@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="FastenerSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/fastener_spec.gd" id="1_tsp4m"]
+
+[resource]
+script = ExtResource("1_tsp4m")
+id = "M12"
+torque_nm = Vector2(80, 95)

@@ -14,6 +14,7 @@ flags = {
 "quality": true,
 "quality.scores": true,
 "ship_bay": true,
+"shared_components": true,
 "trades": true,
 "trades.bolting": true,
 "ui": true
