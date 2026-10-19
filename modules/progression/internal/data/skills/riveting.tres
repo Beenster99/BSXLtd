@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="ProgressionSkill" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://modules/progression/api/progression_skill.gd" id="1"]
+[ext_resource type="Script" path="res://modules/progression/api/progression_perk.gd" id="2"]
+
+[sub_resource type="Resource" id="perk_1"]
+script = ExtResource("2")
+level = 1
+effect_key = &"rivet_set_tolerance"
+value = 0.05
+
+[sub_resource type="Resource" id="perk_3"]
+script = ExtResource("2")
+level = 3
+effect_key = &"rivet_speed"
+value = 0.1
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = &"riveting"
+display_name = "Riveting"
+trade = &"riveting"
+xp_per_joint = 10
+xp_per_level = PackedInt32Array(100, 300, 600, 1000, 1500)
+perks = Array[ExtResource("2")]([SubResource("perk_1"), SubResource("perk_3")])

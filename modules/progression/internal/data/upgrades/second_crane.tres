@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ProgressionUpgrade" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/progression/api/progression_upgrade.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = &"second_crane"
+display_name = "Second bay crane"
+kind = 1
+target_id = &"bay_crane"
+requires = PackedStringArray()
+price_ref = &"upgrade.second_crane"
+effect_key = &"lift_speed"
+value = 0.2
