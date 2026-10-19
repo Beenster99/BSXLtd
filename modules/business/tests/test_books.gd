@@ -29,6 +29,7 @@ func run_tests() -> void:
 	_test_contracts()
 	_test_insolvency()
 	_test_saves()
+	_test_purchases()
 	kessler.reliability = reliability
 
 	bus.reset()
@@ -166,6 +167,22 @@ func _test_saves() -> void:
 	check(bus.get_contract_balance("VS-9").deposit == 1500, "contracts restored")
 	var next := bus.place_order("kessler_fasteners", _lines("M10", 1))
 	check(next.order_id == "PO-0003", "order numbers carry on after a load: %s" % next.order_id)
+
+
+func _test_purchases() -> void:
+	bus.reset()
+	var answers: Array[String] = []
+	bus.purchase_completed.connect(func(id): answers.append("ok:" + id))
+	bus.purchase_failed.connect(func(id, why): answers.append("%s:%s" % [why, id]))
+	var cash := bus.get_cash()
+	bus.request_purchase(&"upgrade.calibrated_torque_wrench", "progression:calibrated_torque_wrench")
+	check(answers.back() == "ok:progression:calibrated_torque_wrench", "priced purchase completes")
+	check(bus.get_cash() == cash - 1500 and bus.get_ledger().back().category == LedgerEntry.UPGRADE, "purchase paid and booked as an upgrade")
+	bus.request_purchase(&"upgrade.no_such_thing", "x")
+	check(answers.back() == "unknown_price:x", "unpriced purchase fails")
+	bus.charge(bus.get_cash(), LedgerEntry.UPGRADE)
+	bus.request_purchase(&"upgrade.second_crane", "y")
+	check(answers.back() == "insufficient_funds:y", "unaffordable purchase fails")
 
 
 func _supplier(id: String) -> SupplierDef:

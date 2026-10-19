@@ -12,5 +12,10 @@ prices = {
 "M10": 2,
 "M12": 3,
 "RIVET_4": 1,
-"TankBracket": 260
+"TankBracket": 260,
+"upgrade.calibrated_torque_wrench": 1500,
+"upgrade.inspection_scanner": 4000,
+"upgrade.pneumatic_rivet_gun": 2500,
+"upgrade.pulse_welder": 6000,
+"upgrade.second_crane": 15000
 }

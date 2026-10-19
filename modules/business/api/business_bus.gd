@@ -28,6 +28,9 @@ signal penalty_applied(contract_id: String, amount: int, reason: String)
 signal reputation_changed(value: float, delta: float, reason: String)
 signal insolvency_warning(days_left: int)
 signal went_insolvent
+## Answers to request_purchase, keyed by the caller's order id.
+signal purchase_completed(order_id: String)
+signal purchase_failed(order_id: String, reason: String)
 signal day_closed(day: int)
 
 const SAVE_SECTION := "business"
@@ -164,6 +167,28 @@ func credit(amount: int, category: String, ref := "") -> BusinessResult:
 		return BusinessResult.fail(ERR_INVALID_PARAMETER, "credit a positive amount")
 	_books.post(amount, category, ref)
 	return BusinessResult.success()
+
+
+## Buys something priced in the PriceList under `price_ref` (Progression's
+## "upgrade.<id>" entries, say). Answers with purchase_completed(order_id) or
+## purchase_failed(order_id, reason), reason one of unknown_price, insufficient_funds,
+## insolvent or not_host.
+func request_purchase(price_ref: StringName, order_id: String) -> void:
+	var reason := ""
+	var price := _books.prices.price_of(price_ref)
+	if not _is_authority():
+		reason = "not_host"
+	elif price < 0:
+		reason = "unknown_price"
+	elif _books.insolvent:
+		reason = "insolvent"
+	elif price > _books.cash:
+		reason = "insufficient_funds"
+	if reason != "":
+		purchase_failed.emit(order_id, reason)
+		return
+	_books.post(-price, LedgerEntry.UPGRADE, order_id, String(price_ref))
+	purchase_completed.emit(order_id)
 
 
 ## Ends the business day: rent, late penalties, deliveries, the solvency check.
