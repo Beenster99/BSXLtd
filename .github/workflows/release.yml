@@ -1,0 +1,82 @@
+name: Release
+
+# Pushing a tag v<major.minor.patch> builds every platform, takes the screenshots, drafts
+# the what's new summary and uploads it all as a draft GitHub Release. The Release thread
+# posts the zips, the edited summary and the screenshots from there.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the v (e.g. 0.1.0). Builds the current branch; no release is drafted."
+        required: true
+
+env:
+  GODOT_VERSION: 4.7.2
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Version
+        id: v
+        run: echo "version=${{ github.event.inputs.version || github.ref_name }}" | sed 's/=v/=/' >> "$GITHUB_OUTPUT"
+
+      - name: Cache Godot and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}
+
+      - name: Install Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot && cd ~/godot
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -sSLo godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip && rm godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 godot
+          curl -sSLo templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$dest"
+          unzip -q -j templates.tpz \
+            'templates/linux_release.x86_64' 'templates/windows_release_x86_64.exe' \
+            'templates/windows_release_x86_64_console.exe' 'templates/macos.zip' \
+            'templates/version.txt' -d "$dest"
+          rm templates.tpz
+
+      - name: Screenshot dependencies
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1 libglx-mesa0 mesa-utils zip
+
+      - name: Build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: GODOT=$HOME/godot/godot tools/build/release.sh "${{ steps.v.outputs.version }}"
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: bsx-v${{ steps.v.outputs.version }}
+          path: release/v${{ steps.v.outputs.version }}
+
+      - name: Draft GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="release/v${{ steps.v.outputs.version }}"
+          gh release create "${{ github.ref_name }}" --draft --title "BSX Ltd ${{ github.ref_name }}" \
+            --notes-file "$out/whats_new.md" "$out"/*.zip "$out"/screenshots/*.png "$out/manifest.json"

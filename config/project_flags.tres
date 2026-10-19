@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="FlagSet" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/core/api/flag_set.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+flags = {
+"business": false,
+"contracts": true,
+"core": true,
+"multiplayer": false,
+"progression": false,
+"quality": false,
+"ship_bay": true,
+"trades": true,
+"trades.bolting": true,
+"ui": true
+}

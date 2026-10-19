@@ -1,0 +1,43 @@
+; Engine configuration file.
+; Hand-edited: keep this file readable. Godot may reorder keys on save, which is fine.
+; Module threads should not need to touch this file: modules are found through their
+; module.tres manifests (modules/core/api/modules.gd), not through autoloads here.
+
+config_version=5
+
+[application]
+
+config/name="BSX Ltd"
+config/description="Co-op ship fitting and maintenance for the salvage crews of Void Salvage."
+config/version="0.0.1"
+run/main_scene="res://modules/core/internal/boot.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+Flags="*res://modules/core/api/flags.gd"
+Settings="*res://modules/core/api/settings.gd"
+Saves="*res://modules/core/api/saves.gd"
+Router="*res://modules/core/api/router.gd"
+Hud="*res://modules/core/api/hud.gd"
+Menu="*res://modules/core/api/menu.gd"
+Shots="*res://modules/core/api/shots.gd"
+Modules="*res://modules/core/api/modules.gd"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/window_width_override=1600
+window/size/window_height_override=900
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+common/physics_ticks_per_second=60
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2
+textures/vram_compression/import_etc2_astc=true
