@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="RivetingRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/quality/internal/riveting_rules.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+head_full_pct = 10.0
+head_zero_pct = 30.0
+hole_fit_full_mm = 0.15
+hole_fit_zero_mm = 0.4
+weight_head = 50.0
+weight_hole = 20.0
+weight_deburr = 15.0
+weight_seated = 15.0
+pass_score = 70
+marginal_score = 50

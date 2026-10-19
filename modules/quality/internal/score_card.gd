@@ -8,7 +8,13 @@ const GRADE_COLORS := {
 	JointRecord.FAIL: Color("e0584f"),
 	JointRecord.UNGRADED: Color("93a1af"),
 }
-const RULE_NAMES := {"torque": "Torque", "sequence": "Sequence", "fastener": "Fasteners", "threads": "Threads"}
+const RULE_NAMES := {
+	"torque": "Torque", "sequence": "Sequence", "fastener": "Fasteners", "threads": "Threads",
+	"head": "Head shape", "hole": "Hole fit", "deburr": "Deburring", "seated": "Drawn tight",
+	"speed": "Travel speed", "angle": "Torch angle", "arc": "Arc length", "coverage": "Coverage",
+	"penetration": "Penetration", "crimp": "Crimps", "strip": "Strip length",
+	"continuity": "Continuity", "insulation": "Insulation", "polarity": "Polarity",
+}
 
 var shown_joint: StringName
 var _box: VBoxContainer
