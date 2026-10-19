@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bsx.as_built.v1",
+  "title": "BSX as-built record (BSX to Void Salvage)",
+  "type": "object",
+  "required": [
+    "schema",
+    "schema_version",
+    "contract_id",
+    "ship_id",
+    "completed_at",
+    "installed",
+    "removed"
+  ],
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "material": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "joint_stats": {
+      "type": "object",
+      "required": [
+        "count",
+        "min",
+        "mean"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "mean": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "bsx.as_built"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "contract_id": {
+      "type": "string"
+    },
+    "ship_id": {
+      "type": "string"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signed_by": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "player_id",
+          "role"
+        ],
+        "properties": {
+          "player_id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "installed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "change_id",
+          "slot",
+          "component",
+          "quality"
+        ],
+        "properties": {
+          "change_id": {
+            "type": "string"
+          },
+          "slot": {
+            "type": "string"
+          },
+          "component": {
+            "$ref": "#/$defs/component"
+          },
+          "serial": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "new",
+              "refurbished",
+              "salvaged"
+            ]
+          },
+          "quality": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "joints": {
+            "type": "object",
+            "properties": {
+              "bolt": {
+                "$ref": "#/$defs/joint_stats"
+              },
+              "rivet": {
+                "$ref": "#/$defs/joint_stats"
+              },
+              "weld": {
+                "$ref": "#/$defs/joint_stats"
+              },
+              "connector": {
+                "$ref": "#/$defs/joint_stats"
+              }
+            }
+          },
+          "defects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "type",
+                "severity",
+                "hidden"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "hidden": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "slot",
+          "component",
+          "condition",
+          "disposition"
+        ],
+        "properties": {
+          "slot": {
+            "type": "string"
+          },
+          "component": {
+            "$ref": "#/$defs/component"
+          },
+          "condition": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "disposition": {
+            "enum": [
+              "returned",
+              "scrapped",
+              "kept_as_salvage"
+            ]
+          }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "passed"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "open_snags": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "variations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "variation_id",
+          "description"
+        ],
+        "properties": {
+          "variation_id": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "price_delta": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "invoice": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "number"
+        },
+        "deposit_paid": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
