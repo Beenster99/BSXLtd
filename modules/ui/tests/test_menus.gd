@@ -1,5 +1,6 @@
 extends ModuleTest
-## UI: registers its scenes, the main menu lists registered entries, the HUD fills slots.
+## UI: registers its scenes, the main menu lists registered entries, the HUD fills slots,
+## and the Void Salvage look (fonts, space backdrop, graphics screen) is in place.
 ##   tools/run_tests.sh ui
 
 
@@ -15,7 +16,24 @@ func run_tests() -> void:
 	var entry := menu.find_child("_job", true, false) as Button
 	check(entry != null and entry.text == "Start job", "main menu shows a registered entry")
 	check(entry != null and not entry.disabled, "entry enabled when its scene exists")
+	var gfx := menu.find_child("Graphics", true, false) as Button
+	check(gfx != null, "main menu has a Graphics button")
+	if gfx != null:
+		gfx.pressed.emit()
+		await frames(2)
+		check(menu.find_children("*", "GraphicsPanel", true, false).size() == 1,
+				"Graphics opens the graphics screen")
 	menu.queue_free()
+
+	for face: String in BsxTheme.FACES:
+		check(BsxTheme.font(face) != null, "font %s loads" % face)
+	var env := SpaceLook.environment()
+	check(env.background_mode == Environment.BG_SKY and env.sky != null,
+			"space look uses the starfield sky")
+	var sun := SpaceLook.sun()
+	check(sun.shadow_enabled, "space look's sun casts shadows")
+	sun.free()
+	check(get_node_or_null("/root/Graphics") != null, "Graphics autoload is running")
 
 	var settings: Control = (load(Router.scene_path(UiBus.SETTINGS)) as PackedScene).instantiate()
 	add_child(settings)
