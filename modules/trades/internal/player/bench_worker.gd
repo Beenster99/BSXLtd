@@ -8,9 +8,8 @@ extends CharacterBody3D
 ## Multiplayer once one is needed.
 
 const EYE := 1.62
-const HI_VIS := Color("f2a33a")
-const OVERALLS := Color("31465c")
-const HARD_HAT := Color("f2d23a")
+## The body's chest, where Void Salvage's PlayerModel measures from (its eyes are 0.3 up).
+const CHEST := Vector3(0, EYE - 0.3, 0)
 
 @export var walk_speed := 2.4
 @export var mouse_sensitivity := 0.0025
@@ -60,7 +59,10 @@ func _ready() -> void:
 
 func set_view(third: bool) -> void:
 	third_person = third
-	_body_model.visible = third
+	var cast := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if third \
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	for n in _body_model.find_children("*", "GeometryInstance3D", true, false):
+		(n as GeometryInstance3D).cast_shadow = cast
 	_place_camera()
 
 
@@ -135,27 +137,70 @@ func _hand(side: String, at: Vector3, is_left: bool) -> StretchHand:
 	return hand
 
 
-## Grey-box worker for third person: hard hat, hi-vis vest over overalls. The hands are the
-## stretchy ones, so the arms stop at the elbows.
+## The salvager (PlayerModel, standing, with the exoskeleton): helmet with an amber visor,
+## suit, life support pack, the frame's struts and jets, colour flashes in BSX orange. The
+## arms stop at the elbows: the hands are the stretchy ones.
 func _build_body() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Body"
+	root.position = CHEST
 	add_child(root)
-	var vest := StretchHand._mat(HI_VIS, 0.0, 0.6)
-	var overalls := StretchHand._mat(OVERALLS, 0.0, 0.8)
-	var skin := StretchHand._mat(Color("d9a37e"), 0.0, 0.8)
-	var hat := StretchHand._mat(HARD_HAT, 0.1, 0.4)
-	_part(_capsule(0.19, 0.62), Vector3(0, 1.22, 0), overalls, root)
-	_part(_box(Vector3(0.42, 0.42, 0.26)), Vector3(0, 1.3, 0), vest, root)
-	_part(_sphere(0.12), Vector3(0, 1.62, 0), skin, root)
-	_part(_cylinder(0.15, 0.06), Vector3(0, 1.72, 0), hat, root)
-	_part(_cylinder(0.19, 0.015), Vector3(0, 1.69, -0.03), hat, root)
-	for x in [-0.1, 0.1]:
-		_part(_capsule(0.08, 0.86), Vector3(x, 0.45, 0), overalls, root)
-	for x in [-0.27, 0.27]:
-		var arm := _part(_capsule(0.06, 0.34), Vector3(x, 1.32, -0.08), overalls, root)
-		arm.rotation.x = deg_to_rad(-55.0)
+	var suit := TradesLook.metal(TradesLook.SUIT, 0.0, 0.75)
+	var frame := TradesLook.metal(TradesLook.FRAME, 0.8, 0.4)
+	var visor := TradesLook.metal(TradesLook.VISOR, 1.0, 0.08)
+	var accent := TradesLook.metal(TradesLook.TRIM, 0.4, 0.5)
+	accent.emission_enabled = true
+	accent.emission = TradesLook.TRIM
+	accent.emission_energy_multiplier = 0.5
+	var up := PI * 0.5
+	_part(_sphere(0.17), Vector3(0, 0.32, 0), suit, root)
+	_part(_sphere(0.14), Vector3(0, 0.33, -0.07), visor, root).scale = Vector3(0.95, 0.72, 0.6)
+	_part(_cylinder(0.11, 0.06), Vector3(0, 0.15, 0), frame, root)                    # neck ring
+	_part(_capsule(0.19, 0.62), Vector3(0, -0.04, 0), suit, root)
+	_part(_box(Vector3(0.34, 0.16, 0.22)), Vector3(0, -0.4, 0), suit, root)
+	_part(_box(Vector3(0.24, 0.3, 0.12)), Vector3(0, -0.02, 0.2), suit, root)          # life support
+	_part(_box(Vector3(0.1, 0.18, 0.02)), Vector3(0, 0.0, 0.265), accent, root)
+	for side: float in [-1.0, 1.0]:
+		var shoulder := Vector3(side * 0.24, 0.12, 0.0)
+		var elbow := Vector3(side * 0.3, -0.1, -0.22)
+		_limb(shoulder, elbow, 0.065, suit, root)
+		_part(_box(Vector3(0.07, 0.03, 0.14)), Vector3(side * 0.24, 0.2, 0), accent, root)   # shoulder flash
+		var hip := Vector3(side * 0.11, -0.45, 0.0)
+		var knee := Vector3(side * 0.12, -0.84, -0.06)
+		var ankle := Vector3(side * 0.12, -1.16, 0.02)
+		_limb(hip, knee, 0.08, suit, root)
+		_limb(knee, ankle, 0.07, suit, root)
+		_part(_box(Vector3(0.11, 0.07, 0.24)), ankle + Vector3(0, -0.05, -0.05), frame, root)  # boot
+		# Exoskeleton: leg struts with powered knees, an arm strut, jets on the pack and calves.
+		var strut_x := side * 0.21
+		_limb(Vector3(strut_x, -0.42, 0.04), Vector3(strut_x, -0.84, -0.02), 0.022, frame, root)
+		_limb(Vector3(strut_x, -0.84, -0.02), Vector3(strut_x, -1.14, 0.05), 0.022, frame, root)
+		_part(_cylinder(0.05, 0.05), Vector3(strut_x, -0.84, -0.02), accent, root).rotation.z = up
+		_limb(shoulder + Vector3(side * 0.06, 0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), 0.018, frame, root)
+		_part(_cylinder(0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), accent, root).rotation.z = up
+		for y: float in [0.12, -0.24]:
+			var jet := Vector3(side * 0.2, y, 0.3)
+			_part(_cylinder(0.045, 0.1), jet, frame, root).rotation.x = up
+			_part(_cylinder(0.05, 0.02), jet + Vector3(0, 0, 0.055), accent, root).rotation.x = up
+		_part(_cylinder(0.035, 0.08), Vector3(side * 0.12, -1.0, 0.12), frame, root).rotation.x = up
+	# Spine: backpack frame, shoulder yoke, hip belt.
+	_part(_box(Vector3(0.3, 0.46, 0.14)), Vector3(0, -0.02, 0.27), frame, root)
+	_part(_box(Vector3(0.12, 0.3, 0.02)), Vector3(0, 0.0, 0.345), accent, root)
+	_part(_box(Vector3(0.06, 0.62, 0.06)), Vector3(0, -0.2, 0.23), frame, root)
+	_part(_box(Vector3(0.56, 0.05, 0.08)), Vector3(0, 0.16, 0.14), frame, root)
+	_part(_box(Vector3(0.46, 0.06, 0.3)), Vector3(0, -0.36, 0.03), frame, root)
 	return root
+
+
+## A capsule from a to b (a limb or strut).
+func _limb(a: Vector3, b: Vector3, radius: float, mat: Material, parent: Node3D) -> void:
+	var m := _part(_capsule(radius, maxf(a.distance_to(b) + radius * 2.0, radius * 2.0)), (a + b) * 0.5, mat, parent)
+	var along := (b - a).normalized()
+	var side := along.cross(Vector3.FORWARD)
+	if side.length() < 0.01:
+		side = along.cross(Vector3.RIGHT)
+	side = side.normalized()
+	m.basis = Basis(side, along, side.cross(along))
 
 
 func _part(mesh: Mesh, at: Vector3, mat: Material, parent: Node3D) -> MeshInstance3D:

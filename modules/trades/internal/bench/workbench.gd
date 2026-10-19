@@ -25,9 +25,12 @@ const PICK_BRACKET_M := 0.08
 const PICK_TRAY_M := 0.09
 const TOOL_LABELS := {&"hands": "Hands", &"torque_wrench": "Torque wrench"}
 
-const STEEL := Color("8d969e")
-const DARK := Color("2b3138")
-const PAINT := Color("f2a33a")
+## Paints, in Void Salvage's style (TradesLook): bare and zinc-plated steel, dark fittings,
+## the BSX orange torque paint.
+var STEEL := TradesLook.paint(Color(0.62, 0.64, 0.66), 0.8, 0.3, "brushed_steel")
+var ZINC := TradesLook.paint(Color(0.7, 0.72, 0.74), 0.7, 0.4, "galvanised")
+var DARK := TradesLook.paint(TradesLook.DARK, 0.55, 0.5)
+var PAINT := TradesLook.paint(TradesLook.TRIM, 0.3, 0.45)
 
 var joint: BoltJoint
 var site: JointSite
@@ -56,6 +59,8 @@ var _left_busy := 0.0
 var _tool_label: Label
 var _bolt_label: Label
 var _hint_label: Label
+var _slots: Array[PanelContainer] = []
+var _slot_labels: Array[Label] = []
 var _result_panel: PanelContainer
 var _result_label: Label
 
@@ -325,6 +330,7 @@ func _update_wrench() -> void:
 	if not wrench.visible:
 		return
 	var hole := joint.pulling_hole()
+	wrench.applied_nm = _pull_px * TUNING.nm_per_px if hole >= 0 else 0.0
 	if hole < 0:
 		if _turning_hole < 0:
 			worker.right_hand.come_back()
@@ -397,7 +403,7 @@ func _on_joint_completed() -> void:
 	var bus := _bus()
 	if bus:
 		bus.complete_joint(site, m)
-	var lines: PackedStringArray = ["Joint complete", ""]
+	var lines: PackedStringArray = ["JOINT COMPLETE", ""]
 	var torques: Array = m.torque_nm
 	for i in torques.size():
 		var notes: PackedStringArray = []
@@ -451,38 +457,86 @@ func stage_for_screenshot(third_person: bool = false) -> void:
 
 func _build_room() -> void:
 	var env := WorldEnvironment.new()
-	env.environment = Environment.new()
-	env.environment.background_mode = Environment.BG_COLOR
-	env.environment.background_color = BsxTheme.BG
-	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.environment.ambient_light_color = Color("9fb0c0")
-	env.environment.ambient_light_energy = 0.35
+	env.environment = TradesLook.environment()
 	add_child(env)
 
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-60, 25, 0)
-	sun.light_energy = 0.7
-	sun.shadow_enabled = true
-	add_child(sun)
-	var lamp := OmniLight3D.new()
-	lamp.position = Vector3(-0.3, BENCH_TOP + 0.9, 0.3)
-	lamp.light_color = Color("ffe2b8")
-	lamp.omni_range = 3.0
-	lamp.light_energy = 0.6
-	add_child(lamp)
-
+	# A corner of a BSX workshop bay, fitted out like a Void Salvage ship's hold: deck plate,
+	# warm-white wall panels on dark frames, lit edge strips, a name board and a strip lamp.
+	var deck := TradesLook.paint(Color(0.32, 0.33, 0.35), 0.6, 0.55, "galvanised")
+	var shell := TradesLook.paint(TradesLook.SHELL.darkened(0.25), 0.25, 0.42)
+	var top := TradesLook.paint(TradesLook.TOP.darkened(0.2), 0.3, 0.3, "brushed_steel")
+	var edge := TradesLook.glow(TradesLook.EDGE, 1.6)
 	var solid := StaticBody3D.new()
 	solid.name = "Solid"
 	add_child(solid)
-	_add_solid_box(solid, Vector3(8, 0.1, 8), Vector3(0, -0.05, 0), Color("3b4048"))       # floor
-	_add_solid_box(solid, Vector3(1.4, BENCH_TOP, 0.6), Vector3(0, BENCH_TOP / 2.0, -0.05), Color("5a4634"))
-	_add_solid_box(solid, Vector3(8, 3.0, 0.1), Vector3(0, 1.5, -0.6), Color("3a4652"))    # back wall
-	_add_box(Vector3(0.3, 0.012, 0.2), Vector3(0, BENCH_TOP + 0.006, 0), Color("4f575f"))  # plate
-	_add_box(Vector3(0.16, 0.03, 0.1), TRAY - Vector3(0, 0.005, 0), DARK)                  # bolt tray
+	_add_solid_box(solid, Vector3(8, 0.1, 8), Vector3(0, -0.05, 0), deck)
+	_add_solid_box(solid, Vector3(8, 3.0, 0.1), Vector3(0, 1.5, -0.6), DARK)              # back wall frame
+	_add_solid_box(solid, Vector3(0.1, 3.0, 8), Vector3(-1.6, 1.5, 3.4), DARK)            # side wall frame
+	for x: float in [-1.15, -0.4, 0.35, 1.1]:
+		_add_box(Vector3(0.7, 1.05, 0.02), Vector3(x, 1.75, -0.54), shell)                 # wall panels
+		_add_box(Vector3(0.7, 0.5, 0.02), Vector3(x, 0.4, -0.54), shell)
+	for z: float in [-0.15, 0.6, 1.35]:
+		_add_box(Vector3(0.02, 1.05, 0.7), Vector3(-1.54, 1.75, z), shell)
+	_add_box(Vector3(8, 0.012, 0.006), Vector3(0, 1.2, -0.528), edge)                     # edge strips
+	_add_box(Vector3(8, 0.012, 0.006), Vector3(0, 2.3, -0.528), edge)
+	_add_box(Vector3(0.006, 0.012, 8), Vector3(-1.528, 1.2, 3.4), edge)
+	_add_box(Vector3(8, 0.04, 0.006), Vector3(0, 0.06, -0.548), PAINT)                     # kick strip
+	_name_board("BSX LTD  //  FITTING BAY 1", Vector3(-0.1, 2.05, -0.525), 1.1)
+
+	# The bench: a dark pedestal, a steel top with a lit front edge and an orange trim band.
+	_add_solid_box(solid, Vector3(1.4, BENCH_TOP - 0.03, 0.6), Vector3(0, (BENCH_TOP - 0.03) / 2.0, -0.05), DARK)
+	_add_box(Vector3(1.44, 0.03, 0.64), Vector3(0, BENCH_TOP - 0.015, -0.05), top)
+	_add_box(Vector3(1.44, 0.006, 0.004), Vector3(0, BENCH_TOP - 0.02, 0.272), edge)
+	_add_box(Vector3(1.4, 0.05, 0.004), Vector3(0, BENCH_TOP - 0.09, 0.252), PAINT)
+	for x: float in [-0.35, 0.35]:
+		_add_box(Vector3(0.6, 0.004, 0.004), Vector3(x, BENCH_TOP - 0.42, 0.252), DARK)  # drawer lines
+	_add_box(Vector3(0.3, 0.012, 0.2), Vector3(0, BENCH_TOP + 0.006, 0), ZINC)             # plate
+	for x: float in [-0.13, 0.13]:
+		for z: float in [-0.085, 0.085]:
+			_add_cylinder(0.006, 0.003, Vector3(x, BENCH_TOP + 0.013, z), STEEL)           # plate screws
+	_add_box(Vector3(0.16, 0.03, 0.1), TRAY - Vector3(0, 0.005, 0), DARK)                 # bolt tray
 	for i in 6:
 		var b := _bolt_mesh(self)
 		b.position = TRAY + Vector3(-0.05 + (i % 3) * 0.05, 0.012, -0.025 + (i / 3) * 0.05)
 		b.rotation_degrees.z = 90
+
+	# Strip lamp over the bench (ShipParts.lamp): dark housing, warm lens, lit edges.
+	var lamp_at := Vector3(0.0, 2.25, -0.15)
+	_add_box(Vector3(0.98, 0.06, 0.22), lamp_at + Vector3(0, 0.04, 0), DARK)
+	_add_box(Vector3(0.9, 0.025, 0.12), lamp_at, TradesLook.glow(TradesLook.WARM, 2.2))
+	for side: float in [-1.0, 1.0]:
+		_add_box(Vector3(0.96, 0.008, 0.008), lamp_at + Vector3(0, 0.012, side * 0.105), edge)
+	var lamp := OmniLight3D.new()
+	lamp.position = lamp_at + Vector3(0, -0.25, 0)
+	lamp.light_color = Color(1.0, 0.84, 0.66)
+	lamp.light_energy = 0.9
+	lamp.omni_range = 3.2
+	lamp.shadow_enabled = true
+	add_child(lamp)
+	# Cool ceiling strips over the rest of the bay.
+	for at: Vector3 in [Vector3(-0.6, 2.9, 1.4), Vector3(1.0, 2.9, 1.4)]:
+		_add_box(Vector3(0.9, 0.025, 0.12), at, TradesLook.glow(Color(0.9, 0.95, 1.0), 3.0))
+		var strip := OmniLight3D.new()
+		strip.position = at + Vector3(0, -0.25, 0)
+		strip.light_color = Color(0.92, 0.96, 1.0)
+		strip.light_energy = 0.45
+		strip.omni_range = 3.5
+		add_child(strip)
+
+
+## A name board (ShipParts.name_board): a dark plate, the name in lit letters, a trim band.
+func _name_board(text: String, at: Vector3, width: float) -> void:
+	_add_box(Vector3(width, 0.2, 0.02), at, DARK)
+	_add_box(Vector3(width, 0.025, 0.022), at + Vector3(0, -0.085, 0), PAINT)
+	var label := Label3D.new()
+	label.font = TradesLook.mono_font()
+	label.text = text
+	label.font_size = 64
+	label.pixel_size = 0.0011
+	label.modulate = TradesLook.EDGE
+	label.position = at + Vector3(0, 0.015, 0.012)
+	label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(label)
 
 
 func _build_site(spec: JointSpec) -> void:
@@ -499,9 +553,10 @@ func _build_site(spec: JointSpec) -> void:
 		_add_cylinder(0.0045, 0.001, m.position + Vector3(0, 0.0005, 0), DARK, site)
 		var seq := Label3D.new()
 		seq.text = str(spec.sequence.find(i) + 1)
+		seq.font = TradesLook.mono_font()
 		seq.font_size = 48
 		seq.pixel_size = 0.0004
-		seq.modulate = Color(PAINT, 0.8)
+		seq.modulate = TradesLook.TRIM
 		seq.rotation_degrees.x = -90
 		seq.position = m.position + Vector3(signf(HOLES[i].x) * 0.035, 0.001, 0.0)
 		site.add_child(seq)
@@ -525,7 +580,7 @@ func _build_bolts() -> void:
 		var parts := _bolt_mesh(bolt)
 		parts.name = "Parts"
 		_add_box(Vector3(0.0136, 0.0012, 0.0016), Vector3(0, 0.0118, 0), PAINT, parts).name = "Paint"
-		var washer := _add_cylinder(0.008, 0.0016, Vector3(0, 0.0008, 0), Color("b9c0c6"), bolt)
+		var washer := _add_cylinder(0.008, 0.0016, Vector3(0, 0.0008, 0), ZINC, bolt)
 		washer.name = "Washer"
 		bolt.position = site.position + Vector3(HOLES[i].x, 0.006, HOLES[i].y)
 		add_child(bolt)
@@ -559,48 +614,74 @@ func _build_audio() -> void:
 	add_child(_tick_player)
 
 
+## The HUD in Void Salvage's style (Hud): cyan monospace readout lines top left, the
+## hotbar of boxed slots along the bottom, a small key line, the result card top right.
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.theme = BsxTheme.get_theme()
 	layer.add_child(root)
 
 	var cross := ColorRect.new()
-	cross.color = Color(1, 1, 1, 0.8)
-	cross.custom_minimum_size = Vector2(6, 6)
+	cross.color = TradesLook.HUD
+	cross.custom_minimum_size = Vector2(4, 4)
 	cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(cross)
 	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 
-	var info := PanelContainer.new()
-	info.position = Vector2(24, 24)
-	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(info)
-	var box := VBoxContainer.new()
-	info.add_child(box)
-	box.add_child(BsxTheme.title("Workbench", 34))
-	_tool_label = Label.new()
-	_bolt_label = Label.new()
-	_hint_label = BsxTheme.muted("")
-	_hint_label.custom_minimum_size.x = 520
-	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-	for l in [_tool_label, _bolt_label, _hint_label]:
-		box.add_child(l)
+	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
+	keys.text = "WASD walk  V view  LMB use  RMB back out  wheel turn  Tab bolt  F washer  R reset  Esc menu"
+	keys.position = Vector2(40, 36)
+	root.add_child(keys)
 
-	var help := BsxTheme.muted("WASD walk  ·  V view  ·  1 hands  2 torque wrench  ·  left click use  ·  right click back out  ·  wheel turn bracket  ·  Tab bolt  ·  F washer  ·  R reset  ·  Esc menu")
-	help.add_theme_font_size_override("font_size", 18)
-	root.add_child(help)
-	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 24)
+	var box := VBoxContainer.new()
+	box.position = Vector2(40, 80)
+	box.add_theme_constant_override("separation", 4)
+	root.add_child(box)
+	_tool_label = TradesLook.hud_label(26)
+	_bolt_label = TradesLook.hud_label(26)
+	_hint_label = TradesLook.hud_label(20, TradesLook.HUD_WARN)
+	_hint_label.custom_minimum_size.x = 560
+	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	box.add_child(_tool_label)
+	box.add_child(_bolt_label)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 8
+	box.add_child(gap)
+	box.add_child(_hint_label)
+
+	var bar := HBoxContainer.new()
+	bar.name = "Hotbar"
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_theme_constant_override("separation", 10)
+	root.add_child(bar)
+	for id: StringName in TOOL_LABELS:
+		var slot := PanelContainer.new()
+		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var label := TradesLook.hud_label(18)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.custom_minimum_size = Vector2(112, 0)
+		label.text = "%d  %s" % [_slots.size() + 1, String(TOOL_LABELS[id]).to_upper()]
+		slot.add_child(label)
+		bar.add_child(slot)
+		_slots.append(slot)
+		_slot_labels.append(label)
+	bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 32)
+	bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
 
 	_result_panel = PanelContainer.new()
 	_result_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var card := TradesLook.slot_style(false)
+	card.bg_color = Color(0.0, 0.02, 0.04, 0.75)
+	card.set_content_margin_all(18)
+	_result_panel.add_theme_stylebox_override("panel", card)
 	root.add_child(_result_panel)
-	_result_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 24)
+	_result_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
 	_result_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_result_label = Label.new()
+	_result_label = TradesLook.hud_label(18)
 	_result_panel.add_child(_result_label)
 
 
@@ -609,10 +690,15 @@ func _build_hud() -> void:
 func _refresh_hud() -> void:
 	if _tool_label == null:
 		return
-	_tool_label.text = "Tool: %s" % TOOL_LABELS[tool]
+	_tool_label.text = "TOOL    %s" % String(TOOL_LABELS[tool]).to_upper()
 	var ids := TradesStubFasteners.ids()
-	_bolt_label.text = "Bolt: %s, %s" % [TradesStubFasteners.label(ids[fastener_index]),
-			"with washer" if with_washer else "no washer"]
+	_bolt_label.text = "BOLT    %s  %s" % [TradesStubFasteners.label(ids[fastener_index]).to_upper(),
+			"+ WASHER" if with_washer else "NO WASHER"]
+	var tools := TOOL_LABELS.keys()
+	for i in _slots.size():
+		var on: bool = tools[i] == tool
+		_slots[i].add_theme_stylebox_override("panel", TradesLook.slot_style(on))
+		_slot_labels[i].label_settings.font_color = TradesLook.HUD if on else TradesLook.HUD_DIM
 
 
 func _hint(text: String) -> void:
@@ -713,8 +799,8 @@ func _bolt_mesh(parent: Node) -> Node3D:
 	return root
 
 
-func _add_solid_box(body: StaticBody3D, size: Vector3, pos: Vector3, color: Color) -> void:
-	_add_box(size, pos, color)
+func _add_solid_box(body: StaticBody3D, size: Vector3, pos: Vector3, mat: Material) -> void:
+	_add_box(size, pos, mat)
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = size
@@ -723,26 +809,22 @@ func _add_solid_box(body: StaticBody3D, size: Vector3, pos: Vector3, color: Colo
 	body.add_child(shape)
 
 
-func _add_box(size: Vector3, pos: Vector3, color: Color, parent: Node = self) -> MeshInstance3D:
+func _add_box(size: Vector3, pos: Vector3, mat: Material, parent: Node = self) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
 	mesh.size = size
-	return _add_mesh(mesh, pos, color, parent)
+	return _add_mesh(mesh, pos, mat, parent)
 
 
-func _add_cylinder(radius: float, height: float, pos: Vector3, color: Color, parent: Node = self) -> MeshInstance3D:
+func _add_cylinder(radius: float, height: float, pos: Vector3, mat: Material, parent: Node = self) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = radius
 	mesh.bottom_radius = radius
 	mesh.height = height
 	mesh.radial_segments = 24
-	return _add_mesh(mesh, pos, color, parent)
+	return _add_mesh(mesh, pos, mat, parent)
 
 
-func _add_mesh(mesh: PrimitiveMesh, pos: Vector3, color: Color, parent: Node) -> MeshInstance3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.metallic = 0.6 if color == STEEL else 0.1
-	mat.roughness = 0.45
+func _add_mesh(mesh: PrimitiveMesh, pos: Vector3, mat: Material, parent: Node) -> MeshInstance3D:
 	mesh.material = mat
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
