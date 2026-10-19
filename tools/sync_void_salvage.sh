@@ -19,6 +19,8 @@ FILES=(
 	scripts/parts/wreck_parts.gd
 	scripts/salvage/connection_data.gd
 	scripts/salvage/glazing.gd
+	scripts/salvage/materials.gd
+	scripts/salvage/part_data.gd
 	scripts/salvage/surface_finish.gd
 	scripts/salvage/surface_zones.gd
 	scripts/salvage/wiring_loom.gd

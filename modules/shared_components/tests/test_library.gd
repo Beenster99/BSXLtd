@@ -22,6 +22,13 @@ func run_tests() -> void:
 	check(lib.part_names("frame").has("TankBracket"), "the 0.1 bracket is in the frame category")
 	check(lib.is_buildable("DeckPlate") and lib.is_buildable("TankBracket"), "release 0.1 parts are buildable")
 
+	check(lib.material_ids().size() == Materials.TABLE.size() and lib.material_ids()[0] != "", "the materials table is shared")
+	check(lib.is_material("steel") and lib.is_material("titanium") and not lib.is_material("cheese"), "material ids resolve")
+	check(Materials.tier("veil") > Materials.tier("steel"), "Materials tiers come through")
+	var plate := PartData.new(1, "DeckPlate", PartData.Kind.HULL, 100.0, 10.0, Transform3D.IDENTITY)
+	Materials.assign(plate, "alloy")
+	check(plate.material == "alloy" and plate.mass < 100.0, "Materials.assign rescales mass by density")
+
 	for part_name in lib.part_names():
 		_check_spec(lib, lib.build_spec(part_name))
 
@@ -31,6 +38,7 @@ func _check_spec(lib: SharedComponentsBus, s: BuildSpec) -> void:
 	check(s.version >= 1, "%s: version" % p)
 	check(s.display_name != "" and s.category != "", "%s: display name and category" % p)
 	check(s.mass > 0.0, "%s: mass" % p)
+	check(lib.is_material(s.material), "%s: material '%s' is a Void Salvage material" % [p, s.material])
 	check(s.shape in SharedComponentsBus.SHAPES, "%s: known shape builder '%s'" % [p, s.shape])
 	var shape := lib.make_shape(p)
 	check(shape != null and shape.mesh != null and shape.collision != null and shape.volume > 0.0,

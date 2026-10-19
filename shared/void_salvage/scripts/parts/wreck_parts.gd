@@ -22,33 +22,33 @@ extends RefCounted
 ##                 shield band, a bolted gimbal collar, a hollow ringed bell with a rolled
 ##                 lip and a glowing injector floor (exhaust to +Y)
 ##   fin           a swept fin (root along Z at y = 0, rising in +Y): a capped leading
-##                 wedge, a tapered trailing lip, bolted root doublers, panel lines and a red
-##                 nav lamp at the tip
+##                 wedge, a tapered trailing lip, bolted root doublers with a rubber root seal,
+##                 panel lines and a red nav lamp under a lens at the tip
 ##   container     a cargo container: corrugated walls and roof, corner castings, a door
-##                 end at +Z with two leaves, lock bars and hinges
+##                 end at +Z with two leaves, lock bars, hinges and an enamel data plate
 ##   antenna       a mast with collars and a ribbed dish, a feed horn over it on struts and a
 ##                 red aviation light at the tip (comms, sensors)
 ##   turret        a gun turret: a bolted ring with a dark race, an angular housing with
 ##                 cheek armour, a sight block with a lit lens, two barrels with sleeves and
-##                 slotted brakes out of a bolted mantlet (-Z)
+##                 slotted brakes out of a bolted mantlet (-Z) through ribbed rubber boots
 ##   ion_thruster  a chamfered square housing with corner bolts, side fins and a status
 ##                 panel, a hollow stepped nozzle with an ion grid over a glowing floor (+Y):
 ##                 the small blue thrusters of SE2-style ships, in any size
 ##   headlamp_bar  a housing on a bolted foot with recessed lamps (reflector, lit lens)
 ##                 under a visor (lit face +Y): bow headlights
-##   pipe          a straight pipe along Y with a weld-neck flange at each end and a
-##                 bolted clamp band
+##   pipe          a straight pipe along Y with a forged weld-neck flange at each end and a
+##                 galvanised clamp band on a rubber liner
 ##   pipe_elbow    a 90 degree pipe bend: in along -Y, out toward +Z, bolted flanges
 ##   pipe_tee      a short flanged pipe run along Y with a flanged, bolted branch stub out of
-##                 its -Z side over a dark saddle (sits in a pipe run between two spans)
+##                 its -Z side over a welded saddle (sits in a pipe run between two spans)
 ##   loom_bend     a wiring loom turning a rounded 90 degree corner (+Y in, +Z out): clip
 ##                 straps with buckles at its ends and a cable tie mid-turn
 ##   junction_box  a wall or deck box: a bevelled lid with corner screws, a hazard tab and a
 ##                 status lamp (front -Z), three cable glands on top (+Y), the middle one
 ##                 taking the loom drop
 ##   grating       a deck grating: a frame round bearing and cross bars over a dark plate (+Y)
-##   generator     a power plant on skids: fin packs, an intake grille, a bolted end
-##                 flange with a coupling hub and a lit five-segment status strip
+##   generator     a power plant on skids on rubber pads: fin packs, an intake grille, a
+##                 bolted end flange with a coupling hub and a lit five-segment status strip
 ##   switch_cabinet a breaker cabinet: hinged door, louvre, handle, a guarded lever on its
 ##                 front (-Z) and two indicator lamps
 ##   battery_rack  a braced rack of battery cells: red and copper terminals, straps, a
@@ -87,8 +87,8 @@ extends RefCounted
 ##   thruster_pod  a twin-nozzle main engine: a banded stadium housing on a bolted flange,
 ##                 panels, lamps and fuel feeds on its sides, a pale cowl with two hollow
 ##                 nozzles glowing deep inside in its +Y face (the Arinox's stern pods)
-##   light_strip   a thin channel along X with end caps and lit cells on its top (+Y):
-##                 cyan trim lines on hulls
+##   light_strip   a thin channel along X with end caps and lit cells under a frosted diffuser
+##                 on its top (+Y): cyan trim lines on hulls
 ##   reactor       a drum on a chamfered bolted plinth: bolted flanges, a hazard check band,
 ##                 ribs, clamp bands, a mullioned waist window with lit slots, a lit gauge
 ##                 strip and flanged pipe stubs on a stepped cap (stands on -Y)
@@ -120,7 +120,8 @@ extends RefCounted
 ##   cargo_ramp    a closed cargo ramp leaf: side rails, a striped hazard border, a toe strip,
 ##                 treads and a pinned hinge on its outer face (+Z)
 ##   shower        a round shower cubicle: tray, cap with vents, a curved door between
-##                 jambs, a vision strip, handle, lit occupied lamp and control panel (-Z)
+##                 jambs on rubber seals, a vision strip, handle, lit occupied lamp and control
+##                 panel (-Z)
 ## Cargo shuttle parts (0.33, the block at the end of this file):
 ##   bed_alcove    a bed set into a wall niche: shell open at the front (-Z) with trim,
 ##                 drawers in the base, bedding and headboard, a canopy shelf in tall niches,
@@ -190,8 +191,8 @@ extends RefCounted
 ##                 ready lamps, a banded drum, six barrels in hex clamps (muzzle toward +Y)
 ##   octagon_thruster a main engine in a deep banded octagonal housing on a bolted flange:
 ##                 pale rim, dark recess, two hollow nozzles with glowing floors (exhaust +Y)
-##   stud_lights   a row of domed lit lenses in bezels on a dark rail along X, bolted end
-##                 caps (lenses on +Y)
+##   stud_lights   a row of domed lit lenses in gasketed bezels on a dark rail along X, bolted
+##                 end caps (lenses on +Y)
 ## Pod scout parts (0.41, the block at the end of this file):
 ##   stick_seat    a fighter pilot's seat: padded, harnessed, armrests with a booted flight
 ##                 stick and a status lamp on each (stands on -Y, faces -Z)
@@ -226,14 +227,14 @@ extends RefCounted
 ##   oval_engine   a main engine in a banded stadium-shaped housing on a bolted flange: pale
 ##                 rim, dark recess, two hollow nozzles with hubs and glowing rings (exhaust +Y)
 ##   spoiler_wing  a flat stern wing along X with red edge trim, up-turned red end fins with
-##                 bright caps and nav lamps, a flap hinge line with actuator fairings, panel
-##                 lines and a lit strip along its trailing edge (base on -Y)
+##                 bright caps and lensed nav lamps, a flap hinge line with actuator fairings,
+##                 panel lines and a lit strip along its trailing edge (base on -Y)
 ## Claymore parts (0.45, the block at the end of this file):
 ##   bomb_rack     eight-sided bombs (fuse tip, yellow nose band, cross fins) lying along Z in
 ##                 columns and rows on a cradle: end frames, rails, cross bars and saddle
 ##                 pads, a base plate (stands on -Y): bomb bay payload and wall stowage
 ##   ribbed_spine  a dorsal keel along Z: a chamfered bar tapering to a point at +Z with dark
-##                 ribs, a ridge cap, foot doublers, a bolted front plate and a red beacon
+##                 ribs, a ridge cap, foot doublers, a bolted front plate and a red beacon lens
 ##                 (base on -Y)
 ##   cannon_maw    a heavy frontal cannon: a bolted mount plate, an octagonal housing with
 ##                 vents and a heat band, a bolted rim round a recessed face with a ring of
@@ -248,7 +249,8 @@ extends RefCounted
 ##                 pointed hub (bit toward +Y)
 ##   lift_car      a lift car: dark floor with tread bars and a hazard edge, corner posts,
 ##                 roof with a lamp, kick plates, a braced back panel with a handrail, a call
-##                 panel with a screen and buttons, a light strip (stands on -Y, open front -Z)
+##                 panel with a glazed screen and buttons, a light strip (stands on -Y, open
+##                 front -Z)
 ##   detector_head a rotating ore detector: bolted rotor base, slewing ring, collared post,
 ##                 six-sided head with a lit eye in a dark bezel (-Z), back vents, a capped mast
 ##   med_station   a wall medical station: a screen with a glowing heart trace in a pale
@@ -348,7 +350,8 @@ extends RefCounted
 ## Endeavor parts (v2, the block at the end of this file):
 ##   fin_blade     a triangular armour fin: a blade rising to its aft end, pale caps along the
 ##                 slope and the aft edge, bolted dark inset panels on both faces, bolted foot
-##                 doublers and a red nav lamp at the top (stands on -Y, along Z)
+##                 doublers with a rubber root seal and a red lensed nav lamp at the top (stands
+##                 on -Y, along Z)
 ##   spoke_beam    a gravity-ring spoke: a flanged box girder along X with lipped octagonal
 ##                 lightening holes, stiffeners and end plates, a grating tread on top and a
 ##                 cable tray on hangers down its +Z side
@@ -453,6 +456,25 @@ const TOOTH_DARK := Color(0.3, 0.31, 0.33, SurfaceZones.CAST_IRON_A)  # the dark
 const GUN_BORE := Color(0.05, 0.05, 0.06, SurfaceZones.GUNMETAL_A)    # the bore's deep black
 const RAIL_BORE := Color(0.05, 0.05, 0.06, SurfaceZones.GUNMETAL_A)   # the bore's deep black
 const PLATE_DARK := Color(0.24, 0.25, 0.27, SurfaceZones.CAST_IRON_A) # the mount plate
+const FLANGE_BOLT := Color(0.32, 0.33, 0.35, SurfaceZones.GUNMETAL_A) # blackened high-tensile flange bolts
+const WELD_PAD := Color(0.5, 0.48, 0.5, SurfaceZones.BLUED_A)      # heat-tinted welded saddles and pads
+const RAIL_DARK := Color(0.32, 0.33, 0.36, SurfaceZones.ANODISED_A) # dark anodised extrusions: conveyor rails, edge frames
+const AERO_EDGE := Color(0.64, 0.67, 0.72, SurfaceZones.TITANIUM_A) # titanium leading edges, intake lips, ridge caps
+const FURN_COLLAR := Color(0.6, 0.61, 0.63, SurfaceZones.BRUSHED_STEEL_A) # brushed steel collars, ribs and cap bands on furniture
+const PNL_ARMOUR_BACK := Color(0.26, 0.27, 0.29, SurfaceZones.DENSE_CAST_A) # dense cast armour backing under shingle tiles
+const PNL_MESH := Color(0.46, 0.47, 0.49, SurfaceZones.GALVANISED_A) # galvanised expanded-mesh grid bars
+const WALK_CROSS_BAR := Color(0.58, 0.6, 0.62, SurfaceZones.GALVANISED_A) # darker galvanised cross bars, rungs and braces
+const WPN_RIB_PALE := Color(0.68, 0.69, 0.71, SurfaceZones.ANODISED_A) # an ore detector's pale anodised drum ribs
+const WPN_RIB_DARK := Color(0.42, 0.43, 0.45, SurfaceZones.ANODISED_A) # ... and the dark ones between them
+const WPN_TIP := Color(0.62, 0.64, 0.7, SurfaceZones.TITANIUM_A)       # titanium sensor tips on probes
+const WPN_BARREL := Color(0.36, 0.37, 0.4, SurfaceZones.GUNMETAL_A)    # machined gun barrels, a shade lighter than GUNMETAL
+const WPN_BLUED := Color(0.4, 0.41, 0.45, SurfaceZones.BLUED_A)        # heat-blued clamps and plates at a gun's muzzle
+const ENG_STATOR := Color(0.4, 0.41, 0.44, SurfaceZones.ANODISED_A) # dark anodised stator vanes
+const ENG_ION_GRID := Color(0.58, 0.6, 0.66, SurfaceZones.TITANIUM_A) # titanium ion grids over a thruster's glow
+const ENG_NOZZLE := Color(0.62, 0.57, 0.5, SurfaceZones.HEAT_A)      # heat-tinted nozzle rims and lips by the glow
+const ENG_FRAME := Color(0.4, 0.41, 0.44, SurfaceZones.GUNMETAL_A)    # gunmetal machine frames (the gyroscope's cage)
+const LIT_CLIP := Color(0.55, 0.56, 0.58, SurfaceZones.GALVANISED_A) # galvanised loom clip straps (the spans' strap tone)
+const LIT_RAIL := Color(0.38, 0.39, 0.42, SurfaceZones.GUNMETAL_A)  # gunmetal stud-light rails, lifted to read on dark hulls
 # --- Paints and enamels ---------------------------------------------------------------------
 const PLATE := Color(0.8, 0.78, 0.7, SurfaceZones.ENAMEL_A)           # pale enamel name and maker's plates
 const CHEVRON := Color(0.82, 0.83, 0.84, SurfaceZones.ENAMEL_A)       # the pale chevrons on the side panels
@@ -477,6 +499,13 @@ const HATCH_LEAF := Color(0.34, 0.35, 0.37, SurfaceZones.SATIN_PAINT_A)
 const AMMO_GREEN := Color(0.34, 0.37, 0.28, SurfaceZones.SATIN_PAINT_A)
 const BOMB_OLIVE := Color(0.36, 0.38, 0.34, SurfaceZones.SATIN_PAINT_A)
 const MEDIA_SPINE := Color(0.36, 0.44, 0.52, SurfaceZones.METALLIC_PAINT_A)
+const AERO_LIME := Color(0.78, 0.85, 0.2, SurfaceZones.ENAMEL_A)    # the K1 pod beams' yellow-green enamel trim lines
+const FURN_PLINTH := Color(0.22, 0.23, 0.24, SurfaceZones.SATIN_PAINT_A) # graphite satin sheet-steel table plinths
+const PNL_LIVERY_PURPLE := Color(0.36, 0.2, 0.62, SurfaceZones.GLOSS_PAINT_A) # the race carrier's purple livery band and digit
+const PNL_LIVERY_WHITE := Color(0.92, 0.93, 0.94, SurfaceZones.GLOSS_PAINT_A) # gloss white livery digits
+const PNL_SEAM_STRIP := Color(0.7, 0.71, 0.74, SurfaceZones.SATIN_PAINT_A) # satin-painted cover strips over panel seams
+const WALK_FRAME := Color(0.2, 0.2, 0.22, SurfaceZones.SATIN_PAINT_A) # dark satin frames and stand-off brackets
+const ENG_PANEL := Color(0.7, 0.71, 0.72, SurfaceZones.ENAMEL_A)    # pale grey enamel service panels on engines
 # --- Plastics and rubber --------------------------------------------------------------------
 const PLASTIC_DARK := Color(0.14, 0.14, 0.15, SurfaceZones.PLASTIC_TEXTURED_A) # housings, bezels, keyboards
 const PLASTIC_PALE := Color(0.7, 0.7, 0.68, SurfaceZones.PLASTIC_A)   # keys, switch faces, pale casings
@@ -490,6 +519,9 @@ const CASE_SHELL := Color(0.13, 0.13, 0.14, SurfaceZones.PLASTIC_TEXTURED_A)
 const PLANTER_TANK := Color(0.3, 0.42, 0.5, SurfaceZones.PLASTIC_A)
 const WINDOW := Color(0.05, 0.07, 0.05, SurfaceZones.PLASTIC_GLOSS_A) # painted-on dark window panes
 const CARBON := Color(0.18, 0.18, 0.2, SurfaceZones.CARBON_A)         # carbon fibre fairings, racer panels
+const WASH_SEAT := Color(0.24, 0.25, 0.27, SurfaceZones.PLASTIC_GLOSS_A) # moulded toilet seats and lids
+const PNL_CABLE := Color(0.12, 0.13, 0.15, SurfaceZones.PLASTIC_A)    # black PVC cable jackets
+const PNL_CABLE_BLUE := Color(0.2, 0.22, 0.28, SurfaceZones.PLASTIC_A) # blue-grey PVC cable jackets
 # --- Ceramics, glass, silicon ---------------------------------------------------------------
 const LINER := Color(0.86, 0.79, 0.64, SurfaceZones.CERAMIC_A)        # ceramic nozzle liners
 const BEZEL := Color(0.86, 0.85, 0.82, SurfaceZones.POLISHED_A)
@@ -499,6 +531,9 @@ const ORE_BED := Color(0.38, 0.32, 0.27, SurfaceZones.CERAMIC_A)
 const ORE_GREY := Color(0.42, 0.4, 0.38, SurfaceZones.CERAMIC_A)
 const ORE_RUST := Color(0.5, 0.33, 0.22, SurfaceZones.CERAMIC_A)
 const ORE_SLATE := Color(0.36, 0.36, 0.38, SurfaceZones.CERAMIC_A)
+const WASH_PORCELAIN := Color(0.88, 0.88, 0.86, SurfaceZones.CERAMIC_GLAZED_A) # glazed porcelain pans, cisterns, basin bowls
+const WPN_RADOME := Color(0.84, 0.83, 0.79, SurfaceZones.CERAMIC_A)    # ceramic radomes, feed horns and sensor windows
+const ENG_LINER := Color(0.56, 0.51, 0.43, SurfaceZones.CERAMIC_A)   # sooted ceramic liners in thruster bores and throats
 # --- Fabrics, leather, wood -----------------------------------------------------------------
 const SEAT_LEATHER := Color(0.2, 0.18, 0.18, SurfaceZones.LEATHER_A)  # seat cushions
 const SEAT_ARM := Color(0.14, 0.14, 0.15, SurfaceZones.RUBBER_A)      # armrest pads
@@ -527,6 +562,7 @@ const MEDIA_CABINET := Color(0.22, 0.2, 0.19, SurfaceZones.WOOD_A)
 const MEDIA_WOOD := Color(0.78, 0.47, 0.27, SurfaceZones.WOOD_A)
 const MEDIA_WOOD_DARK := Color(0.6, 0.34, 0.2, SurfaceZones.WOOD_A)
 const MEDIA_WOOD_MID := Color(0.7, 0.42, 0.24, SurfaceZones.WOOD_A)
+const LIT_TIE := Color(0.07, 0.07, 0.075, SurfaceZones.NYLON_A)       # black nylon cable ties
 # --- Plain paint in the part's material (no code) -------------------------------------------
 const BAR_GLOW := Color(1.0, 0.72, 0.4)
 const PLANTER_FRUIT := Color(0.78, 0.22, 0.12)
@@ -536,9 +572,10 @@ const PLANTER_SOIL := Color(0.22, 0.16, 0.11)
 
 
 ## A ducted fan `radius` x `length` along Y, intake at +Y: a duct in the material colour
-## with chamfered outer edges and a flared bright lip (a bolt ring on it on fans over
-## 0.35 m), a dark bore, `blades` steel blades round a dark hub under a bright spinner, and
-## stator vanes holding the motor nacelle at the exhaust end (-Y).
+## with chamfered outer edges, two galvanised bands and a flared polished lip (a ring of
+## blackened bolts on it on fans over 0.35 m), a dark bore, `blades` anodised blades round a
+## cast iron hub under a chrome spinner, and dark anodised stator vanes holding the cast
+## motor nacelle at the exhaust end (-Y).
 static func ducted_fan(radius: float, length: float, blades: int = 7) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var wall := radius * 0.12
@@ -559,25 +596,26 @@ static func ducted_fan(radius: float, length: float, blades: int = 7) -> PartSha
 	for yc: float in [-h + c + bw * 0.5 + length * 0.04, 0.0]:
 		_piping_spin(k, Vector3(0.0, yc, 0.0), Vector3.UP, PackedVector2Array([Vector2(ro - 0.004, -bw * 0.5),
 				Vector2(radius, -bw * 0.5), Vector2(radius, bw * 0.5), Vector2(ro - 0.004, bw * 0.5)]),
-				[DETAIL] as Array[Color], 24)
+				[GALVANISED] as Array[Color], 24)
 	# A ring of bolts on the lip's top (too small to read on little fans).
 	if radius >= 0.35:
+		k.color = FLANGE_BOLT
 		var bs := clampf(wall * 0.3, 0.014, 0.04)
 		var ring_r := (lip + ro - c) * 0.5
 		_piping_bolts(k, Vector3.ZERO, Vector3.UP, h, clampi(int(TAU * ring_r / 0.16), 8, 24), ring_r, bs, bs * 0.4)
 	# The motor nacelle down the axis, a dark hub on it and a bright spinner on the hub.
 	var hub := radius * 0.28
 	var ys := minf(hub * 0.9, h * 0.8)          # spinner tip, m
-	k.color = DETAIL
+	k.color = CAST
 	_thrusters_ring(k, 0.0, hub * 0.8, -h * 0.85, -h * 0.2, 12)
-	k.color = DARK
+	k.color = HUB
 	_thrusters_ring(k, 0.0, hub, -h * 0.2, h * 0.12, 14)
-	k.color = TRIM
+	k.color = CHROME
 	k.lathe(PackedVector2Array([Vector2(0.0, h * 0.12), Vector2(hub * 0.96, h * 0.12),
 			Vector2(hub * 0.8, lerpf(h * 0.12, ys, 0.45)), Vector2(hub * 0.45, lerpf(h * 0.12, ys, 0.85)),
 			Vector2(0.0, ys)]), 14)
 	# Rotor blades round the hub.
-	k.color = DETAIL
+	k.color = ANODISED
 	for i in blades:
 		var a := TAU * float(i) / float(blades)
 		var dir := Vector3(cos(a), 0.0, sin(a))
@@ -591,7 +629,7 @@ static func ducted_fan(radius: float, length: float, blades: int = 7) -> PartSha
 		k.quad(p0, p1, p2, p3, Vector3.UP)
 		k.quad(p0, p1, p2, p3, Vector3.DOWN)
 	# Stator vanes from the nacelle out to the bore, a slight twist against the rotor.
-	k.color = DETAIL
+	k.color = ENG_STATOR
 	var vt := clampf(radius * 0.025, 0.005, 0.03)
 	var vanes := clampi(blades - 2, 3, 8)
 	for i in vanes:
@@ -1112,10 +1150,12 @@ static func engine_bell(radius: float, length: float, glow := Color(1.0, 0.72, 0
 
 ## A swept fin: a slab `thickness` thick (X) whose root runs `root_length` along Z at
 ## y = 0, rising `height` in +Y to a tip `tip_length` long set back `sweep` from the root's
-## leading (-Z) end. Its leading edge is a bright capped wedge, its trailing edge tapers to
-## a thin lip, a doubler strip runs along the root on both faces with bolts in it, dark
-## panel lines cross both faces, and a small red navigation light sits in a dark housing at
-## the tip's trailing corner (PartShape.glow). Collision is the hull of the slab's outline.
+## leading (-Z) end, in the hull's paint. Its leading edge is a titanium wedge, its trailing
+## edge tapers to a thin anodised lip, a gunmetal doubler strip runs along the root on both
+## faces with steel bolts in it, a rubber seal fillets the root on both faces where it meets
+## the hull, dark panel lines cross both faces, and a small red navigation light
+## (PartShape.glow) sits in a moulded plastic housing at the tip's trailing corner under a
+## faceted red lens (PartShape.glass). Collision is the hull of the slab's outline.
 static func fin(root_length: float, height: float, tip_length: float, sweep: float,
 		thickness: float = 0.1) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -1138,9 +1178,10 @@ static func fin(root_length: float, height: float, tip_length: float, sweep: flo
 	k.color = Color.WHITE
 	k.loft(sec.call(0.0, [Vector2(zl0 + el0, t), Vector2(zt0 - et0, t), Vector2(zt0 - et0, -t), Vector2(zl0 + el0, -t)]),
 			sec.call(height, [Vector2(zl1 + el1, t), Vector2(zt1 - et1, t), Vector2(zt1 - et1, -t), Vector2(zl1 + el1, -t)]))
+	k.color = ANODISED
 	k.loft(sec.call(0.0, [Vector2(zt0 - et0, t), Vector2(zt0, lip), Vector2(zt0, -lip), Vector2(zt0 - et0, -t)]),
 			sec.call(height, [Vector2(zt1 - et1, t), Vector2(zt1, lip), Vector2(zt1, -lip), Vector2(zt1 - et1, -t)]))
-	k.color = TRIM
+	k.color = AERO_EDGE
 	k.loft(sec.call(0.0, [Vector2(zl0, 0.0), Vector2(zl0 + el0, t), Vector2(zl0 + el0, -t)]),
 			sec.call(height, [Vector2(zl1, 0.0), Vector2(zl1 + el1, t), Vector2(zl1 + el1, -t)]))
 	# The root doubler: a wedge strip along each face, bolted.
@@ -1150,12 +1191,13 @@ static func fin(root_length: float, height: float, tip_length: float, sweep: flo
 	var bolts := clampi(int((dz1 - dz0) / maxf(dh * 3.0, 0.3)), 2, 12)
 	var br := clampf(dh * 0.12, 0.008, 0.03)
 	for sx: float in [-1.0, 1.0]:
-		k.color = DETAIL
+		k.color = GUNMETAL
 		var w0 := PackedVector3Array([Vector3(sx * (t - 0.002), 0.0, dz0), Vector3(sx * (t + 0.018), 0.0, dz0),
 				Vector3(sx * (t - 0.002), dh, dz0)])
 		var w1 := PackedVector3Array([Vector3(sx * (t - 0.002), 0.0, dz1), Vector3(sx * (t + 0.018), 0.0, dz1),
 				Vector3(sx * (t - 0.002), dh, dz1)])
 		k.loft(w0, w1)
+		k.color = DETAIL
 		# Bolt heads on the slab's face just above the doubler.
 		for i in bolts:
 			var z := lerpf(dz0 + 0.04, dz1 - 0.04, (float(i) + 0.5) / float(bolts))
@@ -1175,15 +1217,29 @@ static func fin(root_length: float, height: float, tip_length: float, sweep: flo
 		var zlo := lerpf(zc0, zc1, lo / height)
 		var zhi := lerpf(zc0, zc1, hi / height)
 		k.quad(Vector3(x, lo, zlo - lw), Vector3(x, lo, zlo + lw), Vector3(x, hi, zhi + lw), Vector3(x, hi, zhi - lw), Vector3(sx, 0, 0))
-	# The navigation light at the tip's trailing corner: a dark housing, a red lens on top.
+	# The root seal: a rubber fillet along each face where the slab meets the hull plate,
+	# running out past the doubler's toe.
+	k.color = RUBBER
+	for sx: float in [-1.0, 1.0]:
+		var s0 := PackedVector3Array([Vector3(sx * (t - 0.001), -0.002, zl0 + el0), Vector3(sx * (t + 0.03), -0.002, zl0 + el0),
+				Vector3(sx * (t - 0.001), 0.012, zl0 + el0)])
+		var s1 := PackedVector3Array([Vector3(sx * (t - 0.001), -0.002, zt0 - et0), Vector3(sx * (t + 0.03), -0.002, zt0 - et0),
+				Vector3(sx * (t - 0.001), 0.012, zt0 - et0)])
+		k.loft(s0, s1)
+	# The navigation light at the tip's trailing corner: a plastic housing, the red lamp on
+	# top under a faceted red lens.
 	var ll := clampf(tip_length * 0.18, 0.05, 0.3)
 	var lh := clampf(height * 0.04, 0.03, 0.12)
 	var lz := zt1 - et1 - ll * 0.5 - 0.01
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	k.box(Vector3(thickness + 0.016, lh + 0.008, ll), Vector3(0.0, height - lh * 0.5 + 0.004, lz))
 	var g := MeshKit.new()
-	g.box(Vector3(thickness * 0.7, 0.012, ll * 0.7), Vector3(0.0, height + 0.014, lz))
+	g.box(Vector3(thickness * 0.7, 0.004, ll * 0.7), Vector3(0.0, height + 0.010, lz))
+	var gk := MeshKit.new()
+	_navlamps_lens(gk, Vector3(0.0, height + 0.008, lz), Vector3.UP, Vector3.RIGHT, thickness * 0.48, ll * 0.48, 0.016)
 	var shape := PartShapes.PartShape.new()
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.RED
 	shape.mesh = k.finish()
 	shape.volume = (root_length + tip_length) * 0.5 * height * thickness * 0.85
 	var pts := PackedVector3Array()
@@ -1198,6 +1254,32 @@ static func fin(root_length: float, height: float, tip_length: float, sweep: flo
 	return shape
 
 
+## A nav lamp's lens into `g` (a glass mesh): a faceted dome on a chamfered rectangle
+## `hu` by `hv` (half sizes along `u` and `n` x `u`, m) whose base sits at `centre`,
+## rising `h` along `n` through a mid tier to a flat crown. Open at the base (it sits on
+## the housing over the lamp). Used by fin, fin_blade, ribbed_spine and spoiler_wing.
+static func _navlamps_lens(g: MeshKit, centre: Vector3, n: Vector3, u: Vector3, hu: float, hv: float, h: float) -> void:
+	var v := n.cross(u).normalized()
+	var ring := func(o: Vector3, a: float, b: float) -> PackedVector3Array:
+		var c := minf(a, b) * 0.35
+		var out := PackedVector3Array()
+		for p: Vector2 in [Vector2(a - c, b), Vector2(-a + c, b), Vector2(-a, b - c), Vector2(-a, -b + c),
+				Vector2(-a + c, -b), Vector2(a - c, -b), Vector2(a, -b + c), Vector2(a, b - c)]:
+			out.append(o + u * p.x + v * p.y)
+		return out
+	var base: PackedVector3Array = ring.call(centre, hu, hv)
+	var mid: PackedVector3Array = ring.call(centre + n * h * 0.6, hu * 0.82, hv * 0.82)
+	var top: PackedVector3Array = ring.call(centre + n * h, hu * 0.5, hv * 0.5)
+	g.color = Color.WHITE
+	g.loft(base, mid, false)
+	g.loft(mid, top, false)
+	g.poly(top, n)
+
+
+## A shipping container `size`: corrugated walls in the material colour, a dark satin
+## frame, cast corner castings with dark twist-lock holes, two door leaves at +Z meeting on
+## a rubber gasket, galvanised lock bars, handles and hinges on cast keepers, and (when
+## `stripe` has alpha) two bands of the `stripe` colour round it.
 static func container(size: Vector3, stripe := Color(0, 0, 0, 0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := size * 0.5
@@ -1255,9 +1337,10 @@ static func container(size: Vector3, stripe := Color(0, 0, 0, 0)) -> PartShapes.
 				k.box(Vector3(bt, size.y * 0.1, span), Vector3(sx * (h.x - ex + bt * 0.5), y, 0.0))
 			k.box(Vector3(fx * 2.0, size.y * 0.1, 0.006), Vector3(0.0, y, -h.z + ez - 0.003))
 			k.box(Vector3(fx * 2.0, size.y * 0.1, 0.003), Vector3(0.0, y, zl + 0.0015))
-	k.color = DARK
+	k.color = RUBBER
 	k.box(Vector3(gap * 0.8, fy * 2.0, lt + 0.002), Vector3(0.0, 0.0, h.z - rec + (lt + 0.002) * 0.5))
 	# The frame: a post down each long edge, a ring of rails and uprights round each end.
+	k.color = WALK_FRAME
 	for sx: float in [-1.0, 1.0]:
 		for sy: float in [-1.0, 1.0]:
 			k.box(Vector3(post, post, size.z - 0.01), Vector3(sx * (h.x - 0.004 - post * 0.5), sy * (h.y - 0.004 - post * 0.5), 0.0))
@@ -1273,14 +1356,37 @@ static func container(size: Vector3, stripe := Color(0, 0, 0, 0)) -> PartShapes.
 	for sx: float in [-1.0, 1.0]:
 		for t: float in [0.3, 0.7]:
 			var x := sx * (gap * 0.5 + lw * t)
-			k.color = DETAIL
+			k.color = GALVANISED
 			k.box(Vector3(lb, fy * 1.88, lb), Vector3(x, 0.0, bz))
 			k.box(Vector3(lw * 0.16, lb * 0.7, lb * 0.6), Vector3(x - sx * lw * 0.08, -fy * 0.2, bz + lb * 0.3))
-			k.color = DARK
+			k.color = CAST
 			for sy: float in [-1.0, 1.0]:
 				k.box(Vector3(lb * 2.0, lb * 1.2, lb * 1.2), Vector3(x, sy * fy * 0.88, zl + 0.002 + lb * 0.5))
+		k.color = GALVANISED
 		for sy: float in [-1.0, 1.0]:
 			k.box(Vector3(lb, lb * 2.5, lb * 1.1), Vector3(sx * (fx - lb * 0.5), sy * fy * 0.6, zl + lb * 0.55))
+	# The data plate: pale enamel on the right leaf between its two lock bars, high up,
+	# proud of the stripe band, with a bolt head in each corner and stencilled lines on it.
+	var pw := minf(0.32, (lw * 0.4 - lb) * 0.78)
+	var ph := pw * 0.62
+	var pc := Vector3((gap + lw) * 0.5, clampf(fy * 0.35, 0.0, fy * 0.88 - lb - ph * 0.5), zl + 0.0045)
+	k.color = PLATE
+	k.box(Vector3(pw, ph, 0.007), pc)
+	var pf := pc.z + 0.0035                                 # the plate's front face
+	var pb := clampf(pw * 0.06, 0.006, 0.014)               # bolt head, m
+	k.color = FLANGE_BOLT
+	for sx: float in [-1.0, 1.0]:
+		for sy: float in [-1.0, 1.0]:
+			k.box(Vector3(pb, pb, 0.004), Vector3(pc.x + sx * (pw * 0.5 - pb * 1.2), pc.y + sy * (ph * 0.5 - pb * 1.2), pf + 0.002))
+	k.color = DARK
+	var lh := ph * 0.07
+	var widths: Array[float] = [0.7, 0.55, 0.62, 0.4]     # the stencilled lines, of the plate's width
+	for i in 4:
+		var w := pw * widths[i]
+		var y := pc.y + ph * 0.28 - ph * 0.17 * float(i)
+		var x := pc.x - pw * 0.35 + w * 0.5
+		k.quad(Vector3(x - w * 0.5, y - lh * 0.5, pf + 0.001), Vector3(x + w * 0.5, y - lh * 0.5, pf + 0.001),
+				Vector3(x + w * 0.5, y + lh * 0.5, pf + 0.001), Vector3(x - w * 0.5, y + lh * 0.5, pf + 0.001), Vector3.BACK)
 	# Corner castings, a dark twist-lock hole in each end and top face.
 	var cs := post + 0.012
 	var cl := minf(cs * 1.1, end - 0.004)
@@ -1288,7 +1394,7 @@ static func container(size: Vector3, stripe := Color(0, 0, 0, 0)) -> PartShapes.
 		for sy: float in [-1.0, 1.0]:
 			for sz: float in [-1.0, 1.0]:
 				var c := Vector3(sx * (h.x - cs * 0.5), sy * (h.y - cs * 0.5), sz * (h.z - cl * 0.5))
-				k.color = DETAIL
+				k.color = CAST
 				k.box(Vector3(cs, cs, cl), c)
 				k.color = DARK
 				var e := Vector3(c.x, c.y, sz * (h.z + 0.002))
@@ -1309,9 +1415,10 @@ static func container(size: Vector3, stripe := Color(0, 0, 0, 0)) -> PartShapes.
 
 
 ## A comms mast `height` tall (base on -Y) with a dish `dish` in radius facing +Y at its
-## top: a chamfered bolted foot, a round mast with steel collars and a junction box, the
-## dish (bright rim, steel ribs under it) on a hub, a feed horn held over it on three
-## struts, and a red aviation light on the feed (the glow) at the very top.
+## top: a chamfered bolted foot, a round anodised mast with galvanised collars and a plastic
+## junction box, the dish (anodised rim, galvanised ribs under it) on a galvanised hub, a
+## ceramic feed horn held over it on three galvanised struts, and a red aviation light on a
+## rubber gasket on the feed (the glow) at the very top.
 static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var y0 := -height * 0.5
@@ -1333,20 +1440,20 @@ static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) 
 		for sz: float in [-1.0, 1.0]:
 			_thrusters_bolt(k, Vector3(sx * 0.122, y0 + 0.04, sz * 0.122), 0.014, 0.01)
 	# The mast, collars along it and a junction box low on its +Z side.
-	k.color = Color.WHITE
+	k.color = ANODISED
 	var mr := 0.032
 	_tube(k, Vector3(0.0, y0 + 0.12, 0.0), Vector3(0.0, yb - 0.02, 0.0), mr, 8)
-	k.color = DETAIL
+	k.color = GALVANISED
 	var mast := yb - 0.02 - (y0 + 0.12)
 	var collars := clampi(int(mast / 0.45), 1, 5)
 	for i in collars + 1:
 		var y := y0 + 0.12 + 0.025 + (mast - 0.07) * float(i) / float(collars)
 		_tube(k, Vector3(0.0, y - 0.02, 0.0), Vector3(0.0, y + 0.02, 0.0), mr * 1.45, 8)
 	if mast > 0.5:
-		k.color = DARK
+		k.color = PLASTIC_DARK
 		k.box(Vector3(0.08, 0.12, 0.05), Vector3(0.0, y0 + 0.12 + mast * 0.3, mr + 0.024))
 	# The dish's hub, the dish (a bowl: material face and back, bright rim) and its ribs.
-	k.color = DETAIL
+	k.color = GALVANISED
 	_thrusters_ring(k, 0.0, minf(0.06, dish * 0.22), yb - 0.05, yb + t * 0.5, 10)
 	var prof := PackedVector2Array([Vector2(0.0, yb)])
 	var cols: Array[Color] = []
@@ -1354,16 +1461,16 @@ static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) 
 		prof.append(Vector2(dish * r, yb + dd * r * r))
 		cols.append(Color.WHITE)
 	prof.append(Vector2(dish * 0.985, yr + t))
-	cols.append(TRIM)
+	cols.append(ANODISED)
 	for r: float in [0.75, 0.4]:
 		prof.append(Vector2(dish * r, yb + dd * r * r + t))
-		cols.append(TRIM if r > 0.7 else Color.WHITE)
+		cols.append(ANODISED if r > 0.7 else Color.WHITE)
 	prof.append(Vector2(0.0, yb + t))
 	cols.append(Color.WHITE)
 	cols.append(Color.WHITE)
 	_piping_spin(k, Vector3.ZERO, Vector3.UP, prof, cols, 18)
 	var rt := clampf(dish * 0.03, 0.008, 0.02)
-	k.color = DETAIL
+	k.color = GALVANISED
 	for i in 6:
 		var a := TAU * (float(i) + 0.5) / 6.0
 		var d := Vector3(cos(a), 0.0, sin(a))
@@ -1379,9 +1486,9 @@ static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) 
 		k.strut(Vector3(cos(a), 0.0, sin(a)) * dish * 0.9 + Vector3(0.0, yr + t * 0.3, 0.0),
 				Vector3(cos(a), 0.0, sin(a)) * rh * 0.5 + Vector3(0.0, yf + fh * 0.5, 0.0), st)
 	_piping_spin(k, Vector3.ZERO, Vector3.UP, PackedVector2Array([Vector2(0.0, yf), Vector2(rh, yf),
-			Vector2(rh * 0.45, yf + fh), Vector2(0.0, yf + fh)]), [DARK, DETAIL, DETAIL] as Array[Color], 10)
-	# The aviation light's dark base on the feed.
-	k.color = DARK
+			Vector2(rh * 0.45, yf + fh), Vector2(0.0, yf + fh)]), [DARK, WPN_RADOME, WPN_RADOME] as Array[Color], 10)
+	# The aviation light's base on the feed: a rubber gasket.
+	k.color = RUBBER
 	_thrusters_ring(k, 0.0, lr * 0.9, yf + fh, yf + fh + 0.012, 8)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
@@ -1407,10 +1514,11 @@ static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) 
 	return shape
 
 
-## A gun turret, `radius` the ring's: a foot flange with a bolt circle and a ring with a
-## dark traverse race, an angular housing with a sloped glacis toward -Z and raised cheek
-## armour (a seam down each), a sight block with a lit lens (PartShape.glow), a roof hatch
-## and rear vent slots, and two barrels out of a bolted mantlet, each with a collar, a
+## A gun turret, `radius` the ring's: a cast iron foot flange with a circle of blackened
+## bolts and a ring with a rubber-sealed traverse race, an angular housing with a sloped
+## glacis toward -Z and raised cheek armour (a seam down each), a gunmetal sight block with a
+## lit lens (PartShape.glow), a cast roof hatch and rear vent slots, and two gunmetal barrels
+## out of a bolted cast mantlet, each in a ribbed rubber boot at the root, with a collar, a
 ## recoil sleeve, a clamp and a slotted muzzle brake. Stands on -Y, barrels toward -Z,
 ## reaching `barrel` past the housing's front.
 static func turret(radius: float, barrel: float, glow := Color(1.0, 0.18, 0.1)) -> PartShapes.PartShape:
@@ -1422,14 +1530,15 @@ static func turret(radius: float, barrel: float, glow := Color(1.0, 0.18, 0.1)) 
 	var yt := base * 0.5                      # the ring's top: the housing sits here, m
 	var shelf := yb + base * 0.22             # the flange's top, m
 	# The ring: a bolted foot flange, the ring body, a dark traverse race under the housing.
-	k.color = DETAIL
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, yb), Vector2(r, yb), Vector2(r, shelf - r * 0.02),
 			Vector2(r * 0.98, shelf), Vector2(0.0, shelf)]), 24)
+	k.color = FLANGE_BOLT
 	_piping_bolts(k, Vector3(0.0, shelf, 0.0), Vector3.UP, 0.0, 16, r * 0.95, r * 0.04, r * 0.025)
 	k.color = Color.WHITE
 	k.lathe(PackedVector2Array([Vector2(0.0, shelf), Vector2(r * 0.9, shelf), Vector2(r * 0.9, yt - base * 0.22),
 			Vector2(r * 0.86, yt - base * 0.16), Vector2(0.0, yt - base * 0.16)]), 24)
-	k.color = DARK
+	k.color = RUBBER
 	k.lathe(PackedVector2Array([Vector2(0.0, yt - base * 0.16), Vector2(r * 0.8, yt - base * 0.16),
 			Vector2(r * 0.8, yt), Vector2(0.0, yt)]), 24)
 	# The housing: an angular block, its front sloping down to the mantlet, under a roof
@@ -1453,10 +1562,10 @@ static func turret(radius: float, barrel: float, glow := Color(1.0, 0.18, 0.1)) 
 		k.box(Vector3(hx * 0.9, r * 0.03, 0.006), Vector3(0.0, yt + hh * (0.25 + 0.17 * float(i)), hz + 0.003))
 	# The sight block on the roof (lens toward -Z) and a round hatch beside it.
 	var sy := yt + hh + r * 0.04
-	k.color = DETAIL
+	k.color = GUNMETAL
 	k.box(Vector3(r * 0.2, r * 0.08, r * 0.26), Vector3(hx * 0.5, sy, hz * 0.05))
 	_weapons_lens(k, g, Vector3(hx * 0.5, sy, hz * 0.05 - r * 0.13), r * 0.05)
-	k.color = DETAIL
+	k.color = CAST
 	_electrical_lathe_at(k, PackedVector2Array([Vector2(0.0, yt + hh), Vector2(r * 0.13, yt + hh),
 			Vector2(r * 0.12, yt + hh + r * 0.025), Vector2(0.0, yt + hh + r * 0.025)]), 12,
 			Vector3(-hx * 0.45, 0.0, hz * 0.4))
@@ -1464,8 +1573,9 @@ static func turret(radius: float, barrel: float, glow := Color(1.0, 0.18, 0.1)) 
 	var by := yt + hh * 0.36
 	var bx := r * 0.28
 	var front := -hz - r * 0.06
-	k.color = DETAIL
+	k.color = CAST
 	k.box(Vector3(r * 0.86, hh * 0.4, r * 0.07), Vector3(0.0, by, -hz - r * 0.025))
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		_piping_bolts(k, Vector3(sx * r * 0.36, by, front), Vector3.FORWARD, 0.0, 2, hh * 0.13, r * 0.03, r * 0.015,
 				PI * 0.5)
@@ -1473,7 +1583,16 @@ static func turret(radius: float, barrel: float, glow := Color(1.0, 0.18, 0.1)) 
 	var br := r * 0.07
 	for sx: float in [-1.0, 1.0]:
 		_weapons_barrel(k, Vector3(sx * bx, by, front), tip, br, br * 1.75, br * 1.45, br * 1.6,
-				clampf(barrel * 0.13, 0.08, 0.3), Color(0.24, 0.25, 0.27))
+				clampf(barrel * 0.13, 0.08, 0.3), WPN_BARREL)
+	# A ribbed rubber boot round each barrel's root: four folds off the mantlet's face,
+	# closing down onto the gunmetal collar so its front edge still shows.
+	var boot := minf((front - tip) * 0.05, br * 2.0) * 0.8   # the collar's length, less a lip, m
+	var folds := PackedVector2Array()
+	for i in 9:
+		folds.append(Vector2(br * (1.98 if i % 2 == 0 else 1.8), boot * float(i) / 8.0))
+	folds.append(Vector2(br * 1.76, boot + 0.004))
+	for sx: float in [-1.0, 1.0]:
+		_piping_spin(k, Vector3(sx * bx, by, front + 0.002), Vector3.FORWARD, folds, [TREAD] as Array[Color], 10)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = PI * r * r * base * 0.8 + hx * 2.0 * hz * 2.0 * hh * 0.82 + 2.0 * PI * br * br * barrel * 1.4
@@ -1515,15 +1634,15 @@ static func _weapons_lens(k: MeshKit, g: MeshKit, at: Vector3, s: float) -> void
 	g.box(Vector3(s, s, 0.004), at + Vector3(0.0, 0.0, -0.008))
 
 
-## A gun barrel along -Z from `from` (its root on a mantlet's face) to z = `tip`: a dark
+## A gun barrel along -Z from `from` (its root on a mantlet's face) to z = `tip`: a gunmetal
 ## collar `collar` round, a recoil sleeve `sleeve` round with chamfered ends over the first
-## third, the barrel `br` round in `metal`, a steel clamp band at 0.6, and a slotted muzzle
-## brake `brake` round and `brake_len` long at the tip.
+## third, the barrel `br` round in `metal`, a blackened clamp band at 0.6, and a slotted
+## heat-blued muzzle brake `brake` round and `brake_len` long at the tip.
 static func _weapons_barrel(k: MeshKit, from: Vector3, tip: float, br: float, collar: float, sleeve: float,
 		brake: float, brake_len: float, metal: Color) -> void:
 	var length := from.z - tip
 	var cl := minf(length * 0.05, br * 2.0)
-	k.color = DARK
+	k.color = GUNMETAL
 	_tube(k, from + Vector3(0.0, 0.0, 0.005), from + Vector3(0.0, 0.0, -cl), collar, 10)
 	var s0 := cl
 	var s1 := length * 0.32
@@ -1532,23 +1651,23 @@ static func _weapons_barrel(k: MeshKit, from: Vector3, tip: float, br: float, co
 			Vector2(sleeve, s1 - ch), Vector2(br, s1)]), [metal] as Array[Color], 10)
 	k.color = metal
 	_tube(k, from + Vector3(0.0, 0.0, -s0), Vector3(from.x, from.y, tip + brake_len * 0.2), br, 10)
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	var zc := from.z - length * 0.6
 	_tube(k, Vector3(from.x, from.y, zc + br * 0.6), Vector3(from.x, from.y, zc - br * 0.6), br * 1.25, 10)
 	_weapons_brake(k, Vector3(from.x, from.y, tip), brake, brake_len, br * 0.6)
 
 
 ## A slotted muzzle brake on a barrel along Z ending at `tip` (pointing -Z): `baffles`
-## steel rings `r` round, `length` long in all, the barrel showing in the slots between
-## them, and a dark bore disc `bore` round standing just proud of the tip.
+## heat-blued steel rings `r` round, `length` long in all, the barrel showing in the slots
+## between them, and a machined bore disc `bore` round standing just proud of the tip.
 static func _weapons_brake(k: MeshKit, tip: Vector3, r: float, length: float, bore: float, baffles: int = 3,
 		sides: int = 10) -> void:
 	var step := length / float(baffles * 2 - 1)
-	k.color = DETAIL
+	k.color = WPN_BLUED
 	for i in baffles:
 		var za := tip.z + step * float(i * 2)
 		_tube(k, Vector3(tip.x, tip.y, za + step), Vector3(tip.x, tip.y, za), r, sides)
-	k.color = DARK
+	k.color = GUN_BORE
 	_tube(k, Vector3(tip.x, tip.y, tip.z + 0.004), Vector3(tip.x, tip.y, tip.z - 0.003), bore, sides)
 
 
@@ -1795,9 +1914,9 @@ static func bunk(length: float = 2.0, width: float = 0.9, height: float = 1.9) -
 
 
 ## A table `width` along X, `depth` along Z, `height` tall: a top in the material colour
-## with chamfered corners and a dark rubber bumper band round its edge, a steel mounting
-## plate under it, an eight-sided dark pedestal with steel collars, on a chamfered dark
-## foot plate bolted down at its corners. Stands on -Y.
+## with chamfered corners and a rubber bumper band round its edge, a galvanised mounting
+## plate under it, an eight-sided stainless pedestal with brushed steel collars, on a
+## chamfered cast foot plate with a blackened bolt in each corner. Stands on -Y.
 static func table(width: float = 1.8, depth: float = 0.9, height: float = 0.75) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
@@ -1809,22 +1928,24 @@ static func table(width: float = 1.8, depth: float = 0.9, height: float = 0.75) 
 	# The top and the bumper band standing 4 mm proud round its edge.
 	k.color = Color.WHITE
 	_galley_slab(k, width - 0.008, depth - 0.008, c, h - top_t, h)
-	k.color = DARK
+	k.color = RUBBER
 	_galley_slab(k, width, depth, c + 0.002, h - top_t + 0.01, h - 0.012)
 	# The mounting plate and the pedestal's upper collar.
-	k.color = DETAIL
+	k.color = GALVANISED
 	var mount := minf(post * 2.6, minf(width, depth) * 0.6)
 	k.box(Vector3(mount, 0.02, mount), Vector3(0.0, h - top_t - 0.01, 0.0))
 	var y_post0 := -h + plate
 	var y_post1 := h - top_t - 0.02
+	k.color = FURN_COLLAR
 	k.box(Vector3(post * 1.35, 0.04, post * 1.35), Vector3(0.0, y_post1 - 0.02, 0.0))
 	k.box(Vector3(post * 1.35, 0.04, post * 1.35), Vector3(0.0, y_post0 + 0.02, 0.0))
 	# The pedestal: eight-sided, between the collars.
-	k.color = DARK
+	k.color = STAINLESS
 	k.loft(_chamfer_ring(post * 0.5, y_post0 + 0.04, post * 0.15), _chamfer_ring(post * 0.5, y_post1 - 0.04, post * 0.15))
 	# The foot plate, chamfered and tapered, with a bolt in each corner.
+	k.color = CAST
 	_galley_slab(k, foot.x, foot.y, 0.04, -h, -h + plate, 0.012)
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(0.028, 0.012, 0.028), Vector3(sx * (foot.x * 0.5 - 0.045), -h + plate + 0.004, sz * (foot.y * 0.5 - 0.045)))
@@ -1933,9 +2054,10 @@ static func locker(width: float = 0.8, height: float = 1.9, depth: float = 0.5) 
 
 ## A square thruster housing `width` across, `length` deep along Y, its nozzle in the +Y
 ## face. A chamfered housing on a mount flange with a bolt in each corner, cooling fins on
-## the X sides, screwed trim panels on the Z sides (status lamps on -Z), and a hollow nozzle:
-## a pale rim, a stepped liner, a crossed ion grid over a glowing floor and a lit ring on the
-## step (PartShape.glow).
+## the X sides (anodised), pale enamel panels screwed on the Z sides (status lamps in a
+## plastic bezel on -Z), blackened corner bolts, and a hollow nozzle: a heat-tinted rim, a
+## sooted ceramic liner stepped down the bore, a crossed titanium ion grid over a glowing
+## floor and a lit ring on the step (PartShape.glow).
 static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var w := width
@@ -1956,17 +2078,18 @@ static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 
 	k.loft(_chamfer_ring(hb, -h + fl, c), _chamfer_ring(hb, y_low, c))
 	k.loft(_chamfer_ring(hb, y_low, c), _chamfer_ring(hb, y0 - bev, c), false)
 	k.loft(_chamfer_ring(hb, y0 - bev, c), _chamfer_ring(hb - bev, y0, c), false)
-	_thrusters_holed_face(k, hb - bev, c, y0, r_in, y_low, DARK)
+	_thrusters_holed_face(k, hb - bev, c, y0, r_in, y_low, ENG_LINER)
 	# The rim collar, its lip overhanging the bore a little.
-	k.color = TRIM
+	k.color = ENG_NOZZLE
 	var r_base := w * 0.42
 	k.lathe(PackedVector2Array([Vector2(r_in * 0.97, y0), Vector2(r_base, y0), Vector2(r_base, lerpf(y0, h, 0.3)),
 			Vector2(w * 0.39, h), Vector2(r_in * 0.97, h)]), 24)
 	# The bore: a floor, a stepped liner and an ion grid of crossed bars over the glow.
 	k.color = DARK
 	_thrusters_ring(k, 0.0, r_in, y_low, yg, 16)
+	k.color = ENG_LINER
 	_thrusters_ring(k, r2, r_in, yg, ym, 20)
-	k.color = DETAIL
+	k.color = ENG_ION_GRID
 	var bt := maxf(0.008, r2 * 0.07)
 	var yb := lerpf(yg, ym, 0.45)
 	for i in 3:
@@ -1977,6 +2100,7 @@ static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 
 	# Hex bolts in the face's corners.
 	var bolt_r := maxf(0.008, w * 0.028)
 	var bolt_h := clampf(w * 0.02, 0.005, 0.02)
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			_thrusters_bolt(k, Vector3(sx * w * 0.335, y0, sz * w * 0.335), bolt_r, bolt_h)
@@ -1986,7 +2110,7 @@ static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 
 	var side_hi := y0 - bev - (y0 - bev + h - fl) * 0.12
 	var fin_t := clampf(length * 0.035, 0.008, 0.05)
 	var fin_out := w * 0.028
-	k.color = DETAIL
+	k.color = ANODISED
 	for sx: float in [-1.0, 1.0]:
 		for i in 4:
 			var y := lerpf(side_lo, side_hi, (float(i) + 0.5) / 4.0)
@@ -1995,9 +2119,9 @@ static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 
 	var ph := side_hi - side_lo
 	var pm := (side_lo + side_hi) * 0.5
 	for sz: float in [-1.0, 1.0]:
-		k.color = TRIM
+		k.color = ENG_PANEL
 		k.box(Vector3(w * 0.62, ph, pt + 0.002), Vector3(0.0, pm, sz * (hb + pt * 0.5 - 0.001)))
-		k.color = DETAIL
+		k.color = STAINLESS
 		for cx: float in [-1.0, 1.0]:
 			for cy: float in [-1.0, 1.0]:
 				k.box(Vector3(bolt_r * 1.2, bolt_r * 1.2, 0.006),
@@ -2005,7 +2129,7 @@ static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 
 	var led := clampf(w * 0.035, 0.012, 0.05)
 	var led_y := pm + ph * 0.18
 	var bz := hb + pt + 0.002
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	k.box(Vector3(led * 4.6, led * 2.0, 0.006), Vector3(0.0, led_y, -bz))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
@@ -2159,9 +2283,10 @@ static func _lights_rect_band(k: MeshKit, at: Vector3, hx: float, hz: float, pro
 			k.quad(at + pa - ta + ya, at + pa + ta + ya, at + pb + tb + yb, at + pb - tb + yb, d * out2.x + Vector3.UP * out2.y)
 
 
-## A straight pipe along Y, `radius` to the outside of the wall, with a weld-neck flange at
-## each end and a dark clamp band with a bolted lug in the middle. Collision is the flange
-## cylinder.
+## A straight pipe along Y, `radius` to the outside of the wall (in the part's paint), with a
+## bare forged weld-neck flange at each end and a galvanised clamp band (its rubber liner
+## showing at the edges) with a blackened bolt through its lug in the middle. Collision is
+## the flange cylinder.
 static func pipe(radius: float, length: float, flanged: bool = true) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := length * 0.5
@@ -2185,11 +2310,12 @@ static func pipe(radius: float, length: float, flanged: bool = true) -> PartShap
 		var w := 0.04
 		_piping_spin(k, Vector3.ZERO, Vector3.UP, PackedVector2Array([Vector2(radius * 0.95, -w),
 				Vector2(radius * 1.18, -w), Vector2(radius * 1.18, w), Vector2(radius * 0.95, w)]),
-				[DARK] as Array[Color], 8, PI / 8.0)
+				[RUBBER, GALVANISED, RUBBER] as Array[Color], 8, PI / 8.0)
 		if flanged:
-			k.color = DETAIL
+			k.color = GALVANISED
 			k.box(Vector3(fr - 0.002 - radius, w * 1.5, radius * 0.36), Vector3((fr - 0.002 + radius) * 0.5, 0.0, 0.0))
 			var bs := maxf(radius * 0.14, 0.008)
+			k.color = FLANGE_BOLT
 			k.box(Vector3(bs, bs, radius * 0.62), Vector3(radius * 1.2, 0.0, 0.0))
 	return _cylinder(k, fr if flanged else radius * 1.18, length)
 
@@ -2262,7 +2388,8 @@ static func pipe_elbow(radius: float, bend: float = 0.0) -> PartShapes.PartShape
 			var b := TAU * float(j) / 12.0
 			ring.append(c + (u * cos(b) + v * sin(b)) * radius)
 		rings.append(ring)
-	# The bend, open at both ends: the flanges close it.
+	# The bend in the part's paint, open at both ends: the flanges close it.
+	k.color = Color.WHITE
 	for i in steps:
 		k.loft(rings[i], rings[i + 1], false)
 	# A weld-neck flange on each end (like `pipe`'s), each with four bolt heads on its back.
@@ -2276,7 +2403,7 @@ static func pipe_elbow(radius: float, bend: float = 0.0) -> PartShapes.PartShape
 	var bs := maxf(radius * 0.2, 0.01)
 	for f: Array in [[Vector3.ZERO, Vector3.UP], [end, Vector3.FORWARD]]:
 		_piping_spin(k, f[0], f[1], flange, [DETAIL] as Array[Color], 12)
-		k.color = DETAIL
+		k.color = FLANGE_BOLT
 		_piping_bolts(k, f[0], f[1], ft, 4, (rh + fr) * 0.5, bs, bs * 0.6)
 	var flange_a := PackedVector3Array()
 	for j in 12:
@@ -2295,9 +2422,9 @@ static func pipe_elbow(radius: float, bend: float = 0.0) -> PartShapes.PartShape
 	return shape
 
 
-## A deck grating `width` (X) by `length` (Z): a frame of flat bars in the material colour
-## round the edge with a bolt at each corner, thin bearing bars along Z about every 0.1 m
-## and lower cross bars every 0.3 m, over a dark plate (the gaps). Bar counts follow the
+## A deck grating `width` (X) by `length` (Z), all galvanised steel: a frame of flat bars
+## round the edge with a blackened bolt at each corner, thin bearing bars along Z about
+## every 0.1 m and darker lower cross bars every 0.3 m, over a dark plate (the gaps). Bar counts follow the
 ## size; each bearing bar is three faces only (its ends hide in the frame).
 static func grating(width: float, length: float, thickness: float = 0.05) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -2310,7 +2437,7 @@ static func grating(width: float, length: float, thickness: float = 0.05) -> Par
 	var floor_y := -t * 0.5 + t * 0.3                 # top of the dark plate, m
 	k.color = DARK
 	k.box(Vector3(width - fw * 2.0, t * 0.3, length - fw * 2.0), Vector3(0.0, -t * 0.5 + t * 0.15, 0.0))
-	k.color = Color.WHITE
+	k.color = GALVANISED
 	var fh := top + t * 0.5
 	var fy := (top - t * 0.5) * 0.5
 	k.box(Vector3(width, fh, fw), Vector3(0.0, fy, -hz + fw * 0.5))
@@ -2331,7 +2458,7 @@ static func grating(width: float, length: float, thickness: float = 0.05) -> Par
 		k.quad(Vector3(a, floor_y, z0), Vector3(a, bar_top, z0), Vector3(a, bar_top, z1), Vector3(a, floor_y, z1), Vector3.LEFT)
 		k.quad(Vector3(b, floor_y, z0), Vector3(b, bar_top, z0), Vector3(b, bar_top, z1), Vector3(b, floor_y, z1), Vector3.RIGHT)
 	# Cross bars along X, set a little below the bearing bars' tops.
-	k.color = DETAIL
+	k.color = WALK_CROSS_BAR
 	var inner_z := length - fw * 2.0
 	var cross := maxi(1, int(round(inner_z / 0.3)))
 	var ct := bar_top - 0.006
@@ -2344,6 +2471,7 @@ static func grating(width: float, length: float, thickness: float = 0.05) -> Par
 		k.quad(Vector3(-hx + fw, floor_y, a), Vector3(hx - fw, floor_y, a), Vector3(hx - fw, ct, a), Vector3(-hx + fw, ct, a), Vector3.FORWARD)
 		k.quad(Vector3(-hx + fw, floor_y, b), Vector3(hx - fw, floor_y, b), Vector3(hx - fw, ct, b), Vector3(-hx + fw, ct, b), Vector3.BACK)
 	# A bolt in each corner of the frame.
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(fw * 0.4, 0.008, fw * 0.4), Vector3(sx * (hx - fw * 0.5), top + 0.002, sz * (hz - fw * 0.5)))
@@ -2356,20 +2484,34 @@ static func grating(width: float, length: float, thickness: float = 0.05) -> Par
 	return shape
 
 
-## A power plant: a block `size` (x, y, z) on two skids, with cooling fin packs down both
-## sides, a bolted access panel on top, a bolted flange and coupling hub on its back (+Z)
-## and, on its front (-Z), an intake grille and a status strip of lit segments (glow).
+## A power plant: a block `size` (x, y, z) on two galvanised skids standing on rubber
+## anti-vibration pads (on steel shoes) at their ends, with anodised cooling
+## fin packs down both sides, a bolted access panel on top, a cast flange with stainless
+## bolts round a gunmetal coupling hub on its back (+Z) and, on its front (-Z), a galvanised
+## intake grille and a status strip of lit segments in a plastic bezel (glow).
 static func generator(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := size.y * 0.5
 	var front := -size.z * 0.46
 	var back := size.z * 0.46
 	var bx := size.x * 0.42
-	# Skids along Z under the body (rubber-mounted feet).
+	# Skids along Z under the body, standing on rubber anti-vibration pads at their ends:
+	# the pads take the bottom slice of the skid's height, inside its footprint.
 	var sk := clampf(size.y * 0.06, 0.05, 0.09)
-	k.color = DARK
+	var pad := clampf(sk * 0.4, 0.02, 0.03)                 # pad height, m
+	var sw := size.x * 0.14                                 # skid width, m
+	var sl := size.z * 0.93                                 # skid length, m
+	var pl := clampf(size.z * 0.08, 0.08, 0.16)             # pad length, m
 	for sx: float in [-1.0, 1.0]:
-		k.box(Vector3(size.x * 0.14, sk, size.z * 0.93), Vector3(sx * size.x * 0.28, -h + sk * 0.5, 0.0))
+		k.color = GALVANISED
+		k.box(Vector3(sw, sk - pad, sl), Vector3(sx * size.x * 0.28, -h + pad + (sk - pad) * 0.5, 0.0))
+		for sz: float in [-1.0, 1.0]:
+			var pz := sz * (sl * 0.5 - pl * 0.5 - 0.01)
+			k.color = RUBBER
+			k.box(Vector3(sw - 0.012, pad - 0.004, pl), Vector3(sx * size.x * 0.28, -h + 0.004 + (pad - 0.004) * 0.5, pz))
+			# A steel shoe under the rubber, a touch wider than it, on the floor.
+			k.color = GALVANISED
+			k.box(Vector3(sw - 0.004, 0.004, pl + 0.012), Vector3(sx * size.x * 0.28, -h + 0.002, pz))
 	# The body: chamfered along its top edges, stopping short of the top for the panel.
 	k.color = Color.WHITE
 	var top := h - 0.045
@@ -2380,30 +2522,34 @@ static func generator(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShape
 	var px := bx - c - 0.04
 	var pz := size.z * 0.3
 	k.box(Vector3(px * 2.0, 0.03, pz * 2.0), Vector3(0.0, top + 0.015, 0.0))
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(0.035, 0.015, 0.035), Vector3(sx * (px - 0.04), h - 0.0075, sz * (pz - 0.04)))
 	# Fin packs: thin fins held between a top and a bottom rail.
 	var fins := maxi(3, int(size.z / 0.22))
+	k.color = ANODISED
 	for i in fins:
 		var z := -size.z * 0.46 + size.z * 0.92 * (float(i) + 0.5) / float(fins)
 		for sx: float in [-1.0, 1.0]:
 			k.box(Vector3(size.x * 0.1, size.y * 0.85, 0.04), Vector3(sx * size.x * 0.45, 0.0, z))
+	k.color = RAIL_DARK
 	for sx: float in [-1.0, 1.0]:
 		for sy: float in [-1.0, 1.0]:
 			k.box(Vector3(size.x * 0.1 - 0.006, 0.04, size.z * 0.9),
 					Vector3(sx * (size.x * 0.45 - 0.003), sy * (size.y * 0.425 + 0.02), 0.0))
 	# The front: a dark bezel for the status strip, an intake grille, corner bolts.
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	var strip_y := size.y * 0.25
 	k.box(Vector3(size.x * 0.5, 0.1, 0.012), Vector3(0.0, strip_y, front - 0.006))
+	k.color = DARK
 	var grille_y := -h + sk + size.y * 0.22
 	k.box(Vector3(size.x * 0.56, size.y * 0.3, 0.01), Vector3(0.0, grille_y, front - 0.005))
-	k.color = DETAIL
+	k.color = GALVANISED
 	for i in 4:
 		var y := grille_y - size.y * 0.15 + size.y * 0.3 * (float(i) + 0.5) / 4.0
 		k.box(Vector3(size.x * 0.52, 0.03, 0.02), Vector3(0.0, y, front - 0.015))
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for y: float in [top - c - 0.08, -h + sk + 0.07]:
 			k.box(Vector3(0.035, 0.035, 0.015), Vector3(sx * (bx - 0.07), y, front - 0.0075))
@@ -2412,12 +2558,13 @@ static func generator(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShape
 	var tf := size.z * 0.02
 	var deep := size.z * 0.04 - 0.002
 	var from := k.verts.size()
-	k.color = DARK
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, 0.0), Vector2(fr, 0.0), Vector2(fr, tf), Vector2(0.0, tf)]), 20)
-	k.color = DETAIL
+	k.color = GUNMETAL
 	k.lathe(PackedVector2Array([Vector2(0.0, tf), Vector2(fr * 0.35, tf), Vector2(fr * 0.35, deep - 0.02),
 			Vector2(fr * 0.28, deep), Vector2(0.0, deep)]), 12)
 	var br := minf(0.03, fr * 0.07)
+	k.color = STAINLESS
 	for i in 10:
 		var a := TAU * (float(i) + 0.5) / 10.0
 		_electrical_lathe_at(k, PackedVector2Array([Vector2(0.0, tf), Vector2(br, tf), Vector2(br, tf + 0.015),
@@ -2587,10 +2734,12 @@ static func battery_rack(width: float = 1.2, height: float = 1.4, depth: float =
 
 # --- Lounge and cabin fittings ------------------------------------------------------------
 
-## A lounge sofa `length` along X, facing -Z: a dark kick plinth set back under a body and a
-## back frame in the material colour with a slim arm at each end and a trim rail along the
-## back's top, a row of chamfered seat and back cushions in `cushion` (one per ~0.65 m, seams
-## between them) and pads on the arms. Stands on -Y, back at +Z.
+## A lounge sofa `length` along X, facing -Z: a ribbed rubber kick plinth set back under a
+## body and a back frame in the material colour with a slim arm at each end, a chrome trim
+## rail along the back's top and a polished strip along the body's foot, a row of chamfered
+## upholstered seat and back cushions in `cushion` (one per ~0.65 m, seams between them; an
+## untagged colour becomes upholstery, a zoned one keeps its finish) and leather pads in the
+## same tone on the arms. Stands on -Y, back at +Z.
 static func bench(length: float = 2.0, depth: float = 0.8, height: float = 0.95,
 		cushion := Color(0.65, 0.12, 0.14)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -2608,7 +2757,7 @@ static func bench(length: float = 2.0, depth: float = 0.8, height: float = 0.95,
 	var zs := (zf + zb - bt) * 0.5            # middle of the seat
 	var hs := (zb - bt - zf) * 0.5            # half the seat's depth
 	# The kick plinth, set back under the body.
-	k.color = DARK
+	k.color = TREAD
 	k.box(Vector3(length - 0.08, kick, zb - zf - 0.06), Vector3(0.0, -h + kick * 0.5, (zf + zb + 0.02) * 0.5))
 	# Body, back frame and arms in the material colour, a trim rail on the back.
 	k.color = Color.WHITE
@@ -2616,11 +2765,12 @@ static func bench(length: float = 2.0, depth: float = 0.8, height: float = 0.95,
 	k.box(Vector3(length, height - kick - 0.02, bt), Vector3(0.0, -h + kick + (height - kick - 0.02) * 0.5, zb - bt * 0.5))
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(arm, arm_top + h - kick, zb - bt - zf), Vector3(sx * (l - arm * 0.5), (arm_top - h + kick) * 0.5, zs))
-	k.color = DETAIL
+	k.color = CHROME
 	k.box(Vector3(length, 0.02, bt + 0.01), Vector3(0.0, h - 0.01, zb - bt * 0.5 - 0.005))
+	k.color = TRIM
 	k.box(Vector3(length - 2.0 * arm, 0.02, 0.004), Vector3(0.0, -h + kick + 0.012, zf - 0.002))
 	# Cushions: seat and back, one pair per section, and a pad on each arm.
-	k.color = cushion
+	k.color = _furn_zoned(cushion, "upholstery")
 	var n := maxi(1, int(round((length - 2.0 * arm) / 0.65)))
 	var cw := (length - 2.0 * arm - 0.01) / float(n)
 	var yb0 := y0 + seat_t + 0.005
@@ -2630,6 +2780,7 @@ static func bench(length: float = 2.0, depth: float = 0.8, height: float = 0.95,
 		_seating_pad(k, Vector3(x, y0, zs), Vector3.RIGHT, Vector3.BACK, Vector3.UP, cw * 0.5 - 0.006, hs - 0.005, seat_t, 0.03)
 		_seating_pad(k, Vector3(x, (yb0 + yb1) * 0.5, zb - bt), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD,
 				cw * 0.5 - 0.006, (yb1 - yb0) * 0.5, 0.1, 0.03)
+	k.color = _furn_zoned(cushion, "leather")
 	for sx: float in [-1.0, 1.0]:
 		_seating_pad(k, Vector3(sx * (l - arm * 0.5), arm_top, zs), Vector3.RIGHT, Vector3.BACK, Vector3.UP,
 				arm * 0.5 - 0.005, hs - 0.01, 0.03, 0.012)
@@ -2715,50 +2866,62 @@ static func bar_counter(length: float = 3.0, height: float = 1.1, depth: float =
 	return shape
 
 
-## A bar stool `height` tall: a dark base disc with a chamfered edge, a bright steel column
-## with a foot ring on three spokes, a dark seat pan and a round cushion with a rounded
-## edge in `cushion`.
+## A bar stool `height` tall: a cast base disc with a chamfered edge, a chrome column with
+## a rubber-gripped foot ring on three chrome spokes, a dark plastic seat pan and a round
+## leather cushion with a rounded edge in `cushion` (an untagged colour becomes leather, a
+## zoned one keeps its finish).
 static func stool(height: float = 0.75, cushion := Color(0.65, 0.12, 0.14)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var y_pan := h - 0.1                      # underside of the cushion, m
 	var yf := -h + height * 0.4               # foot ring height, m
-	k.color = DARK
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, -h), Vector2(0.2, -h), Vector2(0.2, -h + 0.015),
 			Vector2(0.165, -h + 0.035), Vector2(0.0, -h + 0.035)]), 12)
-	k.color = TRIM
+	k.color = CHROME
 	k.lathe(PackedVector2Array([Vector2(0.0, -h + 0.035), Vector2(0.032, -h + 0.035), Vector2(0.032, y_pan - 0.03),
 			Vector2(0.0, y_pan - 0.03)]), 8)
+	k.color = RUBBER
 	k.lathe(PackedVector2Array([Vector2(0.14, yf - 0.012), Vector2(0.165, yf - 0.012), Vector2(0.165, yf + 0.012),
 			Vector2(0.14, yf + 0.012)]), 12)
+	k.color = CHROME
 	for i in 3:
 		var a := TAU * (float(i) + 0.5) / 3.0
 		var dir := Vector3(cos(a), 0.0, sin(a))
 		k.strut(dir * 0.03 + Vector3(0.0, yf, 0.0), dir * 0.145 + Vector3(0.0, yf, 0.0), 0.018)
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	k.lathe(PackedVector2Array([Vector2(0.0, y_pan - 0.03), Vector2(0.06, y_pan - 0.03), Vector2(0.15, y_pan - 0.006),
 			Vector2(0.15, y_pan), Vector2(0.0, y_pan)]), 12)
-	k.color = cushion
+	k.color = _furn_zoned(cushion, "leather")
 	k.lathe(PackedVector2Array([Vector2(0.0, y_pan), Vector2(0.18, y_pan), Vector2(0.19, y_pan + 0.03),
 			Vector2(0.19, h - 0.03), Vector2(0.17, h), Vector2(0.0, h)]), 12)
 	return _cylinder(k, 0.2, height)
 
 
-## A toilet: a dark floor plate bolted down at its corners, a pedestal tapering up to an
-## oval bowl, a dark seam under the seat, a closed lid with a raised panel and two hinge
-## knuckles, and a cistern at +Z (the back, against a wall) with a chamfered top edge, a
-## lid seam and a two-button flush plate on its front.
+## A caller's cushion colour as finish `id` (bench, stool, armchair): an untagged colour
+## keeps its tone and takes the finish; one that already carries a zone keeps its own.
+static func _furn_zoned(c: Color, id: String) -> Color:
+	if SurfaceZones.zone_of(c) != 0:
+		return c
+	return SurfaceZones.tag(c, id)
+
+
+## A toilet: a cast floor plate bolted down at its corners, a glazed porcelain pedestal
+## tapering up to an oval bowl, a dark seam under the moulded plastic seat, a closed plastic
+## lid with a raised panel and two chrome hinge knuckles, and a porcelain cistern at +Z (the
+## back, against a wall) with a chamfered top edge, a lid seam and a stainless flush plate
+## with two chrome buttons on its front.
 static func toilet() -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	# The floor plate and its bolts.
-	k.color = DARK
+	k.color = CAST
 	_galley_slab(k, 0.36, 0.42, 0.05, -0.39, -0.372, 0.006, 0.05)
-	k.color = DETAIL
+	k.color = GALVANISED
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(0.024, 0.012, 0.024), Vector3(sx * 0.135, -0.37, 0.05 + sz * 0.165))
-	# The pedestal, tapering out to the bowl.
-	k.color = Color.WHITE
+	# The porcelain pedestal, tapering out to the bowl.
+	k.color = WASH_PORCELAIN
 	var ped_a := PackedVector3Array()
 	var ped_b := PackedVector3Array()
 	for p in PartShapes._chamfer_rect(0.28, 0.34, 0.05):
@@ -2770,22 +2933,22 @@ static func toilet() -> PartShapes.PartShape:
 	k.loft(_galley_oval(0.185, 0.195, -0.03, -0.01), _galley_oval(0.205, 0.21, 0.062, -0.01))
 	k.color = DARK
 	k.loft(_galley_oval(0.193, 0.2, 0.062, -0.01), _galley_oval(0.193, 0.2, 0.07, -0.01))
-	k.color = Color.WHITE
+	k.color = WASH_SEAT
 	k.loft(_galley_oval(0.205, 0.21, 0.07, -0.01), _galley_oval(0.195, 0.2, 0.09, -0.01))
 	k.loft(_galley_oval(0.16, 0.16, 0.09, -0.03), _galley_oval(0.15, 0.15, 0.098, -0.03))
-	k.color = DARK
+	k.color = CHROME
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.05, 0.03, 0.03), Vector3(sx * 0.08, 0.095, 0.165))
 	# The cistern: chamfered along its top front edge, a lid seam round it.
-	k.color = Color.WHITE
+	k.color = WASH_PORCELAIN
 	_prism_x(k, PackedVector2Array([Vector2(0.17, -0.05), Vector2(0.35, -0.05), Vector2(0.35, 0.39),
 			Vector2(0.21, 0.39), Vector2(0.17, 0.35)]), -0.21, 0.21)
 	k.color = DARK
 	k.box(Vector3(0.424, 0.01, 0.184), Vector3(0.0, 0.31, 0.26))
-	# The flush plate: a steel frame with two bright buttons split by a seam.
-	k.color = DETAIL
+	# The flush plate: a stainless frame with two chrome buttons split by a seam.
+	k.color = STAINLESS
 	k.box(Vector3(0.17, 0.1, 0.008), Vector3(0.0, 0.2, 0.166))
-	k.color = TRIM
+	k.color = CHROME
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.07, 0.076, 0.006), Vector3(sx * 0.039, 0.2, 0.161))
 	var shape := PartShapes.PartShape.new()
@@ -2798,9 +2961,10 @@ static func toilet() -> PartShapes.PartShape:
 
 
 ## A wash basin: a vanity cabinet in the material colour on a dark toe recess, two doors
-## with a dark seam and steel handles, a grey worktop with an upstand along its back (+Z,
-## the wall), a hollow round bowl standing on it with a plughole, and a steel tap at the
-## back with a lever, its spout reaching over the bowl.
+## with a dark seam and chrome handles, a stainless worktop with an upstand along its back
+## (+Z, the wall), a hollow round glazed porcelain bowl standing on it with a chrome waste,
+## and a chrome tap on a stainless boss at the back with a lever, its spout reaching over
+## the bowl.
 static func basin() -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	# Toe recess, cabinet, door seams and handles.
@@ -2811,24 +2975,24 @@ static func basin() -> PartShapes.PartShape:
 	k.color = DARK
 	k.box(Vector3(0.01, 0.58, 0.006), Vector3(0.0, -0.08, -0.226))
 	k.box(Vector3(0.58, 0.01, 0.006), Vector3(0.0, 0.215, -0.226))
-	k.color = TRIM
+	k.color = CHROME
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.02, 0.13, 0.02), Vector3(sx * 0.05, 0.1, -0.234))
-	# The worktop and its upstand.
-	k.color = DETAIL
+	# The stainless worktop and its upstand.
+	k.color = STAINLESS
 	k.box(Vector3(0.64, 0.08, 0.5), Vector3(0.0, 0.29, 0.0))
 	k.box(Vector3(0.64, 0.07, 0.025), Vector3(0.0, 0.365, 0.2375))
-	# The bowl: a sloped wall round a floor, a plughole in the middle.
-	k.color = Color.WHITE
+	# The porcelain bowl: a sloped wall round a floor, a chrome waste in the middle.
+	k.color = WASH_PORCELAIN
 	k.lathe(PackedVector2Array([Vector2(0.12, 0.33), Vector2(0.165, 0.33), Vector2(0.19, 0.405), Vector2(0.168, 0.405)]), 14)
 	k.lathe(PackedVector2Array([Vector2(0.0, 0.33), Vector2(0.135, 0.33), Vector2(0.135, 0.348), Vector2(0.0, 0.348)]), 14)
-	k.color = DARK
+	k.color = CHROME
 	k.lathe(PackedVector2Array([Vector2(0.0, 0.348), Vector2(0.026, 0.348), Vector2(0.026, 0.352), Vector2(0.0, 0.352)]), 8)
 	# The tap: a base boss, a riser, a spout over the bowl with a nozzle, a lever.
 	var zt := 0.212
-	k.color = DETAIL
+	k.color = STAINLESS
 	k.box(Vector3(0.05, 0.012, 0.03), Vector3(0.0, 0.336, zt))
-	k.color = TRIM
+	k.color = CHROME
 	_tube(k, Vector3(0.0, 0.33, zt), Vector3(0.0, 0.49, zt), 0.014, 8)
 	_tube(k, Vector3(0.0, 0.478, zt), Vector3(0.0, 0.478, 0.08), 0.011, 8)
 	k.box(Vector3(0.026, 0.03, 0.026), Vector3(0.0, 0.462, 0.085))
@@ -2842,10 +3006,10 @@ static func basin() -> PartShapes.PartShape:
 	return shape
 
 
-## A door post `height` tall (`width` across X, `depth` along Z): a post with chamfered
-## corners on a dark kick block, a steel head cap, a dark channel up its +X face holding a
-## lit strip (glow), and on both Z faces a hazard band over the kick block, a panel seam
-## and four bolts. Put one each side of a doorway, the second turned round.
+## A door post `height` tall (`width` across X, `depth` along Z): a painted post with
+## chamfered corners on a rubber kick block, a cast steel head cap, a dark anodised channel up
+## its +X face holding a lit strip (glow), and on both Z faces a hazard band over the kick
+## block, a panel seam and four blackened bolts. Put one each side of a doorway, the second turned round.
 static func portal_jamb(height: float = 2.1, width: float = 0.16, depth: float = 0.3,
 		glow := Color(1.0, 0.85, 0.2)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -2858,12 +3022,12 @@ static func portal_jamb(height: float = 2.1, width: float = 0.16, depth: float =
 	# The post between the kick block and the head cap, its upright edges chamfered.
 	k.color = Color.WHITE
 	k.loft(_doors_ring(hw, hd, c, -hh + base_h - 0.01), _doors_ring(hw, hd, c, hh - cap_h + 0.01))
-	k.color = DARK
+	k.color = RUBBER
 	k.box(Vector3(width + 0.016, base_h, depth + 0.016), Vector3(0.0, -hh + base_h * 0.5, 0.0))
-	k.color = DETAIL
+	k.color = CAST
 	k.box(Vector3(width + 0.01, cap_h, depth + 0.01), Vector3(0.0, hh - cap_h * 0.5, 0.0))
 	# The dark channel up the inner (+X) face that holds the lit strip.
-	k.color = DARK
+	k.color = RAIL_DARK
 	k.box(Vector3(0.012, height * 0.7, 0.05), Vector3(hw + 0.004, 0.05, 0.0))
 	# Both Z faces: a hazard band over the kick block, a seam and four bolts.
 	var haz := minf(0.16, height * 0.08)
@@ -2874,7 +3038,7 @@ static func portal_jamb(height: float = 2.1, width: float = 0.16, depth: float =
 				haz * 0.45)
 		k.color = DARK
 		k.box(Vector3(width - 2.0 * c - 0.01, 0.014, 0.006), Vector3(0.0, height * 0.12, s * (hd + 0.002)))
-		k.color = DETAIL
+		k.color = FLANGE_BOLT
 		for y: float in [y_haz + haz * 0.5 + 0.05, hh - cap_h - 0.05]:
 			for sx: float in [-1.0, 1.0]:
 				_gear_bolt(k, Vector3(sx * (hw - c - 0.018), y, s * hd), n, 0.011, 0.006)
@@ -2907,8 +3071,8 @@ static func _doors_lintel_outline(w: float, h: float, c: float) -> PackedVector2
 
 ## The bar over a doorway, `width` across X, `height` tall, its two lower corners cut by
 ## `cut` (the angled top corners of an SE2 door frame). Both Z faces carry a dark seam
-## round a raised panel with a bolt at each end; under it a dark channel holds a lit strip
-## (glow) facing down into the doorway, the colour of the jambs' strips.
+## round a raised panel with a blackened bolt at each end; under it a dark anodised channel
+## holds a lit strip (glow) facing down into the doorway, the colour of the jambs' strips.
 static func portal_lintel(width: float = 1.5, height: float = 0.35, depth: float = 0.3,
 		cut: float = 0.2, glow := Color(1.0, 0.85, 0.2)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -2925,7 +3089,7 @@ static func portal_lintel(width: float = 1.5, height: float = 0.35, depth: float
 	k.extrude(_doors_lintel_outline(w - i1, h - i1, clampf(c - i1 * 0.414, 0.0, (h - i1) * 1.8)), depth + 0.006)
 	k.color = Color.WHITE
 	k.extrude(_doors_lintel_outline(w - i2, h - i2, clampf(c - i2 * 0.414, 0.0, (h - i2) * 1.8)), depth + 0.01)
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	for s: float in [-1.0, 1.0]:
 		for sx: float in [-1.0, 1.0]:
 			_gear_bolt(k, Vector3(sx * (w - i2 - 0.04), h * 0.35, s * (depth * 0.5 + 0.005)), Vector3(0.0, 0.0, s),
@@ -2934,7 +3098,7 @@ static func portal_lintel(width: float = 1.5, height: float = 0.35, depth: float
 	# The lit strip's channel under the bar, between the cut corners.
 	var run := 2.0 * (w - c) - 0.1
 	if run > 0.05:
-		k.color = DARK
+		k.color = RAIL_DARK
 		k.box(Vector3(run, 0.008, depth * 0.35), Vector3(0.0, -h - 0.003, 0.0))
 		var g := MeshKit.new()
 		g.box(Vector3(run - 0.06, 0.004, depth * 0.14), Vector3(0.0, -h - 0.008, 0.0))
@@ -2984,13 +3148,13 @@ static func pipe_tee(radius: float, length: float = 0.5, stub: float = 0.0) -> P
 	_piping_spin(k, stub_end, Vector3.BACK, PackedVector2Array([Vector2(0.0, 0.0), Vector2(fr, 0.0),
 			Vector2(fr, ft), Vector2(rh, ft), Vector2(radius * 0.98, ft + minf(hub, stub * 0.25))]),
 			[DETAIL] as Array[Color], 12)
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	var bs := maxf(radius * 0.2, 0.01)
 	_piping_bolts(k, stub_end, Vector3.BACK, ft, 4, (rh + fr) * 0.5, bs, bs * 0.6)
-	# A reinforcing saddle where the stub meets the run: an eight-sided dark band.
+	# A reinforcing saddle where the stub meets the run: an eight-sided welded band, heat-tinted.
 	_piping_spin(k, Vector3.ZERO, Vector3.UP, PackedVector2Array([Vector2(radius * 0.95, -radius * 0.9),
 			Vector2(radius * 1.18, -radius * 0.9), Vector2(radius * 1.18, radius * 0.9),
-			Vector2(radius * 0.95, radius * 0.9)]), [DARK] as Array[Color], 8, PI / 8.0)
+			Vector2(radius * 0.95, radius * 0.9)]), [WELD_PAD] as Array[Color], 8, PI / 8.0)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = PI * radius * radius * (length + stub) * 0.3
@@ -3008,8 +3172,8 @@ static func pipe_tee(radius: float, length: float = 0.5, stub: float = 0.0) -> P
 
 ## A wiring loom turning a rounded 90 degree corner: in along +Y from the origin, out
 ## toward +Z (same frame as pipe_elbow). Wires coloured from `spec`, their ends where the
-## straight spans' are; a steel clip strap with a buckle at each end (like the spans' clips)
-## and a black cable tie at the middle of the turn.
+## straight spans' are; a galvanised clip strap with a buckle at each end (like the spans'
+## clips) and a black nylon cable tie at the middle of the turn.
 static func loom_bend(spec: WiringLoom.Spec, bend: float = 0.25) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var steps := 6
@@ -3046,7 +3210,7 @@ static func loom_bend(spec: WiringLoom.Spec, bend: float = 0.25) -> PartShapes.P
 			k.loft(rings[i], rings[i + 1], false)
 		k.poly(rings[0], Vector3.DOWN)
 		k.poly(rings[steps], Vector3.BACK)
-	# Bands round the bundle: a steel clip strap near each end, a black tie mid-turn.
+	# Bands round the bundle: a galvanised clip strap near each end, a nylon tie mid-turn.
 	var br := spec.bundle_radius()
 	var band := func(a: float, s: float, radius: float, width: float) -> void:
 		var c := Vector3(0.0, sin(a) * bend, bend - cos(a) * bend)
@@ -3060,13 +3224,13 @@ static func loom_bend(spec: WiringLoom.Spec, bend: float = 0.25) -> PartShapes.P
 			ra.append(c + t * (s - width * 0.5) + off)
 			rb.append(c + t * (s + width * 0.5) + off)
 		k.loft(ra, rb)
-	k.color = WiringLoom.STRAP_COLOR
+	k.color = LIT_CLIP
 	band.call(0.0, 0.02, br + 0.007, 0.022)
 	band.call(PI * 0.5, -0.02, br + 0.007, 0.022)
-	k.color = WiringLoom.TIE_COLOR
+	k.color = LIT_TIE
 	band.call(PI * 0.25, 0.0, br + 0.004, 0.012)
 	# The clip straps' buckles, on the outside of the turn.
-	k.color = WiringLoom.STRAP_COLOR
+	k.color = LIT_CLIP
 	var bk := br + 0.007
 	k.box(Vector3(0.026, 0.022, 0.01), Vector3(0.0, 0.02, -bk - 0.004))
 	k.box(Vector3(0.026, 0.01, 0.022), Vector3(0.0, bend + bk + 0.004, bend - 0.02))
@@ -3154,10 +3318,11 @@ static func junction_box(size: Vector3 = Vector3(0.4, 0.3, 0.2), glow := Color(0
 
 # --- Liner parts (0.24 additions) ---------------------------------------------------------
 
-## A blocky lounge armchair `width` across (X), facing -Z: a dark recessed plinth, a shell in
-## the material colour (a body under the seat, arms with their front top edge cut away and
-## a seam down their outer faces, a back with its rear top edge cut), chamfered cushions in
-## `cushion`: the seat, a back cushion, a head pillow over it and a pad on each arm.
+## A blocky lounge armchair `width` across (X), facing -Z: a recessed ribbed rubber kick
+## plinth, a shell in the material colour (a body under the seat, arms with their front top
+## edge cut away and a seam down their outer faces, a back with its rear top edge cut),
+## chamfered leather cushions in `cushion` (an untagged colour becomes leather, a zoned one
+## keeps its finish): the seat, a back cushion, a head pillow over it and a pad on each arm.
 static func armchair(width: float = 0.85, depth: float = 0.85, height: float = 0.95,
 		cushion := Color(0.82, 0.82, 0.8)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -3171,7 +3336,7 @@ static func armchair(width: float = 0.85, depth: float = 0.85, height: float = 0
 	var arm_top := y_body + 0.6
 	var zbk := d - 0.2                        # front face of the back
 	var iw := w - arm                         # half the width between the arms
-	k.color = DARK
+	k.color = TREAD
 	k.box(Vector3(width * 0.9, plinth, depth * 0.9), Vector3(0.0, -h + plinth * 0.5, 0.0))
 	# The shell: body under the cushion, arms and back in the paint colour.
 	k.color = Color.WHITE
@@ -3186,7 +3351,7 @@ static func armchair(width: float = 0.85, depth: float = 0.85, height: float = 0
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.004, 0.012, depth - 0.12), Vector3(sx * (w + 0.002), arm_top - 0.1, 0.03))
 	# Cushions, a few millimetres inside the arms.
-	k.color = cushion
+	k.color = _furn_zoned(cushion, "leather")
 	_seating_pad(k, Vector3(0.0, seat_top - 0.14, (-d - 0.003 + zbk - 0.005) * 0.5), Vector3.RIGHT, Vector3.BACK,
 			Vector3.UP, iw - 0.01, (zbk - 0.005 + d + 0.003) * 0.5, 0.14, 0.035)
 	var y_lumbar := seat_top + height * 0.4
@@ -3670,23 +3835,24 @@ static func _engines_append(k: MeshKit, src: MeshKit, offset: Vector3) -> void:
 		k.colors.append(src.colors[i])
 
 
-## A thin trim bar `length` along X, `width` across Z: a dark channel with chamfered lips
-## and end caps, lit cells sunk in it on top (+Y): the cyan edge lights of SE2 hulls. Lay
-## it on a plate with the strip up.
+## A thin trim bar `length` along X, `width` across Z: a dark anodised channel with
+## chamfered anodised lips and plastic end caps, lit cells sunk in it on top (+Y) under a
+## frosted diffuser (PartShape.glass): the cyan edge lights of SE2 hulls. Lay it on a plate with the strip up.
 static func light_strip(length: float, width: float = 0.14, thickness: float = 0.06,
 		glow := Color(0.3, 0.95, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := thickness * 0.5
 	var hw := width * 0.5
-	# The housing: a dark channel whose floor sits a lip's depth under the top, between two
-	# metal lips with chamfered outer edges; end caps close it off. Cheap: drawn a lot.
+	# The housing: a dark anodised extrusion whose floor sits a lip's depth under the top,
+	# between two anodised lips with chamfered outer edges; plastic end caps close it off.
+	# Cheap: drawn a lot.
 	var lip := clampf(thickness * 0.3, 0.008, 0.015)
 	var y_floor := h - lip
 	var cap := clampf(length * 0.04, 0.02, 0.05)
 	var x_end := length * 0.5 - 0.004
-	k.color = DARK
+	k.color = RAIL_DARK
 	k.box(Vector3(x_end * 2.0, y_floor + h, width), Vector3(0.0, (y_floor - h) * 0.5, 0.0))
-	k.color = DETAIL
+	k.color = ANODISED
 	var rw := clampf(width * 0.12, 0.01, 0.02)
 	var ch := minf(lip * 0.6, rw * 0.5)
 	for sz: float in [-1.0, 1.0]:
@@ -3694,7 +3860,8 @@ static func light_strip(length: float, width: float = 0.14, thickness: float = 0
 		var zi := sz * (hw - 0.003 - rw)
 		_prism_x(k, PackedVector2Array([Vector2(zi, y_floor), Vector2(zo, y_floor), Vector2(zo, h - ch),
 				Vector2(zo - sz * ch, h), Vector2(zi, h)]), -x_end + cap, x_end - cap)
-	# End caps: chamfered blocks a few millimetres proud of the housing all round.
+	# End caps: chamfered plastic blocks a few millimetres proud of the housing all round.
+	k.color = PLASTIC_DARK
 	var cc := minf(0.012, thickness * 0.3)
 	var cz := hw + 0.003
 	var cy := h + 0.004
@@ -3723,6 +3890,15 @@ static func light_strip(length: float, width: float = 0.14, thickness: float = 0
 				Vector3.UP)
 	shape.glow = g.finish()
 	shape.glow_color = glow
+	# A frosted diffuser over the whole run of cells, a hair proud of them and still under
+	# the lips' tops, sitting between the lips.
+	var dk := MeshKit.new()
+	var dy := minf(gy + 0.002, h - 0.001)
+	var dz := hw - 0.003 - rw - 0.001
+	dk.quad(Vector3(-run * 0.5, dy, -dz), Vector3(run * 0.5, dy, -dz), Vector3(run * 0.5, dy, dz),
+			Vector3(-run * 0.5, dy, dz), Vector3.UP)
+	shape.glass = dk.finish()
+	shape.glass_kind = Glazing.Kind.FROSTED
 	return shape
 
 
@@ -4177,21 +4353,23 @@ static func shelf_rack(width: float = 1.6, height: float = 2.0, depth: float = 0
 
 
 ## A ladder `height` tall: two rails `width` apart with a rung every 0.3 m, standing on -Y,
-## rungs toward -Z (put its back against a wall or a hatch edge). Each rung has a dark
-## grip strip on its tread and shows its riveted ends on the rails' outer faces; the rails
-## stand on rubber feet and are held off the wall by dark stand-off brackets (+Z).
+## rungs toward -Z (put its back against a wall or a hatch edge). Rails and rungs are
+## galvanised; each rung has a ribbed rubber grip strip on its tread and shows its riveted
+## ends on the rails' outer faces; the rails stand on rubber feet and are held off the wall
+## by dark satin stand-off brackets (+Z).
 static func ladder(height: float, width: float = 0.5) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var rx := (width - 0.06) * 0.5
-	k.color = Color.WHITE
+	k.color = GALVANISED
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.06, height - 0.03, 0.06), Vector3(sx * rx, 0.015, 0.0))
 	# Rubber feet.
-	k.color = DARK
+	k.color = RUBBER
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.07, 0.03, 0.07), Vector3(sx * rx, -h + 0.015, 0.0))
 	# Stand-off brackets behind the rails: top, bottom and about every 1.2 m.
+	k.color = WALK_FRAME
 	var levels := maxi(2, int(ceil((height - 0.4) / 1.2)) + 1)
 	for j in levels:
 		var y := -h + 0.2 + (height - 0.4) * float(j) / float(levels - 1)
@@ -4201,10 +4379,10 @@ static func ladder(height: float, width: float = 0.5) -> PartShapes.PartShape:
 	var tread := width - 0.14
 	for i in rungs:
 		var y := -h + 0.15 + (height - 0.3) * float(i) / float(rungs - 1)
-		k.color = DETAIL
+		k.color = WALK_CROSS_BAR
 		k.box(Vector3(width - 0.06, 0.035, 0.035), Vector3(0.0, y, -0.012))
 		# The grip strip on the rung's tread.
-		k.color = DARK
+		k.color = TREAD
 		k.box(Vector3(tread, 0.006, 0.027), Vector3(0.0, y + 0.0195, -0.012))
 		# Rivet heads where the rung goes through each rail.
 		k.color = DETAIL
@@ -4601,10 +4779,10 @@ static func crash_seat(width: float = 0.65, height: float = 1.9, depth: float = 
 	return shape
 
 
-## A C-shaped grab handle `height` tall along Y: a round bar in the material colour
+## A C-shaped grab handle `height` tall along Y: a round stainless bar
 ## `reach` - 0.05 m off the wall, its ends bent through 45 degree knuckles into two
-## standoffs, a dark rubber grip sleeve with steel ferrules round its middle, and at each
-## standoff a steel collar on a chamfered dark mounting plate with two bolts. The wall side
+## standoffs, a rubber grip sleeve with polished ferrules round its middle, and at each
+## standoff a polished collar on a chamfered cast mounting plate with two bolts. The wall side
 ## is +Z, the bar toward -Z.
 static func grab_bar(height: float = 0.9, reach: float = 0.16) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -4615,25 +4793,25 @@ static func grab_bar(height: float = 0.9, reach: float = 0.16) -> PartShapes.Par
 	var plate_t := 0.018                        # mounting plate thickness, m
 	var bend := minf(0.035, (zw - plate_t - 0.02 - bz) * 0.5)   # knuckle offset, m
 	var ys := h - 0.05                          # standoff height either side of the middle, m
-	k.color = Color.WHITE
+	k.color = STAINLESS
 	_tube(k, Vector3(0.0, -ys + bend, bz), Vector3(0.0, ys - bend, bz), r)
 	for sy: float in [-1.0, 1.0]:
 		var y := sy * ys
 		var knee := Vector3(0.0, y, bz + bend)
-		k.color = Color.WHITE
+		k.color = STAINLESS
 		_tube(k, Vector3(0.0, y - sy * bend, bz), knee, r)
 		_tube(k, knee, Vector3(0.0, y, zw - plate_t - 0.012), r)
 		# The collar, the plate and its two bolts.
 		k.color = TRIM
 		_tube(k, Vector3(0.0, y, zw - plate_t - 0.014), Vector3(0.0, y, zw - plate_t + 0.002), r + 0.008, 8)
-		k.color = DARK
+		k.color = CAST
 		_seating_pad(k, Vector3(0.0, y, zw), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, 0.045, 0.06, plate_t, 0.006)
 		k.color = DETAIL
 		for by: float in [-0.042, 0.042]:
 			k.box(Vector3(0.016, 0.016, 0.008), Vector3(0.0, y + by, zw - plate_t - 0.002))
 	# The grip: a dark sleeve over the middle with a steel ferrule at each end.
 	var grip := clampf(ys - bend - 0.12, 0.08, 0.3)   # half the grip's length, m
-	k.color = DARK
+	k.color = RUBBER
 	_tube(k, Vector3(0.0, -grip, bz), Vector3(0.0, grip, bz), r + 0.004)
 	k.color = TRIM
 	for sy: float in [-1.0, 1.0]:
@@ -5010,11 +5188,13 @@ static func cargo_ramp(width: float = 3.2, height: float = 2.7, thickness: float
 
 
 ## A round shower cubicle (the lander's washroom) `radius` across, `height` tall: a drum
-## in the material colour (green in the reference) standing in a steel tray on a dark
-## kick plinth, under a dark lipped cap with vent slats. On the front (-Z): a curved door
-## standing proud between steel jambs under a header, a dark vision strip, a steel grab
-## handle, an occupied lamp over the door and a small control panel beside it with a dark
-## readout and two status lights (lit in `glow`). Stands on -Y.
+## in the material colour (green in the reference) standing in a stainless tray on a dark
+## kick plinth, under a dark moulded plastic cap with anodised vent slats. On the front
+## (-Z): a curved door standing proud between anodised jambs under a header, rubber seals
+## down its edges, along its top and in a sweep under it, a frosted
+## glass vision strip (PartShape.glass), a chrome grab handle, an occupied lamp over the
+## door and a small plastic control panel beside it with a dark readout and two status
+## lights (lit in `glow`). Stands on -Y.
 static func shower(radius: float = 0.42, height: float = 2.1, glow := Color(0.35, 0.85, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
@@ -5029,29 +5209,42 @@ static func shower(radius: float = 0.42, height: float = 2.1, glow := Color(0.35
 	k.color = DARK
 	k.lathe(PackedVector2Array([Vector2(0.0, -h), Vector2(radius * 0.93, -h), Vector2(radius * 0.93, -h + 0.09),
 			Vector2(0.0, -h + 0.09)]), 16)
-	k.color = DETAIL
+	k.color = STAINLESS
 	k.lathe(PackedVector2Array([Vector2(0.0, -h + 0.09), Vector2(radius + 0.008, -h + 0.09),
 			Vector2(radius + 0.008, y_lo), Vector2(0.0, y_lo)]), 16)
 	k.color = Color.WHITE
 	k.lathe(PackedVector2Array([Vector2(0.0, y_lo), Vector2(radius, y_lo), Vector2(radius, y_hi), Vector2(0.0, y_hi)]), 16)
 	# The cap: a lip, a chamfer up to the top, three vent slats on it.
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	k.lathe(PackedVector2Array([Vector2(0.0, y_hi), Vector2(radius + 0.006, y_hi), Vector2(radius + 0.006, y_hi + 0.03),
 			Vector2(radius * 0.86, h), Vector2(0.0, h)]), 16)
-	k.color = DETAIL
+	k.color = ANODISED
 	for i in 3:
 		k.box(Vector3(radius * 0.8, 0.008, 0.03), Vector3(0.0, h + 0.004, radius * (-0.22 + 0.22 * float(i))))
 	# The door leaf, its jambs and header, the vision strip and the handle.
 	k.color = Color.WHITE
 	_galley_arc(k, radius * 0.97, radius + 0.008, -door, door, y_lo + 0.03, y_door, 6)
-	k.color = DETAIL
+	k.color = ANODISED
 	for s: float in [-1.0, 1.0]:
 		var d := Vector3(sin(s * (door + 0.04)), 0.0, -cos(door + 0.04))
 		k.strut(d * (radius - 0.004) + Vector3(0.0, y_lo, 0.0), d * (radius - 0.004) + Vector3(0.0, y_door, 0.0), 0.03)
 	_galley_arc(k, radius * 0.97, radius + 0.014, -door - 0.08, door + 0.08, y_door, y_door + 0.05, 6)
+	# The leaf's rubber seals: a strip down each edge against the jambs, a sweep under it
+	# closing the gap to the tray, and a band along its top under the header, each a few
+	# millimetres proud of the leaf.
+	k.color = RUBBER
+	for s: float in [-1.0, 1.0]:
+		var a0 := door - 0.04 if s > 0.0 else -door - 0.006
+		_galley_arc(k, radius + 0.006, radius + 0.0135, a0, a0 + 0.046, y_lo + 0.006, y_door - 0.002, 1)
+	_galley_arc(k, radius * 0.975, radius + 0.0125, -door - 0.024, door + 0.024, y_lo + 0.004, y_lo + 0.028, 4)
+	_galley_arc(k, radius + 0.006, radius + 0.0115, -door, door, y_door - 0.02, y_door - 0.003, 4)
 	k.color = DARK
 	_galley_arc(k, radius, radius + 0.012, -door * 0.45, door * 0.45, y_lo + height * 0.45, y_door - 0.25, 4)
-	k.color = TRIM
+	# Frosted glass over the vision strip, a hair proud of it.
+	var gk := MeshKit.new()
+	_galley_arc(gk, radius + 0.0125, radius + 0.0135, -door * 0.43, door * 0.43, y_lo + height * 0.45 + 0.01,
+			y_door - 0.26, 4)
+	k.color = CHROME
 	var hd := Vector3(sin(door * 0.72), 0.0, -cos(door * 0.72))
 	var y_grip := y_lo + height * 0.36
 	_tube(k, hd * (radius + 0.04) + Vector3(0.0, y_grip - 0.2, 0.0), hd * (radius + 0.04) + Vector3(0.0, y_grip + 0.2, 0.0), 0.012, 8)
@@ -5060,12 +5253,12 @@ static func shower(radius: float = 0.42, height: float = 2.1, glow := Color(0.35
 	# The occupied lamp on the header (lit).
 	var y_lamp := y_door + 0.025
 	_seating_pad(g, Vector3(0.0, y_lamp, -radius - 0.014), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, 0.05, 0.012, 0.006, 0.003)
-	# The control panel left of the door: a steel plate, a dark readout, two lit lights.
+	# The control panel left of the door: a plastic plate, a dark readout, two lit lights.
 	var pa := -door - 0.42
 	var pd := Vector3(sin(pa), 0.0, -cos(pa))
 	var pu := Vector3(cos(pa), 0.0, sin(pa))
 	var pc := pd * (radius - 0.006) + Vector3(0.0, y_lo + height * 0.5, 0.0)
-	k.color = DETAIL
+	k.color = PLASTIC_PALE
 	_seating_pad(k, pc, pu, Vector3.UP, pd, 0.05, 0.1, 0.022, 0.006)
 	k.color = DARK
 	_seating_pad(k, pc + pd * 0.022 + Vector3(0.0, 0.035, 0.0), pu, Vector3.UP, pd, 0.035, 0.03, 0.004)
@@ -5076,6 +5269,8 @@ static func shower(radius: float = 0.42, height: float = 2.1, glow := Color(0.35
 	shape.volume = PI * radius * radius * 0.04 * height
 	shape.glow = g.finish()
 	shape.glow_color = glow
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.FROSTED
 	return shape
 
 
@@ -5568,9 +5763,9 @@ static func _heroes_sector(k: MeshKit, r0: float, r1: float, y0: float, y1: floa
 
 ## An open lattice rail along X (the yellow frame down the courier's pontoon sides):
 ## `length` long, `height` tall, top and bottom chords (channels open to the front) and
-## posts in the material colour, a bolted gusset plate over each post's ends, a diagonal
-## brace per bay, standing off a wall on dark brackets `standoff` deep that end in bolted
-## wall plates. Its face is -Z, its brackets reach back to +Z.
+## posts in the material colour, a bolted gusset plate over each post's ends, a galvanised
+## diagonal brace per bay, standing off a wall on galvanised brackets `standoff` deep that
+## end in bolted wall plates; blackened bolts. Its face is -Z, its brackets reach back to +Z.
 static func lattice_rail(length: float, height: float, bays: int = 4, depth: float = 0.16,
 		standoff: float = 0.22) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -5605,7 +5800,7 @@ static func lattice_rail(length: float, height: float, bays: int = 4, depth: flo
 			for sx: float in [-1.0, 1.0]:
 				stud.append(Vector3(gx + sx * gw * 0.28, gy - sy * gh * 0.12, front - 0.014))
 		# Stand-off brackets top and bottom, each ending in a wall plate.
-		k.color = DARK
+		k.color = GALVANISED
 		for sy: float in [-1.0, 1.0]:
 			var y := sy * (hy - chord * 0.5)
 			var z0 := zf + depth * 0.5
@@ -5616,10 +5811,11 @@ static func lattice_rail(length: float, height: float, bays: int = 4, depth: flo
 			for sb: float in [-1.0, 1.0]:
 				stud.append(Vector3(px, y + sb * 0.058, back - 0.017))
 	# Bolt heads: small squares standing just proud of the plates they hold.
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	for c in stud:
 		var e := 0.011
 		k.quad(c + Vector3(-e, -e, 0), c + Vector3(e, -e, 0), c + Vector3(e, e, 0), c + Vector3(-e, e, 0), Vector3.FORWARD)
+	k.color = WALK_CROSS_BAR
 	for i in bays:
 		var x0 := -hl + cell * float(i) + 0.1
 		var x1 := x0 + cell - 0.2
@@ -5850,28 +6046,30 @@ static func nozzle_cluster(count: int = 3, radius: float = 0.15, length: float =
 
 ## A straight SE2 conveyor tube along Y, `length` long and `size` square: a body in the
 ## material colour (yellow in the reference: "all conveyors are coloured yellow"), dark
-## rails down its corners, a dark collar flange at each end with a bolted clamp band inboard
-## of it, access panels down every face (bolted on +-X) and a dark flow arrow toward +Y on
-## each +-X panel. Short tubes keep the collars and arrows.
+## anodised rails down its corners, a cast collar flange at each end with a galvanised clamp
+## band inboard of it, access panels down every face (galvanised screws on +-X) and a dark
+## stencilled flow arrow toward +Y on each +-X panel. Short tubes keep the collars and arrows.
 static func conveyor_tube(length: float, size: float = 0.34) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var flange := 0.06
 	var hs := size * 0.5
 	var inner := length - 2.0 * flange
 	k.box(Vector3(size, inner, size))
-	k.color = DARK
+	k.color = RAIL_DARK
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(0.05, inner, 0.05), Vector3(sx * hs, 0.0, sz * hs))
+	k.color = CAST
 	for sy: float in [-1.0, 1.0]:
 		k.box(Vector3(size + 0.06, flange, size + 0.06), Vector3(0.0, sy * (length * 0.5 - flange * 0.5), 0.0))
 	# Clamp bands inboard of the collars, a bolt head in the middle of each face.
 	var band := 0.045 if inner > 0.2 else 0.0
-	k.color = DETAIL
 	if band > 0.0:
 		for sy: float in [-1.0, 1.0]:
 			var y := sy * (length * 0.5 - flange - band * 0.5)
+			k.color = GALVANISED
 			k.box(Vector3(size + 0.03, band, size + 0.03), Vector3(0.0, y, 0.0))
+			k.color = FLANGE_BOLT
 			for s: float in [-1.0, 1.0]:
 				k.box(Vector3(0.012, 0.024, 0.024), Vector3(s * (hs + 0.021), y, 0.0))
 				k.box(Vector3(0.024, 0.024, 0.012), Vector3(0.0, y, s * (hs + 0.021)))
@@ -5892,7 +6090,7 @@ static func conveyor_tube(length: float, size: float = 0.34) -> PartShapes.PartS
 			for s: float in [-1.0, 1.0]:
 				k.box(Vector3(0.008, plen, pw), Vector3(s * (hs + 0.004), y, 0.0))
 				k.box(Vector3(pw, plen, 0.008), Vector3(0.0, y, s * (hs + 0.004)))
-			k.color = DETAIL
+			k.color = GALVANISED
 			for s: float in [-1.0, 1.0]:
 				for by: float in [-1.0, 1.0]:
 					for bz: float in [-1.0, 1.0]:
@@ -5925,22 +6123,23 @@ static func conveyor_tube(length: float, size: float = 0.34) -> PartShapes.PartS
 	return shape
 
 
-## An SE2 conveyor junction: a cube `size` across in the material colour with dark edge
-## frames between bolted corner blocks, and a port on each of its six faces (tubes butt onto
-## them): a dark plate with a bolt at each corner, a yellow ring and a dark mouth. A small
-## lit status lamp (glow) sits in the top front corner of each side face (+-X, +-Z).
+## An SE2 conveyor junction: a cube `size` across in the material colour with dark anodised
+## edge frames between cast corner blocks, and a port on each of its six faces (tubes butt
+## onto them): a cast plate with a galvanised screw at each corner, a yellow ring and a dark
+## mouth. A small lit status lamp (glow) in a plastic housing sits in the top front corner of
+## each side face (+-X, +-Z).
 static func conveyor_junction(size: float = 0.6, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hs := size * 0.5
 	k.box(Vector3(size - 0.04, size - 0.04, size - 0.04))
-	# Edge frames run between the corner blocks.
-	k.color = DARK
+	# Dark anodised edge frames run between the cast corner blocks.
+	k.color = RAIL_DARK
 	var el := size - 0.12
 	for a: Vector3 in [Vector3(1, 1, 0), Vector3(1, -1, 0), Vector3(-1, 1, 0), Vector3(-1, -1, 0)]:
 		k.box(Vector3(0.05, 0.05, el), Vector3(a.x * (hs - 0.025), a.y * (hs - 0.025), 0.0))
 		k.box(Vector3(el, 0.05, 0.05), Vector3(0.0, a.x * (hs - 0.025), a.y * (hs - 0.025)))
 		k.box(Vector3(0.05, el, 0.05), Vector3(a.x * (hs - 0.025), 0.0, a.y * (hs - 0.025)))
-	k.color = DETAIL
+	k.color = CAST
 	for sx: float in [-1.0, 1.0]:
 		for sy: float in [-1.0, 1.0]:
 			for sz: float in [-1.0, 1.0]:
@@ -5949,7 +6148,7 @@ static func conveyor_junction(size: float = 0.6, glow := Color(0.3, 1.0, 0.45)) 
 	var bolt := size * 0.05
 	for axis: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN, Vector3.BACK, Vector3.FORWARD]:
 		var i := axis.abs().max_axis_index()
-		var steps: Array = [[DARK, size * 0.62, hs - 0.025, hs - 0.005], [PORT_YELLOW, size * 0.5, hs - 0.01, hs],
+		var steps: Array = [[CAST, size * 0.62, hs - 0.025, hs - 0.005], [PORT_YELLOW, size * 0.5, hs - 0.01, hs],
 				[DARK, size * 0.32, hs - 0.005, hs + 0.006]]
 		for st: Array in steps:
 			k.color = st[0]
@@ -5959,7 +6158,7 @@ static func conveyor_junction(size: float = 0.6, glow := Color(0.3, 1.0, 0.45)) 
 			var s := Vector3(w, w, w)
 			s[i] = d1 - d0
 			k.box(s, axis * (d0 + d1) * 0.5)
-		k.color = DETAIL
+		k.color = GALVANISED
 		var j := (i + 1) % 3
 		var l := (i + 2) % 3
 		for sj: float in [-1.0, 1.0]:
@@ -5974,7 +6173,7 @@ static func conveyor_junction(size: float = 0.6, glow := Color(0.3, 1.0, 0.45)) 
 	var m := size * 0.405 - 0.025
 	var hb := minf(0.04, (size * 0.19 - 0.05) * 0.8)
 	var lamps: Array[Vector3] = [Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 0, -1)]
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	for n: Vector3 in lamps:
 		var side := Vector3.FORWARD if n.x != 0.0 else Vector3.RIGHT
 		var c := n * (hs - 0.009) + Vector3(0.0, m, 0.0) + side * m
@@ -5999,11 +6198,12 @@ static func conveyor_junction(size: float = 0.6, glow := Color(0.3, 1.0, 0.45)) 
 	return shape
 
 
-## An SE2 gyroscope `size` across (stands on -Y): a dark open frame cube, a solid base
-## plate and an open top of rails with a cross beam, steel corner castings bolted on its
-## eight corners, bearing housings top and bottom on a bright axle, and a drum in the
-## material colour on it with bright end caps, a steel centre band and two lit rings round
-## it (the glow, with a status lamp on the base's -Z edge).
+## An SE2 gyroscope `size` across (stands on -Y): a gunmetal open frame cube, a solid base
+## plate and an open top of rails with a cross beam, cast iron corner castings with stainless
+## bolts on its eight corners, cast bearing housings top and bottom on a chrome axle, and a
+## drum in the material colour on it with polished end caps, a brushed steel centre band and
+## two lit rings round it (the glow, with a status lamp in a plastic bezel on the base's -Z
+## edge).
 static func gyroscope(size: float = 1.0, glow := Color(0.3, 0.75, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hs := size * 0.5
@@ -6011,7 +6211,7 @@ static func gyroscope(size: float = 1.0, glow := Color(0.3, 0.75, 1.0)) -> PartS
 	var r := size * 0.32                       # drum radius, m
 	var dh := r * 0.75                         # drum half height, m
 	# Frame: base plate, four posts, top rails and a cross beam along X.
-	k.color = DARK
+	k.color = ENG_FRAME
 	k.box(Vector3(size, bar, size), Vector3(0.0, -hs + bar * 0.5, 0.0))
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
@@ -6027,22 +6227,22 @@ static func gyroscope(size: float = 1.0, glow := Color(0.3, 0.75, 1.0)) -> PartS
 		for sy: float in [-1.0, 1.0]:
 			for sz: float in [-1.0, 1.0]:
 				var at := Vector3(sx * co, sy * (hs - cc * 0.5) + maxf(sy, 0.0) * 0.004, sz * co)
-				k.color = DETAIL
+				k.color = BOSS
 				k.box(Vector3(cc, cc, cc), at)
-				k.color = TRIM
+				k.color = STAINLESS
 				k.box(Vector3(0.006, bs, bs), Vector3(sx * (co + cc * 0.5 + 0.003), at.y, at.z - sz * cc * 0.12))
 				k.box(Vector3(bs, bs, 0.006), Vector3(at.x - sx * cc * 0.12, at.y, sz * (co + cc * 0.5 + 0.003)))
 	# Bearing housings on the base and under the beam, a bright axle between them.
 	var yb0 := -hs + bar
 	var yt0 := hs - bar * 0.8 - 0.004
-	k.color = DETAIL
+	k.color = BOSS
 	_piping_spin(k, Vector3.ZERO, Vector3.UP, PackedVector2Array([Vector2(0.0, yb0), Vector2(r * 0.42, yb0),
 			Vector2(r * 0.42, yb0 + bar * 0.4), Vector2(r * 0.26, yb0 + bar * 0.8), Vector2(0.0, yb0 + bar * 0.8)]),
-			[DETAIL], 14)
+			[BOSS], 14)
 	_piping_spin(k, Vector3.ZERO, Vector3.UP, PackedVector2Array([Vector2(0.0, yt0 - bar * 0.8),
 			Vector2(r * 0.26, yt0 - bar * 0.8), Vector2(r * 0.42, yt0 - bar * 0.4), Vector2(r * 0.42, yt0),
-			Vector2(0.0, yt0)]), [DETAIL], 14)
-	k.color = TRIM
+			Vector2(0.0, yt0)]), [BOSS], 14)
+	k.color = CHROME
 	_tube(k, Vector3(0.0, yb0 + bar * 0.8, 0.0), Vector3(0.0, yt0 - bar * 0.8, 0.0), r * 0.1, 8)
 	# The drum: material body with chamfered shoulders, bright end caps, a steel centre band.
 	_piping_spin(k, Vector3.ZERO, Vector3.UP, PackedVector2Array([Vector2(0.0, -dh), Vector2(r * 0.78, -dh),
@@ -6051,11 +6251,11 @@ static func gyroscope(size: float = 1.0, glow := Color(0.3, 0.75, 1.0)) -> PartS
 	k.color = TRIM
 	_thrusters_ring(k, 0.0, r * 0.5, dh - 0.002, dh + 0.008, 16)
 	_thrusters_ring(k, 0.0, r * 0.5, -dh - 0.008, -dh + 0.002, 16)
-	k.color = DETAIL
+	k.color = COLLAR
 	_thrusters_ring(k, r * 0.9, r + 0.012, -r * 0.09, r * 0.09, 20)
 	# Status lamp bezel on the base's front edge.
 	var led := clampf(bar * 0.4, 0.012, 0.03)
-	k.color = DETAIL
+	k.color = PLASTIC_DARK
 	k.box(Vector3(led * 3.0, bar * 0.7, 0.006), Vector3(0.0, -hs + bar * 0.5, -hs - 0.003))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
@@ -6791,12 +6991,12 @@ static func seat_row(count: int = 3, pitch: float = 0.62, height: float = 1.25, 
 	return shape
 
 
-## A square hall pillar `height` tall and `size` across: a dark foot block with a bolt in
-## each corner and a steel collar chamfering in to the shaft, the same mirrored as the
+## A square hall pillar `height` tall and `size` across: a cast foot block with a bolt in
+## each corner and an anodised collar chamfering in to the shaft, the same mirrored as the
 ## capital, the shaft between with chamfered corners in the material colour and a dark
-## shadow-gap reveal low down, and down its -Z face a dark channel between steel rails
-## holding a thin lit strip in three segments (the column lights in the Kyper transport's
-## passenger hall). Stands on -Y.
+## shadow-gap reveal low down, and down its -Z face a dark plastic lamp housing between
+## anodised rails holding a thin lit strip in three segments (the column lights in the Kyper
+## transport's passenger hall). Stands on -Y.
 static func lit_post(height: float = 2.6, size: float = 0.3, glow := Color(0.45, 1.0, 0.35)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
@@ -6805,13 +7005,14 @@ static func lit_post(height: float = 2.6, size: float = 0.3, glow := Color(0.45,
 	var half := size * 0.5
 	var wide := half + 0.04
 	var c := size * 0.12
-	# Foot and head blocks, then steel collars chamfering in to the shaft.
-	k.color = DARK
+	# Cast foot and head blocks, then anodised collars chamfering in to the shaft, steel bolts.
+	k.color = CAST
 	k.box(Vector3(wide * 2.0, foot, wide * 2.0), Vector3(0.0, -h + foot * 0.5, 0.0))
 	k.box(Vector3(wide * 2.0, foot, wide * 2.0), Vector3(0.0, h - foot * 0.5, 0.0))
-	k.color = DETAIL
+	k.color = ANODISED
 	k.loft(_chamfer_ring(half + 0.025, -h + foot, c), _chamfer_ring(half + 0.01, -h + cap, c))
 	k.loft(_chamfer_ring(half + 0.01, h - cap, c), _chamfer_ring(half + 0.025, h - foot, c))
+	k.color = DETAIL
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(0.025, 0.014, 0.025), Vector3(sx * (wide - 0.022), -h + foot + 0.007, sz * (wide - 0.022)))
@@ -6821,12 +7022,14 @@ static func lit_post(height: float = 2.6, size: float = 0.3, glow := Color(0.45,
 	k.color = DARK
 	var ry := -h + cap + 0.3
 	k.loft(_chamfer_ring(half + 0.004, ry - 0.012, c), _chamfer_ring(half + 0.004, ry + 0.012, c))
-	# The light channel on -Z: a dark panel between two steel rails, steel caps at its ends.
+	# The light channel on -Z: a dark plastic housing between two anodised rails, anodised
+	# caps at its ends.
 	var panel_h := height - 2.0 * cap - 0.4
 	var pw := size * 0.6
 	var face := -half
+	k.color = PLASTIC_DARK
 	k.box(Vector3(pw, panel_h, 0.02), Vector3(0.0, 0.0, face - 0.008))
-	k.color = DETAIL
+	k.color = ANODISED
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.014, panel_h, 0.026), Vector3(sx * (pw * 0.5 + 0.007), 0.0, face - 0.011))
 	for sy: float in [-1.0, 1.0]:
@@ -7171,9 +7374,10 @@ static func ore_hatch(width: float = 2.0, length: float = 3.0, thickness: float 
 
 
 ## A round SE2-style thruster (the Scoop's lift thrusters on its roof and the two round
-## engines on its stern): a chamfered dark mount plate with four bolts at -Y, a hollow
-## tapered drum in the material colour with a dark band and two grey ribs, a stepped pale lip
-## at +Y and a funnel throat with a ring part-way down to a glowing floor. Exhaust +Y.
+## engines on its stern): a chamfered cast mount plate with four galvanised bolts at -Y, a
+## hollow tapered drum in the material colour with a gunmetal band and two galvanised ribs,
+## a stepped heat-tinted lip at +Y and a sooted ceramic funnel throat with a heat-blued ring
+## part-way down to a glowing floor. Exhaust +Y.
 ## `radius` is the lip's.
 static func cup_thruster(radius: float = 0.45, length: float = 0.7, glow := Color(0.4, 0.7, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -7182,10 +7386,10 @@ static func cup_thruster(radius: float = 0.45, length: float = 0.7, glow := Colo
 	var seg := 20
 	# A chamfered dark mount plate with a hex bolt in each corner.
 	var plate_t := clampf(length * 0.08, 0.025, 0.08)
-	k.color = DARK
+	k.color = PLATE_DARK
 	k.loft(_chamfer_ring(r * 0.9, -h, r * 0.25), _chamfer_ring(r * 0.9, -h + plate_t, r * 0.25))
 	var d0 := -h + plate_t
-	k.color = DETAIL
+	k.color = GALVANISED
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			_thrusters_bolt(k, Vector3(sx * r * 0.66, d0, sz * r * 0.66), maxf(0.008, r * 0.07),
@@ -7200,14 +7404,14 @@ static func cup_thruster(radius: float = 0.45, length: float = 0.7, glow := Colo
 	# Bands: a dark one low down, two grey ribs high up.
 	var bw := clampf(length * 0.05, 0.012, 0.06)
 	var yb: float = lerpf(d0, top, 0.28)
-	k.color = DARK
+	k.color = GUNMETAL
 	_thrusters_ring(k, drum.call(yb) - 0.01, drum.call(yb) + r * 0.035, yb - bw, yb + bw, 16)
-	k.color = DETAIL
+	k.color = GALVANISED
 	for t: float in [0.62, 0.78]:
 		var y: float = lerpf(d0, top, t)
 		_thrusters_ring(k, drum.call(y) - 0.01, drum.call(y) + r * 0.04, y - bw * 0.4, y + bw * 0.4, 16)
 	# The lip, stepped: a narrower ring under the full-width rim.
-	k.color = TRIM
+	k.color = ENG_NOZZLE
 	var step_y := h - lip * 0.5
 	_thrusters_ring(k, r * 0.7, r * 0.89, top, step_y, seg)
 	_thrusters_ring(k, r * 0.7, r, step_y, h, seg)
@@ -7216,12 +7420,13 @@ static func cup_thruster(radius: float = 0.45, length: float = 0.7, glow := Colo
 	var rf := r * 0.36
 	k.color = DARK
 	_thrusters_ring(k, 0.0, rt, y_floor - clampf(length * 0.03, 0.006, 0.03), y_floor, 16)
+	k.color = ENG_LINER
 	k.lathe(PackedVector2Array([Vector2(rf, y_floor), Vector2(rf + rt - r * 0.68, y_floor), Vector2(rt, h - 0.004),
 			Vector2(r * 0.68, h - 0.004)]), seg)
 	var funnel := func(y: float) -> float: return lerpf(rf, r * 0.68, (y - y_floor) / (h - 0.004 - y_floor))
 	var yr := lerpf(y_floor, h, 0.4)
 	var rr: float = funnel.call(yr)
-	k.color = DETAIL
+	k.color = RIM
 	_thrusters_ring(k, rr - r * 0.05, rr + r * 0.03, yr - bw * 0.35, yr + bw * 0.35, 16)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
@@ -7355,11 +7560,11 @@ static func _stowage_lump(k: MeshKit, c: Vector3, size: Vector3, n: int, colours
 # --- Mantis fighter parts (0.40) ----------------------------------------------------------
 
 ## A rotary cannon (the Mantis's guns in its prong tips, the warships' close-in guns): a
-## chamfered square breech housing at -Y on a steel mount flange, a dark band round it, a
-## ribbed ammo feed chute up its +X side, two lit ready lamps on its -X side
-## (PartShape.glow) and bolts in its top corners; a round drum with a dark band, six barrels
-## in a ring with dark bores, held by two hexagonal clamp plates (the thicker at the
-## muzzle) round a centre spindle. `radius` is the barrel ring's (the housing is a little
+## chamfered square breech housing at -Y on a cast iron mount flange, a dark band round it,
+## a gunmetal ammo feed chute up its +X side with brass belt links across it, two lit ready
+## lamps on its -X side (PartShape.glow) and blackened bolts in its top corners; a cast drum
+## with a dark band, six gunmetal barrels in a ring with dark bores, held by two heat-blued
+## hexagonal clamp plates (the thicker at the muzzle) round a gunmetal spindle. `radius` is the barrel ring's (the housing is a little
 ## wider), `length` the whole part, barrels toward +Y. Collision is the hull of the housing
 ## and the muzzle ring.
 static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(1.0, 0.6, 0.15)) -> PartShapes.PartShape:
@@ -7375,7 +7580,7 @@ static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(
 	var hb := hw * 0.94                   # the housing body's half width, m
 	var bev := house * 0.08               # the bevel round its top, m
 	# The breech housing on its flange, a dark band round it.
-	k.color = DETAIL
+	k.color = CAST
 	k.loft(_chamfer_ring(hw, y0, c), _chamfer_ring(hw, y0 + fl, c))
 	k.color = Color.WHITE
 	k.loft(_chamfer_ring(hb, y0 + fl, c * 0.94), _chamfer_ring(hb, d0 - bev, c * 0.94))
@@ -7385,8 +7590,9 @@ static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(
 	# The ammo feed chute up the +X side, its belt links across it.
 	var ch0 := y0 + fl + house * 0.06
 	var ch1 := d0 - bev - house * 0.04
+	k.color = GUNMETAL
 	k.box(Vector3(0.017, ch1 - ch0, hb * 0.8), Vector3(hb + 0.0035, (ch0 + ch1) * 0.5, 0.0))
-	k.color = DETAIL
+	k.color = BRASS
 	for i in 5:
 		var y := lerpf(ch0, ch1, (float(i) + 0.5) / 5.0)
 		k.box(Vector3(0.006, (ch1 - ch0) * 0.08, hb * 0.66), Vector3(hb + 0.013, y, 0.0))
@@ -7398,7 +7604,7 @@ static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(
 	for sz: float in [-1.0, 1.0]:
 		g.box(Vector3(0.004, ls, ls), Vector3(-hb - 0.008, ly, sz * ls * 1.1))
 	# Bolts in the top's corners, clear of the drum.
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	var bs := maxf(0.012, radius * 0.09)
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
@@ -7406,6 +7612,7 @@ static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(
 					bs * 0.5)
 	# The drum, a dark band round it.
 	var drum := length * 0.16
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, d0), Vector2(radius * 1.05, d0), Vector2(radius * 1.05, d0 + drum),
 			Vector2(radius * 0.7, d0 + drum + 0.03), Vector2(0.0, d0 + drum + 0.03)]), 18)
 	k.color = DARK
@@ -7413,19 +7620,19 @@ static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(
 	# The barrels, a ring of six, dark bores in their tips, round a spindle.
 	var br := radius * 0.17
 	var ring := radius * 0.68
-	var metal := Color(0.22, 0.23, 0.25)
+	var metal := WPN_BARREL
 	for i in 6:
 		var a := TAU * float(i) / 6.0
 		var off := Vector3(cos(a) * ring, 0.0, sin(a) * ring)
 		k.color = metal
 		_tube(k, off + Vector3(0.0, d0 + drum, 0.0), off + Vector3(0.0, y1 - 0.01, 0.0), br, 8)
-		k.color = DARK
+		k.color = GUN_BORE
 		_tube(k, off + Vector3(0.0, y1 - 0.012, 0.0), off + Vector3(0.0, y1 - 0.005, 0.0), br * 0.55, 8)
 	k.color = metal
 	k.lathe(PackedVector2Array([Vector2(0.0, 0.0), Vector2(radius * 0.35, 0.0), Vector2(radius * 0.35, y1 - 0.02),
 			Vector2(0.0, y1 - 0.02)]), 10)
 	# Hexagonal clamp plates: a thin one mid-way, a thick one near the muzzle.
-	k.color = DETAIL
+	k.color = WPN_BLUED
 	var hexr := radius * 1.05
 	for clamp: Vector2 in [Vector2(lerpf(d0 + drum, y1, 0.45), 0.03), Vector2(y1 - 0.06, 0.045)]:
 		k.lathe(PackedVector2Array([Vector2(ring - br * 0.3, clamp.x - clamp.y), Vector2(hexr, clamp.x - clamp.y),
@@ -7481,9 +7688,10 @@ static func octagon_thruster(width: float = 1.6, depth: float = 0.8, glow := Col
 
 
 ## A row of round lit studs on a dark rail (the blue lights the Mantis wears in rows and
-## chevrons on its roof, flanks and belly): a chamfered rail `count` studs long along X with
-## bolted end caps, each stud an eight-sided pale bezel round a domed glowing lens on the +Y
-## face. `pitch` is stud to stud; base on -Y.
+## chevrons on its roof, flanks and belly): a chamfered gunmetal rail `count` studs long
+## along X with bolted anodised end caps, each stud an eight-sided chrome bezel round a domed
+## glowing lens on the +Y face, sealed by a rubber gasket ring under a clear lens face
+## (PartShape.glass). `pitch` is stud to stud; base on -Y.
 static func stud_lights(count: int = 4, pitch: float = 0.3, radius: float = 0.09,
 		glow := Color(0.3, 0.55, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -7492,22 +7700,24 @@ static func stud_lights(count: int = 4, pitch: float = 0.3, radius: float = 0.09
 	var yr := 0.01
 	var w := radius * 2.6
 	var hw := w * 0.5
-	# The rail: chamfered along its top edges, closed by pale end caps with a bolt each.
+	# The rail: gunmetal, chamfered along its top edges, closed by anodised end caps with a
+	# steel bolt each.
 	var cap := clampf((pitch * 0.5 - radius) * 0.6, 0.01, 0.04)
 	var xe := length * 0.5 - 0.004
 	var c := minf(0.012, hw * 0.3)
-	k.color = DARK
+	k.color = LIT_RAIL
 	_prism_x(k, PackedVector2Array([Vector2(-hw, y0), Vector2(hw, y0), Vector2(hw, yr - c), Vector2(hw - c, yr),
 			Vector2(-hw + c, yr), Vector2(-hw, yr - c)]), -xe, xe)
 	for sx: float in [-1.0, 1.0]:
 		var xc := sx * (length * 0.5 - cap * 0.5)
-		k.color = TRIM
+		k.color = ANODISED
 		k.box(Vector3(cap, yr - y0 + 0.003, w + 0.006), Vector3(xc, (yr + y0 + 0.006) * 0.5, 0.0))
 		k.color = DETAIL
 		var b := minf(cap * 0.6, 0.016)
 		k.box(Vector3(b, 0.008, b), Vector3(xc, yr + 0.007, 0.0))
-	# Each stud: a pale bezel sloping up to a lip round a domed lens (the glow).
+	# Each stud: a chrome bezel sloping up to a lip round a domed lens (the glow).
 	var g := MeshKit.new()
+	var gk := MeshKit.new()
 	var ri := radius * 0.68
 	for i in count:
 		var x := -length * 0.5 + pitch * (float(i) + 0.5)
@@ -7516,7 +7726,7 @@ static func stud_lights(count: int = 4, pitch: float = 0.3, radius: float = 0.09
 		for j in bez.verts.size():
 			k.verts.append(bez.verts[j] + Vector3(x, 0.0, 0.0))
 			k.normals.append(bez.normals[j])
-			k.colors.append(TRIM)
+			k.colors.append(CHROME)
 		var lens := MeshKit.new()
 		lens.lathe(PackedVector2Array([Vector2(0.0, yr), Vector2(ri, yr), Vector2(ri * 0.75, 0.026),
 				Vector2(0.0, 0.034)]), 8)
@@ -7524,6 +7734,21 @@ static func stud_lights(count: int = 4, pitch: float = 0.3, radius: float = 0.09
 			g.verts.append(lens.verts[j] + Vector3(x, 0.0, 0.0))
 			g.normals.append(lens.normals[j])
 			g.colors.append(Color.WHITE)
+		# A rubber gasket ring seated in the bezel's lip, over the lit dome's rim.
+		var gasket := MeshKit.new()
+		gasket.lathe(PackedVector2Array([Vector2(ri * 0.84, 0.0295), Vector2(ri + 0.002, 0.0295),
+				Vector2(ri * 0.92, 0.0335)]), 8)
+		for j in gasket.verts.size():
+			k.verts.append(gasket.verts[j] + Vector3(x, 0.0, 0.0))
+			k.normals.append(gasket.normals[j])
+			k.colors.append(RUBBER)
+		# A clear lens face domed over the glow, standing on the gasket.
+		var face := MeshKit.new()
+		face.lathe(PackedVector2Array([Vector2(ri * 0.86, 0.033), Vector2(ri * 0.62, 0.0375), Vector2(0.0, 0.039)]), 8)
+		for j in face.verts.size():
+			gk.verts.append(face.verts[j] + Vector3(x, 0.0, 0.0))
+			gk.normals.append(face.normals[j])
+			gk.colors.append(Color.WHITE)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = length * w * (yr - y0) * 0.95
@@ -7532,6 +7757,8 @@ static func stud_lights(count: int = 4, pitch: float = 0.3, radius: float = 0.09
 	shape.collision = col
 	shape.glow = g.finish()
 	shape.glow_color = glow
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.CLEAR
 	return shape
 
 
@@ -7621,33 +7848,37 @@ static func stick_seat(width: float = 0.7, height: float = 1.3, glow := Color(0.
 ## A round grilled unit on a bracket (the drums beside the Scout N-S1's cockpit cage: an
 ## air intake or a small atmospheric thruster): a drum `radius` across and `length` long
 ## along Y in the material colour, a dark recess in its +Y face behind a grille of
-## horizontal steel slats held by two dark carrier bars across their middles and a bright
-## lip, two clamp bands round it, a bolted foot ring, and a square mounting plate (a bolt in
-## each corner) with two cheeks at -Y carrying dark pivot bosses. Mount it by its plate (-Y).
+## horizontal anodised slats held by two gunmetal carrier bars across their middles and a
+## polished lip, two galvanised clamp bands round it, a cast foot ring with blackened
+## bolts, and a galvanised mounting plate (a bolt in each corner) with two cheeks at -Y
+## carrying rubber pivot bushes. Mount it by its plate (-Y).
 static func grille_drum(radius: float = 0.4, length: float = 0.7) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := length * 0.5
 	var plate := 0.06
 	var y0 := -h + plate
 	var seg := 20
-	k.color = DETAIL
+	k.color = GALVANISED
 	k.box(Vector3(radius * 2.1, plate, radius * 2.1), Vector3(0.0, -h + plate * 0.5, 0.0))
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.06, length * 0.35, radius * 1.2), Vector3(sx * (radius + 0.03), y0 + length * 0.175, 0.0))
 	# A bolt in each corner of the plate.
 	var pb := radius * 1.05 - 0.04
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(0.03, 0.012, 0.03), Vector3(sx * pb, y0 + 0.006, sz * pb))
 	# The foot ring round the drum, and bolts on the plate round it clear of the cheeks.
 	var fl := minf(0.03, length * 0.08)
 	var fr := minf(radius + 0.03, radius * 1.04)
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(radius * 0.98, y0), Vector2(fr, y0), Vector2(fr, y0 + fl),
 			Vector2(radius * 0.98, y0 + fl)]), 16)
+	k.color = FLANGE_BOLT
 	for a: float in [PI / 3.0, PI * 2.0 / 3.0, PI * 4.0 / 3.0, PI * 5.0 / 3.0]:
 		k.box(Vector3(0.022, 0.012, 0.022), Vector3(cos(a) * (fr + 0.012), y0 + 0.006, sin(a) * (fr + 0.012)))
 	# Pivot bosses on the cheeks' outer faces.
-	k.color = DARK
+	k.color = RUBBER
 	var boss := minf(minf(0.05, radius * 0.18), length * 0.12)
 	var yc := y0 + length * 0.2
 	for sx: float in [-1.0, 1.0]:
@@ -7658,7 +7889,7 @@ static func grille_drum(radius: float = 0.4, length: float = 0.7) -> PartShapes.
 	k.color = TRIM
 	k.lathe(PackedVector2Array([Vector2(radius * 0.84, h - 0.06), Vector2(radius * 0.97, h - 0.06),
 			Vector2(radius * 0.97, h - 0.005), Vector2(radius * 0.84, h - 0.005)]), seg)
-	k.color = DETAIL
+	k.color = GALVANISED
 	var bh := minf(0.025, length * 0.05)
 	for t: float in [0.3, 0.62]:
 		var y := lerpf(y0, h, t)
@@ -7668,7 +7899,7 @@ static func grille_drum(radius: float = 0.4, length: float = 0.7) -> PartShapes.
 	k.color = DARK
 	k.lathe(PackedVector2Array([Vector2(0.0, h - 0.09), Vector2(radius * 0.85, h - 0.09),
 			Vector2(radius * 0.85, h - 0.08), Vector2(0.0, h - 0.08)]), seg)
-	k.color = DETAIL
+	k.color = ANODISED
 	var r := radius * 0.82
 	var slats := 7
 	for i in slats:
@@ -7676,7 +7907,7 @@ static func grille_drum(radius: float = 0.4, length: float = 0.7) -> PartShapes.
 		var half := sqrt(maxf(r * r - z * z, 0.0))
 		k.box(Vector3(half * 2.0, 0.05, 0.04), Vector3(0.0, h - 0.055, z))
 	# Two carrier bars across the slats (along Z), standing on them.
-	k.color = DARK
+	k.color = GUNMETAL
 	for sx: float in [-1.0, 1.0]:
 		var cz := sqrt(r * r - r * r * 0.25) - 0.01
 		k.box(Vector3(0.024, 0.016, cz * 2.0), Vector3(sx * r * 0.5, h - 0.03, 0.0))
@@ -7893,10 +8124,11 @@ static func twin_turret(radius: float = 1.0, barrel: float = 2.2, glow := Color(
 
 
 ## A small dome turret (point defence: the Dagger frigate's stern corners, the warships'
-## roofs and keels): a foot flange `radius` across with a bolt circle, a short ring and a
-## dark traverse race, a faceted dome with a dark band, a sensor head on its flat crown
-## with two lit lenses (PartShape.glow) and one barrel out of a round mantlet with a
-## ringed sleeve and a slotted muzzle brake. Stands on -Y, barrel toward -Z.
+## roofs and keels): a cast iron foot flange `radius` across with a circle of blackened
+## bolts, a short cast ring and a rubber-sealed traverse race, a faceted dome with a dark
+## band, a gunmetal sensor head on its flat crown with two lit lenses (PartShape.glow) and
+## one gunmetal barrel out of a round cast mantlet with a ringed sleeve and a slotted muzzle
+## brake. Stands on -Y, barrel toward -Z.
 static func dome_turret(radius: float = 0.6, barrel: float = 1.3, glow := Color(1.0, 0.6, 0.15)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
@@ -7907,14 +8139,16 @@ static func dome_turret(radius: float = 0.6, barrel: float = 1.3, glow := Color(
 	var shelf := y0 + base * 0.45
 	var top := y0 + base + dome_h
 	# The foot flange with its bolts, the ring, a dark race.
-	k.color = DETAIL
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, y0), Vector2(r * 1.05, y0), Vector2(r * 1.05, shelf),
 			Vector2(0.0, shelf)]), 24)
+	k.color = FLANGE_BOLT
 	_piping_bolts(k, Vector3(0.0, shelf, 0.0), Vector3.UP, 0.0, 16, r * 1.01, r * 0.045, r * 0.025)
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, shelf), Vector2(r * 0.97, shelf), Vector2(r * 0.97, y0 + base),
 			Vector2(0.0, y0 + base)]), 24)
 	var yd := y0 + base + r * 0.03
-	k.color = DARK
+	k.color = RUBBER
 	k.lathe(PackedVector2Array([Vector2(0.0, y0 + base), Vector2(r * 0.92, y0 + base), Vector2(r * 0.92, yd),
 			Vector2(0.0, yd)]), 24)
 	# The dome: faceted, its crown cut flat for the sensor head.
@@ -7935,6 +8169,7 @@ static func dome_turret(radius: float = 0.6, barrel: float = 1.3, glow := Color(
 			Vector2(rad.call(0.34), yd + dh * 0.34), Vector2(rd * 0.7, yd + dh * 0.34)]), 8)
 	# The sensor head on the crown, two lenses in its front.
 	var hz := r * 0.02
+	k.color = GUNMETAL
 	k.box(Vector3(r * 0.36, dh * 0.1 + 0.006, r * 0.3), Vector3(0.0, yd + dh * 0.95 - 0.003, hz))
 	k.color = DETAIL
 	k.box(Vector3(r * 0.3, dh * 0.04, r * 0.06), Vector3(0.0, yd + dh * 0.93, hz + r * 0.15 + r * 0.03))
@@ -7943,10 +8178,10 @@ static func dome_turret(radius: float = 0.6, barrel: float = 1.3, glow := Color(
 	# The gun: a round mantlet out of the dome's front, a ringed sleeve, barrel and brake.
 	var by := yd + dh * 0.4
 	var br := r * 0.09
-	k.color = DETAIL
+	k.color = CAST
 	_tube(k, Vector3(0.0, by, -r * 0.8), Vector3(0.0, by, -r * 0.95), br * 1.9, 12)
 	_weapons_barrel(k, Vector3(0.0, by, -r * 0.95), -r * 0.9 - barrel, br, br * 1.65, br * 1.45, br * 1.4,
-			clampf(barrel * 0.12, 0.08, 0.2), Color(0.24, 0.25, 0.27))
+			clampf(barrel * 0.12, 0.08, 0.2), WPN_BARREL)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = PI * r * r * (base + dome_h * 0.6) * 0.5 + barrel * br * br * 3.0
@@ -8078,11 +8313,11 @@ static func spinal_gun(radius: float = 0.45, length: float = 4.0, segments: int 
 
 
 ## A mess table (the Dagger frigate's mess hall): a thick top in the material colour
-## `length` along X and `width` deep with chamfered corners, a steel trim band standing
-## proud round its edge and a condiment rail along its +Z side, two steel bearers under the
-## overhang, on a dark block plinth (steel ribs at its panel joins, a steel cap band under
-## the top, a dark kick recess at its foot) standing on a pale floor plate bolted down at
-## its corners. Stands on -Y.
+## `length` along X and `width` deep with chamfered corners, a stainless trim band standing
+## proud round its edge and a chrome condiment rail along its +Z side, two galvanised bearers
+## under the overhang, on a graphite satin block plinth (brushed steel ribs at its panel
+## joins, a brushed steel cap band under the top, a dark kick recess at its foot) standing
+## on a cast floor plate with a blackened bolt in each corner. Stands on -Y.
 static func mess_table(length: float = 1.8, width: float = 0.9, height: float = 0.8) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
@@ -8093,30 +8328,33 @@ static func mess_table(length: float = 1.8, width: float = 0.9, height: float = 
 	var y_ped := -h + plate + kick               # foot of the plinth body
 	var y_top := h - top                         # underside of the top
 	# The floor plate and its bolts, the kick recess, the plinth.
-	k.color = TRIM
+	k.color = CAST
 	_galley_slab(k, length * 0.62, width * 0.62, 0.05, -h, -h + plate, 0.01)
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(0.03, 0.012, 0.03), Vector3(sx * (length * 0.31 - 0.05), -h + plate + 0.004, sz * (width * 0.31 - 0.05)))
 	k.color = DARK
 	k.box(Vector3(pl.x - 0.08, kick, pl.y - 0.08), Vector3(0.0, -h + plate + kick * 0.5, 0.0))
+	k.color = FURN_PLINTH
 	k.box(Vector3(pl.x, y_top - 0.04 - y_ped, pl.y), Vector3(0.0, (y_top - 0.04 + y_ped) * 0.5, 0.0))
 	# Steel ribs at the panel joins on the long faces, a cap band under the top.
-	k.color = DETAIL
+	k.color = FURN_COLLAR
 	var ribs := maxi(1, roundi(pl.x / 0.45) - 1)
 	for i in ribs:
 		var x := -pl.x * 0.5 + pl.x * float(i + 1) / float(ribs + 1)
 		k.box(Vector3(0.03, y_top - 0.06 - y_ped, pl.y + 0.008), Vector3(x, (y_top - 0.06 + y_ped) * 0.5, 0.0))
 	k.box(Vector3(pl.x + 0.012, 0.04, pl.y + 0.012), Vector3(0.0, y_top - 0.02, 0.0))
 	# Two bearers under the top, out toward its ends.
+	k.color = GALVANISED
 	k.box(Vector3(length - 0.3, 0.03, 0.06), Vector3(0.0, y_top - 0.015, -pl.y * 0.3))
 	k.box(Vector3(length - 0.3, 0.03, 0.06), Vector3(0.0, y_top - 0.015, pl.y * 0.3))
 	# The top, its trim band and the condiment rail.
 	k.color = Color.WHITE
 	_galley_slab(k, length - 0.008, width - 0.008, 0.06, y_top, h)
-	k.color = DETAIL
+	k.color = STAINLESS
 	_galley_slab(k, length, width, 0.062, h - top * 0.62, h - top * 0.38)
+	k.color = CHROME
 	k.box(Vector3(length - 0.12, 0.012, 0.03), Vector3(0.0, h + 0.006, width * 0.5 - 0.1))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
@@ -8486,9 +8724,10 @@ static func workbench(width: float = 2.0, depth: float = 0.8, height: float = 0.
 # --- Talon parts (0.44) --------------------------------------------------------------------
 
 ## The recessed scoop in a Talon pod's raked red tip (the "talons"): a raised rim in the
-## material colour round a dark trough `width` across and `length` long (along Z), two round
-## thruster discs set in the trough floor one behind the other, each a pale lip round a dark
-## hub with a glowing ring. Face +Y, base on -Y; `depth` the whole part.
+## material colour (a titanium lip round its inner edge, steel bolts) round a dark trough
+## `width` across and `length` long (along Z) with gunmetal ribs, two round thruster discs
+## set in the trough floor one behind the other, each a titanium lip round a heat-blued
+## floor with a cast hub, gunmetal stator vanes and a glowing ring. Face +Y, base on -Y; `depth` the whole part.
 static func talon_intake(width: float = 1.6, length: float = 2.8, depth: float = 0.22,
 		glow := Color(1.0, 0.45, 0.3)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -8501,9 +8740,9 @@ static func talon_intake(width: float = 1.6, length: float = 2.8, depth: float =
 		k.box(Vector3(rim, depth, length), Vector3(sx * (w - rim * 0.5), 0.0, 0.0))
 	for sz: float in [-1.0, 1.0]:
 		k.box(Vector3(width - 2.0 * rim, depth, rim), Vector3(0.0, 0.0, sz * (l - rim * 0.5)))
-	# A bright lip round the rim's inner top edge, bolts down the rim's sides.
+	# A titanium lip round the rim's inner top edge, bolts down the rim's sides.
 	var lip := rim * 0.28
-	k.color = TRIM
+	k.color = AERO_EDGE
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(lip, 0.006, length - 2.0 * rim + 2.0 * lip), Vector3(sx * (w - rim + lip * 0.5), h + 0.003, 0.0))
 	for sz: float in [-1.0, 1.0]:
@@ -8514,12 +8753,12 @@ static func talon_intake(width: float = 1.6, length: float = 2.8, depth: float =
 		for i in bolts:
 			var z := lerpf(-l + rim * 0.5, l - rim * 0.5, float(i) / float(bolts - 1))
 			_thrusters_bolt(k, Vector3(sx * (w - rim * 0.4), h, z), rim * 0.12, 0.008)
-	k.color = Color.WHITE
-	# The trough floor, dark, sunk to a third of the depth, with dark ribs across it.
+	# The trough floor, dark, sunk to a third of the depth, with gunmetal ribs across it.
 	k.color = DARK
 	var floor_t := depth * 0.3
 	k.box(Vector3(width - 2.0 * rim, floor_t, length - 2.0 * rim), Vector3(0.0, -h + floor_t * 0.5, 0.0))
 	var ribs := maxi(2, int(length / 0.5))
+	k.color = GUNMETAL
 	for i in ribs:
 		var z := -l + rim + (length - 2.0 * rim) * (float(i) + 0.5) / float(ribs)
 		k.box(Vector3(0.05, 0.03, 0.04), Vector3(-w + rim + 0.04, -h + floor_t + 0.015, z))
@@ -8531,17 +8770,18 @@ static func talon_intake(width: float = 1.6, length: float = 2.8, depth: float =
 	for sz: float in [-1.0, 1.0]:
 		var c := Vector3(0.0, 0.0, sz * (l - rim) * 0.5)
 		var disc := MeshKit.new()
-		disc.color = Color(0.8, 0.81, 0.83)
+		disc.color = AERO_EDGE
 		disc.lathe(PackedVector2Array([Vector2(r * 0.78, y0), Vector2(r, y0), Vector2(r * 0.95, y0 + depth * 0.4),
 				Vector2(r * 0.78, y0 + depth * 0.4)]), 22)
-		disc.color = Color(0.12, 0.12, 0.13)
+		disc.color = RIM
 		disc.lathe(PackedVector2Array([Vector2(0.0, y0), Vector2(r * 0.79, y0), Vector2(r * 0.79, y0 + depth * 0.15),
 				Vector2(0.0, y0 + depth * 0.15)]), 18)
-		disc.color = DETAIL
+		disc.color = HUB
 		disc.lathe(PackedVector2Array([Vector2(0.0, y0 + depth * 0.15), Vector2(r * 0.25, y0 + depth * 0.15),
 				Vector2(r * 0.2, y0 + depth * 0.32), Vector2(0.0, y0 + depth * 0.34)]), 14)
 		# Four stator vanes from the hub out to the lip, over the glowing ring.
 		var vy := y0 + depth * 0.22
+		disc.color = GUNMETAL
 		for a: float in [PI * 0.25, PI * 0.75, PI * 1.25, PI * 1.75]:
 			var dir := Vector3(cos(a), 0.0, sin(a))
 			disc.strut(dir * r * 0.2 + Vector3(0.0, vy, 0.0), dir * r * 0.8 + Vector3(0.0, vy, 0.0), maxf(0.012, r * 0.05))
@@ -8603,9 +8843,9 @@ static func oval_engine(width: float = 2.6, height: float = 1.5, depth: float = 
 ## colour, its leading edge (-Z) bevelled, a red trim strip along both edges, and an
 ## up-turned red end fin at each tip rising `fin_h` and swept back; a glowing light strip runs
 ## along the top of the trailing edge. A dark flap hinge line and panel lines cross the top
-## with two steel actuator fairings over the hinge; bolts line the fins' roots, bright caps
-## run along the fins' top edges and a small lit nav lamp sits high on each fin's outer face
-## (PartShape.glow). Base on -Y (the wing's underside), centred on the wing slab. Collision
+## with two anodised actuator fairings over the hinge; bolts line the fins' roots, carbon
+## fibre caps run along the fins' top edges and a small lit nav lamp sits high on each fin's outer face
+## (PartShape.glow) under a faceted clear lens (PartShape.glass). Base on -Y (the wing's underside), centred on the wing slab. Collision
 ## is the hull of the slab and the fins.
 static func spoiler_wing(span: float = 6.0, chord: float = 1.8, thickness: float = 0.14, fin_h: float = 0.6,
 		trim := Color(0.72, 0.1, 0.08)) -> PartShapes.PartShape:
@@ -8644,14 +8884,14 @@ static func spoiler_wing(span: float = 6.0, chord: float = 1.8, thickness: float
 	for i in 3:
 		var z := lerpf(-c * 0.4, c * 0.4, float(i) / 2.0)
 		k.box(Vector3(span * 0.25, 0.012, 0.06), Vector3(0.0, t + 0.006, z))
-	# The flap: a dark hinge line across the top at 70% chord, two steel actuator fairings
+	# The flap: a dark hinge line across the top at 70% chord, two anodised actuator fairings
 	# over it, and dark panel lines dividing the span in three.
 	var zh := lerpf(-c, c, 0.7)
 	var lw := clampf(chord * 0.008, 0.006, 0.014)
 	k.box(Vector3(span - 0.1, 0.008, lw), Vector3(0.0, t + 0.004, zh))
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(lw, 0.008, chord - bevel - 0.2), Vector3(sx * span / 6.0, t + 0.004, (bevel - 0.04) * 0.5))
-	k.color = DETAIL
+	k.color = ANODISED
 	var fw := clampf(chord * 0.05, 0.03, 0.1)
 	var fh := minf(thickness * 0.45, 0.06)
 	for sx: float in [-1.0, 1.0]:
@@ -8660,14 +8900,14 @@ static func spoiler_wing(span: float = 6.0, chord: float = 1.8, thickness: float
 				Vector3(fx + fw * 0.5, t, zh + chord * 0.12), Vector3(fx - fw * 0.5, t, zh + chord * 0.12)]),
 				PackedVector3Array([Vector3(fx - fw * 0.35, t + fh, zh - chord * 0.08), Vector3(fx + fw * 0.35, t + fh, zh - chord * 0.08),
 				Vector3(fx + fw * 0.35, t + fh, zh + chord * 0.06), Vector3(fx - fw * 0.35, t + fh, zh + chord * 0.06)]))
-	# Bolts along each end fin's root on the wing's top, a bright cap on each fin's top edge.
+	# Bolts along each end fin's root on the wing's top, a carbon cap on each fin's top edge.
 	var br := clampf(chord * 0.012, 0.008, 0.022)
 	for sx: float in [-1.0, 1.0]:
 		k.color = DETAIL
 		for i in 3:
 			var z := lerpf(-c + bevel, c - 0.1, (float(i) + 0.5) / 3.0)
 			_thrusters_bolt(k, Vector3(sx * (w - br * 2.5), t, z), br, 0.008)
-		k.color = TRIM
+		k.color = CARBON
 		var fx := sx * (w + fin_t * 0.5 + 0.005)
 		var z0 := -c + chord * 0.55
 		var z1 := c + chord * 0.25
@@ -8693,8 +8933,15 @@ static func spoiler_wing(span: float = 6.0, chord: float = 1.8, thickness: float
 	var ll := clampf(chord * 0.08, 0.05, 0.16)
 	var ly := t + fin_h - lh * 1.2
 	var lz := c + chord * 0.25 * (ly + t) / (fin_h + 2.0 * t) - ll * 0.8
+	# Each under a faceted clear lens a few millimetres proud (the lamps are white, as the
+	# light strip: one glow colour per part).
+	var gk := MeshKit.new()
 	for sx: float in [-1.0, 1.0]:
-		g.box(Vector3(0.008, lh, ll), Vector3(sx * (w + fin_t + 0.009), ly, lz))
+		g.box(Vector3(0.004, lh, ll), Vector3(sx * (w + fin_t + 0.007), ly, lz))
+		_navlamps_lens(gk, Vector3(sx * (w + fin_t + 0.005), ly, lz), Vector3(sx, 0.0, 0.0), Vector3.BACK,
+				ll * 0.62, lh * 0.62, 0.014)
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.CLEAR
 	shape.glow = g.finish()
 	shape.glow_color = Color(1.0, 0.97, 0.92)
 	return shape
@@ -8792,11 +9039,12 @@ static func bomb_rack(cols: int = 2, rows: int = 2, radius: float = 0.26, length
 
 
 ## The Claymore's dorsal spine: a keel `length` along Z, `width` across its foot and `height`
-## tall, its top narrowed by chamfers, its last quarter tapering down to a low point at +Z;
-## dark ribs `ribs` of them, wrap its top and upper sides, a hair proud. A steel doubler
-## strip and a dark seam run along each side of the foot, a bright cap strip down the
-## ridge, a bolted plate on the blunt front (-Z) and a red-lit anti-collision beacon on the
-## ridge between the first two ribs (PartShape.glow). Base on -Y. Collision is the hull of
+## tall, in the hull's paint, its top narrowed by chamfers, its last quarter tapering down
+## to a low point at +Z; gunmetal ribs, `ribs` of them, wrap its top and upper sides, a hair
+## proud. A gunmetal doubler strip and a dark seam run along each side of the foot, a
+## titanium cap strip down the ridge, a bolted cast plate on the blunt front (-Z) and a
+## red-lit anti-collision beacon (PartShape.glow) on a plastic base on the ridge between the
+## first two ribs, under a faceted red dome lens (PartShape.glass). Base on -Y. Collision is the hull of
 ## the keel.
 static func ribbed_spine(length: float = 10.0, width: float = 0.7, height: float = 0.6, ribs: int = 14) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -8819,7 +9067,7 @@ static func ribbed_spine(length: float = 10.0, width: float = 0.7, height: float
 	k.loft(a, b)
 	k.loft(b, c)
 	# Ribs over the full-height part, each a band round the top and the upper sides.
-	k.color = DARK
+	k.color = GUNMETAL
 	var run := length - taper - 0.3
 	for i in ribs:
 		var z := -hz + 0.15 + run * (float(i) + 0.5) / float(ribs)
@@ -8837,10 +9085,10 @@ static func ribbed_spine(length: float = 10.0, width: float = 0.7, height: float
 			ra.append(Vector3(p.x, p.y, z - 0.07))
 			rb.append(Vector3(p.x, p.y, z + 0.07))
 		k.loft(ra, rb)
-	# A steel doubler strip along each side of the foot, a dark seam above it.
+	# A gunmetal doubler strip along each side of the foot, a dark seam above it.
 	var zf := hz - taper
 	for sx: float in [-1.0, 1.0]:
-		k.color = DETAIL
+		k.color = GUNMETAL
 		k.loft(PackedVector3Array([Vector3(sx * (hw - 0.002), -hh, -hz + 0.02), Vector3(sx * (hw + 0.02), -hh, -hz + 0.02),
 				Vector3(sx * (hw - 0.002), -hh + height * 0.14, -hz + 0.02)]),
 				PackedVector3Array([Vector3(sx * (hw - 0.002), -hh, zf), Vector3(sx * (hw + 0.02), -hh, zf),
@@ -8850,25 +9098,30 @@ static func ribbed_spine(length: float = 10.0, width: float = 0.7, height: float
 		var y := -hh + height * 0.24
 		k.quad(Vector3(x, y - 0.008, -hz + 0.04), Vector3(x, y - 0.008, zf), Vector3(x, y + 0.008, zf), Vector3(x, y + 0.008, -hz + 0.04),
 				Vector3(sx, 0.0, 0.0))
-	# A bright cap strip down the ridge between the ribs, and a bolted end plate on the
-	# blunt front (-Z).
-	k.color = TRIM
+	# A titanium cap strip down the ridge between the ribs, and a bolted cast end plate on
+	# the blunt front (-Z).
+	k.color = AERO_EDGE
 	k.box(Vector3(hw * 0.5, 0.008, zf + hz - 0.08), Vector3(0.0, hh + 0.004, (-hz + zf) * 0.5))
 	var front := PackedVector3Array()
 	for p in section:
 		front.append(Vector3(p.x * 0.8, -hh + (p.y + hh) * 0.8 + 0.02, -hz - 0.004))
-	k.color = DETAIL
+	k.color = CAST
 	k.poly(front, Vector3.FORWARD)
+	k.color = DETAIL
 	for sx: float in [-1.0, 1.0]:
 		for fy: float in [0.3, 0.7]:
 			_gear_bolt(k, Vector3(sx * hw * 0.55, -hh + height * fy * 0.8 + 0.02, -hz - 0.004), Vector3.FORWARD, 0.02, 0.008)
-	# An anti-collision beacon on the ridge near the front: a dark base and a red lens.
+	# An anti-collision beacon on the ridge near the front: a plastic base and a red lens.
 	var bz := -hz + 0.15 + run / float(maxi(ribs, 1))      # between the first two ribs, m
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	k.box(Vector3(hw * 0.4, 0.018, 0.12), Vector3(0.0, hh + 0.017, bz))
 	var g := MeshKit.new()
-	g.box(Vector3(hw * 0.25, 0.012, 0.07), Vector3(0.0, hh + 0.032, bz))
+	g.box(Vector3(hw * 0.25, 0.006, 0.07), Vector3(0.0, hh + 0.029, bz))
+	var gk := MeshKit.new()
+	_navlamps_lens(gk, Vector3(0.0, hh + 0.026, bz), Vector3.UP, Vector3.RIGHT, hw * 0.18, 0.052, 0.022)
 	var shape := PartShapes.PartShape.new()
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.RED
 	shape.mesh = k.finish()
 	shape.glow = g.finish()
 	shape.glow_color = Color(1.0, 0.18, 0.12)
@@ -9292,12 +9545,14 @@ static func _drills_helix(f: int, flights: int, t: float, turn: float, y0: float
 
 
 ## A lift car (the elevators of the Geo Golem, the bay freighter and the Everest): a dark
-## floor `width` by `depth` laid with raised steel tread bars and a hazard band at the
-## open front (-Z), four corner posts, a roof plate in the material colour over a dark
-## frame with a lamp under its middle and a light strip under its front edge, guard rails
-## and kick plates down both sides, a panel across the back with a kick plate, a handrail
-## on standoffs and cross braces over it, and a call panel on the right front post with a
-## screen and two buttons (glow). Stands on -Y. Collision is the box round it.
+## floor `width` by `depth` laid with raised bare-steel tread bars and a hazard band at
+## the open front (-Z), four galvanised corner posts, a roof plate in the material colour
+## over a dark anodised frame with a plastic lamp housing under its middle and a light
+## strip under its front edge, galvanised guard rails and rubber kick plates down both
+## sides, a panel across the back with a kick plate, a chrome handrail on standoffs and
+## galvanised cross braces over it, and a call panel on the right front post (a stainless
+## faceplate, a plastic body) with a screen behind clear cover glass in a stainless bezel and
+## two buttons (glow). Stands on -Y. Collision is the box round it.
 static func lift_car(width: float = 2.0, depth: float = 1.8, height: float = 2.5) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
@@ -9327,40 +9582,43 @@ static func lift_car(width: float = 2.0, depth: float = 1.8, height: float = 2.5
 			var a := Vector3(0.045, 0.0, 0.012) if (i + j) % 2 == 0 else Vector3(0.012, 0.0, 0.045)
 			k.poly(PackedVector3Array([p + Vector3(-a.x, 0, -a.z), p + Vector3(a.x, 0, -a.z), p + Vector3(a.x, 0, a.z),
 					p + Vector3(-a.x, 0, a.z)]), Vector3.UP)
-	# The corner posts.
+	# The corner posts, galvanised.
+	k.color = GALVANISED
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			k.box(Vector3(post, height - floor_t, post), Vector3(sx * (hx - post * 0.5), floor_t * 0.5, sz * (hz - post * 0.5)))
 	# The roof: a plate over a dark frame, a lamp housing under its middle.
 	k.color = Color.WHITE
 	k.box(Vector3(width, roof_t, depth), Vector3(0.0, hy - roof_t * 0.5, 0.0))
-	k.color = DARK
+	k.color = RAIL_DARK
 	k.box(Vector3(width + 0.02, 0.05, depth + 0.02), Vector3(0.0, hy - roof_t - 0.025, 0.0))
 	var lamp_y := hy - roof_t - 0.05
+	k.color = PLASTIC_DARK
 	k.box(Vector3(0.5, 0.04, 0.3), Vector3(0.0, lamp_y - 0.02, 0.0))
 	g.box(Vector3(0.42, 0.006, 0.22), Vector3(0.0, lamp_y - 0.043, 0.0))
-	# Guard rails and kick plates down the sides.
-	k.color = DETAIL
+	# Guard rails (galvanised) and rubber kick plates down the sides.
 	for sx: float in [-1.0, 1.0]:
+		k.color = GALVANISED
 		for y: float in [-hy + 0.55, -hy + 1.05]:
 			k.box(Vector3(0.05, 0.05, depth - 2.0 * post), Vector3(sx * (hx - post * 0.5), y, 0.0))
+		k.color = TREAD
 		k.box(Vector3(0.03, 0.2, depth - 2.0 * post), Vector3(sx * (hx - post * 0.5), fy + 0.1, 0.0))
 	# The back: a panel, a dark rail along its top, a kick plate and a handrail on its inside.
 	var back_top := fy + height * 0.45
 	k.color = Color.WHITE
 	k.box(Vector3(width - 2.0 * post, height * 0.45, 0.05), Vector3(0.0, fy + height * 0.225, hz - 0.035))
-	k.color = DARK
+	k.color = RAIL_DARK
 	k.box(Vector3(width - 2.0 * post, 0.06, 0.06), Vector3(0.0, back_top, hz - 0.04))
-	k.color = DETAIL
+	k.color = TREAD
 	k.box(Vector3(width - 2.0 * post, 0.2, 0.012), Vector3(0.0, fy + 0.1, hz - 0.066))
-	k.color = TRIM
+	k.color = CHROME
 	var rail_y := minf(fy + 0.95, back_top - 0.12)
 	var rx := hx - post - 0.12
 	_tube(k, Vector3(-rx, rail_y, hz - 0.12), Vector3(rx, rail_y, hz - 0.12), 0.02, 8)
 	for sx: float in [-1.0, 1.0]:
 		_tube(k, Vector3(sx * (rx - 0.08), rail_y, hz - 0.12), Vector3(sx * (rx - 0.08), rail_y, hz - 0.059), 0.012, 6)
 	# Cross braces over the back panel, up to the roof frame.
-	k.color = DETAIL
+	k.color = GALVANISED
 	var by0 := back_top + 0.03
 	var by1 := hy - roof_t - 0.05
 	if by1 - by0 > 0.3:
@@ -9369,13 +9627,19 @@ static func lift_car(width: float = 2.0, depth: float = 1.8, height: float = 2.5
 	# The call panel on the right front post: a bezel, a screen and two buttons (glow).
 	var px := hx - post - 0.06
 	var pz := -hz + post * 0.5
-	k.color = DETAIL
+	k.color = STAINLESS
 	k.box(Vector3(0.135, 0.315, 0.03), Vector3(px, 0.0, pz + 0.008))
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	k.box(Vector3(0.12, 0.3, 0.04), Vector3(px, 0.0, pz))
 	g.box(Vector3(0.08, 0.05, 0.006), Vector3(px, 0.08, pz - 0.023))
 	for y: float in [-0.02, -0.075]:
 		g.box(Vector3(0.025, 0.025, 0.006), Vector3(px, y, pz - 0.023))
+	# A stainless bezel round the screen, standing proud of it, for the cover glass to sit in.
+	k.color = STAINLESS
+	var bz := pz - 0.025                                    # the bezel's centre, m
+	for sy: float in [-1.0, 1.0]:
+		k.box(Vector3(0.106, 0.013, 0.01), Vector3(px, 0.08 + sy * 0.0315, bz))
+		k.box(Vector3(0.013, 0.05, 0.01), Vector3(px + sy * 0.0465, 0.08, bz))
 	# The light strip under the roof's front edge.
 	g.box(Vector3(width - 0.3, 0.025, 0.05), Vector3(0.0, hy - roof_t - 0.065, -hz + 0.1))
 	var shape := PartShapes.PartShape.new()
@@ -9386,20 +9650,29 @@ static func lift_car(width: float = 2.0, depth: float = 1.8, height: float = 2.5
 	shape.collision = col
 	shape.glow = g.finish()
 	shape.glow_color = Color(1.0, 0.82, 0.55)
+	# The call panel's cover glass over the screen, a hair proud of it, inside the bezel.
+	var gk := MeshKit.new()
+	gk.color = Color.WHITE
+	var gz := pz - 0.0275
+	gk.quad(Vector3(px - 0.042, 0.052, gz), Vector3(px + 0.042, 0.052, gz), Vector3(px + 0.042, 0.108, gz),
+			Vector3(px - 0.042, 0.108, gz), Vector3.FORWARD)
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.CLEAR
 	return shape
 
 
 ## The rotating ore detector on the Geo Golem's roof (and the sensor heads of the Mule and
-## the warships): a dark rotor base with a bolt ring, a bright slewing ring and a post with
-## a dark collar, a flattened six-sided head in the material colour with a dark band, a
-## glowing yellow eye in a dark bezel on its front (-Z), vent slats on its back
-## and a bolted cap with a small mast and knob on top. `radius` is the head's; base on -Y.
+## the warships): a cast iron rotor base with a bolt ring, a bright slewing ring and a
+## galvanised post with a rubber collar seal, a flattened six-sided head in the material
+## colour with a dark band, a glowing yellow eye in a plastic bezel on its front (-Z), vent
+## slats on its back and a bolted anodised cap with a small anodised mast and a plastic knob
+## on top. `radius` is the head's; base on -Y.
 static func detector_head(radius: float = 0.45, height: float = 0.9) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var y0 := -height * 0.5
 	var base_t := height * 0.14
 	var yb := y0 + base_t
-	k.color = DARK
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, y0), Vector2(radius * 0.9, y0), Vector2(radius * 0.8, yb),
 			Vector2(0.0, yb)]), 16)
 	# Bolts round the base's top, a bright slewing ring round the post's foot.
@@ -9413,10 +9686,10 @@ static func detector_head(radius: float = 0.45, height: float = 0.9) -> PartShap
 	k.lathe(PackedVector2Array([Vector2(radius * 0.2, yb), Vector2(radius * 0.4, yb), Vector2(radius * 0.4, yb + ring_t * 0.6),
 			Vector2(radius * 0.34, yb + ring_t), Vector2(radius * 0.2, yb + ring_t)]), 16)
 	var p1 := yb + height * 0.28
-	k.color = DETAIL
+	k.color = GALVANISED
 	k.lathe(PackedVector2Array([Vector2(0.0, yb), Vector2(radius * 0.22, yb), Vector2(radius * 0.22, p1),
 			Vector2(0.0, p1)]), 10)
-	k.color = DARK
+	k.color = RUBBER
 	var cy := lerpf(yb + ring_t, p1, 0.55)
 	k.lathe(PackedVector2Array([Vector2(radius * 0.21, cy - height * 0.03), Vector2(radius * 0.26, cy - height * 0.025),
 			Vector2(radius * 0.26, cy + height * 0.025), Vector2(radius * 0.21, cy + height * 0.03)]), 10)
@@ -9432,19 +9705,21 @@ static func detector_head(radius: float = 0.45, height: float = 0.9) -> PartShap
 	# 30 + 60 n degrees; -Z is the face at 270), vent slats on the +Z face.
 	var face_d := radius * cos(PI / 6.0)
 	var eye_y := mid + height * 0.03
+	k.color = PLASTIC_DARK
 	k.box(Vector3(radius * 0.6, height * 0.15, 0.02), Vector3(0.0, eye_y, -face_d - 0.008))
+	k.color = DARK
 	for i in 3:
 		k.box(Vector3(radius * 0.5, height * 0.025, 0.016),
 				Vector3(0.0, lerpf(p1 + height * 0.12, head1 - height * 0.12, float(i) / 2.0), face_d + 0.007))
 	# A bolted cap on top, the mast standing on it with a knob at its tip.
 	var cap_t := height * 0.03
-	k.color = DETAIL
+	k.color = ANODISED
 	k.lathe(PackedVector2Array([Vector2(0.0, head1 - 0.002), Vector2(radius * 0.48, head1 - 0.002), Vector2(radius * 0.44, head1 + cap_t),
 			Vector2(0.0, head1 + cap_t)]), 6)
 	var top := y0 + height
 	var mast := Vector3(radius * 0.3, 0.0, radius * 0.2)
 	_tube(k, mast + Vector3(0.0, head1 + cap_t, 0.0), mast + Vector3(0.0, top - 0.04, 0.0), 0.016, 6)
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	k.box(Vector3(0.04, 0.04, 0.04), mast + Vector3(0.0, top - 0.02, 0.0))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
@@ -9890,8 +10165,8 @@ static func _quarters_plant(k: MeshKit, at: Vector3, r: float, tall: float, leaf
 
 ## A hazard panel (the red and white bands round the Superhawk's hangar and over its bridge):
 ## a thin backing plate `length` along X and `height` tall in the material colour (white),
-## a raised steel border round its front (-Z) with dark bolts along its top and bottom
-## bars, and slanted `stripe` stripes standing a hair proud inside it, cut off
+## a raised galvanised border round its front (-Z) with blackened bolts along its top and
+## bottom bars, and slanted `stripe` stripes standing a hair proud inside it, cut off
 ## square at both ends so the pattern runs border to border. Back +Z on the wall.
 static func hazard_band(length: float = 3.0, height: float = 0.5, thickness: float = 0.06,
 		stripe := Color(0.78, 0.12, 0.1)) -> PartShapes.PartShape:
@@ -9903,7 +10178,7 @@ static func hazard_band(length: float = 3.0, height: float = 0.5, thickness: flo
 	k.color = Color.WHITE
 	k.box(Vector3(length, height, thickness - 0.006), Vector3(0.0, 0.0, 0.003))
 	# The border: four bars standing proud of the front, a hair inside the plate's edges.
-	k.color = DETAIL
+	k.color = GALVANISED
 	var bz := Vector2(-hz - 0.004, -hz + 0.012)   # its front and back (z)
 	var bc := (bz.x + bz.y) * 0.5
 	var bd := bz.y - bz.x
@@ -9942,7 +10217,7 @@ static func hazard_band(length: float = 3.0, height: float = 0.5, thickness: flo
 			b.append(Vector3(p.x, p.y, -hz + 0.01))
 		k.loft(a, b)
 	# Bolts along the border's top and bottom bars, one in each corner.
-	k.color = DARK
+	k.color = FLANGE_BOLT
 	var bs := f * 0.45
 	var nb := maxi(int(length / 0.5) + 1, 2)
 	for i in nb:
@@ -10082,10 +10357,10 @@ static func turbine_engine(radius: float = 1.1, length: float = 1.6, body := Col
 
 ## A raised vent hood (the white boxes at the corners of the Pioneer's roof): a chamfered
 ## block `width` across X, `length` along Z and `height` tall in the material colour on a
-## steel foot flange, two dark panel seams across its top and down its sides, a bolted
-## access plate on each side, a V-shaped chevron of two steel bars standing proud of its
+## galvanised foot flange, two dark panel seams across its top and down its sides, a bolted
+## access plate on each side, a V-shaped chevron of two anodised bars standing proud of its
 ## top (pointing -Z) and a framed intake across its -Z end: a dark slot behind a mesh of
-## bars. Base on -Y.
+## galvanised bars. Base on -Y.
 static func roof_hood(width: float = 1.6, length: float = 1.2, height: float = 0.4) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := Vector3(width, height, length) * 0.5
@@ -10093,7 +10368,7 @@ static func roof_hood(width: float = 1.6, length: float = 1.2, height: float = 0
 	# The foot flange, standing out a little all round; the hood sits on it.
 	var ft := minf(0.04, height * 0.12)
 	var fo := 0.016
-	k.color = DETAIL
+	k.color = GALVANISED
 	k.box(Vector3(width + fo * 2.0, ft, length + fo * 2.0), Vector3(0.0, -h.y + ft * 0.5, 0.0))
 	var yb := -h.y + ft - 0.002
 	var outline := PackedVector2Array([Vector2(-h.z, yb), Vector2(h.z, yb), Vector2(h.z, h.y - c),
@@ -10124,7 +10399,7 @@ static func roof_hood(width: float = 1.6, length: float = 1.2, height: float = 0
 				k.box(Vector3(0.006, bs, bs), pc + Vector3(sx * (h.x + 0.009), dy * (py - bs), dz * (pz - bs)))
 	# The chevron: two solid bars from the back corners meeting at the front middle, standing
 	# proud of the top (the second a hair lower so their tops don't fight where they cross).
-	k.color = TRIM
+	k.color = ANODISED
 	var bar := minf(0.07, width * 0.06)
 	var tip := Vector3(0.0, h.y, -h.z + c * 2.0 + 0.12)
 	for sx: float in [-1.0, 1.0]:
@@ -10136,13 +10411,13 @@ static func roof_hood(width: float = 1.6, length: float = 1.2, height: float = 0
 		k.loft(PackedVector3Array([back - across + y0, back + across + y0, back + across + y1, back - across + y1]),
 				PackedVector3Array([tip - across + y0, tip + across + y0, tip + across + y1, tip - across + y1]))
 	# The intake across the front end: a dark slot behind a mesh of upright bars and one bar
-	# across, in a steel frame standing proud of the end face.
+	# across, in a galvanised frame standing proud of the end face.
 	var slot := Vector2(width * 0.7, height * 0.3)
 	var sc := Vector3(0.0, -h.y + height * 0.4, -h.z)
 	var f := clampf(slot.y * 0.18, 0.015, 0.03)
 	k.color = DARK
 	k.box(Vector3(slot.x, slot.y, 0.012), sc + Vector3(0.0, 0.0, -0.004))
-	k.color = DETAIL
+	k.color = GALVANISED
 	for sy: float in [-1.0, 1.0]:
 		k.box(Vector3(slot.x + f * 2.0, f, 0.021), sc + Vector3(0.0, sy * (slot.y + f) * 0.5, -0.0095))
 	for sx: float in [-1.0, 1.0]:
@@ -10243,9 +10518,9 @@ static func lever_stand(count: int = 2, height: float = 1.2, pitch: float = 0.3,
 
 ## The long top beam of a K1 pod: a chamfered square bar `width` across X, `height` tall and
 ## `length` along Z in the material colour, dark seams across it every metre or so, a bolted
-## access panel with a slot handle on each side of every bay between them, a dark foot strip
-## along both lower edges, a thin yellow-green trim line along both top edges and a round
-## end collar with a bolt ring at each end (the bigger one at +Z). Base on -Y; every piece
+## access panel with a slot handle on each side of every bay between them, a rubber seal
+## strip along both lower edges, a thin yellow-green enamel trim line along both top edges
+## and a round galvanised end collar with a bolt ring at each end (the bigger one at +Z). Base on -Y; every piece
 ## is a hair proud of the bar it sits on.
 static func pod_boom(length: float = 12.0, width: float = 1.4, height: float = 0.8) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -10274,12 +10549,12 @@ static func pod_boom(length: float = 12.0, width: float = 1.4, height: float = 0
 		var z := lerpf(z0, z1, float(i + 1) / float(seams + 1))
 		k.loft(ring.call(seam, z - 0.025), ring.call(seam, z + 0.025))
 	# Trim lines along the top edges.
-	k.color = Color(0.78, 0.85, 0.2)
+	k.color = AERO_LIME
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.04, 0.012, z1 - z0 - 0.3), Vector3(sx * (hx - c - 0.05), hy + 0.006, (z0 + z1) * 0.5))
-	# A dark foot strip along each lower edge, and a bolted access panel on each side of
+	# A rubber seal strip along each lower edge, and a bolted access panel on each side of
 	# every bay between the seams (a hair proud, a dark slot handle in it).
-	k.color = DARK
+	k.color = RUBBER
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.02, 0.047, z1 - z0 - 0.04), Vector3(sx * (hx + 0.008), -hy + 0.0265, (z0 + z1) * 0.5))
 	var bays := seams + 1
@@ -10304,7 +10579,7 @@ static func pod_boom(length: float = 12.0, width: float = 1.4, height: float = 0
 		var first := k.verts.size()
 		var r := minf(hx, hy) * (0.9 if end == 1 else 0.7)
 		var cl := collar if end == 1 else collar * 0.6
-		k.color = DETAIL
+		k.color = GALVANISED
 		k.lathe(PackedVector2Array([Vector2(0.0, 0.0), Vector2(r, 0.0), Vector2(r, cl * 0.7), Vector2(r * 0.8, cl),
 				Vector2(0.0, cl)]), 20)
 		k.color = DARK
@@ -11509,10 +11784,10 @@ static func banded_tank(radius: float = 1.2, length: float = 5.0) -> PartShapes.
 
 
 ## A sensor probe on a ship's nose (the Mule's long rod out of its cab, the warships' and
-## the Endeavor's probes): a chamfered dark mount at -Y with four bolts, a round housing in
-## the material colour with a dark band, four small strakes and a shoulder up to a bright
-## collar, a thin steel rod out to +Y with two dark collars, a flared sensor sleeve and a
-## small red lit tip (PartShape.glow). `length` is the whole part along Y.
+## the Endeavor's probes): a chamfered cast iron mount at -Y with four bolts, a round housing
+## in the material colour with a dark band, four small anodised strakes and a shoulder up to
+## a bright collar, a thin carbon fibre rod out to +Y with two anodised collars, a flared
+## titanium sensor sleeve and a small red lit tip (PartShape.glow). `length` is the whole part along Y.
 static func nose_probe(length: float = 1.6, radius: float = 0.14) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := length * 0.5
@@ -11520,7 +11795,7 @@ static func nose_probe(length: float = 1.6, radius: float = 0.14) -> PartShapes.
 	var house := minf(0.35, length * 0.25)
 	var yb := -h + base_t
 	# A chamfered dark mount with a bolt in each corner.
-	k.color = DARK
+	k.color = CAST
 	k.loft(_chamfer_ring(radius * 1.5, -h, radius * 0.4), _chamfer_ring(radius * 1.5, yb, radius * 0.4))
 	k.color = DETAIL
 	for sx: float in [-1.0, 1.0]:
@@ -11536,7 +11811,7 @@ static func nose_probe(length: float = 1.6, radius: float = 0.14) -> PartShapes.
 	var by := yb + house * 0.3
 	k.lathe(PackedVector2Array([Vector2(radius * 0.96, by - 0.022), Vector2(radius * 1.03, by - 0.022),
 			Vector2(radius * 1.03, by + 0.022), Vector2(radius * 0.96, by + 0.022)]), 14)
-	k.color = DETAIL
+	k.color = ANODISED
 	var fin_lo := by + 0.03
 	for i in 4:
 		var a := PI * 0.25 + PI * 0.5 * float(i)
@@ -11553,15 +11828,15 @@ static func nose_probe(length: float = 1.6, radius: float = 0.14) -> PartShapes.
 	k.color = TRIM
 	k.lathe(PackedVector2Array([Vector2(rod * 0.9, yt - 0.01), Vector2(rod * 2.6, yt - 0.01), Vector2(rod * 2.2, yt + 0.03),
 			Vector2(rod * 0.9, yt + 0.03)]), 10)
-	k.color = Color(0.72, 0.74, 0.76)
+	k.color = CARBON
 	k.lathe(PackedVector2Array([Vector2(0.0, r0), Vector2(rod, r0), Vector2(rod, tip), Vector2(0.0, tip)]), 10)
-	k.color = DARK
+	k.color = ANODISED
 	for f: float in [0.35, 0.7]:
 		var y := lerpf(r0, tip, f)
 		k.lathe(PackedVector2Array([Vector2(rod * 0.95, y - 0.03), Vector2(rod * 1.8, y - 0.03),
 				Vector2(rod * 1.8, y + 0.03), Vector2(rod * 0.95, y + 0.03)]), 10)
-	# The sensor head: a flared steel sleeve under the lit tip.
-	k.color = DETAIL
+	# The sensor head: a flared titanium sleeve under the lit tip.
+	k.color = WPN_TIP
 	k.lathe(PackedVector2Array([Vector2(rod * 0.95, tip - 0.1), Vector2(rod * 1.15, tip - 0.1), Vector2(rod * 1.6, tip - 0.03),
 			Vector2(rod * 1.6, tip), Vector2(rod * 0.95, tip)]), 10)
 	var pts := PackedVector3Array()
@@ -11833,10 +12108,11 @@ static func drill_arm(length: float = 4.2, width: float = 1.3, height: float = 0
 
 
 ## A big ore detector (the round toothed drum on the Titan's roof, the Novaris' smaller one):
-## an octagonal plinth in the material colour with a dark skirt and bolts on its faces, a
-## steel drum `radius` across with a ring of upright ribs round its side under a bright top
-## rim and spokes across its top, and a dark raised hub with a bolt ring round a steel boss
-## and a yellow lit ring (PartShape.glow). Stands on -Y; `height` the whole part.
+## an octagonal plinth in the material colour with a rubber skirt and bolts on its faces, a
+## galvanised drum `radius` across with a ring of upright anodised ribs (pale and dark in
+## turn) round its side under a bright top rim and galvanised spokes across its top, and a
+## cast iron raised hub with a bolt ring round a ceramic sensor window and a yellow lit ring
+## (PartShape.glow). Stands on -Y; `height` the whole part.
 static func ore_detector(radius: float = 1.3, height: float = 0.9) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
@@ -11847,7 +12123,7 @@ static func ore_detector(radius: float = 1.3, height: float = 0.9) -> PartShapes
 			Vector2(0.0, -h + plinth_t)]), 8)
 	# A dark skirt band round the plinth's foot and two bolts on each of its faces (the
 	# eight-sided lathe puts a corner at 0 degrees, so faces centre on 22.5 + 45 n).
-	k.color = DARK
+	k.color = RUBBER
 	var skirt := minf(0.05, plinth_t * 0.22)
 	k.lathe(PackedVector2Array([Vector2(plinth_r * 0.95, -h), Vector2(plinth_r + 0.006, -h),
 			Vector2(plinth_r + 0.006, -h + skirt), Vector2(plinth_r * 0.95, -h + skirt)]), 8)
@@ -11864,22 +12140,22 @@ static func ore_detector(radius: float = 1.3, height: float = 0.9) -> PartShapes
 	var d0 := -h + plinth_t
 	var d1 := h - height * 0.16
 	var dr := radius * 0.86
-	k.color = Color(0.5, 0.51, 0.53)
+	k.color = GALVANISED
 	k.lathe(PackedVector2Array([Vector2(0.0, d0), Vector2(dr, d0), Vector2(dr, d1), Vector2(0.0, d1)]), 32)
 	var ribs := 20
 	for i in ribs:
 		var a := TAU * float(i) / float(ribs)
 		var out := Vector3(cos(a), 0.0, sin(a))
-		k.color = Color(0.7, 0.71, 0.73) if i % 2 == 0 else Color(0.42, 0.43, 0.45)
+		k.color = WPN_RIB_PALE if i % 2 == 0 else WPN_RIB_DARK
 		var rr := dr + (radius - dr) * 0.5
 		k.strut(out * rr + Vector3(0.0, d0 + 0.03, 0.0), out * rr + Vector3(0.0, d1 - 0.01, 0.0), radius - dr)
-		k.color = Color(0.62, 0.63, 0.65)
+		k.color = GALVANISED
 		k.strut(out * radius * 0.34 + Vector3(0.0, d1 + 0.025, 0.0), out * dr * 0.94 + Vector3(0.0, d1 + 0.025, 0.0), 0.05)
 	# A bright rim round the drum's top edge, over the ribs' heads.
 	k.color = TRIM
 	k.lathe(PackedVector2Array([Vector2(dr * 0.95, d1 - 0.004), Vector2(radius, d1 - 0.004), Vector2(radius, d1 + 0.02),
 			Vector2(radius * 0.97, d1 + 0.035), Vector2(dr * 0.95, d1 + 0.035)]), 20)
-	k.color = DARK
+	k.color = CAST
 	k.lathe(PackedVector2Array([Vector2(0.0, d1), Vector2(radius * 0.32, d1), Vector2(radius * 0.26, h),
 			Vector2(0.0, h)]), 16)
 	# A bolt ring on the hub's crown round a steel sensor boss.
@@ -11887,6 +12163,7 @@ static func ore_detector(radius: float = 1.3, height: float = 0.9) -> PartShapes
 	for i in 8:
 		var a := TAU * (float(i) + 0.5) / 8.0
 		_thrusters_bolt(k, Vector3(cos(a) * radius * 0.2, h, sin(a) * radius * 0.2), clampf(radius * 0.018, 0.01, 0.025), 0.01)
+	k.color = WPN_RADOME
 	k.lathe(PackedVector2Array([Vector2(0.0, h - 0.002), Vector2(radius * 0.11, h - 0.002), Vector2(radius * 0.09, h + 0.016),
 			Vector2(0.0, h + 0.016)]), 12)
 	var shape := PartShapes.PartShape.new()
@@ -12700,10 +12977,12 @@ static func landing_pad(width: float = 6.0, length: float = 4.0, height: float =
 # --- Endeavor parts (v2) -----------------------------------------------------------------
 ## A triangular armour fin (the dark blades down the Endeavor's habitat flanks): a blade
 ## `thickness` thick (X) whose foot runs `length` along Z on -Y, rising to `height` at its
-## aft (+Z) end, its sloped edge capped with a pale strip and a dark inset panel on both
-## faces standing a few millimetres proud on a steel border bolted at its corners; a pale
-## cap down the aft edge, a bolted doubler strip along the foot on both faces, a panel line,
-## and a red-lit navigation lamp in a dark housing at the top aft corner (PartShape.glow).
+## aft (+Z) end, in the hull's paint, its sloped edge capped with a titanium strip and a
+## carbon-fibre inset panel on both faces standing a few millimetres proud on a gunmetal
+## border bolted at its corners; an anodised cap down the aft edge, a bolted gunmetal
+## doubler strip along the foot on both faces, a rubber root seal filleting the foot on both
+## faces, a panel line, and a red-lit navigation lamp (PartShape.glow) in a moulded plastic
+## housing at the top aft corner under a faceted red lens (PartShape.glass).
 ## Stands on -Y.
 static func fin_blade(length: float = 2.4, height: float = 1.6, thickness: float = 0.22) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -12721,16 +13000,17 @@ static func fin_blade(length: float = 2.4, height: float = 1.6, thickness: float
 	k.loft(a, b)
 	# A pale cap along the sloped edge, standing proud of it.
 	var slope_n := Vector3(0.0, length, -height).normalized()
-	k.color = TRIM
+	k.color = AERO_EDGE
 	var c0 := Vector3(0.0, -hh, -hl) + slope_n * 0.012
 	var c1 := Vector3(0.0, hh, hl) + slope_n * 0.012
 	var cap_a := PackedVector3Array([c0 + Vector3(-ht * 0.7, 0, 0), c1 + Vector3(-ht * 0.7, 0, 0)])
 	var cap_b := PackedVector3Array([c0 + Vector3(ht * 0.7, 0, 0), c1 + Vector3(ht * 0.7, 0, 0)])
 	k.quad(cap_a[0], cap_b[0], cap_b[1], cap_a[1], slope_n)
-	# A bright cap down the aft edge too, and a dark seam where the two caps meet the blade.
+	# An anodised cap down the aft edge.
+	k.color = ANODISED
 	k.box(Vector3(thickness * 0.7, height - 0.1, 0.012), Vector3(0.0, -0.05, hl + 0.006))
-	# Dark inset panels on both faces, a smaller triangle inside the blade, on a steel
-	# border, bolted at its corners.
+	# Carbon-fibre inset panels on both faces, a smaller triangle inside the blade, on a
+	# gunmetal border, bolted at its corners.
 	var p0 := Vector2(-hl + length * 0.42, -hh + 0.16)
 	var p1 := Vector2(hl - 0.14, -hh + 0.16)
 	var p2 := Vector2(hl - 0.14, hh - height * 0.3)
@@ -12738,10 +13018,10 @@ static func fin_blade(length: float = 2.4, height: float = 1.6, thickness: float
 	for sx: float in [-1.0, 1.0]:
 		var n := Vector3(sx, 0.0, 0.0)
 		var outer := [ctr + (p0 - ctr) * 1.12, ctr + (p1 - ctr) * 1.12, ctr + (p2 - ctr) * 1.12]
-		k.color = DETAIL
+		k.color = GUNMETAL
 		var x := sx * (ht + 0.002)
 		k.tri(Vector3(x, outer[0].y, outer[0].x), Vector3(x, outer[1].y, outer[1].x), Vector3(x, outer[2].y, outer[2].x), n)
-		k.color = DARK
+		k.color = CARBON
 		x = sx * (ht + 0.004)
 		k.tri(Vector3(x, p0.y, p0.x), Vector3(x, p1.y, p1.x), Vector3(x, p2.y, p2.x), n)
 		k.color = DETAIL
@@ -12750,6 +13030,7 @@ static func fin_blade(length: float = 2.4, height: float = 1.6, thickness: float
 			_gear_bolt(k, Vector3(sx * (ht + 0.002), q.y, q.x), n, 0.022, 0.01)
 		# The root doubler: a wedge strip along the foot (from where the blade is tall
 		# enough), bolted.
+		k.color = GUNMETAL
 		var dh := 0.08
 		var dz0 := -hl + length * dh / height + 0.06
 		k.loft(PackedVector3Array([Vector3(sx * (ht - 0.002), -hh, dz0), Vector3(sx * (ht + 0.018), -hh, dz0),
@@ -12763,12 +13044,26 @@ static func fin_blade(length: float = 2.4, height: float = 1.6, thickness: float
 		x = sx * (ht + 0.002)
 		k.quad(Vector3(x, -hh + dh + 0.03, zl - 0.008), Vector3(x, -hh + dh + 0.03, zl + 0.008), Vector3(x, ytop, zl + 0.008),
 				Vector3(x, ytop, zl - 0.008), n)
-	# The navigation light at the top aft corner: a dark housing, a red lens facing aft.
-	k.color = DARK
+	# The root seal: a rubber fillet along each face where the blade meets the hull plate,
+	# from just behind the sharp leading end to the aft edge.
+	k.color = RUBBER
+	for sx: float in [-1.0, 1.0]:
+		var s0 := PackedVector3Array([Vector3(sx * (ht - 0.001), -hh - 0.002, -hl + 0.05), Vector3(sx * (ht + 0.03), -hh - 0.002, -hl + 0.05),
+				Vector3(sx * (ht - 0.001), -hh + 0.012, -hl + 0.05)])
+		var s1 := PackedVector3Array([Vector3(sx * (ht - 0.001), -hh - 0.002, hl - 0.004), Vector3(sx * (ht + 0.03), -hh - 0.002, hl - 0.004),
+				Vector3(sx * (ht - 0.001), -hh + 0.012, hl - 0.004)])
+		k.loft(s0, s1)
+	# The navigation light at the top aft corner: a plastic housing, the red lamp facing aft
+	# under a faceted red lens.
+	k.color = PLASTIC_DARK
 	k.box(Vector3(thickness + 0.016, 0.1, 0.13), Vector3(0.0, hh - 0.07, hl - 0.057))
 	var g := MeshKit.new()
-	g.box(Vector3(thickness * 0.6, 0.06, 0.012), Vector3(0.0, hh - 0.07, hl + 0.014))
+	g.box(Vector3(thickness * 0.6, 0.06, 0.004), Vector3(0.0, hh - 0.07, hl + 0.010))
+	var gk := MeshKit.new()
+	_navlamps_lens(gk, Vector3(0.0, hh - 0.07, hl + 0.008), Vector3.BACK, Vector3.RIGHT, thickness * 0.4, 0.042, 0.016)
 	var shape := PartShapes.PartShape.new()
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.RED
 	shape.mesh = k.finish()
 	shape.volume = length * height * 0.5 * thickness
 	var col := ConvexPolygonShape3D.new()
@@ -12784,8 +13079,9 @@ static func fin_blade(length: float = 2.4, height: float = 1.6, thickness: float
 ## A ring spoke (the arms that hold the Endeavor's gravity rings to their hubs): a box
 ## girder `length` long along X, `height` tall and `width` wide: side webs between top and
 ## bottom flanges standing a little proud, octagonal dark lightening holes with steel lips
-## down both webs between upright stiffeners, bolted end plates, a grating tread along its
-## top and a cable tray on hangers along its +Z side with three cables strapped in it.
+## down both webs between galvanised upright stiffeners, bolted galvanised end plates, a
+## galvanised tread along its top with rubber anti-slip slats, and a galvanised cable tray
+## on hangers along its +Z side with three PVC-jacketed cables in rubber cleats.
 ## Collision is the girder's box (its top is the tread, players walk it).
 static func spoke_beam(length: float = 3.0, width: float = 1.2, height: float = 0.9) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -12813,7 +13109,7 @@ static func spoke_beam(length: float = 3.0, width: float = 1.2, height: float = 
 		var x := -hl + length * (float(i) + 0.5) / float(holes)
 		for sz: float in [-1.0, 1.0]:
 			_sensors_hole(k, Vector3(x, 0.0, bz + sz * web), sz, hx, hy, hc, minf(0.04, hy * 0.2))
-	k.color = DETAIL
+	k.color = GALVANISED
 	for i in holes + 1:
 		var x := clampf(-hl + length * float(i) / float(holes), -hl + 0.04, hl - 0.04)
 		for sz: float in [-1.0, 1.0]:
@@ -12821,9 +13117,9 @@ static func spoke_beam(length: float = 3.0, width: float = 1.2, height: float = 
 	# Bolted end plates.
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.012, height - 2.0 * ft - 0.02, body_w + 0.012), Vector3(sx * (hl - 0.004), 0.0, bz))
-	# The grating tread on top: dark slats across a pale frame.
+	# The grating tread on top: rubber anti-slip slats across a galvanised frame.
 	k.box(Vector3(length - 0.1, 0.03, body_w - 0.12), Vector3(0.0, hh + 0.015, bz))
-	k.color = DARK
+	k.color = TREAD
 	var slats := maxi(int(length / 0.18), 2)
 	for i in slats:
 		var x := -hl + 0.1 + (length - 0.2) * (float(i) + 0.5) / float(slats)
@@ -12832,7 +13128,7 @@ static func spoke_beam(length: float = 3.0, width: float = 1.2, height: float = 
 	# with straps round them at each hanger.
 	var tz := hw - tray * 0.5
 	var ty := -hh * 0.3
-	k.color = DETAIL
+	k.color = GALVANISED
 	k.box(Vector3(length - 0.06, 0.03, tray), Vector3(0.0, ty, tz))
 	k.box(Vector3(length - 0.06, 0.12, 0.02), Vector3(0.0, ty + 0.06, hw - 0.01))
 	k.box(Vector3(length - 0.06, 0.06, 0.012), Vector3(0.0, ty + 0.045, hw - tray + 0.006))
@@ -12840,14 +13136,14 @@ static func spoke_beam(length: float = 3.0, width: float = 1.2, height: float = 
 	var web_z := bz + web
 	for i in hangers:
 		var x := lerpf(-hl + 0.12, hl - 0.12, float(i) / float(hangers - 1))
-		k.color = DETAIL
+		k.color = GALVANISED
 		k.box(Vector3(0.04, 0.12, hw - tray + 0.01 - web_z), Vector3(x, ty + 0.03, (web_z + hw - tray + 0.01) * 0.5))
 		k.box(Vector3(0.04, 0.02, tray + 0.03), Vector3(x, ty - 0.025, tz - 0.015))
-		k.color = DARK
+		k.color = RUBBER
 		k.box(Vector3(0.025, 0.09, tray - 0.03), Vector3(x, ty + 0.06, tz))
 	var cable_r := 0.022
 	var cz: Array[float] = [tz - 0.04, tz, tz + 0.04]
-	var cable_cols: Array[Color] = [Color(0.12, 0.13, 0.15), DARK, Color(0.2, 0.22, 0.26)]
+	var cable_cols: Array[Color] = [PNL_CABLE, RUBBER, PNL_CABLE_BLUE]
 	for i in 3:
 		k.color = cable_cols[i]
 		_tube(k, Vector3(-hl + 0.05, ty + 0.015 + cable_r, cz[i]), Vector3(hl - 0.05, ty + 0.015 + cable_r, cz[i]), cable_r, 6)
@@ -12988,13 +13284,13 @@ static func sleep_pod(length: float = 2.2, width: float = 0.95, height: float = 
 
 # --- Novaris parts (v2) ------------------------------------------------------------------
 ## A patch of scaled armour (the overlapping grey and white tiles that cover the Novaris'
-## roof and stepped flanks): a dark backing plate `width` (X) by `length` (Z), `rows` rows
+## roof and stepped flanks): a dense cast backing plate `width` (X) by `length` (Z), `rows` rows
 ## of tiles across it, each row `cols` tiles wide. Every tile is a wedge whose front (-Z)
 ## edge sits low and whose aft edge stands `rise` proud, so the rows step like shingles;
 ## alternate rows are offset half a tile so the seams stagger. Tiles take the material
 ## colour; with `trim` set (alpha > 0) the outermost +X tile of every row is that colour
-## (the blue edging). Each tile's proud aft lip is bevelled and a rivet sits in its low
-## front. Face +Y; collision is the panel's box.
+## (the blue edging). Each tile's proud aft lip is bevelled and a blackened rivet sits in
+## its low front. Face +Y; collision is the panel's box.
 static func shingle_panel(width: float = 2.4, length: float = 3.0, rows: int = 4, cols: int = 3,
 		trim := Color(0, 0, 0, 0), rise: float = 0.09) -> PartShapes.PartShape:
 	var k := MeshKit.new()
@@ -13004,7 +13300,7 @@ static func shingle_panel(width: float = 2.4, length: float = 3.0, rows: int = 4
 	var low := 0.025
 	var total := base + low + rise
 	var y0 := -total * 0.5
-	k.color = DARK
+	k.color = PNL_ARMOUR_BACK
 	k.box(Vector3(width, base, length), Vector3(0.0, y0 + base * 0.5, 0.0))
 	var seam := 0.025
 	var pitch := length / float(rows)
@@ -13034,7 +13330,7 @@ static func shingle_panel(width: float = 2.4, length: float = 3.0, rows: int = 4
 			k.color = trim if (trim.a > 0.0 and c == cuts.size() - 2) else Color.WHITE
 			_prism_x(k, outline, xa, xb)
 			# A rivet in the tile's low front, just behind the row ahead's lip.
-			k.color = DETAIL
+			k.color = FLANGE_BOLT
 			var rz := z0 + minf(0.07, (z1 - z0) * 0.15)
 			_thrusters_bolt(k, Vector3((xa + xb) * 0.5, yb + low + rise * (rz - z0) / (z1 - z0) - 0.003, rz), 0.02, 0.012)
 	var shape := PartShapes.PartShape.new()
@@ -13159,12 +13455,14 @@ const _PURPLE := Color(0.36, 0.2, 0.62)
 
 ## A garage door leaf (the Nexus' two numbered doors, which slide up over the roof to open
 ## the garages in its flank): a slab `width` along X, `height` along Z and `thickness`
-## along Y in the material colour, a dark rim round its +Y face, raised pale panel seams,
-## a purple band across it a little below the middle, the `number` in big raised digits
-## above the band (the first digit purple, the rest white, like the reference's "01"),
-## bolts round the rim, roller brackets on the side edges, a hazard band along the foot
-## (+Z) between two latch blocks with a pull handle over it, stiffening ribs across the
-## inside (-Y) and two lamps in dark housings along the top (-Z) edge (PartShape.glow).
+## along Y in the material colour, a rubber seal round its +Y face, raised satin cover
+## strips over the panel seams, a gloss purple band across it a little below the middle,
+## the `number` in big raised digits above the band (the first digit purple, the rest
+## white, like the reference's "01"), bolts round the rim, galvanised roller brackets with
+## rubber rollers on the side edges, a hazard band along the foot (+Z) between two
+## galvanised latch blocks with a chrome pull handle over it, galvanised stiffening ribs
+## across the inside (-Y) and two lamps in plastic housings along the top (-Z) edge
+## (PartShape.glow).
 ## Face +Y; on a hull side turn it
 ## like a `name_board`: X along the hull, Y out of it, Z down. Collision is its box.
 static func garage_door(width: float = 4.4, height: float = 3.9, number: String = "01",
@@ -13175,8 +13473,8 @@ static func garage_door(width: float = 4.4, height: float = 3.9, number: String 
 	var t := thickness * 0.5
 	k.color = Color.WHITE
 	k.box(Vector3(width, thickness, height))
-	# The dark rim, a hair proud of the face.
-	k.color = DARK
+	# The rubber seal round the rim, a hair proud of the face.
+	k.color = RUBBER
 	var rim := 0.1
 	for s: float in [-1.0, 1.0]:
 		k.box(Vector3(width, 0.012, rim), Vector3(0.0, t + 0.006, s * (hh - rim * 0.5)))
@@ -13187,7 +13485,7 @@ static func garage_door(width: float = 4.4, height: float = 3.9, number: String 
 	var haz_z := hh - rim - 0.04 - haz * 0.5
 	var seam_z0 := -hh + rim + 0.02
 	var seam_z1 := haz_z - haz * 0.5 - 0.04
-	k.color = Color(0.7, 0.71, 0.74)
+	k.color = PNL_SEAM_STRIP
 	for fx: float in [-0.3, 0.3]:
 		k.box(Vector3(0.05, 0.016, seam_z1 - seam_z0), Vector3(fx * width, t + 0.008, (seam_z0 + seam_z1) * 0.5))
 	var rail_z := -hh + height * 0.22
@@ -13195,7 +13493,7 @@ static func garage_door(width: float = 4.4, height: float = 3.9, number: String 
 	# The purple band across the door.
 	var band_z := hh - height * 0.3
 	var band_h := height * 0.09
-	k.color = _PURPLE
+	k.color = PNL_LIVERY_PURPLE
 	k.box(Vector3(width - 2.0 * rim - 0.02, 0.02, band_h), Vector3(0.0, t + 0.01, band_z))
 	# The digits, standing proud over the band's top edge.
 	var cap := height * 0.3
@@ -13205,7 +13503,7 @@ static func garage_door(width: float = 4.4, height: float = 3.9, number: String 
 	var letter_t := 0.07
 	var base_z := band_z - band_h * 0.5 - unit * 0.6   # the digits' feet
 	for i in n:
-		k.color = _PURPLE if i == 0 else Color(0.94, 0.95, 0.96)
+		k.color = PNL_LIVERY_PURPLE if i == 0 else PNL_LIVERY_WHITE
 		var x0 := -pitch * float(n) * 0.5 + pitch * (float(i) + 0.5) - unit * 2.0
 		var parts: Array = _DIGITS.get(number[i], [[0, 0, 4, 6]])
 		for piece: Array in parts:
@@ -13239,28 +13537,28 @@ static func garage_door(width: float = 4.4, height: float = 3.9, number: String 
 	for i in 4:
 		var z := -hh + height * (0.12 + 0.76 * float(i) / 3.0)
 		for s: float in [-1.0, 1.0]:
-			k.color = DETAIL
+			k.color = GALVANISED
 			k.box(Vector3(0.07, 0.04, 0.16), Vector3(s * (hw - rim * 0.5), t + 0.032, z))
-			k.color = DARK
+			k.color = RUBBER
 			k.box(Vector3(0.05, 0.05, 0.07), Vector3(s * (hw - rim * 0.5), t + 0.045, z))
 	# The hazard band along the foot (+Z), a latch block at each end of it, a pull handle over it.
 	_gear_hazard(k, Vector3(0.0, t, haz_z), Vector3.RIGHT, Vector3.BACK, Vector3.UP,
 			Vector2(width - 2.0 * rim - 0.5, haz), haz * 0.9)
-	k.color = DETAIL
+	k.color = GALVANISED
 	for s: float in [-1.0, 1.0]:
 		k.box(Vector3(0.12, 0.04, 0.12), Vector3(s * (hw - rim - 0.12), t + 0.02, haz_z))
-	k.color = DARK
+	k.color = CHROME
 	var pull_z := seam_z1 - 0.1
 	k.box(Vector3(0.5, 0.05, 0.06), Vector3(0.0, t + 0.025, pull_z))
-	k.color = DETAIL
+	k.color = GALVANISED
 	for s: float in [-1.0, 1.0]:
 		k.box(Vector3(0.05, 0.03, 0.08), Vector3(s * 0.2, t + 0.015, pull_z))
 	# Stiffening ribs across the inside face (-Y).
-	k.color = DETAIL
+	k.color = GALVANISED
 	for f: float in [-0.25, 0.0, 0.25]:
 		k.box(Vector3(width - 0.2, 0.02, 0.08), Vector3(0.0, -t - 0.01, f * height))
 	# Lamp housings along the top edge.
-	k.color = DARK
+	k.color = PLASTIC_DARK
 	var lamp_z := -hh + rim + 0.12
 	for i in 2:
 		k.box(Vector3(0.28, 0.025, 0.13), Vector3((-0.25 if i == 0 else 0.25) * width, t + 0.0125, lamp_z))
@@ -14024,11 +14322,12 @@ static func naval_turret(width: float = 3.0, barrel: float = 5.0, glow := Color(
 ## A heavy missile launcher block (the Devastator's lower bow sponsons): an armoured box
 ## `width` across (X), `height` tall and `length` long (Z) with chamfered top edges. Its
 ## front (-Z) is a raised bevelled frame with corner bolts round a dark cell plate holding
-## `cols` by `rows` hollow steel tube collars, each with a missile's warhead cone glowing
-## red inside it (PartShape.glow). On the roof two clamshell hatch lids on dark gaskets
-## with a seam and hinge knuckles; down each side bolted armour panels over a hazard-
-## striped strip; on the back (+Z) a backblast louvre, a bolted service panel with three
-## red ready lamps and a cable gland. Symmetric in X, so it welds to either flank. Stands
+## `cols` by `rows` hollow gunmetal tube collars, each with a missile's warhead cone glowing
+## red inside it (PartShape.glow). On the roof two clamshell hatch lids on rubber gaskets
+## with a seam and gunmetal hinge knuckles; down each side armour panels with blackened
+## bolts over a hazard-striped strip; on the back (+Z) a backblast louvre, a bolted service
+## panel with three red ready lamps in plastic bezels and a brass cable gland round a rubber
+## cable. Symmetric in X, so it welds to either flank. Stands
 ## on -Y.
 static func missile_launcher(width: float = 1.4, height: float = 1.6, length: float = 4.0,
 		cols: int = 2, rows: int = 3) -> PartShapes.PartShape:
@@ -14065,7 +14364,7 @@ static func missile_launcher(width: float = 1.4, height: float = 1.6, length: fl
 	for sy: float in [-1.0, 1.0]:
 		_cabinets_pad(k, Vector3(0.0, fy + sy * (fhh - bar * 0.5), face), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD,
 				fhw - bar - 0.002, bar * 0.5, ft - 0.004, 0.018)
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sy: float in [-1.0, 1.0]:
 			_gear_bolt(k, Vector3(sx * (fhw - bar * 0.5), fy + sy * (fhh - bar * 0.5), face - ft), Vector3.FORWARD, 0.022, 0.012)
@@ -14081,7 +14380,7 @@ static func missile_launcher(width: float = 1.4, height: float = 1.6, length: fl
 	for c in cols:
 		for row in rows:
 			var at := Vector3(-gw * 0.5 + cw * (float(c) + 0.5), fy - gh * 0.5 + rh * (float(row) + 0.5), 0.0)
-			k.color = DETAIL
+			k.color = GUNMETAL
 			_launchers_lathe(k, PackedVector2Array([Vector2(r, -cf - 0.004), Vector2(r * 1.2, -cf - 0.004),
 					Vector2(r * 1.2, -tip - 0.012), Vector2(r * 1.12, -tip), Vector2(r, -tip)]), 12,
 					Transform3D(to_z, at))
@@ -14097,13 +14396,13 @@ static func missile_launcher(width: float = 1.4, height: float = 1.6, length: fl
 	var lw := width - ch * 2.0 - 0.1
 	var ll := length * 0.3
 	for z: float in [-hl * 0.45, hl * 0.25]:
-		k.color = DARK
+		k.color = RUBBER
 		k.box(Vector3(lw + 0.03, 0.008, ll + 0.03), Vector3(0.0, hh + 0.003, z))
 		k.color = Color.WHITE
 		_cabinets_pad(k, Vector3(0.0, hh + 0.006, z), Vector3.RIGHT, Vector3.BACK, Vector3.UP, lw * 0.5, ll * 0.5, 0.024, 0.014)
 		k.color = DARK
 		k.box(Vector3(0.016, 0.006, ll - 0.06), Vector3(0.0, hh + 0.031, z))
-		k.color = DETAIL
+		k.color = GUNMETAL
 		for sx: float in [-1.0, 1.0]:
 			_tube(k, Vector3(sx * lw * 0.15, hh + 0.022, z + ll * 0.5 + 0.012),
 					Vector3(sx * lw * 0.38, hh + 0.022, z + ll * 0.5 + 0.012), 0.016, 8)
@@ -14123,7 +14422,7 @@ static func missile_launcher(width: float = 1.4, height: float = 1.6, length: fl
 			var hv := (py1 - py0) * 0.5
 			k.color = Color.WHITE
 			_cabinets_pad(k, pc, Vector3.BACK, Vector3.UP, n, hu, hv, 0.012, 0.008)
-			k.color = DETAIL
+			k.color = FLANGE_BOLT
 			for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 				_gear_bolt(k, pc + n * 0.012 + Vector3(0.0, c.y * (hv - 0.05), c.x * (hu - 0.05)), n, 0.016, 0.008)
 	# The back: a backblast louvre up top, a service panel with ready lamps, a cable gland.
@@ -14140,15 +14439,15 @@ static func missile_launcher(width: float = 1.4, height: float = 1.6, length: fl
 		_gear_bolt(k, sp + Vector3(c.x * (su - 0.035), c.y * (sv - 0.035), 0.01), Vector3.BACK, 0.013, 0.006)
 	for i in 3:
 		var lp := sp + Vector3(-su * 0.5 + su * 0.5 * float(i), sv * 0.25, 0.01)
-		k.color = DARK
+		k.color = PLASTIC_DARK
 		k.box(Vector3(0.05, 0.05, 0.006), lp + Vector3(0.0, 0.0, 0.003))
 		g.box(Vector3(0.03, 0.03, 0.004), lp + Vector3(0.0, 0.0, 0.008))
 	k.color = DARK
 	k.box(Vector3(su * 1.3, 0.012, 0.004), sp + Vector3(0.0, -sv * 0.35, 0.012))
 	var gl := Vector3(hw * 0.5, -hh + height * 0.25, back)
-	k.color = DETAIL
+	k.color = BRASS
 	_tube(k, gl, gl + Vector3(0.0, 0.0, 0.018), 0.05, 8)
-	k.color = DARK
+	k.color = RUBBER
 	_tube(k, gl + Vector3(0.0, 0.0, 0.017), gl + Vector3(0.0, 0.0, 0.02), 0.03, 8)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
@@ -14852,7 +15151,7 @@ static func case_stack(width: float = 0.95, height: float = 2.0, depth: float = 
 
 # --- v4 fittings (docs/V4_PIPELINE.md) ------------------------------------------------
 
-## A see-through mesh grid panel: a bolted frame round an expanded-metal grid of thin bars
+## A see-through mesh grid panel: a bolted galvanised frame round a galvanised grid of thin bars
 ## (`cell` apart), standing in the XY plane, `thickness` deep along Z. Lift cages, the
 ## corridor ceilings and service-trench covers that show the pipes and looms behind them.
 ## Collision is the whole panel (tools cut it; nothing passes through the holes).
@@ -14862,21 +15161,21 @@ static func mesh_panel(width: float, height: float, thickness: float = 0.03, cel
 	var hw := width * 0.5
 	var hh := height * 0.5
 	var fw := minf(frame, minf(width, height) * 0.2)
-	# The frame.
-	k.color = Color.WHITE
+	# The frame, galvanised.
+	k.color = GALVANISED
 	k.box(Vector3(width, fw, thickness), Vector3(0.0, hh - fw * 0.5, 0.0))
 	k.box(Vector3(width, fw, thickness), Vector3(0.0, -hh + fw * 0.5, 0.0))
 	k.box(Vector3(fw, height - fw * 2.0, thickness), Vector3(-hw + fw * 0.5, 0.0, 0.0))
 	k.box(Vector3(fw, height - fw * 2.0, thickness), Vector3(hw - fw * 0.5, 0.0, 0.0))
 	# Bolts in the frame's corners, both faces.
-	k.color = DETAIL
+	k.color = FLANGE_BOLT
 	for sx: float in [-1.0, 1.0]:
 		for sy: float in [-1.0, 1.0]:
 			for sz: float in [-1.0, 1.0]:
 				k.box(Vector3(fw * 0.4, fw * 0.4, 0.006), Vector3(sx * (hw - fw * 0.5), sy * (hh - fw * 0.5), sz * (thickness * 0.5 + 0.003)))
 	# The grid: upright bars and cross bars, each a thin strip the depth of the panel's
 	# middle, woven a little (uprights proud one way, cross bars the other).
-	k.color = DARK
+	k.color = PNL_MESH
 	var inner_w := width - fw * 2.0
 	var inner_h := height - fw * 2.0
 	var bar := 0.006
