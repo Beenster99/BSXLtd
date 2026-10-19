@@ -1,0 +1,17 @@
+# Godot 4 local cache and editor state
+.godot/
+*.tmp
+
+# Release output (tools/build/release.sh)
+/release/*
+!/release/.gdignore
+
+# Stamped by tools/build/release.sh for a build; the menu shows "dev" without it
+/config/build_info.cfg
+
+export_credentials.cfg
+__pycache__/
+
+# OS clutter
+.DS_Store
+Thumbs.db
