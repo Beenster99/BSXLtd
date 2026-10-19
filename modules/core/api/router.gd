@@ -3,10 +3,13 @@ extends Node
 ## them by id, so no module preloads another module's scene.
 ##   Router.register_scene("main_menu", "res://modules/ui/internal/main_menu.tscn")
 ##   Router.goto("main_menu")
+##   Router.goto("workbench", {"trade": "welding"})   # the scene reads Router.args
 
 signal scene_changed(id: String)
 
 var current_id := ""
+## What the last goto() was asked to open the scene with; read it in the scene's _ready().
+var args: Dictionary = {}
 var _scenes: Dictionary = {}
 
 
@@ -22,10 +25,11 @@ func scene_path(id: String) -> String:
 	return _scenes.get(id, "")
 
 
-func goto(id: String) -> Error:
+func goto(id: String, scene_args: Dictionary = {}) -> Error:
 	if not _scenes.has(id):
 		push_error("Router: no scene registered as '%s'" % id)
 		return ERR_DOES_NOT_EXIST
+	args = scene_args.duplicate()
 	var err := get_tree().change_scene_to_file(_scenes[id])
 	if err == OK:
 		current_id = id

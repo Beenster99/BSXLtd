@@ -16,6 +16,17 @@ func run_tests() -> void:
 	var entry := menu.find_child("_job", true, false) as Button
 	check(entry != null and entry.text == "Start job", "main menu shows a registered entry")
 	check(entry != null and not entry.disabled, "entry enabled when its scene exists")
+	Menu.register_entry("_rivet", "Riveting", UiBus.SETTINGS, 2, {"trade": "riveting"}, "_Bench")
+	Menu.register_entry("_weld", "Welding", UiBus.SETTINGS, 3, {"trade": "welding"}, "_Bench")
+	await frames(2)
+	var heads := menu.find_children("Group__Bench", "Label", true, false)
+	check(heads.size() == 1, "a group's entries share one heading")
+	var rivet := menu.find_child("_rivet", true, false) as Button
+	check(rivet != null and heads.size() == 1
+			and rivet.get_index() == heads[0].get_index() + 1, "grouped entry sits under its heading")
+	Menu.unregister_entry("_rivet")
+	Menu.unregister_entry("_weld")
+	Menu.unregister_entry("_job")
 	var gfx := menu.find_child("Graphics", true, false) as Button
 	check(gfx != null, "main menu has a Graphics button")
 	if gfx != null:
