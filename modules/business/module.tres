@@ -7,7 +7,7 @@
 script = ExtResource("1")
 id = "business"
 display_name = "Business"
-version = "0.0.0"
+version = "0.1.0"
 depends_on = PackedStringArray("contracts")
 flag = "business"
 bus = ExtResource("2")
