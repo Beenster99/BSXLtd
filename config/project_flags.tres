@@ -17,5 +17,8 @@ flags = {
 "shared_components": true,
 "trades": true,
 "trades.bolting": true,
+"trades.riveting": true,
+"trades.welding": true,
+"trades.wiring": true,
 "ui": true
 }

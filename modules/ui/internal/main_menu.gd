@@ -1,7 +1,8 @@
 extends Control
 ## Main menu, laid out like Void Salvage's: the name and version centred over one column of
-## buttons. The entries modules registered with Menu come first, then Graphics (Void
-## Salvage's graphics screen), Settings and Exit Game.
+## buttons. The entries modules registered with Menu come first (a group's entries under
+## its heading, like Void Salvage's field labels), then Graphics (Void Salvage's graphics
+## screen), Settings and Exit Game.
 
 var entry_box: VBoxContainer
 var _center: CenterContainer
@@ -51,14 +52,24 @@ func _ready() -> void:
 
 func _fill_entries() -> void:
 	for child in entry_box.get_children():
+		entry_box.remove_child(child)  # now, so the new buttons can take the same names
 		child.queue_free()
 	var entries := Menu.entries()
 	if entries.is_empty():
 		var none := BsxTheme.muted("Nothing to play yet in this build.")
 		none.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		entry_box.add_child(none)
+	var headed := {}
 	for e in entries:
-		var b := BsxTheme.button(e.label, func(): Router.goto(e.scene))
+		var group: String = e.get("group", "")
+		if group != "" and not headed.has(group):
+			headed[group] = true
+			var head := BsxTheme.muted(group)
+			head.name = "Group_" + group.validate_node_name()
+			head.add_theme_color_override("font_color", Color(BsxTheme.ACCENT, 0.85))
+			entry_box.add_child(head)
+		var args: Dictionary = e.get("args", {})
+		var b := BsxTheme.button(e.label, func(): Router.goto(e.scene, args))
 		b.name = e.id
 		b.disabled = not Router.has_scene(e.scene)
 		entry_box.add_child(b)

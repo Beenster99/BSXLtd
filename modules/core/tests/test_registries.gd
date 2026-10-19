@@ -22,6 +22,14 @@ func run_tests() -> void:
 	Menu.register_entry("_early", "Early", "_t", -50)
 	var ids: Array = Menu.entries().map(func(e): return e.id)
 	check(ids.find("_early") < ids.find("_late"), "menu entries sorted by order")
+	Menu.register_entry("_weld", "Welding", "_t", 60, {"trade": "welding"}, "Workbench")
+	var weld: Dictionary = Menu.entries().filter(func(e): return e.id == "_weld")[0]
+	check(weld.args.trade == "welding" and weld.group == "Workbench", "menu entry keeps args and group")
+	check(Menu.entries().filter(func(e): return e.id == "_late")[0].group == "",
+			"old-style entries have no group")
+	for id in ["_late", "_early", "_weld"]:
+		Menu.unregister_entry(id)
+	check(not Menu.entries().any(func(e): return e.id.begins_with("_")), "menu entries unregister")
 
 	Settings.register("_test", {"speed": 3})
 	check(Settings.get_value("_test", "speed") == 3, "settings default")
