@@ -17,6 +17,12 @@ const CHEST := Vector3(0, EYE - 0.3, 0)
 ## the point the head is aimed at, so the crosshair still points where you work.
 @export var boom := Vector3(1.3, 2.0, 0.55)
 @export var boom_look_m := 1.0
+## Looking down at the bench you lean over it: the head goes this far forward and down
+## (metres) by the time you look `lean_full_deg` below level, starting at `lean_from_deg`.
+@export var lean_forward_m := 0.26
+@export var lean_down_m := 0.12
+@export var lean_from_deg := 25.0
+@export var lean_full_deg := 60.0
 
 var third_person := false
 ## True while a hand is working something: the mouse drives the work, not the view.
@@ -73,7 +79,14 @@ func kick(amount: float) -> void:
 
 func _process(delta: float) -> void:
 	_kick = move_toward(_kick, 0.0, delta * 0.15)
+	_lean()
 	_place_camera()
+
+
+func _lean() -> void:
+	var down := rad_to_deg(-_pitch)
+	var l := smoothstep(lean_from_deg, lean_full_deg, down)
+	head.position = Vector3(0.0, EYE - lean_down_m * l, -lean_forward_m * l)
 
 
 func _place_camera() -> void:
@@ -99,9 +112,13 @@ func face(point: Vector3) -> void:
 	var flat := Vector3(point.x - global_position.x, 0.0, point.z - global_position.z)
 	if flat.length() > 0.01:
 		rotation.y = atan2(-flat.x, -flat.z)
-	var eye := global_position + Vector3(0, EYE, 0)
-	_pitch = atan2(point.y - eye.y, flat.length())
-	head.rotation.x = _pitch
+	# Twice: leaning in moves the eye, which changes the angle down a little.
+	for i in 2:
+		var eye := global_transform * head.position
+		var across := Vector2(point.x - eye.x, point.z - eye.z).length()
+		_pitch = atan2(point.y - eye.y, across)
+		head.rotation.x = _pitch
+		_lean()
 
 
 ## The aim ray: from the camera, through the middle of the screen.
