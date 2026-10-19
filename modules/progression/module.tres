@@ -7,8 +7,8 @@
 script = ExtResource("1")
 id = "progression"
 display_name = "Progression"
-version = "0.0.0"
-depends_on = PackedStringArray("trades", "business")
+version = "0.1.0"
+depends_on = PackedStringArray("trades", "business", "quality", "contracts")
 flag = "progression"
 bus = ExtResource("2")
-test_scene = ""
+test_scene = "res://modules/progression/tests/test_progression.gd"

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ProgressionUpgrade" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/progression/api/progression_upgrade.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = &"calibrated_torque_wrench"
+display_name = "Calibrated torque wrench"
+kind = 0
+target_id = &"torque_wrench"
+requires = PackedStringArray()
+price_ref = &"upgrade.calibrated_torque_wrench"
+effect_key = &"torque_tolerance"
+value = 0.05
