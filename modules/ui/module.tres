@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ModuleManifest" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://modules/core/api/module_manifest.gd" id="1"]
+[ext_resource type="Script" path="res://modules/ui/api/ui_bus.gd" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = "ui"
+display_name = "UI"
+version = "0.1.0"
+depends_on = PackedStringArray()
+flag = "ui"
+bus = ExtResource("2")
+test_scene = "res://modules/ui/tests/test_menus.gd"

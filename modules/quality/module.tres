@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ModuleManifest" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://modules/core/api/module_manifest.gd" id="1"]
+[ext_resource type="Script" path="res://modules/quality/api/quality_bus.gd" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = "quality"
+display_name = "Quality and Inspection"
+version = "0.0.0"
+depends_on = PackedStringArray("trades", "contracts")
+flag = "quality"
+bus = ExtResource("2")
+test_scene = ""
