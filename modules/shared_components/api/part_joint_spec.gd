@@ -1,4 +1,4 @@
-class_name JointSpec
+class_name PartJointSpec
 extends Resource
 ## One joint BSX makes to fit a part: where it sits and what it takes. It mirrors Void
 ## Salvage's ConnectionData, so a joint fitted here is one its tools can take apart.
