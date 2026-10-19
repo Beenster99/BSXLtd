@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="BoltingRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/quality/internal/bolting_rules.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+torque_full_pct = 5.0
+torque_zero_pct = 25.0
+over_torque_fail_pct = 40.0
+weight_torque = 60.0
+weight_sequence = 15.0
+weight_fastener = 15.0
+weight_threads = 10.0
+pass_score = 70
+marginal_score = 50
