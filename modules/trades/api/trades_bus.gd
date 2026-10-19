@@ -15,6 +15,8 @@ signal joint_removed(joint_id: StringName)
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
+## The trades on the workbench, each behind its flag "trades.<trade>".
+const TRADES: Array[String] = ["bolting", "riveting", "welding", "wiring"]
 
 var _sites: Dictionary = {}
 var _results: Dictionary = {}
@@ -22,13 +24,18 @@ var _modifiers: Dictionary = {}  # str(player_id) -> {effect_key: value}
 
 
 func register_module() -> void:
-	if Flags.is_on("trades.bolting"):
-		Router.register_scene(WORKBENCH, BENCH_SCENE)
-		Menu.register_entry(WORKBENCH, "Workbench", WORKBENCH, 10)
-		Shots.register("bolting_bench", WORKBENCH,
-				func(scene: Node) -> void: scene.call("stage_for_screenshot", false), 40)
-		Shots.register("bolting_bench_third_person", WORKBENCH,
-				func(scene: Node) -> void: scene.call("stage_for_screenshot", true), 40)
+	var order := 10
+	for trade: String in TRADES:
+		if not Flags.is_on("trades." + trade):
+			continue
+		if not Router.has_scene(WORKBENCH):
+			Router.register_scene(WORKBENCH, BENCH_SCENE)
+		Menu.register_entry("bench_" + trade, trade.capitalize(), WORKBENCH, order, {"trade": trade}, "Workbench")
+		order += 1
+		Shots.register(trade + "_bench", WORKBENCH,
+				func(scene: Node) -> void: scene.call("stage_for_screenshot", StringName(trade), false), 40)
+		Shots.register(trade + "_bench_third_person", WORKBENCH,
+				func(scene: Node) -> void: scene.call("stage_for_screenshot", StringName(trade), true), 40)
 
 
 func register_site(site: JointSite) -> void:
@@ -51,13 +58,21 @@ func get_result(joint_id: StringName) -> JointResult:
 
 func is_tool_enabled(tool_id: StringName) -> bool:
 	match tool_id:
-		&"hands", &"torque_wrench":
+		&"hands":
+			return TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t))
+		&"torque_wrench":
 			return Flags.is_on("trades.bolting")
+		&"drill", &"rivet_squeezer":
+			return Flags.is_on("trades.riveting")
+		&"welder":
+			return Flags.is_on("trades.welding")
+		&"wire_tool":
+			return Flags.is_on("trades.wiring")
 	return false
 
 
 ## Progression pushes each player's skill effects down here, since Trades can't call up.
-## Trades reads "bolt_speed" (share faster turning). Unknown keys are kept and ignored.
+## Trades reads "bolt_speed" and "rivet_speed" (share faster turning and drilling). Unknown keys are kept and ignored.
 func set_player_modifiers(player_id: Variant, effects: Dictionary) -> void:
 	_modifiers[str(player_id)] = effects.duplicate()
 

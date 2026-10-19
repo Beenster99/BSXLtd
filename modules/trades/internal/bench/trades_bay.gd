@@ -1,0 +1,557 @@
+class_name TradesBay
+extends Node3D
+## The trades bay: one long bench in a BSX fitting bay with a station for each trade
+## (bolting, riveting, welding, wiring). You walk along it as the BSX worker (first or
+## third person, V) with your own stretchy hands, pick a tool from the hotbar and work at
+## whichever station you are looking at. The bay owns the worker, the tools, the HUD and
+## the input; each station (TradesStation) owns its parts, its joint rules and what the
+## tools do there.
+##
+##   WASD walk, mouse look, V first/third person, 1-6 tools, R resets the station,
+##   left click use, right click take off, wheel turns or sets, Esc leaves.
+
+const BENCH_TOP := 0.9
+## The bench runs along X from -BENCH_HALF to BENCH_HALF, its front edge at z = BENCH_FRONT.
+const BENCH_HALF := 2.3
+const BENCH_FRONT := 0.27
+## The hotbar, in order (keys 1..6).
+const TOOLS: Array[StringName] = [&"hands", &"torque_wrench", &"drill", &"rivet_squeezer", &"welder", &"wire_tool"]
+const TOOL_LABELS := {
+	&"hands": "Hands", &"torque_wrench": "Torque wrench", &"drill": "Drill",
+	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper",
+}
+## The stations, left to right: id, script, where along the bench, and the flag that ships it.
+const STATIONS := [
+	[&"bolting", preload("res://modules/trades/internal/bolting/bolting_station.gd"), -1.7, "trades.bolting"],
+	[&"riveting", preload("res://modules/trades/internal/riveting/riveting_station.gd"), -0.57, "trades.riveting"],
+	[&"welding", preload("res://modules/trades/internal/welding/welding_station.gd"), 0.57, "trades.welding"],
+	[&"wiring", preload("res://modules/trades/internal/wiring/wiring_station.gd"), 1.7, "trades.wiring"],
+]
+const HAND_REACH_M := 0.9
+const HAND_STRETCH_M := 0.9
+
+var worker: BenchWorker
+var tool: StringName = &"hands"
+var stations: Array[TradesStation] = []
+## The tool meshes by id (no entry for hands).
+var tool_nodes: Dictionary = {}
+
+var _focus: TradesStation
+var _pressed: TradesStation
+var _placed: Dictionary = {}
+var _players: Dictionary = {}
+var _loops: Dictionary = {}
+
+var _tool_label: Label
+var _status_label: Label
+var _hint_label: Label
+var _slots: Array[PanelContainer] = []
+var _slot_labels: Array[Label] = []
+var _result_panel: PanelContainer
+var _result_label: Label
+
+
+func _ready() -> void:
+	_build_room()
+	_build_worker()
+	_build_tools()
+	_build_audio()
+	_build_hud()
+	for row: Array in STATIONS:
+		if not Flags.is_on(row[3]):
+			continue
+		var s: TradesStation = (row[1] as GDScript).new()
+		s.id = row[0]
+		s.bay = self
+		s.position = Vector3(row[2], 0.0, 0.0)
+		s.name = String(row[0]).capitalize().replace(" ", "") + "Station"
+		add_child(s)
+		s.build()
+		_build_station_dressing(s)
+		stations.append(s)
+	set_tool(&"hands")
+	# The menu opens the bay at one trade's station (Router.args {"trade": "welding"}).
+	var start := station(StringName(Router.args.get("trade", "")))
+	if start == null and not stations.is_empty():
+		start = stations[0]
+	if start:
+		_walk_to(start)
+		_focus = start
+		hint(_focus.start_hint())
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _exit_tree() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func station(station_id: StringName) -> TradesStation:
+	for s in stations:
+		if s.id == station_id:
+			return s
+	return null
+
+
+## The station you are working at (mid-action, or the one you are looking at).
+func focus() -> TradesStation:
+	return _focus
+
+
+func set_tool(id: StringName) -> void:
+	if _pressed:
+		_pressed.release()
+		_pressed = null
+	tool = id
+	var bus := bus()
+	if bus:
+		bus.tool_equipped.emit(1, id)
+	_refresh_hud()
+
+
+## Every station back to its start.
+func reset_all() -> void:
+	for s in stations:
+		s.reset()
+	hide_result()
+
+
+# --- Input ------------------------------------------------------------------------------
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if not (_focus and _focus.motion(event.relative)):
+			worker.look(event.relative)
+	elif event is InputEventMouseButton:
+		if DisplayServer.get_name() != "headless" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			return
+		_on_mouse_button(event)
+	elif event is InputEventKey and event.pressed and not event.echo:
+		_on_key(event.physical_keycode)
+
+
+func _on_key(k: Key) -> void:
+	if k >= KEY_1 and k < KEY_1 + TOOLS.size():
+		set_tool(TOOLS[k - KEY_1])
+		return
+	match k:
+		KEY_V:
+			worker.set_view(not worker.third_person)
+		KEY_R:
+			if _focus:
+				_focus.reset()
+				hide_result()
+				hint(_focus.start_hint())
+		KEY_ESCAPE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			if Router.has_scene("main_menu"):
+				Router.goto("main_menu")
+		_:
+			if _focus and _focus.key(k):
+				_refresh_hud()
+
+
+func _on_mouse_button(event: InputEventMouseButton) -> void:
+	if _focus == null:
+		return
+	match event.button_index:
+		MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_pressed = _focus
+				_focus.press(tool)
+			elif _pressed:
+				_pressed.release()
+				_pressed = null
+		MOUSE_BUTTON_RIGHT:
+			if event.pressed:
+				_focus.back_out(tool)
+		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+			if event.pressed and _focus.wheel(1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1):
+				_refresh_hud()
+
+
+# --- Every frame ------------------------------------------------------------------------
+
+func _process(delta: float) -> void:
+	_update_focus()
+	_placed.clear()
+	for s in stations:
+		s.update(delta)
+	# Tools nobody put on the work ride in the right hand; the rest are put away.
+	for id: StringName in tool_nodes:
+		var t: TradesTool = tool_nodes[id]
+		t.visible = id == tool
+		if t.visible and not _placed.has(id):
+			t.global_transform = t.carried(worker.right_hand.palm())
+	if _focus:
+		_status_label.text = _focus.status_line()
+
+
+func _update_focus() -> void:
+	if _focus and _focus.is_busy():
+		return
+	var next := station_under_aim()
+	if next != _focus and next != null:
+		_focus = next
+		hint(_focus.start_hint())
+		_refresh_hud()
+
+
+## The station whose stretch of bench the aim falls on (or the nearest to it).
+func station_under_aim() -> TradesStation:
+	if stations.is_empty():
+		return null
+	var hit: Variant = Plane(Vector3.UP, BENCH_TOP + 0.05).intersects_ray(worker.aim_origin(), worker.aim_dir())
+	var x: float = (hit as Vector3).x if hit != null else worker.global_position.x
+	var best: TradesStation = stations[0]
+	for s in stations:
+		if absf(x - s.position.x) < absf(x - best.position.x):
+			best = s
+	return best
+
+
+# --- Services for stations ----------------------------------------------------------------
+
+func hint(text: String) -> void:
+	_hint_label.text = text
+
+
+## A station put this tool on the work this frame (so the bay leaves it there).
+func place_tool(id: StringName, xform: Transform3D) -> void:
+	var t: TradesTool = tool_nodes.get(id)
+	if t:
+		t.global_transform = xform
+		_placed[id] = true
+
+
+func tool_node(id: StringName) -> TradesTool:
+	return tool_nodes.get(id)
+
+
+## How far a point is from the aim line (metres), or INF if it is behind you or out of reach.
+func aim_distance(p: Vector3) -> float:
+	var o := worker.aim_origin()
+	var d := worker.aim_dir()
+	var t := (p - o).dot(d)
+	if t < 0.0 or t > 4.0:
+		return INF
+	return (o + d * t).distance_to(p)
+
+
+## Where the aim meets a plane, or null.
+func aim_on(plane: Plane) -> Variant:
+	return plane.intersects_ray(worker.aim_origin(), worker.aim_dir())
+
+
+## The nearest of `points` to the aim line within `pick_m`, or -1.
+func pick(points: Array, pick_m: float) -> int:
+	var best := -1
+	var best_d := pick_m
+	for i in points.size():
+		var d := aim_distance(points[i])
+		if d < best_d:
+			best = i
+			best_d = d
+	return best
+
+
+func play(sound: StringName, pitch := 1.0) -> void:
+	var p: AudioStreamPlayer = _players.get(sound)
+	if p == null or DisplayServer.get_name() == "headless":
+		return
+	p.pitch_scale = pitch
+	p.play()
+
+
+## A looping sound (the drill's whine, the welding arc) on or off.
+func loop(sound: StringName, on: bool, pitch := 1.0) -> void:
+	var p: AudioStreamPlayer = _loops.get(sound)
+	if p == null or DisplayServer.get_name() == "headless":
+		return
+	p.pitch_scale = pitch
+	if on and not p.playing:
+		p.play()
+	elif not on and p.playing:
+		p.stop()
+
+
+func show_result(lines: PackedStringArray) -> void:
+	lines.append("")
+	lines.append("Quality grades this joint." if Modules.is_loaded("quality") else "Grading arrives with the Quality module.")
+	lines.append("R to reset the station.")
+	_result_label.text = "\n".join(lines)
+	_result_panel.visible = true
+
+
+func hide_result() -> void:
+	_result_panel.visible = false
+
+
+func bus() -> TradesBus:
+	return Modules.bus("trades") as TradesBus
+
+
+## Release screenshot of one station mid-job, first or third person.
+func stage_for_screenshot(station_id: StringName = &"bolting", third_person: bool = false) -> void:
+	var s := station(station_id)
+	if s == null:
+		return
+	reset_all()
+	_focus = s
+	await s.stage_for_screenshot()
+	var view := s.screenshot_view()
+	worker.set_view(third_person)
+	worker.global_position = s.to_global(view[0])
+	worker.face(s.to_global(view[1]))
+	_focus = s
+	_refresh_hud()
+	for i in 30:
+		await get_tree().process_frame
+
+
+# --- Building the bay -------------------------------------------------------------------
+
+func _walk_to(s: TradesStation) -> void:
+	worker.global_position = s.to_global(Vector3(0.0, 0.0, 0.58))
+	worker.face(s.to_global(Vector3(0.0, BENCH_TOP, 0.0)))
+
+
+func _build_worker() -> void:
+	worker = BenchWorker.new()
+	worker.name = "Worker"
+	add_child(worker)
+	for hand: StretchHand in [worker.left_hand, worker.right_hand]:
+		hand.reach_m = HAND_REACH_M
+		hand.stretch_m = HAND_STRETCH_M
+		hand.snapped.connect(_on_hand_snapped)
+
+
+func _on_hand_snapped() -> void:
+	if _focus:
+		_focus.on_hand_snapped()
+	hint("Too far: your arm let go.")
+
+
+func _build_tools() -> void:
+	var scripts := {
+		&"torque_wrench": TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetSqueezer,
+		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool,
+	}
+	for id: StringName in scripts:
+		var t: TradesTool = (scripts[id] as GDScript).new()
+		t.top_level = true
+		t.visible = false
+		add_child(t)
+		tool_nodes[id] = t
+
+
+func _build_audio() -> void:
+	_players[&"click"] = _player(TradesSounds.burst(0.05, 0.9, 900.0))
+	_players[&"tick"] = _player(TradesSounds.burst(0.025, 0.3, 2600.0))
+	_players[&"clunk"] = _player(TradesSounds.burst(0.09, 0.8, 500.0))
+	_loops[&"drill"] = _player(TradesSounds.hum(0.5, 0.25, 180.0, 2200.0))
+	_loops[&"arc"] = _player(TradesSounds.hum(0.5, 0.35, 120.0, 6000.0))
+
+
+func _player(stream: AudioStream) -> AudioStreamPlayer:
+	var p := AudioStreamPlayer.new()
+	p.stream = stream
+	add_child(p)
+	return p
+
+
+func _build_room() -> void:
+	var env := WorldEnvironment.new()
+	env.environment = TradesLook.environment()
+	add_child(env)
+
+	# A BSX fitting bay, fitted out like a Void Salvage ship's hold: deck plate, warm-white
+	# wall panels on dark frames, lit edge strips and a name board.
+	var deck := TradesLook.paint(Color(0.32, 0.33, 0.35), 0.6, 0.55, "galvanised")
+	var shell := TradesLook.paint(TradesLook.SHELL.darkened(0.4), 0.25, 0.42)
+	var dark := TradesLook.paint(TradesLook.DARK, 0.55, 0.5)
+	var trim := TradesLook.paint(TradesLook.TRIM, 0.3, 0.45)
+	var top := TradesLook.paint(TradesLook.TOP.darkened(0.35), 0.3, 0.3, "brushed_steel")
+	var edge := TradesLook.glow(TradesLook.EDGE, 1.6)
+	var solid := StaticBody3D.new()
+	solid.name = "Solid"
+	add_child(solid)
+	var wall_x := -BENCH_HALF - 0.45
+	_solid_box(solid, Vector3(12, 0.1, 8), Vector3(0, -0.05, 2.0), deck)
+	_solid_box(solid, Vector3(12, 3.0, 0.1), Vector3(0, 1.5, -0.6), dark)                # back wall frame
+	_solid_box(solid, Vector3(0.1, 3.0, 8), Vector3(wall_x, 1.5, 3.4), dark)             # side wall frame
+	var x := wall_x + 0.45
+	while x < 5.0:
+		_box(Vector3(0.7, 1.05, 0.02), Vector3(x, 1.75, -0.54), shell)                     # wall panels
+		_box(Vector3(0.7, 0.5, 0.02), Vector3(x, 0.4, -0.54), shell)
+		x += 0.75
+	for z: float in [-0.15, 0.6, 1.35, 2.1]:
+		_box(Vector3(0.02, 1.05, 0.7), Vector3(wall_x + 0.06, 1.75, z), shell)
+	for y: float in [1.2, 2.3]:
+		_box(Vector3(12, 0.012, 0.006), Vector3(0, y, -0.528), edge)                     # edge strips
+	_box(Vector3(0.006, 0.012, 8), Vector3(wall_x + 0.072, 1.2, 3.4), edge)
+	_box(Vector3(12, 0.04, 0.006), Vector3(0, 0.06, -0.548), trim)                       # kick strip
+	_name_board("BSX LTD  //  FITTING BAY 1", Vector3(0.0, 2.6, -0.525), 1.4, dark, trim)
+
+	# The bench: a dark pedestal, a steel top with a lit front edge and an orange trim band.
+	var length := BENCH_HALF * 2.0
+	_solid_box(solid, Vector3(length, BENCH_TOP - 0.03, 0.6), Vector3(0, (BENCH_TOP - 0.03) / 2.0, -0.05), dark)
+	_box(Vector3(length + 0.04, 0.03, 0.64), Vector3(0, BENCH_TOP - 0.015, -0.05), top)
+	_box(Vector3(length + 0.04, 0.006, 0.004), Vector3(0, BENCH_TOP - 0.02, BENCH_FRONT + 0.002), edge)
+	_box(Vector3(length, 0.05, 0.004), Vector3(0, BENCH_TOP - 0.09, BENCH_FRONT - 0.018), trim)
+	# Cool ceiling strips over the walkway.
+	for sx: float in [-1.6, 0.0, 1.6]:
+		var at := Vector3(sx, 2.9, 1.4)
+		_box(Vector3(0.9, 0.025, 0.12), at, TradesLook.glow(Color(0.9, 0.95, 1.0), 3.0))
+		var strip := OmniLight3D.new()
+		strip.position = at + Vector3(0, -0.25, 0)
+		strip.light_color = Color(0.92, 0.96, 1.0)
+		strip.light_energy = 0.25
+		strip.omni_range = 3.5
+		add_child(strip)
+
+
+## Each station's sign on the wall and strip lamp over its stretch of bench.
+func _build_station_dressing(s: TradesStation) -> void:
+	var dark := TradesLook.paint(TradesLook.DARK, 0.55, 0.5)
+	var trim := TradesLook.paint(TradesLook.TRIM, 0.3, 0.45)
+	_name_board(s.title.to_upper(), s.position + Vector3(0, 1.62, -0.525), 0.5, dark, trim)
+	var lamp_at := s.position + Vector3(0.0, 2.25, -0.05)
+	_box(Vector3(0.98, 0.06, 0.22), lamp_at + Vector3(0, 0.04, 0), dark)
+	_box(Vector3(0.9, 0.025, 0.12), lamp_at, TradesLook.glow(TradesLook.WARM, 2.2))
+	var edge := TradesLook.glow(TradesLook.EDGE, 1.6)
+	for side: float in [-1.0, 1.0]:
+		_box(Vector3(0.96, 0.008, 0.008), lamp_at + Vector3(0, 0.012, side * 0.105), edge)
+	var lamp := OmniLight3D.new()
+	lamp.position = lamp_at + Vector3(0, -0.25, 0)
+	lamp.light_color = Color(1.0, 0.84, 0.66)
+	lamp.light_energy = 0.45
+	lamp.omni_range = 2.2
+	lamp.shadow_enabled = true
+	add_child(lamp)
+
+
+## A name board (ShipParts.name_board): a dark plate, the name in lit letters, a trim band.
+func _name_board(text: String, at: Vector3, width: float, dark: Material, trim: Material) -> void:
+	_box(Vector3(width, 0.2, 0.02), at, dark)
+	_box(Vector3(width, 0.025, 0.022), at + Vector3(0, -0.085, 0), trim)
+	var label := Label3D.new()
+	label.font = TradesLook.mono_font()
+	label.text = text
+	label.font_size = 64
+	label.pixel_size = 0.0011
+	label.modulate = TradesLook.EDGE
+	label.position = at + Vector3(0, 0.015, 0.012)
+	label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(label)
+
+
+func _solid_box(body: StaticBody3D, size: Vector3, pos: Vector3, mat: Material) -> void:
+	_box(size, pos, mat)
+	var shape := CollisionShape3D.new()
+	var b := BoxShape3D.new()
+	b.size = size
+	shape.shape = b
+	shape.position = pos
+	body.add_child(shape)
+
+
+func _box(size: Vector3, pos: Vector3, mat: Material) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = mat
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = pos
+	add_child(mi)
+	return mi
+
+
+# --- HUD ----------------------------------------------------------------------------------
+
+## The HUD in Void Salvage's style (Hud): cyan monospace readout lines top left, the hotbar
+## of boxed slots along the bottom, a small key line, the result card top right.
+func _build_hud() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(root)
+
+	var cross := ColorRect.new()
+	cross.color = TradesLook.HUD
+	cross.custom_minimum_size = Vector2(4, 4)
+	cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(cross)
+	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
+
+	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
+	keys.text = "WASD walk  V view  1-6 tools  LMB use  RMB take off  wheel turn/set  Tab part  R reset  Esc menu"
+	keys.position = Vector2(40, 36)
+	root.add_child(keys)
+
+	var box := VBoxContainer.new()
+	box.position = Vector2(40, 80)
+	box.add_theme_constant_override("separation", 4)
+	root.add_child(box)
+	_tool_label = TradesLook.hud_label(26)
+	_status_label = TradesLook.hud_label(26)
+	_hint_label = TradesLook.hud_label(20, TradesLook.HUD_WARN)
+	_hint_label.custom_minimum_size.x = 620
+	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	box.add_child(_tool_label)
+	box.add_child(_status_label)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 8
+	box.add_child(gap)
+	box.add_child(_hint_label)
+
+	var bar := HBoxContainer.new()
+	bar.name = "Hotbar"
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_theme_constant_override("separation", 10)
+	root.add_child(bar)
+	for i in TOOLS.size():
+		var slot := PanelContainer.new()
+		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var label := TradesLook.hud_label(18)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.custom_minimum_size = Vector2(112, 0)
+		label.text = "%d  %s" % [i + 1, String(TOOL_LABELS[TOOLS[i]]).to_upper()]
+		slot.add_child(label)
+		bar.add_child(slot)
+		_slots.append(slot)
+		_slot_labels.append(label)
+	bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 32)
+	bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
+
+	_result_panel = PanelContainer.new()
+	_result_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var card := TradesLook.slot_style(false)
+	card.bg_color = Color(0.0, 0.02, 0.04, 0.75)
+	card.set_content_margin_all(18)
+	_result_panel.add_theme_stylebox_override("panel", card)
+	root.add_child(_result_panel)
+	_result_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
+	_result_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_result_label = TradesLook.hud_label(18)
+	_result_panel.add_child(_result_label)
+	_result_panel.visible = false
+
+
+func _refresh_hud() -> void:
+	if _tool_label == null:
+		return
+	_tool_label.text = "TOOL    %s" % String(TOOL_LABELS[tool]).to_upper()
+	_status_label.text = _focus.status_line() if _focus else ""
+	var useful: Array[StringName] = _focus.tools() if _focus else TOOLS
+	for i in _slots.size():
+		var on := TOOLS[i] == tool
+		_slots[i].add_theme_stylebox_override("panel", TradesLook.slot_style(on))
+		var c := TradesLook.HUD if on else TradesLook.HUD_DIM
+		if not on and not useful.has(TOOLS[i]):
+			c = Color(c, 0.15)
+		_slot_labels[i].label_settings.font_color = c

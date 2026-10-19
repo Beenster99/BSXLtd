@@ -10,7 +10,7 @@ func run_tests() -> void:
 	var bus := Modules.bus("trades") as TradesBus
 	check(bus != null, "trades bus is loaded")
 	check(Router.has_scene(TradesBus.WORKBENCH), "workbench scene is registered")
-	check(Menu.entries().any(func(e: Dictionary) -> bool: return e.id == TradesBus.WORKBENCH), "workbench is on the menu")
+	check(Menu.entries().any(func(e: Dictionary) -> bool: return e.id == "bench_bolting" and e.args.trade == "bolting"), "bolting is on the menu")
 
 	_test_clean_joint()
 	_test_bracket_must_line_up()
@@ -187,10 +187,11 @@ func _test_bench_scene(bus: TradesBus) -> void:
 	await frames(2)
 	var got: Array[JointResult] = []
 	bus.joint_completed.connect(func(r: JointResult) -> void: got.append(r))
-	await bench.stage_for_screenshot()
-	var j: BoltJoint = bench.joint
+	await bench.stage_for_screenshot(&"bolting")
+	var station: Node = bench.station(&"bolting")
+	var j: BoltJoint = station.joint
 	check(j.bracket_seated and j.order == PackedInt32Array([0, 2]), "screenshot staging seats the bracket and torques two bolts")
-	check(j.pulling_hole() == 1 and bench.wrench.visible, "staging has the wrench on the third bolt")
+	check(j.pulling_hole() == 1 and station.wrench.visible, "staging has the wrench on the third bolt")
 	j.end_pull()
 	for h in [1, 3]:
 		_hand_start(j, h)
@@ -198,7 +199,7 @@ func _test_bench_scene(bus: TradesBus) -> void:
 		_torque(j, h, 25.0)
 	check(got.size() == 1 and got[0].joint_id == &"bench_bracket", "finishing on the bench reports to the bus")
 	check(got[0].measurements.sequence_ok, "bench joint in spec order")
-	bench.reset_bench()
+	bench.reset_all()
 	check(bus.get_result(&"bench_bracket") == null, "resetting the bench removes its result")
 	bench._on_key(KEY_1)   # hands: the bench leaves the right hand alone
 	var hand: StretchHand = bench.worker.right_hand
