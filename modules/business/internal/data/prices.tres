@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="PriceList" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/business/api/price_list.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+prices = {
+"DeckPlate": 180,
+"IonThruster": 6500,
+"JunctionBox": 420,
+"M10": 2,
+"M12": 3,
+"RIVET_4": 1,
+"TankBracket": 260
+}

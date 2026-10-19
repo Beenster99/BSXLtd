@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="SupplierDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/business/api/supplier_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "kessler_fasteners"
+display_name = "Kessler Fasteners"
+parts = {
+"M10": 1.0,
+"M12": 1.0,
+"RIVET_4": 1.0,
+"TankBracket": 1.1
+}
+lead_hours = 24
+reliability = 0.95
+min_reputation = 0.0
+cancellation_refund_percent = 75

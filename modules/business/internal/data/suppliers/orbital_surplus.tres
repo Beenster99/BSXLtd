@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="SupplierDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/business/api/supplier_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "orbital_surplus"
+display_name = "Orbital Surplus"
+parts = {
+"DeckPlate": 0.8,
+"JunctionBox": 0.85,
+"M10": 0.7,
+"M12": 0.7,
+"RIVET_4": 0.7,
+"TankBracket": 0.8
+}
+lead_hours = 72
+reliability = 0.7
+min_reputation = 0.0
+cancellation_refund_percent = 25

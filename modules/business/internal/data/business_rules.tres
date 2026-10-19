@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BusinessRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/business/api/business_rules.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+starting_cash = 20000
+bay_rent_per_day = 400
+deposit_percent = 30
+late_penalty_per_day = 250
+late_penalty_cap_percent = 25
+starting_reputation = 50.0
+rep_per_quality = 20.0
+quality_par = 0.6
+rep_per_late_day = 2.0
+rep_per_open_snag = 1.0
+rep_for_cancelling = 5.0
+insolvency_grace_days = 5
