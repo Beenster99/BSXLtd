@@ -26,7 +26,9 @@ func register_module() -> void:
 		Router.register_scene(WORKBENCH, BENCH_SCENE)
 		Menu.register_entry(WORKBENCH, "Workbench", WORKBENCH, 10)
 		Shots.register("bolting_bench", WORKBENCH,
-				func(scene: Node) -> void: scene.call("stage_for_screenshot"), 40)
+				func(scene: Node) -> void: scene.call("stage_for_screenshot", false), 40)
+		Shots.register("bolting_bench_third_person", WORKBENCH,
+				func(scene: Node) -> void: scene.call("stage_for_screenshot", true), 40)
 
 
 func register_site(site: JointSite) -> void:
@@ -49,7 +51,7 @@ func get_result(joint_id: StringName) -> JointResult:
 
 func is_tool_enabled(tool_id: StringName) -> bool:
 	match tool_id:
-		&"hands", &"ratchet", &"torque_wrench":
+		&"hands", &"torque_wrench":
 			return Flags.is_on("trades.bolting")
 	return false
 

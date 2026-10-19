@@ -15,7 +15,7 @@ func run_tests() -> void:
 	_test_clean_joint()
 	_test_bracket_must_line_up()
 	_test_cross_thread()
-	_test_ratchet_needs_hand_start()
+	_test_hands_run_down()
 	_test_order_torque_and_parts()
 	_test_back_out_reopens()
 	_test_bus(bus)
@@ -33,14 +33,18 @@ func _joint() -> BoltJoint:
 	return BoltJoint.new(_spec(), 4, TUNING)
 
 
+## Turn by hand just until the thread catches.
 func _hand_start(j: BoltJoint, hole: int, tilt := 0.0, fastener := M8, washer := true) -> void:
-	for i in 20:
-		j.hand_turn(hole, tilt, fastener, washer)
+	for i in 40:
+		if j.hand_turn(hole, tilt, fastener, washer, 0.05) != &"turning":
+			return
 
 
+## Keep turning by hand until it seats.
 func _run_down(j: BoltJoint, hole: int) -> void:
-	for i in 20:
-		j.ratchet(hole)
+	for i in 100:
+		if j.hand_turn(hole, 0.0, M8, true, 0.05) != &"turning":
+			return
 
 
 func _torque(j: BoltJoint, hole: int, nm: float) -> void:
@@ -80,33 +84,43 @@ func _test_bracket_must_line_up() -> void:
 	var j := _joint()
 	check(not j.place_bracket(30.0, 0.0), "bracket far from its seat does not snap")
 	check(not j.place_bracket(2.0, 15.0), "bracket at an angle does not snap")
-	check(j.hand_turn(0, 0.0, M8, true) == &"", "no bolts before the bracket is seated")
+	check(j.hand_turn(0, 0.0, M8, true, 0.1) == &"", "no bolts before the bracket is seated")
 
 
 func _test_cross_thread() -> void:
 	var j := _joint()
 	j.place_bracket(0.0, 0.0)
 	var results: Array[StringName] = []
-	for i in 10:
-		results.append(j.hand_turn(1, 9.0, M8, true))
+	for i in 20:
+		results.append(j.hand_turn(1, 9.0, M8, true, 0.05))
 	check(j.cross[1], "a tilted bolt cross-threads")
 	check(results.has(&"bind") and j.state[1] == BoltJoint.Hole.STARTING, "a cross-threaded bolt binds by hand")
 	j.back_out(1)
 	check(j.state[1] == BoltJoint.Hole.EMPTY and not j.cross[1], "backing out clears it")
 	_hand_start(j, 1, 2.0)
 	check(j.state[1] == BoltJoint.Hole.STARTED and not j.cross[1], "a straight restart is clean")
-	for i in 10:
-		j.hand_turn(2, 9.0, M8, true)
-	_run_down(j, 2)
-	check(j.state[2] == BoltJoint.Hole.SEATED and j.measurements().cross_threaded[2], "forcing with the ratchet keeps the cross thread")
+	for i in 20:
+		j.hand_turn(2, 9.0, M8, true, 0.05)
+	check(j.is_bound(2) and j.can_pull(2), "a jammed bolt can still take the torque wrench")
+	_torque(j, 2, 25.0)
+	check(j.state[2] == BoltJoint.Hole.TORQUED and j.measurements().cross_threaded[2], "forcing it with the wrench keeps the cross thread")
 
 
-func _test_ratchet_needs_hand_start() -> void:
+func _test_hands_run_down() -> void:
 	var j := _joint()
 	j.place_bracket(0.0, 0.0)
-	j.hand_turn(0, 0.0, M8, true)
-	check(j.ratchet(0) == &"", "a straight bolt not yet started by hand refuses the ratchet")
-	check(not j.begin_pull(0), "no torque wrench before the bolt is run down")
+	j.hand_turn(0, 0.0, M8, true, 0.1)
+	check(j.state[0] == BoltJoint.Hole.STARTING and not j.begin_pull(0), "no torque wrench before the bolt is run down")
+	_hand_start(j, 0)
+	check(j.state[0] == BoltJoint.Hole.STARTED and not j.can_pull(0), "thread caught but not yet seated")
+	_run_down(j, 0)
+	check(j.state[0] == BoltJoint.Hole.SEATED and j.can_pull(0), "hands run it down finger tight")
+	check(j.hand_turn(0, 0.0, M8, true, 0.1) == &"", "hands can't turn a seated bolt further")
+	var fast := _joint()
+	fast.speed = 2.0
+	fast.place_bracket(0.0, 0.0)
+	fast.hand_turn(0, 0.0, M8, true, 1.0)
+	check(is_equal_approx(fast.turns[0], 2.0 * TUNING.hand_turns_per_second), "skill speed turns faster")
 
 
 func _test_order_torque_and_parts() -> void:
@@ -173,9 +187,11 @@ func _test_bench_scene(bus: TradesBus) -> void:
 	await frames(2)
 	var got: Array[JointResult] = []
 	bus.joint_completed.connect(func(r: JointResult) -> void: got.append(r))
-	bench.stage_for_screenshot()
+	await bench.stage_for_screenshot()
 	var j: BoltJoint = bench.joint
 	check(j.bracket_seated and j.order == PackedInt32Array([0, 2]), "screenshot staging seats the bracket and torques two bolts")
+	check(j.pulling_hole() == 1 and bench.wrench.visible, "staging has the wrench on the third bolt")
+	j.end_pull()
 	for h in [1, 3]:
 		_hand_start(j, h)
 		_run_down(j, h)
@@ -184,5 +200,17 @@ func _test_bench_scene(bus: TradesBus) -> void:
 	check(got[0].measurements.sequence_ok, "bench joint in spec order")
 	bench.reset_bench()
 	check(bus.get_result(&"bench_bracket") == null, "resetting the bench removes its result")
+	bench._on_key(KEY_1)   # hands: the bench leaves the right hand alone
+	var hand: StretchHand = bench.worker.right_hand
+	var snaps := [0]
+	hand.snapped.connect(func() -> void: snaps[0] += 1)
+	hand.reach_to(bench.worker.global_position + Vector3(0, 1.2, -1.0))
+	await get_tree().create_timer(0.5).timeout
+	check(hand.is_on_target() and snaps[0] == 0 and hand.tension() > 0.0, "a hand stretches out to something within reach")
+	hand.reach_to(bench.worker.global_position + Vector3(0, 1.2, -4.0))
+	await frames(3)
+	check(snaps[0] == 1 and not hand.out, "a hand over-stretched lets go")
+	bench.worker.set_view(true)
+	check(bench.worker.camera.position.length() > 1.0, "third person moves the camera out behind the shoulder")
 	bench.queue_free()
 	await frames(1)

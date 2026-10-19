@@ -4,18 +4,19 @@
 
 [resource]
 script = ExtResource("1")
-version = 1
-snap_distance_mm = 12.0
-snap_angle_deg = 6.0
+version = 2
+snap_distance_mm = 25.0
+snap_angle_deg = 8.0
 snap_residual = 0.25
-tilt_deg_per_mm = 1.5
+hand_reach_m = 0.9
+hand_stretch_m = 0.9
+tilt_deg_per_mm = 0.6
 cross_thread_tilt_deg = 6.0
-hand_turns_per_notch = 0.25
+hand_turns_per_second = 3.0
 hand_start_turns = 2.0
-cross_bind_turns = 0.75
-ratchet_turns_per_notch = 1.0
 run_down_turns = 6.0
-snug_share = 0.3
-nm_per_px = 0.12
+cross_bind_turns = 0.75
+snug_share = 0.2
+nm_per_px = 0.1
 min_pull_share = 0.5
 click_kick = 0.012

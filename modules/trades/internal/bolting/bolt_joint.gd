@@ -81,9 +81,10 @@ func tilt_for_offset(offset_mm: float) -> float:
 	return offset_mm * tuning.tilt_deg_per_mm
 
 
-## Turn a bolt by hand. The first turn decides whether it went in straight. Returns
-## &"turning", &"started", &"bind" (cross-threaded and stuck) or &"" (nothing to do).
-func hand_turn(hole: int, tilt_deg: float, fastener_id: StringName, with_washer: bool, notches: int = 1) -> StringName:
+## Turn a bolt by hand for `dt` seconds. The first turn decides whether it went in
+## straight; a straight bolt then runs down by hand until it seats finger tight. Returns
+## &"turning", &"started", &"seated", &"bind" (cross-threaded and stuck) or &"" (nothing to do).
+func hand_turn(hole: int, tilt_deg: float, fastener_id: StringName, with_washer: bool, dt: float) -> StringName:
 	if not bracket_seated:
 		return &""
 	if state[hole] == Hole.EMPTY:
@@ -92,27 +93,16 @@ func hand_turn(hole: int, tilt_deg: float, fastener_id: StringName, with_washer:
 		fastener[hole] = fastener_id
 		washer[hole] = with_washer
 		turns[hole] = 0.0
-	if state[hole] != Hole.STARTING:
+	if state[hole] != Hole.STARTING and state[hole] != Hole.STARTED:
 		return &""
-	if cross[hole] and turns[hole] >= tuning.cross_bind_turns:
+	if is_bound(hole):
 		return &"bind"
-	turns[hole] += notches * tuning.hand_turns_per_notch * speed
-	if not cross[hole] and turns[hole] >= tuning.hand_start_turns:
+	turns[hole] += dt * tuning.hand_turns_per_second * speed
+	if state[hole] == Hole.STARTING and not cross[hole] and turns[hole] >= tuning.hand_start_turns:
 		state[hole] = Hole.STARTED
 		changed.emit()
 		return &"started"
-	changed.emit()
-	return &"turning"
-
-
-## Run a bolt down with the ratchet. A cross-threaded bolt can be forced, and stays
-## cross-threaded. Returns &"turning", &"seated" or &"" (nothing to do).
-func ratchet(hole: int, notches: int = 1) -> StringName:
-	var forcing := state[hole] == Hole.STARTING and cross[hole]
-	if state[hole] != Hole.STARTED and not forcing:
-		return &""
-	turns[hole] += notches * tuning.ratchet_turns_per_notch * speed
-	if turns[hole] >= tuning.hand_start_turns + tuning.run_down_turns:
+	if state[hole] == Hole.STARTED and turns[hole] >= full_turns():
 		state[hole] = Hole.SEATED
 		torque[hole] = maxf(torque[hole], spec.torque_target_nm * tuning.snug_share)
 		changed.emit()
@@ -121,8 +111,17 @@ func ratchet(hole: int, notches: int = 1) -> StringName:
 	return &"turning"
 
 
+## A cross-threaded bolt that has jammed by hand. The torque wrench can still force it.
+func is_bound(hole: int) -> bool:
+	return state[hole] == Hole.STARTING and cross[hole] and turns[hole] >= tuning.cross_bind_turns
+
+
+func full_turns() -> float:
+	return tuning.hand_start_turns + tuning.run_down_turns
+
+
 func can_pull(hole: int) -> bool:
-	return state[hole] == Hole.SEATED or state[hole] == Hole.TORQUED
+	return state[hole] == Hole.SEATED or state[hole] == Hole.TORQUED or is_bound(hole)
 
 
 func begin_pull(hole: int) -> bool:
@@ -138,6 +137,10 @@ func begin_pull(hole: int) -> bool:
 func pull(applied_nm: float) -> void:
 	if _pull_hole < 0:
 		return
+	if state[_pull_hole] == Hole.STARTING and applied_nm >= spec.torque_target_nm * tuning.snug_share:
+		# Forcing a cross-threaded bolt down: it seats, but stays cross-threaded.
+		state[_pull_hole] = Hole.SEATED
+		turns[_pull_hole] = full_turns()
 	if applied_nm > torque[_pull_hole]:
 		torque[_pull_hole] = applied_nm
 		changed.emit()
@@ -149,7 +152,7 @@ func pull(applied_nm: float) -> void:
 func end_pull() -> void:
 	var hole := _pull_hole
 	_pull_hole = -1
-	if hole < 0 or torque[hole] < spec.torque_target_nm * tuning.min_pull_share:
+	if hole < 0 or state[hole] == Hole.STARTING or torque[hole] < spec.torque_target_nm * tuning.min_pull_share:
 		return
 	if state[hole] != Hole.TORQUED:
 		state[hole] = Hole.TORQUED
