@@ -18,6 +18,7 @@ const SCORE_CARD := "quality_score_card"
 const SAVE_VERSION := 1
 
 var _records: Dictionary = {}
+var _modifiers: Dictionary = {}  # str(peer_id) -> {effect_key: value}
 var _grader: QualityGrader
 
 
@@ -52,7 +53,7 @@ func submit(result: Object) -> JointRecord:
 	r.measurements = _field(result, "measurements", {}).duplicate(true)
 	r.peer_id = int(_field(result, "peer_id", 1))
 	r.time = int(_field(result, "time", int(Time.get_unix_time_from_system())))
-	_grader.grade(r)
+	_grader.grade(r, _modifiers.get(str(r.peer_id), {}))
 	_records[r.joint_id] = r
 	joint_graded.emit(r)
 	return r
@@ -62,6 +63,12 @@ func submit(result: Object) -> JointRecord:
 func drop(joint_id: StringName) -> void:
 	if _records.erase(joint_id):
 		record_dropped.emit(joint_id)
+
+
+## Progression pushes each player's effects here (player_id is str(peer_id)). Quality reads
+## "torque_tolerance" and ignores keys it doesn't own. Applies to joints graded from now on.
+func set_player_modifiers(player_id: Variant, effects: Dictionary) -> void:
+	_modifiers[str(player_id)] = effects.duplicate()
 
 
 func get_record(joint_id: StringName) -> JointRecord:

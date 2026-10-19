@@ -12,12 +12,13 @@ func _init(bolting_rules: BoltingRules = null) -> void:
 	bolting = bolting_rules if bolting_rules else load(BOLTING_RULES) as BoltingRules
 
 
-func grade(r: JointRecord) -> void:
+## `modifiers` are the worker's Progression effects, e.g. {"torque_tolerance": 0.05}.
+func grade(r: JointRecord, modifiers: Dictionary = {}) -> void:
 	r.breakdown = {}
 	r.faults = []
 	match r.trade:
 		&"BOLT":
-			_grade_bolting(r)
+			_grade_bolting(r, modifiers)
 		_:
 			r.score = -1
 			r.grade = JointRecord.UNGRADED
@@ -25,7 +26,9 @@ func grade(r: JointRecord) -> void:
 
 ## Bolting keys (Trades spec 4.3): torque_nm, torque_target_nm, sequence_ok, cross_threaded,
 ## washer, fastener_ids; optional fastener_spec_id and needs_washer copied from the spec.
-func _grade_bolting(r: JointRecord) -> void:
+## torque_tolerance (a fraction of target) widens both torque bands by that many percent;
+## the over-torque fail line never moves, since a yielded bolt fails whoever fitted it.
+func _grade_bolting(r: JointRecord, modifiers: Dictionary) -> void:
 	var m := r.measurements
 	var rules := bolting
 	var torques: Array = m.get("torque_nm", [])
@@ -37,6 +40,9 @@ func _grade_bolting(r: JointRecord) -> void:
 	var spec_fastener := StringName(m.get("fastener_spec_id", ""))
 	var needs_washer := bool(m.get("needs_washer", true))
 	var auto_fail := false
+	var bonus_pct := maxf(float(modifiers.get("torque_tolerance", 0.0)), 0.0) * 100.0
+	var full_pct := rules.torque_full_pct + bonus_pct
+	var zero_pct := rules.torque_zero_pct + bonus_pct
 
 	if holes == 0 or target <= 0.0:
 		r.faults.append(_fault("no_data", -1, "No torque readings"))
@@ -48,13 +54,12 @@ func _grade_bolting(r: JointRecord) -> void:
 		var t := float(torques[i])
 		var off_pct := (t - target) / target * 100.0
 		var dev := absf(off_pct)
-		torque_marks += 1.0 - clampf((dev - rules.torque_full_pct)
-				/ (rules.torque_zero_pct - rules.torque_full_pct), 0.0, 1.0)
+		torque_marks += 1.0 - clampf((dev - full_pct) / (zero_pct - full_pct), 0.0, 1.0)
 		if off_pct >= rules.over_torque_fail_pct:
 			auto_fail = true
 			r.faults.append(_fault("over_torque", i, "Hole %d over-torqued by %d%%: bolt yielded"
 					% [i + 1, roundi(off_pct)]))
-		elif dev > rules.torque_full_pct:
+		elif dev > full_pct:
 			var word := "over" if off_pct > 0 else "under"
 			r.faults.append(_fault(word + "_torque", i, "Hole %d %s target by %d%%"
 					% [i + 1, word, roundi(dev)]))

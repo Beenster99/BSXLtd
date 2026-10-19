@@ -65,6 +65,16 @@ func run_tests() -> void:
 	g2.grade(r)
 	check(r.grade == JointRecord.MARGINAL, "pass mark comes from the rules data")
 
+	var skilled := _bolt([25.0, 25.0, 23.25, 25.0])
+	g.grade(skilled, {"torque_tolerance": 0.05, "bolt_speed": 0.1})
+	var unskilled := _bolt([25.0, 25.0, 23.25, 25.0])
+	g.grade(unskilled)
+	check(skilled.score == 100 and skilled.faults.is_empty() and unskilled.score < 100,
+			"torque_tolerance widens the full-marks band: %d vs %d" % [skilled.score, unskilled.score])
+	var yielded_skilled := _bolt([25.0, 36.0, 25.0, 25.0])
+	g.grade(yielded_skilled, {"torque_tolerance": 0.5})
+	check(yielded_skilled.grade == JointRecord.FAIL, "tolerance never moves the over-torque fail line")
+
 	await _test_bus()
 
 
@@ -105,6 +115,16 @@ func _test_bus() -> void:
 	var s := bus.summary()
 	check(s.joints == 2 and s.passed == 1 and s.failed == 1, "summary counts: %s" % [s])
 	check(bus.records({"grade": JointRecord.FAIL}).size() == 1, "records filter by grade")
+
+	bus.set_player_modifiers("7", {"torque_tolerance": 0.05})
+	var res3 := FakeResult.new()
+	res3.joint_id = &"bracket_c"
+	res3.peer_id = 7
+	res3.measurements = _bolting_measurements([25.0, 25.0, 23.25, 25.0], {})
+	check(bus.submit(res3).score == 100, "player modifiers from Progression apply by peer id")
+	res3.peer_id = 1
+	check(bus.submit(res3).score < 100, "modifiers are per player")
+	bus.drop(&"bracket_c")
 
 	var data := bus.save_data()
 	bus.clear()
