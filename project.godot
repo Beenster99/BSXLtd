@@ -24,6 +24,7 @@ HudSlots="*res://modules/core/api/hud_slots.gd"
 Menu="*res://modules/core/api/menu.gd"
 Shots="*res://modules/core/api/shots.gd"
 Modules="*res://modules/core/api/modules.gd"
+Graphics="*res://modules/core/api/graphics.gd"
 
 [display]
 
