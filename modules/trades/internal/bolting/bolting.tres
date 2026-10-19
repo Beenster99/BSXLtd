@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="BoltingTuning" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/trades/internal/bolting/bolting_tuning.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+snap_distance_mm = 12.0
+snap_angle_deg = 6.0
+snap_residual = 0.25
+tilt_deg_per_mm = 1.5
+cross_thread_tilt_deg = 6.0
+hand_turns_per_notch = 0.25
+hand_start_turns = 2.0
+cross_bind_turns = 0.75
+ratchet_turns_per_notch = 1.0
+run_down_turns = 6.0
+snug_share = 0.3
+nm_per_px = 0.12
+min_pull_share = 0.5
+click_kick = 0.012
