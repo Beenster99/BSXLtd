@@ -6,7 +6,6 @@ extends ModuleTest
 
 class TradesStub:
 	extends Node
-	signal joint_completed(joint_id, quality, trade, player_id)
 	var modifiers := {}
 
 	func set_player_modifiers(player_id: StringName, effects: Dictionary) -> void:
@@ -30,7 +29,30 @@ class BusinessStub:
 
 class QualityStub:
 	extends Node
+	signal joint_graded(record)
+	signal record_dropped(joint_id)
 	signal test_passed(job_id, player_ids)
+	var modifiers := {}
+
+	func set_player_modifiers(player_id: StringName, effects: Dictionary) -> void:
+		modifiers[player_id] = effects
+
+	func grade(joint_id: String, trade: StringName, peer_id: int, score: int) -> void:
+		var r := Record.new()
+		r.joint_id = StringName(joint_id)
+		r.trade = trade
+		r.peer_id = peer_id
+		r.score = score
+		joint_graded.emit(r)
+
+
+## The JointRecord fields Progression reads.
+class Record:
+	extends RefCounted
+	var joint_id: StringName
+	var trade: StringName
+	var peer_id := 1
+	var score := -1
 
 
 class ContractsStub:
@@ -60,38 +82,45 @@ func run_tests() -> void:
 	check(bus.skills().size() == 5, "five trade skills load from data")
 	check(bus.certs().size() >= 1 and bus.upgrades().size() >= 1, "certs and upgrades load")
 
-	# XP: 10 per perfect joint, scaled by quality; level 1 at 100 XP.
+	# XP: 10 per joint scoring 100, scaled by score; level 1 at 100 XP. Peer 2 is "ana".
 	for i in 9:
-		trades.joint_completed.emit("j%d" % i, 1.0, &"welding", &"ana")
-	check(bus.skill_xp(&"ana", &"welding") == 90, "nine perfect welds give 90 XP")
-	check(bus.skill_level(&"ana", &"welding") == 0, "still level 0 below 100 XP")
-	trades.joint_completed.emit("j9", 0.5, &"welding", &"ana")
-	check(bus.skill_xp(&"ana", &"welding") == 95, "a half quality joint gives half XP")
-	trades.joint_completed.emit("j10", 1.0, &"welding", &"ana")
-	check(bus.skill_level(&"ana", &"welding") == 1, "level 1 at 100 XP")
-	check(events.has(["level_up", &"ana", &"welding", 1]), "level_up emitted")
-	check(is_equal_approx(bus.effect(&"ana", &"weld_bead_stability"), 0.05), "level 1 perk applies")
-	check(trades.modifiers.get(&"ana", {}).has(&"weld_bead_stability"), "effects pushed to Trades")
-	check(bus.effect(&"ben", &"weld_bead_stability") == 0.0, "other players unaffected")
-	trades.joint_completed.emit("j11", 1.0, &"no_such_trade", &"ana")
-	trades.joint_completed.emit("j12", 1.0, &"welding", &"")
-	check(bus.skill_xp(&"ana", &"welding") == 105, "unknown trades and anonymous joints ignored")
+		quality.grade("j%d" % i, &"welding", 2, 100)
+	check(bus.skill_xp(&"ana", &"welding") == 0, "players are keyed by peer id for now")
+	check(bus.skill_xp(&"2", &"welding") == 90, "nine perfect welds give 90 XP")
+	check(bus.skill_level(&"2", &"welding") == 0, "still level 0 below 100 XP")
+	quality.grade("j9", &"welding", 2, 30)
+	check(bus.skill_xp(&"2", &"welding") == 93, "a score of 30 gives 30% XP")
+	quality.grade("j9", &"welding", 2, 50)
+	check(bus.skill_xp(&"2", &"welding") == 95, "a regraded joint adds only the difference")
+	quality.grade("j9", &"welding", 2, 20)
+	check(bus.skill_xp(&"2", &"welding") == 95, "a worse regrade takes nothing away")
+	quality.record_dropped.emit(&"j9")
+	quality.grade("j9", &"welding", 2, -1)
+	check(bus.skill_xp(&"2", &"welding") == 100, "a rebuilt ungraded joint earns half afresh")
+	check(bus.skill_level(&"2", &"welding") == 1, "level 1 at 100 XP")
+	check(events.has(["level_up", &"2", &"welding", 1]), "level_up emitted")
+	check(is_equal_approx(bus.effect(&"2", &"weld_bead_stability"), 0.05), "level 1 perk applies")
+	check(trades.modifiers.get(&"2", {}).has(&"weld_bead_stability"), "effects pushed to Trades")
+	check(quality.modifiers.get(&"2", {}).has(&"weld_bead_stability"), "effects pushed to Quality")
+	check(bus.effect(&"3", &"weld_bead_stability") == 0.0, "other players unaffected")
+	quality.grade("j11", &"no_such_trade", 2, 100)
+	check(bus.skill_xp(&"2", &"welding") == 100, "unknown trades ignored")
 
 	# Certs: pressure welding needs welding level 2 and its test job.
-	quality.test_passed.emit(&"cert_test_pressure_weld", [&"ana"])
-	check(not bus.has_cert(&"ana", &"pressure_welding"), "no cert below the skill level")
+	quality.test_passed.emit(&"cert_test_pressure_weld", [&"2"])
+	check(not bus.has_cert(&"2", &"pressure_welding"), "no cert below the skill level")
 	for i in 20:
-		trades.joint_completed.emit("k%d" % i, 1.0, &"welding", &"ana")
-	check(bus.skill_level(&"ana", &"welding") == 2, "level 2 at 300 XP")
-	quality.test_passed.emit(&"cert_test_pressure_weld", [&"ana", &"ben"])
-	check(bus.has_cert(&"ana", &"pressure_welding"), "cert earned on a passed test")
-	check(not bus.has_cert(&"ben", &"pressure_welding"), "unskilled player gets no cert")
+		quality.grade("k%d" % i, &"welding", 2, 100)
+	check(bus.skill_level(&"2", &"welding") == 2, "level 2 at 300 XP")
+	quality.test_passed.emit(&"cert_test_pressure_weld", [&"2", &"3"])
+	check(bus.has_cert(&"2", &"pressure_welding"), "cert earned on a passed test")
+	check(not bus.has_cert(&"3", &"pressure_welding"), "unskilled player gets no cert")
 	for i in 19:
 		contracts.job_closed.emit("job%d" % i)
-	check(bus.has_cert(&"ana", &"pressure_welding"), "cert still valid after 19 jobs")
+	check(bus.has_cert(&"2", &"pressure_welding"), "cert still valid after 19 jobs")
 	contracts.job_closed.emit("job19")
-	check(not bus.has_cert(&"ana", &"pressure_welding"), "cert lapses after 20 jobs")
-	check(events.has(["lapsed", &"ana", &"pressure_welding"]), "cert_lapsed emitted")
+	check(not bus.has_cert(&"2", &"pressure_welding"), "cert lapses after 20 jobs")
+	check(events.has(["lapsed", &"2", &"pressure_welding"]), "cert_lapsed emitted")
 
 	# Upgrades: prerequisites, Business refusing, Business charging.
 	bus.request_upgrade(&"inspection_scanner")
@@ -103,7 +132,7 @@ func run_tests() -> void:
 	bus.request_upgrade(&"second_crane")
 	check(bus.has_upgrade(&"second_crane"), "upgrade owned after purchase")
 	check(business.charged == [&"upgrade.second_crane"], "charged through the upgrade's price_ref")
-	check(is_equal_approx(bus.effect(&"ben", &"lift_speed"), 0.2), "company upgrade applies to everyone")
+	check(is_equal_approx(bus.effect(&"3", &"lift_speed"), 0.2), "company upgrade applies to everyone")
 	check(bus.can_unlock(&"inspection_scanner").ok, "scanner unlockable once the crane is owned")
 	check(bus.can_unlock(&"second_crane").missing == [&"owned"], "owned upgrades can't be bought twice")
 
@@ -113,12 +142,16 @@ func run_tests() -> void:
 	check(Saves.save(slot) == OK, "save writes")
 	var fresh := ProgressionBus.new()
 	add_child(fresh)
-	fresh.attach(trades, null, null, null)
+	var quality2 := QualityStub.new()
+	add_child(quality2)
+	fresh.attach(trades, null, quality2, null)
 	Saves.register_section("progression_test", fresh)
 	check(Saves.load_slot(slot) == OK, "load reads")
-	check(fresh.skill_xp(&"ana", &"welding") == bus.skill_xp(&"ana", &"welding"), "XP survives a save")
+	check(fresh.skill_xp(&"2", &"welding") == bus.skill_xp(&"2", &"welding"), "XP survives a save")
+	quality2.grade("j0", &"welding", 2, 100)
+	check(fresh.skill_xp(&"2", &"welding") == bus.skill_xp(&"2", &"welding"), "regrade after a load gives no XP twice")
 	check(fresh.has_upgrade(&"second_crane"), "upgrades survive a save")
-	check(is_equal_approx(fresh.effect(&"ana", &"weld_bead_stability"), 0.05), "effects rebuilt after load")
+	check(is_equal_approx(fresh.effect(&"2", &"weld_bead_stability"), 0.05), "effects rebuilt after load")
 	Saves.unregister_section("progression_test")
 	DirAccess.remove_absolute(Saves.path_for(slot))
 

@@ -10,6 +10,8 @@ var catalog: RefCounted
 ## String(player_id) -> {"skills": {skill_id: xp}, "certs": {cert_id: jobs_since_earned}}
 var players: Dictionary = {}
 var owned: PackedStringArray = []
+## String(joint_id) -> XP already given for it, so a regraded joint only adds the difference.
+var joint_xp: Dictionary = {}
 
 
 func _init(cat: RefCounted) -> void:
@@ -67,13 +69,18 @@ func can_unlock(upgrade_id: StringName) -> Dictionary:
 	return {"ok": missing.is_empty(), "missing": missing}
 
 
-## A finished joint. Returns {skill, amount, xp, level_before, level_after}, or {} when the
-## joint trains no skill.
-func add_joint(player_id: StringName, trade: StringName, quality: float) -> Dictionary:
+## A graded joint (quality 0..1). A regraded joint adds only what beats its earlier grade.
+## Returns {skill, amount, xp, level_before, level_after}, or {} when it adds nothing.
+func add_joint(player_id: StringName, joint_id: StringName, trade: StringName, quality: float) -> Dictionary:
 	var s: ProgressionSkill = catalog.skill_for_trade(trade)
 	if s == null or player_id == &"":
 		return {}
-	var amount := roundi(s.xp_per_joint * clampf(quality, 0.0, 1.0))
+	var earned := roundi(s.xp_per_joint * clampf(quality, 0.0, 1.0))
+	var given := int(joint_xp.get(String(joint_id), 0))
+	var amount := earned - given
+	if amount <= 0:
+		return {}
+	joint_xp[String(joint_id)] = earned
 	var before := xp(player_id, s.id)
 	_player(player_id, true).skills[String(s.id)] = before + amount
 	return {"skill": s.id, "amount": amount, "xp": before + amount,
@@ -111,13 +118,18 @@ func close_job() -> Array:
 	return lapsed
 
 
+## The joint was taken apart, so a rebuilt joint with the same id earns afresh.
+func forget_joint(joint_id: StringName) -> void:
+	joint_xp.erase(String(joint_id))
+
+
 func own(upgrade_id: StringName) -> void:
 	if not has_upgrade(upgrade_id):
 		owned.append(String(upgrade_id))
 
 
 func to_dict() -> Dictionary:
-	return {"players": players.duplicate(true), "owned": Array(owned)}
+	return {"players": players.duplicate(true), "owned": Array(owned), "joint_xp": joint_xp.duplicate()}
 
 
 func from_dict(data: Dictionary, from_version: int) -> void:
@@ -131,6 +143,7 @@ func from_dict(data: Dictionary, from_version: int) -> void:
 		players[String(pid)] = {"skills": p.get("skills", {}).duplicate(),
 				"certs": p.get("certs", {}).duplicate()}
 	owned = PackedStringArray(data.get("owned", []))
+	joint_xp = data.get("joint_xp", {}).duplicate()
 
 
 func _player(player_id: StringName, create := false) -> Dictionary:

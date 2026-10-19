@@ -5,13 +5,15 @@ extends Node
 ## classes placed next to it. Everything else lives in internal/.
 ##
 ## Skills and certs belong to a player; upgrades belong to the company. XP comes from
-## finished joints, certs from passed test jobs, upgrades from Business purchases.
+## joints as Quality grades them (score 0..100 scales the XP; ungraded joints count as
+## half), certs from passed test jobs, upgrades from Business purchases.
 ##
 ## Modules below Progression can't call it, so it pushes what they need down instead: after
-## any change it hands Trades each player's effects with `set_player_modifiers(player_id,
-## {effect_key: value})`, if Trades offers that method. It listens for these, where present:
-##   Trades    joint_completed(joint_id, quality, trade, player_id)
-##   Quality   test_passed(job_id, player_ids: Array)
+## any change it hands each player's effects to Trades and Quality with
+## `set_player_modifiers(player_id, {effect_key: value})`, where offered. Each reads the keys
+## it owns (Trades "bolt_speed", Quality "torque_tolerance") and ignores the rest. It listens for these, where present:
+##   Quality   joint_graded(record: JointRecord), record_dropped(joint_id),
+##             test_passed(job_id, player_ids: Array)  (from 0.5)
 ##   Contracts job_closed(job_id)
 ##   Business  purchase_completed(order_id), purchase_failed(order_id, reason)
 ## and buys through Business `request_purchase(price_ref, order_id)`.
@@ -25,11 +27,14 @@ signal upgrade_failed(upgrade_id: StringName, reason: String)
 
 const SAVE_SECTION := "progression"
 const ORDER_PREFIX := "progression:"
+## XP scale for a joint Quality has no rules for yet.
+const UNGRADED_QUALITY := 0.5
 const Catalog := preload("res://modules/progression/internal/catalog.gd")
 const State := preload("res://modules/progression/internal/progression_state.gd")
 
 var _state: RefCounted = State.new(Catalog.from_data())
 var _trades: Node
+var _quality: Node
 var _business: Node
 var _pending: Dictionary = {}  # order_id -> upgrade_id
 
@@ -48,8 +53,10 @@ func unregister_module() -> void:
 ## stand-ins. Any of them may be null.
 func attach(trades: Node, business: Node, quality: Node, contracts: Node) -> void:
 	_trades = trades
+	_quality = quality
 	_business = business
-	_listen(trades, "joint_completed", _on_joint_completed)
+	_listen(quality, "joint_graded", _on_joint_graded)
+	_listen(quality, "record_dropped", _on_record_dropped)
 	_listen(quality, "test_passed", _on_test_passed)
 	_listen(contracts, "job_closed", _on_job_closed)
 	_listen(business, "purchase_completed", _on_purchase_completed)
@@ -149,11 +156,20 @@ func load_data(data: Dictionary, from_version: int) -> void:
 
 # Events from other modules
 
-func _on_joint_completed(_joint_id: Variant, quality: float, trade: StringName = &"",
-		player_id: StringName = &"") -> void:
+## Until Multiplayer gives players lasting ids, a player is their peer id.
+static func player_for_peer(peer_id: int) -> StringName:
+	return StringName(str(peer_id))
+
+
+## `record` is a Quality JointRecord, read by field so either module can ship first.
+func _on_joint_graded(record: Object) -> void:
 	if not _is_host():
 		return
-	var r: Dictionary = _state.add_joint(player_id, trade, quality)
+	var score := int(record.get("score"))
+	var quality := UNGRADED_QUALITY if score < 0 else score / 100.0
+	var player_id := player_for_peer(int(record.get("peer_id")))
+	var r: Dictionary = _state.add_joint(player_id, StringName(record.get("joint_id")),
+			StringName(record.get("trade")), quality)
 	if r.is_empty():
 		return
 	xp_gained.emit(player_id, r.skill, r.amount, r.xp)
@@ -161,6 +177,10 @@ func _on_joint_completed(_joint_id: Variant, quality: float, trade: StringName =
 		level_up.emit(player_id, r.skill, lvl)
 	if r.level_after > r.level_before:
 		_push_effects(player_id)
+
+
+func _on_record_dropped(joint_id: StringName) -> void:
+	_state.forget_joint(joint_id)
 
 
 func _on_test_passed(job_id: StringName, player_ids: Array) -> void:
@@ -195,8 +215,10 @@ func _on_purchase_failed(order_id: String, reason: String) -> void:
 
 
 func _push_effects(player_id: StringName) -> void:
-	if _trades and _trades.has_method("set_player_modifiers"):
-		_trades.set_player_modifiers(player_id, effects(player_id))
+	var fx := effects(player_id)
+	for bus in [_trades, _quality]:
+		if bus and bus.has_method("set_player_modifiers"):
+			bus.set_player_modifiers(player_id, fx)
 
 
 func _is_host() -> bool:
