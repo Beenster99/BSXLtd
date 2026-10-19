@@ -245,7 +245,7 @@ func _on_seam_completed() -> void:
 	var bus := bay.bus()
 	if bus:
 		bus.complete_joint(site, m)
-	var pens: Array = m.penetration
+	var pens: Array = m.penetration_samples
 	var lines: PackedStringArray = ["WELDED SEAM COMPLETE", ""]
 	lines.append("Coverage: %d%%" % roundi(m.coverage * 100.0))
 	lines.append("Speed: %s mm/s (target %d)" % [_spread(m.travel_speed_mm_s), roundi(m.travel_speed_mm_s_target)])

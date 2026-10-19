@@ -41,7 +41,8 @@ func _test_clean_run() -> void:
 	var m := w.measurements()
 	check(m.coverage == 1.0 and not m.burn_through and m.restarts == 0, "full coverage, no burn through, one strike")
 	check(m.travel_speed_mm_s.size() == 12, "one sample per 10 mm")
-	var pens: Array = m.penetration
+	var pens: Array = m.penetration_samples
+	check(absf(m.penetration - 1.0) < 0.1 and m.arc_length_target_mm == 3.0, "mean penetration and Quality's target names reported")
 	check(absf(pens[6] - 1.0) < 0.05 and absf(m.travel_speed_mm_s[6] - 8.0) < 0.1, "steady travel at the target gives full penetration")
 	check(m.torch_angle_deg[3] == 30.0 and m.arc_length_mm[3] == 3.0, "angle and arc recorded")
 	check(not w.strike(10.0), "a finished seam can't be struck again")

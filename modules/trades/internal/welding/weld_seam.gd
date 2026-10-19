@@ -203,8 +203,13 @@ func measurements() -> Dictionary:
 		"torch_angle_deg_target": angle_target_deg,
 		"arc_length_mm": arcs,
 		"arc_length_mm_target": arc_target_mm,
+		# Quality's message named the targets "<what>_target_<unit>"; both spellings are sent.
+		"travel_speed_target_mm_s": speed_target_mm_s,
+		"torch_angle_target_deg": angle_target_deg,
+		"arc_length_target_mm": arc_target_mm,
 		"coverage": snappedf(coverage(), 0.001),
-		"penetration": pens,
+		"penetration": snappedf(_mean(pens), 0.01),
+		"penetration_samples": pens,
 		"burn_through": burn_through,
 		"restarts": maxi(0, strikes - 1),
 		"amps": amps,
@@ -212,6 +217,15 @@ func measurements() -> Dictionary:
 		"length_mm": length_mm,
 		"plate_mm": plate_mm,
 	}
+
+
+func _mean(values: Array[float]) -> float:
+	if values.is_empty():
+		return 0.0
+	var sum := 0.0
+	for v in values:
+		sum += v
+	return sum / values.size()
 
 
 func _zeros(n: int) -> PackedFloat64Array:
