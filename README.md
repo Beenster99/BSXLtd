@@ -4,7 +4,9 @@ A co-op Godot game about running BSX Ltd, the contractor that fits and maintains
 ships of [Void Salvage](https://github.com/dantheo999/void-salvage). Players there send
 upgrade contracts; crews here bolt, rivet, weld and wire the work.
 
-Godot **4.7.2** (standard build, not .NET), GDScript, Jolt physics: the same as Void Salvage.
+Godot **4.7.2** (standard build, not .NET), static-typed GDScript, Jolt physics, SI units,
+-Z forward: the same conventions as Void Salvage, so its shared code drops in unchanged.
+Never reuse a Void Salvage class name (the boundary check enforces it).
 
 ## Running it
 
@@ -19,7 +21,7 @@ modules/<id>/          one folder per module, one project thread per module
   internal/            everything else; change freely in a fix
   tests/               test_*.gd, run headless
   module.tres          id, depends_on, flag, bus script
-addons/ship_components/  the component library shared with Void Salvage (submodule, to come)
+shared/void_salvage/   Void Salvage files synced at a pinned commit (never edited by hand)
 config/project_flags.tres        the active feature flags
 config/release_profiles/v0.1.tres what each release switches on
 tools/run_tests.sh               every module's tests
@@ -39,7 +41,7 @@ business, progression. Dependencies point one way (see each `module.tres`).
 2. Talk through buses: a module's bus node is `Modules.bus("<id>")`, with signals such as
    `joint_completed(joint_id, quality)`. Never reach into another module's scenes.
 3. Register with Core instead of being referenced by it:
-   `Router.register_scene`, `Menu.register_entry`, `Hud.register_panel`,
+   `Router.register_scene`, `Menu.register_entry`, `HudSlots.register_panel`,
    `Settings.register`, `Saves.register_section`, `Shots.register`. Do this in your bus's
    `register_module()`.
 4. Save data is one section per module with its own schema version; migrate old versions

@@ -9,7 +9,10 @@ Rules (docs: the Core and UI module spec):
   - Otherwise, modules/<x>/ may be used only through modules/<x>/api/, and only if x is in
     the user's depends_on.
   - A module's tests/ may use any module's api/ (loader and integration tests), never internals.
-  - addons/ is open to everyone (the shared ship component library lives there).
+  - addons/ and shared/ are open to everyone (shared/void_salvage/ holds synced Void
+    Salvage files).
+  - No BSX class_name or autoload may reuse a class name from shared/void_salvage/, or the
+    synced code stops compiling.
 
 Both res:// paths and class_name identifiers are checked, since GDScript can reach a class
 without a path. Usage:  python3 tools/check_boundaries.py [project_dir]
@@ -45,6 +48,28 @@ def read_classes(root: Path) -> dict:
         for name in CLASS_RE.findall(f.read_text(encoding="utf-8")):
             classes[name] = (rel.parts[0], len(rel.parts) > 1 and rel.parts[1] == "api")
     return classes
+
+
+AUTOLOAD_RE = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)="\*?res://', re.M)
+
+
+def name_clashes(root: Path) -> list:
+    shared = {}
+    for f in sorted(root.glob("shared/void_salvage/**/*.gd")):
+        for name in CLASS_RE.findall(f.read_text(encoding="utf-8")):
+            shared[name] = f.relative_to(root)
+    ours = {}
+    for f in sorted(root.glob("modules/**/*.gd")) + sorted(root.glob("tools/**/*.gd")):
+        for name in CLASS_RE.findall(f.read_text(encoding="utf-8")):
+            ours[name] = f"{f.relative_to(root)} (class_name)"
+    project = root / "project.godot"
+    if project.exists():
+        text = project.read_text(encoding="utf-8")
+        section = re.search(r"^\[autoload\]\n(.*?)(?=^\[|\Z)", text, re.M | re.S)
+        for name in AUTOLOAD_RE.findall(section.group(1) if section else ""):
+            ours[name] = "project.godot (autoload)"
+    return [f"{where}: '{name}' is also a Void Salvage class ({shared[name]})"
+            for name, where in sorted(ours.items()) if name in shared]
 
 
 def allowed(user: str, target: str, public: bool, deps: set, in_tests: bool = False) -> str:
@@ -98,7 +123,7 @@ def check(root: Path) -> list:
 
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent)
-    problems = check(root)
+    problems = check(root) + name_clashes(root)
     for p in problems:
         print(p)
     if problems:

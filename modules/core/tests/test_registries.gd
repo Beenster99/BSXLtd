@@ -1,5 +1,5 @@
 extends ModuleTest
-## Router, Hud, Menu, Shots and Settings registries.
+## Router, HudSlots, Menu, Shots and Settings registries.
 ##   tools/run_tests.sh core
 
 
@@ -9,14 +9,14 @@ func run_tests() -> void:
 	check(Router.scene_path("_t").ends_with("boot.tscn"), "router path")
 	check(not Router.has_scene("_nope"), "router unknown id")
 
-	Hud.register_panel("_b", "res://x.tscn", Hud.TOOL_BELT, 5)
-	Hud.register_panel("_a", "res://y.tscn", Hud.TOOL_BELT, 1)
-	Hud.register_panel("_a", "res://y.tscn", Hud.TOOL_BELT, 1)
-	var belt: Array = Hud.panels_in(Hud.TOOL_BELT).filter(func(p): return p.id.begins_with("_"))
+	HudSlots.register_panel("_b", "res://x.tscn", HudSlots.TOOL_BELT, 5)
+	HudSlots.register_panel("_a", "res://y.tscn", HudSlots.TOOL_BELT, 1)
+	HudSlots.register_panel("_a", "res://y.tscn", HudSlots.TOOL_BELT, 1)
+	var belt: Array = HudSlots.panels_in(HudSlots.TOOL_BELT).filter(func(p): return p.id.begins_with("_"))
 	check(belt.size() == 2, "re-registering a panel replaces it")
 	check(belt[0].id == "_a", "panels sorted by order")
-	Hud.unregister_panel("_a")
-	Hud.unregister_panel("_b")
+	HudSlots.unregister_panel("_a")
+	HudSlots.unregister_panel("_b")
 
 	Menu.register_entry("_late", "Late", "_t", 50)
 	Menu.register_entry("_early", "Early", "_t", -50)

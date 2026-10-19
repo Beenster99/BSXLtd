@@ -1,7 +1,7 @@
 class_name HudLayer
 extends CanvasLayer
-## The in-game HUD. A game scene adds one (`add_child(HudLayer.new())`); it lays out the Hud
-## slots and fills them with whatever panels modules registered with Core's Hud.
+## The in-game HUD. A game scene adds one (`add_child(HudLayer.new())`); it lays out the HudSlots
+## slots and fills them with whatever panels modules registered with Core's HudSlots.
 
 var slots: Dictionary = {}
 
@@ -13,11 +13,11 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.theme = BsxTheme.get_theme()
 	add_child(root)
-	_add_slot(root, Hud.TOP_BAR, HBoxContainer.new(), Control.PRESET_TOP_WIDE)
-	_add_slot(root, Hud.TOOL_BELT, HBoxContainer.new(), Control.PRESET_CENTER_BOTTOM)
-	_add_slot(root, Hud.JOB_CARD, VBoxContainer.new(), Control.PRESET_TOP_RIGHT)
-	_add_slot(root, Hud.NOTICES, VBoxContainer.new(), Control.PRESET_CENTER_TOP)
-	Hud.panels_changed.connect(_rebuild)
+	_add_slot(root, HudSlots.TOP_BAR, HBoxContainer.new(), Control.PRESET_TOP_WIDE)
+	_add_slot(root, HudSlots.TOOL_BELT, HBoxContainer.new(), Control.PRESET_CENTER_BOTTOM)
+	_add_slot(root, HudSlots.JOB_CARD, VBoxContainer.new(), Control.PRESET_TOP_RIGHT)
+	_add_slot(root, HudSlots.NOTICES, VBoxContainer.new(), Control.PRESET_CENTER_TOP)
+	HudSlots.panels_changed.connect(_rebuild)
 	var ui := Modules.bus("ui") as UiBus
 	if ui:
 		ui.notice_posted.connect(_on_notice)
@@ -38,7 +38,7 @@ func _rebuild() -> void:
 		for child in box.get_children():
 			if child.has_meta("hud_panel"):
 				child.queue_free()
-		for p in Hud.panels_in(id):
+		for p in HudSlots.panels_in(id):
 			var scene := load(p.scene) as PackedScene
 			if scene == null:
 				push_error("HudLayer: can't load panel %s (%s)" % [p.id, p.scene])
@@ -50,5 +50,5 @@ func _rebuild() -> void:
 
 func _on_notice(text: String) -> void:
 	var l := BsxTheme.muted(text)
-	slots[Hud.NOTICES].add_child(l)
+	slots[HudSlots.NOTICES].add_child(l)
 	get_tree().create_timer(4.0).timeout.connect(l.queue_free)

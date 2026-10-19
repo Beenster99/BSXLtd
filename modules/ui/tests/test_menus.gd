@@ -23,12 +23,12 @@ func run_tests() -> void:
 	check(settings.find_child("MasterVolume", true, false) != null, "settings shows volume")
 	settings.queue_free()
 
-	Hud.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
+	HudSlots.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
 	var hud := HudLayer.new()
 	add_child(hud)
 	await frames(2)
 	var top: Node = hud.slots["top_bar"]
 	check(top.get_children().any(func(c): return c.get_meta("hud_panel", "") == "_panel"),
 			"HUD instantiates a registered panel")
-	Hud.unregister_panel("_panel")
+	HudSlots.unregister_panel("_panel")
 	hud.queue_free()

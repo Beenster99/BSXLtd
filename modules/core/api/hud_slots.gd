@@ -1,7 +1,7 @@
 extends Node
-## HUD panel registry (autoload `Hud`). Modules register panels into named slots; the UI
+## HUD panel registry (autoload `HudSlots`). Modules register panels into named slots; the UI
 ## module's HUD draws whatever is registered, so Core and UI never know which modules exist.
-##   Hud.register_panel("torque_readout", "res://modules/trades/internal/torque.tscn", Hud.TOOL_BELT)
+##   HudSlots.register_panel("torque_readout", "res://modules/trades/internal/torque.tscn", HudSlots.TOOL_BELT)
 
 signal panels_changed
 
@@ -15,7 +15,7 @@ var _panels: Array[Dictionary] = []
 
 
 func register_panel(id: String, scene_path: String, slot: String, order: int = 0) -> void:
-	assert(slot in SLOTS, "Hud: unknown slot '%s'" % slot)
+	assert(slot in SLOTS, "HudSlots: unknown slot '%s'" % slot)
 	unregister_panel(id)
 	_panels.append({"id": id, "scene": scene_path, "slot": slot, "order": order})
 	_panels.sort_custom(func(a, b): return a.order < b.order)

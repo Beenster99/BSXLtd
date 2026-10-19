@@ -20,7 +20,7 @@ Flags="*res://modules/core/api/flags.gd"
 Settings="*res://modules/core/api/settings.gd"
 Saves="*res://modules/core/api/saves.gd"
 Router="*res://modules/core/api/router.gd"
-Hud="*res://modules/core/api/hud.gd"
+HudSlots="*res://modules/core/api/hud_slots.gd"
 Menu="*res://modules/core/api/menu.gd"
 Shots="*res://modules/core/api/shots.gd"
 Modules="*res://modules/core/api/modules.gd"
@@ -41,3 +41,64 @@ common/physics_ticks_per_second=60
 
 anti_aliasing/quality/msaa_3d=2
 textures/vram_compression/import_etc2_astc=true
+
+; Copied from Void Salvage's project.godot: its shared surface shaders
+; (res://shared/void_salvage/) read these. Keep in step when the sync script reports a change.
+[shader_globals]
+
+survey_layer={
+"type": "int",
+"value": -1
+}
+survey_layer_old={
+"type": "int",
+"value": 0
+}
+survey_pane_c={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+survey_pane_u={
+"type": "vec3",
+"value": Vector3(1, 0, 0)
+}
+survey_pane_v={
+"type": "vec3",
+"value": Vector3(0, 1, 0)
+}
+survey_poly_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+survey_poly_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+survey_poly_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+survey_poly_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+survey_poly_n={
+"type": "int",
+"value": 0
+}
+survey_sweep={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 0)
+}
+survey_glow={
+"type": "float",
+"value": 0.0
+}
+surface_detail={
+"type": "float",
+"value": 1.0
+}
+surface_normal={
+"type": "float",
+"value": 1.0
+}
