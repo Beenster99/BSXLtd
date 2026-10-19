@@ -12,6 +12,7 @@ flags = {
 "progression": false,
 "quality": false,
 "ship_bay": true,
+"shared_components": true,
 "trades": true,
 "trades.bolting": true,
 "ui": true

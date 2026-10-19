@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="BuildSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/joint_spec.gd" id="1_yyf8u"]
+[ext_resource type="Script" path="res://modules/shared_components/api/build_spec.gd" id="2_276rw"]
+
+[sub_resource type="Resource" id="Resource_houj4"]
+script = ExtResource("1_yyf8u")
+at = Vector3(-0.24, -0.6, -0.24)
+normal = Vector3(0, -1, 0)
+fastener = "M12"
+
+[sub_resource type="Resource" id="Resource_fnrwi"]
+script = ExtResource("1_yyf8u")
+at = Vector3(0.24, -0.6, -0.24)
+normal = Vector3(0, -1, 0)
+fastener = "M12"
+
+[sub_resource type="Resource" id="Resource_6qpej"]
+script = ExtResource("1_yyf8u")
+at = Vector3(0.24, -0.6, 0.24)
+normal = Vector3(0, -1, 0)
+fastener = "M12"
+
+[sub_resource type="Resource" id="Resource_ei5c3"]
+script = ExtResource("1_yyf8u")
+at = Vector3(-0.24, -0.6, 0.24)
+normal = Vector3(0, -1, 0)
+fastener = "M12"
+
+[sub_resource type="Resource" id="Resource_bqnjr"]
+script = ExtResource("1_yyf8u")
+kind = 3
+at = Vector3(0, -0.5, 0.3)
+normal = Vector3(0, 0, 1)
+port = "power"
+
+[resource]
+script = ExtResource("2_276rw")
+part_name = "IonThruster"
+display_name = "Ion thruster"
+category = "engines"
+mass = 600.0
+shape = "WreckParts.ion_thruster"
+shape_args = [0.6, 1.2]
+joints = Array[ExtResource("1_yyf8u")]([SubResource("Resource_houj4"), SubResource("Resource_fnrwi"), SubResource("Resource_6qpej"), SubResource("Resource_ei5c3"), SubResource("Resource_bqnjr")])
+order = PackedInt32Array(0, 2, 1, 3, 4)
+lift_points = PackedVector3Array(0, 0.6, 0)
+hours = 1.5

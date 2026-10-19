@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="BuildSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/joint_spec.gd" id="1_o6jrn"]
+[ext_resource type="Script" path="res://modules/shared_components/api/build_spec.gd" id="2_rsuri"]
+
+[sub_resource type="Resource" id="Resource_4e33e"]
+script = ExtResource("1_o6jrn")
+at = Vector3(-0.11, 0.006, -0.06)
+fastener = "M12"
+
+[sub_resource type="Resource" id="Resource_2u3ka"]
+script = ExtResource("1_o6jrn")
+at = Vector3(0.11, 0.006, -0.06)
+fastener = "M12"
+
+[sub_resource type="Resource" id="Resource_lggbs"]
+script = ExtResource("1_o6jrn")
+at = Vector3(0.11, 0.006, 0.06)
+fastener = "M12"
+
+[sub_resource type="Resource" id="Resource_q2s1r"]
+script = ExtResource("1_o6jrn")
+at = Vector3(-0.11, 0.006, 0.06)
+fastener = "M12"
+
+[resource]
+script = ExtResource("2_rsuri")
+part_name = "TankBracket"
+display_name = "Tank bracket"
+category = "frame"
+mass = 5.6
+shape = "PartShapes.box"
+shape_args = [Vector3(0.3, 0.012, 0.2)]
+joints = Array[ExtResource("1_o6jrn")]([SubResource("Resource_4e33e"), SubResource("Resource_2u3ka"), SubResource("Resource_lggbs"), SubResource("Resource_q2s1r")])
+order = PackedInt32Array(0, 2, 1, 3)
+lift_points = PackedVector3Array()
+hours = 0.25

@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="BuildSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/joint_spec.gd" id="1_dewtk"]
+[ext_resource type="Script" path="res://modules/shared_components/api/build_spec.gd" id="2_35fk2"]
+
+[sub_resource type="Resource" id="Resource_kh0ip"]
+script = ExtResource("1_dewtk")
+at = Vector3(-0.55, 0.006, -0.55)
+fastener = "M10"
+
+[sub_resource type="Resource" id="Resource_600ty"]
+script = ExtResource("1_dewtk")
+at = Vector3(0.55, 0.006, -0.55)
+fastener = "M10"
+
+[sub_resource type="Resource" id="Resource_dyevs"]
+script = ExtResource("1_dewtk")
+at = Vector3(0.55, 0.006, 0.55)
+fastener = "M10"
+
+[sub_resource type="Resource" id="Resource_ururp"]
+script = ExtResource("1_dewtk")
+at = Vector3(-0.55, 0.006, 0.55)
+fastener = "M10"
+
+[resource]
+script = ExtResource("2_35fk2")
+part_name = "DeckPlate"
+display_name = "Deck plate"
+category = "hull"
+mass = 134.8
+shape = "PartShapes.box"
+shape_args = [Vector3(1.2, 0.012, 1.2)]
+joints = Array[ExtResource("1_dewtk")]([SubResource("Resource_kh0ip"), SubResource("Resource_600ty"), SubResource("Resource_dyevs"), SubResource("Resource_ururp")])
+order = PackedInt32Array(0, 2, 1, 3)
+lift_points = PackedVector3Array()
+hours = 0.5
