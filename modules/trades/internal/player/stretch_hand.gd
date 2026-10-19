@@ -5,14 +5,13 @@ extends Node3D
 ## sleeve stretches behind it and glows amber, then red, as it nears full stretch. Past
 ## that it lets go (snapped is emitted) and springs back.
 ##
-## Void Salvage's tool arm stretches the same way; BSX's is a gloved hand in hi-vis orange.
+## Void Salvage's tool arm stretches the same way, and looks the same: the dark metal arm
+## (ToolController) ending in the salvager suit's glove (PlayerModel's suit and frame).
 
 signal snapped
 
 ## Where the hand sits on its mount, in the mount's space.
 const REST := Vector3(0.0, 0.0, 0.0)
-const GLOVE := Color("e8792b")
-const CUFF := Color("2b3138")
 
 ## How quickly the hand slides out and back (1/s).
 @export var speed := 9.0
@@ -42,30 +41,47 @@ func _ready() -> void:
 	_glove = Node3D.new()
 	_glove.name = "Glove"
 	add_child(_glove)
-	var glove := _mat(GLOVE, 0.0, 0.7)
-	var cuff := _mat(CUFF, 0.4, 0.5)
+	var glove := TradesLook.metal(TradesLook.SUIT, 0.0, 0.75)
+	var frame := TradesLook.metal(TradesLook.FRAME, 0.8, 0.4)
+	var accent := TradesLook.metal(TradesLook.TRIM, 0.4, 0.5)
+	accent.emission_enabled = true
+	accent.emission = TradesLook.TRIM
+	accent.emission_energy_multiplier = 0.5
 	var side := -1.0 if left else 1.0
-	_box(Vector3(0.085, 0.03, 0.095), Vector3(0, 0, -0.01), glove, _glove)
-	_box(Vector3(0.095, 0.045, 0.05), Vector3(0, 0, 0.055), cuff, _glove)
+	_box(Vector3(0.08, 0.03, 0.09), Vector3(0, 0, -0.01), glove, _glove)
+	_box(Vector3(0.06, 0.008, 0.05), Vector3(0, 0.018, -0.012), frame, _glove)      # back plate
+	_box(Vector3(0.03, 0.004, 0.012), Vector3(0, 0.024, 0.0), accent, _glove)       # colour flash
+	var cuff := MeshInstance3D.new()
+	var cuff_mesh := CylinderMesh.new()
+	cuff_mesh.top_radius = 0.034
+	cuff_mesh.bottom_radius = 0.036
+	cuff_mesh.height = 0.04
+	cuff_mesh.radial_segments = 12
+	cuff.mesh = cuff_mesh
+	cuff.material_override = frame
+	cuff.position = Vector3(0, 0, 0.055)
+	cuff.rotation.x = PI * 0.5
+	_glove.add_child(cuff)
 	for i in 4:
 		var f := Node3D.new()
-		f.position = Vector3((i - 1.5) * 0.021, 0.0, -0.058)
+		f.position = Vector3((i - 1.5) * 0.02, 0.0, -0.056)
 		_glove.add_child(f)
-		_box(Vector3(0.017, 0.02, 0.055), Vector3(0, 0, -0.024), glove, f)
+		_box(Vector3(0.016, 0.019, 0.05), Vector3(0, 0, -0.022), glove, f)
+		_box(Vector3(0.012, 0.004, 0.014), Vector3(0, 0.011, -0.012), frame, f)    # knuckle plate
 		_fingers.append(f)
 	var thumb := Node3D.new()
-	thumb.position = Vector3(-0.045 * side, 0.0, -0.005)
+	thumb.position = Vector3(-0.043 * side, 0.0, -0.005)
 	thumb.rotation.y = deg_to_rad(35.0) * side
 	_glove.add_child(thumb)
-	_box(Vector3(0.018, 0.02, 0.05), Vector3(0, 0, -0.022), glove, thumb)
+	_box(Vector3(0.017, 0.019, 0.046), Vector3(0, 0, -0.02), glove, thumb)
 	_fingers.append(thumb)
 
-	_sleeve_mat = _mat(CUFF, 0.5, 0.5)
+	_sleeve_mat = TradesLook.metal(TradesLook.ARM, 0.6, 0.45)
 	_sleeve_mat.emission_enabled = true
 	_sleeve_mat.emission = Color.BLACK
 	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.013
-	mesh.bottom_radius = 0.017
+	mesh.top_radius = 0.016
+	mesh.bottom_radius = 0.024
 	mesh.height = 1.0
 	mesh.radial_segments = 10
 	mesh.rings = 1
@@ -171,10 +187,3 @@ func _box(size: Vector3, at: Vector3, mat: Material, parent: Node3D) -> MeshInst
 	parent.add_child(m)
 	return m
 
-
-static func _mat(color: Color, metallic: float, roughness: float) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.metallic = metallic
-	mat.roughness = roughness
-	return mat
