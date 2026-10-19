@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="WeldingRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/quality/internal/welding_rules.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+steady_full_pct = 10.0
+steady_zero_pct = 40.0
+coverage_full = 0.98
+coverage_zero = 0.8
+coverage_fail = 0.9
+penetration_zero = 0.6
+penetration_fail = 0.7
+weight_speed = 20.0
+weight_angle = 15.0
+weight_arc = 15.0
+weight_coverage = 25.0
+weight_penetration = 25.0
+pass_score = 70
+marginal_score = 50
