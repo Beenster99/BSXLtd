@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ProgressionUpgrade" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/progression/api/progression_upgrade.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = &"inspection_scanner"
+display_name = "Inspection scanner"
+kind = 1
+target_id = &"inspection_station"
+requires = PackedStringArray("second_crane")
+price_ref = &"upgrade.inspection_scanner"
+effect_key = &"scan_coverage"
+value = 1.0

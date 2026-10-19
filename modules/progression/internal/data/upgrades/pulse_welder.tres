@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ProgressionUpgrade" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/progression/api/progression_upgrade.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = &"pulse_welder"
+display_name = "Pulse welder"
+kind = 0
+target_id = &"welder"
+requires = PackedStringArray()
+price_ref = &"upgrade.pulse_welder"
+effect_key = &"weld_bead_stability"
+value = 0.1
