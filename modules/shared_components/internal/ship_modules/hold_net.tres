@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShipModuleSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/ship_module_spec.gd" id="1_smod"]
+
+[resource]
+script = ExtResource("1_smod")
+id = "hold_net"
+display_name = "Hold nets"
+blurb = "Cargo nets and tie-downs that pack the hold tighter."
+category = "handling"
+fits = PackedStringArray("S", "M", "L", "XL")
+mount = "hold"
+stat = "hold_capacity"
+factor = 1.25
+requires = ""
+hours = 3.0

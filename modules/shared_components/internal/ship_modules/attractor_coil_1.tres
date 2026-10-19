@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShipModuleSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/ship_module_spec.gd" id="1_smod"]
+
+[resource]
+script = ExtResource("1_smod")
+id = "attractor_coil_1"
+display_name = "Attractor coil Mk I"
+blurb = "Stronger intake coils: the beam lifts half as much again."
+category = "handling"
+fits = PackedStringArray("S", "M", "L", "XL")
+mount = "hold"
+stat = "attractor_cap"
+factor = 1.5
+requires = ""
+hours = 6.0

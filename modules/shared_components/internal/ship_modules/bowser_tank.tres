@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShipModuleSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/ship_module_spec.gd" id="1_smod"]
+
+[resource]
+script = ExtResource("1_smod")
+id = "bowser_tank"
+display_name = "Bowser tank"
+blurb = "A second bowser tank: half as much fuel and coolant again."
+category = "fuel"
+fits = PackedStringArray("S", "M", "L", "XL")
+mount = "hold"
+stat = "bowser_capacity"
+factor = 1.5
+requires = ""
+hours = 4.0

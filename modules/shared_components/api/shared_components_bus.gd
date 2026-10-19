@@ -7,6 +7,9 @@ extends Node
 
 const SPECS_DIR := "res://modules/shared_components/internal/specs"
 const FASTENERS_DIR := "res://modules/shared_components/internal/fasteners"
+const SHIP_MODULES_DIR := "res://modules/shared_components/internal/ship_modules"
+## Ship classes a module may fit, smallest first.
+const SHIP_CLASSES: PackedStringArray = ["S", "M", "L", "XL"]
 const SOURCE_COMMIT_FILE := "res://shared/void_salvage/SOURCE_COMMIT"
 
 ## The shape builders a BuildSpec may name. Each takes its spec's shape_args in order.
@@ -22,6 +25,7 @@ var specs_version := 0
 
 var _specs: Dictionary = {}
 var _fasteners: Dictionary = {}
+var _ship_modules: Dictionary = {}
 
 
 func register_module() -> void:
@@ -32,6 +36,7 @@ func register_module() -> void:
 func reload() -> void:
 	_specs = {}
 	_fasteners = {}
+	_ship_modules = {}
 	specs_version = 0
 	source_commit = ""
 	if FileAccess.file_exists(SOURCE_COMMIT_FILE):
@@ -40,6 +45,10 @@ func reload() -> void:
 		var f := res as FastenerSpec
 		if f:
 			_fasteners[f.id] = f
+	for res in _load_dir(SHIP_MODULES_DIR):
+		var m := res as ShipModuleSpec
+		if m:
+			_ship_modules[m.id] = m
 	for res in _load_dir(SPECS_DIR):
 		var s := res as BuildSpec
 		if s:
@@ -72,6 +81,25 @@ func fastener(id: String) -> FastenerSpec:
 
 func fastener_ids() -> PackedStringArray:
 	var out := PackedStringArray(_fasteners.keys())
+	out.sort()
+	return out
+
+
+## A ship upgrade by id ("attractor_coil_1"), or null if there is no such module.
+func ship_module(id: String) -> ShipModuleSpec:
+	return _ship_modules.get(id)
+
+
+func is_ship_module(id: String) -> bool:
+	return _ship_modules.has(id)
+
+
+## Every module id, optionally only those a ship class ("S", "M", "L", "XL") takes, sorted.
+func ship_module_ids(ship_class := "") -> PackedStringArray:
+	var out := PackedStringArray()
+	for id: String in _ship_modules:
+		if ship_class == "" or (_ship_modules[id] as ShipModuleSpec).fits.has(ship_class):
+			out.append(id)
 	out.sort()
 	return out
 
