@@ -53,8 +53,8 @@ func run_tests() -> void:
 	g.grade(empty)
 	check(empty.grade == JointRecord.FAIL and empty.score == 0, "no readings fails")
 
-	var weld := JointRecord.new()
-	weld.trade = &"WELD"
+	var weld := JointRecord.new()  # lifting and fitting has no rules until 0.3
+	weld.trade = &"FIT"
 	g.grade(weld)
 	check(weld.grade == JointRecord.UNGRADED and weld.score == -1, "trades without rules stay ungraded")
 

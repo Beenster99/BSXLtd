@@ -273,3 +273,18 @@ static func in_group(group: String) -> Array[String]:
 		if String(FINISHES[id]["group"]) == group:
 			out.append(id)
 	return out
+
+
+## A copy of a salvage surface with its paint (colour, metal, roughness...), made fresh:
+## in Godot 4.7 duplicate() on these loses the colour (on the copy and on the shared
+## original), so weathered parts came out the shader's default grey.
+static func copy_surface(mat: ShaderMaterial) -> ShaderMaterial:
+	var copy := ShaderMaterial.new()
+	copy.shader = mat.shader
+	copy.render_priority = mat.render_priority
+	for u: Dictionary in mat.shader.get_shader_uniform_list():
+		var key: String = u["name"]
+		var value: Variant = mat.get_shader_parameter(key)
+		if value != null:
+			copy.set_shader_parameter(key, value)
+	return copy

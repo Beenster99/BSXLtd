@@ -92,8 +92,9 @@ static func data() -> Spec:
 # Kept coarse: a big wreck has dozens of spans, each several metres of seven wires.
 const SIDES: int = 6        # facets around each wire
 const STEP: float = 0.05    # metres between rings of vertices along a wire
-const TIE_COLOR := Color(0.04, 0.04, 0.045)
-const STRAP_COLOR := Color(0.55, 0.56, 0.58)
+# The clips and ties carry finish codes (SurfaceZones), like the parts library's loom bend.
+const TIE_COLOR := Color(0.07, 0.07, 0.075, SurfaceZones.NYLON_A)       # black nylon cable ties
+const STRAP_COLOR := Color(0.55, 0.56, 0.58, SurfaceZones.GALVANISED_A) # galvanised clip straps
 const COPPER := Color(0.85, 0.45, 0.2)
 
 static var _material: StandardMaterial3D

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="WiringRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/quality/internal/wiring_rules.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+strip_full_mm = 1.0
+strip_zero_mm = 3.0
+crimp_zero = 0.5
+continuity_zero = 2.0
+insulation_zero = 0.5
+insulation_fail = 0.25
+weight_crimp = 35.0
+weight_strip = 15.0
+weight_continuity = 25.0
+weight_insulation = 15.0
+weight_polarity = 10.0
+pass_score = 70
+marginal_score = 50

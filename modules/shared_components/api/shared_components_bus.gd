@@ -85,6 +85,19 @@ func fastener_ids() -> PackedStringArray:
 	return out
 
 
+## Every Void Salvage material id ("steel", "alloy", ...), lowest tier first.
+func material_ids() -> PackedStringArray:
+	var ids: Array = Materials.TABLE.keys()
+	ids.sort_custom(func(a: String, b: String) -> bool:
+		return Materials.tier(a) < Materials.tier(b) or (Materials.tier(a) == Materials.tier(b) and a < b))
+	var out := PackedStringArray(ids)
+	return out
+
+
+func is_material(id: String) -> bool:
+	return Materials.TABLE.has(id)
+
+
 ## A ship upgrade by id ("attractor_coil_1"), or null if there is no such module.
 func ship_module(id: String) -> ShipModuleSpec:
 	return _ship_modules.get(id)
