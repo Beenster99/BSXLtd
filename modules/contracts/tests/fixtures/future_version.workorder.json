@@ -1,0 +1,79 @@
+{
+  "schema": "bsx.work_order",
+  "schema_version": 99,
+  "contract_id": "rook_salvage.bsx3",
+  "issued_at": "2026-10-18T17:00:00Z",
+  "client": {
+    "company": "rook_salvage",
+    "display_name": "Rook Salvage",
+    "game": "void_salvage"
+  },
+  "ship": {
+    "ship_id": "rook_salvage/kestrel",
+    "design": "kestrel",
+    "current_fit": [
+      {
+        "slot": "hold_module_1",
+        "component": {
+          "id": "hold_net"
+        },
+        "condition": 0.8
+      }
+    ]
+  },
+  "changes": [
+    {
+      "change_id": "c1",
+      "action": "replace",
+      "slot": "hold_module_1",
+      "remove": {
+        "id": "hold_net"
+      },
+      "install": {
+        "id": "attractor_coil_1",
+        "material": "copper"
+      },
+      "notes": "Keep the old net, I want it back."
+    }
+  ],
+  "manifest": [
+    {
+      "line_id": "m1",
+      "component": {
+        "id": "attractor_coil_1",
+        "material": "copper"
+      },
+      "qty": 1,
+      "supplied_by": "bsx",
+      "allowed_sources": [
+        "new",
+        "refurbished"
+      ]
+    }
+  ],
+  "spec_sheet": {
+    "library": true,
+    "overrides": [
+      {
+        "change_id": "c1",
+        "bolt": {
+          "torque_nm": 200,
+          "pattern": "star"
+        }
+      }
+    ]
+  },
+  "notes": [
+    {
+      "text": "Coil feed must land on the hold breaker.",
+      "change_id": "c1"
+    }
+  ],
+  "commercial": {
+    "price": 120000,
+    "currency": "cr",
+    "deposit_pct": 30,
+    "deadline": "2026-11-01T00:00:00Z",
+    "late_penalty_per_day": 2500
+  }
+}
