@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShipModuleSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/ship_module_spec.gd" id="1_smod"]
+
+[resource]
+script = ExtResource("1_smod")
+id = "survey_array"
+display_name = "Survey array"
+blurb = "A scanner array that surveys a wreck in half the time and spots cargo."
+category = "sensors"
+fits = PackedStringArray("S", "M", "L", "XL")
+mount = "roof"
+stat = "survey_time"
+factor = 0.5
+requires = ""
+hours = 5.0

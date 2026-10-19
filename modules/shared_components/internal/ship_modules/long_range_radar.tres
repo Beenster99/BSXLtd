@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShipModuleSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/ship_module_spec.gd" id="1_smod"]
+
+[resource]
+script = ExtResource("1_smod")
+id = "long_range_radar"
+display_name = "Long-range radar"
+blurb = "A bigger dish: contacts show from twice as far, with a tighter error ring."
+category = "sensors"
+fits = PackedStringArray("S", "M", "L", "XL")
+mount = "roof"
+stat = "contact_range"
+factor = 2.0
+requires = ""
+hours = 5.0

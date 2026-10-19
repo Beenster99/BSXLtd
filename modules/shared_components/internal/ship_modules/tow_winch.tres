@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShipModuleSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/ship_module_spec.gd" id="1_smod"]
+
+[resource]
+script = ExtResource("1_smod")
+id = "tow_winch"
+display_name = "Tow winch"
+blurb = "A winch on the tow point: tows twice the mass and reels it in."
+category = "towing"
+fits = PackedStringArray("M", "L", "XL")
+mount = "hull"
+stat = "tow_mass"
+factor = 2.0
+requires = ""
+hours = 8.0
