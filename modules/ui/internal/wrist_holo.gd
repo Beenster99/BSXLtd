@@ -3,7 +3,8 @@ extends CanvasLayer
 ## The wrist screen, like Star Citizen's mobiGlas: press the holo key (Keys.HOLO, F1 by
 ## default) anywhere in a game and your wrist projects a semi-transparent screen in front of
 ## your face. Its rail lists Home and every channel modules registered with
-## HudSlots.register_holo_channel; click one to bring it up. The holo key, Esc or a click
+## HudSlots.register_holo_channel; click one to bring it up. A channel's Control that has a
+## close_requested signal puts the screen away when it fires. The holo key, Esc or a click
 ## outside the screen puts it away. The UI bus owns one for the whole game.
 
 const SHADER := """
@@ -114,6 +115,8 @@ func show_channel(channel_id: String, sound: bool = true) -> void:
 		_content_node = made as Control
 		if _content_node == null:
 			_content_node = BsxTheme.muted("This channel has nothing to show.")
+		elif _content_node.has_signal("close_requested"):
+			_content_node.connect("close_requested", close)
 	_content_node.name = "Channel"
 	_content_node.set_anchors_preset(Control.PRESET_FULL_RECT)
 	content.add_child(_content_node)

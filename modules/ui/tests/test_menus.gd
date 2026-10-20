@@ -230,6 +230,12 @@ func _test_holo() -> void:
 	await frames(1)
 	check(holo.channel == UiBus.TIME_CHANNEL and holo.content.find_child("TimeOfDay", true, false) != null,
 			"open_holo switches channel")
+	HudSlots.register_holo_channel("_closing", "Closing", func() -> Control: return Closing.new(), 2)
+	HudSlots.open_holo("_closing")
+	(holo.content.find_child("Channel", false, false) as Closing).close_requested.emit()
+	check(not holo.is_open, "a channel's close_requested puts the screen away")
+	HudSlots.unregister_holo_channel("_closing")
+	HudSlots.open_holo("_orders")
 	HudSlots.unregister_holo_channel("_orders")
 	await frames(1)
 	check(holo.rail.find_child("Ch__orders", false, false) == null, "an unregistered channel leaves the rail")
@@ -275,3 +281,7 @@ class Walker extends CharacterBody3D:
 		velocity.x = 3.0
 		velocity.y -= 9.0 * delta
 		move_and_slide()
+
+
+class Closing extends Control:
+	signal close_requested
