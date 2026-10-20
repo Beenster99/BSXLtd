@@ -21,6 +21,7 @@ var markers: Dictionary = {}
 var _bus: ShipBayBus
 var _tight_mat := _paint(TIGHT, true)
 var _loose_mat := _paint(LOOSE, true)
+var _head_mat := ShipSurface.of(ShipKit.paint(Color(0.55, 0.57, 0.6), 0.85, 0.35))
 
 
 func _ready() -> void:
@@ -126,16 +127,39 @@ func _show_ship(def: ShipDefinition) -> void:
 	pieces = pieces_by_slot(ship_root, def)
 	for s in def.slots:
 		for f in s.fasteners:
-			var m := MeshInstance3D.new()
-			var dot := SphereMesh.new()
-			dot.radius = 0.06
-			dot.height = 0.12
-			m.mesh = dot
-			m.position = f.position + f.normal * 0.03
+			var m := _fastener_marker(f)
 			ship_root.add_child(m)
 			markers[f.joint_id] = m
 		_apply_slot(s.slot_id)
 	_refresh_markers()
+
+
+## A fastener as it looks on the ship: its head (a hex bolt, a domed rivet, a round plug) on
+## a thin washer ring lit green when tight and amber when undone. The ring is the marker
+## (its material shows the state); the head is its child, so hiding the ring hides both.
+func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
+	var n := f.normal.normalized()
+	var side := Vector3.UP if absf(n.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
+	var x := side.cross(n).normalized()
+	var ring := MeshInstance3D.new()
+	var big := f.kind != "rivet"
+	ring.mesh = PartShapes.ring(0.024 if big else 0.016, 0.034 if big else 0.022, 0.004, 16).mesh
+	ring.transform = Transform3D(Basis(x, n, x.cross(n)), f.position + n * 0.002)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var head := MeshInstance3D.new()
+	match f.kind:
+		"rivet":
+			head.mesh = PartShapes.dome(0.014, 0.009, 8, 2).mesh
+			head.position.y = 0.0045
+		"connector":
+			head.mesh = PartShapes.prism(12, 0.04, 0.05).mesh
+			head.position.y = 0.025
+		_:
+			head.mesh = PartShapes.prism(6, 0.021, 0.016).mesh
+			head.position.y = 0.01
+	head.material_override = _head_mat
+	ring.add_child(head)
+	return ring
 
 
 ## The model's mesh pieces whose centre lies in each slot's box (ship space). The Kestrel's
