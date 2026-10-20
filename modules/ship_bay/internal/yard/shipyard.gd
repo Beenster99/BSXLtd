@@ -17,6 +17,7 @@ extends Node3D
 
 const BAY_SCENE := preload("res://modules/ship_bay/internal/bay/bay.tscn")
 const Walker := preload("res://modules/ship_bay/internal/yard/yard_walker.gd")
+const TrolleyFleet := preload("res://modules/ship_bay/internal/yard/trolley_fleet.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
@@ -80,6 +81,8 @@ const VIEWS := {
 	"storage_bins": [Vector3(-11.6, 1.7, -27.4), Vector3(-8.9, 1.4, -32.5)],
 	"storage_bulk": [Vector3(-29.8, 6.0, -25.4), Vector3(-42.0, 0.0, -37.0)],
 	"goods_in": [Vector3(-31.0, 4.6, -21.0), Vector3(-41.0, 0.0, -6.0)],
+	"trolleys": [Vector3(-38.5, 3.4, -25.0), Vector3(-31.0, 0.6, -14.0)],
+	"trolley_lift": [Vector3(-12.2, 1.8, -24.6), Vector3(-10.4, 4.6, -34.0)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)
@@ -143,6 +146,8 @@ var _labels: Node3D                 # location labels and tags
 var _stores: Node3D                 # goods on the shelves and delivered crates, redrawn
 var _stores_paint: Dictionary = {}  # category -> crate material
 var _bus: ShipBayBus
+## The hover trolleys and their console (TrolleyFleet).
+var trolleys: Node3D
 
 
 func _ready() -> void:
@@ -181,6 +186,9 @@ func _ready() -> void:
 	walker.name = "Walker"
 	add_child(walker)
 	walker.call("place", Vector3(-6, 0, 30), Vector3(0, 3, -4))
+	trolleys = TrolleyFleet.new()
+	trolleys.set("yard", self)
+	add_child(trolleys)
 	view_camera = Camera3D.new()
 	view_camera.name = "ViewCamera"
 	view_camera.far = 6000.0
@@ -1495,6 +1503,8 @@ func _refresh_stores() -> void:
 	var crates := _bus.delivered_crates()
 	for id: String in crates:
 		var c: Dictionary = crates[id]
+		if str(c.get("carrier", "")) != "":
+			continue   # on a trolley's deck: the trolley draws it
 		var at := _bus.crate_position(id)
 		var kind := StorageLayout.kind_for(float(c["mass"]))
 		var cat := str(StorageLayout.items().get(c["item"], {}).get("category", ""))

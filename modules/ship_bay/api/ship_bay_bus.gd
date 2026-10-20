@@ -23,6 +23,10 @@ signal ship_power_changed(on: bool)
 signal delivery_landed(order_id: String, crate_ids: PackedStringArray)
 ## A delivered crate's goods were put away on a storage location.
 signal crate_stored(crate_id: String, location_id: String)
+## A hover trolley picked a delivered crate up (trolley "s", "m" or "l").
+signal crate_carried(crate_id: String, trolley_id: String)
+## A hover trolley was told to do something (see command_trolley); the yard's fleet acts.
+signal trolley_command(trolley_id: String, command: String, args: Dictionary)
 ## Anything in the stores changed (crates landed or put away, stock taken, a load).
 signal stock_changed
 ## The shipyard scene has built itself; add your own nodes to `yard` (at shipyard_spot()s).
@@ -33,6 +37,10 @@ const BAY_SCENE := "ship_bay.bay"
 ## Router scene id of the shipyard round the bay (registered while "ship_bay.shipyard" is on).
 const SHIPYARD_SCENE := "ship_bay.shipyard"
 const SAVE_VERSION := 2
+## The yard's hover trolleys, small, medium and large. Their Multiplayer mover ids are
+## "trolley:<id>"; claim one to drive it by remote control.
+const TROLLEYS: PackedStringArray = ["s", "m", "l"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "put_away", "park", "stop", "deck"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
@@ -85,6 +93,16 @@ func register_module() -> void:
 				if not id.ends_with("/1"):
 					store_crate(id)
 			scene.call("show_view", "storage_aisle_d"))
+		Shots.register("shipyard_trolleys", SHIPYARD_SCENE, func(scene: Node) -> void:
+			_sample_delivery()
+			scene.call("show_view", "trolleys"))
+		# The medium trolley in aisle D with a crate raised to the fourth shelf.
+		Shots.register("shipyard_trolley_lift", SHIPYARD_SCENE, func(scene: Node) -> void:
+			var fleet: Node = scene.get("trolleys")
+			var m: Node = (fleet.get("trolleys") as Dictionary)["m"]
+			m.call("set_cargo", {"crate_id": "shot", "kind": "pallet", "mass": 311.0, "name": "Ion thruster"})
+			m.call("pose", Vector3(-10.95, 0, -33.95), 0.0, 5.61)
+			scene.call("show_view", "trolley_lift"))
 
 
 func _hook_net() -> void:
@@ -95,13 +113,16 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.delivery", _apply_delivery, _host_only)
 	_net.call("register_event", "ship_bay.store_crate", _apply_store, _check_store)
 	_net.call("register_event", "ship_bay.take_stock", _apply_take, _check_take)
+	_net.call("register_event", "ship_bay.trolley_carry", _apply_carry, _check_carry)
+	_net.call("register_event", "ship_bay.trolley", _apply_trolley, _check_trolley)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
 	if _net:
-		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock"]:
+		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
+				"ship_bay.trolley_carry", "ship_bay.trolley"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -310,13 +331,16 @@ func delivered_crates() -> Dictionary:
 	return _stock.crates.duplicate(true)
 
 
-## Where a delivered crate stands in the yard (its floor centre), or Vector3.ZERO.
+## Where a delivered crate stands in the yard (its floor centre), or Vector3.ZERO (none, or
+## on a trolley).
 func crate_position(crate_id: String) -> Vector3:
 	var c: Dictionary = _stock.crates.get(crate_id, {})
 	if c.is_empty():
 		return Vector3.ZERO
 	var spots: Array = StorageLayout.get_layout()["goods_in"]
 	var spot := int(c["spot"])
+	if spot < 0:
+		return Vector3.ZERO   # on a trolley
 	return spots[spot % spots.size()] + Vector3(0, 1.1 * (spot / spots.size()), 0)
 
 
@@ -337,6 +361,34 @@ func take_stock(item_id: String, qty := 1) -> void:
 		_net.call("request", "ship_bay.take_stock", payload)
 	elif _check_take(0, payload) is Dictionary:
 		_apply_take(payload)
+
+
+## Tells a hover trolley ("s", "m", "l") what to do; every player's yard hears it and the
+## one driving the trolley carries it out:
+## - "come" {to: Vector3}: come to a place (a player's feet) and wait there
+## - "put_away": take delivered crates it can carry to their places in the stores, one by one
+## - "park": go back to its parking bay in Deliveries; "stop": stop where it is
+## - "deck" {height}: raise or lower its deck (metres, its top over the floor)
+func command_trolley(trolley_id: String, command: String, args: Dictionary = {}) -> void:
+	var payload := {"trolley": trolley_id, "command": command, "args": args.duplicate()}
+	if _net:
+		_net.call("request", "ship_bay.trolley", payload)
+	elif _check_trolley(0, payload) is Dictionary:
+		_apply_trolley(payload)
+
+
+## A trolley picks a delivered crate up (its driver asks when it reaches the crate).
+func carry_crate(crate_id: String, trolley_id: String) -> void:
+	var payload := {"crate_id": crate_id, "trolley": trolley_id}
+	if _net:
+		_net.call("request", "ship_bay.trolley_carry", payload)
+	elif _check_carry(0, payload) is Dictionary:
+		_apply_carry(payload)
+
+
+## The delivered crate a trolley carries now, or "".
+func trolley_cargo(trolley_id: String) -> String:
+	return _stock.carried_by(trolley_id)
 
 
 ## Every storage location: id -> {id, kind ("bin", "pallet", "bulk"), rack, bay, level, pos,
@@ -415,6 +467,35 @@ func _apply_store(payload: Dictionary) -> void:
 	if loc != "":
 		stock_changed.emit()
 		crate_stored.emit(id, loc)
+
+
+func _check_carry(_sender: int, payload: Dictionary) -> Variant:
+	var id := str(payload.get("crate_id", ""))
+	if not _stock.crates.has(id):
+		return "no such crate"
+	if str(_stock.crates[id].get("carrier", "")) != "":
+		return "already on a trolley"
+	if not TROLLEYS.has(str(payload.get("trolley", ""))):
+		return "no such trolley"
+	return payload
+
+
+func _apply_carry(payload: Dictionary) -> void:
+	if _stock.carry(str(payload.get("crate_id", "")), str(payload.get("trolley", ""))):
+		stock_changed.emit()
+		crate_carried.emit(str(payload["crate_id"]), str(payload["trolley"]))
+
+
+func _check_trolley(_sender: int, payload: Dictionary) -> Variant:
+	if not TROLLEYS.has(str(payload.get("trolley", ""))):
+		return "no such trolley"
+	if not TROLLEY_COMMANDS.has(str(payload.get("command", ""))):
+		return "unknown command"
+	return payload
+
+
+func _apply_trolley(payload: Dictionary) -> void:
+	trolley_command.emit(str(payload["trolley"]), str(payload["command"]), payload.get("args", {}))
 
 
 func _check_take(_sender: int, payload: Dictionary) -> Variant:
