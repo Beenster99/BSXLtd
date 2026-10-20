@@ -20,3 +20,7 @@ extends Resource
 @export var rep_for_cancelling := 5.0
 ## Days the company may stay below zero cash before it goes insolvent.
 @export var insolvency_grace_days := 5
+## Game minutes that pass per real second while the yard is open (2 = a 12 minute day).
+@export var game_minutes_per_second := 2.0
+## The most a part's trade price swings from one day to the next, either way.
+@export_range(0.0, 0.5) var daily_price_swing := 0.06

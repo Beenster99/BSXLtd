@@ -4,13 +4,17 @@
 
 [resource]
 script = ExtResource("1")
-version = 1
+version = 2
 id = "halden_drive"
 display_name = "Halden Drive Systems"
-parts = {
-"IonThruster": 1.0,
-"JunctionBox": 1.2
+parts = {}
+categories = PackedStringArray("engines", "electronics", "machinery")
+conditions = {
+"new": 0.6,
+"refurbished": 0.4
 }
+listings_per_day = 12
+trade_factor = 1.0
 lead_hours = 48
 reliability = 0.9
 min_reputation = 60.0

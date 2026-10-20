@@ -9,7 +9,7 @@ var events: Array[String] = []
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "business": true})
+	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "business": true})
 	Modules.load_all()
 	bus = Modules.bus("business") as BusinessBus
 	check(bus != null, "business bus loads when its flag is on")
@@ -51,8 +51,8 @@ func _test_quotes() -> void:
 	var q := bus.quote("kessler_fasteners", _lines("M10", 100))
 	check(q.ok and q.cost == 200, "fasteners priced from the price list: %d" % q.cost)
 	check(q.eta_day == 1, "24 hour lead time arrives next day")
-	q = bus.quote("orbital_surplus", _lines("DeckPlate", 2))
-	check(q.ok and q.cost == 288 and q.eta_day == 3, "surplus discount and 72 hour lead: %d day %d" % [q.cost, q.eta_day])
+	q = bus.quote("orbital_surplus", _lines("M12", 100))
+	check(q.ok and q.cost == 200 and q.eta_day == 3, "surplus discount and 72 hour lead: %d day %d" % [q.cost, q.eta_day])
 	check(not bus.quote("kessler_fasteners", _lines("IonThruster", 1)).ok, "can't buy what a supplier doesn't sell")
 	check(not bus.quote("halden_drive", _lines("IonThruster", 1)).ok, "can't buy from a hidden supplier")
 	check(not bus.quote("kessler_fasteners", _lines("M10", 0)).ok, "zero quantity refused")
@@ -68,7 +68,7 @@ func _test_orders(kessler: SupplierDef) -> void:
 	check(bus.get_ledger().back().category == LedgerEntry.PARTS, "ledger shows the parts spend")
 	check("order_placed" in events, "order_placed emitted")
 
-	var too_big := bus.place_order("orbital_surplus", _lines("DeckPlate", 1000))
+	var too_big := bus.place_order("orbital_surplus", _lines("M12", 100000))
 	check(not too_big.is_ok() and bus.get_cash() == start - 200, "unaffordable order refused, nothing charged")
 
 	kessler.reliability = 1.0
@@ -153,7 +153,7 @@ func _test_saves() -> void:
 	bus.on_contract_accepted("VS-9", 5000, 4)
 	var r := bus.place_order("kessler_fasteners", _lines("M10", 10), "VS-9")
 	bus.advance_day()
-	bus.place_order("orbital_surplus", _lines("DeckPlate", 1))
+	bus.place_order("orbital_surplus", _lines("M12", 1))
 	# Through JSON, as Saves writes it.
 	var data: Dictionary = JSON.parse_string(JSON.stringify(bus.save_data()))
 	var cash := bus.get_cash()
