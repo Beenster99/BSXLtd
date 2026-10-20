@@ -14,7 +14,10 @@ func run_tests() -> void:
 		return
 	check(def.model != null, "Kestrel model loads")
 	check(def.slot_ids() == PackedStringArray(["eng_aft_port_1", "eng_aft_stbd_1", "net_hold_dor_1",
-			"att_hold_aft_1"]), "the four 0.3 slots: %s" % def.slot_ids())
+			"att_hold_aft_1", "pnl_roof_hold_1"]), "the 0.3 slots and the riveted roof panel: %s" % def.slot_ids())
+	var panel := def.slot("pnl_roof_hold_1").fasteners
+	check(panel.size() >= 30 and panel.all(func(f: FastenerPoint) -> bool: return f.kind == "rivet" and f.spec == "RIVET_4"),
+			"roof panel is riveted on: %d rivets" % panel.size())
 	check(def.rooms.get("hold", Vector2.ZERO) == Vector2(1.65, 6.42), "hold span from Void Salvage")
 	for s in def.slots:
 		check(def.bounds.grow(0.01).encloses(s.box), "%s inside the ship" % s.slot_id)

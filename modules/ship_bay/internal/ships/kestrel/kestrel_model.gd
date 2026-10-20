@@ -511,9 +511,9 @@ func _build_exterior() -> void:
 					frame_steel, "", null, false)
 			for c: Vector2 in [Vector2(-0.14, -0.14), Vector2(0.14, -0.14), Vector2(-0.14, 0.14), Vector2(0.14, 0.14)]:
 				_bolt(Vector3(q.x + side * 0.1, q.y + c.y, z + c.x), Vector3(side, 0, 0), bolt_steel)
+	# The hold's roof access panel: riveted on, its rivets are the bay's fastener points
+	# (slot pnl_roof_hold_1), so the bay draws them.
 	kit.add(PartShapes.inset_panel(1.6, 2.4, 0.06, 0.1), Transform3D(Basis(), Vector3(0, ROOF + 0.03, 3.6)), dark)
-	for x: float in [-0.75, 0.75]:
-		_bolt_line(Vector3(x, ROOF + 0.06, 2.45), Vector3(x, ROOF + 0.06, 4.75), Vector3.UP, bolt_steel, 0.38)
 	kit.add(PartShapes.louvre(1.0, 0.8, 0.08, 5), Transform3D(Basis(), Vector3(-0.9, ROOF + 0.04, 0.4)), dark)
 	kit.add(PartShapes.prism(6, 0.03, 1.1), Transform3D(Basis(), Vector3(1.3, ROOF + 0.55, 5.6)), dark, "", null, false)
 	kit.add(PartShapes.frustum(0.1, 0.05, 0.1, 8), Transform3D(Basis(), Vector3(1.3, ROOF + 0.05, 5.6)), dark, "", null, false)
