@@ -8,11 +8,28 @@ const ID := "rook_salvage.bsx1"
 
 
 func run_tests() -> void:
-	var bus := ContractsBus.new()
-	add_child(bus)
+	var saved := Flags.all()
+	Flags.use({"core": true, "ui": true, "contracts": true, "business": false})
+	Modules.load_all()
+	_test_without_business()
+	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "business": true})
+	Modules.load_all()
+	_test_with_business()
+	Flags.use(saved)
+	Modules.load_all()
+
+
+func _library(bus: ContractsBus) -> void:
 	bus.set_component_library(func(_id: String) -> bool: return true,
 			func(id: String) -> Dictionary:
 				return {"bolt": {"torque_nm": 180, "pattern": "cross"}, "connector": {"gauge_awg": 8}} if id == "attractor_coil_1" else {})
+
+
+func _test_without_business() -> void:
+	check(not Modules.is_loaded("business"), "Business is off for the first pass")
+	var bus := ContractsBus.new()
+	add_child(bus)
+	_library(bus)
 	var moves: Array[String] = []
 	bus.job_state_changed.connect(func(_j: String, a: String, b: String) -> void: moves.append("%s>%s" % [a, b]))
 	check(bus.import_work_order(FIXTURE).ok(), "fixture imports")
@@ -102,3 +119,29 @@ func run_tests() -> void:
 	check(not bus.cancel("rook_salvage.bsx9", true), "can't cancel twice")
 	bus.queue_free()
 	bus2.queue_free()
+
+
+## With Business loaded, the loaded Contracts bus can't skip acceptance, accepting books the
+## deposit, and the as-built carries an invoice.
+func _test_with_business() -> void:
+	var bus := Modules.bus("contracts") as ContractsBus
+	var books := Modules.bus("business") as BusinessBus
+	check(bus != null and books != null, "both buses load with Business on: %s" % Modules.skipped_reason("business"))
+	if bus == null or books == null:
+		return
+	books.reset()
+	_library(bus)
+	var order: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(FIXTURE))
+	order["contract_id"] = "rook_salvage.bsx20"
+	order["commercial"]["due_day"] = 12
+	check(bus.import_text(JSON.stringify(order)).ok(), "job imports with Business on")
+	var id := "rook_salvage.bsx20"
+	var cash := books.get_cash()
+	check(not bus.advance(id, ContractJob.PARTS_READY), "can't skip acceptance while Business is on")
+	check(bus.advance(id, ContractJob.ACCEPTED), "offered to accepted")
+	var deposit := books.get_cash() - cash
+	check(deposit > 0 and deposit == int(order["commercial"]["price"] * 0.3), "deposit booked on acceptance: %d" % deposit)
+	check(books.get_contract_balance(id).get("deposit") == deposit, "Business holds the contract")
+	check(bus.advance(id, ContractJob.PARTS_READY), "accepted to parts_ready")
+	check(bus.cancel(id, true), "cancelled by the client")
+	books.reset()
