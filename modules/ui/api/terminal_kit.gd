@@ -95,7 +95,8 @@ static func button(text: String, filled := false, size := 20, on := false, glass
 	b.add_theme_color_override("font_pressed_color", BLACK if filled else TEXT)
 	b.add_theme_color_override("font_disabled_color", Color(ink, 0.4))
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	b.pressed.connect(func() -> void: Sfx.play("click", null, -10.0))
+	b.pressed.connect(func() -> void: Sfx.press(b))
+	b.set_meta("sfx", true)
 	return b
 
 
@@ -246,6 +247,36 @@ static func docket(title: String, ref: String = "", glass := false) -> Dictionar
 	rule.custom_minimum_size.y = 2
 	col.add_child(rule)
 	return {"panel": paper, "body": col}
+
+
+## The sections other modules added to `channel` (HudSlots.register_holo_section), one
+## docket each, kept up to date as they come and go. Put it where the channel wants them.
+static func sections(channel: String, glass := false) -> VBoxContainer:
+	var col := VBoxContainer.new()
+	col.name = "Sections"
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 10)
+	var fill := func() -> void:
+		for c in col.get_children():
+			col.remove_child(c)
+			c.queue_free()
+		for sec: Dictionary in HudSlots.holo_sections(channel):
+			var d := docket(str(sec.label), "", glass)
+			d.panel.name = "Section_" + str(sec.id).validate_node_name()
+			var f: Callable = sec.factory
+			var made: Variant = f.call(glass) if f.get_argument_count() >= 1 else f.call()
+			if made is Control:
+				d.body.add_child(made)
+			col.add_child(d.panel)
+	fill.call()
+	var on_change := func(ch: String) -> void:
+		if ch == channel and is_instance_valid(col):
+			fill.call()
+	HudSlots.holo_sections_changed.connect(on_change)
+	col.tree_exiting.connect(func() -> void:
+		if HudSlots.holo_sections_changed.is_connected(on_change):
+			HudSlots.holo_sections_changed.disconnect(on_change))
+	return col
 
 
 ## A big figure with its caption, for summaries ("STOCK VALUE  CR 12,400").

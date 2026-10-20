@@ -5,6 +5,7 @@ extends RefCounted
 ##   Sfx.play("clunk", crate)               # 3D, follows a Node3D
 ##   Sfx.play("ratchet", Vector3(4, 1, 2))  # 3D, at a point in the current scene
 ##   Sfx.play("click")                      # flat, for screens
+##   Sfx.press(button)                      # "tick" on the wrist screen, else "click"
 ##   var hum := Sfx.loop("beam", beam_node) # a looping 3D player; free it to stop
 ## Footsteps come from a Footsteps node on the walker. BsxTheme's buttons click on their own.
 
@@ -17,6 +18,7 @@ const SOUNDS := {
 	"land": "landing after a jump or a drop",
 	"click": "a button press",
 	"hover": "the pointer over a button",
+	"tick": "anything pressed or typed on the wrist screen",
 	"holo_open": "the wrist screen opening",
 	"holo_close": "the wrist screen closing",
 	"holo_switch": "the wrist screen changing channel",
@@ -93,9 +95,21 @@ static func play(sound: String, at: Variant = null, volume_db: float = 0.0, pitc
 		player = p2
 		tree.root.add_child(p2)
 	player.process_mode = Node.PROCESS_MODE_ALWAYS
+	player.set_meta("sound", sound)
 	player.connect("finished", player.queue_free)
 	player.call("play")
 	return player
+
+
+## The sound of pressing `control`: a holo tick on the wrist screen (anything under a node
+## with meta "holo"), else a click.
+static func press(control: Node, volume_db: float = -10.0) -> Node:
+	var n := control
+	while n != null:
+		if n.has_meta("holo"):
+			return play("tick", null, volume_db + 2.0, randf_range(0.97, 1.04))
+		n = n.get_parent()
+	return play("click", null, volume_db)
 
 
 ## A looping sound on `parent`, playing. Stop it by freeing the returned player.
@@ -126,6 +140,9 @@ static func _make(sound: String) -> PackedFloat32Array:
 			return _mix([_tone(0.28, 70.0, 0.0, 14.0, 0.9), _noise(rng, 0.12, 700.0, 30.0, 0.5)])
 		"click":
 			return _tone(0.025, 1700.0, 0.0, 180.0, 0.45)
+		"tick":
+			return _mix([_tone(0.018, 3400.0, 0.0, 260.0, 0.32), _tone(0.03, 1900.0, 0.0, 160.0, 0.16),
+					_noise(rng, 0.006, 8000.0, 500.0, 0.18)])
 		"hover":
 			return _tone(0.012, 2600.0, 0.0, 300.0, 0.12)
 		"holo_open":
