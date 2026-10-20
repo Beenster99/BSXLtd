@@ -1,6 +1,6 @@
 extends TradesStation
 ## Welding: two 6 mm plates butted on a slatted table, a MIG welder beside them. Set the
-## amps for the plate with the wheel, strike the arc on the seam, then run it end to end with
+## amps for the plate with Q and E, strike the arc on the seam, then run it end to end with
 ## the mouse: sideways is travel, up and down is the torch's height (the arc wanders; keep it
 ## steady). Where you stand sets the torch's lean. All the rules live in WeldSeam.
 
@@ -71,7 +71,7 @@ func status_line() -> String:
 
 
 func start_hint() -> String:
-	return "Welder is 5. Wheel sets the amps. Hold left click on the seam to strike the arc."
+	return "Welder is 5. Q and E set the amps. Hold left click on the seam to strike the arc."
 
 
 func is_busy() -> bool:
@@ -87,7 +87,7 @@ func reset() -> void:
 	bay.worker.look_locked = false
 
 
-func wheel(step: int) -> bool:
+func adjust(step: int) -> bool:
 	if seam.arc_on:
 		return false
 	seam.set_amps(seam.amps + 5.0 * step)

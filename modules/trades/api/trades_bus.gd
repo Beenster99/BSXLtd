@@ -1,6 +1,7 @@
 class_name TradesBus
 extends Node
-## Trades module bus (Modules.bus("trades")). The hands-on tools: bolting, riveting, welding, wiring, lifting and fitting.
+## Tools module bus (Modules.bus("trades"); shown to players as Tools, its id stays "trades").
+## The hands-on tools the player owns: bolting, riveting, welding, wiring, lifting and fitting.
 ## Other modules use this module only through this folder: signals here, and resource
 ## classes placed next to it. Everything else lives in internal/.
 ## Trades reports what was built (JointResult measurements); Quality decides if it is good.
