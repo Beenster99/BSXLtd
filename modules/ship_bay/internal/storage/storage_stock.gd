@@ -9,7 +9,9 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 var stock: Dictionary = {}
 ## Crate id ("<order id>/<n>") -> {order_id, item, name, qty, condition, grade, mass (kg
 ## a unit), spot (goods-in spot index; spots fill up and then crates stack; -1 once a
-## trolley has it), carrier (the trolley carrying it, or "")}.
+## trolley has it), carrier (the trolley carrying it, or "")}. Goods picked off a shelf for
+## someone are crates too ("pick/<n>", order "pick"), always carried, with `to` [x, z]: the
+## floor point they are going to.
 var crates: Dictionary = {}
 
 
@@ -52,6 +54,43 @@ func carry(crate_id: String, trolley: String) -> bool:
 	c["carrier"] = trolley
 	c["spot"] = -1
 	return true
+
+
+## Takes `qty` off a location into a picked crate the picking lift `carrier` holds, bound
+## for the floor point `to`. Returns the crate id, or "" when the location hasn't that many.
+func pick(loc: String, qty: int, carrier: String, to: Vector3) -> String:
+	var have: Dictionary = stock.get(loc, {})
+	if have.is_empty() or int(have["qty"]) < qty or qty <= 0:
+		return ""
+	var item := str(have["item"])
+	var known: Dictionary = Layout.items().get(item, {})
+	var n := 1
+	while crates.has("pick/%d" % n):
+		n += 1
+	var id := "pick/%d" % n
+	crates[id] = {"order_id": "pick", "item": item, "qty": qty, "name": str(known.get("name", item)),
+			"condition": float(have["condition"]), "grade": "stock", "mass": float(known.get("mass", 0.0)),
+			"spot": -1, "carrier": carrier, "to": [to.x, to.z]}
+	have["qty"] = int(have["qty"]) - qty
+	if int(have["qty"]) <= 0:
+		stock.erase(loc)
+	return id
+
+
+## Passes a carried crate to another trolley. False when nothing carries it.
+func hand(crate_id: String, trolley: String) -> bool:
+	var c: Dictionary = crates.get(crate_id, {})
+	if c.is_empty() or str(c.get("carrier", "")) == "":
+		return false
+	c["carrier"] = trolley
+	return true
+
+
+## Someone takes a picked crate off its trolley: it leaves the stores. Returns the crate.
+func collect(crate_id: String) -> Dictionary:
+	var c: Dictionary = crates.get(crate_id, {})
+	crates.erase(crate_id)
+	return c
 
 
 ## The crate a trolley carries, or "".

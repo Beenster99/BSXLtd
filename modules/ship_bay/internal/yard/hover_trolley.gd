@@ -1,8 +1,10 @@
 extends AnimatableBody3D
-## A hover trolley: a chassis floating on four lift pads, a scissor stage under a railed
+## A hover trolley: a chassis floating on four lift pads, a telescopic mast under a railed
 ## grating deck, a control box with its size letter and a status lamp. Three sizes (SPECS):
 ## small and medium decks rise to the top rack level for work at height (you can ride
-## them), the large one carries bulk parts low.
+## them), the large one carries bulk parts low. The picking lift ("p") is the same chassis
+## with a tall twin-column mast: its carriage rides up the columns to any shelf and a shuttle
+## fork reaches sideways into the rack to pull goods off it.
 ##
 ## This node only moves and draws. TrolleyFleet decides where it goes: on the peer that
 ## drives it (Multiplayer.drives), it follows `path` or remote-control input; everywhere else
@@ -16,7 +18,11 @@ const SPECS := {
 			"speed": 2.0, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(1.0, 0.55, 0.16)},
 	"l": {"name": "Large hover trolley", "letter": "L", "deck": Vector2(2.6, 4.4), "radius": 1.3,
 			"speed": 1.4, "lift": 2.5, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
+	"p": {"name": "Picking lift", "letter": "P", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true},
 }
+## The picking lift's mast height over the floor (under the aisle signs), metres.
+const PICKER_MAST := 8.9
 ## Chassis underside and top over the floor while hovering, metres.
 const HOVER := 0.32
 const CHASSIS_TOP := 0.62
@@ -52,6 +58,11 @@ var status := "PARKED"
 var _speed := 0.0
 var _yaw := 0.0
 var _mast: Array[MeshInstance3D] = []
+## The picking lift's shuttle fork, how far out it is (0 in .. 1 into the rack) and which side.
+var _fork: Node3D
+var fork_out := 0.0
+var fork_target := 0.0
+var fork_side := 1.0
 var _cargo_mesh: MeshInstance3D
 var _lamp: MeshInstance3D
 var _screen: Label3D
@@ -191,10 +202,30 @@ func step(delta: float, obstacles: Array) -> void:
 	global_transform = Transform3D(Basis(Vector3.UP, _yaw), Vector3(next.x, 0.0, next.z))
 
 
-## Raises or lowers the deck toward deck_target (every peer runs this).
+## Raises or lowers the deck toward deck_target (every peer runs this), and slides the
+## picking lift's fork.
 func lift_step(delta: float) -> void:
 	if not is_equal_approx(deck_height, deck_target):
 		_set_deck(move_toward(deck_height, deck_target, lift_speed * delta))
+	if _fork and not is_equal_approx(fork_out, fork_target):
+		fork_out = move_toward(fork_out, fork_target, delta * 1.5)
+		_fork.position.x = fork_side * fork_out * 1.0
+
+
+## The picking lift's fork: out into the rack on `side` (+1 the trolley's right, -1 its left)
+## or back in.
+func reach(out: bool, side := 1.0) -> void:
+	fork_target = 1.0 if out else 0.0
+	if out:
+		fork_side = side
+
+
+func fork_ready() -> bool:
+	return _fork == null or is_equal_approx(fork_out, fork_target)
+
+
+func is_picker() -> bool:
+	return bool(spec.get("picker", false))
 
 
 func set_deck_target(h: float) -> void:
@@ -282,7 +313,9 @@ func _build() -> void:
 	frame.material_override = _mats["body"]
 	frame.position.y = -0.08
 	deck.add_child(frame)
-	if kind != "l":
+	if is_picker():
+		_build_picker(d)
+	elif kind != "l":
 		var post := Vector3(0.04, 1.0, 0.04)
 		for p: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
 			_box(post, Vector3(p.x * (d.x * 0.5 - 0.03), 0.5, p.y * (d.y * 0.5 - 0.03)), _mats["body"], deck)
@@ -296,9 +329,36 @@ func _build() -> void:
 	dcol.position.y = -0.06
 	deck.add_child(dcol)
 	# The mast: nested telescopic sections from the chassis up under the deck.
-	for i in MAST_SECTIONS:
+	for i in (0 if is_picker() else MAST_SECTIONS):
 		var w := minf(d.x, d.y) * (0.42 - 0.07 * i)
 		_mast.append(_box(Vector3(w, 0.1, w), Vector3.ZERO, _mats["steel"] if i % 2 else _mats["dark"]))
+
+
+## Two lattice columns up the back with a head beam and a beacon, a stripe down each, the
+## carriage on the deck (a frame round the columns) and the shuttle fork on it.
+func _build_picker(d: Vector2) -> void:
+	var back := d.y * 0.5 - 0.12
+	var stripe := ShipSurface.of(ShipKit.paint(Color(1.0, 0.5, 0.12), 0.2, 0.45, "gloss_paint"))
+	for sx: float in [-1.0, 1.0]:
+		var x := sx * (d.x * 0.5 - 0.1)
+		_box(Vector3(0.16, PICKER_MAST - CHASSIS_TOP, 0.16), Vector3(x, (CHASSIS_TOP + PICKER_MAST) * 0.5, back), _mats["body"])
+		_box(Vector3(0.05, PICKER_MAST - CHASSIS_TOP - 0.4, 0.02), Vector3(x, (CHASSIS_TOP + PICKER_MAST) * 0.5, back + 0.09), stripe)
+		# Lattice: a brace every 0.9 m between the column and a slim back rail.
+		_box(Vector3(0.05, PICKER_MAST - CHASSIS_TOP, 0.05), Vector3(x, (CHASSIS_TOP + PICKER_MAST) * 0.5, back + 0.32), _mats["steel"])
+		var y := CHASSIS_TOP + 0.45
+		while y < PICKER_MAST - 0.3:
+			_box(Vector3(0.03, 0.03, 0.3), Vector3(x, y, back + 0.17), _mats["steel"])
+			y += 0.9
+	_box(Vector3(d.x, 0.18, 0.5), Vector3(0, PICKER_MAST, back + 0.12), _mats["dark"])
+	_box(Vector3(0.12, 0.12, 0.12), Vector3(0, PICKER_MAST + 0.15, back + 0.12), _mats["wait"])
+	# The carriage rides the columns with the deck; the fork slides out of it sideways.
+	_box(Vector3(d.x, 0.6, 0.1), Vector3(0, 0.3, d.y * 0.5 - 0.2), _mats["dark"], deck)
+	_fork = Node3D.new()
+	_fork.name = "Fork"
+	deck.add_child(_fork)
+	for sz: float in [-0.3, 0.3]:
+		_box(Vector3(d.x + 0.2, 0.05, 0.12), Vector3(0, 0.03, sz), _mats["steel"], _fork)
+	_box(Vector3(0.06, 0.25, d.y * 0.6), Vector3(0, 0.15, 0), _mats["body"], _fork)
 
 
 func _set_deck(h: float) -> void:
@@ -309,7 +369,7 @@ func _set_deck(h: float) -> void:
 	var rise := maxf(h - 0.12 - bottom, 0.05)
 	var overlap := 0.08
 	var each := rise / MAST_SECTIONS + overlap
-	for i in MAST_SECTIONS:
+	for i in _mast.size():
 		var sec := _mast[i]
 		var y0 := bottom + i * (each - overlap)
 		(sec.mesh as BoxMesh).size.y = each
