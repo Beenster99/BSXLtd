@@ -8,7 +8,8 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 ## Location id -> {item, qty, condition (0..1, the average of what is there)}.
 var stock: Dictionary = {}
 ## Crate id ("<order id>/<n>") -> {order_id, item, name, qty, condition, grade, mass (kg
-## a unit), spot (goods-in spot index; spots fill up and then crates stack)}.
+## a unit), spot (goods-in spot index; spots fill up and then crates stack; -1 once a
+## trolley has it), carrier (the trolley carrying it, or "")}.
 var crates: Dictionary = {}
 
 
@@ -37,9 +38,28 @@ func land(order_id: String, lines: Array) -> PackedStringArray:
 		crates[id] = {"order_id": order_id, "item": item, "qty": qty,
 				"name": str(d.get("name", known.get("name", item))),
 				"condition": clampf(float(d.get("condition", 1.0)), 0.0, 1.0),
-				"grade": str(d.get("grade", "new")), "mass": mass, "spot": _free_spot()}
+				"grade": str(d.get("grade", "new")), "mass": mass, "spot": _free_spot(), "carrier": ""}
 		ids.append(id)
 	return ids
+
+
+## A trolley picks a crate up off its goods-in spot. False when there is no such crate or
+## something already carries it.
+func carry(crate_id: String, trolley: String) -> bool:
+	var c: Dictionary = crates.get(crate_id, {})
+	if c.is_empty() or str(c.get("carrier", "")) != "":
+		return false
+	c["carrier"] = trolley
+	c["spot"] = -1
+	return true
+
+
+## The crate a trolley carries, or "".
+func carried_by(trolley: String) -> String:
+	for id: String in crates:
+		if str(crates[id].get("carrier", "")) == trolley:
+			return id
+	return ""
 
 
 ## Where a crate's goods go: the item's home if it is free or already holds the same item,
@@ -157,7 +177,8 @@ func from_dict(d: Dictionary) -> void:
 func _free_spot() -> int:
 	var taken := {}
 	for id: String in crates:
-		taken[int(crates[id]["spot"])] = true
+		if int(crates[id]["spot"]) >= 0:
+			taken[int(crates[id]["spot"])] = true
 	var i := 0
 	while taken.has(i):
 		i += 1
