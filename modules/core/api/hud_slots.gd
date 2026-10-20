@@ -72,3 +72,27 @@ func holo_channel(id: String) -> Dictionary:
 ## Opens the wrist screen on a channel.
 func open_holo(channel: String = "") -> void:
 	holo_requested.emit(channel)
+
+
+var _readouts: Array[Dictionary] = []
+
+
+## A short text for the wrist screen's header, read each time the header refreshes.
+func register_holo_readout(id: String, getter: Callable, order: int = 0) -> void:
+	unregister_holo_readout(id)
+	_readouts.append({"id": id, "getter": getter, "order": order})
+	_readouts.sort_custom(func(a, b): return a.order < b.order)
+
+
+func unregister_holo_readout(id: String) -> void:
+	_readouts = _readouts.filter(func(r): return r.id != id)
+
+
+## The readouts' texts now, in order.
+func holo_readouts() -> PackedStringArray:
+	var out := PackedStringArray()
+	for r in _readouts:
+		var v: Variant = r.getter.call() if r.getter.is_valid() else ""
+		if str(v) != "":
+			out.append(str(v))
+	return out
