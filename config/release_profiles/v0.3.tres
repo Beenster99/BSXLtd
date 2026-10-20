@@ -5,7 +5,8 @@
 [resource]
 script = ExtResource("1")
 flags = {
-"business": false,
+"business": true,
+"business.market": true,
 "contracts": true,
 "core": true,
 "multiplayer": true,
