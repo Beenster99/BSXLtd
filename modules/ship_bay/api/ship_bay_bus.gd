@@ -82,7 +82,8 @@ func register_module() -> void:
 		Menu.set_start(SHIPYARD_SCENE, 10)   # the game starts in the yard
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
-				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk"]:
+				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk",
+				"dock", "overlook", "launch_towers"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
