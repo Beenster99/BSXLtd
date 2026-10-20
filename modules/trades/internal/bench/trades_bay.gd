@@ -217,6 +217,19 @@ func reset_all() -> void:
 
 # --- Input ------------------------------------------------------------------------------
 
+## The keys strip on the HUD, from where the keys are bound now.
+func _keys_line() -> String:
+	var k := func(action: String) -> String: return Keys.key_name(action)
+	var walk: String = "".join([k.call(Keys.FORWARD), k.call(Keys.LEFT), k.call(Keys.BACK), k.call(Keys.RIGHT)])
+	var tools := "%s-%s" % [k.call(TradesBus.KEY_TOOL + "1"), k.call(TradesBus.KEY_TOOL + str(hotbar.size()))]
+	var turn := "%s/%s" % [k.call(TradesBus.KEY_TURN_LEFT), k.call(TradesBus.KEY_TURN_RIGHT)]
+	if in_yard:
+		return "%s walk  %s run  %s view  wheel/%s tool  LMB use  RMB take off  %s turn  %s menu" % [
+				walk, k.call(Keys.RUN), k.call(TradesBus.KEY_VIEW), tools, turn, k.call(Keys.CANCEL)]
+	return "%s walk  %s view  wheel/%s tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  %s amps  %s part  %s reset  %s menu" % [
+			walk, k.call(TradesBus.KEY_VIEW), tools, turn, k.call(TradesBus.KEY_NEXT), k.call(TradesBus.KEY_RESET), k.call(Keys.CANCEL)]
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	_handle_input(event)
 
@@ -231,30 +244,45 @@ func _handle_input(event: InputEvent) -> void:
 			return
 		_on_mouse_button(event)
 	elif event is InputEventKey and event.pressed and not event.echo:
-		_on_key(event.physical_keycode)
+		for action in _actions():
+			if InputMap.has_action(action) and event.is_action_pressed(action, false, true):
+				_on_action(action)
+				return
 
 
-func _on_key(k: Key) -> void:
-	if k >= KEY_1 and k < KEY_1 + hotbar.size():
-		set_tool(hotbar[k - KEY_1])
+## The key actions the bay reads (Settings > Key binds can move any of them).
+func _actions() -> Array[String]:
+	var out: Array[String] = [TradesBus.KEY_VIEW, TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT,
+			TradesBus.KEY_RESET, TradesBus.KEY_NEXT, Keys.INTERACT, Keys.CANCEL]
+	for i in hotbar.size():
+		out.append(TradesBus.KEY_TOOL + str(i + 1))
+	return out
+
+
+## A key action pressed (Keys / TradesBus.KEY_*).
+func _on_action(action: String) -> void:
+	if action.begins_with(TradesBus.KEY_TOOL):
+		var i := int(action.trim_prefix(TradesBus.KEY_TOOL)) - 1
+		if i >= 0 and i < hotbar.size():
+			set_tool(hotbar[i])
 		return
-	match k:
-		KEY_V:
+	match action:
+		TradesBus.KEY_VIEW:
 			worker.set_view(not worker.third_person)
-		KEY_Q, KEY_E:
-			if _focus and _focus.adjust(1 if k == KEY_E else -1):
+		TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT:
+			if _focus and _focus.adjust(1 if action == TradesBus.KEY_TURN_RIGHT else -1):
 				_refresh_hud()
-		KEY_R:
+		TradesBus.KEY_RESET:
 			if _focus and not in_yard:
 				_focus.reset()
 				hide_result()
 				hint(_focus.start_hint())
-		KEY_ESCAPE:
+		Keys.CANCEL:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			if Router.has_scene("main_menu"):
 				Router.goto("main_menu")
 		_:
-			if _focus and _focus.key(k):
+			if _focus and _focus.key(action):
 				_refresh_hud()
 
 
@@ -658,8 +686,7 @@ func _build_hud() -> void:
 	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 
 	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
-	keys.text = ("WASD walk  Shift run  V view  wheel/1-%d tool  LMB use  RMB take off  Q/E turn  Esc menu" % hotbar.size() if in_yard
-			else "WASD walk  V view  wheel/1-6 tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  Q/E amps  Tab part  R reset  Esc menu")
+	keys.text = _keys_line()
 	keys.position = Vector2(40, 36)
 	root.add_child(keys)
 

@@ -66,8 +66,8 @@ func motion(_relative: Vector2) -> bool:
 	return false
 
 
-## A key the bay doesn't use itself. True when the station used it.
-func key(_k: Key) -> bool:
+## A key action the bay doesn't use itself (TradesBus.KEY_*, Keys.*). True when the station used it.
+func key(_action: String) -> bool:
 	return false
 
 
