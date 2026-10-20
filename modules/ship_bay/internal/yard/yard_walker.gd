@@ -14,9 +14,13 @@ const EYE := 1.62
 @export var jump_speed := 4.2
 ## The planet's gravity, metres per second squared.
 @export var gravity := 9.0
+## Climbing speed on a ladder, metres per second.
+@export var climb_speed := 1.6
 ## Radians of turn per pixel of mouse movement.
 @export var mouse_sensitivity := 0.0025
 
+## How many ladders' climbing spaces the walker is in (scaffold rigs count it).
+var _ladders := 0
 var head: Node3D
 var camera: Camera3D
 var _pitch := 0.0
@@ -71,7 +75,15 @@ func _physics_process(delta: float) -> void:
 	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
 	velocity.z = move.z
-	if is_on_floor():
+	if _ladders > 0:
+		# On a ladder: forward or jump climbs, back climbs down; you stay on it unless you're
+		# standing at its foot.
+		var climb := clampf(_held(Keys.FORWARD, KEY_W) + _held(Keys.JUMP, KEY_SPACE) - _held(Keys.BACK, KEY_S), -1.0, 1.0)
+		velocity.y = climb * climb_speed
+		if not (is_on_floor() and climb <= 0.0):
+			velocity.x = 0.0
+			velocity.z = 0.0
+	elif is_on_floor():
 		if _held(Keys.JUMP, KEY_SPACE) > 0.0:
 			velocity.y = jump_speed
 	else:
@@ -85,3 +97,12 @@ func _held(action: String, key: Key) -> float:
 	if InputMap.has_action(action):
 		return 1.0 if Input.is_action_pressed(action) else 0.0
 	return 1.0 if Input.is_physical_key_pressed(key) else 0.0
+
+
+## A ladder's climbing space counts the walker in (+1) and out (-1). Leaving one out of its
+## top, it hands over where to step off (`step_to`, else INF).
+func set_ladder(way: int, step_to: Vector3 = Vector3.INF) -> void:
+	_ladders = maxi(_ladders + way, 0)
+	if way < 0 and step_to.is_finite():
+		global_position = step_to
+		velocity = Vector3.ZERO

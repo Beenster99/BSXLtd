@@ -1,6 +1,7 @@
 extends Node3D
-## The kit round the ship in the bay: a scissor lift you drive round the hull and raise, and
-## a ground power unit on wheels whose cable you clip to the hull by hand. The lift starts
+## The kit round the ship in the bay: a scissor lift you drive round the hull and raise, a
+## ground power unit on wheels whose cable you clip to the hull by hand, and mobile scaffold
+## rigs (scaffold_rig.gd) you set up as big as you need, drive in to the hull and back out. The lift starts
 ## at the side door with its platform down: walk up its ramp, press UP on the platform's
 ## control box and it stops level with the door sill, so you can walk aboard (there are no
 ## stairs). UP and DOWN on either control box send the platform to the next stop (board,
@@ -50,6 +51,11 @@ const OUTLET := Vector3(-0.53, 0.6, -0.3)
 const HOOK := Vector3(-0.6, 0.85, 0.15)
 const CABLE_SEGMENTS := 24
 const USE_REACH := 3.5
+const Rig := preload("res://modules/ship_bay/internal/bay/scaffold_rig.gd")
+## Where the scaffold rigs stand to start with (bay space, the ship's starboard side, out of
+## the way): [origin, yaw]. Each rig runs along its z from its origin; yaw PI turns its open
+## work face to the ship.
+const RIG_PARKING := [[Vector3(7.6, 0, -1.0), PI], [Vector3(7.6, 0, 5.2), PI]]
 
 var deck := 1.6
 ## The lift: its root (moved when driven), chassis and platform bodies, the platform's target.
@@ -66,7 +72,9 @@ var plug_state := "hook"
 var switch_on := false
 ## True while the ship is powered: the switch on and the plug on the hull.
 var power_on := false
-## The vehicle this player drives: "", "lift" or "unit".
+## The scaffold rigs round the bay.
+var scaffolds: Array[Node3D] = []
+## The vehicle this player drives: "", "lift", "unit" or "rig<i>".
 var driving := ""
 ## The ship's root (in the bay): the plug clips only to it.
 var ship: Node3D
@@ -112,12 +120,26 @@ func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root:
 	# lift's +X faces +X: it stands outboard of the sill).
 	_build_lift(Transform3D(Basis(), Vector3(sill.x - 0.03 - W * 0.5, 0, sill.z)))
 	_build_power_unit(socket + Vector3(0, deck, 0))
+	for i in RIG_PARKING.size():
+		var rig: Node3D = Rig.new()
+		rig.name = "Scaffold%d" % (i + 1)
+		rig.set("label", str(i + 1))
+		rig.transform = Transform3D(Basis(Vector3.UP, RIG_PARKING[i][1]), RIG_PARKING[i][0])
+		add_child(rig)
+		rig.connect("change_requested", _ask_rig.bind(i))
+		rig.connect("drive_requested", toggle_drive.bind("rig%d" % i))
+		scaffolds.append(rig)
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if bus:
+		bus.kit_changed.connect(_on_kit)
 	_net = Modules.bus("multiplayer")
 	if _net and not _net.has_method("register_mover"):
 		_net = null
 	if _net:
 		for pair: Array in [["bay_lift", lift], ["bay_lift_deck", platform], ["bay_unit", unit], ["bay_plug", plug]]:
 			_net.call("register_mover", pair[0], pair[1])
+		for i in scaffolds.size():
+			_net.call("register_mover", "bay_rig%d" % i, scaffolds[i])
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
@@ -128,8 +150,14 @@ func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root:
 
 
 func _exit_tree() -> void:
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if bus and bus.kit_changed.is_connected(_on_kit):
+		bus.kit_changed.disconnect(_on_kit)
 	if _net:
-		for id: String in ["bay_lift", "bay_lift_deck", "bay_unit", "bay_plug"]:
+		var ids: Array = ["bay_lift", "bay_lift_deck", "bay_unit", "bay_plug"]
+		for i in scaffolds.size():
+			ids.append("bay_rig%d" % i)
+		for id: String in ids:
 			_net.call("unregister_mover", id)
 			if bool(_net.call("is_mine", id)):
 				_net.call("release", id)
@@ -144,7 +172,7 @@ func _build_lift(at: Transform3D) -> void:
 	add_child(lift)
 	chassis = AnimatableBody3D.new()
 	chassis.name = "Chassis"
-	chassis.sync_to_physics = true
+	chassis.sync_to_physics = false
 	chassis.set_meta("surface", "metal")
 	lift.add_child(chassis)
 	# The chassis on four wheels.
@@ -169,7 +197,7 @@ func _build_lift(at: Transform3D) -> void:
 	# work face, to the hull) is open and its +Z side has a gate bar that closes once it's up.
 	platform = AnimatableBody3D.new()
 	platform.name = "LiftPlatform"
-	platform.sync_to_physics = true
+	platform.sync_to_physics = false
 	platform.set_meta("surface", "grating")
 	lift.add_child(platform)
 	_part(WreckParts.grating(W, L), Transform3D(Basis(), Vector3(0, -0.02, 0)), _tread, platform)
@@ -275,11 +303,16 @@ func toggle_drive(which: String) -> void:
 	driving = which
 	for id: String in _movers_of(which):
 		_claim(id)
-	_hud.text = ("Driving the scissor lift\nArrow keys drive  ·  %s / %s raise and lower\nF on its controls lets it go"
-			% [_key_name("ship_bay.raise", "Page Up"), _key_name("ship_bay.lower", "Page Down")]) if which == "lift" \
-			else "Towing the power unit\nArrow keys drive\nF on its handle lets it go"
+	if which == "lift":
+		_hud.text = "Driving the scissor lift\nArrow keys drive  ·  %s / %s raise and lower\nF on its controls lets it go" \
+				% [_key_name("ship_bay.raise", "Page Up"), _key_name("ship_bay.lower", "Page Down")]
+	elif which == "unit":
+		_hud.text = "Towing the power unit\nArrow keys drive\nF on its handle lets it go"
+	else:
+		_hud.text = "Moving scaffold %s\nUp / Down along it  ·  Left / Right sideways  ·  hold %s to turn\nMOVE on its post lets it go" \
+				% [_root_of(which).get("label"), _key_name(Keys.RUN, "Shift")]
 	_hud.visible = true
-	Sfx.play("click", lift if which == "lift" else unit)
+	Sfx.play("click", _root_of(which))
 
 
 func _let_go() -> void:
@@ -291,17 +324,43 @@ func _let_go() -> void:
 
 
 func _movers_of(which: String) -> Array:
-	return ["bay_lift", "bay_lift_deck"] if which == "lift" else (["bay_unit"] if which == "unit" else [])
+	if which == "lift":
+		return ["bay_lift", "bay_lift_deck"]
+	if which == "unit":
+		return ["bay_unit"]
+	return ["bay_" + which] if which.begins_with("rig") else []
 
 
-## Drives `which` by `forward` (metres, along its -Z) and turns it by `turn` (radians, to the
-## left) if nothing is in the way. True if it moved. Tests and the keys call it.
-func drive(which: String, forward: float, turn: float) -> bool:
-	var root := lift if which == "lift" else unit
-	var bodies: Array = [chassis, platform] if which == "lift" else [unit_body]
+## The root node a vehicle moves by, and the bodies that ride on it.
+func _root_of(which: String) -> Node3D:
+	if which == "lift":
+		return lift
+	if which == "unit":
+		return unit
+	var i := which.trim_prefix("rig").to_int()
+	return scaffolds[i] if which.begins_with("rig") and i < scaffolds.size() else null
+
+
+func _bodies_of(which: String) -> Array:
+	if which == "lift":
+		return [chassis, platform]
+	if which == "unit":
+		return [unit_body]
+	var rig := _root_of(which)
+	return [rig.get("body")] if rig else []
+
+
+## Drives `which` by `forward` (metres, along its -Z), `side` (metres, along its +X: the
+## scaffold rigs' castors swivel) and turns it by `turn` (radians, to the left) if nothing is
+## in the way. True if it moved. Tests and the keys call it.
+func drive(which: String, forward: float, turn: float, side := 0.0) -> bool:
+	var root := _root_of(which)
+	var bodies := _bodies_of(which)
+	if root == null:
+		return false
 	var from := root.global_transform
 	var basis := from.basis.rotated(Vector3.UP, turn)
-	var to := Transform3D(basis, from.origin - basis.z * forward)
+	var to := Transform3D(basis, from.origin - basis.z * forward + basis.x * side)
 	if not _clear(bodies, from, to):
 		return false
 	root.global_transform = to
@@ -359,11 +418,19 @@ func _physics_process(delta: float) -> void:
 	if driving != "" and _drives(_movers_of(driving)[0]):
 		var fwd := _axis("ship_bay.drive_forward", KEY_UP, "ship_bay.drive_back", KEY_DOWN)
 		var turn := _axis("ship_bay.drive_left", KEY_LEFT, "ship_bay.drive_right", KEY_RIGHT)
-		if fwd != 0.0 or turn != 0.0:
-			if drive(driving, fwd * drive_speed * delta, turn * turn_speed * delta):
+		var side := 0.0
+		# A rig crabs sideways on its castors (towards its work face with right); holding run
+		# turns it instead.
+		if driving.begins_with("rig") and _held(Keys.RUN, KEY_SHIFT) == 0.0:
+			side = -turn * drive_speed * delta
+			turn = 0.0
+		if fwd != 0.0 or turn != 0.0 or side != 0.0:
+			if drive(driving, fwd * drive_speed * delta, turn * turn_speed * delta, side):
 				moving = driving
 	_hum("lift", moving_deck or moving == "lift")
 	_hum("unit", moving == "unit")
+	for i in scaffolds.size():
+		_hum("rig%d" % i, moving == "rig%d" % i)
 	_update_plug()
 
 
@@ -384,10 +451,28 @@ func _clear_lift(dy: float) -> bool:
 
 func _hum(which: String, on: bool) -> void:
 	if on and not _hums.has(which):
-		_hums[which] = Sfx.loop("servo", lift if which == "lift" else unit)
+		_hums[which] = Sfx.loop("servo", _root_of(which))
 	elif not on and _hums.has(which):
 		(_hums[which] as Node).queue_free()
 		_hums.erase(which)
+
+
+# --- Scaffold rigs --------------------------------------------------------------------------
+
+## A rig's post asked for a change (checked there): send it to every peer.
+func _ask_rig(bays: int, lifts: int, ends: int, i: int) -> void:
+	var payload := {"rig": i, "bays": bays, "lifts": lifts, "ends": ends}
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if bus:
+		bus.change_kit(payload)
+	else:
+		_on_kit(payload)
+
+
+func _on_kit(payload: Dictionary) -> void:
+	var i := int(payload.get("rig", -1))
+	if i >= 0 and i < scaffolds.size():
+		scaffolds[i].call("configure", int(payload["bays"]), int(payload["lifts"]), int(payload["ends"]))
 
 
 # --- Ground power -------------------------------------------------------------------------
@@ -401,7 +486,7 @@ func _build_power_unit(socket: Vector3) -> void:
 	add_child(unit)
 	unit_body = AnimatableBody3D.new()
 	unit_body.name = "Body"
-	unit_body.sync_to_physics = true
+	unit_body.sync_to_physics = false
 	unit.add_child(unit_body)
 	var body := UNIT_BODY
 	var u := unit_body

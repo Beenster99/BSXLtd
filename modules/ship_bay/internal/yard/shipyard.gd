@@ -76,6 +76,7 @@ const VIEWS := {
 	"kestrel_access": [Vector3(-7.5, 3.2, 9.5), Vector3(-1.0, 1.6, 3.5)],
 	"kestrel_lift": [Vector3(-7.5, 3.4, -2.5), Vector3(-3.0, 1.5, 2.6)],
 	"kestrel_power": [Vector3(9.5, 2.8, 3.0), Vector3(3.6, 1.4, 6.6)],
+	"scaffolds": [Vector3(13.5, 7.5, 10.0), Vector3(3.6, 3.0, -1.0)],
 	# The storage hall (StorageLayout): down aisle B, the bins in D2, the bulk floor, goods in.
 	"storage_aisle": [Vector3(-21.55, 1.7, -25.6), Vector3(-21.55, 3.2, -42.0)],
 	"storage_aisle_d": [Vector3(-10.95, 1.7, -25.2), Vector3(-10.95, 2.6, -42.0)],

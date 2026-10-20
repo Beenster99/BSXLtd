@@ -33,6 +33,9 @@ signal crate_collected(crate_id: String, item_id: String, qty: int)
 signal trolley_command(trolley_id: String, command: String, args: Dictionary)
 ## Anything in the stores changed (crates landed or put away, stock taken, a load).
 signal stock_changed
+## A piece of the bay's kit was changed (a scaffold rig's bays, lifts or open ends): every peer
+## hears it. payload {rig, bays, lifts, ends}.
+signal kit_changed(payload: Dictionary)
 ## The shipyard scene has built itself; add your own nodes to `yard` (at shipyard_spot()s).
 signal shipyard_ready(yard: Node3D)
 
@@ -100,6 +103,17 @@ func register_module() -> void:
 		Shots.register("shipyard_power_plugged", SHIPYARD_SCENE, func(scene: Node) -> void:
 			(scene.get("bay") as Node).get("access").call("set_power", true)
 			scene.call("show_view", "kestrel_power"))
+		# The two scaffold rigs parked, then driven to the starboard flank and joined end to
+		# end into one 10 m floor at the roof's edge.
+		Shots.register("shipyard_scaffolds", SHIPYARD_SCENE, func(scene: Node) -> void:
+			scene.call("show_view", "scaffolds"))
+		Shots.register("shipyard_scaffold_floor", SHIPYARD_SCENE, func(scene: Node) -> void:
+			var rigs: Array = ((scene.get("bay") as Node).get("access") as Node).get("scaffolds")
+			rigs[0].call("configure", 2, 2, 1)
+			rigs[1].call("configure", 2, 2, 2)
+			rigs[0].global_position = Vector3(3.42, 0, -1.0)
+			rigs[1].global_position = Vector3(3.42, 0, 4.03)
+			scene.call("show_view", "scaffolds"))
 		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
 			scene.call("set_time_of_day", 22.0)
 			scene.call("show_view", "courtyard"))
@@ -151,6 +165,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.pick", _apply_pick, _check_pick)
 	_net.call("register_event", "ship_bay.hand", _apply_hand, _check_hand)
 	_net.call("register_event", "ship_bay.collect", _apply_collect, _check_collect)
+	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
@@ -162,7 +177,7 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect"]:
+				"ship_bay.collect", "ship_bay.kit"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -472,6 +487,15 @@ func collect_crate(crate_id: String) -> void:
 		_apply_collect(payload)
 
 
+## Changes a scaffold rig round the bay: {rig: index, bays: 1..4, lifts: 1..4, ends: 0..3}.
+## kit_changed follows on every peer.
+func change_kit(payload: Dictionary) -> void:
+	if _net:
+		_net.call("request", "ship_bay.kit", payload)
+	elif _check_kit(0, payload) is Dictionary:
+		_apply_kit(payload)
+
+
 ## Crates picked for someone and on their way (or waiting on a trolley): id -> the crate,
 ## with `to` [x, z].
 func picked_crates() -> Dictionary:
@@ -643,6 +667,20 @@ func _apply_collect(payload: Dictionary) -> void:
 	if not c.is_empty():
 		stock_changed.emit()
 		crate_collected.emit(str(payload["crate_id"]), str(c["item"]), int(c["qty"]))
+
+
+func _check_kit(_sender: int, payload: Dictionary) -> Variant:
+	var rig := int(payload.get("rig", -1))
+	var bays := int(payload.get("bays", 0))
+	var lifts := int(payload.get("lifts", 0))
+	var ends := int(payload.get("ends", -1))
+	if rig < 0 or rig > 15 or bays < 1 or bays > 4 or lifts < 1 or lifts > 4 or ends < 0 or ends > 3:
+		return "not a scaffold change"
+	return {"rig": rig, "bays": bays, "lifts": lifts, "ends": ends}
+
+
+func _apply_kit(payload: Dictionary) -> void:
+	kit_changed.emit(payload)
 
 
 func _check_take(_sender: int, payload: Dictionary) -> Variant:

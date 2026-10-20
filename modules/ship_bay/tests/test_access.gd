@@ -89,6 +89,10 @@ func run_tests() -> void:
 		if bool(access.call("drive", "lift", 0.05, 0.0)):
 			moved += 1
 	check(moved == 60 and lift.global_position.distance_to(start) > 2.9, "the lift drives along the hull: %.2f m" % lift.global_position.distance_to(start))
+	await get_tree().physics_frame
+	var deck_hit := yard.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
+			platform.global_position + Vector3(0, 3, 0), platform.global_position + Vector3(0, -0.5, 0)))
+	check(not deck_hit.is_empty() and deck_hit.collider == platform, "its platform went with it")
 	for i in 60:
 		access.call("drive", "lift", -0.05, 0.0)
 	check(lift.global_position.distance_to(start) < 0.01, "and back to the door")
