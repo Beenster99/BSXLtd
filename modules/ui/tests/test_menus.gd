@@ -24,6 +24,17 @@ func run_tests() -> void:
 	var rivet := menu.find_child("_rivet", true, false) as Button
 	check(rivet != null and heads.size() == 1
 			and rivet.get_index() == heads[0].get_index() + 1, "grouped entry sits under its heading")
+	var before := Menu.start()
+	Menu.set_start(UiBus.SETTINGS, 1000)
+	Menu.register_entry("_dup", "Settings again", UiBus.SETTINGS, 4)
+	await frames(2)
+	var start := menu.find_child("Start", true, false) as Button
+	check(start != null and start.get_index() == 0 and not start.disabled, "Start leads the menu")
+	check(menu.find_child("_dup", true, false) == null, "an entry for the start scene isn't listed twice")
+	Menu.clear_start(UiBus.SETTINGS)
+	if not before.is_empty():
+		Menu.set_start(before.scene, before.priority, before.args)
+	Menu.unregister_entry("_dup")
 	Menu.unregister_entry("_rivet")
 	Menu.unregister_entry("_weld")
 	Menu.unregister_entry("_job")

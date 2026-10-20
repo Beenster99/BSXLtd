@@ -31,6 +31,17 @@ func run_tests() -> void:
 		Menu.unregister_entry(id)
 	check(not Menu.entries().any(func(e): return e.id.begins_with("_")), "menu entries unregister")
 
+	var before := Menu.start()
+	Menu.set_start("_yard", 5)
+	Menu.set_start("_other", 1)
+	check(Menu.start().scene == "_yard", "the highest priority start wins")
+	Menu.set_start("_other", 9, {"x": 1})
+	check(Menu.start().scene == "_other" and Menu.start().args.x == 1, "a higher priority takes over")
+	Menu.clear_start("_other")
+	check(Menu.start().is_empty(), "start clears")
+	if not before.is_empty():
+		Menu.set_start(before.scene, before.priority, before.args)
+
 	Settings.register("_test", {"speed": 3})
 	check(Settings.get_value("_test", "speed") == 3, "settings default")
 	Settings.set_value("_test", "speed", 5)
