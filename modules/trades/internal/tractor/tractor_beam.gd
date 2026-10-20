@@ -488,12 +488,7 @@ func _send_to_trolley(part: TradesLoosePart) -> void:
 	_retry.erase(part.slot_id)
 	if not _has("beam_to_trolley") or to_trolley.has(part.slot_id):
 		return
-	var api := _api()
-	var id := ""
-	if api.get_method_argument_count("beam_to_trolley") >= 4:
-		id = str(api.call("beam_to_trolley", part.slot_id, part.component, 1.0, part.centre()))
-	else:
-		id = str(api.call("beam_to_trolley", part.component, 1.0, part.centre()))
+	var id := str(_api().call("beam_to_trolley", part.slot_id, part.component, 1.0, part.centre()))
 	if id == "":
 		_retry[part.slot_id] = TROLLEY_RETRY_S
 		return
@@ -505,10 +500,9 @@ func _cancel_trolley(slot_id: String) -> void:
 	_drop_yard_beam(slot_id)
 	if not to_trolley.has(slot_id):
 		return
-	var id: String = to_trolley[slot_id]
 	to_trolley.erase(slot_id)
 	if _has("cancel_beam"):
-		_api().call("cancel_beam", id)
+		_api().call("cancel_beam", slot_id)
 
 
 ## The part is on its trolley's deck as a crate: the copy goes.
