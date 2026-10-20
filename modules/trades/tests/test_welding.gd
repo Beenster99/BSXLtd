@@ -113,7 +113,7 @@ func _test_station() -> void:
 	station.release()
 	check(got.size() == 1 and got[0].trade == &"WELD" and got[0].measurements.coverage == 1.0, "finishing the seam reports to the bus")
 	check(not station.torch.lit, "the arc is out after the run")
-	check(station.wheel(-1) and w.amps == 125.0, "the wheel sets the amps")
+	check(station.adjust(-1) and w.amps == 125.0, "Q turns the amps down")
 	bay.reset_all()
 	check(bus.get_result(&"bench_seam") == null and w.coverage() == 0.0, "resetting clears the seam and its result")
 	bay.queue_free()

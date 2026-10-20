@@ -49,8 +49,8 @@ func back_out(_tool: StringName) -> void:
 	pass
 
 
-## Mouse wheel (+1 up, -1 down). True when the station used it.
-func wheel(_step: int) -> bool:
+## E (+1) or Q (-1): turn what you hold, or set the machine. True when the station used it.
+func adjust(_step: int) -> bool:
 	return false
 
 

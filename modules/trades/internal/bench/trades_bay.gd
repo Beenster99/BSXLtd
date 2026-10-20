@@ -1,14 +1,14 @@
 class_name TradesBay
 extends Node3D
-## The trades bay: one long bench in a BSX fitting bay with a station for each trade
+## The tools bay: one long bench in a BSX fitting bay with a station for each kind of job
 ## (bolting, riveting, welding, wiring). You walk along it as the BSX worker (first or
-## third person, V) with your own stretchy hands, pick a tool from the hotbar and work at
-## whichever station you are looking at. The bay owns the worker, the tools, the HUD and
+## third person, V) with your own stretchy hands. You own every tool: the mouse wheel (or
+## 1-6) picks one, and you work at whichever station you are looking at. The bay owns the worker, the tools, the HUD and
 ## the input; each station (TradesStation) owns its parts, its joint rules and what the
 ## tools do there.
 ##
-##   WASD walk, mouse look, V first/third person, 1-6 tools, R resets the station,
-##   left click use, right click take off, wheel turns or sets, Esc leaves.
+##   WASD walk, mouse look, V first/third person, wheel or 1-6 tools, R resets the
+##   station, left click use, right click take off, Q/E turn or set, Esc leaves.
 
 const BENCH_TOP := 0.9
 ## The bench runs along X from -BENCH_HALF to BENCH_HALF, its front edge at z = BENCH_FRONT.
@@ -109,6 +109,15 @@ func set_tool(id: StringName) -> void:
 	_refresh_hud()
 
 
+## The next tool along the hotbar (+1) or the one before (-1), wrapping round. Not while a
+## hand or tool is busy on the work.
+func cycle_tool(step: int) -> void:
+	if _focus and _focus.is_busy():
+		return
+	var i := TOOLS.find(tool)
+	set_tool(TOOLS[posmod(i + step, TOOLS.size())])
+
+
 ## Every station back to its start.
 func reset_all() -> void:
 	for s in stations:
@@ -138,6 +147,9 @@ func _on_key(k: Key) -> void:
 	match k:
 		KEY_V:
 			worker.set_view(not worker.third_person)
+		KEY_Q, KEY_E:
+			if _focus and _focus.adjust(1 if k == KEY_E else -1):
+				_refresh_hud()
 		KEY_R:
 			if _focus:
 				_focus.reset()
@@ -167,8 +179,8 @@ func _on_mouse_button(event: InputEventMouseButton) -> void:
 			if event.pressed:
 				_focus.back_out(tool)
 		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
-			if event.pressed and _focus.wheel(1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1):
-				_refresh_hud()
+			if event.pressed:
+				cycle_tool(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
 
 
 # --- Every frame ------------------------------------------------------------------------
@@ -488,7 +500,7 @@ func _build_hud() -> void:
 	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 
 	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
-	keys.text = "WASD walk  V view  1-6 tools  LMB use  RMB take off  wheel turn/set  Tab part  R reset  Esc menu"
+	keys.text = "WASD walk  V view  wheel/1-6 tool  LMB use  RMB take off  Q/E turn/set  Tab part  R reset  Esc menu"
 	keys.position = Vector2(40, 36)
 	root.add_child(keys)
 

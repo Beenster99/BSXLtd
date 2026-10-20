@@ -1,6 +1,6 @@
 extends TradesStation
 ## Bolting: a steel plate, a four-hole angle bracket beside it and a tray of bolts. Set the
-## bracket on the plate (hands; the wheel turns it), screw each bolt in by hand (aim at the
+## bracket on the plate (hands; Q and E turn it), screw each bolt in by hand (aim at the
 ## hole's centre or it cross-threads and jams), then torque them with the torque wrench in
 ## the order on the plate. All the rules live in BoltJoint.
 ##
@@ -126,7 +126,7 @@ func motion(relative: Vector2) -> bool:
 	return true
 
 
-func wheel(step: int) -> bool:
+func adjust(step: int) -> bool:
 	if not _carrying:
 		return false
 	_bracket_yaw = wrapf(_bracket_yaw + 4.0 * step, -180.0, 180.0)
@@ -169,7 +169,7 @@ func press(tool: StringName) -> void:
 		if worker.left_hand.can_reach(_bracket.global_position):
 			_carrying = true
 			_mark_started()
-			bay.hint("Wheel turns it. Square it up over the plate and click to set it down.")
+			bay.hint("Q and E turn it. Square it up over the plate and click to set it down.")
 		else:
 			bay.hint("Too far. Step closer.")
 		return
