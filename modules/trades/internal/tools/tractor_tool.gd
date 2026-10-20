@@ -104,6 +104,22 @@ func readout_text() -> String:
 	return "LOAD%s\nOUT %4.1fm\n%s" % [t, distance_m, line3]
 
 
+func panel_rows() -> Array:
+	if not on:
+		return [["LOAD", "-"], ["OUT", "-"]]
+	var weight := "%d kg" % roundi(load_kg) if load_kg < 1000.0 else "%.1f t" % (load_kg / 1000.0)
+	var rows := [["LOAD", weight], ["OUT", "%.1f m" % distance_m]]
+	if align >= 0.0:
+		rows.append(["LINE", "IN LINE" if align >= 1.0 else "%d %%" % roundi(align * 100.0)])
+	return rows
+
+
+func panel_state() -> String:
+	if not on:
+		return "READY"
+	return "IN LINE" if align >= 1.0 else "HOLDING"
+
+
 func readout_fill() -> float:
 	return align if on else -1.0
 

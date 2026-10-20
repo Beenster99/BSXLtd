@@ -69,6 +69,19 @@ func readout_text() -> String:
 	return "STRIP\nCRIMP\nREADY"
 
 
+func panel_rows() -> Array:
+	match mode:
+		"strip":
+			return [["MODE", "STRIP"], ["STRIPPED", "%.1f mm" % value]]
+		"crimp":
+			return [["MODE", "CRIMP"], ["CRIMPED", "%d %%" % roundi(value * 100.0)]]
+	return [["MODE", "STRIP / CRIMP"]]
+
+
+func panel_state() -> String:
+	return "CRIMP OK" if _flash > 0.0 else ("WORKING" if mode != "" else "READY")
+
+
 func readout_fill() -> float:
 	match mode:
 		"strip":

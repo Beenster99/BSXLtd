@@ -68,6 +68,16 @@ func readout_text() -> String:
 	return "H %4.2f\nD %4.2f\nmm" % [head_mm, dia_mm]
 
 
+func panel_rows() -> Array:
+	if head_mm < 0.0:
+		return [["HEAD", "-"], ["DIAMETER", "-"], ["CLOSED", "%d %%" % roundi(closed * 100.0)]]
+	return [["HEAD", "%.2f mm" % head_mm], ["DIAMETER", "%.2f mm" % dia_mm], ["CLOSED", "%d %%" % roundi(closed * 100.0)]]
+
+
+func panel_state() -> String:
+	return "SQUEEZING" if closed > 0.02 else "READY"
+
+
 func readout_fill() -> float:
 	return closed
 
