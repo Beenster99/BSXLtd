@@ -31,7 +31,9 @@ func run_tests() -> void:
 		Menu.unregister_entry(id)
 	check(not Menu.entries().any(func(e): return e.id.begins_with("_")), "menu entries unregister")
 
-	var before := Menu.start()
+	var before := Menu.start()  # a module's own start (the yard); put back at the end
+	if not before.is_empty():
+		Menu.clear_start(before.scene)
 	Menu.set_start("_yard", 5)
 	Menu.set_start("_other", 1)
 	check(Menu.start().scene == "_yard", "the highest priority start wins")
