@@ -78,6 +78,12 @@ func run_tests() -> void:
 	var crates: Node3D = front.get_node("GoodsIn")
 	if bus.ship_bay_takes_deliveries():
 		check(crates.get_child_count() == 0, "Ship and Bay places deliveries, so no Business crates")
+		var landed: Dictionary = yard_bus.call("delivered_crates")
+		var ours := landed.keys().filter(func(id): return landed[id].item == picks[0].part)
+		check(ours.size() == 1 and int(landed[ours[0]].qty) == 2, "the order lands as a Ship and Bay crate: %s" % str(landed))
+		for id in ours:
+			var at: Vector3 = yard_bus.call("crate_position", id)
+			check(yard.call("room_at", at + Vector3(0, 0.5, 0)) == "deliveries", "%s stands in the deliveries hall" % id)
 	else:
 		check(crates.get_child_count() == 1, "a crate for what arrived: %d" % crates.get_child_count())
 		for c: Node3D in crates.get_children():
