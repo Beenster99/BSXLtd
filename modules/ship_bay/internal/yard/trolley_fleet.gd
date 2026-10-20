@@ -1,7 +1,8 @@
 extends Node3D
 ## The yard's hover trolleys and what they are doing. Built by the shipyard on every peer:
-## three trolleys (small, medium, large) parked in Deliveries, a TROLLEYS console on the
-## hall's east wall, and the route planner (YardNav) once the yard's collision is in.
+## three trolleys (small, medium, large) parked in Deliveries and the picking lift in the
+## stores, a TV on the hall's east wall (F on it opens the trolley screen, trolley_panel.gd),
+## and the route planner (YardNav) once the yard's collision is in.
 ##
 ## Commands come from ShipBayBus.command_trolley (every peer hears them). The peer driving a
 ## trolley (Multiplayer.drives "trolley:<id>": the host, or a player who claimed it for
@@ -21,6 +22,7 @@ extends Node3D
 const Trolley := preload("res://modules/ship_bay/internal/yard/hover_trolley.gd")
 const Nav := preload("res://modules/ship_bay/internal/yard/yard_nav.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
+const Screen := preload("res://modules/ship_bay/internal/yard/trolley_panel.gd")
 
 ## Parking bays in Deliveries, by the east wall: trolley id -> [floor point, yaw].
 const PARKING := {
@@ -33,8 +35,11 @@ const PARKING := {
 ## west) and where the trolley taking them stands (facing it): [floor point, yaw].
 const HANDOFF := [Vector3(-3.2, 0, -27.0), PI * 0.5]
 const HANDOFF_TROLLEY := [Vector3(-6.0, 0, -27.0), -PI * 0.5]
-## The TROLLEYS console on Deliveries' east wall (facing -X into the hall).
-const CONSOLE := Vector3(-28.32, 1.45, 8.6)
+## The trolleys' TV on Deliveries' east wall, between the frame columns at z 9 and 15
+## (facing -X into the hall): its centre, its picture's size in metres and in pixels.
+const TV := Vector3(-28.32, 2.55, 12.0)
+const TV_SIZE := Vector2(4.0, 2.25)
+const TV_PIXELS := Vector2(1280, 720)
 ## How long a trolley waits held up before it plans a new way round, seconds.
 const REPLAN_AFTER := 3.0
 
@@ -56,9 +61,11 @@ var _aisles: Dictionary = {}
 ## Fetches waiting for a trolley that is busy: id -> [args, ...].
 var _queue: Dictionary = {}
 var _hud: Label
-var _console_text: Label3D
+## The screen a player opened with F on the TV (null when shut), and the one on the TV.
+var panel: Screen
+var tv_panel: Screen
+var _tv_view: SubViewport
 var _deck_send := 0.0
-var _console_tick := 0.0
 
 
 func _ready() -> void:
@@ -78,7 +85,7 @@ func _ready() -> void:
 		jobs[id] = {}
 		if _net:
 			_net.call("register_mover", "trolley:" + id, t)
-	_build_console()
+	_build_tv()
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
@@ -152,10 +159,6 @@ func _physics_process(delta: float) -> void:
 			_go(t, t.path[t.path.size() - 1], t.final_yaw, true)
 			t.blocked_for = 0.0
 	_free_aisles()
-	_console_tick -= delta
-	if _console_tick <= 0.0:
-		_console_tick = 0.5
-		_refresh_console()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -729,66 +732,107 @@ func _refresh_cargo() -> void:
 				"name": c["name"]})
 
 
-# --- The console -------------------------------------------------------------------------
+# --- The screen --------------------------------------------------------------------------
 
-func _build_console() -> void:
+## Parks one trolley.
+func park(id: String) -> void:
+	if _bus:
+		_bus.command_trolley(id, "park")
+
+
+func park_all() -> void:
+	for id: String in trolleys:
+		park(id)
+
+
+## Every trolley puts deliveries away (the picking lift sits it out: it only picks).
+func put_away_all() -> void:
+	if _bus:
+		for id: String in trolleys:
+			_bus.command_trolley(id, "put_away")
+
+
+## F on the TV: the trolley screen full size, with the mouse, until closed.
+func open_panel() -> void:
+	if panel:
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "TrolleyScreen"
+	layer.layer = 20
+	add_child(layer)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(dim)
+	panel = Screen.new()
+	panel.setup(self, true)
+	panel.size = TV_PIXELS
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
+	layer.add_child(panel)
+	panel.closed.connect(close_panel)
+	if yard:
+		yard.call("set_walker_active", false)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func close_panel() -> void:
+	if panel == null:
+		return
+	panel.get_parent().queue_free()
+	panel = null
+	if yard:
+		yard.call("set_walker_active", true)
+
+
+func _build_tv() -> void:
 	var holder := Node3D.new()
-	holder.name = "TrolleyConsole"
-	holder.position = CONSOLE
+	holder.name = "TrolleyTV"
+	holder.position = TV
 	holder.rotation.y = -PI * 0.5
 	add_child(holder)
-	var dark := ShipSurface.of(ShipKit.paint(Color(0.12, 0.13, 0.15), 0.4, 0.5, "satin_paint"))
-	var glass := ShipKit.paint(Color(0.02, 0.03, 0.04), 0.0, 0.25)
-	_panel(holder, Vector3(1.9, 1.5, 0.08), Vector3(0, 0, 0.04), dark)
-	_panel(holder, Vector3(1.75, 0.62, 0.01), Vector3(0, 0.35, 0.085), glass)
-	var title := _label(holder, "HOVER TROLLEYS", Vector3(0, 0.62, 0.095), 30, Color(1.0, 0.6, 0.2))
-	title.name = "Title"
-	_console_text = _label(holder, "", Vector3(0, 0.33, 0.095), 22, Color(0.45, 0.95, 1.0))
-	var buttons := [
-		["PUT AWAY\nDELIVERIES", Vector3(-0.6, -0.2, 0), func() -> void:
-			for id: String in trolleys:
-				_bus.command_trolley(id, "put_away")],
-		["PARK ALL", Vector3(0.0, -0.2, 0), func() -> void:
-			for id: String in trolleys:
-				_bus.command_trolley(id, "park")],
-		["CALL S", Vector3(0.6, -0.2, 0), func() -> void: call_to_me("s")],
-		["CALL M", Vector3(-0.6, -0.52, 0), func() -> void: call_to_me("m")],
-		["CALL L", Vector3(0.0, -0.52, 0), func() -> void: call_to_me("l")],
-		["FETCH FOR\nTHE SHIP", Vector3(0.6, -0.52, 0), func() -> void: fetch_for_ship()],
-	]
+	var dark := ShipSurface.of(ShipKit.paint(Color(0.07, 0.075, 0.085), 0.3, 0.45, "satin_paint"))
+	var steel := ShipSurface.of(ShipKit.paint(Color(0.35, 0.37, 0.4), 0.7, 0.4, "brushed_steel"))
+	var w := TV_SIZE.x
+	var h := TV_SIZE.y
+	# Wall arm, bezel, a lit strip along the bottom edge and a name plate under it.
+	_panel(holder, Vector3(0.5, 0.3, 0.12), Vector3(0, 0, 0.06), steel)
+	_panel(holder, Vector3(w + 0.12, h + 0.12, 0.07), Vector3(0, 0, 0.155), dark)
+	_panel(holder, Vector3(w * 0.6, 0.012, 0.01), Vector3(0, -h * 0.5 - 0.045, 0.195), ShipKit.glow(BsxTheme.ACCENT, 1.4))
+	var plate := _label(holder, "HOVER TROLLEYS  ·  F TO USE", Vector3(0, -h * 0.5 - 0.17, 0.12), 26, Color(1.0, 0.6, 0.2))
+	plate.name = "Plate"
+	_tv_view = SubViewport.new()
+	_tv_view.name = "Screen"
+	_tv_view.size = Vector2i(TV_PIXELS)
+	_tv_view.transparent_bg = false
+	_tv_view.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	holder.add_child(_tv_view)
+	var shown := Screen.new()
+	shown.setup(self, false)
+	shown.size = TV_PIXELS
+	_tv_view.add_child(shown)
+	tv_panel = shown
+	var quad := QuadMesh.new()
+	quad.size = Vector2(w, h)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_texture = _tv_view.get_texture()
+	var glass := MeshInstance3D.new()
+	glass.name = "Glass"
+	glass.mesh = quad
+	glass.material_override = mat
+	glass.position = Vector3(0, 0, 0.192)
+	glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(glass)
 	var body := StaticBody3D.new()
-	body.name = "Buttons"
+	body.name = "Use"
 	holder.add_child(body)
-	var lit := ShipKit.glow(Color(1.0, 0.55, 0.16), 1.6)
-	for b: Array in buttons:
-		var at: Vector3 = b[1] + Vector3(0, 0, 0.11)
-		_panel(holder, Vector3(0.5, 0.24, 0.05), at, lit)
-		var l := _label(holder, b[0], at + Vector3(0, 0, 0.03), 18, Color(0.08, 0.06, 0.04))
-		l.outline_size = 0
-		var col := CollisionShape3D.new()
-		var shape := BoxShape3D.new()
-		shape.size = Vector3(0.5, 0.24, 0.08)
-		col.shape = shape
-		col.position = at
-		col.set_meta("ship_bay_use", b[2])
-		col.name = "Button_" + str(b[0]).replace("\n", "_").replace(" ", "_")
-		body.add_child(col)
-
-
-func _refresh_console() -> void:
-	if _console_text == null:
-		return
-	var lines := PackedStringArray()
-	for id: String in ["s", "m", "l", "p"]:
-		var t: Trolley = trolleys[id]
-		lines.append("%s  %-14s deck %.1f m" % [t.spec["letter"], t.status if t.status != "" else "READY", t.deck_height])
-	var waiting := 0
-	if _bus:
-		for c: Dictionary in _bus.delivered_crates().values():
-			if str(c.get("carrier", "")) == "":
-				waiting += 1
-	lines.append("%d crate%s waiting in goods in" % [waiting, "" if waiting == 1 else "s"])
-	_console_text.text = "\n".join(lines)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(w + 0.12, h + 0.12, 0.08)
+	col.shape = shape
+	col.position = Vector3(0, 0, 0.155)
+	col.set_meta("ship_bay_use", open_panel)
+	body.add_child(col)
 
 
 func _panel(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> void:
