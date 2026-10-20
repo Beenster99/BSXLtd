@@ -43,6 +43,16 @@ func readout_alert() -> bool:
 	return false
 
 
+## The HUD's tool panel: labelled readings, [[label, value], ...] (override).
+func panel_rows() -> Array:
+	return []
+
+
+## The HUD's tool panel: one word or two for what the tool is doing (override).
+func panel_state() -> String:
+	return "RUNNING" if readout_alert() else "READY"
+
+
 func _process(_delta: float) -> void:
 	if _readout == null:
 		return

@@ -9,12 +9,18 @@ extends TradesTool
 
 const GRIP := Vector3(0, 0.1245, 0.0495)
 const AMPS_MAX := 200.0
+## Cutting a weld out runs the arc hot (amps).
+const CUT_AMPS := 180.0
 
 ## The arc is lit (the wire tip glows).
 var lit := false
 ## The welder's setting, and the arc length while lit (mm); the welding station sets them.
 var amps := 110.0
 var arc_mm := 0.0
+## Cutting a weld out (unweld) rather than laying one: the arc gouges the bead away.
+var cutting := false
+## How far through the cut is (0..1), while cutting.
+var cut := 0.0
 
 var _tip: MeshInstance3D
 var _wire: Material
@@ -66,13 +72,29 @@ func _process(delta: float) -> void:
 
 
 func readout_text() -> String:
+	if lit and cutting:
+		return "%3d A\nCUT\n%3d%%" % [roundi(CUT_AMPS), roundi(cut * 100.0)]
 	if lit:
 		return "%3d A\nARC\n%3.1fmm" % [roundi(amps), arc_mm]
 	return "%3d A\nWIRE\nREADY" % roundi(amps)
 
 
 func readout_fill() -> float:
-	return amps / AMPS_MAX
+	return cut if lit and cutting else amps / AMPS_MAX
+
+
+func panel_rows() -> Array:
+	if lit and cutting:
+		return [["MODE", "CUT (UNWELD)"], ["CURRENT", "%d A" % roundi(CUT_AMPS)], ["CUT", "%d %%" % roundi(cut * 100.0)]]
+	var rows := [["MODE", "WELD"], ["CURRENT", "%d A" % roundi(amps)]]
+	rows.append(["ARC", "%.1f mm" % arc_mm if lit else "-"])
+	return rows
+
+
+func panel_state() -> String:
+	if lit:
+		return "CUTTING" if cutting else "ARC ON"
+	return "READY"
 
 
 func readout_alert() -> bool:

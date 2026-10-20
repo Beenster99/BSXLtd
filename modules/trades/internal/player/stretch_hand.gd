@@ -7,11 +7,15 @@ extends Node3D
 ##
 ## Void Salvage's tool arm stretches the same way, and looks the same: the dark metal arm
 ## (ToolController) ending in the salvager suit's glove (PlayerModel's suit and frame).
+## For now (flag "trades.sphere_hands") the glove is a plain ball in the suit's colour with
+## an orange band: the arm still ends where the glove's palm would be, so tools sit the same.
 
 signal snapped
 
 ## Where the hand sits on its mount, in the mount's space.
 const REST := Vector3(0.0, 0.0, 0.0)
+## The stand-in ball hand's radius (metres).
+const SPHERE_R := 0.042
 
 ## How quickly the hand slides out and back (1/s).
 @export var speed := 9.0
@@ -47,6 +51,54 @@ func _ready() -> void:
 	accent.emission_enabled = true
 	accent.emission = TradesLook.TRIM
 	accent.emission_energy_multiplier = 0.5
+	if Flags.is_on("trades.sphere_hands"):
+		_build_sphere(glove, accent)
+	else:
+		_build_glove(glove, frame, accent)
+	_sleeve_mat = TradesLook.metal(TradesLook.ARM, 0.6, 0.45)
+	_sleeve_mat.emission_enabled = true
+	_sleeve_mat.emission = Color.BLACK
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.016
+	mesh.bottom_radius = 0.024
+	mesh.height = 1.0
+	mesh.radial_segments = 10
+	mesh.rings = 1
+	_sleeve = MeshInstance3D.new()
+	_sleeve.name = "Sleeve"
+	_sleeve.mesh = mesh
+	_sleeve.material_override = _sleeve_mat
+	_sleeve.top_level = true
+	_sleeve.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_sleeve.visible = false
+	add_child(_sleeve)
+
+
+## The stand-in hand: a ball where the palm is, banded round its middle.
+func _build_sphere(mat: Material, accent: Material) -> void:
+	var ball := MeshInstance3D.new()
+	ball.name = "Ball"
+	var mesh := SphereMesh.new()
+	mesh.radius = SPHERE_R
+	mesh.height = SPHERE_R * 2.0
+	mesh.radial_segments = 20
+	mesh.rings = 10
+	ball.mesh = mesh
+	ball.material_override = mat
+	_glove.add_child(ball)
+	var band := MeshInstance3D.new()
+	var ring := TorusMesh.new()
+	ring.inner_radius = SPHERE_R * 0.97
+	ring.outer_radius = SPHERE_R * 1.07
+	ring.rings = 20
+	ring.ring_segments = 6
+	band.mesh = ring
+	band.material_override = accent
+	band.rotation.x = PI * 0.5
+	_glove.add_child(band)
+
+
+func _build_glove(glove: Material, frame: Material, accent: Material) -> void:
 	var side := -1.0 if left else 1.0
 	_box(Vector3(0.08, 0.03, 0.09), Vector3(0, 0, -0.01), glove, _glove)
 	_box(Vector3(0.06, 0.008, 0.05), Vector3(0, 0.018, -0.012), frame, _glove)      # back plate
@@ -75,24 +127,6 @@ func _ready() -> void:
 	_glove.add_child(thumb)
 	_box(Vector3(0.017, 0.019, 0.046), Vector3(0, 0, -0.02), glove, thumb)
 	_fingers.append(thumb)
-
-	_sleeve_mat = TradesLook.metal(TradesLook.ARM, 0.6, 0.45)
-	_sleeve_mat.emission_enabled = true
-	_sleeve_mat.emission = Color.BLACK
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.016
-	mesh.bottom_radius = 0.024
-	mesh.height = 1.0
-	mesh.radial_segments = 10
-	mesh.rings = 1
-	_sleeve = MeshInstance3D.new()
-	_sleeve.name = "Sleeve"
-	_sleeve.mesh = mesh
-	_sleeve.material_override = _sleeve_mat
-	_sleeve.top_level = true
-	_sleeve.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_sleeve.visible = false
-	add_child(_sleeve)
 
 
 ## Send the hand out to `point` (world space), palm down onto a surface facing `normal`.

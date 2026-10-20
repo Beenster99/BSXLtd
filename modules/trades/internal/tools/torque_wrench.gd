@@ -66,6 +66,16 @@ func readout_text() -> String:
 	return "SET %2d\n%s\nNm" % [roundi(set_nm), state]
 
 
+func panel_rows() -> Array:
+	return [["SET", "%d N m" % roundi(set_nm)], ["APPLIED", "%.1f N m" % applied_nm if applied_nm > 0.05 else "-"]]
+
+
+func panel_state() -> String:
+	if _flash > 0.0:
+		return "CLICK: TORQUED"
+	return "PULLING" if applied_nm > 0.05 else "READY"
+
+
 func readout_fill() -> float:
 	return applied_nm / maxf(set_nm, 1.0)
 
