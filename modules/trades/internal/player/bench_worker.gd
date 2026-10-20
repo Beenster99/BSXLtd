@@ -135,9 +135,9 @@ func aim_dir() -> Vector3:
 func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
 	if not look_locked:
-		input.x = float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A))
-		input.y = float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W))
-	var speed := run_speed if Input.is_physical_key_pressed(KEY_SHIFT) else walk_speed
+		input.x = Input.get_action_strength(Keys.RIGHT) - Input.get_action_strength(Keys.LEFT)
+		input.y = Input.get_action_strength(Keys.BACK) - Input.get_action_strength(Keys.FORWARD)
+	var speed := run_speed if Input.is_action_pressed(Keys.RUN) else walk_speed
 	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
 	velocity.z = move.z

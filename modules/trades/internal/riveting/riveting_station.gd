@@ -83,8 +83,8 @@ func start_hint() -> String:
 	return "Drill (3) each orange mark. Hold still while it cuts."
 
 
-func key(k: Key) -> bool:
-	if k == KEY_TAB:
+func key(action: String) -> bool:
+	if action == TradesBus.KEY_NEXT:
 		length_index = (length_index + 1) % RivetJoint.LENGTHS.size()
 		return true
 	return false
@@ -277,7 +277,7 @@ func _update_deburr(delta: float) -> void:
 	worker.right_hand.set_spin(sin(Time.get_ticks_msec() * 0.012) * 0.8)
 	if joint.deburr(_deburring, delta):
 		release()
-		bay.hint("Clean. Take a rivet from the tray (Tab picks the length).")
+		bay.hint("Clean. Take a rivet from the tray (%s picks the length)." % Keys.key_name(TradesBus.KEY_NEXT))
 
 
 func _update_squeezer() -> void:

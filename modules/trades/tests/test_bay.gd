@@ -20,10 +20,10 @@ func run_tests() -> void:
 	bay.worker.face(bay.station(&"bolting").to_global(Vector3(0, 0.9, 0)))
 	await frames(2)
 	check(bay.focus() == bay.station(&"bolting"), "looking along the bench moves the focus to that station")
-	bay._on_key(KEY_5)
+	bay._on_action(TradesBus.KEY_TOOL + "5")
 	await frames(1)
 	check(bay.tool == &"welder" and bay.tool_node(&"welder").visible, "number keys pick tools; the tool shows in hand")
-	bay._on_key(KEY_3)
+	bay._on_action(TradesBus.KEY_TOOL + "3")
 	await frames(1)
 	check(bay.tool == &"drill" and not bay.tool_node(&"welder").visible, "only the tool in hand shows")
 	bay.cycle_tool(1)
@@ -33,7 +33,19 @@ func run_tests() -> void:
 	check(bay.tool == &"hands", "and wraps round past the last")
 	bay.cycle_tool(-1)
 	check(bay.tool == &"wire_tool", "and back the other way")
-	bay._on_key(KEY_E)
+	bay._on_action(TradesBus.KEY_TURN_RIGHT)
+
+	# Keys are actions in Settings > Key binds: the default key works, and so does a new one.
+	check(Keys.has(TradesBus.KEY_TOOL + "2") and Keys.key_of(TradesBus.KEY_VIEW) == KEY_V, "the Tools keys are in Key binds")
+	bay._handle_input(_key(KEY_2))
+	check(bay.tool == bay.hotbar[1], "pressing 2 picks tool 2")
+	Keys.rebind(TradesBus.KEY_TOOL + "2", KEY_K)
+	bay.set_tool(&"hands")
+	bay._handle_input(_key(KEY_2))
+	check(bay.tool == &"hands", "moved off 2, the key does nothing")
+	bay._handle_input(_key(KEY_K))
+	check(bay.tool == bay.hotbar[1], "and the new key picks the tool")
+	Keys.reset(TradesBus.KEY_TOOL + "2")
 
 	# Carrying: hold left click on the bracket with your hands; the wheel turns it.
 	var bolting: Node = bay.station(&"bolting")
@@ -74,3 +86,10 @@ func _click(button: MouseButton, pressed: bool) -> InputEventMouseButton:
 	e.button_index = button
 	e.pressed = pressed
 	return e
+
+
+func _key(k: Key) -> InputEventKey:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = k
+	ev.pressed = true
+	return ev
