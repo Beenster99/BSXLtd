@@ -96,6 +96,7 @@ func run_tests() -> void:
 		rig.set_tool(&"welder")
 		station.back_out(&"welder")
 		_run(station, 10)
+		await frames(1)
 		var torch := rig.tool_node(&"welder") as TradesWeldTorch
 		check(torch.lit and torch.cutting and rig.tool_panel_text().contains("CUT"), "right click on a weld: the welder cuts")
 		_run(station, 60)
