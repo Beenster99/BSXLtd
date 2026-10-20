@@ -12,7 +12,7 @@ func run_tests() -> void:
 	Flags.use({"core": true, "ui": true, "contracts": true, "business": false})
 	Modules.load_all()
 	_test_without_business()
-	Flags.use({"core": true, "ui": true, "contracts": true, "business": true})
+	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "business": true})
 	Modules.load_all()
 	_test_with_business()
 	Flags.use(saved)
@@ -126,7 +126,7 @@ func _test_without_business() -> void:
 func _test_with_business() -> void:
 	var bus := Modules.bus("contracts") as ContractsBus
 	var books := Modules.bus("business") as BusinessBus
-	check(bus != null and books != null, "both buses load with Business on")
+	check(bus != null and books != null, "both buses load with Business on: %s" % Modules.skipped_reason("business"))
 	if bus == null or books == null:
 		return
 	books.reset()
