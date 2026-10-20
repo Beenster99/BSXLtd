@@ -37,8 +37,8 @@ const STATIONS := [
 ]
 const HAND_REACH_M := 0.9
 const HAND_STRETCH_M := 0.9
-## In the yard the arms stretch further, up to the joints high on a ship's flank (metres).
-const YARD_STRETCH_M := 2.3
+## In the yard the arms stretch further, up to the joints on a ship's roof from the floor (metres).
+const YARD_STRETCH_M := 3.4
 ## Bolts on the ship (Ship and Bay's FastenerPoints) are in ship space; without the yard
 ## telling us where the ship is, it sits this far over the yard's origin (the bay's cradles).
 const YARD_SHIP_AT := Vector3(0, 1.6, 0)

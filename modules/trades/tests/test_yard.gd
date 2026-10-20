@@ -104,6 +104,14 @@ func run_tests() -> void:
 	station.press(&"hands")
 	check(ship_bus.get_slot_state(slot_id) == ShipBayBus.SlotState.POSITIONED, "hands on it put the part back in place")
 
+	# Rivets on the roof are in reach of the stretchy arms from the floor beside the ship.
+	var rivet := _first(station, "rivet")
+	if rivet >= 0:
+		var at := station.points_world[rivet]
+		rig.worker.global_position = Vector3(at.x + signf(at.x) * 2.0 + 0.01, 0.0, at.z)
+		await frames(1)
+		check(rig.worker.right_hand.can_reach(at), "a roof rivet is in reach from the floor")
+
 	yard.queue_free()
 	await frames(1)
 	if had_ship:
