@@ -60,11 +60,15 @@ const LAMP := Color(1.0, 0.93, 0.82)
 var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
+## False while another module has control (ShipBayBus.set_walker_active).
+var walker_active := true
 
 var _solid: StaticBody3D
 var _rng := RandomNumberGenerator.new()
 var _paints: Dictionary = {}
 var _crates: Array = []
+## The collision bodies the yard built itself, before other modules added theirs.
+var _own_bodies: Dictionary = {}
 var _concrete: StandardMaterial3D
 
 
@@ -96,6 +100,8 @@ func _ready() -> void:
 	view_camera.name = "ViewCamera"
 	view_camera.far = 6000.0
 	add_child(view_camera)
+	for body: Node in find_children("*", "CollisionObject3D", true, false):
+		_own_bodies[body] = true
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus:
 		bus.shipyard_ready.emit(self)
@@ -120,6 +126,11 @@ func show_view(id: String) -> void:
 	view_camera.current = true
 
 
+## True for a collision body the yard built, false for one another module added to it.
+func is_own_body(body: Object) -> bool:
+	return _own_bodies.has(body)
+
+
 ## The room the point (yard space) is in, or "" outside.
 static func room_at(point: Vector3) -> String:
 	for id: String in ROOMS:
@@ -128,7 +139,28 @@ static func room_at(point: Vector3) -> String:
 	return ""
 
 
+## Hands control to another module (off) or takes it back (on). Off, the walker stands still
+## where it is, the yard leaves the mouse and keys alone and its cameras stand down.
+func set_walker_active(on: bool) -> void:
+	if on == walker_active:
+		return
+	walker_active = on
+	walker.set_physics_process(on)
+	walker.velocity = Vector3.ZERO
+	var cam := walker.get("camera") as Camera3D
+	if on:
+		cam.current = true
+		if DisplayServer.get_name() != "headless":
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	else:
+		# Without handing the view on to the yard's other camera.
+		cam.clear_current(false)
+		view_camera.clear_current(false)
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if not walker_active:
+		return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			walker.call("look", event.relative)

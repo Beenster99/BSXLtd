@@ -29,8 +29,30 @@ func run_tests() -> void:
 	Materials.assign(plate, "alloy")
 	check(plate.material == "alloy" and plate.mass < 100.0, "Materials.assign rescales mass by density")
 
+	_check_fittings()
+
 	for part_name in lib.part_names():
 		_check_spec(lib, lib.build_spec(part_name))
+
+
+## Void Salvage's player-ship fittings build on a BSX body with its own ShipKit.
+func _check_fittings() -> void:
+	var body := RigidBody3D.new()
+	var kit := ShipKit.new(body)
+	var frame := Transform3D.IDENTITY
+	var built: Array[Dictionary] = [
+		ShipParts.seat(kit, Vector3.ZERO, "seat_0"),
+		ShipParts.console(kit, frame, 1.2),
+		ShipParts.locker(kit, frame),
+		ShipParts.breaker_panel(kit, frame),
+		ShipParts.reactor_cabinet(kit, frame, 1.0),
+	]
+	for f in built:
+		check(f.has("name") and f.has("box") and (f["box"] as AABB).size.length() > 0.0,
+				"ShipParts fitting '%s' builds with a box" % f.get("name", "?"))
+	check(body.get_child_count() > 0, "ShipParts fittings add their pieces to the body")
+	check(ShipKit.mono_font() != null, "ShipKit.mono_font is shared")
+	body.free()
 
 
 func _check_spec(lib: SharedComponentsBus, s: BuildSpec) -> void:

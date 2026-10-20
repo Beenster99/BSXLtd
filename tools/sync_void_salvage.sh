@@ -14,16 +14,22 @@ DEST=shared/void_salvage
 # The files BSX uses, with no links into the rest of Void Salvage (checked by tracing class
 # references). Add a file only with everything it refers to.
 FILES=(
+	scripts/parts/frame_parts.gd
+	scripts/parts/kit_parts.gd
 	scripts/parts/mesh_kit.gd
 	scripts/parts/part_shapes.gd
+	scripts/parts/ship_parts.gd
 	scripts/parts/wreck_parts.gd
 	scripts/salvage/connection_data.gd
 	scripts/salvage/glazing.gd
 	scripts/salvage/materials.gd
 	scripts/salvage/part_data.gd
+	scripts/salvage/surface_detail.gd
 	scripts/salvage/surface_finish.gd
 	scripts/salvage/surface_zones.gd
 	scripts/salvage/wiring_loom.gd
+	scripts/ship/ship_kit.gd
+	scripts/ship/ship_surface.gd
 	shaders/salvage_surface.gdshader
 	shaders/joint_head.gdshader
 	shaders/survey_glass.gdshaderinc

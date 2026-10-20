@@ -42,7 +42,9 @@ func run_tests() -> void:
 		shape.size = Vector3(5.0, 1.6, 2.6)
 		box.shape = shape
 		box.transform = Transform3D(Basis.IDENTITY, at + Vector3(0, 1.0, 0.8))
-		var hits := yard.get_world_3d().direct_space_state.intersect_shape(box)
+		# Only the yard's own building counts: other modules (Tools' bench) stand on the spots.
+		var hits := yard.get_world_3d().direct_space_state.intersect_shape(box).filter(
+				func(hit: Dictionary) -> bool: return yard.call("is_own_body", hit.collider))
 		check(hits.is_empty(), "%s is clear for a bench and a worker: %d" % [spot, hits.size()])
 	var ship_bay: Node3D = yard.get("bay")
 	check(ship_bay != null and ship_bay.get_node_or_null("Ship") != null, "the bay scene sits in the courtyard")
@@ -71,6 +73,21 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	check(walker.is_on_floor(), "the walker stands on the ground")
 	check(absf(walker.position.y) < 0.1, "at ground level: %.2f" % walker.position.y)
+	check(bay.walker_position(yard).distance_to(walker.position) < 0.001, "walker_position reports the walker")
+	var walker_cam := walker.get("camera") as Camera3D
+	bay.set_walker_active(yard, false)
+	check(not walker.is_physics_processing() and not walker_cam.current, "handed over: the walker stops and its camera stands down")
+	var other := Camera3D.new()
+	yard.add_child(other)
+	other.current = true
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(200, 0)
+	var turn := walker.rotation.y
+	yard.call("_unhandled_input", motion)
+	check(walker.rotation.y == turn and other.current, "handed over: the yard leaves the mouse alone")
+	bay.set_walker_active(yard, true)
+	check(walker.is_physics_processing() and walker_cam.current, "taken back: the walker walks and looks again")
+	other.queue_free()
 	yard.call("show_view", "deliveries")
 	check(yard.get("view_camera").current, "a view takes the camera")
 	yard.queue_free()

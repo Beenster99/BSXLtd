@@ -14,6 +14,7 @@ func run_tests() -> void:
 	await frames(2)
 	var bench: Node = yard.get_node_or_null("ToolsBench")
 	check(bench != null and bench.in_yard, "the shipyard gets the bench")
+	check(bench.is_in_group(TradesBus.YARD_GUEST_GROUP), "marked as a guest in the yard")
 	var spot := (Modules.bus("ship_bay") as ShipBayBus).shipyard_spot(TradesBus.YARD_SPOT)
 	check(bench.global_position.distance_to(spot.origin + Vector3(0, 0, TradesBus.YARD_BOARD_DEPTH)) < 0.001,
 			"standing at the Pre-assembly spot")
