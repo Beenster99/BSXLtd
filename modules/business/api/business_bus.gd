@@ -50,6 +50,14 @@ const SAVE_SECTION := "business"
 const DATA_DIR := "res://modules/business/internal/data"
 const Books := preload("res://modules/business/internal/books.gd")
 const YardFront := preload("res://modules/business/internal/yard/yard_front.gd")
+const TerminalScreen := preload("res://modules/business/internal/ui/terminal_screen.gd")
+## The yard terminal's channels as other screens show them (the wrist holo screen): id ->
+## [title, terminal channel].
+const SCREEN_CHANNELS := {
+	"business.orders": ["ORDERS", "orders"],
+	"business.goods": ["GOODS IN", "goods"],
+	"business.accounts": ["ACCOUNTS", "accounts"],
+}
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
 
@@ -80,10 +88,34 @@ func register_module() -> void:
 		Shots.register("business_terminal", ShipBayBus.SHIPYARD_SCENE, _shot_terminal, 40)
 		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
 		Shots.register("business_goods_in", ShipBayBus.SHIPYARD_SCENE, _shot_goods, 40)
+	_offer_screen_channels()
 
 
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
+	var ui := Modules.bus("ui")
+	if ui and ui.has_method("unregister_screen_channel"):
+		for id: String in SCREEN_CHANNELS:
+			ui.call("unregister_screen_channel", id)
+
+
+## Puts the terminal's channels on UI's wrist holo screen, when UI offers one.
+func _offer_screen_channels() -> void:
+	var ui := Modules.bus("ui")
+	if ui == null or not ui.has_method("register_screen_channel") or not Flags.is_on("business.market"):
+		return
+	for id: String in SCREEN_CHANNELS:
+		ui.call("register_screen_channel", id, SCREEN_CHANNELS[id][0], make_screen.bind(SCREEN_CHANNELS[id][1]))
+
+
+## A yard terminal on `channel` ("orders", "goods", "accounts"), laid out at 1280 x 800 and
+## happy at any size; interactive takes the mouse and can place orders. It emits
+## close_requested when the player is done with it.
+func make_screen(interactive: bool, channel := "orders") -> Control:
+	var screen: Control = TerminalScreen.new()
+	screen.call("setup", self, interactive)
+	screen.call("show_channel", channel)
+	return screen
 
 
 func _process(delta: float) -> void:

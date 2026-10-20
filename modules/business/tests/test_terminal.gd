@@ -5,6 +5,7 @@ extends ModuleTest
 ##   tools/run_tests.sh business
 
 const Screen := preload("res://modules/business/internal/ui/terminal_screen.gd")
+const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 
 
 func run_tests() -> void:
@@ -21,15 +22,27 @@ func run_tests() -> void:
 		return
 	bus.reset()
 
-	# A wall screen on its own: display only, every channel draws.
-	var wall: Control = Screen.new()
-	wall.size = Vector2(1280, 800)
+	# A hall TV on its own: every channel draws, best buys are under Void Salvage's value.
+	var wall: Control = Tv.new()
+	wall.size = Vector2(1280, 720)
 	add_child(wall)
-	wall.call("setup", bus, false)
-	for ch in ["orders", "goods", "accounts"]:
+	wall.call("setup", bus)
+	for ch in Tv.CHANNELS:
 		wall.call("show_channel", ch)
-		check(wall.get_child_count() > 0, "the %s channel draws" % ch)
+		var body: Control = wall.get("_body")
+		check(body.get_child_count() > 0, "the TV's %s channel draws" % ch)
+	var buys: Array = wall.call("best_buys")
+	var cat := bus.get_catalogue()
+	check(not buys.is_empty() and buys.all(func(l): return l.unit_price < cat.value_of(l.part)), "best buys are under value")
+	check(buys.size() < 2 or buys[0].unit_price / cat.value_of(buys[0].part) <= buys[1].unit_price / cat.value_of(buys[1].part), "best first")
 	wall.queue_free()
+
+	# The channels other screens (the wrist holo screen) put up.
+	for id: String in BusinessBus.SCREEN_CHANNELS:
+		var ch: String = BusinessBus.SCREEN_CHANNELS[id][1]
+		var made := bus.make_screen(true, ch)
+		check(made.get("channel") == ch and made.get("interactive") == true and made.has_signal("close_requested"), "%s opens on %s" % [id, ch])
+		made.free()
 
 	var yard: Node3D = load(Router.scene_path(ShipBayBus.SHIPYARD_SCENE)).instantiate()
 	add_child(yard)
@@ -40,15 +53,33 @@ func run_tests() -> void:
 		_done(saved, yard)
 		return
 	var monitors: Array = front.get("monitors")
-	check(monitors.size() == 2, "two wall terminals")
+	check(monitors.size() == 4, "a TV in every hall: %d" % monitors.size())
+	var halls := {}
+	var space := yard.get_world_3d().direct_space_state
+	await get_tree().physics_frame
 	for m: Node3D in monitors:
-		check(yard.call("room_at", m.global_position) == "deliveries", "%s hangs in the deliveries hall" % m.name)
+		var room: String = yard.call("room_at", m.global_position + m.global_basis.z * 0.5)
+		halls[room] = true
+		# Flat on a wall: a ray from in front of the screen to its back hits the wall there.
+		var from := m.global_position + m.global_basis.z * 1.5
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, m.global_position - m.global_basis.z * 0.2))
+		check(not hit.is_empty() and hit.position.distance_to(m.global_position) < 0.1, "%s is flat on the wall" % m.name)
+		# Nothing stands in front of it within reach.
+		var box := BoxShape3D.new()
+		box.size = Vector3(3.2, 2.2, 3.0)
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = box
+		q.transform = Transform3D(m.global_basis, m.global_position + m.global_basis.z * 1.8 + Vector3(0, -0.6, 0))
+		var hits := space.intersect_shape(q, 8)
+		check(hits.is_empty(), "%s has clear floor in front: %s" % [m.name, str(hits.map(func(x): return x.collider.name))])
+	check(halls.keys().size() == 4 and halls.has("deliveries") and halls.has("stock") and halls.has("prep") and halls.has("preassembly"),
+			"one in each hall: %s" % str(halls.keys()))
 
 	# Stand a camera in front of the first terminal: the prompt shows.
 	var cam: Camera3D = front.call("stage_monitor_view", 0)
 	await frames(2)
 	check(front.call("nearest_monitor") == 0, "a player at the terminal can use it")
-	cam.global_position += Vector3(0, 0, 8)
+	cam.global_position += cam.global_basis.z * 8
 	await frames(2)
 	check(front.call("nearest_monitor") == -1, "out of reach, no prompt")
 
