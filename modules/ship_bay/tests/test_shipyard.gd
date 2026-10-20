@@ -23,11 +23,27 @@ func run_tests() -> void:
 	check(Yard.room_at(Vector3(40, 1, 0)) == "preassembly", "east wing is pre-assembly")
 	check(Yard.room_at(Vector3(0, 1, 60)) == "", "the apron is outside")
 
+	for spot: String in ["bench_preassembly", "bench_prep"]:
+		var at := bay.shipyard_spot(spot).origin
+		check(Yard.room_at(at + Vector3(0, 1, 0)) == ("preassembly" if spot == "bench_preassembly" else "prep"),
+				"%s is in its room" % spot)
+	var readied: Array = []
+	bay.shipyard_ready.connect(func(y: Node3D) -> void: readied.append(y))
 	var scene := load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene
 	var yard := scene.instantiate() as Node3D
 	add_child(yard)
 	await frames(3)
+	check(readied == [yard], "shipyard_ready hands other modules the yard")
 	check(bay.ship != null and bay.ship.ship_id == "vs_kestrel", "the Kestrel is in the bay")
+	for spot: String in ["bench_preassembly", "bench_prep"]:
+		var at := bay.shipyard_spot(spot).origin
+		var box := PhysicsShapeQueryParameters3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(5.0, 1.6, 2.6)
+		box.shape = shape
+		box.transform = Transform3D(Basis.IDENTITY, at + Vector3(0, 1.0, 0.8))
+		var hits := yard.get_world_3d().direct_space_state.intersect_shape(box)
+		check(hits.is_empty(), "%s is clear for a bench and a worker: %d" % [spot, hits.size()])
 	var ship_bay: Node3D = yard.get("bay")
 	check(ship_bay != null and ship_bay.get_node_or_null("Ship") != null, "the bay scene sits in the courtyard")
 	check(ship_bay.find_child("Floor", false, false) == null, "inside the yard the bay brings no floor of its own")

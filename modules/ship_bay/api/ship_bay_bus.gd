@@ -17,6 +17,8 @@ signal slot_state_changed(slot_id: String, old_state: SlotState, new_state: Slot
 signal component_removed(slot_id: String, component: String)
 signal component_positioned(slot_id: String, component: String)
 signal component_installed(slot_id: String, component: String)
+## The shipyard scene has built itself; add your own nodes to `yard` (at shipyard_spot()s).
+signal shipyard_ready(yard: Node3D)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -59,6 +61,12 @@ func unregister_module() -> void:
 ## "preassembly", and "bay" (the courtyard the ship sits in).
 func shipyard_rooms() -> Dictionary:
 	return Shipyard.ROOMS.duplicate(true)
+
+
+## A clear work place in the shipyard ("bench_preassembly", "bench_prep"): origin on the
+## floor, +Z towards where the worker stands. Identity for an unknown id.
+func shipyard_spot(id: String) -> Transform3D:
+	return Shipyard.SPOTS.get(id, Transform3D.IDENTITY)
 
 
 ## Ships BSX can take into a bay.

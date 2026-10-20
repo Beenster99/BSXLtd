@@ -31,6 +31,14 @@ const ROOMS := {
 	"preassembly": {"name": "Pre-assembly", "box": AABB(Vector3(28, 0, -24), Vector3(22, 12, 48))},
 	"bay": {"name": "The bay", "box": AABB(Vector3(-28, 0, -24), Vector3(56, 30, 48))},
 }
+## Clear floor kept for other modules' work places: id -> a transform in yard space whose
+## origin is on the floor and whose +Z faces where the worker stands (a bench's back edge).
+## Other modules get these through ShipBayBus.shipyard_spot() and add their nodes to the
+## yard when ShipBayBus.shipyard_ready fires.
+const SPOTS := {
+	"bench_preassembly": Transform3D(Basis.IDENTITY, Vector3(34, 0, -20.5)),
+	"bench_prep": Transform3D(Basis.IDENTITY, Vector3(18, 0, -29)),
+}
 ## Camera views for screenshots and a quick look round: id -> [eye, target].
 const VIEWS := {
 	"overview": [Vector3(70, 46, 88), Vector3(0, 0, -10)],
@@ -88,6 +96,9 @@ func _ready() -> void:
 	view_camera.name = "ViewCamera"
 	view_camera.far = 6000.0
 	add_child(view_camera)
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if bus:
+		bus.shipyard_ready.emit(self)
 	var start: String = Router.args.get("view", "")
 	if VIEWS.has(start):
 		show_view(start)
@@ -479,8 +490,6 @@ func _build_prep() -> void:
 	_block(Vector3(40, 2.1, -42), Vector3(4.0, 0.6, 0.5), _paint(DARK, 0.4, 0.5, "gunmetal"))
 	_block(Vector3(42, 0.5, -30), Vector3(3.0, 1.0, 1.0), _paint(DARK, 0.4, 0.5, "gunmetal"))
 	_block(Vector3(42, 1.05, -30), Vector3(0.8, 0.1, 0.8), _paint(STEEL, 0.8, 0.3, "polished_steel"), false)
-	for x: float in [16.0, 20.0]:
-		_bench(Vector3(x, 0, -28.5))
 
 
 func _build_preassembly() -> void:
