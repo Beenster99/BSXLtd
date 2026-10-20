@@ -14,7 +14,7 @@ extends Node
 ## (MarketCatalogue, from Void Salvage's PartCatalog) in mixed condition at a trade price
 ## that swings a little day to day. A basket of {listing_id, qty} lines is quoted with
 ## quote_market() and bought with place_market_order(). Orders land in the shipyard's
-## deliveries hall: through ShipBayBus.deliver_goods() when Ship and Bay offers it, else as
+## deliveries hall: through ShipBayBus.receive_delivery() when Ship and Bay offers it, else as
 ## Business's own crates. Players buy at the wall monitors Business puts in the yard.
 ##
 ## When the business flag is off this bus doesn't exist, so callers check
@@ -381,17 +381,28 @@ func _on_shipyard_ready(yard: Node3D) -> void:
 
 func _on_delivery_arrived(order: PartsOrder, damaged: Array[OrderLine]) -> void:
 	var yard_bus := Modules.bus("ship_bay")
-	if yard_bus and yard_bus.has_method("deliver_goods"):
-		var items: Array[Dictionary] = []
-		for line in order.lines:
-			var lost := 0
-			for d in damaged:
-				if d.part == line.part and d.condition == line.condition:
-					lost += d.qty
-			if line.qty - lost > 0:
-				items.append({"part": line.part, "qty": line.qty - lost, "condition": line.condition, "order_id": order.id})
-		yard_bus.call("deliver_goods", order.id, items)
+	if yard_bus and yard_bus.has_method("receive_delivery"):
+		yard_bus.call("receive_delivery", order.id, delivery_lines(order, damaged))
 	_refresh_yard()
+
+
+## What lands in the deliveries hall for an order, in Ship and Bay's shape: one line per part
+## and condition, less anything lost in transit. condition is 0..1 (1 = new); grade is the
+## market's condition name; mass is per unit in kg (0 when the catalogue doesn't know it).
+func delivery_lines(order: PartsOrder, damaged: Array[OrderLine] = []) -> Array[Dictionary]:
+	var lines: Array[Dictionary] = []
+	var cat := get_catalogue()
+	for line in order.lines:
+		var lost := 0
+		for d in damaged:
+			if d.part == line.part and d.condition == line.condition:
+				lost += d.qty
+		if line.qty - lost <= 0:
+			continue
+		var grade := line.condition if line.condition != "" else PartCondition.NEW
+		lines.append({"item_id": line.part, "qty": line.qty - lost, "condition": 1.0 - PartCondition.wear_of(grade),
+				"name": part_name(line.part), "grade": grade, "mass": cat.mass_of(line.part) if cat.has_part(line.part) else 0.0})
+	return lines
 
 
 func _front(scene: Node) -> Node:
@@ -433,7 +444,7 @@ func _shot_goods(scene: Node) -> void:
 ## True when Ship and Bay takes deliveries itself, so Business stacks no crates of its own.
 func ship_bay_takes_deliveries() -> bool:
 	var yard_bus := Modules.bus("ship_bay")
-	return yard_bus != null and yard_bus.has_method("deliver_goods")
+	return yard_bus != null and yard_bus.has_method("receive_delivery")
 
 
 func _refresh_yard() -> void:
