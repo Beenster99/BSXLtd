@@ -167,7 +167,7 @@ func _build() -> void:
 	for id in CHANNELS:
 		_tabs.add_child(Look.label(TABS[id], "display_bold", 26, Look.DIM))
 	row.add_child(_tabs)
-	row.add_child(Look.label("WALK UP AND PRESS  [F]  TO ORDER", "display_bold", 26, Look.TEXT))
+	row.add_child(Look.label("WALK UP AND PRESS  %s  TO ORDER" % Keys.prompt(Keys.INTERACT), "display_bold", 26, Look.TEXT))
 	col.add_child(strip)
 
 

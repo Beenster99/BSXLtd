@@ -72,6 +72,9 @@ class Runner:
 				cam.global_position = m.global_position + m.global_basis.z * 4.0 + aside + Vector3(0, -0.9, 0)
 				cam.look_at(m.global_position)
 				await _snap(out, "screen_%s_side" % m.name)
+		# The orders channel on the wrist screen.
+		HudSlots.open_holo("business.orders")
+		await _snap(out, "wrist_orders")
 		get_tree().quit()
 
 	## For each --probe=x,z,dx,dz: casts from (x, 2.6, z) along (dx, 0, dz) and prints the wall.

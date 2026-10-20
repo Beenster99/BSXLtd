@@ -37,11 +37,21 @@ func run_tests() -> void:
 	check(buys.size() < 2 or buys[0].unit_price / cat.value_of(buys[0].part) <= buys[1].unit_price / cat.value_of(buys[1].part), "best first")
 	wall.queue_free()
 
-	# The channels other screens (the wrist holo screen) put up.
+	# The channels on the wrist holo screen.
 	for id: String in BusinessBus.SCREEN_CHANNELS:
 		var ch: String = BusinessBus.SCREEN_CHANNELS[id][1]
-		var made := bus.make_screen(true, ch)
-		check(made.get("channel") == ch and made.get("interactive") == true and made.has_signal("close_requested"), "%s opens on %s" % [id, ch])
+		var entry := HudSlots.holo_channel(id)
+		check(not entry.is_empty(), "%s is on the wrist screen" % id)
+		if entry.is_empty():
+			continue
+		var made: Control = entry.factory.call()
+		var inner: Control = made.get("screen")
+		check(inner.get("channel") == ch and inner.get("interactive") == true and made.has_signal("close_requested"), "%s opens on %s" % [id, ch])
+		add_child(made)
+		made.size = Vector2(900, 560)
+		await frames(1)
+		var drawn: Rect2 = Rect2(inner.position, inner.size * inner.scale)
+		check(Rect2(Vector2.ZERO, made.size).grow(0.5).encloses(drawn), "%s fits the wrist pane: %s" % [id, drawn])
 		made.free()
 
 	var yard: Node3D = load(Router.scene_path(ShipBayBus.SHIPYARD_SCENE)).instantiate()

@@ -91,10 +91,10 @@ func _input(event: InputEvent) -> void:
 	if key == null or not key.pressed or key.echo:
 		return
 	if overlay:
-		if key.physical_keycode in [KEY_ESCAPE, KEY_F]:
+		if event.is_action_pressed(Keys.CANCEL) or event.is_action_pressed(Keys.INTERACT):
 			close_terminal()
 			get_viewport().set_input_as_handled()
-	elif key.physical_keycode == KEY_F and _near >= 0:
+	elif event.is_action_pressed(Keys.INTERACT) and _near >= 0:
 		open_terminal()
 		get_viewport().set_input_as_handled()
 
@@ -232,7 +232,7 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 
 	var prompt := Label3D.new()
 	prompt.name = "Prompt"
-	prompt.text = "[F]  USE SCREEN"
+	prompt.text = "%s  USE SCREEN" % Keys.prompt(Keys.INTERACT)
 	prompt.font = Look.font("display_bold")
 	prompt.font_size = 48
 	prompt.pixel_size = 0.005

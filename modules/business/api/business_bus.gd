@@ -51,7 +51,8 @@ const DATA_DIR := "res://modules/business/internal/data"
 const Books := preload("res://modules/business/internal/books.gd")
 const YardFront := preload("res://modules/business/internal/yard/yard_front.gd")
 const TerminalScreen := preload("res://modules/business/internal/ui/terminal_screen.gd")
-## The yard terminal's channels as other screens show them (the wrist holo screen): id ->
+const FittedScreen := preload("res://modules/business/internal/ui/fitted_screen.gd")
+## The yard terminal's channels on the wrist holo screen: id ->
 ## [title, terminal channel].
 const SCREEN_CHANNELS := {
 	"business.orders": ["ORDERS", "orders"],
@@ -93,19 +94,20 @@ func register_module() -> void:
 
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
-	var ui := Modules.bus("ui")
-	if ui and ui.has_method("unregister_screen_channel"):
-		for id: String in SCREEN_CHANNELS:
-			ui.call("unregister_screen_channel", id)
-
-
-## Puts the terminal's channels on UI's wrist holo screen, when UI offers one.
-func _offer_screen_channels() -> void:
-	var ui := Modules.bus("ui")
-	if ui == null or not ui.has_method("register_screen_channel") or not Flags.is_on("business.market"):
-		return
 	for id: String in SCREEN_CHANNELS:
-		ui.call("register_screen_channel", id, SCREEN_CHANNELS[id][0], make_screen.bind(SCREEN_CHANNELS[id][1]))
+		HudSlots.unregister_holo_channel(id)
+
+
+## Puts the terminal's channels on the wrist holo screen (HudSlots), so a player can order
+## from anywhere in the yard.
+func _offer_screen_channels() -> void:
+	if not Flags.is_on("business.market"):
+		return
+	var order := 100
+	for id: String in SCREEN_CHANNELS:
+		var ch: String = SCREEN_CHANNELS[id][1]
+		HudSlots.register_holo_channel(id, SCREEN_CHANNELS[id][0].capitalize(), func() -> Control: return FittedScreen.new(make_screen(true, ch)), order)
+		order += 1
 
 
 ## A yard terminal on `channel` ("orders", "goods", "accounts"), laid out at 1280 x 800 and
