@@ -29,7 +29,9 @@ func run_tests() -> void:
 	Menu.register_entry("_dup", "Settings again", UiBus.SETTINGS, 4)
 	await frames(2)
 	var start := menu.find_child("Start", true, false) as Button
-	check(start != null and start.get_index() == 0 and not start.disabled, "Start leads the menu")
+	var first: Node = menu.entry_box.get_child(0)
+	check(start != null and start.text == "New Game" and not start.disabled
+			and (first == start or first.name == "Continue"), "Continue or New Game leads the menu")
 	check(menu.find_child("_dup", true, false) == null, "an entry for the start scene isn't listed twice")
 	Menu.clear_start(UiBus.SETTINGS)
 	if not before.is_empty():
@@ -61,7 +63,19 @@ func run_tests() -> void:
 	add_child(settings)
 	await frames(2)
 	check(settings.find_child("MasterVolume", true, false) != null, "settings shows volume")
+	var tod := settings.find_child("TimeOfDay", true, false) as HSlider
+	check(tod != null and tod.max_value == 24.0, "settings has a time of day slider")
+	if tod != null:
+		var was := AlienSky.setting_hour()
+		tod.value = 6.5
+		check(is_equal_approx(AlienSky.setting_hour(), 6.5), "the slider sets the time of day")
+		var label := settings.find_child("TimeOfDayLabel", true, false) as Label
+		check(label != null and label.text.ends_with("06:30"), "the slider shows the clock")
+		tod.value = was
 	settings.queue_free()
+
+	await _test_sky()
+	await _test_games()
 
 	HudSlots.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
 	var hud := HudLayer.new()
@@ -72,3 +86,74 @@ func run_tests() -> void:
 			"HUD instantiates a registered panel")
 	HudSlots.unregister_panel("_panel")
 	hud.queue_free()
+
+
+func _test_sky() -> void:
+	check(AlienSky.sun_direction(12.0).y > 0.7, "the sun is high at noon")
+	check(AlienSky.sun_direction(0.0).y < -0.7, "the sun is down at midnight")
+	check(AlienSky.sun_direction(7.0).x > 0.0 and AlienSky.sun_direction(17.0).x < 0.0,
+			"the sun rises in the east and sets in the west")
+	check(AlienSky.daylight_at(12.0) == 1.0 and AlienSky.daylight_at(0.0) == 0.0,
+			"daylight runs from night to full day")
+	var dawn := AlienSky.daylight_at(6.0)
+	check(dawn > 0.05 and dawn < 0.4, "dawn is half lit")
+	check(AlienSky.clock(15.5) == "15:30" and AlienSky.clock(24.0) == "00:00", "clock text")
+	var sky := AlienSky.new()
+	sky.hour_override = 23.0
+	add_child(sky)
+	await frames(1)
+	check(sky.environment.sky != null and sky.sky_material.shader != null, "the sky has its shader")
+	check(not sky.sun.visible and sky.planet_light.light_energy > 0.2, "at night the planet lights the yard")
+	var hours: Array[float] = []
+	sky.time_changed.connect(func(h: float, _d: float) -> void: hours.append(h))
+	sky.set_hour(12.0)
+	check(sky.sun.visible and sky.sun.light_energy > 1.5, "at noon the sun is up")
+	check(hours == [12.0], "the sky reports the hour")
+	var was := AlienSky.setting_hour()
+	sky.set_hour(-1.0)
+	Settings.set_value(AlienSky.SECTION, AlienSky.KEY, 9.0)
+	check(is_equal_approx(sky.hour, 9.0), "the sky follows the setting")
+	Settings.set_value(AlienSky.SECTION, AlienSky.KEY, was)
+	sky.queue_free()
+
+
+func _test_games() -> void:
+	var before := Menu.start()
+	Menu.set_start(UiBus.SETTINGS, 1000)
+	var stamp := Time.get_ticks_usec()
+	var slot := Saves.new_game("_Menu test %d" % stamp)
+	var menu: Control = (load(Router.scene_path(UiBus.MAIN_MENU)) as PackedScene).instantiate()
+	add_child(menu)
+	await frames(2)
+	var cont := menu.find_child("Continue", true, false) as Button
+	check(cont != null and cont.get_index() == 0 and cont.text.ends_with(str(stamp)),
+			"Continue leads the menu with the latest game")
+	check(menu.find_child("LoadGame", true, false) != null, "the menu has Load Game")
+	(menu.find_child("Start", true, false) as Button).pressed.emit()
+	await frames(2)
+	var panel := menu.find_child("GamesPanel", true, false) as GamesPanel
+	check(panel != null and not menu._center.visible, "New Game opens the games panel")
+	if panel != null:
+		check(panel.name_field.text != "" and panel.find_child("Begin", true, false) != null,
+				"the panel offers a name and Begin")
+		var row := panel.list_box.find_child("Game_" + slot.validate_node_name(), false, false)
+		check(row != null, "the panel lists the saved game")
+		if row != null:
+			var del := row.find_child("Delete", false, false) as Button
+			del.pressed.emit()
+			check(Saves.exists(slot) and del.text == "Sure?", "Delete asks once more")
+			del.pressed.emit()
+			await frames(1)
+			check(not Saves.exists(slot), "the second press deletes the game")
+			check(panel.list_box.find_child("Game_" + slot.validate_node_name(), false, false) == null,
+					"the deleted game leaves the list")
+		(panel.find_child("Back", true, false) as Button).pressed.emit()
+		await frames(2)
+		check(menu._center.visible, "Back shows the menu again")
+	if Saves.exists(slot):
+		Saves.delete(slot)
+	Saves.close_game()
+	menu.queue_free()
+	Menu.clear_start(UiBus.SETTINGS)
+	if not before.is_empty():
+		Menu.set_start(before.scene, before.priority, before.args)

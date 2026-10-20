@@ -1,7 +1,8 @@
 extends Control
 ## Main menu, laid out like Void Salvage's: the name and version centred over one column of
-## buttons. Start (Menu.start(): into the yard) comes first, like Void Salvage's Play Solo,
-## then any other entries modules registered with Menu (a group's entries under its heading,
+## buttons. Continue (the latest saved game), New Game and Load Game come first, like Void
+## Salvage's Play Solo; all three go to Menu.start() (the yard). New Game and Load Game open
+## the games panel over the menu. Then any other entries modules registered with Menu (a group's entries under its heading,
 ## like Void Salvage's field labels), then Graphics (Void Salvage's graphics screen),
 ## Settings and Exit Game.
 
@@ -58,11 +59,24 @@ func _fill_entries() -> void:
 	var entries := Menu.entries()
 	var start := Menu.start()
 	if not start.is_empty():
-		var go := BsxTheme.button("Start", func(): Router.goto(start.scene, start.args))
+		var playable := Router.has_scene(start.scene)
+		var games := Saves.games()
+		if not games.is_empty():
+			var latest: Dictionary = games[0]
+			var cont := BsxTheme.button("Continue  -  %s" % latest.name, func() -> void: _continue(latest.slot))
+			cont.name = "Continue"
+			cont.custom_minimum_size.y = 52
+			cont.disabled = not playable
+			entry_box.add_child(cont)
+		var go := BsxTheme.button("New Game", func() -> void: _open_games(true))
 		go.name = "Start"
-		go.custom_minimum_size.y = 52
-		go.disabled = not Router.has_scene(start.scene)
+		go.custom_minimum_size.y = 52 if games.is_empty() else 0.0
+		go.disabled = not playable
 		entry_box.add_child(go)
+		if not games.is_empty():
+			var load_button := BsxTheme.button("Load Game", func() -> void: _open_games(false))
+			load_button.name = "LoadGame"
+			entry_box.add_child(load_button)
 	elif entries.is_empty():
 		var none := BsxTheme.muted("Nothing to play yet in this build.")
 		none.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -83,6 +97,24 @@ func _fill_entries() -> void:
 		b.name = e.id
 		b.disabled = not Router.has_scene(e.scene)
 		entry_box.add_child(b)
+
+
+func _continue(slot: String) -> void:
+	var start := Menu.start()
+	if Saves.continue_game(slot) == OK:
+		Router.goto(start.scene, start.args)
+
+
+## The games panel over the menu: New Game puts the cursor in the name, Load Game is the same
+## panel (its list of saved games is under the name).
+func _open_games(_new: bool) -> void:
+	_center.visible = false
+	var panel := GamesPanel.new()
+	panel.name = "GamesPanel"
+	panel.closed.connect(func() -> void:
+		_center.visible = true
+		_fill_entries())
+	add_child(panel)
 
 
 ## The graphics settings over the menu (the menu hides until it's closed), as in Void Salvage.
