@@ -64,6 +64,29 @@ class Runner:
 				cam.global_position = first.global_position + first.global_basis.z * 3.4 + Vector3(0, -0.4, 0)
 				cam.look_at(first.global_position)
 				await _snap(out, "channel_" + ch)
+			# Using it in place: the pointer over the first listing's + button.
+			cam.global_position = first.global_position + first.global_basis.z * 2.6 + Vector3(0.4, -1.0, 0)
+			cam.look_at(first.global_position)
+			await _snap(out, "in_place_wake")
+			var live: Control = first.get_node("Viewport/Terminal")
+			for b: Button in live.find_children("*", "Button", true, false):
+				if b.text == "+" and not b.disabled:
+					var p: Vector2 = b.get_global_rect().get_center()
+					var px := Vector2(front.get("SCREEN_PX"))
+					var size: Vector2 = front.get("SCREEN_M")
+					cam.look_at(first.to_global(Vector3((p.x / px.x - 0.5) * size.x, (0.5 - p.y / px.y) * size.y, front.get("DEPTH"))))
+					break
+			for k in 2:
+				var click := InputEventMouseButton.new()
+				click.button_index = MOUSE_BUTTON_LEFT
+				click.pressed = true
+				front.call("_input", click)
+				await get_tree().process_frame
+				click = click.duplicate()
+				click.pressed = false
+				front.call("_input", click)
+				await get_tree().process_frame
+			await _snap(out, "in_place_click")
 			for m: Node3D in monitors:
 				cam.global_position = m.global_position + m.global_basis.z * 6.0 + Vector3(0, -0.6, 0)
 				cam.look_at(m.global_position)

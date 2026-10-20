@@ -93,6 +93,48 @@ func run_tests() -> void:
 	await frames(2)
 	check(front.call("nearest_monitor") == -1, "out of reach, no prompt")
 
+	# In place: aim the view at a TV and its floating pointer clicks on the working terminal.
+	var tv0: Node3D = monitors[0]
+	var px := Vector2(front.get("SCREEN_PX"))
+	var m_size: Vector2 = front.get("SCREEN_M")
+	var depth: float = front.get("DEPTH")
+	var aim_at := func(pixel: Vector2) -> void:
+		var spot := tv0.to_global(Vector3((pixel.x / px.x - 0.5) * m_size.x, (0.5 - pixel.y / px.y) * m_size.y, depth))
+		cam.global_position = tv0.global_position + tv0.global_basis.z * 2.4 + Vector3(0, -0.9, 0)
+		cam.look_at(spot)
+	aim_at.call(px * 0.5)
+	await frames(2)
+	check(front.get("aimed") == 0 and front.call("is_awake", 0), "aiming at a TV wakes its terminal")
+	var live: Control = tv0.get_node("Viewport/Terminal")
+	live.call("show_channel", "orders")
+	await frames(2)
+	var plus: Button = null
+	for b: Button in live.find_children("*", "Button", true, false):
+		if b.text == "+" and not b.disabled:
+			plus = b
+			break
+	check(plus != null, "a + button to aim at")
+	if plus:
+		aim_at.call(plus.get_global_rect().get_center())
+		await frames(2)
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = true
+		front.call("_input", click)
+		await frames(1)
+		click = click.duplicate()
+		click.pressed = false
+		front.call("_input", click)
+		await frames(2)
+		check((live.get("basket") as Dictionary).size() == 1, "clicking + with the pointer adds to the order: %s" % str(live.get("basket")))
+		var full: Control = front.call("open_full", 0)
+		check((full.get("basket") as Dictionary).size() == 1 and not front.call("is_awake", 0), "F takes it full screen with the order")
+		full.set("basket", {})
+		front.call("close_terminal")
+	cam.global_position += cam.global_basis.z * 8
+	await frames(2)
+	check(front.get("aimed") == -1, "looking away drops the pointer")
+
 	# The full terminal: add two listings, set quantities, place the order.
 	var screen: Control = front.call("open_terminal")
 	check(front.get("overlay") != null and screen != null, "the terminal opens full size")
