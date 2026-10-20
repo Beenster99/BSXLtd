@@ -23,6 +23,8 @@ const Trolley := preload("res://modules/ship_bay/internal/yard/hover_trolley.gd"
 const Nav := preload("res://modules/ship_bay/internal/yard/yard_nav.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const Screen := preload("res://modules/ship_bay/internal/yard/trolley_panel.gd")
+const WristStock := preload("res://modules/ship_bay/internal/yard/wrist_stock.gd")
+const WristMachines := preload("res://modules/ship_bay/internal/yard/wrist_machines.gd")
 
 ## Parking bays in Deliveries, by the east wall: trolley id -> [floor point, yaw].
 const PARKING := {
@@ -86,10 +88,12 @@ func _ready() -> void:
 		if _net:
 			_net.call("register_mover", "trolley:" + id, t)
 	_build_tv()
-	HudSlots.register_holo_channel("ship_bay.trolleys", "Hover trolleys", func() -> Control:
-		var s := Screen.new()
-		s.setup(self, true, true)
-		return s, 20)
+	# The wrist screen's Stock and Machines channels.
+	if _bus:
+		HudSlots.register_holo_channel("ship_bay.stock", "Stock", func(glass: bool) -> Control:
+			return WristStock.new(_bus, self, glass), 20)
+	HudSlots.register_holo_channel("ship_bay.machines", "Machines", func(glass: bool) -> Control:
+		return WristMachines.new(self, glass), 40)
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
@@ -121,7 +125,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	HudSlots.unregister_holo_channel("ship_bay.trolleys")
+	HudSlots.unregister_holo_channel("ship_bay.stock")
+	HudSlots.unregister_holo_channel("ship_bay.machines")
 	if _bus:
 		for pair: Array in [[_bus.trolley_command, _on_command], [_bus.crate_carried, _on_carried],
 				[_bus.crate_stored, _on_stored], [_bus.stock_changed, _refresh_cargo]]:
@@ -249,6 +254,11 @@ func _held(action: String, key: Key) -> float:
 
 func _drives(id: String) -> bool:
 	return _net == null or bool(_net.call("drives", "trolley:" + id))
+
+
+## Where the player stands (the walker, or the camera when another module has the yard).
+func player_position() -> Vector3:
+	return _player_position()
 
 
 func _player_position() -> Vector3:

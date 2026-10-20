@@ -140,6 +140,23 @@ func run_tests() -> void:
 	check(access.get("driving") == "", "and lets go")
 	access.call("toggle_power")
 
+	# The wrist's Machines channel lists the lift, the power unit and the scaffold rigs too.
+	var machines_ch := HudSlots.holo_channel("ship_bay.machines")
+	if not machines_ch.is_empty():
+		var wrist: Control = (machines_ch["factory"] as Callable).call(true)
+		add_child(wrist)
+		await frames(2)
+		var shown: String = wrist.call("text")
+		check(shown.contains("Scissor lift") and shown.contains("Ground power unit") and shown.contains("Scaffold rig 1") and shown.contains("RAISE"),
+				"the Machines screen lists the bay's kit: %s" % shown.left(400))
+		wrist.call("press", "rig0", "drive")
+		check(access.get("driving") == "rig0", "DRIVE there takes a scaffold rig")
+		wrist.call("press", "rig0", "drive")
+		check(access.get("driving") == "", "and lets it go again")
+		wrist.queue_free()
+	else:
+		check(false, "the Machines channel is registered")
+
 	# Night: the lamp posts come on in the dark and go out by day.
 	yard.call("set_time_of_day", 22.0)
 	var lights: Array = yard.get("_night_lights")
