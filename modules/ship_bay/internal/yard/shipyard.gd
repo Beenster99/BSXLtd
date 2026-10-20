@@ -98,7 +98,7 @@ var _walker_layers := Vector2i(1, 1)
 var _solid: StaticBody3D
 var _sun: DirectionalLight3D
 var _env: Environment
-var _sky_mat: ProceduralSkyMaterial
+var _sky: AlienSky
 ## Lights that only burn at night, each with its full energy in meta "night_energy".
 var _night_lights: Array[Light3D] = []
 var _night_lens: StandardMaterial3D
@@ -165,8 +165,7 @@ func _ready() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus:
 		bus.shipyard_ready.emit(self)
-	var hour: Variant = Settings.get_value("world", "time_of_day") if Settings.keys("world").has("time_of_day") else null
-	set_time_of_day(time_of_day if hour == null else float(hour))
+	_on_sky_time(_sky.hour, AlienSky.daylight_at(_sky.hour))
 	Settings.changed.connect(_on_setting)
 	var start: String = Router.args.get("view", "")
 	if VIEWS.has(start):
@@ -181,33 +180,21 @@ func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
-func _on_setting(section: String, key: String, value: Variant) -> void:
-	if section == "world" and key == "time_of_day":
-		set_time_of_day(float(value))
-
-
-## Sets the hour (0..24): the sun's height and bearing, the sky's colours, the ambient light,
-## and the night lights, which fade in as the sun goes down.
+## Sets the hour (0..24) for this yard alone (screenshots, tests): the sky moves the sun and
+## the night lights follow. A change to the time-of-day setting puts it back on the setting.
 func set_time_of_day(hour: float) -> void:
-	time_of_day = fposmod(hour, 24.0)
-	var elevation := 68.0 * sin(PI * (time_of_day - 6.0) / 12.0)   # degrees
-	var day := smoothstep(-8.0, 12.0, elevation)
-	var dusk := clampf(1.0 - absf(elevation) / 14.0, 0.0, 1.0)
-	var night := 1.0 - smoothstep(-4.0, 8.0, elevation)
-	if _sun:
-		_sun.rotation_degrees = Vector3(-maxf(elevation, 2.0), -32.0 + (time_of_day - 14.0) * 15.0, 0.0)
-		_sun.light_energy = 1.15 * clampf(elevation / 18.0, 0.0, 1.0)
-		_sun.light_color = Color(1.0, 0.92, 0.82).lerp(Color(1.0, 0.55, 0.3), dusk)
-		_sun.visible = elevation > -1.0
-	if _sky_mat:
-		_sky_mat.sky_top_color = Color(0.015, 0.02, 0.05).lerp(Color(0.26, 0.36, 0.52), day)
-		_sky_mat.sky_horizon_color = Color(0.05, 0.05, 0.08).lerp(Color(0.86, 0.68, 0.52), day).lerp(Color(0.95, 0.45, 0.25), dusk * 0.6)
-		_sky_mat.ground_horizon_color = Color(0.04, 0.035, 0.04).lerp(Color(0.7, 0.55, 0.42), day)
-		_sky_mat.ground_bottom_color = Color(0.02, 0.02, 0.02).lerp(Color(0.3, 0.22, 0.17), day)
-	if _env:
-		_env.ambient_light_energy = lerpf(0.16, 0.45, day)
-		_env.ambient_light_color = Color(0.35, 0.4, 0.6).lerp(Color(0.6, 0.55, 0.5), day)
-		_env.fog_light_color = Color(0.06, 0.06, 0.09).lerp(Color(0.8, 0.66, 0.54), day)
+	_sky.set_hour(fposmod(hour, 24.0))
+
+
+func _on_setting(section: String, key: String, _value: Variant) -> void:
+	if section == AlienSky.SECTION and key == AlienSky.KEY:
+		_sky.set_hour(-1.0)
+
+
+## The sky moved: the night lights fade in as the daylight goes.
+func _on_sky_time(hour: float, daylight: float) -> void:
+	time_of_day = hour
+	var night := 1.0 - smoothstep(0.0, 0.3, daylight)
 	for l in _night_lights:
 		l.light_energy = float(l.get_meta("night_energy")) * night
 		l.visible = night > 0.01
@@ -217,8 +204,7 @@ func set_time_of_day(hour: float) -> void:
 
 ## Is it dark enough for the night lights (0 day .. 1 full night)?
 func night_amount() -> float:
-	var elevation := 68.0 * sin(PI * (time_of_day - 6.0) / 12.0)
-	return 1.0 - smoothstep(-4.0, 8.0, elevation)
+	return 1.0 - smoothstep(0.0, 0.3, AlienSky.daylight_at(time_of_day))
 
 
 ## Registers a light that only burns at night.
@@ -378,44 +364,12 @@ func _paints_init() -> void:
 # --- The planet ---------------------------------------------------------------------------
 
 func _build_planet() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.26, 0.36, 0.52)
-	sky_mat.sky_horizon_color = Color(0.86, 0.68, 0.52)
-	sky_mat.ground_horizon_color = Color(0.7, 0.55, 0.42)
-	sky_mat.ground_bottom_color = Color(0.3, 0.22, 0.17)
-	sky_mat.sun_angle_max = 8.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	var e := Environment.new()
-	e.background_mode = Environment.BG_SKY
-	e.sky = sky
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.6, 0.55, 0.5)
-	e.ambient_light_energy = 0.45
-	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	e.tonemap_mode = Environment.TONE_MAPPER_ACES
-	e.ssao_enabled = true
-	e.glow_enabled = true
-	e.glow_intensity = 0.6
-	e.fog_enabled = true
-	e.fog_light_color = Color(0.8, 0.66, 0.54)
-	e.fog_density = 0.0012
-	e.fog_sky_affect = 0.0
-	_env = e
-	_sky_mat = sky_mat
-	var we := WorldEnvironment.new()
-	we.name = "WorldEnvironment"
-	we.environment = e
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-38, -32, 0)
-	sun.light_color = Color(1.0, 0.92, 0.82)
-	sun.light_energy = 1.15
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 180.0
-	add_child(sun)
-	_sun = sun
+	# The sky, sun and planet-light come from UI's AlienSky, which follows the time of day.
+	_sky = AlienSky.new()
+	_sky.time_changed.connect(_on_sky_time)
+	add_child(_sky)
+	_sun = _sky.sun
+	_env = _sky.environment
 
 	# The ground: dusty red-brown plain, with a concrete apron in front of the open end and
 	# a road to the truck doors.
