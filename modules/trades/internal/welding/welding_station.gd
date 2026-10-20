@@ -165,6 +165,8 @@ func update(delta: float) -> void:
 			_end_arc()
 			if not seam.is_complete():
 				bay.hint("End of the seam. Strike again where the bead is missing.")
+	torch.amps = seam.amps
+	torch.arc_mm = seam.arc_mm
 	if seam.arc_on:
 		var tip := _tip_world()
 		var angle := _torch_angle(tip)

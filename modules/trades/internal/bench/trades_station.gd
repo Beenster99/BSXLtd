@@ -49,8 +49,15 @@ func back_out(_tool: StringName) -> void:
 	pass
 
 
-## E (+1) or Q (-1): turn what you hold, or set the machine. True when the station used it.
+## E (+1) or Q (-1): set the machine (the welder's amps). True when the station used it.
 func adjust(_step: int) -> bool:
+	return false
+
+
+## The mouse wheel while left click holds something in your hands: turn it by one notch
+## (+1 or -1), a few degrees, or a quarter turn when `snap` is on. True when the station
+## turned something.
+func turn_held(_step: int, _snap: bool) -> bool:
 	return false
 
 
