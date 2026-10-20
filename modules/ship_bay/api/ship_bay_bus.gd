@@ -117,6 +117,11 @@ func register_module() -> void:
 			lift.call("reach", true, signf(StorageLayout.rack_x("B1") - StorageLayout.aisle_x("B")))
 			lift.set("fork_out", 0.99)
 			scene.call("show_view", "picking_lift"))
+		Shots.register("shipyard_trolley_tv", SHIPYARD_SCENE, func(scene: Node) -> void:
+			_sample_delivery()
+			scene.call("show_view", "trolley_tv"))
+		Shots.register("shipyard_hover_truck", SHIPYARD_SCENE, func(scene: Node) -> void:
+			scene.call("show_view", "hover_truck"))
 
 
 func _hook_net() -> void:
