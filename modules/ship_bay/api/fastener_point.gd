@@ -15,6 +15,11 @@ extends Resource
 @export var position := Vector3.ZERO
 ## Out of the surface the joint sits on, ship space.
 @export var normal := Vector3.UP
+## Welds only: one direction along the seam (ship space), and the bead's length along it (x)
+## and width across (y), metres. As Shared Components' PartJointSpec and Void Salvage's
+## ConnectionData have them.
+@export var seam_up := Vector3.ZERO
+@export var seam_size := Vector2.ZERO
 
 
 static func slot_of(id: String) -> String:
