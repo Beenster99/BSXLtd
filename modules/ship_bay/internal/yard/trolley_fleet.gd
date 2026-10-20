@@ -105,6 +105,8 @@ func _ready() -> void:
 	_hud.visible = false
 	layer.add_child(_hud)
 	if _bus:
+		_bus.fleet = self
+		_bus.part_beamed.connect(_on_beamed)
 		_bus.trolley_command.connect(_on_command)
 		_bus.crate_carried.connect(_on_carried)
 		_bus.crate_stored.connect(_on_stored)
@@ -128,7 +130,9 @@ func _exit_tree() -> void:
 	HudSlots.unregister_holo_channel("ship_bay.stock")
 	HudSlots.unregister_holo_channel("ship_bay.machines")
 	if _bus:
-		for pair: Array in [[_bus.trolley_command, _on_command], [_bus.crate_carried, _on_carried],
+		if _bus.fleet == self:
+			_bus.fleet = null
+		for pair: Array in [[_bus.part_beamed, _on_beamed], [_bus.trolley_command, _on_command], [_bus.crate_carried, _on_carried],
 				[_bus.crate_stored, _on_stored], [_bus.stock_changed, _refresh_cargo]]:
 			if (pair[0] as Signal).is_connected(pair[1]):
 				(pair[0] as Signal).disconnect(pair[1])
@@ -313,6 +317,11 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		return
 	if command == "put_away" and t.is_picker():
 		return   # the picking lift only fetches
+	if command == "beam" and (["fetch", "deliver", "put_away", "beam"].has(str((jobs[id] as Dictionary).get("do", ""))) or _bus.trolley_cargo(id) != ""):
+		var later := args.duplicate()
+		later["command"] = "beam"
+		(_queue.get_or_add(id, []) as Array).append(later)
+		return
 	if command == "fetch":
 		# Bulk goods are too big for the lift: the large trolley fetches them itself.
 		var mass := float(_bus.storage_items().get(str(args.get("item", "")), {}).get("mass", 0.0))
@@ -342,6 +351,17 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 			jobs[id] = {"do": "fetch", "phase": "find", "item": str(args.get("item", "")),
 					"qty": int(args.get("qty", 1)), "to": args.get("to", Vector3.ZERO)}
 			t.show_status("FETCHING")
+		"beam":
+			var from: Vector3 = args.get("from", t.global_position)
+			jobs[id] = {"do": "beam", "phase": "to_part", "slot": str(args.get("slot", "")), "component": str(args.get("component", "")),
+					"condition": float(args.get("condition", 1.0)), "from": from}
+			if _go_under(t, from):
+				t.show_status("TO THE SHIP")
+			else:
+				# Nowhere near it to stand: the beam carries the part across to where it is.
+				t.path = PackedVector3Array()
+				t.final_yaw = NAN
+				t.show_status("TAKING THE PART")
 		"deliver":
 			jobs[id] = {"do": "deliver", "phase": "to_lift", "crate": str(args.get("crate", "")), "to": args.get("to", Vector3.ZERO)}
 			_go(t, HANDOFF_TROLLEY[0], HANDOFF_TROLLEY[1])
@@ -356,7 +376,7 @@ func _run_job(id: String, t: Trolley) -> void:
 	var waiting: Array = _queue.get(id, [])
 	if not waiting.is_empty() and ["", "park"].has(str(job.get("do", ""))) and _bus.trolley_cargo(id) == "":
 		var next: Dictionary = waiting.pop_front()
-		_on_command(id, "fetch", next)
+		_on_command(id, str(next.get("command", "fetch")), next)
 		return
 	match str(job.get("do", "")):
 		"come":
@@ -373,6 +393,8 @@ func _run_job(id: String, t: Trolley) -> void:
 			_fetch(id, t, job)
 		"deliver":
 			_deliver(id, t, job)
+		"beam":
+			_beam(id, t, job)
 
 
 ## The fetch job (the picking lift, or the large trolley for bulk goods).
@@ -490,6 +512,72 @@ func _free_courier(goods_kind: String) -> String:
 				and _bus.trolley_cargo(id) == "" and id != remote_id and _drives(id):
 			return id
 	return ""
+
+
+## The beam job: drive over under the part freed off the ship, raise the deck to it, and
+## ask for it to land (then part_beamed turns the job into putting it away).
+func _beam(id: String, t: Trolley, job: Dictionary) -> void:
+	match str(job.get("phase", "")):
+		"to_part":
+			if _arrived(t):
+				var from: Vector3 = job["from"]
+				job["phase"] = "lifting"
+				_bus.command_trolley(id, "deck", {"height": clampf(from.y - 0.5, Trolley.DECK_MIN, float(t.spec["lift"]))})
+				t.show_status("TAKING THE PART")
+		"lifting":
+			if t.deck_ready():
+				job["phase"] = "landing"
+				_bus.land_beamed(str(job["slot"]), id, str(job["component"]), float(job["condition"]))
+
+
+## Plans a way to stand by the part at `from`: beside it first, then further round it.
+func _go_under(t: Trolley, from: Vector3) -> bool:
+	if nav == null:
+		build_nav()
+	var floor_at := Vector3(from.x, 0.0, from.z)
+	var away := t.global_position - floor_at
+	away.y = 0.0
+	var start := atan2(away.x, away.z) if away.length() > 0.1 else 0.0
+	for gap: float in [t.radius() + 1.0, t.radius() + 2.2, t.radius() + 3.5]:
+		for k in 8:
+			var a := start + (k + 1) / 2 * (PI / 4.0) * (1 if k % 2 == 0 else -1)
+			var stand := floor_at + Vector3(sin(a), 0, cos(a)) * gap
+			if not nav.call("is_free", stand, t.radius()):
+				continue
+			if _go(t, stand, a):
+				return true
+	return false
+
+
+func _on_beamed(crate_id: String, trolley_id: String, _component: String, _slot_id: String) -> void:
+	if not trolleys.has(trolley_id) or not _drives(trolley_id):
+		return
+	jobs[trolley_id] = {"do": "put_away", "phase": "find", "crate": crate_id}
+	_bus.command_trolley(trolley_id, "deck", {"height": Trolley.DECK_MIN})
+
+
+## The smallest free hover trolley that carries `goods_kind` (the nearest of a size), or ""
+## for none, leaving out the picking lift and the ids in `taken`.
+func free_for_beam(goods_kind: String, from: Vector3, taken: Array = []) -> String:
+	var best := ""
+	var best_d := INF
+	for id: String in trolleys:
+		var t: Trolley = trolleys[id]
+		if t.is_picker() or not t.carries(goods_kind) or taken.has(id) or id == remote_id:
+			continue
+		if not ["", "park", "come"].has(str((jobs[id] as Dictionary).get("do", ""))) or _bus.trolley_cargo(id) != "":
+			continue
+		var d := t.global_position.distance_to(from) + float(t.radius()) * 1000.0
+		if d < best_d:
+			best = id
+			best_d = d
+	return best
+
+
+## The top of a trolley's deck, yard space; null for no such trolley.
+func deck_position(id: String) -> Variant:
+	var t: Trolley = trolleys.get(id)
+	return t.to_global(Vector3(0, t.deck_height, 0)) if t else null
 
 
 ## Drives to stand by a person at `to`, facing them.

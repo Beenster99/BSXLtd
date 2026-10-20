@@ -33,6 +33,9 @@ signal crate_collected(crate_id: String, item_id: String, qty: int)
 signal trolley_command(trolley_id: String, command: String, args: Dictionary)
 ## Anything in the stores changed (crates landed or put away, stock taken, a load).
 signal stock_changed
+## A part beamed off the ship landed on a trolley's deck as a crate (`crate_id`, carried by
+## `trolley_id`, which puts it away like a delivery): it is stock now. Every peer hears it.
+signal part_beamed(crate_id: String, trolley_id: String, component: String, slot_id: String)
 ## A piece of the bay's kit was changed (a scaffold rig's bays, lifts or open ends): every peer
 ## hears it. payload {rig, bays, lifts, ends}.
 signal kit_changed(payload: Dictionary)
@@ -48,7 +51,7 @@ const SAVE_VERSION := 2
 ## stores. Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
 const TROLLEYS: PackedStringArray = ["s", "m", "l", "p"]
-const TROLLEY_COMMANDS: PackedStringArray = ["come", "put_away", "park", "stop", "deck", "fetch", "deliver"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "put_away", "park", "stop", "deck", "fetch", "deliver", "beam"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
@@ -66,6 +69,10 @@ var _definitions: Dictionary = {}
 var ship_powered := false
 var _stock := StorageStock.new()
 var _part_values := Callable()
+## The yard's trolley fleet while the shipyard is up (it sets this), for beam_to_trolley.
+var fleet: Node
+## Slot id -> the trolley sent for a part beamed off the ship, until it lands or is called off.
+var _beam_claims: Dictionary = {}
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
 ## runs without it: tests that switch only part of the game on, and solo builds).
 var _net: Node
@@ -167,6 +174,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.hand", _apply_hand, _check_hand)
 	_net.call("register_event", "ship_bay.collect", _apply_collect, _check_collect)
 	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
+	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
@@ -178,7 +186,7 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.kit"]:
+				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -479,6 +487,49 @@ func hand_crate(crate_id: String, trolley_id: String) -> void:
 		_apply_hand(payload)
 
 
+## Sends a free hover trolley big enough for a part freed off the ship (Tools' tractor beam):
+## it drives over to `from` (yard space, where the part floats), raises its deck, and the part
+## lands on it as a crate it then puts away (part_beamed follows). Returns the trolley's id,
+## or "" when none that fits is free (ask again later) or the yard isn't up.
+func beam_to_trolley(slot_id: String, component: String, condition: float, from: Vector3) -> String:
+	if _beam_claims.has(slot_id):
+		return str(_beam_claims[slot_id])
+	if fleet == null or not is_instance_valid(fleet):
+		return ""
+	var mass := float(StorageLayout.items().get(component, {}).get("mass", 0.0))
+	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(mass), from, _beam_claims.values()))
+	if id == "":
+		return ""
+	_beam_claims[slot_id] = id
+	command_trolley(id, "beam", {"slot": slot_id, "component": component, "condition": condition, "from": from})
+	return id
+
+
+## Calls off the trolley sent for a part (the player took it with their own beam): it parks.
+func cancel_beam(slot_id: String) -> void:
+	if not _beam_claims.has(slot_id):
+		return
+	var id := str(_beam_claims[slot_id])
+	_beam_claims.erase(slot_id)
+	command_trolley(id, "park")
+
+
+## The top of a trolley's deck (yard space), where a beamed part lands; null for no trolley.
+func trolley_deck_position(trolley_id: String) -> Variant:
+	if fleet == null or not is_instance_valid(fleet):
+		return null
+	return fleet.call("deck_position", trolley_id)
+
+
+## The trolley under a beamed part has its deck up: the part lands on it (its driver asks).
+func land_beamed(slot_id: String, trolley_id: String, component: String, condition: float) -> void:
+	var payload := {"slot": slot_id, "trolley": trolley_id, "component": component, "condition": condition}
+	if _net:
+		_net.call("request", "ship_bay.beamed", payload)
+	elif _check_beamed(0, payload) is Dictionary:
+		_apply_beamed(payload)
+
+
 ## Takes a picked crate off the trolley that brought it; crate_collected follows.
 func collect_crate(crate_id: String) -> void:
 	var payload := {"crate_id": crate_id}
@@ -688,6 +739,28 @@ func _apply_collect(payload: Dictionary) -> void:
 	if not c.is_empty():
 		stock_changed.emit()
 		crate_collected.emit(str(payload["crate_id"]), str(c["item"]), int(c["qty"]))
+
+
+func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
+	var by := str(payload.get("trolley", ""))
+	if not TROLLEYS.has(by) or _stock.carried_by(by) != "":
+		return "that trolley is full"
+	if str(payload.get("component", "")) == "":
+		return "no part"
+	return {"slot": str(payload.get("slot", "")), "trolley": by, "component": str(payload["component"]),
+			"condition": clampf(float(payload.get("condition", 1.0)), 0.0, 1.0)}
+
+
+func _apply_beamed(payload: Dictionary) -> void:
+	var by := str(payload["trolley"])
+	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by)
+	if _beam_claims.get(str(payload["slot"])) == by:
+		_beam_claims.erase(str(payload["slot"]))
+	if id == "":
+		return
+	stock_changed.emit()
+	crate_carried.emit(id, by)
+	part_beamed.emit(id, by, str(payload["component"]), str(payload["slot"]))
 
 
 func _check_kit(_sender: int, payload: Dictionary) -> Variant:
