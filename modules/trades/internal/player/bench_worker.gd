@@ -12,6 +12,8 @@ const EYE := 1.62
 const CHEST := Vector3(0, EYE - 0.3, 0)
 
 @export var walk_speed := 2.4
+## Holding Shift (m/s): across the yard.
+@export var run_speed := 5.5
 @export var mouse_sensitivity := 0.0025
 ## Third-person camera: over the right shoulder, in the body's space (metres), looking at
 ## the point the head is aimed at, so the crosshair still points where you work.
@@ -135,7 +137,8 @@ func _physics_process(delta: float) -> void:
 	if not look_locked:
 		input.x = float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A))
 		input.y = float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W))
-	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * walk_speed
+	var speed := run_speed if Input.is_physical_key_pressed(KEY_SHIFT) else walk_speed
+	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
 	velocity.z = move.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - 9.8 * delta

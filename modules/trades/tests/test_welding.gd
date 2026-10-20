@@ -95,7 +95,6 @@ func _test_gaps_and_ends() -> void:
 
 func _test_station() -> void:
 	var bus := Modules.bus("trades") as TradesBus
-	check(Menu.entries().any(func(e: Dictionary) -> bool: return e.id == "bench_welding"), "welding is on the menu")
 	check(bus.is_tool_enabled(&"welder"), "the welder is enabled")
 	var bay: Node = load(TradesBus.BENCH_SCENE).instantiate()
 	add_child(bay)

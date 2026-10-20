@@ -16,13 +16,12 @@ signal joint_removed(joint_id: StringName)
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
-## The trades on the workbench, each behind its flag "trades.<trade>".
+## The trades, each behind its flag "trades.<trade>". Their practice bench is no longer on
+## the menu: the work happens on the ship in the yard.
 const TRADES: Array[String] = ["bolting", "riveting", "welding", "wiring"]
-## Where the bench stands in Ship and Bay's shipyard (behind the flag "trades.shipyard").
-const YARD_SPOT := "bench_preassembly"
-## The yard spot is the back of the bench's tool board; the bench's own origin is this far
-## in front of it (metres).
-const YARD_BOARD_DEPTH := 0.59
+## What we add to Ship and Bay's shipyard (behind the flag "trades.shipyard"): you, the
+## worker with the tools.
+const YARD_RIG := "ToolsRig"
 ## The group Ship and Bay knows other modules' nodes in the yard by.
 const YARD_GUEST_GROUP := "yard_guest"
 
@@ -32,37 +31,25 @@ var _modifiers: Dictionary = {}  # str(player_id) -> {effect_key: value}
 
 
 func register_module() -> void:
-	var order := 10
-	for trade: String in TRADES:
-		if not Flags.is_on("trades." + trade):
-			continue
-		if not Router.has_scene(WORKBENCH):
-			Router.register_scene(WORKBENCH, BENCH_SCENE)
-		Menu.register_entry("bench_" + trade, trade.capitalize(), WORKBENCH, order, {"trade": trade}, "Workbench")
-		order += 1
-		Shots.register(trade + "_bench", WORKBENCH,
-				func(scene: Node) -> void: scene.call("stage_for_screenshot", StringName(trade), false), 40)
-		Shots.register(trade + "_bench_third_person", WORKBENCH,
-				func(scene: Node) -> void: scene.call("stage_for_screenshot", StringName(trade), true), 40)
+	if TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t)):
+		Router.register_scene(WORKBENCH, BENCH_SCENE)
 	if Flags.is_on("trades.shipyard"):
 		var yard_bus := Modules.bus("ship_bay") as ShipBayBus
 		if yard_bus and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
 			yard_bus.shipyard_ready.connect(_on_shipyard_ready)
 		if Router.has_scene(ShipBayBus.SHIPYARD_SCENE):
-			Shots.register("tools_bench_in_shipyard", ShipBayBus.SHIPYARD_SCENE,
-					func(scene: Node) -> void: scene.get_node("ToolsBench").call("stage_for_screenshot", &"welding", true), 40)
+			for shot: Array in [["bolt", false], ["bolt", true], ["connector", false]]:
+				Shots.register("tools_%s_on_kestrel%s" % [shot[0], "_third_person" if shot[1] else ""], ShipBayBus.SHIPYARD_SCENE,
+						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_on_ship", shot[0], shot[1]), 40)
 
 
-## Ship and Bay built its shipyard: stand the bench at our spot in Pre-assembly.
+## Ship and Bay built its shipyard: put you in it, the worker with every tool to hand.
 func _on_shipyard_ready(yard: Node3D) -> void:
-	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
-	var bench: Node3D = load(BENCH_SCENE).instantiate()
-	bench.set("in_yard", true)
-	bench.name = "ToolsBench"
-	# Ship and Bay's clear-spot checks leave out what other modules put there.
-	bench.add_to_group(YARD_GUEST_GROUP)
-	bench.transform = yard_bus.shipyard_spot(YARD_SPOT) * Transform3D(Basis(), Vector3(0, 0, YARD_BOARD_DEPTH))
-	yard.add_child(bench)
+	var rig: Node3D = load(BENCH_SCENE).instantiate()
+	rig.set("in_yard", true)
+	rig.name = YARD_RIG
+	rig.add_to_group(YARD_GUEST_GROUP)
+	yard.add_child(rig)
 
 
 func register_site(site: JointSite) -> void:
