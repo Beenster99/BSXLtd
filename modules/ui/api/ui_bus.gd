@@ -8,6 +8,11 @@ signal notice_posted(text: String)
 
 const MAIN_MENU := "main_menu"
 const SETTINGS := "settings"
+const TIME_CHANNEL := "ui.time"
+const KEYS_CHANNEL := "ui.keys"
+
+## The wrist screen (Keys.HOLO in any game scene).
+var holo: WristHolo
 
 
 func register_module() -> void:
@@ -19,9 +24,17 @@ func register_module() -> void:
 	Shots.register("settings", SETTINGS)
 	Settings.changed.connect(_on_setting_changed)
 	apply_settings()
+	holo = WristHolo.new()
+	add_child(holo)
+	HudSlots.register_holo_channel(TIME_CHANNEL, "Time of day", _time_channel, 900)
+	HudSlots.register_holo_channel(KEYS_CHANNEL, "Key binds", func() -> Control: return KeyBindsPanel.new(), 910)
 
 
 func unregister_module() -> void:
+	HudSlots.unregister_holo_channel(TIME_CHANNEL)
+	HudSlots.unregister_holo_channel(KEYS_CHANNEL)
+	if holo:
+		holo.close()
 	if Settings.changed.is_connected(_on_setting_changed):
 		Settings.changed.disconnect(_on_setting_changed)
 
@@ -38,3 +51,25 @@ func apply_settings() -> void:
 
 func _on_setting_changed(_section: String, _key: String, _value: Variant) -> void:
 	apply_settings()
+
+
+## The wrist screen's time of day: the same slider as Settings.
+func _time_channel() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	var label := BsxTheme.hud_label("", 28, BsxTheme.ACCENT)
+	label.name = "Clock"
+	box.add_child(label)
+	var slider := HSlider.new()
+	slider.name = "TimeOfDay"
+	slider.min_value = 0.0
+	slider.max_value = 24.0
+	slider.step = 0.25
+	slider.value = AlienSky.setting_hour()
+	label.text = AlienSky.clock(slider.value)
+	slider.value_changed.connect(func(h: float) -> void:
+		label.text = AlienSky.clock(h)
+		Settings.set_value(AlienSky.SECTION, AlienSky.KEY, h))
+	box.add_child(slider)
+	box.add_child(BsxTheme.muted("Moves the sun over the yard. Saved with your settings."))
+	return box

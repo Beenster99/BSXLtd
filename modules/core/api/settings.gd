@@ -22,6 +22,8 @@ func register(section: String, defaults: Dictionary) -> void:
 
 func get_value(section: String, key: String) -> Variant:
 	var fallback: Variant = _defaults.get(section, {}).get(key)
+	if not _cfg.has_section_key(section, key):
+		return fallback
 	return _cfg.get_value(section, key, fallback)
 
 
