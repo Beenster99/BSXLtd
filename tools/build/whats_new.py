@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 MODULE_NAMES = {
-    "core": "Core and UI", "ui": "Core and UI", "trades": "Trades",
+    "core": "Core and UI", "ui": "Core and UI", "trades": "Tools",
     "ship_bay": "Ship and Bay", "contracts": "Contracts", "quality": "Quality and Inspection",
     "multiplayer": "Multiplayer", "business": "Business", "progression": "Progression",
     "shared_components": "Shared Components",
