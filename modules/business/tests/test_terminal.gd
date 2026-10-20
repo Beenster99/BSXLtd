@@ -5,6 +5,7 @@ extends ModuleTest
 ##   tools/run_tests.sh business
 
 const Screen := preload("res://modules/business/internal/ui/terminal_screen.gd")
+const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 
 
 func run_tests() -> void:
@@ -21,15 +22,73 @@ func run_tests() -> void:
 		return
 	bus.reset()
 
-	# A wall screen on its own: display only, every channel draws.
-	var wall: Control = Screen.new()
-	wall.size = Vector2(1280, 800)
+	# A hall TV on its own: every channel draws, best buys are under Void Salvage's value.
+	var wall: Control = Tv.new()
+	wall.size = Vector2(1280, 720)
 	add_child(wall)
-	wall.call("setup", bus, false)
-	for ch in ["orders", "goods", "accounts"]:
+	wall.call("setup", bus)
+	for ch in Tv.CHANNELS:
 		wall.call("show_channel", ch)
-		check(wall.get_child_count() > 0, "the %s channel draws" % ch)
+		var body: Control = wall.get("_body")
+		check(body.get_child_count() > 0, "the TV's %s channel draws" % ch)
+	var buys: Array = wall.call("best_buys")
+	var cat := bus.get_catalogue()
+	check(not buys.is_empty() and buys.all(func(l): return l.unit_price < cat.value_of(l.part)), "best buys are under value")
+	check(buys.size() < 2 or buys[0].unit_price / cat.value_of(buys[0].part) <= buys[1].unit_price / cat.value_of(buys[1].part), "best first")
 	wall.queue_free()
+
+	# The channels on the wrist holo screen, on glass: Orders at the front, Accounts after
+	# Ship and Bay's and Contracts', cash in the header.
+	check(HudSlots.holo_channel("business.orders").get("order") == 10 and HudSlots.holo_channel("business.accounts").get("order", 0) >= 50,
+			"Orders first, Accounts after the other modules' screens")
+	for id: String in BusinessBus.SCREEN_CHANNELS:
+		var entry := HudSlots.holo_channel(id)
+		check(not entry.is_empty(), "%s is on the wrist screen" % id)
+		if entry.is_empty():
+			continue
+		var made: Control = entry.factory.call(true)
+		check(made.get("page") == BusinessBus.SCREEN_CHANNELS[id][1] and made.get("glass") == true, "%s draws on glass" % id)
+		check(made.find_children("*", "Label", true, false).all(func(l): return l.text != "BSX" and not l.text.begins_with("01")), "%s draws no header or tabs of its own" % id)
+		add_child(made)
+		made.size = Vector2(860, 420)
+		await frames(2)
+		check(made.size.x <= 861 and made.size.y <= 421, "%s fits the wrist pane: %s" % [id, made.size])
+		made.free()
+
+	# Ordering from the wrist: search, add, place; the order shows as on order.
+	var wrist: Control = HudSlots.holo_channel("business.orders").factory.call(true)
+	add_child(wrist)
+	wrist.size = Vector2(1200, 600)
+	await frames(1)
+	var first: MarketListing = bus.get_listings().filter(func(l): return l.available >= 2 and l.unit_price < 3000)[0]
+	var word := bus.part_name(first.part).split(" ")[0].to_lower()
+	wrist.set("query", word)
+	wrist.call("refresh")
+	var found: Array = wrist.call("shown_listings")
+	check(not found.is_empty() and found.all(func(l): return (bus.part_name(l.part) + " " + bus.supplier(l.supplier_id).display_name + " " + bus.listing_category(l)).to_lower().contains(word)),
+			"search keeps only matching parts: %d for '%s'" % [found.size(), word])
+	await frames(1)
+	var add_btn := wrist.find_child("Add_" + first.id, true, false) as Button
+	check(add_btn != null, "the searched part has a + button")
+	if add_btn:
+		add_btn.pressed.emit()
+		add_btn = wrist.find_child("Add_" + first.id, true, false) as Button
+		add_btn.pressed.emit()
+	check(int(bus.wrist_basket.get(first.id, 0)) == 2, "+ twice puts two on the purchase order")
+	wrist.free()
+	wrist = HudSlots.holo_channel("business.orders").factory.call(true)
+	add_child(wrist)
+	check(int(wrist.get("basket").get(first.id, 0)) == 2, "the purchase order survives closing the wrist")
+	var wcash := bus.get_cash()
+	var placed: BusinessResult = wrist.call("place_order")
+	check(placed.is_ok() and bus.get_cash() == wcash - first.unit_price * 2 and bus.wrist_basket.is_empty(), "PLACE ORDER on the wrist buys it")
+	var on_order := false
+	for l: Label in wrist.find_children("*", "Label", true, false):
+		if l.text == placed.order_ids[0]:
+			on_order = true
+	check(on_order, "the order shows under ON ORDER")
+	wrist.free()
+	bus.reset()
 
 	var yard: Node3D = load(Router.scene_path(ShipBayBus.SHIPYARD_SCENE)).instantiate()
 	add_child(yard)
@@ -40,17 +99,77 @@ func run_tests() -> void:
 		_done(saved, yard)
 		return
 	var monitors: Array = front.get("monitors")
-	check(monitors.size() == 2, "two wall terminals")
+	check(monitors.size() == 4, "a TV in every hall: %d" % monitors.size())
+	var halls := {}
+	var space := yard.get_world_3d().direct_space_state
+	await get_tree().physics_frame
 	for m: Node3D in monitors:
-		check(yard.call("room_at", m.global_position) == "deliveries", "%s hangs in the deliveries hall" % m.name)
+		var room: String = yard.call("room_at", m.global_position + m.global_basis.z * 0.5)
+		halls[room] = true
+		# Flat on a wall: a ray from in front of the screen to its back hits the wall there.
+		var from := m.global_position + m.global_basis.z * 1.5
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, m.global_position - m.global_basis.z * 0.2))
+		check(not hit.is_empty() and hit.position.distance_to(m.global_position) < 0.1, "%s is flat on the wall" % m.name)
+		# Nothing stands in front of it within reach.
+		var box := BoxShape3D.new()
+		box.size = Vector3(3.2, 2.2, 3.0)
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = box
+		q.transform = Transform3D(m.global_basis, m.global_position + m.global_basis.z * 1.8 + Vector3(0, -0.6, 0))
+		var hits := space.intersect_shape(q, 8)
+		check(hits.is_empty(), "%s has clear floor in front: %s" % [m.name, str(hits.map(func(x): return x.collider.name))])
+	check(halls.keys().size() == 4 and halls.has("deliveries") and halls.has("stock") and halls.has("prep") and halls.has("preassembly"),
+			"one in each hall: %s" % str(halls.keys()))
 
 	# Stand a camera in front of the first terminal: the prompt shows.
 	var cam: Camera3D = front.call("stage_monitor_view", 0)
 	await frames(2)
 	check(front.call("nearest_monitor") == 0, "a player at the terminal can use it")
-	cam.global_position += Vector3(0, 0, 8)
+	cam.global_position += cam.global_basis.z * 8
 	await frames(2)
 	check(front.call("nearest_monitor") == -1, "out of reach, no prompt")
+
+	# In place: aim the view at a TV and its floating pointer clicks on the working terminal.
+	var tv0: Node3D = monitors[0]
+	var px := Vector2(front.get("SCREEN_PX"))
+	var m_size: Vector2 = front.get("SCREEN_M")
+	var depth: float = front.get("DEPTH")
+	var aim_at := func(pixel: Vector2) -> void:
+		var spot := tv0.to_global(Vector3((pixel.x / px.x - 0.5) * m_size.x, (0.5 - pixel.y / px.y) * m_size.y, depth))
+		cam.global_position = tv0.global_position + tv0.global_basis.z * 2.4 + Vector3(0, -0.9, 0)
+		cam.look_at(spot)
+	aim_at.call(px * 0.5)
+	await frames(2)
+	check(front.get("aimed") == 0 and front.call("is_awake", 0), "aiming at a TV wakes its terminal")
+	var live: Control = tv0.get_node("Viewport/Terminal")
+	live.call("show_channel", "orders")
+	await frames(2)
+	var plus: Button = null
+	for b: Button in live.find_children("*", "Button", true, false):
+		if b.text == "+" and not b.disabled:
+			plus = b
+			break
+	check(plus != null, "a + button to aim at")
+	if plus:
+		aim_at.call(plus.get_global_rect().get_center())
+		await frames(2)
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = true
+		front.call("_input", click)
+		await frames(1)
+		click = click.duplicate()
+		click.pressed = false
+		front.call("_input", click)
+		await frames(2)
+		check((live.get("basket") as Dictionary).size() == 1, "clicking + with the pointer adds to the order: %s" % str(live.get("basket")))
+		var full: Control = front.call("open_full", 0)
+		check((full.get("basket") as Dictionary).size() == 1 and not front.call("is_awake", 0), "F takes it full screen with the order")
+		full.set("basket", {})
+		front.call("close_terminal")
+	cam.global_position += cam.global_basis.z * 8
+	await frames(2)
+	check(front.get("aimed") == -1, "looking away drops the pointer")
 
 	# The full terminal: add two listings, set quantities, place the order.
 	var screen: Control = front.call("open_terminal")
