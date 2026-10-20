@@ -66,11 +66,11 @@ func run_tests() -> void:
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(wall[1], wall[2]))
 		check(not hit.is_empty(), "%s is a wall" % wall[0])
 
-	# Dock 1: the gantry towers stand solid either side of the ship; the overlook and its
+	# Dock 1: no fixed gantries round the ship (bigger ships come in); the overlook and its
 	# stair are floors to walk on.
-	for z: float in Yard.GANTRY_Z:
-		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(Yard.GANTRY_X, 1, z + 3), Vector3(Yard.GANTRY_X, 1, z - 3)))
-		check(not hit.is_empty(), "a gantry tower stands at z %.1f" % z)
+	for z: float in [-8.6, 11.2]:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-7.0, 1, z + 1.5), Vector3(-7.0, 1, z - 1.5)))
+		check(hit.is_empty(), "the dock is clear at z %.1f" % z)
 	var deck_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(0, 8, -22.9), Vector3(0, 0, -22.9)))
 	check(absf(float(deck_hit.get("position", Vector3.ZERO).y) - Yard.OVERLOOK_Y) < 0.1, "the overlook is a floor at %.1f m: %s" % [Yard.OVERLOOK_Y, deck_hit.get("position", "")])
 	var stair_x: float = Yard.OVERLOOK.position.x + 0.65

@@ -74,7 +74,8 @@ const VIEWS := {
 	"kestrel_cabin": [Vector3(0, 3.45, -3.0), Vector3(0, 2.7, 1.4)],
 	"kestrel_hold": [Vector3(0.3, 3.4, 2.0), Vector3(0, 2.3, 6.4)],
 	"kestrel_access": [Vector3(-7.5, 3.2, 9.5), Vector3(-1.0, 1.6, 3.5)],
-	"kestrel_lift": [Vector3(9.0, 4.0, 9.0), Vector3(3.5, 2.0, 4.0)],
+	"kestrel_lift": [Vector3(-7.5, 3.4, -2.5), Vector3(-3.0, 1.5, 2.6)],
+	"kestrel_power": [Vector3(9.5, 2.8, 3.0), Vector3(3.6, 1.4, 6.6)],
 	# The storage hall (StorageLayout): down aisle B, the bins in D2, the bulk floor, goods in.
 	"storage_aisle": [Vector3(-21.55, 1.7, -25.6), Vector3(-21.55, 3.2, -42.0)],
 	"storage_aisle_d": [Vector3(-10.95, 1.7, -25.2), Vector3(-10.95, 2.6, -42.0)],
@@ -84,7 +85,7 @@ const VIEWS := {
 	"trolleys": [Vector3(-38.5, 3.4, -25.0), Vector3(-31.0, 0.6, -14.0)],
 	"trolley_lift": [Vector3(-12.2, 1.8, -24.6), Vector3(-10.4, 4.6, -34.0)],
 	"picking_lift": [Vector3(-20.0, 1.7, -25.6), Vector3(-20.55, 5.8, -34.3)],
-	# Dock 1: the gantries over the ship, the overlook, the launch towers out on the plain.
+	# Dock 1: the overlook, the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
 	"overlook": [Vector3(-3, 7.1, -22.4), Vector3(1, 1.5, 4)],
 	"launch_towers": [Vector3(72, 2.0, 40), Vector3(150, 32, -450)],
@@ -1295,95 +1296,16 @@ func _build_crane() -> void:
 			return PartShapes.ring(0.16, 0.26, 0.1)), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(4, 7.3, bridge_z)), _bare, false)
 
 
-## Dock 1, after a planetary shipyard's dry docks: two scaffold gantries standing over the
-## ship's nose and tail (lattice towers with railed platforms and ladders, a bridge with a
-## walkway and a hoist, a white slogan banner with the dock number), an overlook balcony on
-## the north wall with a stair down into the courtyard, and launch towers out on the plain.
+## Dock 1, after a planetary shipyard's dry docks: an overlook balcony on the north wall with a
+## stair down into the courtyard, and launch towers out on the plain. Work at height on the
+## ship is done from the scissor lift (and mobile scaffolds), which drive out of the way, so
+## the dock has no fixed gantries: it takes ships much bigger than the Kestrel.
 const DOCK := "D1"
-const GANTRY_X := 7.0              # tower centres either side of the ship, metres
-const GANTRY_Z := [-8.6, 11.2]     # over the nose and the tail
-const GANTRY_TOP := 10.4           # the bridge walkway, metres over the floor
-const SLOGANS := ["BUILT TO GO FURTHER", "EVERY SHIP LEAVES BETTER"]
 const OVERLOOK := Rect2(-8.0, -23.75, 16.0, 1.8)   # x, z, length, depth of the balcony
 const OVERLOOK_Y := 5.2
 
 
 func _build_dock() -> void:
-	var tower := _lib("truss/gantry_tower", func() -> PartShapes.PartShape:
-			return PartShapes.truss(GANTRY_TOP, 1.4, 1.4, 8, 0.1))
-	var deck := _lib("grating/gantry_deck", func() -> PartShapes.PartShape:
-			return WreckParts.grating(1.8, 1.8))
-	var guard := _lib("railing/gantry", func() -> PartShapes.PartShape:
-			return WreckParts.railing(1.8))
-	var ladder := _lib("ladder/gantry", func() -> PartShapes.PartShape:
-			return WreckParts.ladder(GANTRY_TOP, 0.45))
-	var span := GANTRY_X * 2.0 + 1.4
-	var bridge := _lib("truss/gantry_bridge", func() -> PartShapes.PartShape:
-			return PartShapes.truss(span, 0.35, 1.2, 10, 0.08))
-	var walk := _lib("grating/gantry_walk", func() -> PartShapes.PartShape:
-			return WreckParts.grating(1.2, span - 1.8))
-	var rail := _lib("railing/gantry_walk", func() -> PartShapes.PartShape:
-			return WreckParts.railing(3.0))
-	var white := _paint(SHELL, 0.1, 0.55, "satin_paint")
-	var ink := Color(0.12, 0.13, 0.15)
-	for i in GANTRY_Z.size():
-		var z: float = GANTRY_Z[i]
-		var out := -1.0 if z < 0.0 else 1.0   # the side facing away from the ship
-		for side: float in [-1.0, 1.0]:
-			var foot := Vector3(side * GANTRY_X, 0, z)
-			_put(tower, Transform3D(UPRIGHT, foot + Vector3(0, GANTRY_TOP * 0.5, 0)), _trim)
-			_put(_box(Vector3(2.0, 0.3, 2.0)), _at(foot + Vector3(0, 0.15, 0)), _concrete)
-			_put(_box(Vector3(2.04, 0.12, 2.04)), _at(foot + Vector3(0, 0.3, 0)), _hazard, false)
-			_put(ladder, _at(foot + Vector3(side * 0.95, GANTRY_TOP * 0.5, 0), side * PI * 0.5), _galv, false)
-			for h: float in [3.4, 6.9]:
-				_put(deck, _at(foot + Vector3(0, h, 0)), _galv, false)
-				_put(guard, _at(foot + Vector3(0, h + 0.55, out * 0.9)), _hazard, false)
-				_put(guard, _at(foot + Vector3(-side * 0.9, h + 0.55, 0), PI * 0.5), _hazard, false)
-			# A work light on each tower aimed down at the hull.
-			var work := SpotLight3D.new()
-			work.position = foot + Vector3(-side * 0.8, 6.6, 0)
-			work.light_color = LAMP
-			work.light_energy = 4.0
-			work.spot_range = 14.0
-			work.spot_angle = 40.0
-			work.set_meta("gfx_no_shadow", true)
-			add_child(work)
-			work.look_at(Vector3(0, 2.0, z * 0.6))
-			_night(work)
-		# The bridge across the tops: two trusses, a walkway between, rails both sides.
-		for k: float in [-0.75, 0.75]:
-			_put(bridge, _at(Vector3(0, GANTRY_TOP + 0.6, z + k)), _trim, false)
-		_put(walk, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, GANTRY_TOP + 1.22, z)), _galv, false)
-		var x := -span * 0.5 + 2.4
-		while x < span * 0.5 - 2.0:
-			for k: float in [-0.6, 0.6]:
-				_put(rail, _at(Vector3(x, GANTRY_TOP + 1.77, z + k)), _hazard, false)
-			x += 3.0
-		# The hoist on the bridge, its line down to a hook block hanging clear of the hull.
-		var hoist_x := -2.5 if i == 0 else 2.5
-		_put(_lib("machine/gantry_hoist", func() -> PartShapes.PartShape:
-				return WreckParts.machine_unit(Vector3(1.2, 0.8, 1.6))), _at(Vector3(hoist_x, GANTRY_TOP - 0.2, z)), _paint(HAZARD, 0.3, 0.5), false)
-		var line := GANTRY_TOP - 0.6 - 7.2
-		_put(_lib("pipe/gantry_line", func() -> PartShapes.PartShape:
-				return WreckParts.pipe(0.02, line, false)), _at(Vector3(hoist_x, 7.2 + line * 0.5, z)), _frame, false)
-		_put(_lib("cbox/gantry_hook", func() -> PartShapes.PartShape:
-				return PartShapes.chamfer_box(Vector3(0.45, 0.5, 0.3), 0.05)), _at(Vector3(hoist_x, 6.95, z)), _hazard, false)
-		# The banner under the bridge, on the side facing out: the dock number and a slogan,
-		# dark letters on a white board with an orange band.
-		var board_z := z + out * 0.95
-		var face := 0.0 if out > 0.0 else PI
-		var basis := Basis(Vector3.UP, face)
-		_put(_box(Vector3(span - 1.6, 1.5, 0.08)), Transform3D(basis, Vector3(0, GANTRY_TOP - 0.6, board_z)), white, false)
-		_put(_box(Vector3(span - 1.6, 0.18, 0.1)), Transform3D(basis, Vector3(0, GANTRY_TOP - 1.42, board_z)), _trim, false)
-		var words := _sign("%s   %s" % [DOCK, SLOGANS[i]], Vector3(0, GANTRY_TOP - 0.55, board_z + out * 0.06), face, 0.8, false)
-		words.modulate = ink
-		words.outline_size = 0
-		# The dock number big on each tower's outer face.
-		for side: float in [-1.0, 1.0]:
-			var number := _sign(DOCK, Vector3(side * GANTRY_X, 1.9, z + out * 0.78), face, 1.4, false)
-			number.modulate = ink
-			number.outline_size = 0
-			_put(_box(Vector3(1.35, 2.2, 0.04)), Transform3D(basis, Vector3(side * GANTRY_X, 1.9, z + out * 0.73)), white, false)
 	_build_overlook()
 	_build_launch_towers()
 
