@@ -98,6 +98,9 @@ func register_module() -> void:
 	if yard_bus and Flags.is_on("business.market") and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
 		yard_bus.shipyard_ready.connect(_on_shipyard_ready)
 	delivery_arrived.connect(_on_delivery_arrived)
+	# Ship and Bay's wrist Stock prices what's held at Void Salvage's value for a new part.
+	if yard_bus and yard_bus.has_method("set_part_values"):
+		yard_bus.call("set_part_values", func(item_id: String) -> int: return get_catalogue().value_of(item_id))
 	if Flags.is_on("business.market") and Router.has_scene(ShipBayBus.SHIPYARD_SCENE):
 		Shots.register("business_terminal", ShipBayBus.SHIPYARD_SCENE, _shot_terminal, 40)
 		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
