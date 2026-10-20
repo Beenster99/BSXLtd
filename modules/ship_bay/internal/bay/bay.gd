@@ -18,7 +18,7 @@ const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
 const USE_REACH := 3.5
 
 var ship_root: Node3D
-## The ship's model (its root node), and the stairs, lift and power unit round it.
+## The ship's model (its root node), and the lift and power unit round it.
 var model: Node3D
 var access: Node3D
 ## slot_id -> Array of the model's MeshInstance3Ds inside its box.
@@ -146,7 +146,7 @@ func _show_ship(def: ShipDefinition) -> void:
 	_refresh_markers()
 
 
-## Boarding stairs, the lift and the ground power unit, for a model that says where its
+## The scissor lift and the ground power unit, for a model that says where its
 ## side door and power socket are.
 func _build_access() -> void:
 	if access:
@@ -158,7 +158,7 @@ func _build_access() -> void:
 	access = Access.new()
 	access.name = "Access"
 	add_child(access)
-	access.call("build", cradle_height, points["side_door"], points["power_socket"])
+	access.call("build", cradle_height, points["side_door"], points["power_socket"], ship_root)
 	access.connect("power_switched", func(on: bool) -> void:
 		if _bus:
 			_bus.set_ship_powered(on)
@@ -177,10 +177,19 @@ func _on_power(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F:
-		var cam := get_viewport().get_camera_3d()
-		if cam and use_along(cam.global_position, -cam.global_basis.z):
-			get_viewport().set_input_as_handled()
+	var use: bool = event.is_action_pressed(Keys.INTERACT) if InputMap.has_action(Keys.INTERACT) \
+			else (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F)
+	if not use or event.is_echo():
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	# With the power plug in hand, F puts it somewhere instead.
+	if access and bool(access.call("holding_plug")):
+		access.call("place_plug", cam.global_position, -cam.global_basis.z)
+		get_viewport().set_input_as_handled()
+	elif use_along(cam.global_position, -cam.global_basis.z):
+		get_viewport().set_input_as_handled()
 
 
 ## Use (F): the first usable thing within reach along the ray (world space). True if one was.

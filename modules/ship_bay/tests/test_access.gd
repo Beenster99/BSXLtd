@@ -1,7 +1,8 @@
 extends ModuleTest
-## Ship and Bay: you can walk up the boarding stairs into the Kestrel's hold, the scissor lift
-## rises and falls on its control, the ground power unit powers the ship up and down, and the
-## yard's night lights follow the time of day.
+## Ship and Bay: you board the Kestrel on the scissor lift (walk on, UP to the door sill,
+## walk in), the lift steps, stops, drives and won't run into the hull, the ground power unit
+## powers the ship once its plug is clipped to the hull, and the yard's night lights follow
+## the time of day.
 ##   tools/run_tests.sh ship_bay
 
 
@@ -14,51 +15,130 @@ func run_tests() -> void:
 	var bay: Node3D = yard.get("bay")
 	var access: Node3D = bay.get("access")
 	var model: Node3D = bay.get("model")
-	check(access != null, "the bay has its stairs, lift and power unit")
+	check(access != null, "the bay has its lift and power unit")
 	if access == null:
 		yard.queue_free()
 		return
 	for i in 3:
 		await get_tree().physics_frame
 
-	# Walk from the foot of the stairs, up and through the side door into the hold.
+	# No stairs: walk up the lift's ramp onto its platform, press UP, ride it to the door sill
+	# and walk into the hold.
 	var walker: CharacterBody3D = yard.get("walker")
 	yard.call("set_walker_active", true)
 	walker.set_physics_process(false)
-	walker.call("place", Vector3(-7.4, 0.05, 2.25), Vector3(0, 1, 2.25))
-	var top_y := 0.0
+	var platform: AnimatableBody3D = access.get("platform")
+	var lift: Node3D = access.get("lift")
+	check(access.get_node_or_null("Stairs") == null and lift != null, "a lift at the door and no stairs")
+	var ramp_foot := lift.to_global(Vector3(0, 0.05, 2.6 * 0.5 + 1.3 + 0.6))
+	walker.call("place", ramp_foot, ramp_foot + Vector3(0, 0, -2))
+	for i in 180:
+		walker.velocity = Vector3(0, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, -2.0)
+		walker.move_and_slide()
+		await get_tree().physics_frame
+		if walker.position.z < lift.global_position.z:
+			break
+	check(absf(walker.position.y - (platform.global_position.y)) < 0.15 and walker.position.z < lift.global_position.z + 0.3,
+			"walked up the ramp onto the platform: y %.2f z %.2f" % [walker.position.y, walker.position.z])
+	var button := platform.to_global(Vector3(-0.7 - 0.06 - 0.085, 1.05 - 0.1 + 0.05, -2.6 * 0.25))
+	check(bool(bay.call("use_along", button + lift.global_basis.x * -1.2, lift.global_basis.x)), "UP on the platform's controls takes Use")
+	for i in 400:
+		walker.velocity = Vector3(0, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, 0)
+		walker.move_and_slide()
+		await get_tree().physics_frame
+	var sill := 1.6
+	check(absf(platform.position.y - sill) < 0.01, "it stopped level with the door sill: %.2f" % platform.position.y)
+	check(absf(walker.position.y - sill) < 0.15, "riding up on it: y %.2f" % walker.position.y)
 	for i in 240:
 		walker.velocity = Vector3(2.5, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, 0.0)
 		walker.move_and_slide()
-		top_y = maxf(top_y, walker.position.y)
 		await get_tree().physics_frame
 		if walker.position.x > -1.2:
 			break
-	check(walker.position.x > -1.6, "walked through the side door into the hold: x %.2f" % walker.position.x)
+	check(walker.position.x > -1.6, "walked off it through the side door into the hold: x %.2f" % walker.position.x)
 	check(absf(walker.position.y - 1.6) < 0.15, "standing on the hold's floor: y %.2f" % walker.position.y)
 	walker.set_physics_process(true)
+	yard.call("set_walker_active", false)
 
-	# Shore power: off to start with; the power unit's switch turns it on and off.
-	check(not bus.ship_powered and not bool(model.get("powered")), "the ship is cold in the yard")
-	var socket: Vector3 = model.call("access_points")["power_socket"]
-	var unit := bay.to_global(Vector3(socket.x + 2.1, 0.7, socket.z + 1.6))
-	var used: bool = bay.call("use_along", unit + Vector3(2.0, 0, 0), Vector3.LEFT)
-	check(used and bus.ship_powered, "the power unit's switch powers the ship up")
-	check(bool(model.get("powered")), "the ship's lamps and screens come on")
-	var lamps_on := model.find_children("*", "Light3D", false, false).all(func(l: Light3D) -> bool: return l.visible)
-	check(lamps_on, "every lamp aboard is lit")
-	bay.call("use_along", unit + Vector3(2.0, 0, 0), Vector3.LEFT)
-	check(not bus.ship_powered and not bool(model.get("powered")), "and down again")
-	check(bus.snapshot().get("powered") == false, "power is saved with the bay")
-
-	# The lift: its ground control sends the platform up to the flank level.
-	var platform: Node3D = access.get("platform")
-	var start_y := platform.position.y
-	var control := bay.to_global(Vector3(4.2, 0.85, 3.9))
-	check(bay.call("use_along", control + Vector3(1.5, 0, 0), Vector3.LEFT), "the lift's ground control takes Use")
+	# UP again to the flank stop, DOWN to stop it partway, DOWN back to the bottom.
+	access.call("lift_up")
+	for i in 200:
+		await get_tree().physics_frame
+	check(absf(platform.position.y - 2.4) < 0.01, "UP goes on to the flank stop: %.2f" % platform.position.y)
+	access.call("lift_down")
+	for i in 200:
+		await get_tree().physics_frame
+	check(absf(platform.position.y - 1.6) < 0.01, "DOWN steps back to the sill: %.2f" % platform.position.y)
+	access.call("lift_down")
+	for i in 20:
+		await get_tree().physics_frame
+	access.call("lift_down")
+	var held := platform.position.y
+	for i in 30:
+		await get_tree().physics_frame
+	check(absf(platform.position.y - held) < 0.001 and held < 1.6 and held > 0.4, "pressed while moving it stops: %.2f" % held)
+	access.call("lift_down")
 	for i in 300:
 		await get_tree().physics_frame
-	check(absf(platform.position.y - 2.4) < 0.01, "the platform rose to 2.4 m: %.2f (from %.2f)" % [platform.position.y, start_y])
+	check(absf(platform.position.y - 0.35) < 0.01, "and goes down to the bottom")
+
+	# Driving: along the hull it goes; it won't drive or rise into the ship.
+	var start := lift.global_position
+	var moved := 0
+	for i in 60:
+		if bool(access.call("drive", "lift", 0.05, 0.0)):
+			moved += 1
+	check(moved == 60 and lift.global_position.distance_to(start) > 2.9, "the lift drives along the hull: %.2f m" % lift.global_position.distance_to(start))
+	await get_tree().physics_frame
+	var deck_hit := yard.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
+			platform.global_position + Vector3(0, 3, 0), platform.global_position + Vector3(0, -0.5, 0)))
+	check(not deck_hit.is_empty() and deck_hit.collider == platform, "its platform went with it")
+	for i in 60:
+		access.call("drive", "lift", -0.05, 0.0)
+	check(lift.global_position.distance_to(start) < 0.01, "and back to the door")
+	var into := lift.global_transform
+	var turned: bool = access.call("drive", "lift", 0.0, -PI * 0.5)
+	if turned:
+		for i in 100:
+			if not bool(access.call("drive", "lift", 0.05, 0.0)):
+				break
+	check(lift.global_position.x < -2.0, "it can't be driven into the hull: x %.2f" % lift.global_position.x)
+	lift.global_transform = into
+
+	# Shore power: off to start with. The switch alone does nothing; the plug clipped to the
+	# hull (anywhere in reach) with the switch on powers the ship.
+	check(not bus.ship_powered and not bool(model.get("powered")), "the ship is cold in the yard")
+	var unit: Node3D = access.get("unit")
+	var panel := unit.to_global(Vector3(0, 0.95, 0.77))
+	check(bool(bay.call("use_along", panel + Vector3(0, 0, 1.5), Vector3.BACK * -1.0)), "the power unit's switch takes Use")
+	check(bool(access.get("switch_on")) and not bus.ship_powered, "switched on, the plug still on its hook: no power")
+	var hook := unit.to_global(Vector3(-0.6, 0.85, 0.15))
+	bay.call("use_along", hook + Vector3(-1.5, 0, 0), Vector3.RIGHT)
+	check(bool(access.call("holding_plug")), "F on the hook takes the plug in hand")
+	check(not bool(access.call("place_plug", Vector3(6, 1.5, 9), Vector3.DOWN)), "the floor won't take it")
+	var hull := Vector3(4.8, 2.6, 3.0)
+	check(bool(access.call("place_plug", hull, Vector3.LEFT)), "it clips on to the hull")
+	check(bus.ship_powered and bool(model.get("powered")), "and the ship powers up")
+	var lamps_on := model.find_children("*", "Light3D", false, false).all(func(l: Light3D) -> bool: return l.visible)
+	check(lamps_on, "every lamp aboard is lit")
+	bay.call("use_along", panel + Vector3(0, 0, 1.5), Vector3.BACK * -1.0)
+	check(not bus.ship_powered and not bool(model.get("powered")), "the switch turns it off")
+	check(bus.snapshot().get("powered") == false, "power is saved with the bay")
+	bay.call("use_along", panel + Vector3(0, 0, 1.5), Vector3.BACK * -1.0)
+	check(bus.ship_powered, "and on again")
+
+	# Towing the unit: out of the cable's reach the plug pops off and the power goes.
+	access.call("toggle_drive", "unit")
+	check(access.get("driving") == "unit", "F on its handle tows the unit")
+	for i in 400:
+		access.call("drive", "unit", -0.05, 0.0)
+		await get_tree().physics_frame
+		if access.get("plug_state") != "hull":
+			break
+	check(access.get("plug_state") == "hook" and not bus.ship_powered, "towed out of reach, the plug reels in and the power goes (%s)" % access.get("plug_state"))
+	access.call("toggle_drive", "unit")
+	check(access.get("driving") == "", "and lets go")
+	access.call("toggle_power")
 
 	# Night: the lamp posts come on in the dark and go out by day.
 	yard.call("set_time_of_day", 22.0)

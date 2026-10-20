@@ -153,6 +153,18 @@ func run_tests() -> void:
 		check(fleet.get("remote_id") == "l" and fleet.get("panel") == null, "REMOTE CONTROL takes the large one and shuts the screen")
 		fleet.call("toggle_remote", "l")
 
+	# The same screen on the wrist, small enough for its pane.
+	var channel := HudSlots.holo_channel("ship_bay.trolleys")
+	check(not channel.is_empty(), "the trolley screen is a wrist screen channel")
+	if not channel.is_empty():
+		var wrist: Control = (channel["factory"] as Callable).call()
+		add_child(wrist)
+		await frames(2)
+		check(wrist.has_signal("close_requested") and str(wrist.call("text")).contains("MEDIUM"), "it lists the trolleys there too")
+		check(wrist.get_combined_minimum_size().x <= 900.0 and wrist.get_combined_minimum_size().y <= 560.0,
+				"and fits the wrist screen's pane: %s" % wrist.get_combined_minimum_size())
+		wrist.queue_free()
+
 	bus.crate_carried.disconnect(on_carry)
 	yard.queue_free()
 	await frames(1)

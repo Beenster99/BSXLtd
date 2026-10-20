@@ -30,6 +30,8 @@ func _ready() -> void:
 	shape.shape = capsule
 	shape.position.y = 0.9
 	add_child(shape)
+	# Steps and a landing thud (metal on decks and gratings that say so).
+	add_child(Footsteps.new())
 	head = Node3D.new()
 	head.name = "Head"
 	head.position.y = EYE
@@ -63,15 +65,23 @@ func place(at: Vector3, target: Vector3) -> void:
 
 func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
-	input.x = float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A))
-	input.y = float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W))
-	var speed := run_speed if Input.is_physical_key_pressed(KEY_SHIFT) else walk_speed
+	input.x = _held(Keys.RIGHT, KEY_D) - _held(Keys.LEFT, KEY_A)
+	input.y = _held(Keys.BACK, KEY_S) - _held(Keys.FORWARD, KEY_W)
+	var speed := run_speed if _held(Keys.RUN, KEY_SHIFT) > 0.0 else walk_speed
 	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
 	velocity.z = move.z
 	if is_on_floor():
-		if Input.is_physical_key_pressed(KEY_SPACE):
+		if _held(Keys.JUMP, KEY_SPACE) > 0.0:
 			velocity.y = jump_speed
 	else:
 		velocity.y -= gravity * delta
 	move_and_slide()
+
+
+## 1 while a Core movement action (as bound in Settings > Key binds) is held; `key` before
+## the key map is in.
+func _held(action: String, key: Key) -> float:
+	if InputMap.has_action(action):
+		return 1.0 if Input.is_action_pressed(action) else 0.0
+	return 1.0 if Input.is_physical_key_pressed(key) else 0.0
