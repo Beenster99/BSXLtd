@@ -54,6 +54,16 @@
 			"facing": [0, 0, -1],
 			"box": {"min": [-1.65, 0.1, 6.3], "max": [1.65, 2.5, 6.45]},
 			"access": "inboard"
+		},
+		{
+			"slot_id": "pnl_roof_hold_1",
+			"display_name": "Hold roof access panel",
+			"accepts": ["roof_panel"],
+			"fitted": "roof_panel",
+			"origin": [0.0, 3.26, 3.6],
+			"facing": [0, 1, 0],
+			"box": {"min": [-0.85, 3.19, 2.35], "max": [0.85, 3.3, 4.85]},
+			"access": "outboard"
 		}
 	]
 }

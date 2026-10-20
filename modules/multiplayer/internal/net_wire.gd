@@ -23,6 +23,13 @@ func ping(t_client: float) -> void:
 	session._on_ping(multiplayer.get_remote_sender_id(), t_client)
 
 
+## Mover transforms, both ways: peer -> host for what the peer drives, host -> peer for the
+## rest. Its own channel, so a burst of motion never delays events.
+@rpc("any_peer", "call_remote", "unreliable_ordered", 2)
+func moves(t: float, batch: Dictionary) -> void:
+	session._on_moves(multiplayer.get_remote_sender_id(), t, batch)
+
+
 # Host -> peer.
 
 @rpc("authority", "call_remote", "reliable")
