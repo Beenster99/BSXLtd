@@ -7,7 +7,7 @@
 script = ExtResource("1")
 id = "ship_bay"
 display_name = "Ship and Bay"
-version = "0.2.0"
+version = "0.3.0"
 depends_on = PackedStringArray("contracts")
 flag = "ship_bay"
 bus = ExtResource("2")

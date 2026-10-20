@@ -1,0 +1,970 @@
+{
+	"void_salvage_commit": "ec334f15b12f0e902627b1fc89a7769a0ea88fee",
+	"items": {
+		"Antenna": {
+			"name": "Antenna",
+			"category": "electronics",
+			"mass": 34.7
+		},
+		"Armchair": {
+			"name": "Armchair",
+			"category": "electronics",
+			"mass": 133.8
+		},
+		"Assembler": {
+			"name": "Assembler",
+			"category": "machinery",
+			"mass": 8629.1
+		},
+		"Basin": {
+			"name": "Basin",
+			"category": "fittings",
+			"mass": 187.2
+		},
+		"BatteryRack": {
+			"name": "Battery rack",
+			"category": "electronics",
+			"mass": 655.2
+		},
+		"BedAlcove": {
+			"name": "Bed alcove",
+			"category": "fittings",
+			"mass": 826.4
+		},
+		"BellyLight": {
+			"name": "Belly light",
+			"category": "fittings",
+			"mass": 9.5
+		},
+		"Bench": {
+			"name": "Bench",
+			"category": "fittings",
+			"mass": 222.4
+		},
+		"BowLights": {
+			"name": "Bow lights",
+			"category": "fittings",
+			"mass": 12.9
+		},
+		"BreakerPanel": {
+			"name": "Breaker panel",
+			"category": "electronics",
+			"mass": 321.0
+		},
+		"BridgeJunction": {
+			"name": "Bridge junction",
+			"category": "electronics",
+			"mass": 30.0
+		},
+		"BridgeWindow": {
+			"name": "Bridge window",
+			"category": "glass",
+			"mass": 25.2
+		},
+		"Brow": {
+			"name": "Brow",
+			"category": "hull",
+			"mass": 613.6
+		},
+		"Bulkhead": {
+			"name": "Bulkhead",
+			"category": "hull",
+			"mass": 43.8
+		},
+		"Bunk": {
+			"name": "Bunk",
+			"category": "fittings",
+			"mass": 604.5
+		},
+		"ButtonPanel": {
+			"name": "Button panel",
+			"category": "electronics",
+			"mass": 511.0
+		},
+		"CabinWall": {
+			"name": "Cabin wall",
+			"category": "hull",
+			"mass": 176.1
+		},
+		"CagePane": {
+			"name": "Cage pane",
+			"category": "glass",
+			"mass": 71.5
+		},
+		"CanopyPane": {
+			"name": "Canopy pane",
+			"category": "glass",
+			"mass": 39.9
+		},
+		"CapPlate": {
+			"name": "Cap plate",
+			"category": "hull",
+			"mass": 221.7
+		},
+		"CapacitorBank": {
+			"name": "Capacitor bank",
+			"category": "electronics",
+			"mass": 798.0
+		},
+		"CargoContainer": {
+			"name": "Cargo container",
+			"category": "cargo",
+			"mass": 8093.3
+		},
+		"CargoCrate": {
+			"name": "Cargo crate",
+			"category": "cargo",
+			"mass": 137.3
+		},
+		"CargoModule": {
+			"name": "Cargo module",
+			"category": "cargo",
+			"mass": 4746.6
+		},
+		"CeilingLamp": {
+			"name": "Ceiling lamp",
+			"category": "fittings",
+			"mass": 2.1
+		},
+		"CockpitJunction": {
+			"name": "Cockpit junction",
+			"category": "electronics",
+			"mass": 30.0
+		},
+		"CockpitPane": {
+			"name": "Cockpit pane",
+			"category": "glass",
+			"mass": 76.8
+		},
+		"Container": {
+			"name": "Container",
+			"category": "cargo",
+			"mass": 2555.3
+		},
+		"ContainerHatch": {
+			"name": "Container hatch",
+			"category": "cargo",
+			"mass": 108.5
+		},
+		"ConveyorJunction": {
+			"name": "Conveyor junction",
+			"category": "wiring",
+			"mass": 168.5
+		},
+		"ConveyorTube": {
+			"name": "Conveyor tube",
+			"category": "wiring",
+			"mass": 52.6
+		},
+		"CoolantElbow": {
+			"name": "Coolant elbow",
+			"category": "wiring",
+			"mass": 6.8
+		},
+		"CoolantLine": {
+			"name": "Coolant line",
+			"category": "piping",
+			"mass": 24.3
+		},
+		"CoolantLineTee": {
+			"name": "Coolant line tee",
+			"category": "piping",
+			"mass": 9.5
+		},
+		"CoolantPipe": {
+			"name": "Coolant pipe",
+			"category": "piping",
+			"mass": 13.3
+		},
+		"CoolantPump": {
+			"name": "Coolant pump",
+			"category": "fluids",
+			"mass": 2780.1
+		},
+		"CoolantTank": {
+			"name": "Coolant tank",
+			"category": "fluids",
+			"mass": 322.0
+		},
+		"CorridorWall": {
+			"name": "Corridor wall",
+			"category": "hull",
+			"mass": 50.9
+		},
+		"CrewSeat": {
+			"name": "Crew seat",
+			"category": "fittings",
+			"mass": 120.3
+		},
+		"CutterDrum": {
+			"name": "Cutter drum",
+			"category": "machinery",
+			"mass": 23812.8
+		},
+		"DeckJoist": {
+			"name": "Deck joist",
+			"category": "frame",
+			"mass": 10.6
+		},
+		"DeckPlate": {
+			"name": "Deck plate",
+			"category": "hull",
+			"mass": 493.4
+		},
+		"DeckPost": {
+			"name": "Deck post",
+			"category": "frame",
+			"mass": 52.0
+		},
+		"Desk": {
+			"name": "Desk",
+			"category": "fittings",
+			"mass": 193.4
+		},
+		"DeskChair": {
+			"name": "Desk chair",
+			"category": "fittings",
+			"mass": 160.0
+		},
+		"DoorHeader": {
+			"name": "Door header",
+			"category": "hull",
+			"mass": 220.8
+		},
+		"DoorJamb": {
+			"name": "Door jamb",
+			"category": "fittings",
+			"mass": 38.9
+		},
+		"DoorLight": {
+			"name": "Door light",
+			"category": "fittings",
+			"mass": 14.0
+		},
+		"DoorLintel": {
+			"name": "Door lintel",
+			"category": "fittings",
+			"mass": 226.5
+		},
+		"Drill": {
+			"name": "Drill",
+			"category": "machinery",
+			"mass": 5926.0
+		},
+		"DrillMotor": {
+			"name": "Drill motor",
+			"category": "machinery",
+			"mass": 1695.3
+		},
+		"DrillShaft": {
+			"name": "Drill shaft",
+			"category": "machinery",
+			"mass": 168.6
+		},
+		"DriveEngine": {
+			"name": "Drive engine",
+			"category": "engines",
+			"mass": 87.3
+		},
+		"EngineControl": {
+			"name": "Engine control",
+			"category": "electronics",
+			"mass": 4914.0
+		},
+		"EngineFeed": {
+			"name": "Engine feed",
+			"category": "engines",
+			"mass": 1803.9
+		},
+		"EngineJunction": {
+			"name": "Engine junction",
+			"category": "engines",
+			"mass": 17.3
+		},
+		"EnginePod": {
+			"name": "Engine pod",
+			"category": "engines",
+			"mass": 11203.9
+		},
+		"FacePlate": {
+			"name": "Face plate",
+			"category": "hull",
+			"mass": 101.1
+		},
+		"FlankPanel": {
+			"name": "Flank panel",
+			"category": "hull",
+			"mass": 112.3
+		},
+		"Forge": {
+			"name": "Forge",
+			"category": "machinery",
+			"mass": 9734.4
+		},
+		"FrameRing": {
+			"name": "Frame ring",
+			"category": "frame",
+			"mass": 1.1
+		},
+		"FuelElbow": {
+			"name": "Fuel elbow",
+			"category": "fluids",
+			"mass": 6.9
+		},
+		"FuelLine": {
+			"name": "Fuel line",
+			"category": "fluids",
+			"mass": 12.0
+		},
+		"FuelLineElbow": {
+			"name": "Fuel line elbow",
+			"category": "fluids",
+			"mass": 6.8
+		},
+		"FuelLineTee": {
+			"name": "Fuel line tee",
+			"category": "fluids",
+			"mass": 7.1
+		},
+		"FuelPipe": {
+			"name": "Fuel pipe",
+			"category": "fluids",
+			"mass": 17.3
+		},
+		"FuelPump": {
+			"name": "Fuel pump",
+			"category": "fluids",
+			"mass": 1749.4
+		},
+		"FuelTank": {
+			"name": "Fuel tank",
+			"category": "fluids",
+			"mass": 1948.0
+		},
+		"Galley": {
+			"name": "Galley",
+			"category": "fittings",
+			"mass": 2155.1
+		},
+		"GalleyCounter": {
+			"name": "Galley counter",
+			"category": "fittings",
+			"mass": 1724.1
+		},
+		"GasGenerator": {
+			"name": "Gas generator",
+			"category": "electronics",
+			"mass": 2956.2
+		},
+		"Gearforge": {
+			"name": "Gearforge",
+			"category": "machinery",
+			"mass": 9126.0
+		},
+		"Generator": {
+			"name": "Generator",
+			"category": "electronics",
+			"mass": 11243.2
+		},
+		"Grating": {
+			"name": "Grating",
+			"category": "hull",
+			"mass": 158.8
+		},
+		"GravityGenerator": {
+			"name": "Gravity generator",
+			"category": "electronics",
+			"mass": 4458.4
+		},
+		"GunCradle": {
+			"name": "Gun cradle",
+			"category": "frame",
+			"mass": 1608.6
+		},
+		"GunMount": {
+			"name": "Gun mount",
+			"category": "frame",
+			"mass": 2124.0
+		},
+		"GunnerConsole": {
+			"name": "Gunner console",
+			"category": "weapons",
+			"mass": 1965.4
+		},
+		"GunnerSeat": {
+			"name": "Gunner seat",
+			"category": "weapons",
+			"mass": 205.5
+		},
+		"Gyroscope": {
+			"name": "Gyroscope",
+			"category": "electronics",
+			"mass": 852.9
+		},
+		"HangarConsole": {
+			"name": "Hangar console",
+			"category": "electronics",
+			"mass": 1682.8
+		},
+		"HangarJunction": {
+			"name": "Hangar junction",
+			"category": "electronics",
+			"mass": 30.0
+		},
+		"Headlamp": {
+			"name": "Headlamp",
+			"category": "electronics",
+			"mass": 91.8
+		},
+		"HeatSink": {
+			"name": "Heat sink",
+			"category": "electronics",
+			"mass": 110.5
+		},
+		"HelmConsole": {
+			"name": "Helm console",
+			"category": "electronics",
+			"mass": 1598.7
+		},
+		"HoldJunction": {
+			"name": "Hold junction",
+			"category": "electronics",
+			"mass": 30.0
+		},
+		"HullPlate": {
+			"name": "Hull plate",
+			"category": "hull",
+			"mass": 10.1
+		},
+		"HydrogenEngine": {
+			"name": "Hydrogen engine",
+			"category": "engines",
+			"mass": 2835.0
+		},
+		"HydrogenGenerator": {
+			"name": "Hydrogen generator",
+			"category": "electronics",
+			"mass": 5646.2
+		},
+		"HydrogenThruster": {
+			"name": "Hydrogen thruster",
+			"category": "engines",
+			"mass": 1969.3
+		},
+		"IonThruster": {
+			"name": "Ion thruster",
+			"category": "engines",
+			"mass": 40.9
+		},
+		"JumpDrive": {
+			"name": "Jump drive",
+			"category": "engines",
+			"mass": 3332.9
+		},
+		"Ladder": {
+			"name": "Ladder",
+			"category": "fittings",
+			"mass": 79.1
+		},
+		"LandingGear": {
+			"name": "Landing gear",
+			"category": "machinery",
+			"mass": 134.8
+		},
+		"LandingLeg": {
+			"name": "Landing leg",
+			"category": "frame",
+			"mass": 64.8
+		},
+		"LargeTurret": {
+			"name": "Large turret",
+			"category": "weapons",
+			"mass": 8226.6
+		},
+		"LiftCar": {
+			"name": "Lift car",
+			"category": "machinery",
+			"mass": 1843.5
+		},
+		"LiftThruster": {
+			"name": "Lift thruster",
+			"category": "engines",
+			"mass": 46.4
+		},
+		"Locker": {
+			"name": "Locker",
+			"category": "fittings",
+			"mass": 69.0
+		},
+		"LoungeTable": {
+			"name": "Lounge table",
+			"category": "fittings",
+			"mass": 123.5
+		},
+		"M10": {
+			"name": "M10 bolt",
+			"category": "fasteners",
+			"mass": 0.05
+		},
+		"M12": {
+			"name": "M12 bolt",
+			"category": "fasteners",
+			"mass": 0.05
+		},
+		"MainEngine": {
+			"name": "Main engine",
+			"category": "engines",
+			"mass": 2231.7
+		},
+		"MainLoom": {
+			"name": "Main loom",
+			"category": "wiring",
+			"mass": 17.4
+		},
+		"MainLoomBend": {
+			"name": "Main loom bend",
+			"category": "wiring",
+			"mass": 2.0
+		},
+		"MainLoomDrop": {
+			"name": "Main loom drop",
+			"category": "wiring",
+			"mass": 4.2
+		},
+		"MainThruster": {
+			"name": "Main thruster",
+			"category": "engines",
+			"mass": 892.4
+		},
+		"MedBed": {
+			"name": "Med bed",
+			"category": "fittings",
+			"mass": 870.5
+		},
+		"MedStation": {
+			"name": "Med station",
+			"category": "electronics",
+			"mass": 2217.0
+		},
+		"MediaWall": {
+			"name": "Media wall",
+			"category": "electronics",
+			"mass": 1860.8
+		},
+		"MessSeat": {
+			"name": "Mess seat",
+			"category": "fittings",
+			"mass": 42.3
+		},
+		"MessTable": {
+			"name": "Mess table",
+			"category": "fittings",
+			"mass": 734.0
+		},
+		"MissileLauncher": {
+			"name": "Missile launcher",
+			"category": "weapons",
+			"mass": 10046.4
+		},
+		"MissileRack": {
+			"name": "Missile rack",
+			"category": "weapons",
+			"mass": 1521.0
+		},
+		"NameBoard": {
+			"name": "Name board",
+			"category": "fittings",
+			"mass": 926.6
+		},
+		"NavalTurret": {
+			"name": "Naval turret",
+			"category": "weapons",
+			"mass": 6561.1
+		},
+		"OreBin": {
+			"name": "Ore bin",
+			"category": "cargo",
+			"mass": 1739.4
+		},
+		"OreContainer": {
+			"name": "Ore container",
+			"category": "cargo",
+			"mass": 10256.2
+		},
+		"OreDetector": {
+			"name": "Ore detector",
+			"category": "electronics",
+			"mass": 735.1
+		},
+		"OverheadPanel": {
+			"name": "Overhead panel",
+			"category": "electronics",
+			"mass": 78.6
+		},
+		"OxygenGenerator": {
+			"name": "Oxygen generator",
+			"category": "electronics",
+			"mass": 7800.0
+		},
+		"Partition": {
+			"name": "Partition",
+			"category": "hull",
+			"mass": 74.3
+		},
+		"PilotConsole": {
+			"name": "Pilot console",
+			"category": "electronics",
+			"mass": 1682.8
+		},
+		"PilotSeat": {
+			"name": "Pilot seat",
+			"category": "fittings",
+			"mass": 279.1
+		},
+		"PipeDrop": {
+			"name": "Pipe drop",
+			"category": "fluids",
+			"mass": 23.6
+		},
+		"PipeElbow": {
+			"name": "Pipe elbow",
+			"category": "fluids",
+			"mass": 7.0
+		},
+		"PlotTable": {
+			"name": "Plot table",
+			"category": "fittings",
+			"mass": 205.0
+		},
+		"PodPylon": {
+			"name": "Pod pylon",
+			"category": "frame",
+			"mass": 305.5
+		},
+		"PodSpacer": {
+			"name": "Pod spacer",
+			"category": "frame",
+			"mass": 48.7
+		},
+		"Porch": {
+			"name": "Porch",
+			"category": "hull",
+			"mass": 748.8
+		},
+		"RIVET_4": {
+			"name": "4 mm rivet",
+			"category": "fasteners",
+			"mass": 0.05
+		},
+		"Radiator": {
+			"name": "Radiator",
+			"category": "electronics",
+			"mass": 656.0
+		},
+		"RailBarrel": {
+			"name": "Rail barrel",
+			"category": "frame",
+			"mass": 4301.9
+		},
+		"RailBreech": {
+			"name": "Rail breech",
+			"category": "frame",
+			"mass": 87600.2
+		},
+		"RailMuzzle": {
+			"name": "Railgun muzzle",
+			"category": "weapons",
+			"mass": 10281.6
+		},
+		"Railing": {
+			"name": "Railing",
+			"category": "fittings",
+			"mass": 49.7
+		},
+		"Reactor": {
+			"name": "Reactor",
+			"category": "electronics",
+			"mass": 11953.0
+		},
+		"RefillStation": {
+			"name": "Refill station",
+			"category": "electronics",
+			"mass": 1067.0
+		},
+		"Refinery": {
+			"name": "Refinery",
+			"category": "machinery",
+			"mass": 8073.0
+		},
+		"RockWheel": {
+			"name": "Rock wheel",
+			"category": "machinery",
+			"mass": 2713.6
+		},
+		"RoofHatch": {
+			"name": "Roof hatch",
+			"category": "fittings",
+			"mass": 77.4
+		},
+		"RoofLight": {
+			"name": "Roof light",
+			"category": "fittings",
+			"mass": 16.2
+		},
+		"RoofLights": {
+			"name": "Roof lights",
+			"category": "fittings",
+			"mass": 20.8
+		},
+		"RoofVent": {
+			"name": "Roof vent",
+			"category": "fittings",
+			"mass": 63.5
+		},
+		"Saddle": {
+			"name": "Saddle",
+			"category": "frame",
+			"mass": 72.9
+		},
+		"Searchlight": {
+			"name": "Searchlight",
+			"category": "electronics",
+			"mass": 221.4
+		},
+		"Seat": {
+			"name": "Seat",
+			"category": "fittings",
+			"mass": 59.9
+		},
+		"ShelfRack": {
+			"name": "Shelf rack",
+			"category": "fittings",
+			"mass": 517.9
+		},
+		"Shower": {
+			"name": "Shower",
+			"category": "fittings",
+			"mass": 108.9
+		},
+		"SideConsole": {
+			"name": "Side console",
+			"category": "electronics",
+			"mass": 484.9
+		},
+		"SideTank": {
+			"name": "Side tank",
+			"category": "fluids",
+			"mass": 1550.5
+		},
+		"SideThruster": {
+			"name": "Side thruster",
+			"category": "engines",
+			"mass": 22.1
+		},
+		"SideThrusters": {
+			"name": "Side thrusters",
+			"category": "engines",
+			"mass": 38.0
+		},
+		"SideVent": {
+			"name": "Side vent",
+			"category": "fittings",
+			"mass": 47.5
+		},
+		"Smelter": {
+			"name": "Smelter",
+			"category": "machinery",
+			"mass": 9654.9
+		},
+		"SolarPanel": {
+			"name": "Solar panel",
+			"category": "electronics",
+			"mass": 515.4
+		},
+		"Spine": {
+			"name": "Spine",
+			"category": "hull",
+			"mass": 7250.7
+		},
+		"Stair": {
+			"name": "Stair",
+			"category": "fittings",
+			"mass": 1259.5
+		},
+		"SternGrille": {
+			"name": "Stern grille",
+			"category": "fittings",
+			"mass": 91.5
+		},
+		"SternLoom": {
+			"name": "Stern loom",
+			"category": "wiring",
+			"mass": 38.6
+		},
+		"SternLoomBend": {
+			"name": "Stern loom bend",
+			"category": "wiring",
+			"mass": 8.1
+		},
+		"SternPlate": {
+			"name": "Stern plate",
+			"category": "hull",
+			"mass": 589.8
+		},
+		"SternThruster": {
+			"name": "Stern thruster",
+			"category": "engines",
+			"mass": 156.0
+		},
+		"SternVent": {
+			"name": "Stern vent",
+			"category": "fittings",
+			"mass": 84.0
+		},
+		"Stool": {
+			"name": "Stool",
+			"category": "fittings",
+			"mass": 20.2
+		},
+		"Stringer": {
+			"name": "Stringer",
+			"category": "frame",
+			"mass": 0.9
+		},
+		"SuitLocker": {
+			"name": "Suit locker",
+			"category": "fittings",
+			"mass": 129.2
+		},
+		"SurvivalKit": {
+			"name": "Survival kit",
+			"category": "electronics",
+			"mass": 1352.4
+		},
+		"SurvivalLocker": {
+			"name": "Survival locker",
+			"category": "fittings",
+			"mass": 240.1
+		},
+		"TankSaddle": {
+			"name": "Tank saddle",
+			"category": "frame",
+			"mass": 70.2
+		},
+		"TechContainer": {
+			"name": "Tech container",
+			"category": "cargo",
+			"mass": 5110.6
+		},
+		"ThrusterBlock": {
+			"name": "Thruster block",
+			"category": "hull",
+			"mass": 2284.2
+		},
+		"Toilet": {
+			"name": "Toilet",
+			"category": "fittings",
+			"mass": 140.4
+		},
+		"ToolLocker": {
+			"name": "Tool locker",
+			"category": "fittings",
+			"mass": 133.4
+		},
+		"TunnelWall": {
+			"name": "Tunnel wall",
+			"category": "hull",
+			"mass": 49.1
+		},
+		"TurbineEngine": {
+			"name": "Turbine engine",
+			"category": "engines",
+			"mass": 1430.2
+		},
+		"Turret": {
+			"name": "Turret",
+			"category": "weapons",
+			"mass": 391.9
+		},
+		"WashroomWall": {
+			"name": "Washroom wall",
+			"category": "hull",
+			"mass": 467.2
+		},
+		"Welder": {
+			"name": "Welder",
+			"category": "machinery",
+			"mass": 4804.6
+		},
+		"WindowFrame": {
+			"name": "Window frame",
+			"category": "hull",
+			"mass": 13.3
+		},
+		"WindowPane": {
+			"name": "Window pane",
+			"category": "glass",
+			"mass": 56.1
+		},
+		"WindscreenPane": {
+			"name": "Windscreen pane",
+			"category": "glass",
+			"mass": 637.5
+		},
+		"Workbench": {
+			"name": "Workbench",
+			"category": "electronics",
+			"mass": 661.5
+		},
+		"attractor_coil_1": {
+			"name": "Attractor coil Mk I",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"attractor_coil_2": {
+			"name": "Attractor coil Mk II",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"bowser_tank": {
+			"name": "Bowser tank",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"hold_net": {
+			"name": "Hold nets",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"long_range_radar": {
+			"name": "Long-range radar",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"refinery": {
+			"name": "Refinery",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"scrap_grinder": {
+			"name": "Scrap grinder",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"smelter": {
+			"name": "Smelter",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"survey_array": {
+			"name": "Survey array",
+			"category": "modules",
+			"mass": 900.0
+		},
+		"tow_winch": {
+			"name": "Tow winch",
+			"category": "modules",
+			"mass": 900.0
+		}
+	}
+}
