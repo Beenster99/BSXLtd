@@ -76,6 +76,9 @@ func run_tests() -> void:
 
 	await _test_sky()
 	await _test_games()
+	await _test_sounds()
+	await _test_holo()
+	await _test_key_binds()
 
 	HudSlots.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
 	var hud := HudLayer.new()
@@ -157,3 +160,128 @@ func _test_games() -> void:
 	Menu.clear_start(UiBus.SETTINGS)
 	if not before.is_empty():
 		Menu.set_start(before.scene, before.priority, before.args)
+
+
+func _test_sounds() -> void:
+	for sound in Sfx.names():
+		var wav := Sfx.stream(sound)
+		check(wav != null and wav.data.size() > 200, "sound %s is made" % sound)
+	check(Sfx.stream("beam").loop_mode == AudioStreamWAV.LOOP_FORWARD, "the beam hum loops")
+	check(Sfx.stream("click") == Sfx.stream("click"), "sounds are cached")
+	var p := Sfx.play("click")
+	check(p is AudioStreamPlayer, "a flat sound plays")
+	var anchor := Node3D.new()
+	add_child(anchor)
+	check(Sfx.play("clunk", anchor) is AudioStreamPlayer3D, "a 3D sound follows its node")
+
+	# A walker crossing a floor takes steps, and lands with a thud.
+	var floor_body := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(40, 1, 40)
+	shape.shape = box
+	floor_body.add_child(shape)
+	floor_body.position = Vector3(0, -0.5, 0)
+	floor_body.set_meta("surface", "metal")
+	add_child(floor_body)
+	var walker := Walker.new()
+	var cap := CollisionShape3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.3
+	capsule.height = 1.8
+	cap.shape = capsule
+	cap.position.y = 0.9
+	walker.add_child(cap)
+	walker.position = Vector3(0, 0.6, 0)
+	add_child(walker)
+	var feet := Footsteps.new()
+	walker.add_child(feet)
+	for i in 120:
+		await get_tree().physics_frame
+	check(feet.surface == "metal", "steps hear the metal floor")
+	check(feet.steps >= 3, "walking 6 m takes steps (%d)" % feet.steps)
+	walker.queue_free()
+	floor_body.queue_free()
+	anchor.queue_free()
+
+
+func _test_holo() -> void:
+	var ui := Modules.bus("ui") as UiBus
+	var holo: WristHolo = ui.holo if ui else null
+	check(holo != null and holo.is_inside_tree(), "the UI bus owns the wrist screen")
+	if holo == null:
+		return
+	var made := [0]
+	HudSlots.register_holo_channel("_orders", "Orders", func() -> Control:
+		made[0] += 1
+		var l := Label.new()
+		l.text = "orders here"
+		return l, 1)
+	HudSlots.open_holo()
+	await frames(2)
+	check(holo.is_open and holo.channel == "", "the wrist screen opens on Home")
+	check(holo.root.find_child("Tile__orders", true, false) != null, "Home has a tile per channel")
+	check(holo.rail.find_child("Ch_ui_time", false, false) != null, "UI's time channel is on the rail")
+	(holo.rail.find_child("Ch__orders", false, false) as Button).pressed.emit()
+	await frames(1)
+	check(holo.channel == "_orders" and made[0] == 1, "a rail button brings up its channel")
+	check(holo.content.find_child("Channel", false, false) is Label, "the channel's screen shows")
+	HudSlots.open_holo(UiBus.TIME_CHANNEL)
+	await frames(1)
+	check(holo.channel == UiBus.TIME_CHANNEL and holo.content.find_child("TimeOfDay", true, false) != null,
+			"open_holo switches channel")
+	HudSlots.register_holo_channel("_closing", "Closing", func() -> Control: return Closing.new(), 2)
+	HudSlots.open_holo("_closing")
+	(holo.content.find_child("Channel", false, false) as Closing).close_requested.emit()
+	check(not holo.is_open, "a channel's close_requested puts the screen away")
+	HudSlots.unregister_holo_channel("_closing")
+	HudSlots.open_holo("_orders")
+	HudSlots.unregister_holo_channel("_orders")
+	await frames(1)
+	check(holo.rail.find_child("Ch__orders", false, false) == null, "an unregistered channel leaves the rail")
+	var esc := InputEventKey.new()
+	esc.physical_keycode = Keys.key_of(Keys.CANCEL)
+	esc.pressed = true
+	holo._input(esc)
+	check(not holo.is_open and holo.root == null, "Esc puts the wrist screen away")
+	var key := InputEventKey.new()
+	key.physical_keycode = Keys.key_of(Keys.HOLO)
+	key.pressed = true
+	holo._input(key)
+	check(holo.is_open, "the holo key brings it up in a game")
+	holo._input(key)
+	check(not holo.is_open, "the holo key puts it away")
+
+
+func _test_key_binds() -> void:
+	var settings: Control = (load(Router.scene_path(UiBus.SETTINGS)) as PackedScene).instantiate()
+	add_child(settings)
+	await frames(2)
+	(settings.find_child("KeyBinds", true, false) as Button).pressed.emit()
+	await frames(2)
+	var panel := settings.find_child("KeyBindsPanel", true, false) as KeyBindsPanel
+	check(panel != null, "Settings has a key binds screen")
+	if panel != null:
+		check(panel.rows.has(Keys.INTERACT) and panel.rows[Keys.INTERACT].text == Keys.key_name(Keys.INTERACT),
+				"key binds list the doing key")
+		var was := Keys.key_of(Keys.JUMP)
+		panel.rows[Keys.JUMP].pressed.emit()
+		check(panel.listening == Keys.JUMP, "clicking a key waits for the new one")
+		panel.press(KEY_K)
+		check(Keys.key_of(Keys.JUMP) == KEY_K and panel.rows[Keys.JUMP].text == "K", "pressing a key rebinds")
+		panel.rows[Keys.JUMP].pressed.emit()
+		panel.press(KEY_ESCAPE)
+		check(Keys.key_of(Keys.JUMP) == KEY_K, "Esc cancels a rebind")
+		Keys.rebind(Keys.JUMP, was)
+	settings.queue_free()
+
+
+class Walker extends CharacterBody3D:
+	func _physics_process(delta: float) -> void:
+		velocity.x = 3.0
+		velocity.y -= 9.0 * delta
+		move_and_slide()
+
+
+class Closing extends Control:
+	signal close_requested
