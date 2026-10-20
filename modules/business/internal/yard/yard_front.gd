@@ -1,23 +1,29 @@
 extends Node3D
-## Business in the shipyard: the wall-mounted yard terminals (walk up, press T, order parts)
+## Business in the shipyard: a big wall TV in every hall (walk up, press F, order parts)
 ## and, until Ship and Bay takes deliveries itself, crates in the deliveries hall for what
 ## is in store. Added by BusinessBus when Ship and Bay builds its shipyard.
 
 const Screen := preload("res://modules/business/internal/ui/terminal_screen.gd")
 const Look := preload("res://modules/business/internal/ui/terminal_look.gd")
+const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 
-## Where the terminals hang, yard space (Ship and Bay's shipyard.gd ROOMS): the north wall of
-## the deliveries hall beside the door to stock, and the south wall by the goods-in desk.
-## Each faces +Z of its basis.
-const MONITORS: Array[Transform3D] = [
-	Transform3D(Basis.IDENTITY, Vector3(-46.6, 1.95, -23.62)),
-	Transform3D(Basis(Vector3.UP, PI), Vector3(-40.0, 1.95, 23.62)),
-]
-## The screen's texture size; the terminal is laid out for it.
-const SCREEN_PX := Vector2i(1280, 800)
-const SCREEN_M := Vector2(1.84, 1.15)
+## Where the yard TVs hang, one per hall, yard space (Ship and Bay's shipyard.gd ROOMS): hall id
+## -> the wall face at screen height, +Z out of the wall. Deliveries: the north wall beside
+## the door to stock. Stock: the south wall in the clear corner by the door to prep. Prep and
+## pre-assembly: the north walls, clear of the benches and stations.
+const MONITORS := {
+	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.0, 2.85, -23.75)),
+	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 2.7, -24.25)),
+	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 2.7, -45.75)),
+	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.0, 2.85, -23.75)),
+}
+## The screen's texture size; the terminal is laid out for it. 16:9 like a TV.
+const SCREEN_PX := Vector2i(1280, 720)
+const SCREEN_M := Vector2(2.9, 1.63)
+## How far the screen's face stands off the wall (metres).
+const DEPTH := 0.24
 ## How close (metres) and how square-on a player must be to use a terminal.
-const REACH := 3.2
+const REACH := 4.5
 const FACING := 0.3
 ## Crates for goods in store: a grid in the deliveries hall clear of the pallets, the truck
 ## door and the walkways (x, z of the first crate; spacing; columns; rows).
@@ -36,13 +42,20 @@ var _near := -1
 var _was_paused := false
 var _mouse_before := Input.MOUSE_MODE_VISIBLE
 var _crates: Node3D
+## The TV the player is aiming at and where on it (pixels), or -1: the floating pointer.
+var aimed := -1
+var aimed_px := Vector2.ZERO
+## Seconds since each awake TV was last aimed at; it goes back to broadcasting after IDLE.
+var _idle: Array[float] = []
+## How long (seconds) a TV stays on the terminal after you look away.
+const IDLE := 6.0
 
 
 func setup(p_bus: BusinessBus, yard: Node3D) -> void:
 	bus = p_bus
 	_yard = yard
-	for xf in MONITORS:
-		monitors.append(_make_monitor(xf))
+	for hall: String in MONITORS:
+		monitors.append(_make_monitor(hall, MONITORS[hall]))
 	_crates = Node3D.new()
 	_crates.name = "GoodsIn"
 	add_child(_crates)
@@ -53,9 +66,10 @@ func _exit_tree() -> void:
 	close_terminal()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if overlay:
 		return
+	_update_pointer(delta)
 	var near := nearest_monitor()
 	if near != _near:
 		for i in monitors.size():
@@ -81,16 +95,37 @@ func nearest_monitor() -> int:
 
 
 func _input(event: InputEvent) -> void:
+	# A screen in front of the view (the wrist holo, a menu) keeps its clicks and typing.
+	if get_viewport().gui_get_hovered_control() != null or get_viewport().gui_get_focus_owner() is LineEdit:
+		return
+	var button := event as InputEventMouseButton
+	if button and overlay == null and aimed >= 0:
+		_press_screen(aimed, button)
+		get_viewport().set_input_as_handled()
+		return
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
 		return
 	if overlay:
-		if key.physical_keycode in [KEY_ESCAPE, KEY_T]:
+		if event.is_action_pressed(Keys.CANCEL) or event.is_action_pressed(Keys.INTERACT):
 			close_terminal()
 			get_viewport().set_input_as_handled()
-	elif key.physical_keycode == KEY_T and _near >= 0:
-		open_terminal()
+	elif event.is_action_pressed(Keys.INTERACT) and _near >= 0:
+		open_full(_near)
 		get_viewport().set_input_as_handled()
+
+
+## Takes TV `i` full screen, carrying on where it was (channel and purchase order).
+func open_full(i: int) -> Control:
+	var vp := _viewport(i)
+	var from: Control = vp.get_node("Terminal") if is_awake(i) else vp.get_node("Broadcast")
+	var screen := open_terminal(str(from.get("channel")))
+	if is_awake(i):
+		screen.set("basket", (from.get("basket") as Dictionary).duplicate())
+		screen.set("category", from.get("category"))
+		screen.call("refresh")
+		sleep(i)
+	return screen
 
 
 ## Puts the terminal up full size. Offline, the game holds still while you order.
@@ -141,23 +176,151 @@ func _is_offline() -> bool:
 	return peer == null or peer is OfflineMultiplayerPeer or multiplayer.get_peers().is_empty()
 
 
+# --- The floating pointer -----------------------------------------------------------------
+
+## Where the view's centre meets a TV within reach: [index, pixel] or [-1, ZERO].
+func aim() -> Array:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return [-1, Vector2.ZERO]
+	var from := cam.global_position
+	var dir := -cam.global_basis.z
+	for i in monitors.size():
+		var m := monitors[i]
+		var n := m.global_basis.z
+		var face := m.global_position + n * DEPTH
+		var denom := dir.dot(n)
+		if denom >= -0.05:
+			continue
+		var t := (face - from).dot(n) / denom
+		if t <= 0.0 or t > REACH:
+			continue
+		var local := m.to_local(from + dir * t)
+		var uv := Vector2(local.x / SCREEN_M.x + 0.5, 0.5 - local.y / SCREEN_M.y)
+		if uv.x >= 0.0 and uv.x <= 1.0 and uv.y >= 0.0 and uv.y <= 1.0:
+			return [i, uv * Vector2(SCREEN_PX)]
+	return [-1, Vector2.ZERO]
+
+
+func _update_pointer(delta: float) -> void:
+	var hit := aim()
+	var was := aimed
+	aimed = hit[0]
+	if aimed >= 0:
+		var moved: bool = aimed != was or (hit[1] as Vector2).distance_to(aimed_px) > 0.5
+		aimed_px = hit[1]
+		wake(aimed)
+		_idle[aimed] = 0.0
+		if moved:
+			var motion := InputEventMouseMotion.new()
+			motion.position = aimed_px
+			motion.global_position = aimed_px
+			_viewport(aimed).push_input(motion, true)
+	for i in monitors.size():
+		var pointer := _viewport(i).get_node("Pointer") as Control
+		pointer.visible = i == aimed
+		if i == aimed:
+			pointer.position = aimed_px
+		if is_awake(i) and i != aimed:
+			_idle[i] += delta
+			if _idle[i] > IDLE:
+				sleep(i)
+
+
+func _press_screen(i: int, button: InputEventMouseButton) -> void:
+	var ev := button.duplicate() as InputEventMouseButton
+	ev.position = aimed_px
+	ev.global_position = aimed_px
+	_viewport(i).push_input(ev, true)
+
+
+func _viewport(i: int) -> SubViewport:
+	return monitors[i].get_node("Viewport") as SubViewport
+
+
+func is_awake(i: int) -> bool:
+	return _viewport(i).has_node("Terminal")
+
+
+## Swaps a TV's broadcast for the working terminal (the pointer clicks on it).
+func wake(i: int) -> Control:
+	var vp := _viewport(i)
+	if vp.has_node("Terminal"):
+		return vp.get_node("Terminal")
+	var tv := vp.get_node("Broadcast") as Control
+	tv.visible = false
+	tv.process_mode = Node.PROCESS_MODE_DISABLED
+	var screen: Control = Screen.new()
+	screen.name = "Terminal"
+	screen.size = Vector2(SCREEN_PX)
+	vp.add_child(screen)
+	vp.move_child(screen, vp.get_node("Pointer").get_index())
+	screen.call("setup", bus, true)
+	screen.call("show_channel", tv.get("channel"))
+	screen.connect("close_requested", sleep.bind(i))
+	_idle[i] = 0.0
+	return screen
+
+
+## Back to broadcasting.
+func sleep(i: int) -> void:
+	var vp := _viewport(i)
+	if not vp.has_node("Terminal"):
+		return
+	var screen := vp.get_node("Terminal")
+	vp.remove_child(screen)
+	screen.queue_free()
+	var tv := vp.get_node("Broadcast") as Control
+	tv.visible = true
+	tv.process_mode = Node.PROCESS_MODE_INHERIT
+
+
+## The floating pointer drawn on a TV: a ring and a dot in BSX orange.
+class Pointer:
+	extends Control
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		z_index = 10
+
+	func _draw() -> void:
+		draw_circle(Vector2.ZERO, 14.0, Color(0, 0, 0, 0.35))
+		draw_arc(Vector2.ZERO, 12.0, 0.0, TAU, 32, Color("e8792b"), 3.0, true)
+		draw_circle(Vector2.ZERO, 3.5, Color("ffffff"))
+
+
 # --- The monitors -------------------------------------------------------------------------
 
-func _make_monitor(xf: Transform3D) -> Node3D:
+func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	var m := Node3D.new()
-	m.name = "Terminal%d" % (monitors.size() + 1)
+	m.name = "TV_%s" % hall
 	m.transform = xf
 	add_child(m)
-	var steel := _mat(Color("2a2e33"), 0.6, 0.45)
-	_box(m, Vector3(SCREEN_M.x + 0.16, SCREEN_M.y + 0.16, 0.09), Vector3(0, 0, 0.045), steel)
-	# Wall bracket and a BSX orange strip under the bezel.
-	_box(m, Vector3(0.5, 0.36, 0.06), Vector3(0, 0, -0.01), _mat(Color("1b1e21"), 0.7, 0.5))
-	_box(m, Vector3(SCREEN_M.x + 0.16, 0.05, 0.1), Vector3(0, -SCREEN_M.y * 0.5 - 0.105, 0.05), _mat(Look.ORANGE, 0.2, 0.5))
-	# Hazard tape across the top edge of the bezel.
-	var tape := _mat(Look.ORANGE, 0.1, 0.6)
-	tape.albedo_texture = _hazard_texture()
-	tape.uv1_scale = Vector3(14, 1, 1)
-	_box(m, Vector3(SCREEN_M.x + 0.16, 0.04, 0.1), Vector3(0, SCREEN_M.y * 0.5 + 0.1, 0.05), tape)
+	var w := SCREEN_M.x
+	var h := SCREEN_M.y
+	var gloss := _mat(Color("0b0c0e"), 0.3, 0.18)
+	var dark := _mat(Color("1d2024"), 0.7, 0.45)
+	# Wall plate and arm, the set's back, then a slim gloss-black bezel round the panel.
+	_box(m, Vector3(0.7, 0.45, 0.05), Vector3(0, 0, 0.025), dark)
+	for x: float in [-0.18, 0.18]:
+		_box(m, Vector3(0.06, 0.3, 0.1), Vector3(x, 0, 0.1), dark)
+	_box(m, Vector3(w - 0.4, h - 0.3, 0.06), Vector3(0, 0, 0.17), gloss)
+	_box(m, Vector3(w + 0.07, h + 0.07, 0.04), Vector3(0, 0, DEPTH - 0.02), gloss)
+	# A chin under the panel: BSX in orange and a standby light.
+	_box(m, Vector3(w + 0.07, 0.07, 0.035), Vector3(0, -h * 0.5 - 0.07, DEPTH - 0.025), gloss)
+	var badge := Label3D.new()
+	badge.text = "BSX"
+	badge.font = Look.font("display_bold")
+	badge.font_size = 40
+	badge.pixel_size = 0.0012
+	badge.modulate = Look.ORANGE
+	badge.position = Vector3(0, -h * 0.5 - 0.07, DEPTH - 0.006)
+	m.add_child(badge)
+	var led := _mat(Look.ORANGE, 0.0, 0.5)
+	led.emission_enabled = true
+	led.emission = Look.ORANGE
+	led.emission_energy_multiplier = 3.0
+	_box(m, Vector3(0.018, 0.018, 0.01), Vector3(w * 0.5 - 0.06, -h * 0.5 - 0.07, DEPTH - 0.004), led)
 
 	var vp := SubViewport.new()
 	vp.name = "Viewport"
@@ -165,20 +328,26 @@ func _make_monitor(xf: Transform3D) -> Node3D:
 	vp.disable_3d = true
 	vp.transparent_bg = false
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	vp.gui_disable_input = true
+	vp.gui_disable_input = false
+	vp.handle_input_locally = true
 	m.add_child(vp)
-	var screen: Control = Screen.new()
-	screen.size = Vector2(SCREEN_PX)
-	vp.add_child(screen)
-	screen.call("setup", bus, false)
-	screen.call("show_channel", ["orders", "goods", "accounts"][monitors.size() % 3])
+	var tv: Control = Tv.new()
+	tv.name = "Broadcast"
+	tv.size = Vector2(SCREEN_PX)
+	vp.add_child(tv)
+	tv.call("setup", bus, Tv.CHANNELS[monitors.size() % Tv.CHANNELS.size()])
+	var pointer := Pointer.new()
+	pointer.name = "Pointer"
+	pointer.visible = false
+	vp.add_child(pointer)
+	_idle.append(0.0)
 
 	var quad := MeshInstance3D.new()
 	quad.name = "Screen"
 	var qm := QuadMesh.new()
 	qm.size = SCREEN_M
 	quad.mesh = qm
-	quad.position.z = 0.092
+	quad.position.z = DEPTH + 0.001
 	var sm := StandardMaterial3D.new()
 	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sm.albedo_texture = vp.get_texture()
@@ -186,24 +355,39 @@ func _make_monitor(xf: Transform3D) -> Node3D:
 	quad.material_override = sm
 	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	m.add_child(quad)
+	# A faint sheen across the glass so it reads as a panel, not a hole in the wall.
+	var sheen := MeshInstance3D.new()
+	var sq := QuadMesh.new()
+	sq.size = SCREEN_M
+	sheen.mesh = sq
+	sheen.position.z = DEPTH + 0.004
+	var shm := StandardMaterial3D.new()
+	shm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shm.albedo_color = Color(1, 1, 1, 0.0)
+	shm.metallic = 0.0
+	shm.roughness = 0.08
+	shm.metallic_specular = 0.9
+	sheen.material_override = shm
+	sheen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	m.add_child(sheen)
 	var glow := OmniLight3D.new()
 	glow.light_color = Color(0.85, 0.9, 1.0)
-	glow.light_energy = 0.35
-	glow.omni_range = 2.2
-	glow.position = Vector3(0, 0, 0.5)
+	glow.light_energy = 0.5
+	glow.omni_range = 3.5
+	glow.position = Vector3(0, 0, 0.9)
 	glow.shadow_enabled = false
 	m.add_child(glow)
 
 	var prompt := Label3D.new()
 	prompt.name = "Prompt"
-	prompt.text = "[T]  USE TERMINAL"
+	prompt.text = "AIM AND CLICK   ·   %s  FULL SCREEN" % Keys.prompt(Keys.INTERACT)
 	prompt.font = Look.font("display_bold")
 	prompt.font_size = 48
-	prompt.pixel_size = 0.004
+	prompt.pixel_size = 0.005
 	prompt.modulate = Look.ORANGE
 	prompt.outline_size = 10
 	prompt.outline_modulate = Color(0, 0, 0, 0.85)
-	prompt.position = Vector3(0, -SCREEN_M.y * 0.5 - 0.3, 0.12)
+	prompt.position = Vector3(0, -h * 0.5 - 0.32, DEPTH + 0.05)
 	prompt.no_depth_test = true
 	prompt.visible = false
 	m.add_child(prompt)
@@ -227,20 +411,6 @@ static func _mat(c: Color, metal: float, rough: float) -> StandardMaterial3D:
 	m.metallic = metal
 	m.roughness = rough
 	return m
-
-
-static var _hazard: ImageTexture
-
-
-static func _hazard_texture() -> ImageTexture:
-	if _hazard:
-		return _hazard
-	var img := Image.create(32, 8, false, Image.FORMAT_RGB8)
-	for x in 32:
-		for y in 8:
-			img.set_pixel(x, y, Look.ORANGE if (x + y) % 16 < 8 else Look.BLACK)
-	_hazard = ImageTexture.create_from_image(img)
-	return _hazard
 
 
 # --- Goods in -----------------------------------------------------------------------------
@@ -313,8 +483,8 @@ func stage_monitor_view(i := 0) -> Camera3D:
 	var cam := Camera3D.new()
 	cam.name = "BusinessShotCamera"
 	add_child(cam)
-	cam.global_position = m.global_position + m.global_basis.z * 2.6 + Vector3(0.9, -0.15, 0)
-	cam.look_at(m.global_position + Vector3(0.1, -0.1, 0))
+	cam.global_position = m.global_position + m.global_basis.z * 3.8 + m.global_basis.x * 1.2 + Vector3(0, -1.1, 0)
+	cam.look_at(m.global_position + Vector3(0, -0.15, 0))
 	cam.fov = 60
 	cam.current = true
 	(m.get_node("Prompt") as Label3D).visible = true
