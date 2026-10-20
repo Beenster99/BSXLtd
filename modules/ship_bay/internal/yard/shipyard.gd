@@ -17,6 +17,15 @@ extends Node3D
 
 const BAY_SCENE := preload("res://modules/ship_bay/internal/bay/bay.tscn")
 const Walker := preload("res://modules/ship_bay/internal/yard/yard_walker.gd")
+const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
+## Crate tints by category for goods in the stores.
+const CATEGORY_TINT := {
+	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
+	"fluids": Color(0.25, 0.6, 0.55), "weapons": Color(0.45, 0.42, 0.4), "cargo": Color(0.6, 0.48, 0.32),
+	"hull": Color(0.7, 0.71, 0.72), "frame": Color(0.5, 0.52, 0.56), "wiring": Color(0.75, 0.55, 0.25),
+	"piping": Color(0.6, 0.62, 0.6), "glass": Color(0.55, 0.7, 0.75), "fittings": Color(0.65, 0.6, 0.55),
+	"modules": Color(0.95, 0.55, 0.15), "fasteners": Color(0.3, 0.33, 0.38),
+}
 
 ## Wall height of the wings (inside, floor to roof), metres.
 const H := 12.0
@@ -63,6 +72,14 @@ const VIEWS := {
 	"kestrel_rivets": [Vector3(4.4, 3.3, 3.6), Vector3(2.6, 2.7, 1.2)],
 	"kestrel_cabin": [Vector3(0, 3.45, -3.0), Vector3(0, 2.7, 1.4)],
 	"kestrel_hold": [Vector3(0.3, 3.4, 2.0), Vector3(0, 2.3, 6.4)],
+	"kestrel_access": [Vector3(-7.5, 3.2, 9.5), Vector3(-1.0, 1.6, 3.5)],
+	"kestrel_lift": [Vector3(9.0, 4.0, 9.0), Vector3(3.5, 2.0, 4.0)],
+	# The storage hall (StorageLayout): down aisle B, the bins in D2, the bulk floor, goods in.
+	"storage_aisle": [Vector3(-21.55, 1.7, -25.6), Vector3(-21.55, 3.2, -42.0)],
+	"storage_aisle_d": [Vector3(-10.95, 1.7, -25.2), Vector3(-10.95, 2.6, -42.0)],
+	"storage_bins": [Vector3(-11.6, 1.7, -27.4), Vector3(-8.9, 1.4, -32.5)],
+	"storage_bulk": [Vector3(-29.8, 6.0, -25.4), Vector3(-42.0, 0.0, -37.0)],
+	"goods_in": [Vector3(-31.0, 4.6, -21.0), Vector3(-41.0, 0.0, -6.0)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)
@@ -82,6 +99,10 @@ const Y_TO_Z := Basis(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, -1, 0))
 ## A part along X facing +Y turned to run along Z facing -X (lamp bars, grilles).
 const FACE_NX := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 
+## The hour of the day, 0..24: moves the sun and the sky, and the yard's night lights come on
+## as it gets dark. Follows the "world/time_of_day" setting when there is one.
+@export_range(0.0, 24.0) var time_of_day := 14.0
+
 var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
@@ -90,6 +111,12 @@ var walker_active := true
 var _walker_layers := Vector2i(1, 1)
 
 var _solid: StaticBody3D
+var _sun: DirectionalLight3D
+var _env: Environment
+var _sky: AlienSky
+## Lights that only burn at night, each with its full energy in meta "night_energy".
+var _night_lights: Array[Light3D] = []
+var _night_lens: StandardMaterial3D
 var _rng := RandomNumberGenerator.new()
 var _paints: Dictionary = {}
 ## Library shapes by key, made once (_lib).
@@ -112,6 +139,10 @@ var _wood: Material
 var _concrete: Material
 var _parts: Material   # white: a library part shows its own zones and colours
 var _goods: Array[Material] = []   # crate tints
+var _labels: Node3D                 # location labels and tags
+var _stores: Node3D                 # goods on the shelves and delivered crates, redrawn
+var _stores_paint: Dictionary = {}  # category -> crate material
+var _bus: ShipBayBus
 
 
 func _ready() -> void:
@@ -120,6 +151,12 @@ func _ready() -> void:
 	_solid.name = "Solid"
 	add_child(_solid)
 	_paints_init()
+	_labels = Node3D.new()
+	_labels.name = "Labels"
+	add_child(_labels)
+	_stores = Node3D.new()
+	_stores.name = "Stores"
+	add_child(_stores)
 	_build_planet()
 	_build_shell()
 	_build_frame()
@@ -134,6 +171,7 @@ func _ready() -> void:
 	_build_courtyard()
 	_build_crane()
 	_build_outside()
+	_build_night_lights()
 	_flush()
 	bay = BAY_SCENE.instantiate() as Node3D
 	bay.set("standalone", false)
@@ -149,9 +187,13 @@ func _ready() -> void:
 	add_child(view_camera)
 	for body: Node in find_children("*", "CollisionObject3D", true, false):
 		_own_bodies[body] = true
-	var bus := Modules.bus("ship_bay") as ShipBayBus
-	if bus:
-		bus.shipyard_ready.emit(self)
+	_bus = Modules.bus("ship_bay") as ShipBayBus
+	if _bus:
+		_bus.stock_changed.connect(_refresh_stores)
+		_refresh_stores()
+		_bus.shipyard_ready.emit(self)
+	_on_sky_time(_sky.hour, AlienSky.daylight_at(_sky.hour))
+	Settings.changed.connect(_on_setting)
 	var start: String = Router.args.get("view", "")
 	if VIEWS.has(start):
 		show_view(start)
@@ -160,7 +202,103 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if _bus and _bus.stock_changed.is_connected(_refresh_stores):
+		_bus.stock_changed.disconnect(_refresh_stores)
+	if Settings.changed.is_connected(_on_setting):
+		Settings.changed.disconnect(_on_setting)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## Sets the hour (0..24) for this yard alone (screenshots, tests): the sky moves the sun and
+## the night lights follow. A change to the time-of-day setting puts it back on the setting.
+func set_time_of_day(hour: float) -> void:
+	_sky.set_hour(fposmod(hour, 24.0))
+
+
+func _on_setting(section: String, key: String, _value: Variant) -> void:
+	if section == AlienSky.SECTION and key == AlienSky.KEY:
+		_sky.set_hour(-1.0)
+
+
+## The sky moved: the night lights fade in as the daylight goes.
+func _on_sky_time(hour: float, daylight: float) -> void:
+	time_of_day = hour
+	var night := 1.0 - smoothstep(0.0, 0.3, daylight)
+	for l in _night_lights:
+		l.light_energy = float(l.get_meta("night_energy")) * night
+		l.visible = night > 0.01
+	if _night_lens:
+		_night_lens.emission_energy_multiplier = lerpf(0.15, 4.0, night)
+
+
+## Is it dark enough for the night lights (0 day .. 1 full night)?
+func night_amount() -> float:
+	return 1.0 - smoothstep(0.0, 0.3, AlienSky.daylight_at(time_of_day))
+
+
+## Registers a light that only burns at night.
+func _night(l: Light3D) -> void:
+	l.set_meta("night_energy", l.light_energy)
+	_night_lights.append(l)
+
+
+## Lamp posts round the courtyard and down the apron, and wall lamps over the big doors:
+## off by day, they come on at dusk.
+func _build_night_lights() -> void:
+	_night_lens = ShipKit.glow(LAMP, 4.0)
+	var pole := _lib("pipe/lamp_pole", func() -> PartShapes.PartShape: return WreckParts.pipe(0.09, 7.0, false))
+	var arm := _lib("pipe/lamp_arm", func() -> PartShapes.PartShape: return WreckParts.pipe(0.05, 1.2, false))
+	var base := _lib("prism/lamp_base", func() -> PartShapes.PartShape: return PartShapes.prism(8, 0.22, 0.6))
+	var housing := _lib("chamfer/lamp_head", func() -> PartShapes.PartShape:
+			return PartShapes.chamfer_box(Vector3(0.7, 0.14, 0.32), 0.04))
+	var lens := _box(Vector3(0.6, 0.02, 0.24))
+	var posts: Array[Vector3] = []
+	for x: float in [-22.0, 22.0]:
+		for z: float in [-14.0, 2.0, 18.0]:
+			posts.append(Vector3(x, 0, z))
+	for x: float in [-34.0, 34.0]:
+		for z: float in [38.0, 58.0, 78.0]:
+			posts.append(Vector3(x, 0, z))
+	for p in posts:
+		var toward := signf(-p.x)   # the arm reaches in toward the middle
+		_put(base, _at(p + Vector3(0, 0.3, 0)), _concrete)
+		_put(pole, _at(p + Vector3(0, 3.6 + 0.3, 0)), _galv)
+		_put(arm, Transform3D(Y_TO_X, p + Vector3(toward * 0.6, 7.1, 0)), _galv, false)
+		var head := p + Vector3(toward * 1.2, 7.0, 0)
+		_put(housing, _at(head), _frame, false)
+		_put(lens, _at(head + Vector3(0, -0.08, 0)), _night_lens, false)
+		var l := SpotLight3D.new()
+		l.position = head + Vector3(0, -0.2, 0)
+		l.rotation_degrees = Vector3(-90, 0, 0)
+		l.light_color = LAMP
+		l.light_energy = 12.0
+		l.spot_range = 20.0
+		l.spot_angle = 62.0
+		l.spot_attenuation = 0.8
+		l.set_meta("gfx_no_shadow", true)
+		add_child(l)
+		_night(l)
+	# Wall lamps on the wings' courtyard faces, over each big doorway.
+	var wall_lamp := _lib("chamfer/wall_lamp", func() -> PartShapes.PartShape:
+			return PartShapes.chamfer_box(Vector3(0.6, 0.25, 0.3), 0.04))
+	for spot: Array in [[Vector3(-YARD.x + 0.35, 9.2, -12.0), Vector3.RIGHT], [Vector3(-YARD.x + 0.35, 9.2, 12.0), Vector3.RIGHT],
+			[Vector3(YARD.x - 0.35, 9.2, -12.0), Vector3.LEFT], [Vector3(YARD.x - 0.35, 9.2, 12.0), Vector3.LEFT],
+			[Vector3(-14.0, 9.2, -YARD.y + 0.35), Vector3.BACK], [Vector3(14.0, 9.2, -YARD.y + 0.35), Vector3.BACK]]:
+		var at: Vector3 = spot[0]
+		var out: Vector3 = spot[1]
+		var yaw := atan2(out.x, out.z)
+		_put(wall_lamp, _at(at, yaw), _frame, false)
+		_put(_box(Vector3(0.5, 0.02, 0.2)), _at(at + Vector3(0, -0.13, 0) + out * 0.02, yaw), _night_lens, false)
+		var w := SpotLight3D.new()
+		w.position = at + out * 0.3 + Vector3(0, -0.2, 0)
+		w.light_color = LAMP
+		w.light_energy = 5.0
+		w.spot_range = 22.0
+		w.spot_angle = 60.0
+		w.set_meta("gfx_no_shadow", true)
+		add_child(w)
+		w.look_at(w.position + out * 0.6 + Vector3(0, -1.0, 0))
+		_night(w)
 
 
 ## Looks from one of VIEWS with a still camera (screenshots); any key or click walks again.
@@ -255,41 +393,12 @@ func _paints_init() -> void:
 # --- The planet ---------------------------------------------------------------------------
 
 func _build_planet() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.26, 0.36, 0.52)
-	sky_mat.sky_horizon_color = Color(0.86, 0.68, 0.52)
-	sky_mat.ground_horizon_color = Color(0.7, 0.55, 0.42)
-	sky_mat.ground_bottom_color = Color(0.3, 0.22, 0.17)
-	sky_mat.sun_angle_max = 8.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	var e := Environment.new()
-	e.background_mode = Environment.BG_SKY
-	e.sky = sky
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.6, 0.55, 0.5)
-	e.ambient_light_energy = 0.45
-	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	e.tonemap_mode = Environment.TONE_MAPPER_ACES
-	e.ssao_enabled = true
-	e.glow_enabled = true
-	e.glow_intensity = 0.6
-	e.fog_enabled = true
-	e.fog_light_color = Color(0.8, 0.66, 0.54)
-	e.fog_density = 0.0012
-	e.fog_sky_affect = 0.0
-	var we := WorldEnvironment.new()
-	we.name = "WorldEnvironment"
-	we.environment = e
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-38, -32, 0)
-	sun.light_color = Color(1.0, 0.92, 0.82)
-	sun.light_energy = 1.15
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 180.0
-	add_child(sun)
+	# The sky, sun and planet-light come from UI's AlienSky, which follows the time of day.
+	_sky = AlienSky.new()
+	_sky.time_changed.connect(_on_sky_time)
+	add_child(_sky)
+	_sun = _sky.sun
+	_env = _sky.environment
 
 	# The ground: dusty red-brown plain, with a concrete apron in front of the open end and
 	# a road to the truck doors.
@@ -752,15 +861,20 @@ func _build_deliveries() -> void:
 				return WreckParts.headlamp_bar(0.6, 2, LAMP))
 		_put(head, Transform3D(FACE_NX, Vector3(-48.1, 3.6, z - 3.9)), _parts, false)
 	_truck(Vector3(-51.3, 0, 8))
-	# Pallets of incoming goods in rows, some stacked two high.
-	for i in 6:
-		for j in 3:
-			var at := Vector3(-44 + j * 3.2, 0, -16 + i * 3.6 + (2.0 if j == 1 else 0.0))
-			if at.distance_to(Vector3(-44, 0, 8)) < 3.0:
-				continue
-			_pallet(at, _rng.randi_range(1, 2))
+	# Goods-in spots where deliveries are set down (StorageLayout.goods_in), numbered on the floor.
+	var spot_line := _paint(Color(0.9, 0.9, 0.88), 0.0, 0.8)
+	var spots: Array = StorageLayout.get_layout()["goods_in"]
+	for i in spots.size():
+		var at: Vector3 = spots[i]
+		for dz: float in [-0.75, 0.75]:
+			_block(at + Vector3(0, 0.024, dz), Vector3(1.6, 0.004, 0.06), spot_line, false)
+		for dx: float in [-0.8, 0.8]:
+			_block(at + Vector3(dx, 0.024, 0), Vector3(0.06, 0.004, 1.5), spot_line, false)
+		var n := _tag("GI-%02d" % (i + 1), at + Vector3(0, 0.03, 0.95), 0.18, Vector3.ZERO)
+		n.rotation = Vector3(-PI * 0.5, 0, 0)
+	_sign("GOODS IN", Vector3(-40.8, 5.6, -23.6), 0.0, 0.45)
 	# A forklift and the goods-in desk with its screen, stool and a shelf behind.
-	_forklift(Vector3(-36, 0, -4), 0.4)
+	_forklift(Vector3(-31.5, 0, 3), 0.4)
 	_put(_lib("cbox/desk", func() -> PartShapes.PartShape:
 			return PartShapes.chamfer_box(Vector3(1.0, 1.05, 3.2), 0.04)), _at(Vector3(-31, 0.525, 14)), _paint(DARK, 0.3, 0.5, "satin_paint"))
 	_put(_box(Vector3(1.1, 0.04, 3.3)), _at(Vector3(-31, 1.07, 14)), _paint(Color(0.7, 0.71, 0.7), 0.3, 0.4, "brushed_alloy"), false)
@@ -771,16 +885,135 @@ func _build_deliveries() -> void:
 				_at(Vector3(-28.25 - 0.32, 1.0, 17.0 + k * 1.7), PI * 0.5), _parts)
 
 
+## The storage hall, laid out by StorageLayout: four aisles of racking with a rack each side,
+## the small-parts bins in D2, a bulk floor west of the racks, and the transfer aisle along
+## the south wall. Every place is labelled with its location id and the part kept there.
+## It starts empty; the goods on it are drawn from the bus (_refresh_stores).
 func _build_stock() -> void:
-	# Three runs of pallet racking along the wing, a walkway between each.
-	# The runs break for a cross aisle in from the door from Deliveries.
-	for z: float in [-43.0, -36.5, -30.0]:
-		_rack(Vector3(-48.4, 0, z), 8.1, 1.4, 4, 2.2)
-		_rack(Vector3(-33.6, 0, z), 25.6, 1.4, 4, 2.2)
+	var layout := StorageLayout.get_layout()
+	var locations: Dictionary = layout["locations"]
+	var line := _paint(HAZARD, 0.0, 0.7, "hazard_paint")
+	var white := _paint(Color(0.9, 0.9, 0.88), 0.0, 0.8)
+	for rack: String in StorageLayout.rack_ids():
+		_storage_rack(rack)
+	# Lane lines down each aisle and along the transfer aisle and the back cross aisle.
+	var rack_len := StorageLayout.BAYS * StorageLayout.BAY_LENGTH
+	for aisle: String in layout["aisles"]:
+		var x: float = layout["aisles"][aisle]
+		for side: float in [-1.0, 1.0]:
+			_block(Vector3(x + side * (StorageLayout.AISLE_WIDTH * 0.5 - 0.08), 0.024, StorageLayout.RACK_Z0 - rack_len * 0.5),
+					Vector3(0.08, 0.004, rack_len), line, false)
+		# Signs hang over the racks' tops, clear of the picking lift's mast; the letter is
+		# painted on the floor at the aisle's mouth too.
+		var sign := _sign("AISLE %s" % aisle, Vector3(x, 9.9, StorageLayout.RACK_Z0 + 0.2), 0.0, 0.45)
+		sign.name = "AisleSign_" + aisle
+		var letter := _tag(aisle, Vector3(x, 0.03, StorageLayout.RACK_Z0 + 1.0), 1.1, Vector3.ZERO)
+		letter.rotation = Vector3(-PI * 0.5, 0, 0)
+		letter.modulate = HAZARD
+		var cats := PackedStringArray()
+		for b: Dictionary in layout["bays"]:
+			if str(b["rack"]).begins_with(aisle) and b["category"] != "":
+				var n: String = StorageLayout.CATEGORIES.get(b["category"], str(b["category"]).capitalize())
+				if not cats.has(n.to_upper()):
+					cats.append(n.to_upper())
+		if not cats.is_empty():
+			_sign(" · ".join(cats), Vector3(x, 10.55, StorageLayout.RACK_Z0 + 0.2), 0.0, 0.2, false)
+	for z: float in [StorageLayout.TRANSFER_Z - 1.4, StorageLayout.TRANSFER_Z + 1.4]:
+		_block(Vector3(-25.0, 0.024, z), Vector3(49.0, 0.004, 0.08), line, false)
+	_block(Vector3(-18.9, 0.024, StorageLayout.BACK_Z + 1.3), Vector3(21.0, 0.004, 0.08), line, false)
+	# The bulk floor: painted bays with their ids on the floor and a sign over them.
+	for id: String in locations:
+		var l: Dictionary = locations[id]
+		if l["kind"] != "bulk":
+			continue
+		var at: Vector3 = l["at"]
+		var size: Vector3 = l["size"]
+		for dz: float in [-0.5, 0.5]:
+			_block(at + Vector3(0, 0.024, size.z * dz), Vector3(size.x, 0.004, 0.07), white, false)
+		for dx: float in [-0.5, 0.5]:
+			_block(at + Vector3(size.x * dx, 0.024, 0), Vector3(0.07, 0.004, size.z), white, false)
+		var floor_id := _tag(id, at + Vector3(-float(l["face"].x) * 1.6, 0.03, 0), 0.32, Vector3.ZERO)
+		floor_id.rotation = Vector3(-PI * 0.5, PI * 0.5 * float(l["face"].x), 0)
+		_tag(_place_text(l), at + Vector3(float(l["face"].x) * (size.x * 0.5 + 0.125), 0.5, 0), 0.07, l["face"])
+		_put(_box(Vector3(0.12, 0.7, 0.12)), _at(at + Vector3(float(l["face"].x) * (size.x * 0.5 + 0.06), 0.35, 0)), _hazard)
+	_sign("BULK STORE  Z-01 - Z-18", Vector3(-39.5, 6.4, -27.6), 0.0, 0.45)
 	# Small-parts shelving along the partition to Material prep.
 	for i in 4:
 		_put(_lib("shelf_rack", func() -> PartShapes.PartShape: return WreckParts.shelf_rack()),
 				_at(Vector3(-0.62, 1.0, -44.6 + i * 1.7), PI * 0.5), _parts)
+
+
+## One rack of StorageLayout: lattice end frames at each bay, orange beams and grating decks
+## at each level, a location label on the beam under each place, a placard per bay.
+func _storage_rack(rack: String) -> void:
+	var L := StorageLayout
+	var layout := L.get_layout()
+	var x := L.rack_x(rack)
+	var face := L.rack_face(rack)
+	var depth := L.RACK_DEPTH
+	var tall := L.RACK_HEIGHT
+	var frame := _lib("truss/rack/%.1f/%.1f" % [tall, depth], func() -> PartShapes.PartShape:
+			return PartShapes.truss(tall, 0.09, depth, 10, 0.05))
+	var beam := _box(Vector3(0.05, 0.12, L.BAY_LENGTH - 0.1))
+	var deck := _lib("grating/rack/%.2f/%.2f" % [depth, L.BAY_LENGTH], func() -> PartShapes.PartShape:
+			return WreckParts.grating(depth - 0.06, L.BAY_LENGTH - 0.12, 0.03))
+	# Lattice frame stood up: its length up (Y), its height across the rack (X).
+	var stand := Basis(Vector3(0, 1, 0), Vector3(1, 0, 0), Vector3(0, 0, -1))
+	for i in L.BAYS + 1:
+		var z := L.RACK_Z0 - i * L.BAY_LENGTH
+		_put(frame, Transform3D(stand, Vector3(x, tall * 0.5, z)), _blue, false)
+		for side: float in [-0.5, 0.5]:
+			_put(_box(Vector3(0.16, 0.012, 0.16)), _at(Vector3(x + depth * side, 0.006, z)), _bare, false)
+	for bay in range(1, L.BAYS + 1):
+		var z := L.bay_z(bay)
+		for level in range(1, L.LEVELS + 1):
+			var y := L.BEAM_Y + (level - 1) * L.LEVEL_PITCH
+			for side: float in [-0.5, 0.5]:
+				_put(beam, _at(Vector3(x + depth * side, y, z)), _trim, false)
+			if level > 1:
+				_put(deck, _at(Vector3(x, y + 0.075, z)), _galv, false)
+		var info: Dictionary = {}
+		for b: Dictionary in layout["bays"]:
+			if b["rack"] == rack and b["bay"] == bay:
+				info = b
+		var cat := str(info.get("category", ""))
+		var title := "%s-%02d  %s" % [rack, bay, str(L.CATEGORIES.get(cat, cat)).to_upper() if cat != "" else "SPARE"]
+		_tag(title, Vector3(x + face * (depth * 0.5 + 0.05), L.BEAM_Y + L.LEVELS * L.LEVEL_PITCH - 0.25, z), 0.11, Vector3(face, 0, 0))
+	for id: String in layout["locations"]:
+		var l: Dictionary = layout["locations"][id]
+		if l["rack"] != rack:
+			continue
+		var at: Vector3 = l["at"]
+		_tag(_place_text(l), Vector3(x + face * (depth * 0.5 + 0.04), at.y - 0.06, at.z), 0.045, Vector3(face, 0, 0))
+	_collide_xf(_box_shape(Vector3(depth + 0.1, tall, L.BAYS * L.BAY_LENGTH)),
+			_at(Vector3(x, tall * 0.5, L.RACK_Z0 - L.BAYS * L.BAY_LENGTH * 0.5)))
+
+
+## "B2-03-4-1\nIon thruster" for a location; spare places show their id alone.
+func _place_text(l: Dictionary) -> String:
+	var home := str(l["home"])
+	if home == "":
+		return str(l["id"])
+	var item: Dictionary = StorageLayout.items().get(home, {})
+	return "%s\n%s" % [l["id"], item.get("name", home)]
+
+
+## A small flat label facing `face` (Vector3.ZERO: left as made, for the caller to turn).
+func _tag(text: String, at: Vector3, height_m: float, face: Vector3, parent: Node = null) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.font_size = 48
+	label.outline_size = 6
+	label.pixel_size = height_m / 48.0
+	label.modulate = Color(0.95, 0.95, 0.9)
+	label.outline_modulate = Color(0.03, 0.03, 0.04)
+	label.shaded = false
+	label.double_sided = false
+	label.position = at
+	if face != Vector3.ZERO:
+		label.rotation.y = atan2(face.x, face.z)
+	(parent if parent else _labels).add_child(label)
+	return label
 
 
 func _build_prep() -> void:
@@ -1072,12 +1305,13 @@ func _build_outside() -> void:
 		var flood := SpotLight3D.new()
 		flood.position = foot + Vector3(0, 15.4, -0.5)
 		flood.light_color = LAMP
-		flood.light_energy = 3.0
+		flood.light_energy = 10.0
 		flood.spot_range = 55.0
 		flood.spot_angle = 30.0
 		flood.set_meta("gfx_no_shadow", true)
 		add_child(flood)
 		flood.look_at(Vector3(0, 2.0, 0))
+		_night(flood)
 
 	# The tank farm: three upright tanks on plinths, piped to a manifold, with a fence.
 	var tank := _lib("tank/farm", func() -> PartShapes.PartShape: return WreckParts.tank(1.5, 7.0))
@@ -1193,22 +1427,6 @@ func _forklift(at: Vector3, yaw: float) -> void:
 	_collide_xf(_box_shape(Vector3(1.25, 2.4, 3.3)), base * _at(Vector3(0, 1.2, -0.45)))
 
 
-## A wooden pallet at `at` with goods on it, `stack` layers.
-func _pallet(at: Vector3, stack: int) -> void:
-	var board := _box(Vector3(0.14, 0.022, 1.0))
-	var stringer := _box(Vector3(1.2, 0.1, 0.1))
-	for k in 3:
-		_put(stringer, _at(at + Vector3(0, 0.072, -0.44 + k * 0.44)), _wood, false)
-	for k in 7:
-		_put(board, _at(at + Vector3(-0.53 + k * 0.177, 0.133, 0)), _wood, false)
-	var y := 0.144
-	for k in stack:
-		var crate := _crate_key(_rng.randi() % 3)
-		var h := (_shapes[crate] as PartShapes.PartShape).mesh.get_aabb().size.y
-		_put(crate, _at(at + Vector3(_rng.randf_range(-0.05, 0.05), y + h * 0.5, 0), _rng.randf_range(-0.06, 0.06)), _goods[_rng.randi() % _goods.size()], false)
-		y += h + 0.005
-	_collide_xf(_box_shape(Vector3(1.2, y, 1.1)), _at(at + Vector3(0, y * 0.5, 0)))
-
 
 ## One of a few crate sizes from the parts library, as a shape key.
 func _crate_key(i: int) -> String:
@@ -1232,43 +1450,6 @@ func _cart(at: Vector3) -> void:
 	_put(crate, _at(at + Vector3(0, 0.66 + 0.325, -0.4)), _goods[0], false)
 
 
-## A run of pallet racking from `at` along +X: lattice end frames, orange beams, grating
-## decks and goods on each level.
-func _rack(at: Vector3, length: float, depth: float, levels: int, level_h: float) -> void:
-	var tall := levels * level_h
-	var frame := _lib("truss/rack/%.1f/%.1f" % [tall, depth], func() -> PartShapes.PartShape:
-			return PartShapes.truss(tall, 0.09, depth, levels * 2, 0.05))
-	var bays := int(length / 2.7)
-	var bay_w := length / float(bays)
-	var beam := _box(Vector3(bay_w - 0.1, 0.12, 0.05))
-	var deck := _lib("grating/rack/%.2f/%.2f" % [depth, bay_w], func() -> PartShapes.PartShape:
-			return WreckParts.grating(bay_w - 0.12, depth - 0.06, 0.03))
-	# Lattice frame stood up: its length up (Y), its height across the rack (Z).
-	var stand := Basis(Vector3(0, 1, 0), Vector3(0, 0, 1), Vector3(1, 0, 0))
-	for i in bays + 1:
-		_put(frame, Transform3D(stand, at + Vector3(i * bay_w, tall * 0.5, 0)), _blue, false)
-		for side: float in [-0.5, 0.5]:
-			_put(_box(Vector3(0.16, 0.012, 0.16)), _at(at + Vector3(i * bay_w, 0.006, depth * side)), _bare, false)
-	for k in levels:
-		var y := 0.15 + k * level_h
-		for i in bays:
-			var x := at.x + (i + 0.5) * bay_w
-			for side: float in [-0.5, 0.5]:
-				_put(beam, _at(Vector3(x, at.y + y, at.z + depth * side)), _trim, false)
-			if k > 0:
-				_put(deck, _at(Vector3(x, at.y + y + 0.075, at.z)), _galv, false)
-			for c in 2:
-				if _rng.randf() < 0.2:
-					continue
-				var crate := _crate_key(_rng.randi() % 4)
-				var size := (_shapes[crate] as PartShapes.PartShape).mesh.get_aabb().size
-				if size.y > level_h - 0.4:
-					crate = _crate_key(0)
-					size = (_shapes[crate] as PartShapes.PartShape).mesh.get_aabb().size
-				_put(crate, _at(Vector3(at.x + i * bay_w + bay_w * (0.27 + 0.46 * c), at.y + y + 0.09 + size.y * 0.5, at.z)), _goods[_rng.randi() % _goods.size()], false)
-	_collide_xf(_box_shape(Vector3(length + 0.1, tall, depth + 0.1)), _at(at + Vector3(length * 0.5, tall * 0.5, 0)))
-
-
 ## A small lit screen facing `yaw`, like TradesLook.readout.
 func _screen(at: Vector3, text: String, yaw: float) -> void:
 	var holder := Node3D.new()
@@ -1288,6 +1469,73 @@ func _screen(at: Vector3, text: String, yaw: float) -> void:
 	label.shaded = false
 	label.position.z = 0.04
 	holder.add_child(label)
+
+
+# --- The stores -------------------------------------------------------------------------
+
+## Redraws what the bus says is in the stores: a tote, a crate on a pallet or a big crate
+## on each location that holds goods, and each delivered crate on its goods-in spot,
+## labelled with what it holds and where it is going.
+func _refresh_stores() -> void:
+	for c in _stores.get_children():
+		c.free()
+	if _bus == null:
+		return
+	var locations: Dictionary = StorageLayout.get_layout()["locations"]
+	var batches := {}
+	for loc: String in locations:
+		var have := _bus.stock_at(loc)
+		if have.is_empty():
+			continue
+		var l: Dictionary = locations[loc]
+		var item: Dictionary = StorageLayout.items().get(have["item"], {})
+		_goods_box(batches, l["kind"], float(item.get("mass", 0.0)), str(item.get("category", "")), l["at"])
+		var tag := _tag("%s  x%d" % [item.get("name", have["item"]), int(have["qty"])],
+				l["at"] + Vector3(float(l["face"].x) * (float(l["size"].x) * 0.5 + 0.06), 0.55 if l["kind"] != "bulk" else 1.4, 0), 0.06, l["face"], _stores)
+	var crates := _bus.delivered_crates()
+	for id: String in crates:
+		var c: Dictionary = crates[id]
+		var at := _bus.crate_position(id)
+		var kind := StorageLayout.kind_for(float(c["mass"]))
+		var cat := str(StorageLayout.items().get(c["item"], {}).get("category", ""))
+		var h := _goods_box(batches, "pallet" if kind == "bin" else kind, float(c["mass"]) * (int(c["qty"]) if kind == "bin" else 1), cat, at)
+		var dest := _bus.place_for(str(c["item"]))
+		var tag := _tag("%s  x%d\n%s  ->  %s" % [c["name"], int(c["qty"]), str(c["grade"]).to_upper(), dest if dest != "" else "NO SPACE"],
+				at + Vector3(0, h + 0.25, 0), 0.09, Vector3(0, 0, 1), _stores)
+		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		tag.name = "Crate_" + id.replace("/", "_")
+	for batch: Dictionary in batches.values():
+		_multimesh(_stores, (_shapes[batch.key] as PartShapes.PartShape).mesh, batch.xforms, batch.mat)
+
+
+## Adds the look of goods of one kind to `batches`: a tote (bin), a crate on a pallet, or a
+## big crate (bulk), sized by mass (kg), tinted by category. Returns its height (m).
+func _goods_box(batches: Dictionary, kind: String, mass: float, category: String, at: Vector3) -> float:
+	if not _stores_paint.has(category):
+		_stores_paint[category] = _paint(CATEGORY_TINT.get(category, Color(0.6, 0.6, 0.6)), 0.15, 0.6)
+	var mat: Material = _stores_paint[category]
+	var size: Vector3
+	var lift := 0.0
+	match kind:
+		"bin":
+			size = Vector3(0.6, 0.32, 0.9)
+		"bulk":
+			size = Vector3(3.6, clampf(1.0 + mass / 15000.0, 1.0, 2.6), 2.2)
+		_:
+			size = Vector3(1.0, clampf(0.35 + mass / 2500.0, 0.35, 1.35), 1.2)
+			lift = 0.144
+			_goods_add(batches, _box(Vector3(1.0, 0.14, 1.2)), _wood, Transform3D(Basis.IDENTITY, at + Vector3(0, 0.07, 0)))
+	var key := _lib("crate/stores/%.2f/%.2f/%.2f" % [size.x, size.y, size.z], func() -> PartShapes.PartShape:
+			return WreckParts.cargo_crate(size))
+	_goods_add(batches, key, mat, Transform3D(Basis.IDENTITY, at + Vector3(0, lift + size.y * 0.5, 0)))
+	return lift + size.y
+
+
+func _goods_add(batches: Dictionary, key: String, mat: Material, xform: Transform3D) -> void:
+	var b := "%s|%d" % [key, mat.get_instance_id()]
+	if not batches.has(b):
+		batches[b] = {"key": key, "mat": mat, "xforms": []}
+	(batches[b].xforms as Array).append(xform)
 
 
 # --- Building blocks ----------------------------------------------------------------------

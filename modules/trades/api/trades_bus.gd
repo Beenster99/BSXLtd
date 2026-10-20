@@ -13,6 +13,9 @@ signal joint_progress(joint_id: StringName, progress: float)
 signal joint_completed(result: JointResult)
 ## The joint was taken apart for rework; any record of it is stale.
 signal joint_removed(joint_id: StringName)
+## A player's tractor beam moved a loose part (yard space is the world here), or let go of it
+## (holding false). Multiplayer can mirror the part from this.
+signal part_beamed(peer_id: int, slot_id: String, xform: Transform3D, holding: bool)
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
@@ -41,6 +44,9 @@ func register_module() -> void:
 			for shot: Array in [["bolt", false], ["bolt", true], ["connector", false]]:
 				Shots.register("tools_%s_on_kestrel%s" % [shot[0], "_third_person" if shot[1] else ""], ShipBayBus.SHIPYARD_SCENE,
 						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_on_ship", shot[0], shot[1]), 40)
+			if Flags.is_on("trades.tractor"):
+				Shots.register("tools_tractor_lifting_engine", ShipBayBus.SHIPYARD_SCENE,
+						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_tractor", true), 40)
 
 
 ## Ship and Bay built its shipyard: put you in it, the worker with every tool to hand.
@@ -82,6 +88,8 @@ func is_tool_enabled(tool_id: StringName) -> bool:
 			return Flags.is_on("trades.welding")
 		&"wire_tool":
 			return Flags.is_on("trades.wiring")
+		&"tractor":
+			return Flags.is_on("trades.tractor")
 	return false
 
 

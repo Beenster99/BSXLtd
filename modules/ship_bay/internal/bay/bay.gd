@@ -13,7 +13,14 @@ extends Node3D
 const TIGHT := Color(0.3, 0.9, 0.4)
 const LOOSE := Color(1.0, 0.65, 0.1)
 
+const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
+## How far Use (F) reaches from the camera, metres.
+const USE_REACH := 3.5
+
 var ship_root: Node3D
+## The ship's model (its root node), and the stairs, lift and power unit round it.
+var model: Node3D
+var access: Node3D
 ## slot_id -> Array of the model's MeshInstance3Ds inside its box.
 var pieces: Dictionary = {}
 ## joint_id -> MeshInstance3D marker.
@@ -34,6 +41,7 @@ func _ready() -> void:
 	if _bus.ship == null or _bus.ship.ship_id != ship_id:
 		_bus.load_ship(ship_id)
 	_bus.slot_state_changed.connect(_on_slot_changed)
+	_bus.ship_power_changed.connect(_on_power)
 	_bus.component_installed.connect(func(_s: String, _c: String) -> void: _refresh_markers())
 	_show_ship(_bus.ship)
 
@@ -41,6 +49,8 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if _bus and _bus.slot_state_changed.is_connected(_on_slot_changed):
 		_bus.slot_state_changed.disconnect(_on_slot_changed)
+	if _bus and _bus.ship_power_changed.is_connected(_on_power):
+		_bus.ship_power_changed.disconnect(_on_power)
 
 
 ## Three ship cradles, each an I-beam base on the floor with two posts, a head beam under
@@ -123,8 +133,10 @@ func _show_ship(def: ShipDefinition) -> void:
 	ship_root.position = Vector3(0, cradle_height, 0)
 	add_child(ship_root)
 	if def.model:
-		ship_root.add_child(def.model.instantiate())
+		model = def.model.instantiate() as Node3D
+		ship_root.add_child(model)
 	pieces = pieces_by_slot(ship_root, def)
+	_build_access()
 	for s in def.slots:
 		for f in s.fasteners:
 			var m := _fastener_marker(f)
@@ -132,6 +144,59 @@ func _show_ship(def: ShipDefinition) -> void:
 			markers[f.joint_id] = m
 		_apply_slot(s.slot_id)
 	_refresh_markers()
+
+
+## Boarding stairs, the lift and the ground power unit, for a model that says where its
+## side door and power socket are.
+func _build_access() -> void:
+	if access:
+		access.queue_free()
+		access = null
+	if model == null or not model.has_method("access_points"):
+		return
+	var points: Dictionary = model.call("access_points")
+	access = Access.new()
+	access.name = "Access"
+	add_child(access)
+	access.call("build", cradle_height, points["side_door"], points["power_socket"])
+	access.connect("power_switched", func(on: bool) -> void:
+		if _bus:
+			_bus.set_ship_powered(on)
+		else:
+			_on_power(on))
+	var on := _bus != null and _bus.ship_powered
+	access.call("set_power", on)
+	_on_power(on)
+
+
+func _on_power(on: bool) -> void:
+	if model and model.has_method("set_powered"):
+		model.call("set_powered", on)
+	if access:
+		access.call("set_power", on)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F:
+		var cam := get_viewport().get_camera_3d()
+		if cam and use_along(cam.global_position, -cam.global_basis.z):
+			get_viewport().set_input_as_handled()
+
+
+## Use (F): the first usable thing within reach along the ray (world space). True if one was.
+func use_along(from: Vector3, direction: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(from, from + direction.normalized() * USE_REACH)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return false
+	var body := hit.collider as CollisionObject3D
+	var owner_id := body.shape_find_owner(int(hit.shape)) if body else -1
+	var node: Object = body.shape_owner_get_owner(owner_id) if owner_id >= 0 else null
+	for n: Object in [node, body]:
+		if n and n.has_meta("ship_bay_use"):
+			(n.get_meta("ship_bay_use") as Callable).call()
+			return true
+	return false
 
 
 ## A fastener as it looks on the ship: its head (a hex bolt, a domed rivet, a round plug) on

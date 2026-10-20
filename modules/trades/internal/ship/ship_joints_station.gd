@@ -62,6 +62,8 @@ var _frozen := false
 ## slot_id -> the component that came off it (so hands can put it back).
 var _removed: Dictionary = {}
 var _marker: MeshInstance3D
+## The tractor beam (tool 7), for lifting parts that are off the ship.
+var tractor: TradesTractor
 var _arc: OmniLight3D
 
 
@@ -91,6 +93,10 @@ func build() -> void:
 	_arc.top_level = true
 	_arc.visible = false
 	add_child(_arc)
+	tractor = TradesTractor.new()
+	tractor.name = "Tractor"
+	tractor.station = self
+	add_child(tractor)
 	refresh_points()
 
 
@@ -108,14 +114,18 @@ func refresh_points() -> void:
 
 
 func tools() -> Array[StringName]:
+	if tractor.is_holding():
+		return [&"tractor"]
 	if aimed < 0:
-		return TradesBay.TOOLS
+		return bay.hotbar
 	var useful: Array[StringName] = []
 	useful.assign(KIND_TOOLS.get(points[aimed].kind, []))
 	return useful
 
 
 func status_line() -> String:
+	if bay.tool == &"tractor":
+		return tractor.status_line()
 	if aimed < 0:
 		return "Ship: %d joints, %d tight" % [points.size(), _tight_count()] if not points.is_empty() else ""
 	var f := points[aimed]
@@ -131,7 +141,7 @@ func start_hint() -> String:
 
 
 func is_busy() -> bool:
-	return _working >= 0
+	return _working >= 0 or tractor.is_holding()
 
 
 ## The torque range (N m) for a bolt spec from Shared Components' fastener specs, or a
@@ -149,6 +159,9 @@ static func torque_range(spec_id: String) -> Vector2:
 # --- Input --------------------------------------------------------------------------------
 
 func press(tool: StringName) -> void:
+	if tool == &"tractor":
+		tractor.press()
+		return
 	if aimed < 0:
 		return
 	var f := points[aimed]
@@ -169,11 +182,14 @@ func press(tool: StringName) -> void:
 		_begin(true, tool)
 	elif tight:
 		bay.hint("Already %s. Right click takes it off." % _state_word(f).to_lower())
+	elif _first_joint(f) and tractor.blocks_first_joint(FastenerPoint.slot_of(f.joint_id)):
+		bay.hint("The beam holding this part has it out of line. Its first joint waits until it's in line.")
 	else:
 		_begin(false, tool)
 
 
 func release() -> void:
+	tractor.release()
 	if _working < 0:
 		return
 	if not _undoing and points[_working].kind == "bolt" and not _clicked:
@@ -182,6 +198,10 @@ func release() -> void:
 
 
 func back_out(tool: StringName) -> void:
+	if tool == &"tractor":
+		if not tractor.park():
+			bay.hint("Right click parks a part you're holding in the beam.")
+		return
 	if aimed < 0 or _working >= 0:
 		return
 	var f := points[aimed]
@@ -207,6 +227,16 @@ func back_out(tool: StringName) -> void:
 	_begin(true, tool)
 
 
+## Wheel while the beam holds a part: pull it in or push it out.
+func turn_held(step: int, _snap: bool) -> bool:
+	return tractor.push(step)
+
+
+## Q / E: turn the part in the beam.
+func adjust(step: int) -> bool:
+	return tractor.turn(step)
+
+
 func motion(relative: Vector2) -> bool:
 	if _working < 0 or _undoing or points[_working].kind != "bolt":
 		return false
@@ -215,7 +245,8 @@ func motion(relative: Vector2) -> bool:
 
 
 func update(delta: float) -> void:
-	if _working < 0:
+	tractor.update(delta)
+	if _working < 0 and not tractor.is_holding():
 		_update_aim()
 	_place_marker()
 	_arc.visible = false
@@ -317,6 +348,9 @@ func _made(f: FastenerPoint, quality: float) -> void:
 ## Hands put a part that came off back in its slot.
 func _refit(f: FastenerPoint) -> void:
 	var slot_id := FastenerPoint.slot_of(f.joint_id)
+	if not tractor.near_mount(slot_id):
+		bay.hint("The part isn't at its mount. Bring it back with the tractor beam (7).")
+		return
 	var comp: String = _removed.get(slot_id, "")
 	if comp == "":
 		var slot := _bus.get_slot(slot_id)
@@ -455,6 +489,14 @@ func _place_marker() -> void:
 	_marker.global_transform = Transform3D(Basis(x.normalized(), n, x.normalized().cross(n)), points_world[i] + n * 0.012)
 
 
+## No joint of its part is in yet.
+func _first_joint(f: FastenerPoint) -> bool:
+	for g in _bus.get_fasteners(FastenerPoint.slot_of(f.joint_id)):
+		if _bus.is_joint_tight(g.joint_id):
+			return false
+	return true
+
+
 func _slot_empty(f: FastenerPoint) -> bool:
 	return _bus.get_slot_state(FastenerPoint.slot_of(f.joint_id)) == ShipBayBus.SlotState.EMPTY
 
@@ -476,6 +518,7 @@ func _tight_count() -> int:
 
 
 func reset() -> void:
+	tractor.release()
 	_stop()
 
 

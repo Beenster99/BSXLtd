@@ -67,6 +67,17 @@ var fittings: Array[Dictionary] = []
 ## Rivet and bolt heads, by material: Material -> Array[Transform3D] (one MultiMesh each).
 var rivets: Dictionary = {}
 var bolts: Dictionary = {}
+## Whether the ship has power (shore power in the yard): its lamps, screens and lit edges.
+var powered := true
+var _lit: Array[MeshInstance3D] = []
+var _lamps: Array[Light3D] = []
+var _texts: Array[Label3D] = []
+var _dark_mats: Dictionary = {}
+
+## Where the yard's kit meets the ship (ship space): the side door's sill (outside the skin,
+## the way in is -X), and the shore power socket on the right flank.
+const SIDE_DOOR_SILL := Vector3(-W, 0.0, (LOCK_DOOR.x + LOCK_DOOR.y) * 0.5)
+const POWER_SOCKET := Vector3(W + 0.06, 0.72, 6.05)
 
 
 func _init() -> void:
@@ -83,9 +94,59 @@ func _init() -> void:
 	_build_side_door()
 	_build_stern()
 	_build_exterior()
+	_build_power_socket()
 	_rivet_hull()
 	_bolt_inside()
 	_build_heads()
+	for n: Node in find_children("*", "", false, false):
+		if n is Light3D:
+			_lamps.append(n)
+		elif n is Label3D:
+			_texts.append(n)
+		elif n is MeshInstance3D:
+			var m := (n as MeshInstance3D).material_override as StandardMaterial3D
+			if m and m.emission_enabled:
+				_lit.append(n)
+	set_powered(false)
+
+
+## Where the bay's stairs and power cable meet the ship (ship space).
+func access_points() -> Dictionary:
+	return {"side_door": SIDE_DOOR_SILL, "power_socket": POWER_SOCKET}
+
+
+## Lamps, screens, lit edges and text on or off. Off they read as dark glass and paint.
+func set_powered(on: bool) -> void:
+	powered = on
+	for l in _lamps:
+		l.visible = on
+	for t in _texts:
+		t.visible = on
+	for mi in _lit:
+		if on:
+			mi.material_override = mi.get_meta("lit_mat", mi.material_override)
+			continue
+		var lit := mi.material_override as StandardMaterial3D
+		if not mi.has_meta("lit_mat"):
+			mi.set_meta("lit_mat", lit)
+		lit = mi.get_meta("lit_mat")
+		if not _dark_mats.has(lit):
+			var d := ShipKit.paint(lit.emission.darkened(0.82), 0.3, 0.35)
+			_dark_mats[lit] = ShipSurface.of(d)
+		mi.material_override = _dark_mats[lit]
+
+
+## The shore power socket low on the right flank, aft of the fuel port: a recessed box with a
+## round plug face and a lamp that shows when the ship has power.
+func _build_power_socket() -> void:
+	var at := POWER_SOCKET
+	kit.add(PartShapes.chamfer_box(Vector3(0.08, 0.32, 0.3), 0.015), Transform3D(Basis(), at), dark, "", null, false)
+	kit.add(PartShapes.prism(12, 0.07, 0.05), Transform3D(Basis(Vector3.BACK, -PI * 0.5), at + Vector3(0.05, -0.02, 0)), hazard, "", null, false)
+	kit.add(PartShapes.box(Vector3(0.01, 0.03, 0.12)), Transform3D(Basis(), at + Vector3(0.045, 0.12, 0)),
+			ShipKit.glow(Color(0.35, 1.0, 0.5), 2.0), "", null, false)
+	_label("SHORE PWR", Transform3D(Basis(Vector3.UP, PI * 0.5), at + Vector3(0.046, -0.13, 0)), 14, Color(1.0, 0.8, 0.4))
+	for c: Vector2 in [Vector2(-0.12, -0.13), Vector2(0.12, -0.13), Vector2(-0.12, 0.13), Vector2(0.12, 0.13)]:
+		_bolt(at + Vector3(0.04, c.y, c.x), Vector3.RIGHT, bolt_steel)
 
 
 ## The main hull's cross-section, round from the roof's left edge (x, y).
@@ -381,14 +442,16 @@ func _build_hold() -> void:
 func _build_bulkhead_door() -> void:
 	var h := DOOR.size.y - 0.02
 	var w := DOOR.size.x + 0.02
-	var win := Rect2(-0.25, 1.2, 0.5, 0.55)
-	kit.wall("z", Z_BULK, -w * 0.5, w * 0.5, 0.0, h, 0.06, [win], shell)
-	kit.add(PartShapes.box(Vector3(win.size.x, win.size.y, 0.02)), Transform3D(Basis(), Vector3(0, win.get_center().y, Z_BULK)),
+	# The leaf stands open, slid into the bulkhead (in the yard the ship is walked through).
+	var dx := -(DOOR.size.x + 0.05)
+	var win := Rect2(-0.25 + dx, 1.2, 0.5, 0.55)
+	kit.wall("z", Z_BULK, -w * 0.5 + dx, w * 0.5 + dx, 0.0, h, 0.06, [win], shell)
+	kit.add(PartShapes.box(Vector3(win.size.x, win.size.y, 0.02)), Transform3D(Basis(), Vector3(win.get_center().x, win.get_center().y, Z_BULK)),
 			glass, "", null, false)
 	for s: float in [-1.0, 1.0]:
-		kit.add(PartShapes.box(Vector3(w - 0.1, 0.12, 0.01)), Transform3D(Basis(), Vector3(0, 0.6, Z_BULK + s * 0.035)),
+		kit.add(PartShapes.box(Vector3(w - 0.1, 0.12, 0.01)), Transform3D(Basis(), Vector3(dx, 0.6, Z_BULK + s * 0.035)),
 				trim_paint, "", null, false)
-		kit.add(PartShapes.box(Vector3(0.012, h - 0.3, 0.012)), Transform3D(Basis(), Vector3(w * 0.5 - 0.05, h * 0.5, Z_BULK + s * 0.036)),
+		kit.add(PartShapes.box(Vector3(0.012, h - 0.3, 0.012)), Transform3D(Basis(), Vector3(w * 0.5 - 0.05 + dx, h * 0.5, Z_BULK + s * 0.036)),
 				edge_glow, "", null, false)
 	for s: float in [-1.0, 1.0]:
 		var z := Z_BULK + s * (BULK_T * 0.5 + 0.01)
@@ -407,9 +470,11 @@ func _build_side_door() -> void:
 	var door_w := LOCK_DOOR.y - LOCK_DOOR.x
 	var door_z := (LOCK_DOOR.x + LOCK_DOOR.y) * 0.5
 	var gap_x := -(IN + 0.18)
+	# The leaf stands open, slid aft into its pocket between skin and lining.
+	var leaf_z := door_z + door_w + 0.05
 	kit.add(PartShapes.box(Vector3(0.05, LOCK_DOOR_TOP - 0.02, door_w + 0.02)), Transform3D(Basis(),
-			Vector3(gap_x, (LOCK_DOOR_TOP - 0.02) * 0.5, door_z)), dark)
-	kit.add(PartShapes.box(Vector3(0.01, 0.1, door_w - 0.1)), Transform3D(Basis(), Vector3(gap_x - 0.03, 1.5, door_z)),
+			Vector3(gap_x, (LOCK_DOOR_TOP - 0.02) * 0.5, leaf_z)), dark)
+	kit.add(PartShapes.box(Vector3(0.01, 0.1, door_w - 0.1)), Transform3D(Basis(), Vector3(gap_x - 0.03, 1.5, leaf_z)),
 			hazard, "", null, false)
 	kit.add(PartShapes.box(Vector3(0.2, 0.04, door_w)), Transform3D(Basis(), Vector3(gap_x, LOCK_DOOR_TOP + 0.02, door_z)), lining)
 	kit.add(PartShapes.box(Vector3(0.2, 0.02, door_w)), Transform3D(Basis(), Vector3(gap_x, 0.0 - 0.01, door_z)), floor_mat)
@@ -857,6 +922,7 @@ func _flank_keep(side: float) -> Callable:
 	else:
 		keep_out.append(Rect2(1.95, 1.6, 1.6, 0.5))     # name board
 		keep_out.append(Rect2(4.5, 0.75, 1.4, 1.1))     # fuel port
+		keep_out.append(Rect2(5.85, 0.5, 0.4, 0.45))    # shore power socket
 	return func(p: Vector3) -> bool:
 		for r in keep_out:
 			if r.has_point(Vector2(p.z, p.y)):

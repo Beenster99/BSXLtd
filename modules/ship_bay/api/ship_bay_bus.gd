@@ -17,6 +17,14 @@ signal slot_state_changed(slot_id: String, old_state: SlotState, new_state: Slot
 signal component_removed(slot_id: String, component: String)
 signal component_positioned(slot_id: String, component: String)
 signal component_installed(slot_id: String, component: String)
+## The ship in the bay was powered up (shore power on) or down.
+signal ship_power_changed(on: bool)
+## Business delivered an order: a crate per line, set down in the Deliveries hall.
+signal delivery_landed(order_id: String, crate_ids: PackedStringArray)
+## A delivered crate's goods were put away on a storage location.
+signal crate_stored(crate_id: String, location_id: String)
+## Anything in the stores changed (crates landed or put away, stock taken, a load).
+signal stock_changed
 ## The shipyard scene has built itself; add your own nodes to `yard` (at shipyard_spot()s).
 signal shipyard_ready(yard: Node3D)
 
@@ -24,22 +32,35 @@ signal shipyard_ready(yard: Node3D)
 const BAY_SCENE := "ship_bay.bay"
 ## Router scene id of the shipyard round the bay (registered while "ship_bay.shipyard" is on).
 const SHIPYARD_SCENE := "ship_bay.shipyard"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
 const SlotTracker := preload("res://modules/ship_bay/internal/slot_tracker.gd")
 const Shipyard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
+const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
+const StorageStock := preload("res://modules/ship_bay/internal/storage/storage_stock.gd")
 
 ## The ship in the bay, or null.
 var ship: ShipDefinition
 var _tracker: SlotTracker
 var _definitions: Dictionary = {}
+## Whether the ship in the bay is on shore power (its lamps, screens and systems live).
+var ship_powered := false
+var _stock := StorageStock.new()
+## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
+## runs without it: tests that switch only part of the game on, and solo builds).
+var _net: Node
 
 
 func register_module() -> void:
 	Saves.register_section("ship_bay", self)
+	# Multiplayer may load after this module, so its events are hooked up once all are in.
+	if Modules.ready_done:
+		_hook_net()
+	elif not Modules.modules_ready.is_connected(_hook_net):
+		Modules.modules_ready.connect(_hook_net, CONNECT_ONE_SHOT)
 	if Flags.is_on("ship_bay.bay_view"):
 		Router.register_scene(BAY_SCENE, "res://modules/ship_bay/internal/bay/bay.tscn")
 		Shots.register("kestrel_in_bay", BAY_SCENE)
@@ -47,13 +68,43 @@ func register_module() -> void:
 		Router.register_scene(SHIPYARD_SCENE, "res://modules/ship_bay/internal/yard/shipyard.tscn")
 		Menu.set_start(SHIPYARD_SCENE, 10)   # the game starts in the yard
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
-				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold"]:
+				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
+				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
+		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
+			scene.call("set_time_of_day", 22.0)
+			scene.call("show_view", "courtyard"))
+		# A sample delivery in the hall, then some of it put away (these change the stores).
+		Shots.register("shipyard_goods_in", SHIPYARD_SCENE, func(scene: Node) -> void:
+			_sample_delivery()
+			scene.call("show_view", "goods_in"))
+		Shots.register("shipyard_storage_stocked", SHIPYARD_SCENE, func(scene: Node) -> void:
+			_sample_delivery()
+			for id: String in delivered_crates():
+				if not id.ends_with("/1"):
+					store_crate(id)
+			scene.call("show_view", "storage_aisle_d"))
+
+
+func _hook_net() -> void:
+	var net := Modules.bus("multiplayer")
+	if net == null or not net.has_method("register_event") or net == _net:
+		return
+	_net = net
+	_net.call("register_event", "ship_bay.delivery", _apply_delivery, _host_only)
+	_net.call("register_event", "ship_bay.store_crate", _apply_store, _check_store)
+	_net.call("register_event", "ship_bay.take_stock", _apply_take, _check_take)
+	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
+	if _net:
+		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock"]:
+			_net.call("unregister_event", e)
+		_net.call("unregister_snapshot_provider", "ship_bay")
+		_net = null
 	Menu.clear_start(SHIPYARD_SCENE)
 
 
@@ -129,6 +180,7 @@ func unload_ship() -> void:
 	var id := ship.ship_id
 	ship = null
 	_tracker = null
+	set_ship_powered(false)
 	ship_unloaded.emit(id)
 
 
@@ -184,14 +236,25 @@ func note_joint_removed(joint_id: String) -> bool:
 	return _tracker != null and _tracker.joint_removed(joint_id)
 
 
+## Shore power to the ship in the bay on or off (the bay's ground power unit, or anyone).
+func set_ship_powered(on: bool) -> void:
+	if on == ship_powered:
+		return
+	ship_powered = on
+	ship_power_changed.emit(on)
+
+
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
-	if ship == null:
-		return {}
-	return {"ship_id": ship.ship_id, "slots": _tracker.snapshot()}
+	var out := {"storage": _stock.to_dict()}
+	if ship:
+		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
+	return out
 
 
 func restore(state: Dictionary) -> void:
+	_stock.from_dict(state.get("storage", {}))
+	stock_changed.emit()
 	var id: String = state.get("ship_id", "")
 	if id == "":
 		unload_ship()
@@ -199,6 +262,20 @@ func restore(state: Dictionary) -> void:
 	if (ship == null or ship.ship_id != id) and not load_ship(id):
 		return
 	_tracker.restore(state.get("slots", {}))
+	set_ship_powered(bool(state.get("powered", false)))
+
+
+## A new game: no ship in the bay and the stores empty.
+func reset_data() -> void:
+	restore({})
+
+
+func get_net_snapshot() -> Dictionary:
+	return snapshot()
+
+
+func apply_net_snapshot(data: Dictionary) -> void:
+	restore(data)
 
 
 func save_version() -> int:
@@ -211,6 +288,144 @@ func save_data() -> Dictionary:
 
 func load_data(data: Dictionary, _from_version: int) -> void:
 	restore(data)
+
+
+# --- The stores ------------------------------------------------------------------------
+
+## Business: an order has arrived. Lines are {item_id (a Void Salvage part_name or a
+## fastener id), qty, condition (0..1), name, grade, mass (kg a unit, 0 when unknown)}.
+## The host sets a crate per line down in the Deliveries hall and every player sees it;
+## delivery_landed follows. Other players' calls are ignored (the host's arrive for them).
+func receive_delivery(order_id: String, lines: Array) -> void:
+	var payload := {"order_id": order_id, "lines": lines.duplicate(true)}
+	if _net == null:
+		_apply_delivery(payload)
+	elif bool(_net.call("is_host")):
+		_net.call("host_emit", "ship_bay.delivery", payload)
+
+
+## Crates in the Deliveries hall not yet put away: crate id -> {order_id, item, name, qty,
+## condition, grade, mass, spot}.
+func delivered_crates() -> Dictionary:
+	return _stock.crates.duplicate(true)
+
+
+## Where a delivered crate stands in the yard (its floor centre), or Vector3.ZERO.
+func crate_position(crate_id: String) -> Vector3:
+	var c: Dictionary = _stock.crates.get(crate_id, {})
+	if c.is_empty():
+		return Vector3.ZERO
+	var spots: Array = StorageLayout.get_layout()["goods_in"]
+	var spot := int(c["spot"])
+	return spots[spot % spots.size()] + Vector3(0, 1.1 * (spot / spots.size()), 0)
+
+
+## Asks for a delivered crate's goods to be put away (on `location_id`, or the item's
+## home); crate_stored follows on every player. Trolleys call this as they set it down.
+func store_crate(crate_id: String, location_id := "") -> void:
+	var payload := {"crate_id": crate_id, "location": location_id}
+	if _net:
+		_net.call("request", "ship_bay.store_crate", payload)
+	elif _check_store(0, payload) is Dictionary:
+		_apply_store(payload)
+
+
+## Asks for parts out of the stores (to fit them); stock_changed follows.
+func take_stock(item_id: String, qty := 1) -> void:
+	var payload := {"item": item_id, "qty": qty}
+	if _net:
+		_net.call("request", "ship_bay.take_stock", payload)
+	elif _check_take(0, payload) is Dictionary:
+		_apply_take(payload)
+
+
+## Every storage location: id -> {id, kind ("bin", "pallet", "bulk"), rack, bay, level, pos,
+## at (yard space, the floor of the place), size, face, category, home (item id or "")}.
+func storage_locations() -> Dictionary:
+	return (StorageLayout.get_layout()["locations"] as Dictionary).duplicate(true)
+
+
+## The location an item is kept on ("" for an item without a home: it goes to a spare one).
+func home_location(item_id: String) -> String:
+	return StorageLayout.get_layout()["homes"].get(item_id, "")
+
+
+## Where a crate of this item would be put away now ("" when the stores are full).
+func place_for(item_id: String) -> String:
+	return _stock.place_for(item_id)
+
+
+## What is on a location: {item, qty, condition}, or {} when it is empty.
+func stock_at(location_id: String) -> Dictionary:
+	return (_stock.stock.get(location_id, {}) as Dictionary).duplicate()
+
+
+## Locations holding an item, its home first.
+func find_stock(item_id: String) -> PackedStringArray:
+	return _stock.where(item_id)
+
+
+func stock_count(item_id: String) -> int:
+	return _stock.count(item_id)
+
+
+## The parts the stores keep a home for: item id -> {name, category, mass (kg)}.
+func storage_items() -> Dictionary:
+	return StorageLayout.items().duplicate(true)
+
+
+func _sample_delivery() -> void:
+	var lines: Array = []
+	for item: String in ["IonThruster", "SideThruster", "LiftThruster", "HydrogenThruster", "DriveEngine",
+			"BatteryRack", "Gyroscope", "HelmConsole", "M10", "M12", "RIVET_4", "Reactor", "FuelPump"]:
+		var d: Dictionary = StorageLayout.items().get(item, {})
+		lines.append({"item_id": item, "qty": 1 if float(d.get("mass", 0.0)) > 40.0 else 250,
+				"condition": 1.0, "name": d.get("name", item), "grade": "new", "mass": d.get("mass", 0.0)})
+	receive_delivery("PO-%d" % (delivered_crates().size() + 1001), lines)
+
+
+func _host_only(sender: int, payload: Dictionary) -> Variant:
+	return payload if sender == 0 or (_net and sender == int(_net.call("local_peer_id"))) else "deliveries come from the host"
+
+
+func _apply_delivery(payload: Dictionary) -> void:
+	var ids := _stock.land(str(payload.get("order_id", "")), payload.get("lines", []))
+	stock_changed.emit()
+	delivery_landed.emit(str(payload.get("order_id", "")), ids)
+
+
+func _check_store(_sender: int, payload: Dictionary) -> Variant:
+	var id := str(payload.get("crate_id", ""))
+	if not _stock.crates.has(id):
+		return "no such crate"
+	var loc := str(payload.get("location", ""))
+	if loc == "":
+		loc = _stock.place_for(_stock.crates[id]["item"], float(_stock.crates[id]["mass"]))
+	if loc == "" or not StorageLayout.get_layout()["locations"].has(loc):
+		return "nowhere to put it"
+	var have: Dictionary = _stock.stock.get(loc, {})
+	if not have.is_empty() and have["item"] != _stock.crates[id]["item"]:
+		return "that place holds something else"
+	return {"crate_id": id, "location": loc}
+
+
+func _apply_store(payload: Dictionary) -> void:
+	var id := str(payload.get("crate_id", ""))
+	var loc := _stock.store(id, str(payload.get("location", "")))
+	if loc != "":
+		stock_changed.emit()
+		crate_stored.emit(id, loc)
+
+
+func _check_take(_sender: int, payload: Dictionary) -> Variant:
+	if _stock.count(str(payload.get("item", ""))) < int(payload.get("qty", 1)):
+		return "not enough in stock"
+	return payload
+
+
+func _apply_take(payload: Dictionary) -> void:
+	if _stock.take(str(payload.get("item", "")), int(payload.get("qty", 1))):
+		stock_changed.emit()
 
 
 func _emit(signal_name: String, args: Array) -> void:
