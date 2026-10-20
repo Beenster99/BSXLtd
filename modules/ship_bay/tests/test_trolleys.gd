@@ -122,6 +122,37 @@ func run_tests() -> void:
 	fleet.call("toggle_remote", "m")
 	check(fleet.get("remote_id") == "", "and lets go")
 
+	# The TV on Deliveries' east wall: clear of the frame columns, F on it opens the screen.
+	var tv := fleet.get_node_or_null("TrolleyTV") as Node3D
+	check(tv != null and absf(tv.global_position.z - 12.0) < 0.01 and fleet.get("tv_panel") != null, "a TV with the trolley screen on it")
+	var from := Vector3(-32.0, 2.55, 12.0)
+	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3(6, 0, 0))
+	var hit := yard.get_world_3d().direct_space_state.intersect_ray(q)
+	var used: Object = null
+	if not hit.is_empty():
+		var body := hit.collider as CollisionObject3D
+		used = body.shape_owner_get_owner(body.shape_find_owner(int(hit.shape)))
+	check(used != null and used.has_meta("ship_bay_use"), "nothing stands in front of it: looking at it hits %s" % [used])
+	if used and used.has_meta("ship_bay_use"):
+		(used.get_meta("ship_bay_use") as Callable).call()
+	var screen: Control = fleet.get("panel")
+	check(screen != null and screen.is_visible_in_tree(), "F on it opens the trolley screen")
+	if screen:
+		var shown: String = screen.call("text")
+		check(shown.contains("SMALL") and shown.contains("PICKING LIFT") and shown.contains("PUT AWAY DELIVERIES"),
+				"it lists every vehicle and the yard's keys")
+		screen.call("select", "s")
+		screen.call("press", "call")
+		await get_tree().physics_frame
+		check(not (fleet.get("jobs")["s"] as Dictionary).is_empty(), "CALL TO ME sends the small trolley: %s" % [fleet.get("jobs")["s"]])
+		screen.call("press", "park_all")
+		await get_tree().physics_frame
+		check(str(fleet.get("jobs")["s"].get("do", "")) == "park", "PARK ALL parks them")
+		screen.call("select", "l")
+		screen.call("press", "remote")
+		check(fleet.get("remote_id") == "l" and fleet.get("panel") == null, "REMOTE CONTROL takes the large one and shuts the screen")
+		fleet.call("toggle_remote", "l")
+
 	bus.crate_carried.disconnect(on_carry)
 	yard.queue_free()
 	await frames(1)

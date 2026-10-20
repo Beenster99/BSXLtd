@@ -20,8 +20,8 @@ var deck := Vector3(6, 1.0, 4)
 func beam_to_trolley(slot_id: String, component: String, condition: float, from: Vector3) -> String:
 	asked.append([slot_id, component, from])
 	return "" if busy else "m"
-func cancel_beam(id: String) -> void:
-	cancelled.append(id)
+func cancel_beam(slot_id: String) -> void:
+	cancelled.append(slot_id)
 func trolley_deck_position(id: String) -> Variant:
 	return deck if id == "m" else null
 """
@@ -64,7 +64,7 @@ func run_tests() -> void:
 	# The player takes it first: the trolley is called off; dropped, one is sent for again.
 	_stand_off(rig, part.centre())
 	station.press(&"tractor")
-	check(beam.held == part and beam.to_trolley.is_empty() and trolleys.get("cancelled") == ["m"],
+	check(beam.held == part and beam.to_trolley.is_empty() and trolleys.get("cancelled") == [SLOT],
 			"taking it with your own beam calls the trolley off")
 	_run(station, 1)
 	await frames(1)

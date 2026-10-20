@@ -1,41 +1,46 @@
 class_name WristHolo
 extends CanvasLayer
 ## The wrist screen, like Star Citizen's mobiGlas: press the holo key (Keys.HOLO, F1 by
-## default) anywhere in a game and your wrist projects a semi-transparent screen in front of
-## your face. Its rail lists Home and every channel modules registered with
-## HudSlots.register_holo_channel; click one to bring it up. A channel's Control that has a
-## close_requested signal puts the screen away when it fires. The holo key, Esc or a click
-## outside the screen puts it away. The UI bus owns one for the whole game.
+## default) anywhere in a game and your wrist projects the yard terminal in front of your
+## face, see-through: the BSX header, the hazard rule, a numbered tab for every channel
+## modules registered with HudSlots.register_holo_channel (Orders, Stock, Contracts,
+## Machines...), CLOSE, and the channel's screen under them. The holo key, Esc, CLOSE or a
+## click outside the screen puts it away. A channel's Control with a close_requested signal
+## puts it away too. The UI bus owns one for the whole game.
 
 const SHADER := """
 shader_type canvas_item;
 render_mode blend_add;
-uniform vec4 tint : source_color = vec4(0.45, 0.85, 1.0, 1.0);
+uniform vec4 tint : source_color = vec4(0.55, 0.8, 0.95, 1.0);
 uniform float strength = 1.0;
 void fragment() {
 	vec2 uv = UV;
 	float scan = 0.5 + 0.5 * sin(uv.y * 720.0 + TIME * 6.0);
 	float band = smoothstep(0.0, 0.04, fract(uv.y * 0.6 - TIME * 0.15)) * (1.0 - smoothstep(0.04, 0.1, fract(uv.y * 0.6 - TIME * 0.15)));
-	float edge = max(smoothstep(0.012, 0.0, min(uv.x, 1.0 - uv.x)), smoothstep(0.02, 0.0, min(uv.y, 1.0 - uv.y)));
+	float edge = max(smoothstep(0.008, 0.0, min(uv.x, 1.0 - uv.x)), smoothstep(0.014, 0.0, min(uv.y, 1.0 - uv.y)));
 	float flicker = 0.92 + 0.08 * sin(TIME * 53.0) * sin(TIME * 7.3);
-	float a = (scan * 0.035 + band * 0.05 + edge * 0.35) * flicker * strength;
+	float a = (scan * 0.025 + band * 0.035 + edge * 0.3) * flicker * strength;
 	COLOR = vec4(tint.rgb * a, 1.0);
 }
 """
 ## Where the screen sits: its size as a share of the window, and how far it leans.
-const SCREEN_SHARE := Vector2(0.7, 0.72)
-const TILT_DEG := -1.2
-const HOLO_FILL := Color(0.03, 0.12, 0.17, 0.62)
+const SCREEN_SHARE := Vector2(0.84, 0.8)
+const TILT_DEG := -1.0
+const T := preload("res://modules/ui/api/terminal_kit.gd")
 
 var is_open := false
 var channel := ""
 var root: Control
 var pane: PanelContainer
-var content: Control
-var rail: VBoxContainer
+var content: MarginContainer
+var tabs: HBoxContainer
+var _readouts: Label
+var _clock: Label
+var _last := ""
 var _mouse_before := Input.MOUSE_MODE_VISIBLE
 var _content_node: Control
 var _tween: Tween
+var _tick := 0.0
 
 
 func _ready() -> void:
@@ -59,7 +64,8 @@ func toggle() -> void:
 		open()
 
 
-## Brings the screen up on `channel_id` ("" = Home). Already up: switches channel.
+## Brings the screen up on `channel_id` ("" = the channel shown last, else the first).
+## Already up: switches channel.
 func open(channel_id: String = "") -> void:
 	if is_open:
 		show_channel(channel_id)
@@ -91,38 +97,52 @@ func close() -> void:
 	root = null
 	pane = null
 	content = null
+	tabs = null
 	_content_node = null
 	channel = ""
 	Input.mouse_mode = _mouse_before
 
 
-## Puts a channel on the screen ("" = Home, the channel tiles).
+## Puts a channel on the screen ("" = the last one shown, else the first).
 func show_channel(channel_id: String, sound: bool = true) -> void:
 	if not is_open:
 		open(channel_id)
 		return
-	if channel_id != "" and HudSlots.holo_channel(channel_id).is_empty():
-		channel_id = ""
+	if channel_id == "" or HudSlots.holo_channel(channel_id).is_empty():
+		channel_id = _last if not HudSlots.holo_channel(_last).is_empty() else _first()
 	channel = channel_id
+	if channel_id != "":
+		_last = channel_id
 	if _content_node:
 		content.remove_child(_content_node)  # now, so the new screen can take the name
 		_content_node.queue_free()
 		_content_node = null
 	if channel_id == "":
-		_content_node = _home()
+		_content_node = T.label("No screens yet.", "body", 20, T.DIM)
 	else:
-		var made: Variant = HudSlots.holo_channel(channel_id).factory.call()
+		var factory: Callable = HudSlots.holo_channel(channel_id).factory
+		var made: Variant = factory.call(true) if factory.get_argument_count() >= 1 else factory.call()
 		_content_node = made as Control
 		if _content_node == null:
-			_content_node = BsxTheme.muted("This channel has nothing to show.")
+			_content_node = T.label("This screen has nothing to show.", "body", 20, T.DIM)
 		elif _content_node.has_signal("close_requested"):
 			_content_node.connect("close_requested", close)
 	_content_node.name = "Channel"
-	_content_node.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_content_node.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content_node.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(_content_node)
-	_mark_rail()
+	_fill_tabs()
 	if sound:
 		Sfx.play("holo_switch", null, -10.0)
+
+
+func _process(delta: float) -> void:
+	if not is_open:
+		return
+	_tick -= delta
+	if _tick <= 0.0:
+		_tick = 0.5
+		_refresh_header()
 
 
 func _input(event: InputEvent) -> void:
@@ -136,6 +156,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+func _first() -> String:
+	var all := HudSlots.holo_channels()
+	return "" if all.is_empty() else str(all[0].id)
+
+
 func _build() -> void:
 	root = Control.new()
 	root.name = "Holo"
@@ -146,7 +171,7 @@ func _build() -> void:
 		if e is InputEventMouseButton and e.pressed:
 			close())
 	add_child(root)
-	var view := root.get_viewport_rect().size if root.is_inside_tree() else Vector2(1280, 720)
+	var view := root.get_viewport_rect().size
 	if view.x <= 0.0:
 		view = Vector2(1280, 720)
 
@@ -158,62 +183,92 @@ func _build() -> void:
 
 	pane = PanelContainer.new()
 	pane.name = "Pane"
-	var size := (view * SCREEN_SHARE).max(Vector2(760, 480))
+	var size := (view * SCREEN_SHARE).max(Vector2(900, 540))
 	pane.size = size
-	pane.position = Vector2((view.x - size.x) * 0.5 + view.x * 0.03, (view.y - size.y) * 0.42)
+	pane.position = Vector2((view.x - size.x) * 0.5 + view.x * 0.02, (view.y - size.y) * 0.4)
 	pane.rotation = deg_to_rad(TILT_DEG)
-	var style := StyleBoxFlat.new()
-	style.bg_color = HOLO_FILL
-	style.border_color = Color(BsxTheme.ACCENT, 0.75)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(10)
-	style.set_content_margin_all(18)
-	style.shadow_color = Color(BsxTheme.ACCENT, 0.18)
-	style.shadow_size = 18
+	var style := T.box(T.tone(T.KIOSK, true, T.GLASS_KIOSK), Color(T.STEEL, 0.55), 2, 0)
+	style.shadow_color = Color(0.55, 0.8, 0.95, 0.12)
+	style.shadow_size = 16
 	pane.add_theme_stylebox_override("panel", style)
 	root.add_child(pane)
 	wrist.target = pane
 
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 10)
-	pane.add_child(box)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 16)
-	box.add_child(head)
-	var title := BsxTheme.hud_label("BSX  //  WRIST", 20, BsxTheme.ACCENT)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(title)
-	var game := BsxTheme.hud_label(Saves.current_name, 16, BsxTheme.HUD_DIM)
-	game.name = "GameName"
-	head.add_child(game)
-	var clock := BsxTheme.hud_label(AlienSky.clock(AlienSky.setting_hour()), 18, BsxTheme.HUD)
-	clock.name = "Clock"
-	head.add_child(clock)
-	var x := _holo_button("X", close)
-	x.name = "Close"
-	x.custom_minimum_size = Vector2(40, 32)
-	head.add_child(x)
-	var rule := ColorRect.new()
-	rule.color = Color(BsxTheme.ACCENT, 0.35)
-	rule.custom_minimum_size = Vector2(0, 1)
-	box.add_child(rule)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	pane.add_child(col)
 
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 16)
-	box.add_child(body)
-	rail = VBoxContainer.new()
-	rail.name = "Rail"
-	rail.custom_minimum_size = Vector2(190, 0)
-	rail.add_theme_constant_override("separation", 6)
-	body.add_child(rail)
-	content = Control.new()
+	# The terminal's header: the BSX badge, the title, the clock and readouts.
+	var header := HBoxContainer.new()
+	header.name = "Header"
+	header.custom_minimum_size.y = 58
+	header.add_theme_constant_override("separation", 0)
+	col.add_child(header)
+	var badge := PanelContainer.new()
+	var badge_st := T.box(Color(T.ORANGE, 0.88))
+	badge_st.content_margin_left = 16
+	badge_st.content_margin_right = 16
+	badge.add_theme_stylebox_override("panel", badge_st)
+	var bsx := T.label("BSX", "display_bold", 36, T.BLACK)
+	bsx.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge.add_child(bsx)
+	header.add_child(badge)
+	var title := VBoxContainer.new()
+	title.alignment = BoxContainer.ALIGNMENT_CENTER
+	title.add_theme_constant_override("separation", -4)
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 16)
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pad.add_child(title)
+	header.add_child(pad)
+	title.add_child(T.label("WRIST TERMINAL", "display_bold", 28, T.TEXT))
+	var game := T.label(Saves.current_name.to_upper() if Saves.current_name != "" else "BSX LTD  ·  SHIP FITTING",
+			"display_medium", 15, T.DIM)
+	game.name = "GameName"
+	title.add_child(game)
+	var readouts := VBoxContainer.new()
+	readouts.alignment = BoxContainer.ALIGNMENT_CENTER
+	readouts.add_theme_constant_override("separation", -2)
+	var rpad := MarginContainer.new()
+	rpad.add_theme_constant_override("margin_right", 16)
+	rpad.add_child(readouts)
+	header.add_child(rpad)
+	_clock = T.label("", "mono_medium", 17, T.DIM)
+	_clock.name = "Clock"
+	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	readouts.add_child(_clock)
+	_readouts = T.label("", "mono_bold", 24, T.ORANGE)
+	_readouts.name = "Readouts"
+	_readouts.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	readouts.add_child(_readouts)
+	col.add_child(T.HazardRule.new(9.0, true))
+
+	var tab_pad := MarginContainer.new()
+	for side in ["left", "right", "top"]:
+		tab_pad.add_theme_constant_override("margin_" + side, 14)
+	tabs = HBoxContainer.new()
+	tabs.name = "Tabs"
+	tabs.add_theme_constant_override("separation", 6)
+	tab_pad.add_child(tabs)
+	col.add_child(tab_pad)
+
+	content = MarginContainer.new()
 	content.name = "Content"
 	content.clip_contents = true
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(content)
-	_fill_rail()
+	for side in ["left", "right", "top", "bottom"]:
+		content.add_theme_constant_override("margin_" + side, 14)
+	col.add_child(content)
+
+	var footer := PanelContainer.new()
+	footer.add_theme_stylebox_override("panel", T.box(Color(T.EDGE, 0.45), Color.TRANSPARENT, 0, 5))
+	var hint := T.label("%s OR %s CLOSE    ·    CLICK A TAB FOR ANOTHER SCREEN    ·    %s USE" % [
+			Keys.prompt(Keys.HOLO), Keys.prompt(Keys.CANCEL), Keys.prompt(Keys.INTERACT)],
+			"display_medium", 15, T.DIM)
+	hint.name = "Hint"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	footer.add_child(hint)
+	col.add_child(footer)
 
 	var glow := ColorRect.new()
 	glow.name = "Scan"
@@ -224,81 +279,48 @@ func _build() -> void:
 	mat.shader = shader
 	glow.material = mat
 	pane.add_child(glow)
+	_refresh_header()
 
 
-func _fill_rail() -> void:
-	if rail == null:
+func _refresh_header() -> void:
+	if _clock == null or not is_instance_valid(_clock):
 		return
-	for child in rail.get_children():
-		rail.remove_child(child)
-		child.queue_free()
-	var home := _holo_button("Home", func() -> void: show_channel(""))
-	home.name = "Home"
-	rail.add_child(home)
+	_clock.text = AlienSky.clock(AlienSky.setting_hour())
+	_readouts.text = "    ".join(HudSlots.holo_readouts())
+
+
+## One numbered tab per channel, the shown one lit, CLOSE at the end.
+func _fill_tabs() -> void:
+	if tabs == null:
+		return
+	for c in tabs.get_children():
+		tabs.remove_child(c)
+		c.queue_free()
+	var n := 0
 	for c: Dictionary in HudSlots.holo_channels():
-		var b := _holo_button(c.label, func() -> void: show_channel(c.id))
+		n += 1
+		var b := T.button("%02d  %s" % [n, str(c.label).to_upper()], false, 19, c.id == channel, true)
 		b.name = "Ch_" + str(c.id).validate_node_name()
+		b.custom_minimum_size.x = 150
 		b.set_meta("channel", c.id)
-		rail.add_child(b)
+		b.pressed.connect(func() -> void: show_channel(c.id))
+		tabs.add_child(b)
 	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	rail.add_child(spacer)
-	rail.add_child(BsxTheme.hud_label("%s  close" % Keys.prompt(Keys.HOLO), 14, BsxTheme.MUTED))
-
-
-func _mark_rail() -> void:
-	if rail == null:
-		return
-	for b in rail.get_children():
-		if b is Button:
-			var on: bool = str(b.get_meta("channel", "")) == channel
-			b.add_theme_color_override("font_color", BsxTheme.LIVE if on else BsxTheme.HUD)
-
-
-func _home() -> Control:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
-	box.add_child(BsxTheme.hud_label("CHANNELS", 16, BsxTheme.HUD_DIM))
-	var grid := GridContainer.new()
-	grid.name = "Tiles"
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 12)
-	box.add_child(grid)
-	var channels := HudSlots.holo_channels()
-	for c: Dictionary in channels:
-		var tile := _holo_button(c.label, func() -> void: show_channel(c.id))
-		tile.name = "Tile_" + str(c.id).validate_node_name()
-		tile.custom_minimum_size = Vector2(200, 84)
-		grid.add_child(tile)
-	if channels.is_empty():
-		box.add_child(BsxTheme.muted("No channels yet."))
-	return box
-
-
-func _holo_button(text: String, on_pressed: Callable) -> Button:
-	var b := BsxTheme.button(text, on_pressed)
-	b.custom_minimum_size = Vector2(0, 38)
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	for state: String in ["normal", "hover", "pressed", "focus"]:
-		var s := StyleBoxFlat.new()
-		s.bg_color = Color(BsxTheme.ACCENT, 0.16 if state == "hover" else (0.24 if state == "pressed" else 0.06))
-		s.border_color = Color(BsxTheme.ACCENT, 0.5 if state == "hover" else 0.25)
-		s.set_border_width_all(1)
-		s.set_corner_radius_all(4)
-		s.set_content_margin_all(8)
-		b.add_theme_stylebox_override(state, s)
-	b.add_theme_color_override("font_color", BsxTheme.HUD)
-	return b
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tabs.add_child(spacer)
+	var x := T.button("CLOSE  ✕", false, 17, false, true)
+	x.name = "Close"
+	x.pressed.connect(close)
+	tabs.add_child(x)
 
 
 func _on_channels_changed() -> void:
-	if is_open:
-		_fill_rail()
-		if channel != "" and HudSlots.holo_channel(channel).is_empty():
-			show_channel("", false)
-		else:
-			_mark_rail()
+	if not is_open:
+		return
+	if channel != "" and HudSlots.holo_channel(channel).is_empty():
+		show_channel("", false)
+	else:
+		_fill_tabs()
 
 
 ## The forearm and gauntlet at the bottom left, with the emitter's light fanning up to the
@@ -318,14 +340,15 @@ class WristArm extends Control:
 		var plate := PackedVector2Array([Vector2(s.x * 0.08, s.y * 0.885), Vector2(s.x * 0.2, s.y * 0.9),
 				Vector2(s.x * 0.215, s.y * 0.97), Vector2(s.x * 0.075, s.y * 0.955)])
 		draw_colored_polygon(plate, Color(0.2, 0.22, 0.25, 1.0))
-		draw_polyline(plate + PackedVector2Array([plate[0]]), Color(1.0, 0.55, 0.16, 0.9), 2.0)
+		draw_polyline(plate + PackedVector2Array([plate[0]]), Color(TerminalKit.ORANGE, 0.9), 2.0)
 		var pulse := 0.75 + 0.25 * sin(Time.get_ticks_msec() * 0.006)
-		draw_circle(cuff, 9.0, Color(BsxTheme.ACCENT, 0.9 * pulse))
-		draw_circle(cuff, 20.0, Color(BsxTheme.ACCENT, 0.18 * pulse))
+		var light := Color(0.62, 0.9, 1.0)
+		draw_circle(cuff, 9.0, Color(light, 0.9 * pulse))
+		draw_circle(cuff, 20.0, Color(light, 0.18 * pulse))
 		if target and is_instance_valid(target):
 			var t := target.get_global_transform()
 			var bl := t * Vector2(0, target.size.y)
 			var br := t * Vector2(target.size.x * 0.45, target.size.y)
-			draw_colored_polygon(PackedVector2Array([cuff, bl, br]), Color(BsxTheme.ACCENT, 0.07))
-			draw_line(cuff, bl, Color(BsxTheme.ACCENT, 0.25), 1.5)
-			draw_line(cuff, br, Color(BsxTheme.ACCENT, 0.15), 1.5)
+			draw_colored_polygon(PackedVector2Array([cuff, bl, br]), Color(light, 0.06))
+			draw_line(cuff, bl, Color(light, 0.25), 1.5)
+			draw_line(cuff, br, Color(light, 0.15), 1.5)

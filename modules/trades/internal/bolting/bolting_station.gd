@@ -90,12 +90,12 @@ func start_hint() -> String:
 	return "Take a bolt from the tray and screw it in by hand. Torque wrench is 2."
 
 
-func key(k: Key) -> bool:
-	match k:
-		KEY_TAB:
+func key(action: String) -> bool:
+	match action:
+		TradesBus.KEY_NEXT:
 			fastener_index = (fastener_index + 1) % TradesStubFasteners.ids().size()
 			return true
-		KEY_F:
+		Keys.INTERACT:
 			with_washer = not with_washer
 			return true
 	return false

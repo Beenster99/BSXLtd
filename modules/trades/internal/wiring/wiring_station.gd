@@ -85,8 +85,8 @@ func start_hint() -> String:
 	return "Wire S+ to COM, NO to L+ and L- to S-. Click a terminal with your hands to run a wire."
 
 
-func key(k: Key) -> bool:
-	if k == KEY_TAB:
+func key(action: String) -> bool:
+	if action == TradesBus.KEY_NEXT:
 		colour_index = (colour_index + 1) % WireCircuit.COLOURS.size()
 		return true
 	return false

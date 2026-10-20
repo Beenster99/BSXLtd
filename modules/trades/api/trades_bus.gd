@@ -27,6 +27,17 @@ const TRADES: Array[String] = ["bolting", "riveting", "welding", "wiring"]
 const YARD_RIG := "ToolsRig"
 ## The group Ship and Bay knows other modules' nodes in the yard by.
 const YARD_GUEST_GROUP := "yard_guest"
+## The Tools keys, input actions in Settings > Key binds ("Tools"); walking, F and Esc are
+## Core's (Keys.FORWARD..., Keys.INTERACT, Keys.CANCEL).
+const KEY_TOOL := "trades.tool_"         # + 1..9: pick a tool off the hotbar
+const KEY_VIEW := "trades.view"
+const KEY_TURN_LEFT := "trades.turn_left"
+const KEY_TURN_RIGHT := "trades.turn_right"
+## The practice bench's: start the job again, the next part in the tray.
+const KEY_RESET := "trades.reset"
+const KEY_NEXT := "trades.next"
+const KEY_GROUP := "Tools"
+const HOTBAR_KEYS := 9
 
 var _sites: Dictionary = {}
 var _results: Dictionary = {}
@@ -34,6 +45,13 @@ var _modifiers: Dictionary = {}  # str(player_id) -> {effect_key: value}
 
 
 func register_module() -> void:
+	for i in HOTBAR_KEYS:
+		Keys.register(KEY_TOOL + str(i + 1), "Tool %d" % (i + 1), (KEY_1 + i) as Key, KEY_GROUP)
+	Keys.register(KEY_VIEW, "First / third person", KEY_V, KEY_GROUP)
+	Keys.register(KEY_TURN_LEFT, "Turn left / amps down", KEY_Q, KEY_GROUP)
+	Keys.register(KEY_TURN_RIGHT, "Turn right / amps up", KEY_E, KEY_GROUP)
+	Keys.register(KEY_RESET, "Start the bench job again", KEY_R, KEY_GROUP)
+	Keys.register(KEY_NEXT, "Next part in the tray", KEY_TAB, KEY_GROUP)
 	if TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t)):
 		Router.register_scene(WORKBENCH, BENCH_SCENE)
 	if Flags.is_on("trades.shipyard"):

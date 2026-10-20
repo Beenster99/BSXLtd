@@ -8,8 +8,8 @@ signal notice_posted(text: String)
 
 const MAIN_MENU := "main_menu"
 const SETTINGS := "settings"
-const TIME_CHANNEL := "ui.time"
-const KEYS_CHANNEL := "ui.keys"
+## The wrist screen's own channel: time of day and key binds.
+const SETTINGS_CHANNEL := "ui.settings"
 
 ## The wrist screen (Keys.HOLO in any game scene).
 var holo: WristHolo
@@ -26,13 +26,11 @@ func register_module() -> void:
 	apply_settings()
 	holo = WristHolo.new()
 	add_child(holo)
-	HudSlots.register_holo_channel(TIME_CHANNEL, "Time of day", _time_channel, 900)
-	HudSlots.register_holo_channel(KEYS_CHANNEL, "Key binds", func() -> Control: return KeyBindsPanel.new(), 910)
+	HudSlots.register_holo_channel(SETTINGS_CHANNEL, "Settings", _settings_channel, 900)
 
 
 func unregister_module() -> void:
-	HudSlots.unregister_holo_channel(TIME_CHANNEL)
-	HudSlots.unregister_holo_channel(KEYS_CHANNEL)
+	HudSlots.unregister_holo_channel(SETTINGS_CHANNEL)
 	if holo:
 		holo.close()
 	if Settings.changed.is_connected(_on_setting_changed):
@@ -53,13 +51,20 @@ func _on_setting_changed(_section: String, _key: String, _value: Variant) -> voi
 	apply_settings()
 
 
-## The wrist screen's time of day: the same slider as Settings.
-func _time_channel() -> Control:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
-	var label := BsxTheme.hud_label("", 28, BsxTheme.ACCENT)
+## The wrist screen's Settings: the time of day on the left, key binds on the right, on
+## the terminal's see-through plates.
+func _settings_channel(glass: bool) -> Control:
+	var T := TerminalKit
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	var left := T.docket("Time of day", "SKY", glass)
+	var lp: PanelContainer = left.panel
+	lp.size_flags_stretch_ratio = 0.8
+	row.add_child(lp)
+	var body: VBoxContainer = left.body
+	var label := T.label("", "mono_bold", 44, T.ORANGE)
 	label.name = "Clock"
-	box.add_child(label)
+	body.add_child(label)
 	var slider := HSlider.new()
 	slider.name = "TimeOfDay"
 	slider.min_value = 0.0
@@ -70,6 +75,15 @@ func _time_channel() -> Control:
 	slider.value_changed.connect(func(h: float) -> void:
 		label.text = AlienSky.clock(h)
 		Settings.set_value(AlienSky.SECTION, AlienSky.KEY, h))
-	box.add_child(slider)
-	box.add_child(BsxTheme.muted("Moves the sun over the yard. Saved with your settings."))
-	return box
+	body.add_child(slider)
+	body.add_child(T.label("Moves the sun over the yard.", "body", 17, T.DIM))
+	var right := T.docket("Key binds", "KEYS", glass)
+	var rp: PanelContainer = right.panel
+	rp.size_flags_stretch_ratio = 1.2
+	row.add_child(rp)
+	var binds := KeyBindsPanel.new()
+	binds.name = "KeyBindsPanel"
+	binds.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	(right.body as VBoxContainer).add_child(binds)
+	(right.body as VBoxContainer).size_flags_vertical = Control.SIZE_EXPAND_FILL
+	return row

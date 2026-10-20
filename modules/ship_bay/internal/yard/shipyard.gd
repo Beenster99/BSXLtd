@@ -85,6 +85,8 @@ const VIEWS := {
 	"trolleys": [Vector3(-38.5, 3.4, -25.0), Vector3(-31.0, 0.6, -14.0)],
 	"trolley_lift": [Vector3(-12.2, 1.8, -24.6), Vector3(-10.4, 4.6, -34.0)],
 	"picking_lift": [Vector3(-20.0, 1.7, -25.6), Vector3(-20.55, 5.8, -34.3)],
+	"trolley_tv": [Vector3(-34.0, 1.9, 12.0), Vector3(-28.3, 2.5, 12.0)],
+	"hover_truck": [Vector3(-74.0, 4.5, 22.0), Vector3(-60.0, 1.8, 8.0)],
 	# Dock 1: the overlook, the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
 	"overlook": [Vector3(-3, 7.1, -22.4), Vector3(1, 1.5, 4)],
@@ -888,8 +890,7 @@ func _build_deliveries() -> void:
 		var n := _tag("GI-%02d" % (i + 1), at + Vector3(0, 0.03, 0.95), 0.18, Vector3.ZERO)
 		n.rotation = Vector3(-PI * 0.5, 0, 0)
 	_sign("GOODS IN", Vector3(-40.8, 5.6, -23.6), 0.0, 0.45)
-	# A forklift and the goods-in desk with its screen, stool and a shelf behind.
-	_forklift(Vector3(-31.5, 0, 3), 0.4)
+	# The goods-in desk with its screen, stool and a shelf behind.
 	_put(_lib("cbox/desk", func() -> PartShapes.PartShape:
 			return PartShapes.chamfer_box(Vector3(1.0, 1.05, 3.2), 0.04)), _at(Vector3(-31, 0.525, 14)), _paint(DARK, 0.3, 0.5, "satin_paint"))
 	_put(_box(Vector3(1.1, 0.04, 3.3)), _at(Vector3(-31, 1.07, 14)), _paint(Color(0.7, 0.71, 0.7), 0.3, 0.4, "brushed_alloy"), false)
@@ -1454,86 +1455,52 @@ func _build_outside() -> void:
 
 # --- Props --------------------------------------------------------------------------------
 
-## A delivery truck backed up to a dock: its trailer's doors at `rear` (the trailer runs
-## off towards -X), a cab on a ladder chassis.
+## A hover truck backed up to a dock: its cargo pod's doors at `rear` (the pod runs off
+## towards -X), floating on a spine of lift pads with a cab ahead of it: a rounded nose with
+## a wrap-round windscreen, Void Salvage's lit edge strip down both sides, running lamps.
 func _truck(rear: Vector3) -> void:
-	var trailer := _lib("container/trailer", func() -> PartShapes.PartShape:
+	const FLOAT := 0.7   # the spine's underside over the ground, metres
+	var pod := _lib("container/hover_pod", func() -> PartShapes.PartShape:
 			return WreckParts.container(Vector3(2.5, 2.7, 12.0), TRIM))
 	var c := rear + Vector3(-6.05, 0, 0)
-	_put(trailer, Transform3D(Basis(Vector3.UP, PI * 0.5), c + Vector3(0, 1.15 + 1.35, 0)), _parts)
-	var rail := _lib("ibeam/chassis", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(17.0, 0.12, 0.3))
-	for k: float in [-0.5, 0.5]:
-		_put(rail, _at(rear + Vector3(-8.4, 0.95, k)), _frame, false)
-	var wheel := _lib("prism/truck_wheel", func() -> PartShapes.PartShape:
-			return PartShapes.prism(16, 0.5, 0.36))
-	var hub := _lib("prism/truck_hub", func() -> PartShapes.PartShape:
-			return PartShapes.prism(10, 0.24, 0.38))
-	for x: float in [-1.6, -2.75, -12.6, -15.6]:
-		for side: float in [-1.0, 1.0]:
-			var p := rear + Vector3(x, 0.5, 1.02 * side)
-			_put(wheel, Transform3D(Y_TO_Z, p), _rubber, false)
-			_put(hub, Transform3D(Y_TO_Z, p), _bare, false)
-	_put(_box(Vector3(0.15, 0.25, 2.5)), _at(rear + Vector3(0.0, 0.95, 0)), _hazard, false)
-	# The cab.
-	var cab := rear + Vector3(-15.9, 0, 0)
-	_put(_lib("cbox/cab", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(2.4, 2.4, 2.5), 0.14)), _at(cab + Vector3(0, 2.3, 0)), _paint(BLUE, 0.4, 0.4, "metallic_paint"))
-	_put(_lib("wedge/deflector", func() -> PartShapes.PartShape:
-			return PartShapes.wedge(Vector3(2.3, 0.6, 1.6))), Transform3D(Basis(Vector3.UP, PI * 0.5), cab + Vector3(0.2, 3.8, 0)), _paint(BLUE, 0.4, 0.4, "metallic_paint"), false)
-	_put(_lib("window/windscreen", func() -> PartShapes.PartShape:
-			return PartShapes.window_rect(2.1, 0.95, 0.06)), Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, PI * 0.5), cab + Vector3(-1.22, 2.85, 0)), _frame, false)
+	_put(pod, Transform3D(Basis(Vector3.UP, PI * 0.5), c + Vector3(0, FLOAT + 0.45 + 1.35, 0)), _parts)
+	var paint := _paint(Color(0.9, 0.91, 0.9), 0.2, 0.4, "gloss_paint")
+	# The spine under the pod and cab, its lift pads glowing blue underneath.
+	_put(_lib("cbox/hover_spine", func() -> PartShapes.PartShape:
+			return PartShapes.chamfer_box(Vector3(17.0, 0.45, 2.2), 0.12)), _at(rear + Vector3(-8.5, FLOAT + 0.22, 0)), _frame, false)
+	var pad := _lib("prism/hover_pad", func() -> PartShapes.PartShape:
+			return PartShapes.prism(16, 0.42, 0.08))
+	var glow := _glow_mat(EDGE, 4.0)
+	for x: float in [-1.6, -5.0, -8.4, -11.8, -15.4]:
+		for side: float in [-0.6, 0.6]:
+			_put(pad, _at(rear + Vector3(x, FLOAT - 0.04, side)), glow, false)
+	for x: float in [-3.3, -10.1]:
+		var lift := OmniLight3D.new()
+		lift.position = rear + Vector3(x, 0.25, 0)
+		lift.light_color = EDGE
+		lift.light_energy = 1.4
+		lift.omni_range = 3.0
+		lift.set_meta("gfx_no_shadow", true)
+		add_child(lift)
+	_put(_box(Vector3(0.15, 0.25, 2.5)), _at(rear + Vector3(0.0, FLOAT + 0.3, 0)), _hazard, false)
+	# The cab: a rounded body, a raked nose, the windscreen wrapping round it.
+	var cab := rear + Vector3(-15.6, 0, 0)
+	_put(_lib("cbox/hover_cab", func() -> PartShapes.PartShape:
+			return PartShapes.chamfer_box(Vector3(3.0, 2.3, 2.5), 0.45)), _at(cab + Vector3(0.2, FLOAT + 0.45 + 1.15, 0)), paint)
+	_put(_lib("wedge/hover_nose", func() -> PartShapes.PartShape:
+			return PartShapes.wedge(Vector3(2.4, 1.2, 1.4))), Transform3D(Basis(Vector3.UP, -PI * 0.5), cab + Vector3(-1.95, FLOAT + 0.45 + 0.6, 0)), paint, false)
+	_put(_lib("window/hover_screen", func() -> PartShapes.PartShape:
+			return PartShapes.window_rect(2.2, 0.9, 0.06)), Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, PI * 0.5 - 0.5), cab + Vector3(-1.38, FLOAT + 0.45 + 1.75, 0)), _frame, false)
 	for side: float in [-1.0, 1.0]:
-		_put(_lib("window/side", func() -> PartShapes.PartShape:
-				return PartShapes.window_rect(1.0, 0.7, 0.05)), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), cab + Vector3(-0.4, 2.9, 1.26 * side)), _frame, false)
-		_put(_box(Vector3(0.08, 0.4, 0.06)), _at(cab + Vector3(-1.1, 2.9, 1.45 * side)), _frame, false)
-		_put(_lib("tank/fuel", func() -> PartShapes.PartShape: return WreckParts.tank(0.3, 1.1)),
-				Transform3D(Y_TO_X, cab + Vector3(1.9, 0.75, 0.95 * side)), _parts, false)
-		_put(_box(Vector3(0.5, 0.06, 0.3)), _at(cab + Vector3(1.3, 0.9, 1.15 * side)), _galv, false)
-	_put(_lib("louvre/grille", func() -> PartShapes.PartShape: return PartShapes.louvre(1.6, 0.8, 0.1, 7)),
-			Transform3D(FACE_NX, cab + Vector3(-1.24, 1.6, 0)), _frame, false)
-	_put(_lib("headlamp/truck", func() -> PartShapes.PartShape:
-			return WreckParts.headlamp_bar(2.2, 4, LAMP)), Transform3D(FACE_NX, cab + Vector3(-1.3, 1.05, 0)), _parts, false)
-	_put(_lib("pipe/stack", func() -> PartShapes.PartShape: return WreckParts.pipe(0.09, 2.4, false)),
-			_at(cab + Vector3(1.35, 3.0, 1.0)), _paint(STEEL, 0.85, 0.3, "chrome"), false)
-	_put(_box(Vector3(1.0, 0.12, 1.0)), _at(rear + Vector3(-13.2, 1.15, 0)), _frame, false)
-	_collide_xf(_box_shape(Vector3(17.6, 3.0, 2.6)), _at(rear + Vector3(-8.6, 2.1, 0)))
-	_sign("BSX", c + Vector3(0, 2.6, 1.29), 0.0, 1.2, false).modulate = TRIM
-
-
-## A forklift at `at` facing -Z turned by `yaw`: body, counterweight, overhead guard, mast,
-## carriage and forks.
-func _forklift(at: Vector3, yaw: float) -> void:
-	var base := Transform3D(Basis(Vector3.UP, yaw), at)
-	var body := _paint(HAZARD, 0.2, 0.45, "gloss_paint")
-	_put(_lib("cbox/fork_body", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(1.2, 0.9, 1.9), 0.08)), base * _at(Vector3(0, 0.75, 0.05)), body, false)
-	_put(_lib("cbox/fork_weight", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(1.18, 0.75, 0.45), 0.12)), base * _at(Vector3(0, 0.95, 1.1)), _frame, false)
-	var guard := _lib("ibeam/fork_guard", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(1.15, 0.06, 0.06))
-	for p: Vector3 in [Vector3(-0.55, 1.75, -0.35), Vector3(0.55, 1.75, -0.35), Vector3(-0.55, 1.75, 0.85), Vector3(0.55, 1.75, 0.85)]:
-		_put(guard, base * Transform3D(UPRIGHT, p), _frame, false)
-	_put(_lib("grating/fork_roof", func() -> PartShapes.PartShape: return WreckParts.grating(1.2, 1.35)),
-			base * _at(Vector3(0, 2.35, 0.25)), _frame, false)
-	var mast := _lib("ibeam/fork_mast", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(2.9, 0.1, 0.14))
-	for side: float in [-0.42, 0.42]:
-		_put(mast, base * Transform3D(UPRIGHT, Vector3(side, 1.55, -1.05)), _frame, false)
-	_put(_box(Vector3(1.0, 0.5, 0.06)), base * _at(Vector3(0, 0.55, -1.16)), _frame, false)
-	var fork := _box(Vector3(0.12, 0.05, 1.1))
-	for side: float in [-0.3, 0.3]:
-		_put(fork, base * _at(Vector3(side, 0.12, -1.75)), _bare, false)
-	var wheel := _lib("prism/fork_wheel", func() -> PartShapes.PartShape:
-			return PartShapes.prism(14, 0.3, 0.24))
-	for p: Vector3 in [Vector3(-0.55, 0.3, -0.6), Vector3(0.55, 0.3, -0.6), Vector3(-0.55, 0.3, 0.8), Vector3(0.55, 0.3, 0.8)]:
-		_put(wheel, base * Transform3D(Y_TO_X, p), _rubber, false)
-	_put(_lib("stool", func() -> PartShapes.PartShape: return WreckParts.stool()), base * _at(Vector3(0, 1.15, 0.55)), _parts, false)
-	_put(_lib("pipe/steer", func() -> PartShapes.PartShape: return WreckParts.pipe(0.025, 0.6, false)),
-			base * Transform3D(Basis(Vector3.RIGHT, -0.5), Vector3(0, 1.45, -0.15)), _frame, false)
-	_put(_box(Vector3(0.12, 0.08, 0.12)), base * _at(Vector3(0.4, 2.42, 0.7)), _glow_mat(Color(1.0, 0.6, 0.1), 4.0), false)
-	_collide_xf(_box_shape(Vector3(1.25, 2.4, 3.3)), base * _at(Vector3(0, 1.2, -0.45)))
-
+		_put(_lib("window/hover_side", func() -> PartShapes.PartShape:
+				return PartShapes.window_rect(1.3, 0.65, 0.05)), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), cab + Vector3(-0.3, FLOAT + 0.45 + 1.75, 1.26 * side)), _frame, false)
+		# The lit edge strip down the cab and the pod.
+		_put(_box(Vector3(16.6, 0.06, 0.04)), _at(rear + Vector3(-8.5, FLOAT + 0.47, 1.12 * side)), glow, false)
+	_put(_lib("headlamp/hover_truck", func() -> PartShapes.PartShape:
+			return WreckParts.headlamp_bar(2.0, 4, LAMP)), Transform3D(FACE_NX, cab + Vector3(-2.62, FLOAT + 0.75, 0)), _parts, false)
+	_put(_box(Vector3(0.1, 0.1, 2.2)), _at(rear + Vector3(0.02, FLOAT + 3.4, 0)), _glow_mat(Color(1.0, 0.2, 0.1), 3.0), false)
+	_collide_xf(_box_shape(Vector3(17.6, 3.2, 2.6)), _at(rear + Vector3(-8.6, FLOAT + 1.6, 0)))
+	_sign("BSX", c + Vector3(0, FLOAT + 2.0, 1.29), 0.0, 1.2, false).modulate = TRIM
 
 
 ## One of a few crate sizes from the parts library, as a shape key.

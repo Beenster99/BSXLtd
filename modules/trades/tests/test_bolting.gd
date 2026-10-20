@@ -200,7 +200,7 @@ func _test_bench_scene(bus: TradesBus) -> void:
 	check(got[0].measurements.sequence_ok, "bench joint in spec order")
 	bench.reset_all()
 	check(bus.get_result(&"bench_bracket") == null, "resetting the bench removes its result")
-	bench._on_key(KEY_1)   # hands: the bench leaves the right hand alone
+	bench._on_action(TradesBus.KEY_TOOL + "1")   # hands: the bench leaves the right hand alone
 	var hand: StretchHand = bench.worker.right_hand
 	var snaps := [0]
 	hand.snapped.connect(func() -> void: snaps[0] += 1)

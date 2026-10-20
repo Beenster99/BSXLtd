@@ -78,6 +78,7 @@ func run_tests() -> void:
 	await _test_games()
 	await _test_sounds()
 	await _test_holo()
+	_test_terminal_kit()
 	await _test_key_binds()
 
 	HudSlots.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
@@ -212,25 +213,37 @@ func _test_holo() -> void:
 	if holo == null:
 		return
 	var made := [0]
-	HudSlots.register_holo_channel("_orders", "Orders", func() -> Control:
+	var glass_seen := [false]
+	HudSlots.register_holo_channel("_orders", "Orders", func(glass: bool) -> Control:
 		made[0] += 1
+		glass_seen[0] = glass
 		var l := Label.new()
 		l.text = "orders here"
 		return l, 1)
+	HudSlots.register_holo_channel("_stock", "Stock", func() -> Control: return Label.new(), 2)
+	HudSlots.register_holo_readout("_cash", func() -> String: return "CR 1,234")
 	HudSlots.open_holo()
 	await frames(2)
-	check(holo.is_open and holo.channel == "", "the wrist screen opens on Home")
-	check(holo.root.find_child("Tile__orders", true, false) != null, "Home has a tile per channel")
-	check(holo.rail.find_child("Ch_ui_time", false, false) != null, "UI's time channel is on the rail")
-	(holo.rail.find_child("Ch__orders", false, false) as Button).pressed.emit()
+	check(holo.is_open and holo.channel == "_orders", "the wrist screen opens on the first channel")
+	check(made[0] == 1 and glass_seen[0], "a one-argument factory is told it's on glass")
+	check(holo.root.find_child("Header", true, false) != null and holo.root.find_child("Hint", true, false) != null,
+			"the wrist screen has the terminal's header and footer")
+	var first := holo.tabs.get_child(0) as Button
+	check(first != null and first.text == "01  ORDERS", "tabs are numbered like the terminal's")
+	check(holo.tabs.find_child("Ch_ui_settings", false, false) != null, "UI's settings tab is there")
+	check((holo.root.find_child("Readouts", true, false) as Label).text == "CR 1,234", "readouts show in the header")
+	(holo.tabs.find_child("Ch__stock", false, false) as Button).pressed.emit()
 	await frames(1)
-	check(holo.channel == "_orders" and made[0] == 1, "a rail button brings up its channel")
+	check(holo.channel == "_stock", "a tab brings up its channel")
 	check(holo.content.find_child("Channel", false, false) is Label, "the channel's screen shows")
-	HudSlots.open_holo(UiBus.TIME_CHANNEL)
+	holo.close()
+	HudSlots.open_holo()
+	check(holo.channel == "_stock", "the wrist screen comes back on the last channel")
+	HudSlots.open_holo(UiBus.SETTINGS_CHANNEL)
 	await frames(1)
-	check(holo.channel == UiBus.TIME_CHANNEL and holo.content.find_child("TimeOfDay", true, false) != null,
-			"open_holo switches channel")
-	HudSlots.register_holo_channel("_closing", "Closing", func() -> Control: return Closing.new(), 2)
+	check(holo.channel == UiBus.SETTINGS_CHANNEL and holo.content.find_child("TimeOfDay", true, false) != null
+			and holo.content.find_child("KeyBindsPanel", true, false) != null, "Settings has the time and the keys")
+	HudSlots.register_holo_channel("_closing", "Closing", func() -> Control: return Closing.new(), 3)
 	HudSlots.open_holo("_closing")
 	(holo.content.find_child("Channel", false, false) as Closing).close_requested.emit()
 	check(not holo.is_open, "a channel's close_requested puts the screen away")
@@ -238,19 +251,46 @@ func _test_holo() -> void:
 	HudSlots.open_holo("_orders")
 	HudSlots.unregister_holo_channel("_orders")
 	await frames(1)
-	check(holo.rail.find_child("Ch__orders", false, false) == null, "an unregistered channel leaves the rail")
-	var esc := InputEventKey.new()
-	esc.physical_keycode = Keys.key_of(Keys.CANCEL)
-	esc.pressed = true
-	holo._input(esc)
-	check(not holo.is_open and holo.root == null, "Esc puts the wrist screen away")
+	check(holo.tabs.find_child("Ch__orders", false, false) == null and holo.channel != "_orders",
+			"an unregistered channel leaves the tabs")
+	(holo.tabs.find_child("Close", false, false) as Button).pressed.emit()
+	check(not holo.is_open, "CLOSE puts the screen away")
+	HudSlots.unregister_holo_channel("_stock")
+	HudSlots.unregister_holo_readout("_cash")
 	var key := InputEventKey.new()
 	key.physical_keycode = Keys.key_of(Keys.HOLO)
 	key.pressed = true
 	holo._input(key)
 	check(holo.is_open, "the holo key brings it up in a game")
-	holo._input(key)
-	check(not holo.is_open, "the holo key puts it away")
+	var esc := InputEventKey.new()
+	esc.physical_keycode = Keys.key_of(Keys.CANCEL)
+	esc.pressed = true
+	holo._input(esc)
+	check(not holo.is_open and holo.root == null, "Esc puts the wrist screen away")
+
+
+func _test_terminal_kit() -> void:
+	var T := TerminalKit
+	var rows := T.list()
+	for i in 3:
+		rows.add_child(T.row([T.cell_text("Stringer", "Orbital surplus"), T.tag("new", T.GOOD),
+				T.cell("24", 60), T.cell("CR " + T.money(12400), 110, T.TEXT, "mono_bold")], i % 2 == 1, true))
+	check(rows.get_child_count() == 3 and rows.get_parent() is ScrollContainer, "kit lists hold rows")
+	var plate := (rows.get_child(0) as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
+	check(plate.bg_color.a < 0.8, "rows on glass are see-through")
+	check(T.money(12400) == "12,400" and T.money(-5) == "-5", "money text")
+	var picked := [""]
+	var flow := T.chips(PackedStringArray(["hull", "wiring"]), "", func(n: String) -> void: picked[0] = n, true)
+	(flow.get_child(2) as Button).pressed.emit()
+	check(flow.get_child_count() == 3 and picked[0] == "wiring", "chips: ALL then each, and they pick")
+	var typed := [""]
+	var s := T.search("Search parts", func(t: String) -> void: typed[0] = t, true)
+	s.text_changed.emit("bolt")
+	check(typed[0] == "bolt", "the search box reports what's typed")
+	var d := T.docket("Purchase order", "BSX/PO", true)
+	check(d.panel is PanelContainer and d.body is VBoxContainer, "a docket has a panel and a body")
+	for n: Node in [rows.get_parent(), flow, s, d.panel]:
+		n.free()
 
 
 func _test_key_binds() -> void:
