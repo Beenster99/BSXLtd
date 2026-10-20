@@ -103,7 +103,7 @@ func unregister_module() -> void:
 func _offer_screen_channels() -> void:
 	if not Flags.is_on("business.market"):
 		return
-	var order := 100
+	var order := 10
 	for id: String in SCREEN_CHANNELS:
 		var ch: String = SCREEN_CHANNELS[id][1]
 		HudSlots.register_holo_channel(id, SCREEN_CHANNELS[id][0].capitalize(), func() -> Control: return FittedScreen.new(make_screen(true, ch)), order)
@@ -417,6 +417,9 @@ func _on_delivery_arrived(order: PartsOrder, damaged: Array[OrderLine]) -> void:
 	var yard_bus := Modules.bus("ship_bay")
 	if yard_bus and yard_bus.has_method("receive_delivery"):
 		yard_bus.call("receive_delivery", order.id, delivery_lines(order, damaged))
+	if _yard and is_instance_valid(_yard) and _yard.is_inside_tree():
+		var hall: AABB = yard_bus.shipyard_rooms().get("deliveries", {}).get("box", AABB()) if yard_bus else AABB()
+		Sfx.play("chime", hall.get_center() if hall.has_volume() else null)
 	_refresh_yard()
 
 

@@ -461,7 +461,9 @@ func place_order() -> BusinessResult:
 		basket.clear()
 		_message = "Order placed: %s for %s CR. Watch GOODS IN." % [", ".join(r.order_ids), Look.money(r.cost)]
 		_message_good = true
+		Sfx.play("chime")
 	else:
+		Sfx.play("error")
 		_message = r.message.left(1).to_upper() + r.message.substr(1) + "."
 		_message_good = false
 	refresh()
