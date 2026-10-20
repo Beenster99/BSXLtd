@@ -10,6 +10,7 @@ flags = {
 "contracts": true,
 "core": true,
 "multiplayer": true,
+"multiplayer.crew": true,
 "multiplayer.online": false,
 "progression": false,
 "quality": true,
