@@ -93,7 +93,7 @@ func register_module() -> void:
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
 				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk",
-				"dock", "overlook", "launch_towers"]:
+				"dock", "overlook", "launch_towers", "city", "downtown"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 		# The lift up at the side door, and the power unit's plug clipped on the hull.
@@ -118,6 +118,9 @@ func register_module() -> void:
 		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
 			scene.call("set_time_of_day", 22.0)
 			scene.call("show_view", "courtyard"))
+		Shots.register("shipyard_city_night", SHIPYARD_SCENE, func(scene: Node) -> void:
+			scene.call("set_time_of_day", 21.5)
+			scene.call("show_view", "downtown"))
 		# A sample delivery in the hall, then some of it put away (these change the stores).
 		Shots.register("shipyard_goods_in", SHIPYARD_SCENE, func(scene: Node) -> void:
 			_sample_delivery()

@@ -18,6 +18,7 @@ extends Node3D
 const BAY_SCENE := preload("res://modules/ship_bay/internal/bay/bay.tscn")
 const Walker := preload("res://modules/ship_bay/internal/yard/yard_walker.gd")
 const TrolleyFleet := preload("res://modules/ship_bay/internal/yard/trolley_fleet.gd")
+const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
@@ -75,6 +76,9 @@ const VIEWS := {
 	"kestrel_hold": [Vector3(0.3, 3.4, 2.0), Vector3(0, 2.3, 6.4)],
 	"kestrel_access": [Vector3(-7.5, 3.2, 9.5), Vector3(-1.0, 1.6, 3.5)],
 	"kestrel_lift": [Vector3(-7.5, 3.4, -2.5), Vector3(-3.0, 1.5, 2.6)],
+	# The city round the yard: south over the apron, and north-west to downtown.
+	"city": [Vector3(30, 24, 100), Vector3(-120, 40, 600)],
+	"downtown": [Vector3(-40, 48, 70), Vector3(-560, 90, -620)],
 	"kestrel_power": [Vector3(9.5, 2.8, 3.0), Vector3(3.6, 1.4, 6.6)],
 	"scaffolds": [Vector3(13.5, 7.5, 10.0), Vector3(3.6, 3.0, -1.0)],
 	# The storage hall (StorageLayout): down aisle B, the bins in D2, the bulk floor, goods in.
@@ -157,6 +161,8 @@ var _stores_paint: Dictionary = {}  # category -> crate material
 var _bus: ShipBayBus
 ## The hover trolleys and their console (TrolleyFleet).
 var trolleys: Node3D
+## The city round the yard (YardCity).
+var city: Node3D
 
 
 func _ready() -> void:
@@ -186,6 +192,8 @@ func _ready() -> void:
 	_build_crane()
 	_build_dock()
 	_build_outside()
+	city = City.new()
+	add_child(city)
 	_build_night_lights()
 	_flush()
 	bay = BAY_SCENE.instantiate() as Node3D
@@ -247,6 +255,8 @@ func _on_sky_time(hour: float, daylight: float) -> void:
 		l.visible = night > 0.01
 	if _night_lens:
 		_night_lens.emission_energy_multiplier = lerpf(0.15, 4.0, night)
+	if city:
+		city.call("set_night", night)
 
 
 ## Is it dark enough for the night lights (0 day .. 1 full night)?
