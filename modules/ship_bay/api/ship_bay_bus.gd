@@ -45,7 +45,7 @@ func register_module() -> void:
 		Shots.register("kestrel_in_bay", BAY_SCENE)
 	if Flags.is_on("ship_bay.shipyard"):
 		Router.register_scene(SHIPYARD_SCENE, "res://modules/ship_bay/internal/yard/shipyard.tscn")
-		Menu.register_entry("shipyard", "Shipyard", SHIPYARD_SCENE, 5)
+		Menu.set_start(SHIPYARD_SCENE, 10)   # the game starts in the yard
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
@@ -53,7 +53,7 @@ func register_module() -> void:
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
-	Menu.unregister_entry("shipyard")
+	Menu.clear_start(SHIPYARD_SCENE)
 
 
 ## The shipyard's rooms in work order: id -> {name, box (AABB, metres, yard space with the
