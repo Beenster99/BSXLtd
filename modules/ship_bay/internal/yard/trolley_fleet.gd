@@ -14,7 +14,7 @@ extends Node3D
 ## trolley, which brings them to whoever asked and waits there (bulk goods the large trolley
 ## fetches itself).
 ##
-## Keys: T calls the medium trolley to you (Shift+T the large, Ctrl+T the small). F on a
+## Keys (rebindable in Settings > Key binds): T calls the medium trolley to you (Shift+T the large, Ctrl+T the small). F on a
 ## trolley takes it on remote control (arrow keys drive it, Page Up and Page Down raise and
 ## lower the deck, which you can ride for work at height); F on it again lets it go. F on a
 ## trolley that brought you goods takes them.
@@ -86,6 +86,10 @@ func _ready() -> void:
 		if _net:
 			_net.call("register_mover", "trolley:" + id, t)
 	_build_tv()
+	HudSlots.register_holo_channel("ship_bay.trolleys", "Hover trolleys", func() -> Control:
+		var s := Screen.new()
+		s.setup(self, true, true)
+		return s, 20)
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
@@ -117,6 +121,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	HudSlots.unregister_holo_channel("ship_bay.trolleys")
 	if _bus:
 		for pair: Array in [[_bus.trolley_command, _on_command], [_bus.crate_carried, _on_carried],
 				[_bus.crate_stored, _on_stored], [_bus.stock_changed, _refresh_cargo]]:
@@ -163,7 +168,9 @@ func _physics_process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo or key.physical_keycode != KEY_T:
+	if key == null or not key.pressed or key.echo:
+		return
+	if not (event.is_action_pressed("ship_bay.call_trolley") if InputMap.has_action("ship_bay.call_trolley") else key.physical_keycode == KEY_T):
 		return
 	var id := "l" if key.shift_pressed else ("s" if key.ctrl_pressed else "m")
 	call_to_me(id)
@@ -233,6 +240,13 @@ func toggle_remote(id: String) -> void:
 	_hud.visible = true
 
 
+## 1 while a bound action (or `key`, before the key map is in) is held.
+func _held(action: String, key: Key) -> float:
+	if InputMap.has_action(action):
+		return 1.0 if Input.is_action_pressed(action) else 0.0
+	return 1.0 if Input.is_physical_key_pressed(key) else 0.0
+
+
 func _drives(id: String) -> bool:
 	return _net == null or bool(_net.call("drives", "trolley:" + id))
 
@@ -261,21 +275,10 @@ func _obstacles(t: Trolley) -> Array:
 
 
 func _remote_input(t: Trolley, delta: float) -> void:
-	var drive := Vector2.ZERO
-	if Input.is_physical_key_pressed(KEY_UP):
-		drive.y += 1.0
-	if Input.is_physical_key_pressed(KEY_DOWN):
-		drive.y -= 1.0
-	if Input.is_physical_key_pressed(KEY_LEFT):
-		drive.x -= 1.0
-	if Input.is_physical_key_pressed(KEY_RIGHT):
-		drive.x += 1.0
+	var drive := Vector2(_held("ship_bay.drive_right", KEY_RIGHT) - _held("ship_bay.drive_left", KEY_LEFT),
+			_held("ship_bay.drive_forward", KEY_UP) - _held("ship_bay.drive_back", KEY_DOWN))
 	t.drive_input = drive
-	var lift := 0.0
-	if Input.is_physical_key_pressed(KEY_PAGEUP):
-		lift += 1.0
-	if Input.is_physical_key_pressed(KEY_PAGEDOWN):
-		lift -= 1.0
+	var lift := _held("ship_bay.raise", KEY_PAGEUP) - _held("ship_bay.lower", KEY_PAGEDOWN)
 	if lift != 0.0:
 		t.set_deck_target(t.deck_target + lift * remote_lift_rate * delta)
 		_deck_send -= delta
@@ -769,7 +772,7 @@ func open_panel() -> void:
 	panel.size = TV_PIXELS
 	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 	layer.add_child(panel)
-	panel.closed.connect(close_panel)
+	panel.close_requested.connect(close_panel)
 	if yard:
 		yard.call("set_walker_active", false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

@@ -3,11 +3,13 @@ extends PanelContainer
 ## monospace readouts. A row per vehicle (letter, status, deck height, what it carries), the
 ## selected one's details and actions, and the yard-wide soft keys along the bottom.
 ##
-## Two copies run: one drawn on the TV on Deliveries' east wall (display only, `live` off)
-## and one opened full screen when a player presses F on the TV (mouse, Up/Down to pick a
-## vehicle, Enter calls it, Esc or F closes). Both read the fleet; actions go through it.
+## Copies: one drawn on the TV on Deliveries' east wall (display only, `live` off), one
+## opened full screen when a player presses F on the TV, and a compact one on the wrist
+## screen's "Hover trolleys" channel (mouse, Up/Down to pick a vehicle, Enter calls it, Esc
+## or F closes). All read the fleet; actions go through it.
 
-signal closed
+## Asks whoever shows the screen to put it away (the fleet's full-screen copy, the wrist screen).
+signal close_requested
 
 ## Soft keys along the bottom: [action, label].
 const KEYS := [["put_away", "PUT AWAY DELIVERIES"], ["park_all", "PARK ALL"],
@@ -19,6 +21,8 @@ const ORDER := ["s", "m", "l", "p"]
 var fleet: Node3D
 ## True for the copy a player is using (mouse and keys); false on the TV.
 var live := false
+## Text size factor: 1 on the TV and full screen, smaller on the wrist screen's pane.
+var scale_text := 1.0
 var selected := "m"
 var _rows: Dictionary = {}       # id -> {box, status, deck, cargo}
 var _detail: Label
@@ -29,11 +33,12 @@ var _buttons: Dictionary = {}    # action -> Button
 var _tick := 0.0
 
 
-func setup(p_fleet: Node3D, p_live: bool) -> void:
+func setup(p_fleet: Node3D, p_live: bool, compact := false) -> void:
 	fleet = p_fleet
 	live = p_live
+	scale_text = 0.68 if compact else 1.0
 	theme = BsxTheme.get_theme()
-	add_theme_stylebox_override("panel", BsxTheme.panel_style(28))
+	add_theme_stylebox_override("panel", BsxTheme.panel_style(12 if compact else 28))
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 14)
 	add_child(col)
@@ -103,9 +108,11 @@ func _input(event: InputEvent) -> void:
 	if not live or key == null or not key.pressed or key.echo:
 		return
 	var i := ORDER.find(selected)
+	if _is(event, "cancel", KEY_ESCAPE) or _is(event, "interact", KEY_F):
+		close_requested.emit()
+		get_viewport().set_input_as_handled()
+		return
 	match key.physical_keycode:
-		KEY_ESCAPE, KEY_F:
-			closed.emit()
 		KEY_UP, KEY_W:
 			select(ORDER[posmod(i - 1, ORDER.size())])
 		KEY_DOWN, KEY_S:
@@ -115,6 +122,14 @@ func _input(event: InputEvent) -> void:
 		_:
 			return
 	get_viewport().set_input_as_handled()
+
+
+## Whether `event` is a press of a Core action (as the player bound it), or of `key` before
+## the key map is in.
+func _is(event: InputEvent, action: String, key: Key) -> bool:
+	if InputMap.has_action(action):
+		return event.is_action_pressed(action)
+	return (event as InputEventKey).physical_keycode == key
 
 
 func select(id: String) -> void:
@@ -138,7 +153,7 @@ func press(action: String) -> void:
 		"remote":
 			fleet.call("toggle_remote", selected)
 			if live and fleet.get("remote_id") == selected:
-				closed.emit()
+				close_requested.emit()
 		"put_away":
 			fleet.call("put_away_all")
 			said = "PUTTING AWAY"
@@ -215,16 +230,16 @@ func _row(id: String) -> Control:
 	box.add_child(h)
 	var spec := _spec(id)
 	var letter := _text(spec["letter"], "mono_bold", 34, spec["colour"])
-	letter.custom_minimum_size.x = 34
+	letter.custom_minimum_size.x = 34 * scale_text
 	h.add_child(letter)
 	var vehicle := _text(str(spec["name"]).replace(" hover trolley", "").to_upper(), "display_medium", 28, BsxTheme.TEXT)
-	vehicle.custom_minimum_size.x = 170
+	vehicle.custom_minimum_size.x = 170 * scale_text
 	h.add_child(vehicle)
 	var status := _text("", "mono_medium", 22, BsxTheme.STATUS)
-	status.custom_minimum_size.x = 250
+	status.custom_minimum_size.x = 250 * scale_text
 	h.add_child(status)
 	var deck := _text("", "mono", 22, BsxTheme.HUD)
-	deck.custom_minimum_size.x = 100
+	deck.custom_minimum_size.x = 100 * scale_text
 	h.add_child(deck)
 	var cargo := _text("", "mono", 20, BsxTheme.MUTED)
 	cargo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -240,7 +255,7 @@ func _button(action: String, label: String) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_filter = Control.MOUSE_FILTER_STOP if live else Control.MOUSE_FILTER_IGNORE
 	b.add_theme_font_override("font", BsxTheme.font("mono_medium"))
-	b.add_theme_font_size_override("font_size", 21)
+	b.add_theme_font_size_override("font_size", roundi(21 * scale_text))
 	for state: String in ["normal", "hover", "pressed"]:
 		var s := BsxTheme.slot_style(state != "normal")
 		s.content_margin_top = 8
@@ -258,7 +273,7 @@ func _text(t: String, face: String, size: int, colour: Color) -> Label:
 	l.text = t
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	l.add_theme_font_override("font", BsxTheme.font(face))
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", roundi(size * scale_text))
 	l.add_theme_color_override("font_color", colour)
 	return l
 

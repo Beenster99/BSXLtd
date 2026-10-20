@@ -72,7 +72,8 @@ func register_module() -> void:
 	# Driving the yard's vehicles (the lift, the power unit, a trolley on remote control).
 	for k: Array in [["ship_bay.drive_forward", "Drive forward", KEY_UP], ["ship_bay.drive_back", "Drive back", KEY_DOWN],
 			["ship_bay.drive_left", "Turn left", KEY_LEFT], ["ship_bay.drive_right", "Turn right", KEY_RIGHT],
-			["ship_bay.raise", "Raise the lift or deck", KEY_PAGEUP], ["ship_bay.lower", "Lower the lift or deck", KEY_PAGEDOWN]]:
+			["ship_bay.raise", "Raise the lift or deck", KEY_PAGEUP], ["ship_bay.lower", "Lower the lift or deck", KEY_PAGEDOWN],
+			["ship_bay.call_trolley", "Call a trolley (Shift: large, Ctrl: small)", KEY_T]]:
 		Keys.register(k[0], k[1], k[2], "Yard vehicles")
 	# Multiplayer may load after this module, so its events are hooked up once all are in.
 	if Modules.ready_done:
@@ -156,7 +157,7 @@ func _hook_net() -> void:
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
 	for k: String in ["ship_bay.drive_forward", "ship_bay.drive_back", "ship_bay.drive_left", "ship_bay.drive_right",
-			"ship_bay.raise", "ship_bay.lower"]:
+			"ship_bay.raise", "ship_bay.lower", "ship_bay.call_trolley"]:
 		Keys.unregister(k)
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
