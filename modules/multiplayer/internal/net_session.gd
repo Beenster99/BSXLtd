@@ -17,6 +17,8 @@ signal peer_left(peer_id: int, reason: String)
 signal event_applied(event_name: String, payload: Dictionary)
 signal request_rejected(event_name: String, reason: String)
 signal claim_changed(object_id: String, peer_id: int)
+## A hold started, changed (aligned, locked) or ended; info is {} when it ended.
+signal hold_changed(object_id: String, info: Dictionary)
 
 enum State { OFFLINE, HOSTING, JOINING, JOINED }
 
@@ -25,6 +27,7 @@ const HOST_ID := 1
 const PROTOCOL := 1
 const CLAIM := "net.claim"
 const RELEASE := "net.release"
+const HOLD := "net.hold"
 const CLOCK_SAMPLES := 8
 const PING_INTERVAL := 1.0
 const REFUSE_GRACE := 0.5
@@ -48,6 +51,9 @@ var _clock_offset := 0.0
 var _clock_samples: Array[Vector2] = []  # (rtt, offset)
 var _ping_timer := 0.0
 var _max_clients := 0
+var _holds: Dictionary = {}  # object id -> {"peer", "aligned", "locked", "target"}
+var _movers := NetMovers.new()
+var _send_timer := 0.0
 
 
 func _init() -> void:
@@ -62,6 +68,7 @@ func _init() -> void:
 	_mp.server_disconnected.connect(_on_server_disconnected)
 	register_event(CLAIM, _apply_claim, _validate_claim)
 	register_event(RELEASE, _apply_claim, _validate_release)
+	register_event(HOLD, _apply_hold, _validate_hold)
 	register_snapshot_provider("net", self)
 
 
@@ -78,12 +85,17 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
-	if state != State.JOINED:
-		return
-	_ping_timer -= delta
-	if _ping_timer <= 0.0:
-		_ping_timer = PING_INTERVAL
-		_wire.ping.rpc_id(HOST_ID, _now())
+	if state == State.JOINED:
+		_ping_timer -= delta
+		if _ping_timer <= 0.0:
+			_ping_timer = PING_INTERVAL
+			_wire.ping.rpc_id(HOST_ID, _now())
+	if state == State.HOSTING or state == State.JOINED:
+		_send_timer -= delta
+		if _send_timer <= 0.0:
+			_send_timer = 1.0 / NetMovers.SEND_RATE
+			_send_moves()
+		_movers.play_back(server_time() - NetMovers.DELAY, _is_mine)
 
 
 # --- Session ---------------------------------------------------------------------------
@@ -204,7 +216,7 @@ func unregister_snapshot_provider(section: String) -> void:
 
 
 func get_net_snapshot() -> Dictionary:
-	return {"claims": _claims.duplicate()}
+	return {"claims": _claims.duplicate(), "holds": _holds.duplicate(true), "movers": _movers.snapshot()}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
@@ -212,6 +224,11 @@ func apply_net_snapshot(data: Dictionary) -> void:
 	var claims: Dictionary = data.get("claims", {})
 	for id in claims:
 		_claims[str(id)] = int(claims[id])
+	_holds = {}
+	var holds: Dictionary = data.get("holds", {})
+	for id in holds:
+		_holds[str(id)] = holds[id]
+	_movers.apply_snapshot(data.get("movers", {}))
 
 
 # --- Claims ----------------------------------------------------------------------------
@@ -255,7 +272,102 @@ func _apply_claim(payload: Dictionary) -> void:
 		_claims.erase(id)
 	else:
 		_claims[id] = peer
+	_movers.clear(id)
+	if _holds.has(id) and _holds[id].peer != peer:
+		_holds.erase(id)
+		hold_changed.emit(id, {})
 	claim_changed.emit(id, peer)
+
+
+# --- Holds -----------------------------------------------------------------------------
+
+## Holds an object in place (a unit in a tractor beam, a panel held up by hand) so another
+## player, or the same one once it is locked, can fasten it. Claims the object if free.
+## aligned: it sits within tolerance of its target. locked: it stays put without the holder
+## (solo play: lock the beam, then pick up the rivet gun). release() ends the hold.
+func set_hold(object_id: String, aligned: bool, locked := false, target := "") -> void:
+	request(HOLD, {"object_id": object_id, "aligned": aligned, "locked": locked, "target": target})
+
+
+## {"peer", "aligned", "locked", "target"}, or {} when nobody holds it.
+func hold_info(object_id: String) -> Dictionary:
+	return _holds.get(object_id, {}).duplicate()
+
+
+## True when the object is held in alignment: what a fastening validator checks.
+func is_hold_ready(object_id: String) -> bool:
+	return bool(_holds.get(object_id, {}).get("aligned", false))
+
+
+func _validate_hold(sender: int, payload: Dictionary) -> Variant:
+	var id := str(payload.get("object_id", ""))
+	var owner: int = _claims.get(id, 0)
+	if id == "":
+		return "no object_id"
+	if owner != 0 and owner != sender:
+		return "held by %s" % _peer_name(owner)
+	return {"object_id": id, "peer": sender, "aligned": bool(payload.get("aligned", false)),
+			"locked": bool(payload.get("locked", false)), "target": str(payload.get("target", ""))}
+
+
+func _apply_hold(payload: Dictionary) -> void:
+	var id: String = payload.object_id
+	var peer: int = payload.peer
+	if _claims.get(id, 0) != peer:
+		_claims[id] = peer
+		_movers.clear(id)
+		claim_changed.emit(id, peer)
+	var info := {"peer": peer, "aligned": payload.aligned, "locked": payload.locked, "target": payload.target}
+	_holds[id] = info
+	hold_changed.emit(id, info.duplicate())
+
+
+# --- Movers ----------------------------------------------------------------------------
+
+## Streams a moving node's transform to the other players. Every peer registers its own node
+## under the same id; the peer with the object claimed drives it (the host when unclaimed)
+## and the rest follow, interpolated a moment behind. Offline this does nothing.
+func register_mover(object_id: String, node: Node3D) -> void:
+	_movers.register(object_id, node)
+
+
+func unregister_mover(object_id: String) -> void:
+	_movers.unregister(object_id)
+
+
+## Peer whose copy of the object everyone else follows.
+func mover_authority(object_id: String) -> int:
+	var owner: int = _claims.get(object_id, 0)
+	return owner if owner != 0 else HOST_ID
+
+
+func _is_mine(object_id: String) -> bool:
+	return mover_authority(object_id) == local_peer_id()
+
+
+func _send_moves() -> void:
+	var batch := _movers.outgoing(_is_mine)
+	if batch.is_empty():
+		return
+	var t := server_time()
+	if state == State.HOSTING:
+		for id in _peers:
+			if id != HOST_ID:
+				_wire.moves.rpc_id(id, t, batch)
+	else:
+		_wire.moves.rpc_id(HOST_ID, t, batch)
+
+
+func _on_moves(sender: int, t: float, batch: Dictionary) -> void:
+	if state == State.HOSTING and _peers.has(sender):
+		var taken := _movers.receive(t, batch, func(id: String) -> bool: return mover_authority(id) == sender)
+		if taken.is_empty():
+			return
+		for id in _peers:
+			if id != HOST_ID and id != sender:
+				_wire.moves.rpc_id(id, t, taken)
+	elif state == State.JOINED and sender == HOST_ID:
+		_movers.receive(t, batch, func(id: String) -> bool: return not _is_mine(id))
 
 
 func _release_all(peer_id: int) -> void:
@@ -471,6 +583,7 @@ func _close(reason: String) -> void:
 		_mp.multiplayer_peer.close()
 	if was == State.JOINING or was == State.JOINED:
 		_claims.clear()  # The host's world is gone; keep nothing it lent us.
+		_holds.clear()
 	_go_offline()
 	if was != State.OFFLINE:
 		session_ended.emit(reason)
@@ -483,6 +596,9 @@ func _go_offline() -> void:
 	for id in _claims.keys():
 		if _claims[id] != HOST_ID:
 			_claims.erase(id)
+	for id in _holds.keys():
+		if not _claims.has(id):
+			_holds.erase(id)
 	_clock_offset = 0.0
 	_clock_samples.clear()
 
