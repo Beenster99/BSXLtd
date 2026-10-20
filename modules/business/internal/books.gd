@@ -7,6 +7,8 @@ const SAVE_VERSION := 2
 const MINUTES_PER_DAY := 1440
 ## How long a supplier's miss holds an order up the first time.
 const DELAY_MINUTES := 12 * 60
+## What a player has in their wallet the first time they join, CR.
+const WALLET_START := 1000
 
 var rules: BusinessRules
 var prices: PriceList
@@ -32,6 +34,9 @@ var listings: Dictionary = {}
 var market_seed := 0
 var days_in_debt := 0
 var insolvent := false
+## Each player's own money: player name -> CR. Players are known by name, so a wallet
+## follows its owner from one session to the next.
+var wallets: Dictionary = {}
 
 var _bus: Node
 var _next_order := 1
@@ -58,6 +63,7 @@ func reset() -> void:
 	stock = {}
 	days_in_debt = 0
 	insolvent = false
+	wallets = {}
 	_next_order = 1
 	rng.randomize()
 	market_seed = rng.randi()
@@ -77,6 +83,25 @@ func post(amount: int, category: String, ref := "", note := "") -> void:
 	cash += amount
 	_bus.ledger_entry_added.emit(e)
 	_bus.cash_changed.emit(cash, amount, category)
+
+
+## A player's wallet, opened with the starting sum the first time they're seen.
+func wallet(player: String) -> int:
+	if not wallets.has(player):
+		wallets[player] = WALLET_START
+	return int(wallets[player])
+
+
+## Moves money to a player's wallet from another's ("" = the company account, posted to the
+## ledger as wages). Checks nothing: the host validated it.
+func transfer(from: String, to: String, amount: int) -> void:
+	if from == "":
+		post(-amount, "wages", to)
+	else:
+		wallets[from] = wallet(from) - amount
+		_bus.wallet_changed.emit(from, wallets[from], -amount)
+	wallets[to] = wallet(to) + amount
+	_bus.wallet_changed.emit(to, wallets[to], amount)
 
 
 # --- Suppliers and staples ---
@@ -524,6 +549,7 @@ func save_data() -> Dictionary:
 		"contracts": contracts.duplicate(true), "stock": stock.duplicate(true),
 		"market_seed": market_seed, "listings": listings.values().map(func(l): return l.to_dict()),
 		"days_in_debt": days_in_debt, "insolvent": insolvent, "next_order": _next_order,
+		"wallets": wallets.duplicate(),
 	}
 
 
@@ -558,6 +584,8 @@ func load_data(d: Dictionary, from_version: int) -> void:
 	insolvent = bool(d.get("insolvent", false))
 	_next_order = int(d.get("next_order", orders.size() + 1))
 	market_seed = int(d.get("market_seed", market_seed))
+	for player in d.get("wallets", {}):
+		wallets[str(player)] = int(d.wallets[player])
 	if d.has("listings"):
 		listings = {}
 		for ld in d.listings:
