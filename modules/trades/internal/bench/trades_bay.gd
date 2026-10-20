@@ -126,7 +126,7 @@ func _enter_yard() -> void:
 		yard_bus.set_walker_active(yard, false)
 		var feet := yard.global_transform * yard_bus.walker_position(yard) if yard else Vector3.ZERO
 		worker.global_position = feet
-	worker.face(global_transform * ship_transform().origin + Vector3(0, -0.4, 0))
+	worker.face(ship_transform().origin + Vector3(0, -0.4, 0))
 	worker.camera.current = true
 	set_tool(&"hands")
 	hint(s.start_hint())
@@ -139,9 +139,10 @@ func _enter_yard() -> void:
 func ship_transform() -> Transform3D:
 	var yard := get_parent() as Node3D
 	var yard_bus := Modules.bus("ship_bay")
-	if yard and yard_bus and yard_bus.has_method("ship_transform"):
-		return yard_bus.call("ship_transform", yard)
 	var base := yard.global_transform if yard else Transform3D.IDENTITY
+	if yard and yard_bus and yard_bus.has_method("ship_transform"):
+		# Ship space to yard space.
+		return base * (yard_bus.call("ship_transform", yard) as Transform3D)
 	return base * Transform3D(Basis(), YARD_SHIP_AT)
 
 
