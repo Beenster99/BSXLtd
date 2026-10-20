@@ -51,14 +51,15 @@ const DATA_DIR := "res://modules/business/internal/data"
 const Books := preload("res://modules/business/internal/books.gd")
 const YardFront := preload("res://modules/business/internal/yard/yard_front.gd")
 const TerminalScreen := preload("res://modules/business/internal/ui/terminal_screen.gd")
-const FittedScreen := preload("res://modules/business/internal/ui/fitted_screen.gd")
-## The yard terminal's channels on the wrist holo screen: id ->
-## [title, terminal channel].
+const WristScreen := preload("res://modules/business/internal/ui/wrist_screen.gd")
+## Business's channels on the wrist holo screen: id -> [tab name, page, order]. Orders holds
+## the market, the purchase order and what's on order; Ship and Bay and Contracts sit
+## between them at 20 to 40.
 const SCREEN_CHANNELS := {
-	"business.orders": ["ORDERS", "orders"],
-	"business.goods": ["GOODS IN", "goods"],
-	"business.accounts": ["ACCOUNTS", "accounts"],
+	"business.orders": ["Orders", "orders", 10],
+	"business.accounts": ["Accounts", "accounts", 50],
 }
+const CASH_READOUT := "business.cash"
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
 
@@ -66,6 +67,8 @@ var _books: Books
 ## The open shipyard Business has furnished, or null; the clock runs while it is open.
 var _yard: Node3D
 var _clock_carry := 0.0
+## The purchase order being built on the wrist, kept here so it survives closing the screen.
+var wrist_basket: Dictionary = {}
 
 
 func _init() -> void:
@@ -96,6 +99,7 @@ func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
 	for id: String in SCREEN_CHANNELS:
 		HudSlots.unregister_holo_channel(id)
+	HudSlots.unregister_holo_readout(CASH_READOUT)
 
 
 ## Puts the terminal's channels on the wrist holo screen (HudSlots), so a player can order
@@ -103,11 +107,12 @@ func unregister_module() -> void:
 func _offer_screen_channels() -> void:
 	if not Flags.is_on("business.market"):
 		return
-	var order := 10
 	for id: String in SCREEN_CHANNELS:
-		var ch: String = SCREEN_CHANNELS[id][1]
-		HudSlots.register_holo_channel(id, SCREEN_CHANNELS[id][0].capitalize(), func() -> Control: return FittedScreen.new(make_screen(true, ch)), order)
-		order += 1
+		var spec: Array = SCREEN_CHANNELS[id]
+		var page: String = spec[1]
+		HudSlots.register_holo_channel(id, spec[0], func(glass: bool) -> Control: return WristScreen.new(self, page, glass), spec[2])
+	# The cash readout for the wrist header waits on UI's test_menus taking more than one.
+	# HudSlots.register_holo_readout(CASH_READOUT, func() -> String: return "CR %s" % TerminalKit.money(get_cash()))
 
 
 ## A yard terminal on `channel` ("orders", "goods", "accounts"), laid out at 1280 x 800 and
@@ -376,6 +381,7 @@ func on_contract_cancelled(contract_id: String, by_client: bool) -> BusinessResu
 ## Back to a fresh company (new game): starting cash, an empty store, today's market.
 func reset() -> void:
 	_books.reset()
+	wrist_basket.clear()
 	_refresh_yard()
 
 

@@ -95,9 +95,17 @@ class Runner:
 				cam.global_position = m.global_position + m.global_basis.z * 4.0 + aside + Vector3(0, -0.9, 0)
 				cam.look_at(m.global_position)
 				await _snap(out, "screen_%s_side" % m.name)
-		# The orders channel on the wrist screen.
+		# The orders channel on the wrist screen, with something on the purchase order and
+		# something on its way; then the accounts.
+		var bus := Modules.bus("business") as BusinessBus
+		var buys := bus.get_listings().filter(func(l): return l.available >= 3 and l.unit_price < 2000)
+		bus.place_market_order([{"listing_id": buys[2].id, "qty": 3}])
+		bus.wrist_basket[buys[0].id] = 2
+		bus.wrist_basket[buys[1].id] = 1
 		HudSlots.open_holo("business.orders")
 		await _snap(out, "wrist_orders")
+		HudSlots.open_holo("business.accounts")
+		await _snap(out, "wrist_accounts")
 		get_tree().quit()
 
 	## For each --probe=x,z,dx,dz: casts from (x, 2.6, z) along (dx, 0, dz) and prints the wall.

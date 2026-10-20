@@ -37,22 +37,58 @@ func run_tests() -> void:
 	check(buys.size() < 2 or buys[0].unit_price / cat.value_of(buys[0].part) <= buys[1].unit_price / cat.value_of(buys[1].part), "best first")
 	wall.queue_free()
 
-	# The channels on the wrist holo screen.
+	# The channels on the wrist holo screen, on glass: Orders at the front, Accounts after
+	# Ship and Bay's and Contracts', cash in the header.
+	check(HudSlots.holo_channel("business.orders").get("order") == 10 and HudSlots.holo_channel("business.accounts").get("order", 0) >= 50,
+			"Orders first, Accounts after the other modules' screens")
 	for id: String in BusinessBus.SCREEN_CHANNELS:
-		var ch: String = BusinessBus.SCREEN_CHANNELS[id][1]
 		var entry := HudSlots.holo_channel(id)
 		check(not entry.is_empty(), "%s is on the wrist screen" % id)
 		if entry.is_empty():
 			continue
-		var made: Control = entry.factory.call()
-		var inner: Control = made.get("screen")
-		check(inner.get("channel") == ch and inner.get("interactive") == true and made.has_signal("close_requested"), "%s opens on %s" % [id, ch])
+		var made: Control = entry.factory.call(true)
+		check(made.get("page") == BusinessBus.SCREEN_CHANNELS[id][1] and made.get("glass") == true, "%s draws on glass" % id)
+		check(made.find_children("*", "Label", true, false).all(func(l): return l.text != "BSX" and not l.text.begins_with("01")), "%s draws no header or tabs of its own" % id)
 		add_child(made)
-		made.size = Vector2(900, 560)
-		await frames(1)
-		var drawn: Rect2 = Rect2(inner.position, inner.size * inner.scale)
-		check(Rect2(Vector2.ZERO, made.size).grow(0.5).encloses(drawn), "%s fits the wrist pane: %s" % [id, drawn])
+		made.size = Vector2(860, 420)
+		await frames(2)
+		check(made.size.x <= 861 and made.size.y <= 421, "%s fits the wrist pane: %s" % [id, made.size])
 		made.free()
+
+	# Ordering from the wrist: search, add, place; the order shows as on order.
+	var wrist: Control = HudSlots.holo_channel("business.orders").factory.call(true)
+	add_child(wrist)
+	wrist.size = Vector2(1200, 600)
+	await frames(1)
+	var first: MarketListing = bus.get_listings().filter(func(l): return l.available >= 2 and l.unit_price < 3000)[0]
+	var word := bus.part_name(first.part).split(" ")[0].to_lower()
+	wrist.set("query", word)
+	wrist.call("refresh")
+	var found: Array = wrist.call("shown_listings")
+	check(not found.is_empty() and found.all(func(l): return (bus.part_name(l.part) + " " + bus.supplier(l.supplier_id).display_name + " " + bus.listing_category(l)).to_lower().contains(word)),
+			"search keeps only matching parts: %d for '%s'" % [found.size(), word])
+	await frames(1)
+	var add_btn := wrist.find_child("Add_" + first.id, true, false) as Button
+	check(add_btn != null, "the searched part has a + button")
+	if add_btn:
+		add_btn.pressed.emit()
+		add_btn = wrist.find_child("Add_" + first.id, true, false) as Button
+		add_btn.pressed.emit()
+	check(int(bus.wrist_basket.get(first.id, 0)) == 2, "+ twice puts two on the purchase order")
+	wrist.free()
+	wrist = HudSlots.holo_channel("business.orders").factory.call(true)
+	add_child(wrist)
+	check(int(wrist.get("basket").get(first.id, 0)) == 2, "the purchase order survives closing the wrist")
+	var wcash := bus.get_cash()
+	var placed: BusinessResult = wrist.call("place_order")
+	check(placed.is_ok() and bus.get_cash() == wcash - first.unit_price * 2 and bus.wrist_basket.is_empty(), "PLACE ORDER on the wrist buys it")
+	var on_order := false
+	for l: Label in wrist.find_children("*", "Label", true, false):
+		if l.text == placed.order_ids[0]:
+			on_order = true
+	check(on_order, "the order shows under ON ORDER")
+	wrist.free()
+	bus.reset()
 
 	var yard: Node3D = load(Router.scene_path(ShipBayBus.SHIPYARD_SCENE)).instantiate()
 	add_child(yard)

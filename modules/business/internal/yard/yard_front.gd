@@ -95,6 +95,9 @@ func nearest_monitor() -> int:
 
 
 func _input(event: InputEvent) -> void:
+	# A screen in front of the view (the wrist holo, a menu) keeps its clicks and typing.
+	if get_viewport().gui_get_hovered_control() != null or get_viewport().gui_get_focus_owner() is LineEdit:
+		return
 	var button := event as InputEventMouseButton
 	if button and overlay == null and aimed >= 0:
 		_press_screen(aimed, button)
