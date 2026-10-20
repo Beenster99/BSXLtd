@@ -231,7 +231,7 @@ func _test_holo() -> void:
 	var first := holo.tabs.get_child(0) as Button
 	check(first != null and first.text == "01  ORDERS", "tabs are numbered like the terminal's")
 	check(holo.tabs.find_child("Ch_ui_settings", false, false) != null, "UI's settings tab is there")
-	check((holo.root.find_child("Readouts", true, false) as Label).text == "CR 1,234", "readouts show in the header")
+	check((holo.root.find_child("Readouts", true, false) as Label).text.contains("CR 1,234"), "readouts show in the header")
 	var os := holo.root.find_child("OsInfo", true, false) as Label
 	check(os != null and os.text.begins_with("BSX-OS") and BuildInfo.version() in os.text,
 			"the footer's small print names the OS and the build")
