@@ -41,6 +41,7 @@ func run_tests() -> void:
 	# Ship and Bay's and Contracts', cash in the header.
 	check(HudSlots.holo_channel("business.orders").get("order") == 10 and HudSlots.holo_channel("business.accounts").get("order", 0) >= 50,
 			"Orders first, Accounts after the other modules' screens")
+	check(Array(HudSlots.holo_readouts()).has("CR %s" % TerminalKit.money(bus.get_cash())), "cash shows in the wrist header")
 	for id: String in BusinessBus.SCREEN_CHANNELS:
 		var entry := HudSlots.holo_channel(id)
 		check(not entry.is_empty(), "%s is on the wrist screen" % id)
