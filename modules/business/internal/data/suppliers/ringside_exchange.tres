@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SupplierDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/business/api/supplier_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 2
+id = "ringside_exchange"
+display_name = "Ringside Salvage Exchange"
+parts = {}
+categories = PackedStringArray("engines", "electronics", "machinery", "cargo", "weapons", "hull", "fluids")
+conditions = {
+"new": 0.3,
+"refurbished": 0.3,
+"used": 0.25,
+"damaged": 0.15
+}
+listings_per_day = 24
+trade_factor = 0.85
+lead_hours = 36
+reliability = 0.85
+min_reputation = 0.0
+cancellation_refund_percent = 40

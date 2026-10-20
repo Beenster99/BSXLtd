@@ -28,6 +28,8 @@ signal event_applied(event_name: String, payload: Dictionary)
 ## A request this player made was refused by the host, or could not be sent.
 signal request_rejected(event_name: String, reason: String)
 signal claim_changed(object_id: String, peer_id: int)
+## A hold started, changed or ended (info is {} when it ended). See set_hold().
+signal hold_changed(object_id: String, info: Dictionary)
 
 const ONLINE_FLAG := "multiplayer.online"
 const DEFAULT_PORT := 24570
@@ -45,7 +47,7 @@ func register_module() -> void:
 	_session.compat = compat_info()
 	_session.profile = {"name": str(Settings.get_value("multiplayer", "player_name"))}
 	for s in ["session_started", "session_ended", "peer_joined", "peer_left", "event_applied",
-			"request_rejected", "claim_changed"]:
+			"request_rejected", "claim_changed", "hold_changed"]:
 		_session.connect(s, Signal(self, s).emit)
 	add_child(_session)
 
@@ -152,6 +154,65 @@ func claim_owner(object_id: String) -> int:
 
 func is_mine(object_id: String) -> bool:
 	return _session.claim_owner(object_id) == _session.local_peer_id()
+
+
+# --- Holds: one player holds, another fastens ----------------------------------------
+#
+# The tractor beam (or a pair of hands) holds a unit; the holder's tool decides each moment
+# whether it sits within tolerance of its target and says so here. A fastening event's
+# validator checks is_hold_ready() on the host, so the first rivet, weld or bolt only counts
+# while the unit is held in alignment:
+#
+#   net.set_hold("unit:reactor_2", true, false, "slot:engine_bay_1")    # holder, aligned
+#   func _validate_rivet(sender, p): return p if net.is_hold_ready(p.unit) else "not held in line"
+#
+# Solo play: the same player locks the hold (locked = true), puts the beam down and fastens.
+
+## Holds the object (claiming it if free). Send again whenever aligned or locked changes.
+func set_hold(object_id: String, aligned: bool, locked := false, target := "") -> void:
+	_session.set_hold(object_id, aligned, locked, target)
+
+
+## Ends the hold and lets the object go (the same as release()).
+func end_hold(object_id: String) -> void:
+	_session.release(object_id)
+
+
+## {"peer": holder, "aligned": bool, "locked": bool, "target": String}, or {}.
+func hold_info(object_id: String) -> Dictionary:
+	return _session.hold_info(object_id)
+
+
+func is_hold_ready(object_id: String) -> bool:
+	return _session.is_hold_ready(object_id)
+
+
+# --- Movers: things that move every frame -------------------------------------------
+#
+# A unit in a tractor beam, a hover trolley, the picking lift. Each peer registers its own
+# node under the same data id; the player with the object claimed drives it (the host when
+# nobody has, so automated trolleys and the lift run on the host) and everyone else's copy
+# follows smoothly. Route planning only ever runs on the driving peer.
+#
+#   net.register_mover("trolley:large_1", trolley_node)
+#   net.claim("trolley:large_1")      # remote control: this player now drives it
+
+func register_mover(object_id: String, node: Node3D) -> void:
+	_session.register_mover(object_id, node)
+
+
+func unregister_mover(object_id: String) -> void:
+	_session.unregister_mover(object_id)
+
+
+## Peer driving the object: its claim owner, or the host.
+func mover_authority(object_id: String) -> int:
+	return _session.mover_authority(object_id)
+
+
+## True when this peer should run the object's motion (physics, routing, beam control).
+func drives(object_id: String) -> bool:
+	return _session.mover_authority(object_id) == _session.local_peer_id()
 
 
 # --- Compatibility ---------------------------------------------------------------------
