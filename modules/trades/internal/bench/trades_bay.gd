@@ -3,12 +3,15 @@ extends Node3D
 ## The tools bay: one long bench in a BSX fitting bay with a station for each kind of job
 ## (bolting, riveting, welding, wiring). You walk along it as the BSX worker (first or
 ## third person, V) with your own stretchy hands. You own every tool: the mouse wheel (or
-## 1-6) picks one, and you work at whichever station you are looking at. The bay owns the worker, the tools, the HUD and
-## the input; each station (TradesStation) owns its parts, its joint rules and what the
-## tools do there.
+## 1-6) picks one, and you work at whichever station you are looking at. Hold left click
+## with your hands on a part to carry it; the wheel then turns it instead, freely or in
+## quarter turns (middle click swaps). The bay owns the worker, the tools, the HUD and the
+## input; each station (TradesStation) owns its parts, its joint rules and what the tools
+## do there.
 ##
 ##   WASD walk, mouse look, V first/third person, wheel or 1-6 tools, R resets the
-##   station, left click use, right click take off, Q/E turn or set, Esc leaves.
+##   station, left click use (hold to carry), wheel while carrying turns it, middle click
+##   free or 90 degree turning, right click take off, Q/E set the machine, Esc leaves.
 
 const BENCH_TOP := 0.9
 ## The bench runs along X from -BENCH_HALF to BENCH_HALF, its front edge at z = BENCH_FRONT.
@@ -32,6 +35,8 @@ const HAND_STRETCH_M := 0.9
 
 var worker: BenchWorker
 var tool: StringName = &"hands"
+## The wheel turns a held part in quarter turns (true) or a few degrees a notch.
+var turn_snap := false
 var stations: Array[TradesStation] = []
 ## The tool meshes by id (no entry for hands).
 var tool_nodes: Dictionary = {}
@@ -118,6 +123,21 @@ func cycle_tool(step: int) -> void:
 	set_tool(TOOLS[posmod(i + step, TOOLS.size())])
 
 
+## One wheel notch: turns the part your hands hold while left click is down, otherwise
+## moves along the hotbar.
+func wheel(step: int) -> void:
+	if _pressed and _pressed.turn_held(step, turn_snap):
+		return
+	cycle_tool(step)
+
+
+## Middle click: turning held parts freely or in quarter turns.
+func toggle_turn_snap() -> void:
+	turn_snap = not turn_snap
+	hint("Turning in 90 degree steps." if turn_snap else "Turning freely.")
+	_refresh_hud()
+
+
 ## Every station back to its start.
 func reset_all() -> void:
 	for s in stations:
@@ -178,9 +198,12 @@ func _on_mouse_button(event: InputEventMouseButton) -> void:
 		MOUSE_BUTTON_RIGHT:
 			if event.pressed:
 				_focus.back_out(tool)
+		MOUSE_BUTTON_MIDDLE:
+			if event.pressed:
+				toggle_turn_snap()
 		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 			if event.pressed:
-				cycle_tool(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
+				wheel(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1)
 
 
 # --- Every frame ------------------------------------------------------------------------
@@ -500,7 +523,7 @@ func _build_hud() -> void:
 	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 
 	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
-	keys.text = "WASD walk  V view  wheel/1-6 tool  LMB use  RMB take off  Q/E turn/set  Tab part  R reset  Esc menu"
+	keys.text = "WASD walk  V view  wheel/1-6 tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  Q/E amps  Tab part  R reset  Esc menu"
 	keys.position = Vector2(40, 36)
 	root.add_child(keys)
 
@@ -558,6 +581,8 @@ func _refresh_hud() -> void:
 	if _tool_label == null:
 		return
 	_tool_label.text = "TOOL    %s" % String(TOOL_LABELS[tool]).to_upper()
+	if tool == &"hands":
+		_tool_label.text += "    TURN %s" % ("90°" if turn_snap else "FREE")
 	_status_label.text = _focus.status_line() if _focus else ""
 	var useful: Array[StringName] = _focus.tools() if _focus else TOOLS
 	for i in _slots.size():
