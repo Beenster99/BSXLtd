@@ -288,3 +288,17 @@ static func copy_surface(mat: ShaderMaterial) -> ShaderMaterial:
 		if value != null:
 			copy.set_shader_parameter(key, value)
 	return copy
+
+
+static var _two_sided: Shader
+
+
+## The surface shader, or a copy that draws both sides of faces (thin parts like looms).
+static func surface_shader(two_sided: bool) -> Shader:
+	var base := preload("res://shared/void_salvage/shaders/salvage_surface.gdshader")
+	if not two_sided:
+		return base
+	if _two_sided == null:
+		_two_sided = Shader.new()
+		_two_sided.code = base.code.replace("render_mode cull_back;", "render_mode cull_disabled;")
+	return _two_sided
