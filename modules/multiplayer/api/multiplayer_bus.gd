@@ -30,11 +30,20 @@ signal request_rejected(event_name: String, reason: String)
 signal claim_changed(object_id: String, peer_id: int)
 ## A hold started, changed or ended (info is {} when it ended). See set_hold().
 signal hold_changed(object_id: String, info: Dictionary)
+## A line in the crew text channel: {"time": "22:14", "peer", "name", "text"}.
+signal chat_received(line: Dictionary)
+signal activity_changed(peer_id: int, text: String)
 
 const ONLINE_FLAG := "multiplayer.online"
 const DEFAULT_PORT := 24570
 ## Host plus three. Change here if the crew size changes.
 const MAX_CREW := 4
+## The wrist screen's Crew channel (behind the flag of the same name). Other modules add
+## dockets to it with HudSlots.register_holo_section(CREW_CHANNEL, ...).
+const CREW_CHANNEL := "multiplayer.crew"
+const CREW_SCREEN := preload("res://modules/multiplayer/internal/crew/crew_screen.gd")
+
+var _crew: Node
 
 var _session: NetSession
 
@@ -50,9 +59,18 @@ func register_module() -> void:
 			"request_rejected", "claim_changed", "hold_changed"]:
 		_session.connect(s, Signal(self, s).emit)
 	add_child(_session)
+	_crew = preload("res://modules/multiplayer/internal/crew/crew_channel.gd").new()
+	_crew.name = "Crew"
+	_crew.net = self
+	_crew.chat_received.connect(chat_received.emit)
+	_crew.activity_changed.connect(activity_changed.emit)
+	add_child(_crew)
+	if Flags.is_on(CREW_CHANNEL):
+		HudSlots.register_holo_channel(CREW_CHANNEL, "Crew", _crew_screen, 45)
 
 
 func unregister_module() -> void:
+	HudSlots.unregister_holo_channel(CREW_CHANNEL)
 	if _session:
 		_session.leave()
 
@@ -213,6 +231,39 @@ func mover_authority(object_id: String) -> int:
 ## True when this peer should run the object's motion (physics, routing, beam control).
 func drives(object_id: String) -> bool:
 	return _session.mover_authority(object_id) == _session.local_peer_id()
+
+
+# --- Crew ------------------------------------------------------------------------------
+
+## Says something on the crew text channel (everyone sees it, solo play included).
+func say(text: String) -> void:
+	_crew.say(text)
+
+
+func chat_log() -> Array[Dictionary]:
+	return _crew.chat_log()
+
+
+## A few words on what this player is doing ("Riveting", "Stores"), shown on the crew list.
+## Tools and other modules may set it as the player changes job.
+func set_activity(text: String) -> void:
+	_crew.set_activity(text)
+
+
+func activity(peer_id: int) -> String:
+	return _crew.activity(peer_id)
+
+
+func player_name(peer_id: int) -> String:
+	return _crew.player_name(peer_id)
+
+
+func _crew_screen(glass: bool) -> Control:
+	var screen: Control = CREW_SCREEN.new()
+	screen.net = self
+	screen.crew = _crew
+	screen.glass = glass
+	return screen
 
 
 # --- Compatibility ---------------------------------------------------------------------
