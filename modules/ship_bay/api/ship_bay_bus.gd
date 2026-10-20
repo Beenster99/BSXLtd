@@ -65,6 +65,7 @@ var _definitions: Dictionary = {}
 ## Whether the ship in the bay is on shore power (its lamps, screens and systems live).
 var ship_powered := false
 var _stock := StorageStock.new()
+var _part_values := Callable()
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
 ## runs without it: tests that switch only part of the game on, and solo builds).
 var _net: Node
@@ -539,6 +540,26 @@ func find_stock(item_id: String) -> PackedStringArray:
 
 func stock_count(item_id: String) -> int:
 	return _stock.count(item_id)
+
+
+## Location ids that hold goods now.
+func stocked_locations() -> PackedStringArray:
+	return PackedStringArray(_stock.stock.keys())
+
+
+## Lets another module price the stores (Business: its catalogue's new value of a part, CR;
+## -1 for one it doesn't know). Until one does, the Stock screen shows no values.
+##   yard_bus.set_part_values(func(item_id: String) -> int: return catalogue.value_of(item_id))
+func set_part_values(getter: Callable) -> void:
+	_part_values = getter
+	stock_changed.emit()
+
+
+## What one new part is worth, CR (-1 when nothing prices it).
+func part_value(item_id: String) -> int:
+	if not _part_values.is_valid():
+		return -1
+	return int(_part_values.call(item_id))
 
 
 ## The parts the stores keep a home for: item id -> {name, category, mass (kg)}.

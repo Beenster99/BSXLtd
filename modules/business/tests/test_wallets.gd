@@ -64,7 +64,7 @@ func run_tests() -> void:
 	amount.text = "12a0"
 	amount.text_changed.emit(amount.text)
 	check(amount.text == "120", "the amount takes digits only")
-	var send := panel.find_child("Send", true, false) as Button
+	var send := panel.find_child("SendMoney", true, false) as Button
 	check(send != null and not send.disabled and send.text == "SEND 120 CR", "SEND shows the sum")
 	send.pressed.emit()
 	await frames(1)
