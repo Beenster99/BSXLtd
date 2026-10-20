@@ -45,6 +45,10 @@ signal day_closed(day: int)
 signal market_changed
 ## The business clock moved (game minutes since the company started).
 signal clock_changed(minute: int)
+## A player's wallet changed (a transfer in or out).
+signal wallet_changed(player: String, balance: int, delta: int)
+## A transfer the host refused, on the player who asked.
+signal transfer_refused(reason: String)
 
 const SAVE_SECTION := "business"
 const DATA_DIR := "res://modules/business/internal/data"
@@ -60,6 +64,12 @@ const SCREEN_CHANNELS := {
 	"business.accounts": ["Accounts", "accounts", 50],
 }
 const CASH_READOUT := "business.cash"
+const TransferPanel := preload("res://modules/business/internal/ui/transfer_panel.gd")
+## Sending money: host-validated, so every player's wallets agree.
+const TRANSFER_EVENT := "business.transfer"
+## The crew tab the transfer docket sits in (Multiplayer's).
+const CREW_CHANNEL := "multiplayer.crew"
+const TRANSFER_SECTION := "business.transfer"
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
 
@@ -88,14 +98,25 @@ func register_module() -> void:
 	if yard_bus and Flags.is_on("business.market") and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
 		yard_bus.shipyard_ready.connect(_on_shipyard_ready)
 	delivery_arrived.connect(_on_delivery_arrived)
+	# Ship and Bay's wrist Stock prices what's held at Void Salvage's value for a new part.
+	if yard_bus and yard_bus.has_method("set_part_values"):
+		yard_bus.call("set_part_values", func(item_id: String) -> int: return get_catalogue().value_of(item_id))
 	if Flags.is_on("business.market") and Router.has_scene(ShipBayBus.SHIPYARD_SCENE):
 		Shots.register("business_terminal", ShipBayBus.SHIPYARD_SCENE, _shot_terminal, 40)
 		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
 		Shots.register("business_goods_in", ShipBayBus.SHIPYARD_SCENE, _shot_goods, 40)
 	_offer_screen_channels()
+	# Multiplayer may load after Business; wallets need its events.
+	if not Modules.modules_ready.is_connected(_offer_wallets):
+		Modules.modules_ready.connect(_offer_wallets, CONNECT_ONE_SHOT)
 
 
 func unregister_module() -> void:
+	var net := _net()
+	if net:
+		net.call("unregister_event", TRANSFER_EVENT)
+		net.call("unregister_snapshot_provider", SAVE_SECTION)
+	HudSlots.unregister_holo_section(CREW_CHANNEL, TRANSFER_SECTION)
 	Saves.unregister_section(SAVE_SECTION)
 	for id: String in SCREEN_CHANNELS:
 		HudSlots.unregister_holo_channel(id)
@@ -111,8 +132,118 @@ func _offer_screen_channels() -> void:
 		var spec: Array = SCREEN_CHANNELS[id]
 		var page: String = spec[1]
 		HudSlots.register_holo_channel(id, spec[0], func(glass: bool) -> Control: return WristScreen.new(self, page, glass), spec[2])
-	# The cash readout for the wrist header waits on UI's test_menus taking more than one.
-	# HudSlots.register_holo_readout(CASH_READOUT, func() -> String: return "CR %s" % TerminalKit.money(get_cash()))
+	HudSlots.register_holo_readout(CASH_READOUT, func() -> String: return "CR %s" % TerminalKit.money(get_cash()))
+
+
+# --- Wallets ---------------------------------------------------------------------------
+
+## Every player has a wallet of their own and can send money to the crew; the company account
+## can pay crew too (posted as wages). Players are known by their profile name.
+func _offer_wallets() -> void:
+	if not Flags.is_on("business.wallets"):
+		return
+	var net := _net()
+	if net == null:
+		return
+	net.call("register_event", TRANSFER_EVENT, _apply_transfer, _validate_transfer)
+	net.call("register_snapshot_provider", SAVE_SECTION, self)
+	if not net.is_connected("request_rejected", _on_request_rejected):
+		net.connect("request_rejected", _on_request_rejected)
+	HudSlots.register_holo_section(CREW_CHANNEL, TRANSFER_SECTION, "Transfer money", func(glass: bool) -> Control: return TransferPanel.new(self, glass))
+
+
+## Multiplayer's bus when it's loaded. Business doesn't list multiplayer in depends_on (the
+## yard runs without it, and so do other modules' tests), so its calls go by name.
+func _net() -> Node:
+	return Modules.bus("multiplayer")
+
+
+## Tests stand a crew in here (peer id -> name) instead of a real session.
+var test_crew: Dictionary = {}
+
+
+## The players in the session, you included: peer id -> name.
+func crew_names() -> Dictionary:
+	if not test_crew.is_empty():
+		return test_crew
+	var out := {}
+	var net := _net()
+	if net:
+		var peers: Dictionary = net.call("peers")
+		for id: int in peers:
+			out[id] = str(peers[id].get("name", "Player %d" % id)) if peers[id] is Dictionary else "Player %d" % id
+	return out
+
+
+## Name of a player in the session, "" if there's no such player.
+func player_name(peer_id: int) -> String:
+	return str(crew_names().get(peer_id, ""))
+
+
+## The local player's name.
+func my_name() -> String:
+	return player_name(my_peer())
+
+
+## The local player's peer id (1 when playing alone).
+func my_peer() -> int:
+	var net := _net()
+	return int(net.call("local_peer_id")) if net else 1
+
+
+## What a player holds, CR (a new player starts with Books.WALLET_START).
+func get_wallet(player: String) -> int:
+	return _books.wallet(player)
+
+
+## Asks the host to send `amount` CR to the player `to_peer`, from your wallet or, with
+## `from_company`, from the company account. The answer comes as wallet_changed or
+## transfer_refused.
+func request_transfer(to_peer: int, amount: int, from_company := false) -> void:
+	var net := _net()
+	if net == null:
+		transfer_refused.emit("no crew to send to")
+		return
+	net.call("request", TRANSFER_EVENT, {"to": to_peer, "amount": amount, "company": from_company})
+
+
+func _validate_transfer(sender: int, p: Dictionary) -> Variant:
+	var from := player_name(sender)
+	var to := player_name(int(p.get("to", 0)))
+	var amount := int(p.get("amount", 0))
+	var company := bool(p.get("company", false))
+	if from == "" or to == "":
+		return "that player isn't here"
+	if to == from:
+		return "you can't send money to yourself"
+	if amount <= 0:
+		return "enter an amount"
+	if company:
+		if _books.insolvent or amount > _books.cash:
+			return "the company can't pay that"
+	elif amount > _books.wallet(from):
+		return "you only have %s CR" % TerminalKit.money(_books.wallet(from))
+	return {"from": "" if company else from, "to": to, "amount": amount, "by": from}
+
+
+func _apply_transfer(p: Dictionary) -> void:
+	_books.transfer(str(p.from), str(p.to), int(p.amount))
+
+
+func _on_request_rejected(event_name: String, reason: String) -> void:
+	if event_name == TRANSFER_EVENT:
+		transfer_refused.emit(reason)
+
+
+## Joining players get everyone's wallets from the host.
+func get_net_snapshot() -> Dictionary:
+	return {"wallets": _books.wallets.duplicate()}
+
+
+func apply_net_snapshot(data: Dictionary) -> void:
+	for player in data.get("wallets", {}):
+		_books.wallets[str(player)] = int(data.wallets[player])
+		wallet_changed.emit(str(player), _books.wallets[str(player)], 0)
 
 
 ## A yard terminal on `channel` ("orders", "goods", "accounts"), laid out at 1280 x 800 and

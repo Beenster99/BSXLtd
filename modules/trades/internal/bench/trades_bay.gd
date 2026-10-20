@@ -70,6 +70,16 @@ var _slot_labels: Array[Label] = []
 var _result_panel: PanelContainer
 var _result_label: Label
 var _hud: CanvasLayer
+## The tool panel (the tool in hand's readings, bottom right) and the inspect panel (hold
+## Tab: key data of what you're looking at).
+var _tool_panel: PanelContainer
+var _tool_title: Label
+var _tool_text: Label
+var _tool_state: Label
+var _tool_bar: ColorRect
+var _tool_light: ColorRect
+var _inspect_panel: PanelContainer
+var _inspect_label: Label
 
 
 func _ready() -> void:
@@ -159,6 +169,9 @@ func ship_station() -> TradesShipJoints:
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	# A screenshot may have left Tab held down.
+	if InputMap.has_action(TradesBus.KEY_INSPECT):
+		Input.action_release(TradesBus.KEY_INSPECT)
 
 
 func station(station_id: StringName) -> TradesStation:
@@ -326,6 +339,54 @@ func _process(delta: float) -> void:
 			t.global_transform = t.carried(worker.right_hand.palm())
 	if _focus:
 		_status_label.text = _focus.status_line()
+	_update_tool_panel()
+	_update_inspect()
+
+
+## Width of the tool panel's fill bar (pixels).
+const TOOL_BAR_PX := 300.0
+
+
+func _update_tool_panel() -> void:
+	if _tool_panel == null:
+		return
+	var t: TradesTool = tool_nodes.get(tool)
+	_tool_title.text = String(TOOL_LABELS[tool]).to_upper()
+	var rows: Array = t.panel_rows() if t else []
+	var lines := PackedStringArray()
+	for r: Array in rows:
+		lines.append("%-9s %s" % [r[0], r[1]])
+	_tool_text.text = "\n".join(lines)
+	_tool_text.visible = not lines.is_empty()
+	var state := t.panel_state() if t else ("HOLDING" if _focus and _focus.is_busy() else "READY")
+	_tool_state.text = state
+	var fill := t.readout_fill() if t else -1.0
+	_tool_bar.get_parent().visible = fill >= 0.0
+	_tool_bar.size.x = TOOL_BAR_PX * clampf(fill, 0.0, 1.0)
+	var alert := t.readout_alert() if t else false
+	_tool_light.color = Color(1.0, 0.55, 0.15) if alert else Color(0.25, 0.12, 0.05)
+
+
+func _update_inspect() -> void:
+	if _inspect_panel == null:
+		return
+	var on := InputMap.has_action(TradesBus.KEY_INSPECT) and Input.is_action_pressed(TradesBus.KEY_INSPECT)
+	_inspect_panel.visible = on
+	if not on:
+		return
+	var lines := _focus.inspect_lines() if _focus else PackedStringArray()
+	if lines.is_empty():
+		lines = PackedStringArray(["Look at a part or a joint."])
+	_inspect_label.text = "\n".join(lines)
+
+
+## What the tool panel and the inspect panel show now (tests).
+func tool_panel_text() -> String:
+	return "%s\n%s\n%s" % [_tool_title.text, _tool_text.text, _tool_state.text] if _tool_panel else ""
+
+
+func inspect_text() -> String:
+	return _inspect_label.text if _inspect_panel and _inspect_panel.visible else ""
 
 
 func _update_focus() -> void:
@@ -465,6 +526,26 @@ func stage_on_ship(kind: String = "bolt", third_person: bool = false) -> void:
 	worker.set_view(third_person)
 	worker.global_position = view[0]
 	worker.face(view[1])
+	for i in 30:
+		await get_tree().process_frame
+
+
+## Release screenshot in the yard: looking at a joint on the ship with Tab held, its part's
+## details up.
+func stage_inspect() -> void:
+	var s := ship_station()
+	if s == null:
+		return
+	var view := s.stage_joint("bolt", 1.5)
+	if view.is_empty():
+		return
+	s.reset()
+	s.aimed = -1
+	set_tool(&"torque_wrench")
+	worker.set_view(false)
+	worker.global_position = view[0]
+	worker.face(view[1])
+	Input.action_press(TradesBus.KEY_INSPECT)
 	for i in 30:
 		await get_tree().process_frame
 
@@ -738,6 +819,70 @@ func _build_hud() -> void:
 	_result_label = TradesLook.hud_label(18)
 	_result_panel.add_child(_result_label)
 	_result_panel.visible = false
+
+	if Flags.is_on("trades.tool_panel"):
+		_build_tool_panel(root)
+	if Flags.is_on("trades.inspect"):
+		_inspect_panel = _card()
+		root.add_child(_inspect_panel)
+		_inspect_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
+		_inspect_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		_inspect_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+		var details := VBoxContainer.new()
+		details.add_theme_constant_override("separation", 6)
+		_inspect_panel.add_child(details)
+		var head := TradesLook.hud_label(16, TradesLook.HUD_WARN)
+		head.text = "PART DETAILS"
+		details.add_child(head)
+		_inspect_label = TradesLook.hud_label(20)
+		details.add_child(_inspect_label)
+		_inspect_panel.visible = false
+
+
+## The tool in hand's readings, large and labelled, bottom right over the hotbar: its name,
+## each reading (torque, amps, rpm...), a fill bar with the status light, and what it's doing.
+func _build_tool_panel(root: Control) -> void:
+	_tool_panel = _card()
+	root.add_child(_tool_panel)
+	_tool_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
+	_tool_panel.offset_bottom = -110
+	_tool_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_tool_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	_tool_panel.add_child(box)
+	_tool_title = TradesLook.hud_label(18, TradesLook.HUD_WARN)
+	box.add_child(_tool_title)
+	_tool_text = TradesLook.hud_label(26)
+	box.add_child(_tool_text)
+	var bar_row := HBoxContainer.new()
+	bar_row.add_theme_constant_override("separation", 10)
+	box.add_child(bar_row)
+	var track := ColorRect.new()
+	track.color = Color(0.62, 0.9, 1.0, 0.15)
+	track.custom_minimum_size = Vector2(TOOL_BAR_PX, 10)
+	track.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar_row.add_child(track)
+	_tool_bar = ColorRect.new()
+	_tool_bar.color = TradesLook.HUD
+	_tool_bar.size = Vector2(0, 10)
+	track.add_child(_tool_bar)
+	_tool_light = ColorRect.new()
+	_tool_light.custom_minimum_size = Vector2(14, 14)
+	_tool_light.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar_row.add_child(_tool_light)
+	_tool_state = TradesLook.hud_label(20, TradesLook.HUD_DIM)
+	box.add_child(_tool_state)
+
+
+func _card() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var card := TradesLook.slot_style(false)
+	card.bg_color = Color(0.0, 0.02, 0.04, 0.75)
+	card.set_content_margin_all(18)
+	panel.add_theme_stylebox_override("panel", card)
+	return panel
 
 
 func refresh_hud() -> void:

@@ -28,6 +28,7 @@ const PROTOCOL := 1
 const CLAIM := "net.claim"
 const RELEASE := "net.release"
 const HOLD := "net.hold"
+const PLAYER_PREFIX := "player:"
 const CLOCK_SAMPLES := 8
 const PING_INTERVAL := 1.0
 const REFUSE_GRACE := 0.5
@@ -335,8 +336,11 @@ func unregister_mover(object_id: String) -> void:
 	_movers.unregister(object_id)
 
 
-## Peer whose copy of the object everyone else follows.
+## Peer whose copy of the object everyone else follows. "player:<peer id>" movers (a
+## player's head) are always driven by that player.
 func mover_authority(object_id: String) -> int:
+	if object_id.begins_with(PLAYER_PREFIX):
+		return object_id.trim_prefix(PLAYER_PREFIX).to_int()
 	var owner: int = _claims.get(object_id, 0)
 	return owner if owner != 0 else HOST_ID
 

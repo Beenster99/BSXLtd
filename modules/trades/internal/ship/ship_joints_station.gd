@@ -7,7 +7,7 @@ extends TradesStation
 ##   bolt       torque wrench: hold left click and pull the mouse back until it clicks;
 ##              right click (hold) breaks it loose
 ##   rivet      squeezer: hold left click to set it; drill: hold left click to drill it out
-##   weld       welder: hold left click to lay it (cutting one waits for the grinder)
+##   weld       welder: hold left click to lay it; hold right click to cut it out (unweld)
 ##   connector  hands or crimper: left click plugs it, right click unplugs it
 ##
 ## Ship and Bay hears about every joint made or taken off (note_joint_made/removed) and keeps
@@ -22,6 +22,8 @@ const SQUEEZE_S := 0.8
 const DRILL_S := 1.2
 const WELD_S := 2.0
 const BREAK_S := 0.6
+## Cutting a weld out takes longer than laying it.
+const CUT_S := 2.5
 const PLUG_S := 0.3
 ## Torque per pixel of pulling the mouse back (N m).
 const NM_PER_PX := 0.35
@@ -38,7 +40,7 @@ const KIND_TOOLS := {
 const KIND_HELP := {
 	"bolt": "torque wrench (2)",
 	"rivet": "squeezer (4) to set, drill (3) to drill out",
-	"weld": "welder (5)",
+	"weld": "welder (5): left click welds, right click cuts it",
 	"connector": "hands (1) or crimper (6)",
 }
 
@@ -218,8 +220,12 @@ func back_out(tool: StringName) -> void:
 				bay.hint("Rivets come out with the drill (3).")
 				return
 		"weld":
-			bay.hint("Cutting a weld needs the grinder, which is still on order.")
-			return
+			if tool != &"welder":
+				bay.hint("Cut a weld out with the welder (5).")
+				return
+			if not Flags.is_on("trades.unweld"):
+				bay.hint("Cutting welds isn't switched on yet.")
+				return
 		"connector":
 			if tool != &"hands" and tool != &"wire_tool":
 				bay.hint("Unplug it with your hands (1).")
@@ -238,6 +244,8 @@ func adjust(step: int) -> bool:
 
 
 func motion(relative: Vector2) -> bool:
+	if tractor.is_holding() and InputMap.has_action(TradesBus.KEY_ROTATE) and Input.is_action_pressed(TradesBus.KEY_ROTATE):
+		return tractor.rotate_by(relative)
 	if _working < 0 or _undoing or points[_working].kind != "bolt":
 		return false
 	_pull_px = maxf(0.0, _pull_px + relative.y)
@@ -321,7 +329,7 @@ func _begin(undo: bool, tool: StringName) -> void:
 		"rivet":
 			bay.hint("Drilling it out..." if undo else "Squeezing...")
 		"weld":
-			bay.hint("Laying the bead...")
+			bay.hint("Cutting the weld out..." if undo else "Laying the bead...")
 		"connector":
 			bay.hint("Unplugging..." if undo else "Plugging in...")
 
@@ -373,6 +381,7 @@ func _stop() -> void:
 			(t as TradesDrill).spin = 0.0
 		elif t is TradesWeldTorch:
 			(t as TradesWeldTorch).lit = false
+			(t as TradesWeldTorch).cutting = false
 	var squeezer := bay.tool_node(&"rivet_squeezer") as TradesRivetSqueezer
 	if squeezer:
 		squeezer.closed = 0.0
@@ -389,7 +398,7 @@ func _stop() -> void:
 
 func _seconds(kind: String) -> float:
 	if _undoing:
-		return {"bolt": BREAK_S, "rivet": DRILL_S, "connector": PLUG_S}.get(kind, 1.0)
+		return {"bolt": BREAK_S, "rivet": DRILL_S, "weld": CUT_S, "connector": PLUG_S}.get(kind, 1.0)
 	return {"rivet": SQUEEZE_S, "weld": WELD_S, "connector": PLUG_S}.get(kind, 1.0)
 
 
@@ -413,6 +422,8 @@ func _place(kind: String, at: Vector3, n: Vector3, progress: float) -> StringNam
 			var torch := bay.tool_node(&"welder") as TradesWeldTorch
 			torch.lit = true
 			torch.arc_mm = 3.0
+			torch.cutting = _undoing
+			torch.cut = progress if _undoing else 0.0
 			var xform := _on_surface(at, n, TORCH_TURN) * Transform3D(Basis(Vector3.RIGHT, deg_to_rad(TORCH_TILT_DEG)))
 			bay.place_tool(&"welder", xform)
 			bay.loop(&"arc", true, 0.9 + randf() * 0.2)
@@ -445,6 +456,100 @@ func _grip_point(tool: StringName, at: Vector3, n: Vector3) -> Vector3:
 	return t.global_transform * t.grip + n * 0.015 if t else at
 
 
+# --- Inspect (hold Tab) ---------------------------------------------------------------------
+
+const SLOT_STATES := {
+	ShipBayBus.SlotState.FITTED: "FITTED", ShipBayBus.SlotState.LOOSENED: "LOOSENED",
+	ShipBayBus.SlotState.EMPTY: "OFF THE SHIP", ShipBayBus.SlotState.POSITIONED: "IN PLACE, NOT FASTENED",
+	ShipBayBus.SlotState.INSTALLED: "INSTALLED",
+}
+
+
+## The part (and joint) under the aim: a loose part, the part a joint holds on, or a part on
+## the ship the aim passes through.
+func inspect_lines() -> PackedStringArray:
+	var lines := PackedStringArray()
+	if _bus == null:
+		return lines
+	var joint: FastenerPoint = points[aimed] if aimed >= 0 else null
+	var loose := tractor.held if tractor.held else tractor.aimed_part()
+	var slot_id := ""
+	if loose:
+		slot_id = loose.slot_id
+	elif joint:
+		slot_id = FastenerPoint.slot_of(joint.joint_id)
+	else:
+		slot_id = tractor.aimed_slot()
+	var slot := _bus.get_slot(slot_id) if slot_id != "" else null
+	if slot == null:
+		return lines
+	var comp := _bus.get_component(slot_id)
+	if comp == "":
+		comp = loose.component if loose else String(_removed.get(slot_id, slot.fitted))
+	var spec := _build_spec(comp)
+	var title := slot.display_name if slot.display_name != "" else slot_id
+	if spec and str(spec.get("display_name")) != "":
+		title = str(spec.get("display_name"))
+	lines.append(title.to_upper())
+	lines.append("%-9s %s" % ["PART", comp if comp != "" else "-"])
+	lines.append("%-9s %s" % ["SLOT", slot_id])
+	lines.append("%-9s %s" % ["STATE", SLOT_STATES.get(_bus.get_slot_state(slot_id), "-")])
+	var size := slot.box.size
+	var mass := float(spec.get("mass")) if spec else 0.0
+	if mass > 0.0:
+		lines.append("%-9s %s" % ["MASS", _kg(mass)])
+	else:
+		lines.append("%-9s %s (est.)" % ["MASS", _kg(maxf(5.0, size.x * size.y * size.z * TradesLoosePart.DENSITY))])
+	lines.append("%-9s %.2f x %.2f x %.2f m" % ["SIZE", size.x, size.y, size.z])
+	if spec and str(spec.get("material")) != "":
+		lines.append("%-9s %s" % ["MATERIAL", str(spec.get("material"))])
+	# The joints holding it on, by kind and spec, and how many are in.
+	var groups := {}
+	for f in slot.fasteners:
+		var key := "%s %s" % [f.kind, f.spec]
+		var g: Array = groups.get_or_add(key, [0, 0, f])
+		g[0] += 1
+		if _bus.is_joint_tight(f.joint_id):
+			g[1] += 1
+	var first := true
+	for key: String in groups:
+		var g: Array = groups[key]
+		var f: FastenerPoint = g[2]
+		var what := "%d %s%s %s, %d in" % [g[0], f.kind, "" if g[0] == 1 else "s", f.spec, g[1]]
+		if f.kind == "bolt":
+			var nm := torque_range(f.spec)
+			what += " (%d-%d N m)" % [roundi(nm.x), roundi(nm.y)]
+		lines.append("%-9s %s" % ["JOINTS" if first else "", what])
+		first = false
+	if groups.is_empty():
+		lines.append("%-9s none" % "JOINTS")
+	if loose:
+		var where := "in your beam" if loose == tractor.held else "hovering"
+		if tractor.to_trolley.has(slot_id):
+			where = "waiting for a trolley"
+		lines.append("%-9s %s" % ["NOW", where])
+	if joint:
+		lines.append("")
+		lines.append("%-9s %s  %s %s  %s" % ["JOINT", joint.joint_id, joint.spec, joint.kind, _state_word(joint)])
+		lines.append("%-9s %s" % ["TOOL", KIND_HELP.get(joint.kind, "-")])
+	if not slot.accepts.is_empty():
+		lines.append("%-9s %s" % ["TAKES", ", ".join(slot.accepts)])
+	return lines
+
+
+## Shared Components' build spec for a component (mass, material, name), or null. Reached
+## untyped: Shared Components is optional here.
+static func _build_spec(component: String) -> Object:
+	var shared: Node = Modules.bus("shared_components")
+	if component == "" or shared == null or not shared.has_method("build_spec"):
+		return null
+	return shared.call("build_spec", component)
+
+
+static func _kg(kg: float) -> String:
+	return "%d kg" % roundi(kg) if kg < 1000.0 else "%.1f t" % (kg / 1000.0)
+
+
 # --- Aim and marker ---------------------------------------------------------------------------
 
 func _update_aim() -> void:
@@ -460,6 +565,11 @@ func _update_aim() -> void:
 		aimed = best
 		if aimed >= 0:
 			bay.hint(_aim_hint(points[aimed]))
+			# The wrench's screen and panel show the torque the bolt under the aim wants.
+			var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
+			if wrench and points[aimed].kind == "bolt":
+				var nm := torque_range(points[aimed].spec)
+				wrench.set_nm = (nm.x + nm.y) * 0.5
 		bay.refresh_hud()
 
 
@@ -473,7 +583,7 @@ func _aim_hint(f: FastenerPoint) -> String:
 		"rivet":
 			return "Drill (3): left click drills it out." if tight else "Squeezer (4): hold left click to set a rivet."
 		"weld":
-			return "A finished weld. Cutting one needs the grinder." if tight else "Welder (5): hold left click to lay the bead."
+			return "Welder (5): hold right click to cut the weld out." if tight else "Welder (5): hold left click to lay the bead."
 		"connector":
 			return "%s line: right click unplugs it." % f.spec.capitalize() if tight else "%s line: left click plugs it in." % f.spec.capitalize()
 	return ""

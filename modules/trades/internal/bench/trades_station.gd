@@ -66,6 +66,12 @@ func motion(_relative: Vector2) -> bool:
 	return false
 
 
+## Key data about what the aim is on (a part, a joint), for the inspect panel (hold Tab).
+## Empty when the aim is on nothing this station knows.
+func inspect_lines() -> PackedStringArray:
+	return PackedStringArray()
+
+
 ## A key action the bay doesn't use itself (TradesBus.KEY_*, Keys.*). True when the station used it.
 func key(_action: String) -> bool:
 	return false

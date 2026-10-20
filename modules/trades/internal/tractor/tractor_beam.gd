@@ -6,6 +6,8 @@ extends Node3D
 ##   aim at a loose part, hold left click   the beam takes it where it is
 ##   look about, walk                       it follows, out along the beam
 ##   mouse wheel                            pull it in / push it out
+##   hold R (rebindable) and move the mouse  turn it any way: sideways round the vertical,
+##                                          up and down tips it toward or away from you
 ##   Q / E                                  turn it a step round the vertical
 ##   let go                                 it drops, or stays locked in its mount when in line
 ##   right click while holding              park it hovering there (pick it up again later)
@@ -41,6 +43,8 @@ const LINE_M := 0.04
 const LINE_DEG := 4.0
 ## How quickly a held part catches up with the beam (per second).
 const FOLLOW := 7.0
+## Holding the rotate key, the part turns this much per pixel of mouse (degrees).
+const ROTATE_DEG_PER_PX := 0.35
 
 var station: TradesShipJoints
 ## slot_id -> TradesLoosePart, every part off the ship.
@@ -220,6 +224,20 @@ func push(step: int) -> bool:
 	return true
 
 
+## Mouse movement while the rotate key is held: turn the part round its own middle, sideways
+## round the vertical and up and down round the line across your view. True while holding.
+func rotate_by(relative: Vector2) -> bool:
+	if held == null:
+		return false
+	var k := deg_to_rad(ROTATE_DEG_PER_PX)
+	var turn := Basis(Vector3.UP, relative.x * k) * Basis(Vector3.RIGHT, relative.y * k)
+	var middle := _grip * held.outline.get_center()
+	_grip = Transform3D(Basis.IDENTITY, middle) * Transform3D(turn, Vector3.ZERO) \
+			* Transform3D(Basis.IDENTITY, -middle) * _grip
+	_grip = _grip.orthonormalized()
+	return true
+
+
 ## Q / E while holding: turn it a step round the vertical.
 func turn(step: int) -> bool:
 	if held == null:
@@ -299,7 +317,8 @@ func _take(part: TradesLoosePart) -> void:
 	_distance = clampf(station.bay.worker.aim_origin().distance_to(part.centre()), MIN_M, RANGE_M)
 	_grip = _beam_frame().affine_inverse() * part.global_transform
 	station.bay.play(&"click", 0.6)
-	station.bay.hint("Got it. Wheel pulls in and pushes out, Q/E turns it, right click parks it.")
+	station.bay.hint("Got it. Wheel pulls in and pushes out, hold %s and move the mouse to turn it, right click parks it." %
+			Keys.key_name(TradesBus.KEY_ROTATE))
 
 
 ## A part sitting in its mount with nothing fastened yet comes straight back off.
