@@ -83,6 +83,7 @@ const VIEWS := {
 	"goods_in": [Vector3(-31.0, 4.6, -21.0), Vector3(-41.0, 0.0, -6.0)],
 	"trolleys": [Vector3(-38.5, 3.4, -25.0), Vector3(-31.0, 0.6, -14.0)],
 	"trolley_lift": [Vector3(-12.2, 1.8, -24.6), Vector3(-10.4, 4.6, -34.0)],
+	"picking_lift": [Vector3(-19.4, 1.7, -24.9), Vector3(-20.8, 6.2, -36.0)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)

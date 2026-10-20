@@ -22,10 +22,12 @@ func run_tests() -> void:
 		yard.queue_free()
 		return
 	var trolleys: Dictionary = fleet.get("trolleys")
-	check(trolleys.keys() == ["s", "m", "l"], "small, medium and large: %s" % [trolleys.keys()])
+	check(trolleys.keys() == ["s", "m", "l", "p"], "small, medium, large and the picking lift: %s" % [trolleys.keys()])
 	var hall: AABB = bus.shipyard_rooms()["deliveries"]["box"]
-	check(trolleys.values().all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))),
+	var haulers: Array = [trolleys["s"], trolleys["m"], trolleys["l"]]
+	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))),
 			"parked in Deliveries")
+	check((bus.shipyard_rooms()["stock"]["box"] as AABB).has_point(trolleys["p"].global_position + Vector3(0, 1, 0)), "the lift in the stores")
 	# The walker stays out of the way at the far end of the courtyard.
 	yard.call("set_walker_active", false)
 
@@ -63,7 +65,7 @@ func run_tests() -> void:
 	var lifted := {}
 	var on_carry := func(crate_id: String, trolley_id: String) -> void: carried[crate_id] = trolley_id
 	bus.crate_carried.connect(on_carry)
-	for id: String in ["s", "m", "l"]:
+	for id: String in ["s", "m", "l", "p"]:
 		bus.command_trolley(id, "put_away")
 	for i in 5400:
 		await get_tree().physics_frame
@@ -86,7 +88,7 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 		if trolleys.values().all(func(t: Node) -> bool: return t.get("status") == "PARKED" or t.get("status") == "ALL PUT AWAY" and (t.get("path") as PackedVector3Array).is_empty()):
 			break
-	check(trolleys.values().all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))), "back in Deliveries")
+	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))), "back in Deliveries")
 
 	# Called: the medium trolley comes out to someone in the courtyard and waits by them.
 	var me := Vector3(-6, 0, 14)
