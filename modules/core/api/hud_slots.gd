@@ -9,9 +9,13 @@ extends Node
 ## or switches channel); the holo shows it on a semi-transparent pane sized about 900 x 560.
 ##   HudSlots.register_holo_channel("business.orders", "Orders", func() -> Control: return OrdersScreen.new())
 ##   HudSlots.open_holo("business.orders")   # e.g. from a terminal's "show on wrist" button
+## A channel can take sections from other modules without naming them: the owner lays out
+## TerminalKit.sections("<channel>", glass) and any module adds a docket to it, e.g.
+##   HudSlots.register_holo_section("multiplayer.crew", "business.transfer", "Transfer money", factory)
 
 signal panels_changed
 signal holo_channels_changed
+signal holo_sections_changed(channel: String)
 ## Asks the UI's wrist screen to open on a channel ("" = its home page).
 signal holo_requested(channel: String)
 
@@ -96,3 +100,27 @@ func holo_readouts() -> PackedStringArray:
 		if str(v) != "":
 			out.append(str(v))
 	return out
+
+
+var _sections: Array[Dictionary] = []
+
+
+## Adds a section to another module's channel (see the header). `factory` builds a Control
+## and, like a channel's, may take one argument: true on the wrist screen's glass.
+func register_holo_section(channel: String, id: String, label: String, factory: Callable, order: int = 0) -> void:
+	unregister_holo_section(channel, id)
+	_sections.append({"channel": channel, "id": id, "label": label, "factory": factory, "order": order})
+	_sections.sort_custom(func(a, b): return a.order < b.order)
+	holo_sections_changed.emit(channel)
+
+
+func unregister_holo_section(channel: String, id: String) -> void:
+	var before := _sections.size()
+	_sections = _sections.filter(func(c): return not (c.channel == channel and c.id == id))
+	if _sections.size() != before:
+		holo_sections_changed.emit(channel)
+
+
+## The sections other modules added to `channel`, in order.
+func holo_sections(channel: String) -> Array[Dictionary]:
+	return _sections.filter(func(c): return c.channel == channel)

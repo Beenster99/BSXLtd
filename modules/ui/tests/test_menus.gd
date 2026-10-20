@@ -232,11 +232,30 @@ func _test_holo() -> void:
 	check(first != null and first.text == "01  ORDERS", "tabs are numbered like the terminal's")
 	check(holo.tabs.find_child("Ch_ui_settings", false, false) != null, "UI's settings tab is there")
 	check((holo.root.find_child("Readouts", true, false) as Label).text == "CR 1,234", "readouts show in the header")
+	var os := holo.root.find_child("OsInfo", true, false) as Label
+	check(os != null and os.text.begins_with("BSX-OS") and BuildInfo.version() in os.text,
+			"the footer's small print names the OS and the build")
+	var status := holo.root.find_child("Status", true, false) as Label
+	check(status != null and str(Time.get_datetime_dict_from_system().year) in status.text and "UP " in status.text,
+			"the footer shows the date, time and uptime")
+	check(holo.root.has_meta("holo") and Sfx.press(first).get_meta("sound") == "tick",
+			"buttons on the wrist screen tick")
+	var plain := Button.new()
+	holo.content.add_child(plain)
+	check(Sfx.press(Button.new()).get_meta("sound") == "click", "buttons elsewhere still click")
+	check(plain.has_meta("sfx") and plain.pressed.get_connections().size() > 0,
+			"a plain button another module puts on the screen ticks too")
+	await get_tree().create_timer(0.6).timeout
+	check(is_equal_approx(holo.pane.scale.y, 1.0) and is_equal_approx((holo.pane.get_child(0) as Control).modulate.a, 1.0),
+			"the screen has finished coming up")
 	(holo.tabs.find_child("Ch__stock", false, false) as Button).pressed.emit()
 	await frames(1)
 	check(holo.channel == "_stock", "a tab brings up its channel")
 	check(holo.content.find_child("Channel", false, false) is Label, "the channel's screen shows")
 	holo.close()
+	check(holo.root == null and holo.get_node_or_null("HoloVanishing") != null, "closing leaves the old screen folding away")
+	await get_tree().create_timer(0.4).timeout
+	check(holo.get_node_or_null("HoloVanishing") == null, "and then it's gone")
 	HudSlots.open_holo()
 	check(holo.channel == "_stock", "the wrist screen comes back on the last channel")
 	HudSlots.open_holo(UiBus.SETTINGS_CHANNEL)
@@ -271,6 +290,22 @@ func _test_holo() -> void:
 
 func _test_terminal_kit() -> void:
 	var T := TerminalKit
+	check("tick" in Sfx.names() and Sfx.stream("tick").data.size() > 0, "the holo tick is a sound")
+	HudSlots.register_holo_section("_crew", "_cash", "Transfer money", func(glass: bool) -> Control:
+		var l := Label.new()
+		l.text = "glass" if glass else "plain"
+		return l)
+	var secs := T.sections("_crew", true)
+	add_child(secs)
+	check(secs.get_child_count() == 1 and secs.find_child("Section__cash", false, false) != null,
+			"a module's section shows in another's channel")
+	HudSlots.register_holo_section("_crew", "_other", "Other", func() -> Control: return Label.new(), 5)
+	check(secs.get_child_count() == 2, "sections added later show up")
+	HudSlots.unregister_holo_section("_crew", "_cash")
+	HudSlots.unregister_holo_section("_crew", "_other")
+	await frames(1)
+	check(secs.get_child_count() == 0 and HudSlots.holo_sections("_crew").is_empty(), "and leave when unregistered")
+	secs.queue_free()
 	var rows := T.list()
 	for i in 3:
 		rows.add_child(T.row([T.cell_text("Stringer", "Orbital surplus"), T.tag("new", T.GOOD),
