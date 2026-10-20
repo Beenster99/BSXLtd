@@ -1,5 +1,5 @@
 extends Control
-## Settings: sound, the time of day in the yard and the like, laid out like the main menu.
+## Settings: sound, the time of day in the yard, key binds and the like, laid out like the main menu.
 ## Graphics have their own screen (GraphicsPanel). Modules' own settings sections get
 ## controls here as they need them.
 
@@ -50,7 +50,43 @@ func _ready() -> void:
 		Settings.set_value(AlienSky.SECTION, AlienSky.KEY, h))
 	box.add_child(time)
 	box.add_child(_spacer(12))
+	var keys := BsxTheme.button("Key binds", _open_keys)
+	keys.name = "KeyBinds"
+	box.add_child(keys)
 	box.add_child(BsxTheme.button("Back", _back))
+	_center = center
+
+
+var _center: CenterContainer
+
+
+## Every key the game uses, over the settings (they hide until it's closed).
+func _open_keys() -> void:
+	_center.visible = false
+	var panel := PanelContainer.new()
+	panel.name = "KeyBindsOverlay"
+	panel.add_theme_stylebox_override("panel", BsxTheme.panel_style(20))
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	panel.custom_minimum_size = Vector2(660, 760)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+	var title := BsxTheme.title("KEY BINDS", 30)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+	box.add_child(BsxTheme.muted("Click a key, then press the new one. Esc cancels."))
+	var binds := KeyBindsPanel.new()
+	binds.name = "KeyBindsPanel"
+	binds.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(binds)
+	var back := BsxTheme.button("Done", func() -> void:
+		panel.queue_free()
+		_center.visible = true)
+	back.name = "Done"
+	box.add_child(back)
+	add_child(panel)
 
 
 func _back() -> void:

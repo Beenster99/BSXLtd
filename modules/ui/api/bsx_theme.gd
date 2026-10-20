@@ -116,4 +116,8 @@ static func button(text: String, on_pressed: Callable) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(150, 42)
 	b.pressed.connect(on_pressed)
+	b.pressed.connect(func() -> void: Sfx.play("click", null, -10.0))
+	b.mouse_entered.connect(func() -> void:
+		if not b.disabled:
+			Sfx.play("hover", null, -20.0))
 	return b
