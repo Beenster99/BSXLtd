@@ -20,12 +20,15 @@ signal component_installed(slot_id: String, component: String)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
+## Router scene id of the shipyard round the bay (registered while "ship_bay.shipyard" is on).
+const SHIPYARD_SCENE := "ship_bay.shipyard"
 const SAVE_VERSION := 1
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
 const SlotTracker := preload("res://modules/ship_bay/internal/slot_tracker.gd")
+const Shipyard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
 
 ## The ship in the bay, or null.
 var ship: ShipDefinition
@@ -38,10 +41,24 @@ func register_module() -> void:
 	if Flags.is_on("ship_bay.bay_view"):
 		Router.register_scene(BAY_SCENE, "res://modules/ship_bay/internal/bay/bay.tscn")
 		Shots.register("kestrel_in_bay", BAY_SCENE)
+	if Flags.is_on("ship_bay.shipyard"):
+		Router.register_scene(SHIPYARD_SCENE, "res://modules/ship_bay/internal/yard/shipyard.tscn")
+		Menu.register_entry("shipyard", "Shipyard", SHIPYARD_SCENE, 5)
+		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly"]:
+			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
+					func(scene: Node) -> void: scene.call("show_view", view))
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
+	Menu.unregister_entry("shipyard")
+
+
+## The shipyard's rooms in work order: id -> {name, box (AABB, metres, yard space with the
+## courtyard centred on the origin, north -Z)}. "deliveries", "stock", "prep",
+## "preassembly", and "bay" (the courtyard the ship sits in).
+func shipyard_rooms() -> Dictionary:
+	return Shipyard.ROOMS.duplicate(true)
 
 
 ## Ships BSX can take into a bay.
