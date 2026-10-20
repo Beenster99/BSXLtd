@@ -1,0 +1,57 @@
+{
+  "schema": "bsx.work_order",
+  "schema_version": 1,
+  "contract_id": "rook_salvage.vs101",
+  "issued_at": "2026-10-20T09:00:00Z",
+  "client": {
+    "company": "rook_salvage",
+    "display_name": "Rook Salvage",
+    "game": "void_salvage"
+  },
+  "ship": {
+    "ship_id": "rook_salvage/kestrel",
+    "design": "kestrel",
+    "current_fit": []
+  },
+  "changes": [
+    {
+      "change_id": "c1",
+      "action": "add",
+      "slot": "hold_module_1",
+      "install": {
+        "id": "hold_net"
+      },
+      "notes": "Nets across the whole hold, please."
+    }
+  ],
+  "manifest": [
+    {
+      "line_id": "m1",
+      "component": {
+        "id": "hold_net"
+      },
+      "qty": 1,
+      "supplied_by": "bsx",
+      "allowed_sources": [
+        "new",
+        "refurbished"
+      ]
+    }
+  ],
+  "spec_sheet": {
+    "library": true,
+    "overrides": []
+  },
+  "notes": [
+    {
+      "text": "First job for us. Keep it tidy.",
+      "change_id": ""
+    }
+  ],
+  "commercial": {
+    "price": 4200,
+    "currency": "cr",
+    "deposit_pct": 30,
+    "due_day": 3
+  }
+}

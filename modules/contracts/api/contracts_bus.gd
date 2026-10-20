@@ -30,6 +30,14 @@ const NO_DUE_DAY := 1_000_000
 const Reader := preload("res://modules/contracts/internal/work_order_reader.gd")
 const Writer := preload("res://modules/contracts/internal/as_built_writer.gd")
 const Store := preload("res://modules/contracts/internal/job_store.gd")
+const BoardPanel := preload("res://modules/contracts/internal/board_panel.gd")
+## Work orders on offer when a game starts: Void Salvage crews' and local yards' jobs.
+const BOARD_DIR := "res://modules/contracts/data/board"
+const BOARD_CHANNEL := "contracts.board"
+## The contracts board's tabs (board()).
+const VOID_SALVAGE := "void_salvage"
+const LOCAL := "local"
+const TAKEN := "accepted"
 
 var _jobs: Dictionary = {}
 var _active := ""
@@ -42,10 +50,15 @@ var _library_spec: Callable
 
 func register_module() -> void:
 	Saves.register_section("contracts", self)
+	seed_board()
+	if Flags.is_on(BOARD_CHANNEL):
+		HudSlots.register_holo_channel(BOARD_CHANNEL, "Contracts",
+				func(glass: bool) -> Control: return BoardPanel.new(self, glass), 30)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("contracts")
+	HudSlots.unregister_holo_channel(BOARD_CHANNEL)
 
 
 func set_component_library(exists: Callable, library_spec: Callable = Callable()) -> void:
@@ -129,6 +142,57 @@ func get_spec(job_id: String, change_id: String) -> SpecEntry:
 		spec.apply(_library_spec.call(spec.component.id))
 	spec.apply(job.order.overrides.get(change_id, {}))
 	return spec
+
+
+## The contracts board: offered Void Salvage jobs (VOID_SALVAGE), offered local yard jobs
+## (LOCAL), or jobs taken on and not yet handed over (TAKEN). Void Salvage first, then by
+## due day.
+func board(tab: String) -> Array[ContractJob]:
+	var out: Array[ContractJob] = []
+	for job: ContractJob in _jobs.values():
+		var vs := String(job.order.client.get("game", "")) == "void_salvage"
+		var offered := job.state == ContractJob.OFFERED
+		var taken := not offered and not job.state in [ContractJob.HANDED_OVER, ContractJob.CLOSED,
+				ContractJob.DECLINED, ContractJob.CANCELLED]
+		if (tab == VOID_SALVAGE and offered and vs) or (tab == LOCAL and offered and not vs) \
+				or (tab == TAKEN and taken):
+			out.append(job)
+	out.sort_custom(func(a: ContractJob, b: ContractJob) -> bool:
+		var av := String(a.order.client.get("game", "")) == "void_salvage"
+		var bv := String(b.order.client.get("game", "")) == "void_salvage"
+		if av != bv:
+			return av
+		var ad := int(a.order.commercial.get("due_day", NO_DUE_DAY))
+		var bd := int(b.order.commercial.get("due_day", NO_DUE_DAY))
+		return ad < bd if ad != bd else a.job_id < b.job_id)
+	return out
+
+
+## Puts the bundled work orders (BOARD_DIR) on offer, skipping any the company already has
+## in any state, so a declined or finished job never comes back. Host only.
+func seed_board() -> void:
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
+	for file in DirAccess.get_files_at(BOARD_DIR):
+		if not file.ends_with(".workorder.json"):
+			continue
+		var text := FileAccess.get_file_as_string(BOARD_DIR.path_join(file))
+		var parsed: Variant = JSON.parse_string(text)
+		if parsed is Dictionary and _jobs.has(String(parsed.get("contract_id", ""))):
+			continue
+		var result := import_text(text)
+		if not result.ok():
+			push_warning("Contracts: board offer %s: %s" % [file, "; ".join(result.errors)])
+
+
+## The board's ACCEPT JOB: takes an offered job on, and makes it the active job if there
+## is none.
+func accept(job_id: String) -> bool:
+	if not advance(job_id, ContractJob.ACCEPTED):
+		return false
+	if get_active_job() == null:
+		set_active_job(job_id)
+	return true
 
 
 # Changing jobs
@@ -283,3 +347,4 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 			push_warning("Contracts: dropped saved job %s: %s" % [id, "; ".join(errors)])
 	_active = ""
 	set_active_job(String(data.get("active", "")))
+	seed_board()

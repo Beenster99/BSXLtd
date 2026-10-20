@@ -1,0 +1,59 @@
+{
+  "schema": "bsx.work_order",
+  "schema_version": 1,
+  "contract_id": "cold_iron.vs104",
+  "issued_at": "2026-10-20T09:00:00Z",
+  "client": {
+    "company": "cold_iron",
+    "display_name": "Cold Iron Co",
+    "game": "void_salvage"
+  },
+  "ship": {
+    "ship_id": "cold_iron/manta",
+    "design": "manta",
+    "current_fit": []
+  },
+  "changes": [
+    {
+      "change_id": "c1",
+      "action": "add",
+      "slot": "hull_module_1",
+      "install": {
+        "id": "tow_winch"
+      }
+    }
+  ],
+  "manifest": [
+    {
+      "line_id": "m1",
+      "component": {
+        "id": "tow_winch"
+      },
+      "qty": 1,
+      "supplied_by": "bsx",
+      "allowed_sources": [
+        "new",
+        "refurbished",
+        "salvaged"
+      ]
+    }
+  ],
+  "spec_sheet": {
+    "library": true,
+    "overrides": [
+      {
+        "change_id": "c1",
+        "weld": {
+          "type": "fillet", "inspection_class": "B"
+        }
+      }
+    ]
+  },
+  "notes": [],
+  "commercial": {
+    "price": 11200,
+    "currency": "cr",
+    "deposit_pct": 30,
+    "due_day": 8
+  }
+}

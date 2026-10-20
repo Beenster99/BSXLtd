@@ -8,6 +8,7 @@ flags = {
 "business": true,
 "business.market": true,
 "contracts": true,
+"contracts.board": true,
 "core": true,
 "multiplayer": true,
 "multiplayer.online": false,
