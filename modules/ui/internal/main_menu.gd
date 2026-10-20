@@ -1,8 +1,9 @@
 extends Control
 ## Main menu, laid out like Void Salvage's: the name and version centred over one column of
-## buttons. The entries modules registered with Menu come first (a group's entries under
-## its heading, like Void Salvage's field labels), then Graphics (Void Salvage's graphics
-## screen), Settings and Exit Game.
+## buttons. Start (Menu.start(): into the yard) comes first, like Void Salvage's Play Solo,
+## then any other entries modules registered with Menu (a group's entries under its heading,
+## like Void Salvage's field labels), then Graphics (Void Salvage's graphics screen),
+## Settings and Exit Game.
 
 var entry_box: VBoxContainer
 var _center: CenterContainer
@@ -55,12 +56,21 @@ func _fill_entries() -> void:
 		entry_box.remove_child(child)  # now, so the new buttons can take the same names
 		child.queue_free()
 	var entries := Menu.entries()
-	if entries.is_empty():
+	var start := Menu.start()
+	if not start.is_empty():
+		var go := BsxTheme.button("Start", func(): Router.goto(start.scene, start.args))
+		go.name = "Start"
+		go.custom_minimum_size.y = 52
+		go.disabled = not Router.has_scene(start.scene)
+		entry_box.add_child(go)
+	elif entries.is_empty():
 		var none := BsxTheme.muted("Nothing to play yet in this build.")
 		none.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		entry_box.add_child(none)
 	var headed := {}
 	for e in entries:
+		if not start.is_empty() and e.scene == start.scene:
+			continue  # Start already goes there
 		var group: String = e.get("group", "")
 		if group != "" and not headed.has(group):
 			headed[group] = true
