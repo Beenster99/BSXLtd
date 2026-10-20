@@ -2,7 +2,8 @@ extends RefCounted
 ## Builds a ShipDefinition from a ship's folder:
 ##   <name>_layout.json     Void Salvage's view of the ship (rooms, module slots), ship space
 ##   <name>_fasteners.json  BSX's joints per slot
-##   <name>.glb             the model
+##   <name>.tscn            the model, built in code from the shared parts (preferred), or
+##   <name>.glb             an exported model
 ## The layout is shaped like the file Void Salvage will export, so swapping the hand-written
 ## one for an exported one needs no code change.
 
@@ -32,9 +33,11 @@ static func load_ship(dir: String) -> ShipDefinition:
 		for j: Dictionary in joints.get(s.slot_id, []):
 			s.fasteners.append(_fastener(s.slot_id, j))
 		def.slots.append(s)
-	var model_path := dir.path_join(name + ".glb")
-	if ResourceLoader.exists(model_path):
-		def.model = load(model_path)
+	for ext: String in [".tscn", ".glb"]:
+		var model_path := dir.path_join(name + ext)
+		if ResourceLoader.exists(model_path):
+			def.model = load(model_path)
+			break
 	return def
 
 

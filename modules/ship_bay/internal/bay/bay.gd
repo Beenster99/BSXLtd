@@ -42,22 +42,46 @@ func _exit_tree() -> void:
 		_bus.slot_state_changed.disconnect(_on_slot_changed)
 
 
+## Three ship cradles, each an I-beam base on the floor with two posts, a head beam under
+## the belly carried on hydraulic rams and a rubber pad on top (Void Salvage's parts on its
+## ship surface). One box per cradle collides.
 func _build_cradles() -> void:
-	for z: float in [-3.0, 1.5, 5.5]:
-		var cradle := MeshInstance3D.new()
+	var top := cradle_height - 0.5
+	var yellow := ShipSurface.of(ShipKit.paint(Color(0.95, 0.75, 0.1), 0.15, 0.5, "hazard_paint"))
+	var steel := ShipSurface.of(ShipKit.paint(Color(0.55, 0.57, 0.6), 0.85, 0.3, "chrome"))
+	var dark := ShipSurface.of(ShipKit.paint(Color(0.15, 0.16, 0.18), 0.5, 0.5, "gunmetal"))
+	var rubber := ShipSurface.of(ShipKit.paint(Color(0.07, 0.07, 0.075), 0.0, 0.9, "rubber"))
+	var upright := Basis(Vector3(0, 1, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1))
+	# Clear of the landing skids (z -1.6 and 5.2) and the belly jets.
+	for z: float in [-3.4, 1.5, 4.2]:
+		var cradle := Node3D.new()
 		cradle.name = "Cradle"
-		var box := BoxMesh.new()
-		box.size = Vector3(3.2, cradle_height - 0.5, 0.6)
-		cradle.mesh = box
-		cradle.position = Vector3(0, (cradle_height - 0.5) * 0.5, z)
-		cradle.material_override = _paint(Color(0.85, 0.6, 0.1))
+		cradle.position = Vector3(0, 0, z)
 		add_child(cradle)
+		_part(cradle, PartShapes.i_beam(3.6, 0.6, 0.25, 0.03), Transform3D(Basis(), Vector3(0, 0.125, 0)), yellow)
+		_part(cradle, PartShapes.i_beam(3.2, 0.45, 0.22, 0.03), Transform3D(Basis(), Vector3(0, top - 0.2, 0)), yellow)
+		for x: float in [-1.35, 1.35]:
+			_part(cradle, PartShapes.i_beam(top - 0.56, 0.4, 0.3, 0.03), Transform3D(upright, Vector3(x, 0.25 + (top - 0.56) * 0.5, 0)), yellow)
+			_part(cradle, PartShapes.box(Vector3(0.6, 0.03, 0.8)), Transform3D(Basis(), Vector3(x, 0.015, 0)), dark)
+		for x: float in [-0.55, 0.55]:
+			_part(cradle, WreckParts.pipe(0.09, top - 0.56, false), Transform3D(Basis(), Vector3(x, 0.25 + (top - 0.56) * 0.5, 0)), steel)
+			_part(cradle, WreckParts.pipe(0.13, 0.3, true), Transform3D(Basis(), Vector3(x, 0.4, 0)), dark)
+		_part(cradle, PartShapes.chamfer_box(Vector3(2.8, 0.1, 0.5), 0.03), Transform3D(Basis(), Vector3(0, top - 0.05, 0)), rubber)
 		var solid := StaticBody3D.new()
 		var shape := CollisionShape3D.new()
 		shape.shape = BoxShape3D.new()
-		(shape.shape as BoxShape3D).size = box.size
+		(shape.shape as BoxShape3D).size = Vector3(3.2, top, 0.6)
+		shape.position.y = top * 0.5
 		solid.add_child(shape)
 		cradle.add_child(solid)
+
+
+static func _part(parent: Node3D, shape: PartShapes.PartShape, xform: Transform3D, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = shape.mesh
+	mi.material_override = mat
+	mi.transform = xform
+	parent.add_child(mi)
 
 
 func _build_stage() -> void:

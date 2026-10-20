@@ -45,15 +45,16 @@ func register_module() -> void:
 		Shots.register("kestrel_in_bay", BAY_SCENE)
 	if Flags.is_on("ship_bay.shipyard"):
 		Router.register_scene(SHIPYARD_SCENE, "res://modules/ship_bay/internal/yard/shipyard.tscn")
-		Menu.register_entry("shipyard", "Shipyard", SHIPYARD_SCENE, 5)
-		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly"]:
+		Menu.set_start(SHIPYARD_SCENE, 10)   # the game starts in the yard
+		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
+				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
-	Menu.unregister_entry("shipyard")
+	Menu.clear_start(SHIPYARD_SCENE)
 
 
 ## The shipyard's rooms in work order: id -> {name, box (AABB, metres, yard space with the
@@ -81,6 +82,21 @@ func set_walker_active(yard: Node3D, on: bool) -> void:
 func walker_position(yard: Node3D) -> Vector3:
 	var walker := yard.get("walker") as Node3D if yard else null
 	return walker.position if walker else Vector3.ZERO
+
+
+## Ship space (the loaded ship's own frame: FastenerPoint positions and normals) to yard
+## space, for the ship sitting in the yard's bay; identity without one.
+func ship_transform(yard: Node3D) -> Transform3D:
+	var bay_node := yard.get("bay") as Node3D if yard else null
+	var ship_node := bay_node.get("ship_root") as Node3D if bay_node else null
+	if ship_node == null:
+		return Transform3D.IDENTITY
+	return bay_node.transform * ship_node.transform
+
+
+## The same as ship_transform.
+func ship_to_yard(yard: Node3D) -> Transform3D:
+	return ship_transform(yard)
 
 
 ## Ships BSX can take into a bay.

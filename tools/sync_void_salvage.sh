@@ -15,6 +15,7 @@ DEST=shared/void_salvage
 # references). Add a file only with everything it refers to.
 FILES=(
 	scripts/parts/frame_parts.gd
+	scripts/parts/hull_builder.gd
 	scripts/parts/kit_parts.gd
 	scripts/parts/mesh_kit.gd
 	scripts/parts/part_shapes.gd
