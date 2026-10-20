@@ -43,7 +43,7 @@ func _init(p_bus: BusinessBus, p_glass := true) -> void:
 	_amount.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(_amount)
 	_send = T.button("SEND CR", true, 17, false, glass)
-	_send.name = "Send"
+	_send.name = "SendMoney"
 	_send.pressed.connect(send)
 	row.add_child(_send)
 	add_child(row)
