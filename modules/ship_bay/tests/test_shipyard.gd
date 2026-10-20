@@ -42,7 +42,9 @@ func run_tests() -> void:
 		shape.size = Vector3(5.0, 1.6, 2.6)
 		box.shape = shape
 		box.transform = Transform3D(Basis.IDENTITY, at + Vector3(0, 1.0, 0.8))
-		var hits := yard.get_world_3d().direct_space_state.intersect_shape(box)
+		# Only the yard's own building counts: other modules (Tools' bench) stand on the spots.
+		var hits := yard.get_world_3d().direct_space_state.intersect_shape(box).filter(
+				func(hit: Dictionary) -> bool: return yard.call("is_own_body", hit.collider))
 		check(hits.is_empty(), "%s is clear for a bench and a worker: %d" % [spot, hits.size()])
 	var ship_bay: Node3D = yard.get("bay")
 	check(ship_bay != null and ship_bay.get_node_or_null("Ship") != null, "the bay scene sits in the courtyard")

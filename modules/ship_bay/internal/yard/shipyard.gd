@@ -67,6 +67,8 @@ var _solid: StaticBody3D
 var _rng := RandomNumberGenerator.new()
 var _paints: Dictionary = {}
 var _crates: Array = []
+## The collision bodies the yard built itself, before other modules added theirs.
+var _own_bodies: Dictionary = {}
 var _concrete: StandardMaterial3D
 
 
@@ -98,6 +100,8 @@ func _ready() -> void:
 	view_camera.name = "ViewCamera"
 	view_camera.far = 6000.0
 	add_child(view_camera)
+	for body: Node in find_children("*", "CollisionObject3D", true, false):
+		_own_bodies[body] = true
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus:
 		bus.shipyard_ready.emit(self)
@@ -120,6 +124,11 @@ func show_view(id: String) -> void:
 	view_camera.position = v[0]
 	view_camera.look_at(v[1])
 	view_camera.current = true
+
+
+## True for a collision body the yard built, false for one another module added to it.
+func is_own_body(body: Object) -> bool:
+	return _own_bodies.has(body)
 
 
 ## The room the point (yard space) is in, or "" outside.
