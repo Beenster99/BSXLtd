@@ -8,12 +8,14 @@
 # Output: release/v<version>/ with bsx-v<version>-<platform>.zip, screenshots/*.png,
 # whats_new.md and manifest.json.
 # Env: ALLOW_DIRTY=1 builds from uncommitted changes (local tries only);
-#      SKIP_SHOTS=1 skips screenshots; PLATFORMS="linux windows" builds a subset.
+#      SKIP_SHOTS=1 skips screenshots; SHOTS_TIMEOUT=<seconds> limits the tour (default 900);
+#      PLATFORMS="linux windows" builds a subset.
 set -euo pipefail
 
 VERSION="${1:-}"
 GODOT="${GODOT:-godot}"
 PLATFORMS="${PLATFORMS:-windows linux macos}"
+SHOTS_TIMEOUT="${SHOTS_TIMEOUT:-900}"
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
 
@@ -95,9 +97,9 @@ else
 	TOUR=("$GODOT" --path . --rendering-driver opengl3
 		res://tools/screenshot_tour/screenshot_tour.tscn -- "--out=$ROOT/$OUT/screenshots")
 	if [ -n "${DISPLAY:-}" ]; then
-		timeout 300 "${TOUR[@]}"
+		timeout "$SHOTS_TIMEOUT" "${TOUR[@]}"
 	elif command -v xvfb-run >/dev/null; then
-		timeout 300 xvfb-run -a -s "-screen 0 1920x1080x24" "${TOUR[@]}"
+		timeout "$SHOTS_TIMEOUT" xvfb-run -a -s "-screen 0 1920x1080x24" "${TOUR[@]}"
 	else
 		die "screenshots need a display or xvfb-run (SKIP_SHOTS=1 to skip)"
 	fi
