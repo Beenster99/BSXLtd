@@ -144,7 +144,7 @@ func _build_lift(at: Transform3D) -> void:
 	add_child(lift)
 	chassis = AnimatableBody3D.new()
 	chassis.name = "Chassis"
-	chassis.sync_to_physics = true
+	chassis.sync_to_physics = false
 	chassis.set_meta("surface", "metal")
 	lift.add_child(chassis)
 	# The chassis on four wheels.
@@ -169,7 +169,7 @@ func _build_lift(at: Transform3D) -> void:
 	# work face, to the hull) is open and its +Z side has a gate bar that closes once it's up.
 	platform = AnimatableBody3D.new()
 	platform.name = "LiftPlatform"
-	platform.sync_to_physics = true
+	platform.sync_to_physics = false
 	platform.set_meta("surface", "grating")
 	lift.add_child(platform)
 	_part(WreckParts.grating(W, L), Transform3D(Basis(), Vector3(0, -0.02, 0)), _tread, platform)
@@ -401,7 +401,7 @@ func _build_power_unit(socket: Vector3) -> void:
 	add_child(unit)
 	unit_body = AnimatableBody3D.new()
 	unit_body.name = "Body"
-	unit_body.sync_to_physics = true
+	unit_body.sync_to_physics = false
 	unit.add_child(unit_body)
 	var body := UNIT_BODY
 	var u := unit_body
