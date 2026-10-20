@@ -68,6 +68,8 @@ func run_tests() -> void:
 
 	# The walker stands on the courtyard.
 	var walker: CharacterBody3D = yard.get("walker")
+	# Another module (Tools) may have taken the yard over on shipyard_ready.
+	yard.call("set_walker_active", true)
 	walker.call("place", Vector3(0, 0.5, 20), Vector3(0, 1, 0))
 	for i in 30:
 		await get_tree().physics_frame
@@ -77,6 +79,10 @@ func run_tests() -> void:
 	var walker_cam := walker.get("camera") as Camera3D
 	bay.set_walker_active(yard, false)
 	check(not walker.is_physics_processing() and not walker_cam.current, "handed over: the walker stops and its camera stands down")
+	check(walker.collision_layer == 0 and walker.collision_mask == 0, "handed over: the walker no longer collides")
+	var ship_xf := bay.ship_transform(yard)
+	check(ship_xf.origin.is_equal_approx(Vector3(0, 1.6, 0)), "ship space sits on the cradles: %s" % ship_xf.origin)
+	check(bay.ship_to_yard(yard) == ship_xf, "ship_to_yard is ship_transform")
 	var other := Camera3D.new()
 	yard.add_child(other)
 	other.current = true
@@ -87,6 +93,7 @@ func run_tests() -> void:
 	check(walker.rotation.y == turn and other.current, "handed over: the yard leaves the mouse alone")
 	bay.set_walker_active(yard, true)
 	check(walker.is_physics_processing() and walker_cam.current, "taken back: the walker walks and looks again")
+	check(walker.collision_layer != 0, "taken back: the walker collides again")
 	other.queue_free()
 	yard.call("show_view", "deliveries")
 	check(yard.get("view_camera").current, "a view takes the camera")

@@ -81,6 +81,7 @@ var view_camera: Camera3D
 var bay: Node3D
 ## False while another module has control (ShipBayBus.set_walker_active).
 var walker_active := true
+var _walker_layers := Vector2i(1, 1)
 
 var _solid: StaticBody3D
 var _rng := RandomNumberGenerator.new()
@@ -187,6 +188,14 @@ func set_walker_active(on: bool) -> void:
 	walker_active = on
 	walker.set_physics_process(on)
 	walker.velocity = Vector3.ZERO
+	# Off, it stands nowhere: nothing bumps into it.
+	if on:
+		walker.collision_layer = _walker_layers.x
+		walker.collision_mask = _walker_layers.y
+	else:
+		_walker_layers = Vector2i(walker.collision_layer, walker.collision_mask)
+		walker.collision_layer = 0
+		walker.collision_mask = 0
 	var cam := walker.get("camera") as Camera3D
 	if on:
 		cam.current = true

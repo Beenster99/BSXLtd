@@ -83,6 +83,21 @@ func walker_position(yard: Node3D) -> Vector3:
 	return walker.position if walker else Vector3.ZERO
 
 
+## Ship space (the loaded ship's own frame: FastenerPoint positions and normals) to yard
+## space, for the ship sitting in the yard's bay; identity without one.
+func ship_transform(yard: Node3D) -> Transform3D:
+	var bay_node := yard.get("bay") as Node3D if yard else null
+	var ship_node := bay_node.get("ship_root") as Node3D if bay_node else null
+	if ship_node == null:
+		return Transform3D.IDENTITY
+	return bay_node.transform * ship_node.transform
+
+
+## The same as ship_transform.
+func ship_to_yard(yard: Node3D) -> Transform3D:
+	return ship_transform(yard)
+
+
 ## Ships BSX can take into a bay.
 func ship_ids() -> PackedStringArray:
 	return PackedStringArray(SHIPS.keys())
