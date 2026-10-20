@@ -23,6 +23,8 @@ const YARD_SPOT := "bench_preassembly"
 ## The yard spot is the back of the bench's tool board; the bench's own origin is this far
 ## in front of it (metres).
 const YARD_BOARD_DEPTH := 0.59
+## The group Ship and Bay knows other modules' nodes in the yard by.
+const YARD_GUEST_GROUP := "yard_guest"
 
 var _sites: Dictionary = {}
 var _results: Dictionary = {}
@@ -57,6 +59,8 @@ func _on_shipyard_ready(yard: Node3D) -> void:
 	var bench: Node3D = load(BENCH_SCENE).instantiate()
 	bench.set("in_yard", true)
 	bench.name = "ToolsBench"
+	# Ship and Bay's clear-spot checks leave out what other modules put there.
+	bench.add_to_group(YARD_GUEST_GROUP)
 	bench.transform = yard_bus.shipyard_spot(YARD_SPOT) * Transform3D(Basis(), Vector3(0, 0, YARD_BOARD_DEPTH))
 	yard.add_child(bench)
 
