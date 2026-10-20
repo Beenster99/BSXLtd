@@ -17,6 +17,8 @@ signal slot_state_changed(slot_id: String, old_state: SlotState, new_state: Slot
 signal component_removed(slot_id: String, component: String)
 signal component_positioned(slot_id: String, component: String)
 signal component_installed(slot_id: String, component: String)
+## The ship in the bay was powered up (shore power on) or down.
+signal ship_power_changed(on: bool)
 ## The shipyard scene has built itself; add your own nodes to `yard` (at shipyard_spot()s).
 signal shipyard_ready(yard: Node3D)
 
@@ -36,6 +38,8 @@ const Shipyard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
 var ship: ShipDefinition
 var _tracker: SlotTracker
 var _definitions: Dictionary = {}
+## Whether the ship in the bay is on shore power (its lamps, screens and systems live).
+var ship_powered := false
 
 
 func register_module() -> void:
@@ -47,9 +51,13 @@ func register_module() -> void:
 		Router.register_scene(SHIPYARD_SCENE, "res://modules/ship_bay/internal/yard/shipyard.tscn")
 		Menu.set_start(SHIPYARD_SCENE, 10)   # the game starts in the yard
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
-				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold"]:
+				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
+				"kestrel_access", "kestrel_lift"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
+		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
+			scene.call("set_time_of_day", 22.0)
+			scene.call("show_view", "courtyard"))
 
 
 func unregister_module() -> void:
@@ -129,6 +137,7 @@ func unload_ship() -> void:
 	var id := ship.ship_id
 	ship = null
 	_tracker = null
+	set_ship_powered(false)
 	ship_unloaded.emit(id)
 
 
@@ -184,11 +193,19 @@ func note_joint_removed(joint_id: String) -> bool:
 	return _tracker != null and _tracker.joint_removed(joint_id)
 
 
+## Shore power to the ship in the bay on or off (the bay's ground power unit, or anyone).
+func set_ship_powered(on: bool) -> void:
+	if on == ship_powered:
+		return
+	ship_powered = on
+	ship_power_changed.emit(on)
+
+
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
 	if ship == null:
 		return {}
-	return {"ship_id": ship.ship_id, "slots": _tracker.snapshot()}
+	return {"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered}
 
 
 func restore(state: Dictionary) -> void:
@@ -199,6 +216,7 @@ func restore(state: Dictionary) -> void:
 	if (ship == null or ship.ship_id != id) and not load_ship(id):
 		return
 	_tracker.restore(state.get("slots", {}))
+	set_ship_powered(bool(state.get("powered", false)))
 
 
 func save_version() -> int:

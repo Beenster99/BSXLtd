@@ -63,6 +63,8 @@ const VIEWS := {
 	"kestrel_rivets": [Vector3(4.4, 3.3, 3.6), Vector3(2.6, 2.7, 1.2)],
 	"kestrel_cabin": [Vector3(0, 3.45, -3.0), Vector3(0, 2.7, 1.4)],
 	"kestrel_hold": [Vector3(0.3, 3.4, 2.0), Vector3(0, 2.3, 6.4)],
+	"kestrel_access": [Vector3(-7.5, 3.2, 9.5), Vector3(-1.0, 1.6, 3.5)],
+	"kestrel_lift": [Vector3(9.0, 4.0, 9.0), Vector3(3.5, 2.0, 4.0)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)
@@ -82,6 +84,10 @@ const Y_TO_Z := Basis(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, -1, 0))
 ## A part along X facing +Y turned to run along Z facing -X (lamp bars, grilles).
 const FACE_NX := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 
+## The hour of the day, 0..24: moves the sun and the sky, and the yard's night lights come on
+## as it gets dark. Follows the "world/time_of_day" setting when there is one.
+@export_range(0.0, 24.0) var time_of_day := 14.0
+
 var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
@@ -90,6 +96,12 @@ var walker_active := true
 var _walker_layers := Vector2i(1, 1)
 
 var _solid: StaticBody3D
+var _sun: DirectionalLight3D
+var _env: Environment
+var _sky: AlienSky
+## Lights that only burn at night, each with its full energy in meta "night_energy".
+var _night_lights: Array[Light3D] = []
+var _night_lens: StandardMaterial3D
 var _rng := RandomNumberGenerator.new()
 var _paints: Dictionary = {}
 ## Library shapes by key, made once (_lib).
@@ -134,6 +146,7 @@ func _ready() -> void:
 	_build_courtyard()
 	_build_crane()
 	_build_outside()
+	_build_night_lights()
 	_flush()
 	bay = BAY_SCENE.instantiate() as Node3D
 	bay.set("standalone", false)
@@ -152,6 +165,8 @@ func _ready() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus:
 		bus.shipyard_ready.emit(self)
+	_on_sky_time(_sky.hour, AlienSky.daylight_at(_sky.hour))
+	Settings.changed.connect(_on_setting)
 	var start: String = Router.args.get("view", "")
 	if VIEWS.has(start):
 		show_view(start)
@@ -160,7 +175,101 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if Settings.changed.is_connected(_on_setting):
+		Settings.changed.disconnect(_on_setting)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## Sets the hour (0..24) for this yard alone (screenshots, tests): the sky moves the sun and
+## the night lights follow. A change to the time-of-day setting puts it back on the setting.
+func set_time_of_day(hour: float) -> void:
+	_sky.set_hour(fposmod(hour, 24.0))
+
+
+func _on_setting(section: String, key: String, _value: Variant) -> void:
+	if section == AlienSky.SECTION and key == AlienSky.KEY:
+		_sky.set_hour(-1.0)
+
+
+## The sky moved: the night lights fade in as the daylight goes.
+func _on_sky_time(hour: float, daylight: float) -> void:
+	time_of_day = hour
+	var night := 1.0 - smoothstep(0.0, 0.3, daylight)
+	for l in _night_lights:
+		l.light_energy = float(l.get_meta("night_energy")) * night
+		l.visible = night > 0.01
+	if _night_lens:
+		_night_lens.emission_energy_multiplier = lerpf(0.15, 4.0, night)
+
+
+## Is it dark enough for the night lights (0 day .. 1 full night)?
+func night_amount() -> float:
+	return 1.0 - smoothstep(0.0, 0.3, AlienSky.daylight_at(time_of_day))
+
+
+## Registers a light that only burns at night.
+func _night(l: Light3D) -> void:
+	l.set_meta("night_energy", l.light_energy)
+	_night_lights.append(l)
+
+
+## Lamp posts round the courtyard and down the apron, and wall lamps over the big doors:
+## off by day, they come on at dusk.
+func _build_night_lights() -> void:
+	_night_lens = ShipKit.glow(LAMP, 4.0)
+	var pole := _lib("pipe/lamp_pole", func() -> PartShapes.PartShape: return WreckParts.pipe(0.09, 7.0, false))
+	var arm := _lib("pipe/lamp_arm", func() -> PartShapes.PartShape: return WreckParts.pipe(0.05, 1.2, false))
+	var base := _lib("prism/lamp_base", func() -> PartShapes.PartShape: return PartShapes.prism(8, 0.22, 0.6))
+	var housing := _lib("chamfer/lamp_head", func() -> PartShapes.PartShape:
+			return PartShapes.chamfer_box(Vector3(0.7, 0.14, 0.32), 0.04))
+	var lens := _box(Vector3(0.6, 0.02, 0.24))
+	var posts: Array[Vector3] = []
+	for x: float in [-22.0, 22.0]:
+		for z: float in [-14.0, 2.0, 18.0]:
+			posts.append(Vector3(x, 0, z))
+	for x: float in [-34.0, 34.0]:
+		for z: float in [38.0, 58.0, 78.0]:
+			posts.append(Vector3(x, 0, z))
+	for p in posts:
+		var toward := signf(-p.x)   # the arm reaches in toward the middle
+		_put(base, _at(p + Vector3(0, 0.3, 0)), _concrete)
+		_put(pole, _at(p + Vector3(0, 3.6 + 0.3, 0)), _galv)
+		_put(arm, Transform3D(Y_TO_X, p + Vector3(toward * 0.6, 7.1, 0)), _galv, false)
+		var head := p + Vector3(toward * 1.2, 7.0, 0)
+		_put(housing, _at(head), _frame, false)
+		_put(lens, _at(head + Vector3(0, -0.08, 0)), _night_lens, false)
+		var l := SpotLight3D.new()
+		l.position = head + Vector3(0, -0.2, 0)
+		l.rotation_degrees = Vector3(-90, 0, 0)
+		l.light_color = LAMP
+		l.light_energy = 12.0
+		l.spot_range = 20.0
+		l.spot_angle = 62.0
+		l.spot_attenuation = 0.8
+		l.set_meta("gfx_no_shadow", true)
+		add_child(l)
+		_night(l)
+	# Wall lamps on the wings' courtyard faces, over each big doorway.
+	var wall_lamp := _lib("chamfer/wall_lamp", func() -> PartShapes.PartShape:
+			return PartShapes.chamfer_box(Vector3(0.6, 0.25, 0.3), 0.04))
+	for spot: Array in [[Vector3(-YARD.x + 0.35, 9.2, -12.0), Vector3.RIGHT], [Vector3(-YARD.x + 0.35, 9.2, 12.0), Vector3.RIGHT],
+			[Vector3(YARD.x - 0.35, 9.2, -12.0), Vector3.LEFT], [Vector3(YARD.x - 0.35, 9.2, 12.0), Vector3.LEFT],
+			[Vector3(-14.0, 9.2, -YARD.y + 0.35), Vector3.BACK], [Vector3(14.0, 9.2, -YARD.y + 0.35), Vector3.BACK]]:
+		var at: Vector3 = spot[0]
+		var out: Vector3 = spot[1]
+		var yaw := atan2(out.x, out.z)
+		_put(wall_lamp, _at(at, yaw), _frame, false)
+		_put(_box(Vector3(0.5, 0.02, 0.2)), _at(at + Vector3(0, -0.13, 0) + out * 0.02, yaw), _night_lens, false)
+		var w := SpotLight3D.new()
+		w.position = at + out * 0.3 + Vector3(0, -0.2, 0)
+		w.light_color = LAMP
+		w.light_energy = 5.0
+		w.spot_range = 22.0
+		w.spot_angle = 60.0
+		w.set_meta("gfx_no_shadow", true)
+		add_child(w)
+		w.look_at(w.position + out * 0.6 + Vector3(0, -1.0, 0))
+		_night(w)
 
 
 ## Looks from one of VIEWS with a still camera (screenshots); any key or click walks again.
@@ -255,41 +364,12 @@ func _paints_init() -> void:
 # --- The planet ---------------------------------------------------------------------------
 
 func _build_planet() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.26, 0.36, 0.52)
-	sky_mat.sky_horizon_color = Color(0.86, 0.68, 0.52)
-	sky_mat.ground_horizon_color = Color(0.7, 0.55, 0.42)
-	sky_mat.ground_bottom_color = Color(0.3, 0.22, 0.17)
-	sky_mat.sun_angle_max = 8.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	var e := Environment.new()
-	e.background_mode = Environment.BG_SKY
-	e.sky = sky
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.6, 0.55, 0.5)
-	e.ambient_light_energy = 0.45
-	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	e.tonemap_mode = Environment.TONE_MAPPER_ACES
-	e.ssao_enabled = true
-	e.glow_enabled = true
-	e.glow_intensity = 0.6
-	e.fog_enabled = true
-	e.fog_light_color = Color(0.8, 0.66, 0.54)
-	e.fog_density = 0.0012
-	e.fog_sky_affect = 0.0
-	var we := WorldEnvironment.new()
-	we.name = "WorldEnvironment"
-	we.environment = e
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-38, -32, 0)
-	sun.light_color = Color(1.0, 0.92, 0.82)
-	sun.light_energy = 1.15
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 180.0
-	add_child(sun)
+	# The sky, sun and planet-light come from UI's AlienSky, which follows the time of day.
+	_sky = AlienSky.new()
+	_sky.time_changed.connect(_on_sky_time)
+	add_child(_sky)
+	_sun = _sky.sun
+	_env = _sky.environment
 
 	# The ground: dusty red-brown plain, with a concrete apron in front of the open end and
 	# a road to the truck doors.
@@ -1072,12 +1152,13 @@ func _build_outside() -> void:
 		var flood := SpotLight3D.new()
 		flood.position = foot + Vector3(0, 15.4, -0.5)
 		flood.light_color = LAMP
-		flood.light_energy = 3.0
+		flood.light_energy = 10.0
 		flood.spot_range = 55.0
 		flood.spot_angle = 30.0
 		flood.set_meta("gfx_no_shadow", true)
 		add_child(flood)
 		flood.look_at(Vector3(0, 2.0, 0))
+		_night(flood)
 
 	# The tank farm: three upright tanks on plinths, piped to a manifold, with a fence.
 	var tank := _lib("tank/farm", func() -> PartShapes.PartShape: return WreckParts.tank(1.5, 7.0))
