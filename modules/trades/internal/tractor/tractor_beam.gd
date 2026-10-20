@@ -19,6 +19,15 @@ extends Node3D
 ## (register_mover); Multiplayer is optional here, so it is reached untyped.
 ## A part still held by its joints only says how many are left. Owned by the ship station
 ## (TradesShipJoints), which hands it the tractor's input.
+##
+## Nothing that comes off the ship disappears: its loose copy hovers where it was and the
+## yard sends a hover trolley big enough for it (ShipBayBus.beam_to_trolley). A yard beam
+## reaches from the part to the trolley's deck while it comes, and once the part is on the
+## deck as a crate (Ship and Bay's part_beamed) the copy goes: it is stock now, to take off
+## the trolley, put away or fetch for a refit. A player who takes the part with their own
+## beam first calls the trolley off (cancel_beam); dropped away from the mount, it is sent
+## for again. No trolley free: it waits and asks again. The trolley calls are Ship and
+## Bay's, reached by name, so they work once it offers them.
 
 const RANGE_M := 9.0
 const MIN_M := 1.0
@@ -41,6 +50,14 @@ var held: TradesLoosePart
 var aligned := false
 ## The unit ids holds were last sent for, with the aligned flag sent.
 var _sent: Dictionary = {}
+## slot_id -> the trolley coming for that part.
+var to_trolley: Dictionary = {}
+## slot_id -> seconds until asking for a trolley again (none was free).
+var _retry: Dictionary = {}
+## slot_id -> the yard beam drawn from the part to its trolley.
+var _yard_beams: Dictionary = {}
+## Stands in for Ship and Bay's trolley calls when set (tests).
+var trolley_api: Object
 
 var _bus: ShipBayBus
 var _distance := 3.0
@@ -58,6 +75,9 @@ func _ready() -> void:
 		_bus.component_removed.connect(_on_component_removed)
 		_bus.component_positioned.connect(_on_component_positioned)
 		_bus.ship_unloaded.connect(func(_id: String) -> void: clear())
+		# Ship and Bay's, once it has trolleys that take parts.
+		if _bus.has_signal("part_beamed"):
+			_bus.connect("part_beamed", _on_part_beamed)
 	_beam_mat = StandardMaterial3D.new()
 	_beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -131,6 +151,7 @@ func press() -> void:
 			station.bay.hint("%s is still held on: %d of its %d joints are in. Take them all off first." %
 					[slot.display_name if slot.display_name != "" else slot_id, left, total])
 		return
+	_cancel_trolley(part.slot_id)
 	_take(part)
 
 
@@ -145,6 +166,7 @@ func release() -> void:
 	else:
 		part.drop()
 		_end_hold(part)
+		_send_to_trolley(part)
 		station.bay.hint("Let go.")
 	aligned = false
 	_emit(part, false)
@@ -219,6 +241,7 @@ func update(delta: float) -> void:
 	for p: TradesLoosePart in loose.values():
 		if p.seated and _tight(p.slot_id) > 0:
 			_finish(p)
+	_update_trolleys(delta)
 	var tool := station.bay.tool_node(&"tractor") as TradesTractorTool
 	if held == null or not is_instance_valid(held):
 		held = null
@@ -368,6 +391,7 @@ func _on_component_removed(slot_id: String, comp: String) -> void:
 	var net := _net()
 	if net:
 		net.call("register_mover", unit_id(slot_id), part)
+	_send_to_trolley(part)
 
 
 ## In its slot again. Seated by the beam, the copy stays (hidden) until the first joint is
@@ -388,6 +412,7 @@ func _finish(part: TradesLoosePart) -> void:
 		held = null
 		_stop_beam()
 	_end_hold(part)
+	_cancel_trolley(part.slot_id)
 	loose.erase(part.slot_id)
 	var net := _net()
 	if net:
@@ -439,6 +464,105 @@ func clear() -> void:
 	for p: TradesLoosePart in loose.values():
 		_finish(p)
 	loose.clear()
+	to_trolley.clear()
+	_retry.clear()
+
+
+# --- Trolleys (Ship and Bay's) -----------------------------------------------------------
+
+## How long to wait before asking again when no trolley was free, seconds.
+const TROLLEY_RETRY_S := 4.0
+
+
+## Who answers the trolley calls: Ship and Bay's bus (tests put a stand-in here).
+func _api() -> Object:
+	return trolley_api if trolley_api else _bus
+
+
+func _has(method: String) -> bool:
+	return _api() != null and _api().has_method(method)
+
+
+## Asks the yard for a trolley to take the part; none free, it asks again later.
+func _send_to_trolley(part: TradesLoosePart) -> void:
+	_retry.erase(part.slot_id)
+	if not _has("beam_to_trolley") or to_trolley.has(part.slot_id):
+		return
+	var api := _api()
+	var id := ""
+	if api.get_method_argument_count("beam_to_trolley") >= 4:
+		id = str(api.call("beam_to_trolley", part.slot_id, part.component, 1.0, part.centre()))
+	else:
+		id = str(api.call("beam_to_trolley", part.component, 1.0, part.centre()))
+	if id == "":
+		_retry[part.slot_id] = TROLLEY_RETRY_S
+		return
+	to_trolley[part.slot_id] = id
+
+
+func _cancel_trolley(slot_id: String) -> void:
+	_retry.erase(slot_id)
+	_drop_yard_beam(slot_id)
+	if not to_trolley.has(slot_id):
+		return
+	var id: String = to_trolley[slot_id]
+	to_trolley.erase(slot_id)
+	if _has("cancel_beam"):
+		_api().call("cancel_beam", id)
+
+
+## The part is on its trolley's deck as a crate: the copy goes.
+func _on_part_beamed(_crate_id: String, trolley_id: String, _component: String, slot_id := "") -> void:
+	if slot_id == "":
+		for s: String in to_trolley:
+			if to_trolley[s] == trolley_id:
+				slot_id = s
+	var part: TradesLoosePart = loose.get(slot_id)
+	if part == null or part == held or not to_trolley.has(slot_id):
+		return
+	to_trolley.erase(slot_id)
+	_finish(part)
+
+
+func _update_trolleys(delta: float) -> void:
+	for slot_id: String in _retry.keys():
+		_retry[slot_id] -= delta
+		var part: TradesLoosePart = loose.get(slot_id)
+		if part == null or part == held:
+			_retry.erase(slot_id)
+		elif _retry[slot_id] <= 0.0:
+			_send_to_trolley(part)
+	for slot_id: String in to_trolley:
+		var part: TradesLoosePart = loose.get(slot_id)
+		var deck: Variant = _api().call("trolley_deck_position", to_trolley[slot_id]) \
+				if _has("trolley_deck_position") else null
+		if part and deck is Vector3:
+			_draw_yard_beam(slot_id, part.centre(), deck)
+	for slot_id: String in _yard_beams.keys():
+		if not to_trolley.has(slot_id):
+			_drop_yard_beam(slot_id)
+
+
+func _draw_yard_beam(slot_id: String, from: Vector3, to: Vector3) -> void:
+	var length := from.distance_to(to)
+	if length < 0.05:
+		return
+	var m: MeshInstance3D = _yard_beams.get(slot_id)
+	if m == null:
+		m = _beam_mesh(0.03, 0.06)
+		(m.material_override as StandardMaterial3D).albedo_color = Color(TradesTractorTool.BEAM_COLOR, 0.3)
+		_yard_beams[slot_id] = m
+	var y := (to - from) / length
+	var x := y.cross(Vector3.UP if absf(y.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT).normalized()
+	m.global_transform = Transform3D(Basis(x, y, x.cross(y)), (from + to) * 0.5).scaled_local(Vector3(1.0, length, 1.0))
+	m.visible = true
+
+
+func _drop_yard_beam(slot_id: String) -> void:
+	var m: MeshInstance3D = _yard_beams.get(slot_id)
+	if m:
+		m.queue_free()
+	_yard_beams.erase(slot_id)
 
 
 func _emit(part: TradesLoosePart, holding: bool) -> void:
