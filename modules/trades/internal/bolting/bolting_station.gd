@@ -1,6 +1,7 @@
 extends TradesStation
 ## Bolting: a steel plate, a four-hole angle bracket beside it and a tray of bolts. Set the
-## bracket on the plate (hands; Q and E turn it), screw each bolt in by hand (aim at the
+## bracket on the plate (hold left click with your hands to carry it, the wheel turns it,
+## let go to set it down), screw each bolt in by hand (aim at the
 ## hole's centre or it cross-threads and jams), then torque them with the torque wrench in
 ## the order on the plate. All the rules live in BoltJoint.
 ##
@@ -17,6 +18,8 @@ const TRAY := Vector3(-0.3, BENCH_TOP + 0.02, 0.1)
 const PICK_HOLE_M := 0.03
 const PICK_BRACKET_M := 0.08
 const PICK_TRAY_M := 0.09
+## How far one wheel notch turns a part you hold freely (degrees); snapping turns 90.
+const FREE_TURN_DEG := 5.0
 
 var joint: BoltJoint
 var site: JointSite
@@ -126,11 +129,22 @@ func motion(relative: Vector2) -> bool:
 	return true
 
 
-func adjust(step: int) -> bool:
+func turn_held(step: int, snap: bool) -> bool:
 	if not _carrying:
 		return false
-	_bracket_yaw = wrapf(_bracket_yaw + 4.0 * step, -180.0, 180.0)
+	_bracket_yaw = wrapf(turned(_bracket_yaw, step, snap), -180.0, 180.0)
 	return true
+
+
+## A yaw one wheel notch on: FREE_TURN_DEG freely, or to the next quarter turn that way
+## when snapping (a part held off square snaps to square first).
+static func turned(yaw: float, step: int, snap: bool) -> float:
+	if not snap:
+		return yaw + FREE_TURN_DEG * step
+	var quarters := yaw / 90.0
+	if is_equal_approx(quarters, roundf(quarters)):
+		return (roundf(quarters) + step) * 90.0
+	return (ceilf(quarters) if step > 0 else floorf(quarters)) * 90.0
 
 
 func update(delta: float) -> void:
@@ -162,14 +176,11 @@ func press(tool: StringName) -> void:
 	if tool != &"hands":
 		bay.hint("Bolting takes your hands (1) and the torque wrench (2).")
 		return
-	if _carrying:
-		_set_bracket_down()
-		return
 	if not joint.bracket_seated and bay.aim_distance(_bracket.global_position) < PICK_BRACKET_M:
 		if worker.left_hand.can_reach(_bracket.global_position):
 			_carrying = true
 			_mark_started()
-			bay.hint("Q and E turn it. Square it up over the plate and click to set it down.")
+			bay.hint("Keep left click held. The wheel turns it (middle click: free or 90 degree steps). Let go over the plate to set it down.")
 		else:
 			bay.hint("Too far. Step closer.")
 		return
@@ -198,6 +209,8 @@ func press(tool: StringName) -> void:
 
 func release() -> void:
 	var worker := bay.worker
+	if _carrying:
+		_set_bracket_down()
 	if _turning_hole >= 0:
 		_turning_hole = -1
 		worker.look_locked = false
@@ -220,7 +233,7 @@ func back_out(tool: StringName) -> void:
 			bay.hide_result()
 		bay.hint("Bolt out.")
 	elif tool == &"hands" and bay.aim_distance(_bracket.global_position) < PICK_BRACKET_M and joint.lift_bracket():
-		_carrying = true
+		bay.hint("Lifted off its seat. Hold left click on it to carry it.")
 
 
 func on_hand_snapped() -> void:
