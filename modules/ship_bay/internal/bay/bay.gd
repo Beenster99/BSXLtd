@@ -6,6 +6,9 @@ extends Node3D
 ## Height of the ship's deck (y = 0 in ship space) over the bay floor, metres.
 @export var cradle_height := 1.6
 @export var ship_id := "vs_kestrel"
+## Off when the bay sits inside another scene (the shipyard's courtyard), which brings its
+## own ground, sky, sun and camera; the bay then adds only its cradles and the ship.
+@export var standalone := true
 
 const TIGHT := Color(0.3, 0.9, 0.4)
 const LOOSE := Color(1.0, 0.65, 0.1)
@@ -22,7 +25,9 @@ var _loose_mat := _paint(LOOSE, true)
 
 func _ready() -> void:
 	_bus = Modules.bus("ship_bay") as ShipBayBus
-	_build_bay()
+	if standalone:
+		_build_stage()
+	_build_cradles()
 	if _bus == null:
 		return
 	if _bus.ship == null or _bus.ship.ship_id != ship_id:
@@ -37,14 +42,7 @@ func _exit_tree() -> void:
 		_bus.slot_state_changed.disconnect(_on_slot_changed)
 
 
-func _build_bay() -> void:
-	var floor_mesh := MeshInstance3D.new()
-	floor_mesh.name = "Floor"
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(30, 30)
-	floor_mesh.mesh = plane
-	floor_mesh.material_override = _paint(Color(0.22, 0.23, 0.25))
-	add_child(floor_mesh)
+func _build_cradles() -> void:
 	for z: float in [-3.0, 1.5, 5.5]:
 		var cradle := MeshInstance3D.new()
 		cradle.name = "Cradle"
@@ -54,6 +52,22 @@ func _build_bay() -> void:
 		cradle.position = Vector3(0, (cradle_height - 0.5) * 0.5, z)
 		cradle.material_override = _paint(Color(0.85, 0.6, 0.1))
 		add_child(cradle)
+		var solid := StaticBody3D.new()
+		var shape := CollisionShape3D.new()
+		shape.shape = BoxShape3D.new()
+		(shape.shape as BoxShape3D).size = box.size
+		solid.add_child(shape)
+		cradle.add_child(solid)
+
+
+func _build_stage() -> void:
+	var floor_mesh := MeshInstance3D.new()
+	floor_mesh.name = "Floor"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(30, 30)
+	floor_mesh.mesh = plane
+	floor_mesh.material_override = _paint(Color(0.22, 0.23, 0.25))
+	add_child(floor_mesh)
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-55, 35, 0)
 	sun.shadow_enabled = true
