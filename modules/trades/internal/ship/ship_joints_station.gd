@@ -1,0 +1,526 @@
+class_name TradesShipJoints
+extends TradesStation
+## The work on the ship itself, in the shipyard: every joint Ship and Bay lists on the loaded
+## ship (FastenerPoint: bolts, rivets, welds, connectors), worked with whichever tool is in
+## your hand. Aim at a joint within reach and it lights up; then
+##
+##   bolt       torque wrench: hold left click and pull the mouse back until it clicks;
+##              right click (hold) breaks it loose
+##   rivet      squeezer: hold left click to set it; drill: hold left click to drill it out
+##   weld       welder: hold left click to lay it (cutting one waits for the grinder)
+##   connector  hands or crimper: left click plugs it, right click unplugs it
+##
+## Ship and Bay hears about every joint made or taken off (note_joint_made/removed) and keeps
+## the slot's state: take every joint off a part and the part comes off; hands on one of its
+## joints puts it back in place, ready to fasten again. The station has no bench: `bay` is
+## the yard rig (TradesBay in the yard).
+
+## How close the aim has to pass a joint to pick it (metres).
+const PICK_M := 0.09
+## Seconds of holding for each job.
+const SQUEEZE_S := 0.8
+const DRILL_S := 1.2
+const WELD_S := 2.0
+const BREAK_S := 0.6
+const PLUG_S := 0.3
+## Torque per pixel of pulling the mouse back (N m).
+const NM_PER_PX := 0.35
+## The torch's tilt off the surface's normal while welding (degrees).
+const TORCH_TILT_DEG := 20.0
+## The torch turned off the line back to the worker, so it isn't in front of the view (radians).
+const TORCH_TURN := 0.9
+const KIND_TOOLS := {
+	"bolt": [&"torque_wrench"],
+	"rivet": [&"rivet_squeezer", &"drill"],
+	"weld": [&"welder"],
+	"connector": [&"hands", &"wire_tool"],
+}
+const KIND_HELP := {
+	"bolt": "torque wrench (2)",
+	"rivet": "squeezer (4) to set, drill (3) to drill out",
+	"weld": "welder (5)",
+	"connector": "hands (1) or crimper (6)",
+}
+
+## Ship space to this station's world: set from the yard on every ship_loaded.
+var ship_xform := Transform3D.IDENTITY
+## The loaded ship's joints and where each one is in the world.
+var points: Array[FastenerPoint] = []
+var points_world: PackedVector3Array = []
+## The joint under the aim (index into points), or -1.
+var aimed := -1
+
+var _bus: ShipBayBus
+var _working := -1
+var _undoing := false
+var _tool_held: StringName = &""
+var _held_s := 0.0
+var _pull_px := 0.0
+var _clicked := false
+## A screenshot holds the job where it is.
+var _frozen := false
+## slot_id -> the component that came off it (so hands can put it back).
+var _removed: Dictionary = {}
+var _marker: MeshInstance3D
+var _arc: OmniLight3D
+
+
+func build() -> void:
+	title = "Ship"
+	_bus = Modules.bus("ship_bay") as ShipBayBus
+	if _bus:
+		_bus.ship_loaded.connect(func(_id: String) -> void: refresh_points())
+		_bus.ship_unloaded.connect(func(_id: String) -> void: refresh_points())
+		_bus.component_removed.connect(func(slot_id: String, comp: String) -> void: _removed[slot_id] = comp)
+		_bus.component_positioned.connect(func(slot_id: String, _c: String) -> void: _removed.erase(slot_id))
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.028
+	ring.outer_radius = 0.036
+	ring.rings = 24
+	ring.ring_segments = 8
+	ring.material = TradesLook.glow(TradesLook.HUD, 2.5)
+	_marker = MeshInstance3D.new()
+	_marker.mesh = ring
+	_marker.top_level = true
+	_marker.visible = false
+	_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_marker)
+	_arc = OmniLight3D.new()
+	_arc.light_color = Color(0.7, 0.85, 1.0)
+	_arc.omni_range = 3.0
+	_arc.top_level = true
+	_arc.visible = false
+	add_child(_arc)
+	refresh_points()
+
+
+## Read the loaded ship's joints again (after a ship loads, or the ship moved).
+func refresh_points() -> void:
+	points.clear()
+	points_world.clear()
+	if _bus == null or _bus.ship == null:
+		return
+	for slot in _bus.get_slots():
+		for f in _bus.get_fasteners(slot.slot_id):
+			points.append(f)
+			points_world.append(ship_xform * f.position)
+	aimed = -1
+
+
+func tools() -> Array[StringName]:
+	if aimed < 0:
+		return TradesBay.TOOLS
+	var useful: Array[StringName] = []
+	useful.assign(KIND_TOOLS.get(points[aimed].kind, []))
+	return useful
+
+
+func status_line() -> String:
+	if aimed < 0:
+		return "Ship: %d joints, %d tight" % [points.size(), _tight_count()] if not points.is_empty() else ""
+	var f := points[aimed]
+	var line := "%s  %s %s  %s" % [f.joint_id.to_upper(), f.spec.to_upper(), f.kind.to_upper(), _state_word(f)]
+	if f.kind == "bolt":
+		var nm := torque_range(f.spec)
+		line += "  [%d-%d N m]" % [roundi(nm.x), roundi(nm.y)]
+	return line
+
+
+func start_hint() -> String:
+	return "Walk up to the ship and aim at a bolt, rivet, weld or plug. Mouse wheel picks the tool."
+
+
+func is_busy() -> bool:
+	return _working >= 0
+
+
+## The torque range (N m) for a bolt spec from Shared Components' fastener specs, or a
+## sensible default. Shared Components is optional here (not in depends_on, so the modules
+## that load Tools don't all need it), hence the untyped calls.
+static func torque_range(spec_id: String) -> Vector2:
+	var shared: Node = Modules.bus("shared_components")
+	var spec: Object = shared.call("fastener", spec_id) if shared and shared.has_method("fastener") else null
+	var nm: Variant = spec.get("torque_nm") if spec else null
+	if nm is Vector2 and (nm as Vector2).y > 0.0:
+		return nm
+	return Vector2(40.0, 60.0)
+
+
+# --- Input --------------------------------------------------------------------------------
+
+func press(tool: StringName) -> void:
+	if aimed < 0:
+		return
+	var f := points[aimed]
+	if _slot_empty(f):
+		if tool == &"hands":
+			_refit(f)
+		else:
+			bay.hint("The part is off. Hands (1) on one of its joints puts it back.")
+		return
+	var tight := _bus.is_joint_tight(f.joint_id)
+	if not (KIND_TOOLS[f.kind] as Array).has(tool):
+		bay.hint("That's a %s: %s." % [f.kind, KIND_HELP[f.kind]])
+		return
+	if tool == &"drill":
+		if not tight:
+			bay.hint("Nothing to drill out: this rivet hole is empty. Squeezer (4) sets a new one.")
+			return
+		_begin(true, tool)
+	elif tight:
+		bay.hint("Already %s. Right click takes it off." % _state_word(f).to_lower())
+	else:
+		_begin(false, tool)
+
+
+func release() -> void:
+	if _working < 0:
+		return
+	if not _undoing and points[_working].kind == "bolt" and not _clicked:
+		bay.hint("Not torqued yet: hold left click and pull back until it clicks.")
+	_stop()
+
+
+func back_out(tool: StringName) -> void:
+	if aimed < 0 or _working >= 0:
+		return
+	var f := points[aimed]
+	if not _bus.is_joint_tight(f.joint_id):
+		bay.hint("Nothing to take off here.")
+		return
+	match f.kind:
+		"bolt":
+			if tool != &"torque_wrench":
+				bay.hint("Breaking a bolt loose takes the torque wrench (2).")
+				return
+		"rivet":
+			if tool != &"drill":
+				bay.hint("Rivets come out with the drill (3).")
+				return
+		"weld":
+			bay.hint("Cutting a weld needs the grinder, which is still on order.")
+			return
+		"connector":
+			if tool != &"hands" and tool != &"wire_tool":
+				bay.hint("Unplug it with your hands (1).")
+				return
+	_begin(true, tool)
+
+
+func motion(relative: Vector2) -> bool:
+	if _working < 0 or _undoing or points[_working].kind != "bolt":
+		return false
+	_pull_px = maxf(0.0, _pull_px + relative.y)
+	return true
+
+
+func update(delta: float) -> void:
+	if _working < 0:
+		_update_aim()
+	_place_marker()
+	_arc.visible = false
+	if _working < 0:
+		return
+	var f := points[_working]
+	var at := points_world[_working]
+	var n := (ship_xform.basis * f.normal).normalized()
+	var hand := bay.worker.right_hand
+	if not hand.can_reach(at):
+		bay.hint("Too far: step closer to the ship.")
+		_stop()
+		return
+	if not _frozen:
+		_held_s += delta
+	var bus := bay.bus()
+	if f.kind == "bolt" and not _undoing:
+		_work_bolt(f, at, n)
+	else:
+		var need := _seconds(f.kind)
+		var tool := _place(f.kind, at, n, clampf(_held_s / need, 0.0, 1.0))
+		if tool != &"":
+			hand.reach_to(_grip_point(tool, at, n), n)
+			hand.set_grip(1.0)
+		if bus:
+			bus.joint_progress.emit(StringName(f.joint_id), clampf(_held_s / need, 0.0, 1.0))
+		if _held_s >= need:
+			_finish(f)
+
+
+func _work_bolt(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
+	var nm := torque_range(f.spec)
+	var target := (nm.x + nm.y) * 0.5
+	var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
+	wrench.set_nm = target
+	wrench.applied_nm = _pull_px * NM_PER_PX
+	var share := clampf(wrench.applied_nm / target, 0.0, 1.6)
+	var xform := _on_surface(at, n, deg_to_rad(35.0 - share * 25.0))
+	bay.place_tool(&"torque_wrench", xform)
+	bay.worker.right_hand.reach_to(xform * TradesTorqueWrench.GRIP + n * 0.02, n)
+	bay.worker.right_hand.set_grip(1.0)
+	var bus := bay.bus()
+	if bus:
+		bus.joint_progress.emit(StringName(f.joint_id), clampf(share, 0.0, 1.0))
+	if not _clicked and wrench.applied_nm >= target:
+		_clicked = true
+		wrench.click()
+		bay.play(&"click")
+		bay.worker.kick(0.01)
+		# Pulled on past the click: the further over the range, the worse the joint.
+		var over := maxf(0.0, wrench.applied_nm - nm.y) / maxf(1.0, nm.y)
+		_made(f, 1.0 - clampf(over * 4.0, 0.0, 0.5))
+		bay.hint("Click. %s torqued to %d N m." % [f.spec, roundi(target)])
+
+
+# --- Doing the work -------------------------------------------------------------------------
+
+func _begin(undo: bool, tool: StringName) -> void:
+	_working = aimed
+	_undoing = undo
+	_tool_held = tool
+	_held_s = 0.0
+	_pull_px = 0.0
+	_clicked = false
+	bay.worker.look_locked = points[_working].kind == "bolt" and not undo
+	var bus := bay.bus()
+	if bus and not undo:
+		bus.joint_started.emit(StringName(points[_working].joint_id), StringName(points[_working].kind), 1)
+	match points[_working].kind:
+		"bolt":
+			bay.hint("Breaking it loose..." if undo else "Pull the mouse back until the wrench clicks.")
+		"rivet":
+			bay.hint("Drilling it out..." if undo else "Squeezing...")
+		"weld":
+			bay.hint("Laying the bead...")
+		"connector":
+			bay.hint("Unplugging..." if undo else "Plugging in...")
+
+
+func _finish(f: FastenerPoint) -> void:
+	if _undoing:
+		if _bus.note_joint_removed(f.joint_id):
+			var bus := bay.bus()
+			if bus:
+				bus.remove_joint(StringName(f.joint_id))
+			bay.play(&"clunk", 1.1)
+			bay.hint("%s off.%s" % [f.kind.capitalize(), " The part is free." if _slot_empty(f) else ""])
+	else:
+		_made(f, 1.0)
+		bay.play(&"clunk" if f.kind != "connector" else &"click")
+	_stop()
+
+
+func _made(f: FastenerPoint, quality: float) -> void:
+	if _bus.note_joint_made(f.joint_id, quality) and f.kind != "bolt":
+		bay.hint("%s done." % f.kind.capitalize())
+
+
+## Hands put a part that came off back in its slot.
+func _refit(f: FastenerPoint) -> void:
+	var slot_id := FastenerPoint.slot_of(f.joint_id)
+	var comp: String = _removed.get(slot_id, "")
+	if comp == "":
+		var slot := _bus.get_slot(slot_id)
+		comp = slot.fitted if slot else ""
+	if comp != "" and _bus.try_position(slot_id, comp):
+		bay.play(&"clunk", 0.8)
+		bay.hint("Part back in place. Fasten its joints to install it.")
+	else:
+		bay.hint("Nothing to put back here.")
+
+
+func _stop() -> void:
+	_frozen = false
+	_working = -1
+	_undoing = false
+	_pull_px = 0.0
+	for id: StringName in [&"drill", &"welder"]:
+		var t := bay.tool_node(id)
+		if t is TradesDrill:
+			(t as TradesDrill).spin = 0.0
+		elif t is TradesWeldTorch:
+			(t as TradesWeldTorch).lit = false
+	var squeezer := bay.tool_node(&"rivet_squeezer") as TradesRivetSqueezer
+	if squeezer:
+		squeezer.closed = 0.0
+	var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
+	if wrench:
+		wrench.applied_nm = 0.0
+	bay.loop(&"drill", false)
+	bay.loop(&"arc", false)
+	if bay.worker:
+		bay.worker.look_locked = false
+		bay.worker.right_hand.come_back()
+		bay.worker.left_hand.come_back()
+
+
+func _seconds(kind: String) -> float:
+	if _undoing:
+		return {"bolt": BREAK_S, "rivet": DRILL_S, "connector": PLUG_S}.get(kind, 1.0)
+	return {"rivet": SQUEEZE_S, "weld": WELD_S, "connector": PLUG_S}.get(kind, 1.0)
+
+
+## Puts the tool in use on the joint (progress 0..1) and returns its id ("" for hands).
+func _place(kind: String, at: Vector3, n: Vector3, progress: float) -> StringName:
+	match _tool_held:
+		&"torque_wrench":
+			bay.place_tool(&"torque_wrench", _on_surface(at, n, deg_to_rad(35.0 + progress * 30.0)))
+			return &"torque_wrench"
+		&"drill":
+			var drill := bay.tool_node(&"drill") as TradesDrill
+			drill.spin = 1.0
+			bay.loop(&"drill", true)
+			bay.place_tool(&"drill", _on_surface(at - n * progress * 0.006, n, 0.0))
+			return &"drill"
+		&"rivet_squeezer":
+			(bay.tool_node(&"rivet_squeezer") as TradesRivetSqueezer).closed = progress
+			bay.place_tool(&"rivet_squeezer", _on_surface(at, n, 0.0))
+			return &"rivet_squeezer"
+		&"welder":
+			var torch := bay.tool_node(&"welder") as TradesWeldTorch
+			torch.lit = true
+			torch.arc_mm = 3.0
+			var xform := _on_surface(at, n, TORCH_TURN) * Transform3D(Basis(Vector3.RIGHT, deg_to_rad(TORCH_TILT_DEG)))
+			bay.place_tool(&"welder", xform)
+			bay.loop(&"arc", true, 0.9 + randf() * 0.2)
+			_arc.global_position = at + n * 0.05
+			_arc.light_energy = 1.0 + randf() * 0.8
+			_arc.visible = true
+			return &"welder"
+		&"wire_tool":
+			bay.place_tool(&"wire_tool", _on_surface(at, n, 0.0))
+			return &"wire_tool"
+	# Hands on the plug.
+	bay.worker.right_hand.reach_to(at + n * 0.01, n)
+	bay.worker.right_hand.set_grip(0.4 + 0.6 * progress)
+	return &""
+
+
+## Tools sit on the work with +Y out of the surface and their handle (+Z) turned back
+## toward the worker, then `turn` radians further round the normal.
+func _on_surface(at: Vector3, n: Vector3, turn: float) -> Transform3D:
+	var back := bay.worker.global_position + Vector3(0, 1.2, 0) - at
+	back -= n * back.dot(n)
+	if back.length() < 0.01:
+		back = n.cross(Vector3.RIGHT) if absf(n.dot(Vector3.RIGHT)) < 0.9 else n.cross(Vector3.FORWARD)
+	var z := back.normalized().rotated(n, turn)
+	return Transform3D(Basis(n.cross(z), n, z).orthonormalized(), at)
+
+
+func _grip_point(tool: StringName, at: Vector3, n: Vector3) -> Vector3:
+	var t := bay.tool_node(tool)
+	return t.global_transform * t.grip + n * 0.015 if t else at
+
+
+# --- Aim and marker ---------------------------------------------------------------------------
+
+func _update_aim() -> void:
+	var best := -1
+	var best_d := PICK_M
+	var hand := bay.worker.right_hand
+	for i in points_world.size():
+		var d := bay.aim_distance(points_world[i])
+		if d < best_d and hand.can_reach(points_world[i]):
+			best = i
+			best_d = d
+	if best != aimed:
+		aimed = best
+		if aimed >= 0:
+			bay.hint(_aim_hint(points[aimed]))
+		bay.refresh_hud()
+
+
+func _aim_hint(f: FastenerPoint) -> String:
+	if _slot_empty(f):
+		return "The part is off this mount. Hands (1) and left click put it back."
+	var tight := _bus.is_joint_tight(f.joint_id)
+	match f.kind:
+		"bolt":
+			return "Torque wrench (2): right click breaks it loose." if tight else "Torque wrench (2): hold left click and pull back to torque it."
+		"rivet":
+			return "Drill (3): left click drills it out." if tight else "Squeezer (4): hold left click to set a rivet."
+		"weld":
+			return "A finished weld. Cutting one needs the grinder." if tight else "Welder (5): hold left click to lay the bead."
+		"connector":
+			return "%s line: right click unplugs it." % f.spec.capitalize() if tight else "%s line: left click plugs it in." % f.spec.capitalize()
+	return ""
+
+
+func _place_marker() -> void:
+	var i := _working if _working >= 0 else aimed
+	_marker.visible = i >= 0
+	if i < 0:
+		return
+	var n := (ship_xform.basis * points[i].normal).normalized()
+	var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
+	_marker.global_transform = Transform3D(Basis(x.normalized(), n, x.normalized().cross(n)), points_world[i] + n * 0.012)
+
+
+func _slot_empty(f: FastenerPoint) -> bool:
+	return _bus.get_slot_state(FastenerPoint.slot_of(f.joint_id)) == ShipBayBus.SlotState.EMPTY
+
+
+func _state_word(f: FastenerPoint) -> String:
+	if _slot_empty(f):
+		return "PART OFF"
+	if not _bus.is_joint_tight(f.joint_id):
+		return "LOOSE" if f.kind != "connector" else "UNPLUGGED"
+	return {"bolt": "TIGHT", "rivet": "SET", "weld": "WELDED", "connector": "PLUGGED"}.get(f.kind, "DONE")
+
+
+func _tight_count() -> int:
+	var n := 0
+	for f in points:
+		if _bus.is_joint_tight(f.joint_id):
+			n += 1
+	return n
+
+
+func reset() -> void:
+	_stop()
+
+
+## Release screenshot: a joint of `kind` mid-job (a bolt being torqued, a plug pulled...),
+## with the worker standing `back_m` out from it. Returns [feet, look at] in world space, or
+## [] when the ship has no joint of that kind.
+func stage_joint(kind: String, back_m := 1.6) -> Array[Vector3]:
+	# The one easiest to see: on an outside face (standing in front of it is furthest from
+	# the ship's middle), and on a side rather than overhead.
+	var i := -1
+	var feet := Vector3.ZERO
+	var best := INF
+	var middle := Vector3(ship_xform.origin.x, 0.0, ship_xform.origin.z)
+	for j in points.size():
+		if points[j].kind != kind:
+			continue
+		var n := (ship_xform.basis * points[j].normal).normalized()
+		var out := Vector3(n.x, 0.0, n.z)
+		if out.length() < 0.2:
+			out = Vector3(points_world[j].x, 0.0, points_world[j].z) - middle
+		var stand := points_world[j] + out.normalized() * back_m
+		stand.y = global_position.y
+		var score := absf(n.y) * 4.0 - Vector3(stand.x, 0.0, stand.z).distance_to(middle)
+		if score < best:
+			best = score
+			i = j
+			feet = stand
+	if i < 0:
+		return []
+	var f := points[i]
+	var at := points_world[i]
+	aimed = i
+	match kind:
+		"bolt":
+			_bus.note_joint_removed(f.joint_id)
+			_begin(false, &"torque_wrench")
+			_pull_px = torque_range(f.spec).x * 0.8 / NM_PER_PX
+		"rivet":
+			_begin(true, &"drill")
+		"weld":
+			_bus.note_joint_removed(f.joint_id)
+			_begin(false, &"welder")
+		"connector":
+			_bus.note_joint_removed(f.joint_id)
+			_begin(false, &"hands")
+	_held_s = _seconds(kind) * 0.6
+	_frozen = true
+	return [feet, at]

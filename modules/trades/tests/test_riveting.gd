@@ -125,7 +125,6 @@ func _test_drill_out() -> void:
 
 func _test_station() -> void:
 	var bus := Modules.bus("trades") as TradesBus
-	check(Menu.entries().any(func(e: Dictionary) -> bool: return e.id == "bench_riveting" and e.group == "Workbench"), "riveting is on the menu")
 	check(bus.is_tool_enabled(&"drill") and bus.is_tool_enabled(&"rivet_squeezer"), "riveting tools are enabled")
 	var bay: Node = load(TradesBus.BENCH_SCENE).instantiate()
 	add_child(bay)

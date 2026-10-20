@@ -4,9 +4,8 @@ extends ModuleTest
 
 func run_tests() -> void:
 	var bus := Modules.bus("trades") as TradesBus
-	var ids: Array = Menu.entries().filter(func(e: Dictionary) -> bool: return e.group == "Workbench").map(
-			func(e: Dictionary) -> String: return e.id)
-	check(ids == ["bench_bolting", "bench_riveting", "bench_welding", "bench_wiring"], "a menu entry per trade, in order")
+	check(not Menu.entries().any(func(e: Dictionary) -> bool: return String(e.id).begins_with("bench_")),
+			"the practice bench is off the front menu")
 	check(bus.is_tool_enabled(&"hands") and not bus.is_tool_enabled(&"spanner"), "tools follow the trade flags")
 
 	Router.args = {"trade": "welding"}

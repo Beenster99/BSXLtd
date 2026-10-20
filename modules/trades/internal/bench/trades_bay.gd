@@ -13,10 +13,10 @@ extends Node3D
 ##   station, left click use (hold to carry), wheel while carrying turns it, middle click
 ##   free or 90 degree turning, right click take off, Q/E set the machine, Esc leaves.
 ##
-## The same bench also stands in Ship and Bay's shipyard (in_yard, added by TradesBus at the
-## Pre-assembly spot): there it has no room of its own, only a tool board behind it, and it
-## waits while you walk the yard. Step up to it and press F and your worker takes over at
-## the bench; Esc steps back into the yard.
+## In Ship and Bay's shipyard (in_yard, added by TradesBus) there is no bench: this is you,
+## the BSX worker, walking the yard (Shift runs) with every tool to hand, and the one
+## station is the ship itself (TradesShipJoints): the tools work on its real joints. The
+## yard's own walker stands down for good.
 
 const BENCH_TOP := 0.9
 ## The bench runs along X from -BENCH_HALF to BENCH_HALF, its front edge at z = BENCH_FRONT.
@@ -37,14 +37,14 @@ const STATIONS := [
 ]
 const HAND_REACH_M := 0.9
 const HAND_STRETCH_M := 0.9
+## In the yard the arms stretch further, up to the joints high on a ship's flank (metres).
+const YARD_STRETCH_M := 2.3
+## Bolts on the ship (Ship and Bay's FastenerPoints) are in ship space; without the yard
+## telling us where the ship is, it sits this far over the yard's origin (the bay's cradles).
+const YARD_SHIP_AT := Vector3(0, 1.6, 0)
 
-## How far in front of the bench the yard walker can be to step up to it (metres).
-const STEP_UP_M := 1.8
-
-## Set before adding to the tree: the bench stands in the shipyard instead of its own bay.
+## Set before adding to the tree: you are in the shipyard working on the ship, not at a bench.
 var in_yard := false
-## In the yard: you are working at the bench (your worker has the controls and the view).
-var active := true
 var worker: BenchWorker
 var tool: StringName = &"hands"
 ## The wheel turns a held part in quarter turns (true) or a few degrees a notch.
@@ -67,21 +67,19 @@ var _slot_labels: Array[Label] = []
 var _result_panel: PanelContainer
 var _result_label: Label
 var _hud: CanvasLayer
-var _prompt: CanvasLayer
-var _yard_camera: Camera3D
 
 
 func _ready() -> void:
-	var yard_camera := get_viewport().get_camera_3d()
-	if in_yard:
-		_build_tool_board()
-	else:
+	if not in_yard:
 		_build_room()
-	_build_bench()
+		_build_bench()
 	_build_worker()
 	_build_tools()
 	_build_audio()
 	_build_hud()
+	if in_yard:
+		_enter_yard()
+		return
 	for row: Array in STATIONS:
 		if not Flags.is_on(row[3]):
 			continue
@@ -103,12 +101,53 @@ func _ready() -> void:
 		_walk_to(start)
 		_focus = start
 		hint(_focus.start_hint())
-	if in_yard:
-		_build_prompt()
-		_yard_camera = yard_camera
-		leave_bench()
-	elif DisplayServer.get_name() != "headless":
+	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## In the yard: the ship is the station, the worker stands where the yard's walker stood and
+## takes the view and the controls for good.
+func _enter_yard() -> void:
+	var yard := get_parent() as Node3D
+	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	var walker := yard.get("walker") as PhysicsBody3D if yard else null
+	if walker:
+		worker.add_collision_exception_with(walker)
+	var s := TradesShipJoints.new()
+	s.id = &"ship"
+	s.bay = self
+	s.name = "ShipJoints"
+	add_child(s)
+	s.ship_xform = ship_transform()
+	s.build()
+	stations.append(s)
+	_focus = s
+	if yard_bus:
+		yard_bus.set_walker_active(yard, false)
+		var feet := yard.global_transform * yard_bus.walker_position(yard) if yard else Vector3.ZERO
+		worker.global_position = feet
+	worker.face(global_transform * ship_transform().origin + Vector3(0, -0.4, 0))
+	worker.camera.current = true
+	set_tool(&"hands")
+	hint(s.start_hint())
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Where the ship in the yard is (ship space to world): from Ship and Bay once it says, else
+## over the yard's origin at the cradles' height.
+func ship_transform() -> Transform3D:
+	var yard := get_parent() as Node3D
+	var yard_bus := Modules.bus("ship_bay")
+	if yard and yard_bus and yard_bus.has_method("ship_transform"):
+		return yard_bus.call("ship_transform", yard)
+	var base := yard.global_transform if yard else Transform3D.IDENTITY
+	return base * Transform3D(Basis(), YARD_SHIP_AT)
+
+
+## The ship's station (in the yard), or null.
+func ship_station() -> TradesShipJoints:
+	return station(&"ship") as TradesShipJoints
 
 
 func _exit_tree() -> void:
@@ -162,62 +201,6 @@ func toggle_turn_snap() -> void:
 	_refresh_hud()
 
 
-## In the yard: your worker steps up to the bench where the yard walker stands, and takes
-## the controls and the view.
-func take_bench() -> void:
-	if active:
-		return
-	_yard_camera = get_viewport().get_camera_3d()
-	_yard_walker(false)
-	active = true
-	worker.process_mode = Node.PROCESS_MODE_INHERIT
-	worker.visible = true
-	var x := 0.0
-	if _yard_camera:
-		x = clampf(to_local(_yard_camera.global_position).x, -BENCH_HALF + 0.3, BENCH_HALF - 0.3)
-	worker.global_position = to_global(Vector3(x, 0.0, 0.58))
-	worker.face(to_global(Vector3(x, BENCH_TOP, 0.0)))
-	worker.camera.current = true
-	_hud.visible = true
-	_prompt.visible = false
-	_focus = station_under_aim()
-	if _focus:
-		hint(_focus.start_hint())
-	_refresh_hud()
-
-
-## In the yard: put down what you hold and step back; the yard walker has the controls again.
-func leave_bench() -> void:
-	if _pressed:
-		_pressed.release()
-		_pressed = null
-	active = false
-	worker.process_mode = Node.PROCESS_MODE_DISABLED
-	worker.visible = false
-	for id: StringName in tool_nodes:
-		(tool_nodes[id] as Node3D).visible = false
-	_hud.visible = false
-	if is_instance_valid(_yard_camera):
-		_yard_camera.current = true
-	_yard_walker(true)
-
-
-## The yard walker is standing in front of the bench (judged by the view it gives).
-func yard_walker_near() -> bool:
-	var cam := get_viewport().get_camera_3d()
-	if cam == null or cam == worker.camera:
-		return false
-	var p := to_local(cam.global_position)
-	return absf(p.x) < BENCH_HALF + 0.3 and p.z > BENCH_FRONT and p.z < BENCH_FRONT + STEP_UP_M
-
-
-## Ship and Bay's hand-over hook, once it has one: stop (or restart) its walker.
-func _yard_walker(on: bool) -> void:
-	var bus := Modules.bus("ship_bay")
-	if bus and bus.has_method("set_walker_active"):
-		bus.call("set_walker_active", get_parent(), on)
-
-
 ## Every station back to its start.
 func reset_all() -> void:
 	for s in stations:
@@ -228,25 +211,7 @@ func reset_all() -> void:
 # --- Input ------------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not in_yard:
-		_handle_input(event)
-
-
-## In the yard the bench sees input before the yard does: all of it while you work here,
-## and only F (step up) while you walk the yard in front of it.
-func _input(event: InputEvent) -> void:
-	if not in_yard:
-		return
-	if active:
-		_handle_input(event)
-		get_viewport().set_input_as_handled()
-	elif _is_key(event, KEY_F) and yard_walker_near():
-		take_bench()
-		get_viewport().set_input_as_handled()
-
-
-static func _is_key(event: InputEvent, k: Key) -> bool:
-	return event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == k
+	_handle_input(event)
 
 
 func _handle_input(event: InputEvent) -> void:
@@ -273,14 +238,11 @@ func _on_key(k: Key) -> void:
 			if _focus and _focus.adjust(1 if k == KEY_E else -1):
 				_refresh_hud()
 		KEY_R:
-			if _focus:
+			if _focus and not in_yard:
 				_focus.reset()
 				hide_result()
 				hint(_focus.start_hint())
 		KEY_ESCAPE:
-			if in_yard:
-				leave_bench()
-				return
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			if Router.has_scene("main_menu"):
 				Router.goto("main_menu")
@@ -314,9 +276,9 @@ func _on_mouse_button(event: InputEventMouseButton) -> void:
 # --- Every frame ------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
-	if not active:
-		_prompt.visible = yard_walker_near()
-		return
+	if in_yard:
+		# The yard's still views (its screenshots) borrow the screen: no HUD over them.
+		_hud.visible = get_viewport().get_camera_3d() == worker.camera
 	_update_focus()
 	_placed.clear()
 	for s in stations:
@@ -345,6 +307,8 @@ func _update_focus() -> void:
 func station_under_aim() -> TradesStation:
 	if stations.is_empty():
 		return null
+	if in_yard:
+		return stations[0]
 	var hit: Variant = Plane(Vector3.UP, BENCH_TOP + 0.05).intersects_ray(worker.aim_origin(), worker.aim_dir())
 	var x: float = (hit as Vector3).x if hit != null else worker.global_position.x
 	var best: TradesStation = stations[0]
@@ -440,8 +404,6 @@ func stage_for_screenshot(station_id: StringName = &"bolting", third_person: boo
 	var s := station(station_id)
 	if s == null:
 		return
-	if in_yard:
-		take_bench()
 	reset_all()
 	_focus = s
 	await s.stage_for_screenshot()
@@ -451,6 +413,23 @@ func stage_for_screenshot(station_id: StringName = &"bolting", third_person: boo
 	worker.face(s.to_global(view[1]))
 	_focus = s
 	_refresh_hud()
+	for i in 30:
+		await get_tree().process_frame
+
+
+## Release screenshot in the yard: the worker at the ship with a joint of `kind` mid-job.
+func stage_on_ship(kind: String = "bolt", third_person: bool = false) -> void:
+	var s := ship_station()
+	if s == null:
+		return
+	s.reset()
+	var view := s.stage_joint(kind, 2.2 if third_person else 1.5)
+	if view.is_empty():
+		return
+	set_tool(s._tool_held)
+	worker.set_view(third_person)
+	worker.global_position = view[0]
+	worker.face(view[1])
 	for i in 30:
 		await get_tree().process_frame
 
@@ -468,7 +447,7 @@ func _build_worker() -> void:
 	add_child(worker)
 	for hand: StretchHand in [worker.left_hand, worker.right_hand]:
 		hand.reach_m = HAND_REACH_M
-		hand.stretch_m = HAND_STRETCH_M
+		hand.stretch_m = YARD_STRETCH_M if in_yard else HAND_STRETCH_M
 		hand.snapped.connect(_on_hand_snapped)
 
 
@@ -566,29 +545,6 @@ func _build_bench() -> void:
 	_box(Vector3(length, 0.05, 0.004), Vector3(0, BENCH_TOP - 0.09, BENCH_FRONT - 0.018), trim)
 
 
-## In the yard: a tool board standing behind the bench where the bay has its wall, so the
-## station signs have somewhere to hang: a dark frame on two feet, warm-white panels, a lit
-## edge strip and the name board.
-func _build_tool_board() -> void:
-	var shell := TradesLook.paint(TradesLook.SHELL.darkened(0.25), 0.25, 0.42)
-	var dark := TradesLook.paint(TradesLook.DARK, 0.55, 0.5)
-	var trim := TradesLook.paint(TradesLook.TRIM, 0.3, 0.45)
-	var solid := StaticBody3D.new()
-	solid.name = "BoardSolid"
-	add_child(solid)
-	var width := BENCH_HALF * 2.0 + 0.3
-	_solid_box(solid, Vector3(width, 2.8, 0.04), Vector3(0, 1.4, -0.565), dark)
-	for side: float in [-1.0, 1.0]:
-		_solid_box(solid, Vector3(0.08, 0.04, 0.5), Vector3(side * (width * 0.5 - 0.06), 0.02, -0.4), dark)
-	var x := -BENCH_HALF
-	while x < BENCH_HALF - 0.1:
-		_box(Vector3(0.7, 1.05, 0.02), Vector3(x + 0.375, 1.75, -0.54), shell)
-		x += 0.75
-	_box(Vector3(width, 0.012, 0.006), Vector3(0, 1.2, -0.528), TradesLook.glow(TradesLook.EDGE, 1.6))
-	_box(Vector3(width, 0.04, 0.006), Vector3(0, 0.06, -0.542), trim)
-	_name_board("BSX LTD  //  TOOLS", Vector3(0.0, 2.6, -0.525), 1.2, dark, trim)
-
-
 ## Each station's sign on the wall and strip lamp over its stretch of bench.
 func _build_station_dressing(s: TradesStation) -> void:
 	var dark := TradesLook.paint(TradesLook.DARK, 0.55, 0.5)
@@ -666,7 +622,8 @@ func _build_hud() -> void:
 	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 
 	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
-	keys.text = "WASD walk  V view  wheel/1-6 tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  Q/E amps  Tab part  R reset  Esc %s" % ("yard" if in_yard else "menu")
+	keys.text = ("WASD walk  Shift run  V view  wheel/1-6 tool  LMB use  RMB take off  Esc menu" if in_yard
+			else "WASD walk  V view  wheel/1-6 tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  Q/E amps  Tab part  R reset  Esc menu")
 	keys.position = Vector2(40, 36)
 	root.add_child(keys)
 
@@ -720,24 +677,15 @@ func _build_hud() -> void:
 	_result_panel.visible = false
 
 
-## In the yard: the line that asks you to step up to the bench, shown while you stand at it.
-func _build_prompt() -> void:
-	_prompt = CanvasLayer.new()
-	_prompt.visible = false
-	add_child(_prompt)
-	var label := TradesLook.hud_label(24)
-	label.text = "F  WORK AT THE TOOLS BENCH"
-	_prompt.add_child(label)
-	label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 140)
-	label.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+func refresh_hud() -> void:
+	_refresh_hud()
 
 
 func _refresh_hud() -> void:
 	if _tool_label == null:
 		return
 	_tool_label.text = "TOOL    %s" % String(TOOL_LABELS[tool]).to_upper()
-	if tool == &"hands":
+	if tool == &"hands" and not in_yard:
 		_tool_label.text += "    TURN %s" % ("90°" if turn_snap else "FREE")
 	_status_label.text = _focus.status_line() if _focus else ""
 	var useful: Array[StringName] = _focus.tools() if _focus else TOOLS

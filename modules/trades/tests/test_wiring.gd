@@ -109,7 +109,6 @@ func _test_rework() -> void:
 
 func _test_station() -> void:
 	var bus := Modules.bus("trades") as TradesBus
-	check(Menu.entries().any(func(e: Dictionary) -> bool: return e.id == "bench_wiring"), "wiring is on the menu")
 	check(bus.is_tool_enabled(&"wire_tool"), "the crimper is enabled")
 	var bay: Node = load(TradesBus.BENCH_SCENE).instantiate()
 	add_child(bay)

@@ -10,7 +10,6 @@ func run_tests() -> void:
 	var bus := Modules.bus("trades") as TradesBus
 	check(bus != null, "trades bus is loaded")
 	check(Router.has_scene(TradesBus.WORKBENCH), "workbench scene is registered")
-	check(Menu.entries().any(func(e: Dictionary) -> bool: return e.id == "bench_bolting" and e.args.trade == "bolting"), "bolting is on the menu")
 
 	_test_clean_joint()
 	_test_bracket_must_line_up()
