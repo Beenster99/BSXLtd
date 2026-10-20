@@ -118,6 +118,13 @@ func _test_market_order() -> void:
 	var detail := bus.get_stock_detail()
 	check(int(detail.get(a.part, {}).get(a.condition, 0)) >= 2, "stock is kept by condition: %s" % str(detail.get(a.part)))
 	check(bus.get_stock()[a.part] >= 2, "and counted per part")
+	var landed := bus.delivery_lines(order)
+	check(landed.size() == order.lines.size() and landed[0].item_id == order.lines[0].part and landed[0].name == bus.part_name(order.lines[0].part),
+			"delivery lines in Ship and Bay's shape: %s" % str(landed))
+	var lc: float = landed[0].condition
+	check(lc > 0.0 and lc <= 1.0 and is_equal_approx(lc, 1.0 - PartCondition.wear_of(order.lines[0].condition)), "condition as 0..1 for the crate")
+	var lost: Array[OrderLine] = [OrderLine.new(order.lines[0].part, order.lines[0].qty, order.lines[0].condition)]
+	check(bus.delivery_lines(order, lost).size() == order.lines.size() - 1, "parts lost in transit don't land")
 	check(bus.use_stock(a.part, 1, a.condition).is_ok(), "use a named condition")
 	check(not bus.use_stock(a.part, 1, "no_such_condition").is_ok(), "an unknown condition has none")
 
