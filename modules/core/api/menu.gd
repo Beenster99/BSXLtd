@@ -10,6 +10,28 @@ extends Node
 signal entries_changed
 
 var _entries: Array[Dictionary] = []
+var _start: Dictionary = {}
+
+
+## Where "Start" on the main menu goes: the game itself (the yard). The highest priority wins,
+## so one module owns it without the menu naming any module.
+##   Menu.set_start("ship_bay.shipyard", 10)
+func set_start(scene_id: String, priority: int = 0, args: Dictionary = {}) -> void:
+	if not _start.is_empty() and int(_start.priority) > priority and _start.scene != scene_id:
+		return
+	_start = {"scene": scene_id, "priority": priority, "args": args.duplicate()}
+	entries_changed.emit()
+
+
+func clear_start(scene_id: String) -> void:
+	if _start.get("scene", "") == scene_id:
+		_start = {}
+		entries_changed.emit()
+
+
+## {scene, priority, args}, or {} while nothing set a start.
+func start() -> Dictionary:
+	return _start.duplicate()
 
 
 func register_entry(id: String, label: String, scene_id: String, order: int = 0,
