@@ -29,6 +29,12 @@ func run_tests() -> void:
 			"engines mirror each other")
 
 	var model := def.model.instantiate() as Node3D
+	var heads := {}
+	for mmi: MultiMeshInstance3D in model.find_children("*", "MultiMeshInstance3D", false, false):
+		heads[mmi.name.rstrip("0123456789")] = int(heads.get(mmi.name.rstrip("0123456789"), 0)) + mmi.multimesh.instance_count
+	check(int(heads.get("Rivets", 0)) > 1500, "skin is riveted: %s" % heads)
+	check(int(heads.get("BoltHeads", 0)) > 200, "linings, deck and fittings are bolted: %s" % heads)
+	check(model.find_children("*", "CollisionShape3D", false, false).size() > 100, "the hull is solid to walk in")
 	var root := Node3D.new()
 	root.add_child(model)
 	var found: Dictionary = Bay.pieces_by_slot(root, def)

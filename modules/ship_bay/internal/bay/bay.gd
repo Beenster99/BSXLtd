@@ -52,7 +52,8 @@ func _build_cradles() -> void:
 	var dark := ShipSurface.of(ShipKit.paint(Color(0.15, 0.16, 0.18), 0.5, 0.5, "gunmetal"))
 	var rubber := ShipSurface.of(ShipKit.paint(Color(0.07, 0.07, 0.075), 0.0, 0.9, "rubber"))
 	var upright := Basis(Vector3(0, 1, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1))
-	for z: float in [-3.0, 1.5, 5.5]:
+	# Clear of the landing skids (z -1.6 and 5.2) and the belly jets.
+	for z: float in [-3.4, 1.5, 4.2]:
 		var cradle := Node3D.new()
 		cradle.name = "Cradle"
 		cradle.position = Vector3(0, 0, z)

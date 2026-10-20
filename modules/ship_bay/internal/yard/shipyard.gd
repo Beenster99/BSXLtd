@@ -57,6 +57,12 @@ const VIEWS := {
 	"stock": [Vector3(-3, 2.5, -27), Vector3(-40, 2.0, -38)],
 	"prep": [Vector3(3, 2.5, -27), Vector3(40, 1.0, -40)],
 	"preassembly": [Vector3(31, 2.4, 21), Vector3(42, 1.5, -12)],
+	# The Kestrel on its cradles (ship space + the cradle height).
+	"kestrel_front": [Vector3(8, 5.2, -12), Vector3(0, 2.6, 0.5)],
+	"kestrel_stern": [Vector3(6.5, 4.2, 15), Vector3(0, 2.6, 5.5)],
+	"kestrel_rivets": [Vector3(4.4, 3.3, 3.6), Vector3(2.6, 2.7, 1.2)],
+	"kestrel_cabin": [Vector3(0, 3.45, -3.0), Vector3(0, 2.7, 1.4)],
+	"kestrel_hold": [Vector3(0.3, 3.4, 2.0), Vector3(0, 2.3, 6.4)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)
