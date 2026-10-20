@@ -1,12 +1,21 @@
 class_name BusinessBus
 extends Node
-## Business module bus (Modules.bus("business")). Money, suppliers, deliveries, bay rent, penalties and reputation.
+## Business module bus (Modules.bus("business")). Money, the parts market, suppliers,
+## deliveries, bay rent, penalties and reputation.
 ## Other modules use this module only through this folder: signals here, and resource
 ## classes placed next to it. Everything else lives in internal/.
 ##
-## Money is whole credits (int); negative amounts go out. Time is the business day, moved on
-## by advance_day(). Calls that change anything run on the host only (or with no network
-## peer) and return ERR_UNAUTHORIZED elsewhere; clients follow along through the signals.
+## Money is whole credits (int); negative amounts go out. Time is the business clock in game
+## minutes: it runs while the shipyard is open (rules.game_minutes_per_second) and tests move
+## it with advance_minutes() / advance_day(). Calls that change anything run on the host
+## only and return ERR_UNAUTHORIZED elsewhere; clients follow along through the signals.
+##
+## The parts market: each business day every open supplier lists catalogue parts
+## (MarketCatalogue, from Void Salvage's PartCatalog) in mixed condition at a trade price
+## that swings a little day to day. A basket of {listing_id, qty} lines is quoted with
+## quote_market() and bought with place_market_order(). Orders land in the shipyard's
+## deliveries hall: through ShipBayBus.deliver_goods() when Ship and Bay offers it, else as
+## Business's own crates. Players buy at the wall monitors Business puts in the yard.
 ##
 ## When the business flag is off this bus doesn't exist, so callers check
 ## Modules.is_loaded("business") and treat money as free when it isn't.
@@ -32,12 +41,22 @@ signal went_insolvent
 signal purchase_completed(order_id: String)
 signal purchase_failed(order_id: String, reason: String)
 signal day_closed(day: int)
+## Today's listings changed (a new day, or something was bought).
+signal market_changed
+## The business clock moved (game minutes since the company started).
+signal clock_changed(minute: int)
 
 const SAVE_SECTION := "business"
 const DATA_DIR := "res://modules/business/internal/data"
 const Books := preload("res://modules/business/internal/books.gd")
+const YardFront := preload("res://modules/business/internal/yard/yard_front.gd")
+## Node name of Business's things in the shipyard (monitors, fallback crates).
+const YARD_NODE := "BusinessYard"
 
 var _books: Books
+## The open shipyard Business has furnished, or null; the clock runs while it is open.
+var _yard: Node3D
+var _clock_carry := 0.0
 
 
 func _init() -> void:
@@ -46,22 +65,52 @@ func _init() -> void:
 		var s := load("%s/suppliers/%s" % [DATA_DIR, file]) as SupplierDef
 		if s:
 			suppliers.append(s)
-	_books = Books.new(self, load(DATA_DIR + "/business_rules.tres"), load(DATA_DIR + "/prices.tres"), suppliers)
+	_books = Books.new(self, load(DATA_DIR + "/business_rules.tres"), load(DATA_DIR + "/prices.tres"),
+			load(DATA_DIR + "/market_catalogue.tres"), suppliers)
 
 
 func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, self)
 	_listen_to_contracts()
+	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	if yard_bus and Flags.is_on("business.market") and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
+		yard_bus.shipyard_ready.connect(_on_shipyard_ready)
+	delivery_arrived.connect(_on_delivery_arrived)
+	if Flags.is_on("business.market") and Router.has_scene(ShipBayBus.SHIPYARD_SCENE):
+		Shots.register("business_terminal", ShipBayBus.SHIPYARD_SCENE, _shot_terminal, 40)
+		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
+		Shots.register("business_goods_in", ShipBayBus.SHIPYARD_SCENE, _shot_goods, 40)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
 
 
+func _process(delta: float) -> void:
+	if _yard == null or not is_instance_valid(_yard) or not _yard.is_inside_tree() or not _is_authority():
+		return
+	_clock_carry += delta * _books.rules.game_minutes_per_second
+	if _clock_carry >= 1.0:
+		var whole := int(_clock_carry)
+		_clock_carry -= whole
+		_books.advance_minutes(whole)
+
+
 # --- Reads (any peer) ---
 
 func get_day() -> int:
 	return _books.day
+
+
+## Game minutes since the company started.
+func get_minute() -> int:
+	return _books.minute
+
+
+## "DAY 3  14:20".
+func get_clock_text() -> String:
+	var m := _books.minute % Books.MINUTES_PER_DAY
+	return "DAY %d  %02d:%02d" % [_books.day + 1, m / 60, m % 60]
 
 
 func get_cash() -> int:
@@ -113,9 +162,65 @@ func get_orders(state := -1) -> Array[PartsOrder]:
 	return out
 
 
-## Delivered parts on hand (part -> count).
+## Delivered parts on hand (part -> count, any condition).
 func get_stock() -> Dictionary:
-	return _books.stock.duplicate()
+	var out := {}
+	for part in _books.stock:
+		out[part] = _books.stock_total(part)
+	return out
+
+
+## Delivered parts on hand by condition (part -> {condition: count}).
+func get_stock_detail() -> Dictionary:
+	return _books.stock.duplicate(true)
+
+
+## The parts the market deals in (Void Salvage's catalogue).
+func get_catalogue() -> MarketCatalogue:
+	return _books.catalogue
+
+
+## Today's market, cheapest first with staples (fasteners, category "staples") after the
+## catalogue parts; optionally one category's or one supplier's.
+func get_listings(category := "", supplier_id := "") -> Array[MarketListing]:
+	var out: Array[MarketListing] = []
+	for l: MarketListing in _books.listings.values():
+		if supplier_id != "" and l.supplier_id != supplier_id:
+			continue
+		if category != "" and listing_category(l) != category:
+			continue
+		out.append(l)
+	out.sort_custom(func(a: MarketListing, b: MarketListing) -> bool:
+		var sa := a.id.begins_with("S-")
+		var sb := b.id.begins_with("S-")
+		if sa != sb:
+			return sb
+		return a.unit_price < b.unit_price or (a.unit_price == b.unit_price and a.id < b.id))
+	return out
+
+
+func get_listing(listing_id: String) -> MarketListing:
+	return _books.listings.get(listing_id)
+
+
+## A listing's catalogue category, or "staples" for a supplier's counter goods.
+func listing_category(l: MarketListing) -> String:
+	return _books.catalogue.category_of(l.part) if _books.catalogue.has_part(l.part) else "staples"
+
+
+func part_name(part: String) -> String:
+	if _books.catalogue.has_part(part):
+		return _books.catalogue.display_name(part)
+	return str(_books.prices.names.get(part, part))
+
+
+func supplier(supplier_id: String) -> SupplierDef:
+	return _books.suppliers.get(supplier_id)
+
+
+## What a basket of {listing_id, qty} lines costs and when the last of it arrives.
+func quote_market(basket: Array) -> PartsQuote:
+	return _books.quote_market(basket)
 
 
 ## {value, due_day, deposit, penalties, parts, margin, state}, or {} for an unknown contract.
@@ -131,20 +236,28 @@ func place_order(supplier_id: String, lines: Array[OrderLine], contract_id := ""
 	return _books.place_order(supplier_id, lines, contract_id)
 
 
+## Buys a basket of {listing_id, qty} lines from today's market: one order per supplier,
+## paid now. result.order_ids lists them, result.cost is the bill.
+func place_market_order(basket: Array, contract_id := "") -> BusinessResult:
+	if not _is_authority():
+		return _not_host()
+	return _books.place_market_order(basket, contract_id)
+
+
 func cancel_order(order_id: String) -> BusinessResult:
 	if not _is_authority():
 		return _not_host()
 	return _books.cancel_order(order_id)
 
 
-## Takes delivered parts out of stock as they are fitted. Fails without changing anything
-## if there aren't enough.
-func use_stock(part: String, qty := 1) -> BusinessResult:
+## Takes delivered parts out of stock as they are fitted, best condition first unless one
+## is named. Fails without changing anything if there aren't enough.
+func use_stock(part: String, qty := 1, condition := "") -> BusinessResult:
 	if not _is_authority():
 		return _not_host()
-	if int(_books.stock.get(part, 0)) < qty:
-		return BusinessResult.fail(ERR_UNAVAILABLE, "only %d %s in stock" % [int(_books.stock.get(part, 0)), part])
-	_books.stock[part] -= qty
+	if _books.take_stock(part, qty, condition).is_empty():
+		return BusinessResult.fail(ERR_UNAVAILABLE, "only %d %s in stock" % [_books.stock_total(part), part])
+	_refresh_yard()
 	return BusinessResult.success()
 
 
@@ -191,9 +304,15 @@ func request_purchase(price_ref: StringName, order_id: String) -> void:
 	purchase_completed.emit(order_id)
 
 
-## Ends the business day: rent, late penalties, deliveries, the solvency check.
-## Until Core has a game clock, whoever runs the day (a bay "end shift" action, tests)
-## calls this.
+## Moves the business clock on: deliveries land when due; each midnight charges rent and
+## late penalties, checks solvency and opens a new market. Runs by itself while the yard
+## is open.
+func advance_minutes(minutes: int) -> void:
+	if _is_authority():
+		_books.advance_minutes(minutes)
+
+
+## Runs the clock to the next midnight.
 func advance_day() -> void:
 	if _is_authority():
 		_books.advance_day()
@@ -220,9 +339,10 @@ func on_contract_cancelled(contract_id: String, by_client: bool) -> BusinessResu
 	return _books.cancel_contract(contract_id, by_client)
 
 
-## Back to a fresh company (new game).
+## Back to a fresh company (new game): starting cash, an empty store, today's market.
 func reset() -> void:
 	_books.reset()
+	_refresh_yard()
 
 
 # --- Saves provider ---
@@ -239,6 +359,88 @@ func load_data(data: Dictionary, from_version: int) -> void:
 	_books.load_data(data, from_version)
 	cash_changed.emit(_books.cash, 0, "load")
 	reputation_changed.emit(_books.reputation, 0.0, "load")
+	clock_changed.emit(_books.minute)
+	_refresh_yard()
+
+
+# --- The shipyard ---
+
+## Ship and Bay built its shipyard: put up the ordering monitors and the goods-in crates.
+func _on_shipyard_ready(yard: Node3D) -> void:
+	_yard = yard
+	var old := yard.get_node_or_null(YARD_NODE)
+	if old:
+		old.free()
+	var front: Node3D = YardFront.new()
+	front.name = YARD_NODE
+	# Ship and Bay counts nodes in this group as other modules' (its own tests skip them).
+	front.add_to_group("yard_guest")
+	yard.add_child(front)
+	front.call("setup", self, yard)
+
+
+func _on_delivery_arrived(order: PartsOrder, damaged: Array[OrderLine]) -> void:
+	var yard_bus := Modules.bus("ship_bay")
+	if yard_bus and yard_bus.has_method("deliver_goods"):
+		var items: Array[Dictionary] = []
+		for line in order.lines:
+			var lost := 0
+			for d in damaged:
+				if d.part == line.part and d.condition == line.condition:
+					lost += d.qty
+			if line.qty - lost > 0:
+				items.append({"part": line.part, "qty": line.qty - lost, "condition": line.condition, "order_id": order.id})
+		yard_bus.call("deliver_goods", order.id, items)
+	_refresh_yard()
+
+
+func _front(scene: Node) -> Node:
+	return scene.find_child(YARD_NODE, true, false)
+
+
+func _shot_terminal(scene: Node) -> void:
+	var front := _front(scene)
+	if front == null:
+		return
+	var screen: Control = front.call("open_terminal")
+	var picked := 0
+	for l in get_listings():
+		if l.available >= 2 and picked < 4 and not l.id.begins_with("S-"):
+			screen.call("add_to_basket", l.id, 1 + picked % 2)
+			picked += 1
+
+
+func _shot_monitor(scene: Node) -> void:
+	var front := _front(scene)
+	if front:
+		front.call("stage_monitor_view", 0)
+
+
+func _shot_goods(scene: Node) -> void:
+	var front := _front(scene)
+	if front == null:
+		return
+	var basket := []
+	for l in get_listings():
+		if basket.size() < 7 and l.available > 0 and l.unit_price < 2500:
+			basket.append({"listing_id": l.id, "qty": mini(l.available, 3)})
+	place_market_order(basket)
+	for i in 5:
+		advance_day()
+	front.call("stage_goods_view")
+
+
+## True when Ship and Bay takes deliveries itself, so Business stacks no crates of its own.
+func ship_bay_takes_deliveries() -> bool:
+	var yard_bus := Modules.bus("ship_bay")
+	return yard_bus != null and yard_bus.has_method("deliver_goods")
+
+
+func _refresh_yard() -> void:
+	if _yard and is_instance_valid(_yard):
+		var front := _yard.get_node_or_null(YARD_NODE)
+		if front:
+			front.call("refresh_goods")
 
 
 # --- Internals ---

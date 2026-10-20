@@ -5,8 +5,18 @@ extends Resource
 @export var version := 1
 @export var id := ""
 @export var display_name := ""
-## Part name (as in Shared Components) -> price multiplier on the PriceList base price.
+## Part name -> price multiplier on the PriceList base price: staples (fasteners) always on
+## its counter, new, in any quantity.
 @export var parts: Dictionary = {}
+## Market catalogue categories it deals in ("engines", "hull", ...); its daily listings
+## are drawn from these.
+@export var categories: PackedStringArray = []
+## Conditions it sells, with the weight of each in its daily listings.
+@export var conditions: Dictionary = {"new": 1.0}
+## How many market listings it puts up each day.
+@export var listings_per_day := 0
+## Trade price as a share of Void Salvage's value, before condition and the day's swing.
+@export_range(0.1, 2.0) var trade_factor := 0.85
 @export var lead_hours := 24
 ## Chance (0-1) an order arrives on time and intact. A miss delays it a day the first
 ## time and damages one item the second.
@@ -19,3 +29,7 @@ extends Resource
 
 func sells(part: String) -> bool:
 	return parts.has(part)
+
+
+func deals_in(category: String) -> bool:
+	return categories.has(category)

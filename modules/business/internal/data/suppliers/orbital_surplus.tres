@@ -4,17 +4,23 @@
 
 [resource]
 script = ExtResource("1")
-version = 1
+version = 2
 id = "orbital_surplus"
 display_name = "Orbital Surplus"
 parts = {
-"DeckPlate": 0.8,
-"JunctionBox": 0.85,
 "M10": 0.7,
 "M12": 0.7,
-"RIVET_4": 0.7,
-"TankBracket": 0.8
+"RIVET_4": 0.7
 }
+categories = PackedStringArray("hull", "frame", "fittings", "electronics", "wiring", "piping", "glass", "fluids")
+conditions = {
+"new": 0.15,
+"refurbished": 0.25,
+"used": 0.35,
+"damaged": 0.25
+}
+listings_per_day = 26
+trade_factor = 0.7
 lead_hours = 72
 reliability = 0.7
 min_reputation = 0.0

@@ -4,8 +4,12 @@ extends RefCounted
 
 var error := OK
 var message := ""
-## Set by place_order.
+## Set by place_order (the first order of a market order).
 var order_id := ""
+## Every order a market order made (one per supplier).
+var order_ids: PackedStringArray = []
+## What it cost in all.
+var cost := 0
 
 
 func is_ok() -> bool:
