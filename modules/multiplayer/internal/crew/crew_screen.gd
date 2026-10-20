@@ -46,14 +46,14 @@ func _ready() -> void:
 	mid.body.add_child(_log.get_parent())
 	var say_row := HBoxContainer.new()
 	_say = T.search("Say something to the crew", func(_t: String) -> void: pass, glass)
-	_say.name = "SayBox"
+	_say.name = "CrewSayBox"
 	_say.clear_button_enabled = false
 	_say.max_length = crew.MAX_CHARS
 	_say.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_say.text_submitted.connect(func(_t: String) -> void: _send())
 	say_row.add_child(_say)
 	var send := T.button("SEND", true, 17, false, glass)
-	send.name = "Send"
+	send.name = "CrewSend"
 	send.pressed.connect(_send)
 	say_row.add_child(send)
 	mid.body.add_child(say_row)
