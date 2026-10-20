@@ -69,6 +69,20 @@ func shipyard_spot(id: String) -> Transform3D:
 	return Shipyard.SPOTS.get(id, Transform3D.IDENTITY)
 
 
+## Hands the shipyard's walker over (on = false: it stops where it is, leaves the mouse and
+## keys alone and its camera stands down) or takes it back (true), for a module that puts
+## its own worker and camera in the yard. `yard` is the node shipyard_ready handed you.
+func set_walker_active(yard: Node3D, on: bool) -> void:
+	if yard and yard.has_method("set_walker_active"):
+		yard.call("set_walker_active", on)
+
+
+## Where the shipyard's walker stands (its feet, yard space), or Vector3.ZERO without one.
+func walker_position(yard: Node3D) -> Vector3:
+	var walker := yard.get("walker") as Node3D if yard else null
+	return walker.position if walker else Vector3.ZERO
+
+
 ## Ships BSX can take into a bay.
 func ship_ids() -> PackedStringArray:
 	return PackedStringArray(SHIPS.keys())

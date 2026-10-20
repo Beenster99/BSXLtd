@@ -60,6 +60,8 @@ const LAMP := Color(1.0, 0.93, 0.82)
 var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
+## False while another module has control (ShipBayBus.set_walker_active).
+var walker_active := true
 
 var _solid: StaticBody3D
 var _rng := RandomNumberGenerator.new()
@@ -128,7 +130,28 @@ static func room_at(point: Vector3) -> String:
 	return ""
 
 
+## Hands control to another module (off) or takes it back (on). Off, the walker stands still
+## where it is, the yard leaves the mouse and keys alone and its cameras stand down.
+func set_walker_active(on: bool) -> void:
+	if on == walker_active:
+		return
+	walker_active = on
+	walker.set_physics_process(on)
+	walker.velocity = Vector3.ZERO
+	var cam := walker.get("camera") as Camera3D
+	if on:
+		cam.current = true
+		if DisplayServer.get_name() != "headless":
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	else:
+		# Without handing the view on to the yard's other camera.
+		cam.clear_current(false)
+		view_camera.clear_current(false)
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if not walker_active:
+		return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			walker.call("look", event.relative)

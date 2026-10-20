@@ -71,6 +71,21 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	check(walker.is_on_floor(), "the walker stands on the ground")
 	check(absf(walker.position.y) < 0.1, "at ground level: %.2f" % walker.position.y)
+	check(bay.walker_position(yard).distance_to(walker.position) < 0.001, "walker_position reports the walker")
+	var walker_cam := walker.get("camera") as Camera3D
+	bay.set_walker_active(yard, false)
+	check(not walker.is_physics_processing() and not walker_cam.current, "handed over: the walker stops and its camera stands down")
+	var other := Camera3D.new()
+	yard.add_child(other)
+	other.current = true
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(200, 0)
+	var turn := walker.rotation.y
+	yard.call("_unhandled_input", motion)
+	check(walker.rotation.y == turn and other.current, "handed over: the yard leaves the mouse alone")
+	bay.set_walker_active(yard, true)
+	check(walker.is_physics_processing() and walker_cam.current, "taken back: the walker walks and looks again")
+	other.queue_free()
 	yard.call("show_view", "deliveries")
 	check(yard.get("view_camera").current, "a view takes the camera")
 	yard.queue_free()
