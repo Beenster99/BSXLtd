@@ -14,10 +14,12 @@ flags = {
 "quality": true,
 "quality.scores": true,
 "ship_bay": true,
+"ship_bay.shipyard": true,
 "shared_components": true,
 "trades": true,
 "trades.bolting": true,
 "trades.riveting": true,
+"trades.shipyard": true,
 "trades.welding": true,
 "trades.wiring": true,
 "ui": true
