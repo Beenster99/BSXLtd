@@ -26,7 +26,7 @@ const BENCH_FRONT := 0.27
 const TOOLS: Array[StringName] = [&"hands", &"torque_wrench", &"drill", &"rivet_squeezer", &"welder", &"wire_tool"]
 const TOOL_LABELS := {
 	&"hands": "Hands", &"torque_wrench": "Torque wrench", &"drill": "Drill",
-	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper",
+	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
 }
 ## The stations, left to right: id, script, where along the bench, and the flag that ships it.
 const STATIONS := [
@@ -37,8 +37,8 @@ const STATIONS := [
 ]
 const HAND_REACH_M := 0.9
 const HAND_STRETCH_M := 0.9
-## In the yard the arms stretch further, up to the joints high on a ship's flank (metres).
-const YARD_STRETCH_M := 2.3
+## In the yard the arms stretch further, up to the joints on a ship's roof from the floor (metres).
+const YARD_STRETCH_M := 3.4
 ## Bolts on the ship (Ship and Bay's FastenerPoints) are in ship space; without the yard
 ## telling us where the ship is, it sits this far over the yard's origin (the bay's cradles).
 const YARD_SHIP_AT := Vector3(0, 1.6, 0)
@@ -47,6 +47,9 @@ const YARD_SHIP_AT := Vector3(0, 1.6, 0)
 var in_yard := false
 var worker: BenchWorker
 var tool: StringName = &"hands"
+## The tools on your hotbar (keys 1..n): TOOLS, and in the yard the tractor beam
+## (flag "trades.tractor").
+var hotbar: Array[StringName] = []
 ## The wheel turns a held part in quarter turns (true) or a few degrees a notch.
 var turn_snap := false
 var stations: Array[TradesStation] = []
@@ -73,6 +76,9 @@ func _ready() -> void:
 	if not in_yard:
 		_build_room()
 		_build_bench()
+	hotbar.assign(TOOLS)
+	if in_yard and Flags.is_on("trades.tractor"):
+		hotbar.append(&"tractor")
 	_build_worker()
 	_build_tools()
 	_build_audio()
@@ -183,8 +189,8 @@ func set_tool(id: StringName) -> void:
 func cycle_tool(step: int) -> void:
 	if _focus and _focus.is_busy():
 		return
-	var i := TOOLS.find(tool)
-	set_tool(TOOLS[posmod(i + step, TOOLS.size())])
+	var i := hotbar.find(tool)
+	set_tool(hotbar[posmod(i + step, hotbar.size())])
 
 
 ## One wheel notch: turns the part your hands hold while left click is down, otherwise
@@ -229,8 +235,8 @@ func _handle_input(event: InputEvent) -> void:
 
 
 func _on_key(k: Key) -> void:
-	if k >= KEY_1 and k < KEY_1 + TOOLS.size():
-		set_tool(TOOLS[k - KEY_1])
+	if k >= KEY_1 and k < KEY_1 + hotbar.size():
+		set_tool(hotbar[k - KEY_1])
 		return
 	match k:
 		KEY_V:
@@ -435,6 +441,34 @@ func stage_on_ship(kind: String = "bolt", third_person: bool = false) -> void:
 		await get_tree().process_frame
 
 
+## Release screenshot in the yard: an engine off the ship and up in the tractor beam.
+func stage_tractor(third_person: bool = true) -> void:
+	var s := ship_station()
+	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	if s == null or yard_bus == null or yard_bus.get_slots().is_empty():
+		return
+	var slot := yard_bus.get_slots()[0]
+	for f in yard_bus.get_fasteners(slot.slot_id):
+		yard_bus.note_joint_removed(f.joint_id)
+	var part: TradesLoosePart = s.tractor.loose.get(slot.slot_id)
+	if part == null:
+		return
+	var out := (s.ship_xform * slot.mount).basis.z
+	out = Vector3(out.x, 0.0, out.z).normalized()
+	# Take hold in first person (the aim is the view), then step back and look on.
+	worker.set_view(false)
+	worker.global_position = Vector3(part.centre().x, global_position.y, part.centre().z) + out * 2.6
+	worker.face(part.centre())
+	set_tool(&"tractor")
+	_focus = s
+	s.press(&"tractor")
+	worker.set_view(third_person)
+	worker.global_position += out * 1.2
+	worker.look(Vector2(0, -60))
+	for i in 40:
+		await get_tree().process_frame
+
+
 # --- Building the bay -------------------------------------------------------------------
 
 func _walk_to(s: TradesStation) -> void:
@@ -461,7 +495,7 @@ func _on_hand_snapped() -> void:
 func _build_tools() -> void:
 	var scripts := {
 		&"torque_wrench": TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetSqueezer,
-		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool,
+		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool,
 	}
 	for id: StringName in scripts:
 		var t: TradesTool = (scripts[id] as GDScript).new()
@@ -477,6 +511,7 @@ func _build_audio() -> void:
 	_players[&"clunk"] = _player(TradesSounds.burst(0.09, 0.8, 500.0))
 	_loops[&"drill"] = _player(TradesSounds.hum(0.5, 0.25, 180.0, 2200.0))
 	_loops[&"arc"] = _player(TradesSounds.hum(0.5, 0.35, 120.0, 6000.0))
+	_loops[&"beam"] = _player(TradesSounds.hum(0.5, 0.2, 70.0, 900.0))
 
 
 func _player(stream: AudioStream) -> AudioStreamPlayer:
@@ -623,7 +658,7 @@ func _build_hud() -> void:
 	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 
 	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
-	keys.text = ("WASD walk  Shift run  V view  wheel/1-6 tool  LMB use  RMB take off  Esc menu" if in_yard
+	keys.text = ("WASD walk  Shift run  V view  wheel/1-%d tool  LMB use  RMB take off  Q/E turn  Esc menu" % hotbar.size() if in_yard
 			else "WASD walk  V view  wheel/1-6 tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  Q/E amps  Tab part  R reset  Esc menu")
 	keys.position = Vector2(40, 36)
 	root.add_child(keys)
@@ -649,13 +684,13 @@ func _build_hud() -> void:
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_theme_constant_override("separation", 10)
 	root.add_child(bar)
-	for i in TOOLS.size():
+	for i in hotbar.size():
 		var slot := PanelContainer.new()
 		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var label := TradesLook.hud_label(18)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.custom_minimum_size = Vector2(112, 0)
-		label.text = "%d  %s" % [i + 1, String(TOOL_LABELS[TOOLS[i]]).to_upper()]
+		label.text = "%d  %s" % [i + 1, String(TOOL_LABELS[hotbar[i]]).to_upper()]
 		slot.add_child(label)
 		bar.add_child(slot)
 		_slots.append(slot)
@@ -689,11 +724,11 @@ func _refresh_hud() -> void:
 	if tool == &"hands" and not in_yard:
 		_tool_label.text += "    TURN %s" % ("90°" if turn_snap else "FREE")
 	_status_label.text = _focus.status_line() if _focus else ""
-	var useful: Array[StringName] = _focus.tools() if _focus else TOOLS
+	var useful: Array[StringName] = _focus.tools() if _focus else hotbar
 	for i in _slots.size():
-		var on := TOOLS[i] == tool
+		var on := hotbar[i] == tool
 		_slots[i].add_theme_stylebox_override("panel", TradesLook.slot_style(on))
 		var c := TradesLook.HUD if on else TradesLook.HUD_DIM
-		if not on and not useful.has(TOOLS[i]):
+		if not on and not useful.has(hotbar[i]):
 			c = Color(c, 0.15)
 		_slot_labels[i].label_settings.font_color = c
