@@ -316,6 +316,9 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	# set by this body.
 	m.add_to_group("gfx_interactable")
 	m.set_meta("gfx_id", "business.tv.%s" % hall)
+	m.set_meta("look_hint", {"title": "Hall TV",
+			"text": "The wrist terminal on the wall: orders, goods in, machines, accounts and the rest.",
+			"keys": [["LMB", "Press what the pointer is on"], [Keys.INTERACT, "Full screen"]]})
 	var body := StaticBody3D.new()
 	body.name = "Body"
 	var shape := CollisionShape3D.new()
