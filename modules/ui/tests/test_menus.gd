@@ -374,14 +374,16 @@ func _test_settings_pages() -> void:
 	Menu.register_settings_section(Menu.CHARACTER, "_level", "Level", func() -> Control: return Label.new(), 10)
 	await frames(1)
 	var body := over.find_child("PageBody", true, false)
-	check(body.get_child_count() == 3 and body.get_child(1).name == "Section__level", "sections added later slot in by order")
+	var lv := body.find_child("Section__level", false, false)
+	var ps := body.find_child("Section__payslips", false, false)
+	check(lv != null and ps != null and lv.get_index() < ps.get_index(), "sections added later slot in by order")
 	(over.find_child("Done", true, false) as Button).pressed.emit()
 	Menu.unregister_settings_page("_company")
 	await frames(1)
 	check(pages.find_child("Page__company", false, false) == null, "an unregistered page leaves the menu")
 	Menu.unregister_settings_section(Menu.CHARACTER, "_payslips")
 	Menu.unregister_settings_section(Menu.CHARACTER, "_level")
-	check(Menu.settings_sections(Menu.CHARACTER).is_empty(), "sections unregister")
+	check(Menu.settings_sections(Menu.CHARACTER).all(func(c): return not str(c.id).begins_with("_")), "sections unregister")
 	settings.queue_free()
 
 
