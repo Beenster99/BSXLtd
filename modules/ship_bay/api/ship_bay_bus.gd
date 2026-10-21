@@ -45,10 +45,13 @@ signal shipyard_ready(yard: Node3D)
 ## `remote_driving` is true, W A S D and the mouse drive the trolley (its camera shows in a
 ## picture-in-picture window): the player's own walker should stand still and not look round.
 signal remote_driving_changed(on: bool)
-## The recycler in Pre-assembly broke `qty` of a stored part down into raw materials:
-## materials is {Void Salvage material id ("steel", "copper", ...): kg}. Every player hears
-## it; Business adds the raw materials to its stock (on the host, once).
+## A dust vessel off the refurbishment line's grinder reached the stores (item_id is
+## DUST_ITEM, qty 1): materials is {Void Salvage material id ("steel", "copper", ...): kg},
+## ready for sale. Every player hears it; Business adds the raw materials to its stock (on
+## the host, once).
 signal scrap_recycled(item_id: String, qty: int, materials: Dictionary)
+## The refurbishment line in Pre-assembly changed (line_state()).
+signal line_changed
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -68,6 +71,7 @@ const SlotTracker := preload("res://modules/ship_bay/internal/slot_tracker.gd")
 const Shipyard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const StorageStock := preload("res://modules/ship_bay/internal/storage/storage_stock.gd")
+const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 
 ## The ship in the bay, or null.
 var ship: ShipDefinition
@@ -183,7 +187,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.collect", _apply_collect, _check_collect)
 	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
 	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
-	_net.call("register_event", "ship_bay.recycle", _apply_recycle, _check_recycle)
+	_net.call("register_event", "ship_bay.line", _apply_line, _check_line)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
@@ -194,7 +198,7 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.recycle"]:
+				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -339,7 +343,7 @@ func set_ship_powered(on: bool) -> void:
 
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
-	var out := {"storage": _stock.to_dict()}
+	var out := {"storage": _stock.to_dict(), "line": line_state()}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -347,7 +351,19 @@ func snapshot() -> Dictionary:
 
 func restore(state: Dictionary) -> void:
 	_stock.from_dict(state.get("storage", {}))
+	_line = _new_line()
+	var saved: Dictionary = state.get("line", {})
+	_line["auto"] = bool(saved.get("auto", false))
+	_line["dust"] = (saved.get("dust", {}) as Dictionary).duplicate()
+	for s: String in saved.get("stations", {}):
+		if _line["stations"].has(s):
+			var at: Dictionary = (saved["stations"][s] as Dictionary).duplicate(true)
+			# A machine that was running when the game was saved runs again on load.
+			if str(at.get("state", "")) == "running":
+				at["state"] = "waiting"
+			_line["stations"][s] = at
 	stock_changed.emit()
+	line_changed.emit()
 	var id: String = state.get("ship_id", "")
 	if id == "":
 		unload_ship()
@@ -418,6 +434,9 @@ func crate_position(crate_id: String) -> Vector3:
 	var c: Dictionary = _stock.crates.get(crate_id, {})
 	if c.is_empty():
 		return Vector3.ZERO
+	if c.has("at") and str(c.get("carrier", "")) == "":
+		var at: Array = c["at"]
+		return Vector3(float(at[0]), float(at[1]), float(at[2]))   # set down by the line
 	var spots: Array = StorageLayout.get_layout()["goods_in"]
 	var spot := int(c["spot"])
 	if spot < 0:
@@ -587,6 +606,17 @@ func home_location(item_id: String) -> String:
 
 ## Where a crate of this item would be put away now ("" when the stores are full).
 func place_for(item_id: String) -> String:
+	if item_id == DUST_ITEM:
+		# The bulk floor: any empty bay will do, since its dust goes straight on sale.
+		var locations: Dictionary = StorageLayout.get_layout()["locations"]
+		var fallback := ""
+		for loc: String in locations:
+			if locations[loc]["kind"] == "bulk" and not _stock.stock.has(loc):
+				if str(locations[loc]["home"]) == "":
+					return loc
+				if fallback == "":
+					fallback = loc
+		return fallback if fallback != "" else _stock.place_for(item_id, StorageLayout.PALLET_MAX + 1.0)
 	return _stock.place_for(item_id)
 
 
@@ -629,13 +659,26 @@ func storage_items() -> Dictionary:
 	return StorageLayout.items().duplicate(true)
 
 
-# --- The recycler (Pre-assembly) -----------------------------------------------------
+# --- The refurbishment line (Pre-assembly) ---------------------------------------------
 
-## Stored goods this poor (condition 0..1) or worse can go in the recycler.
-const RECYCLE_BELOW := 0.4
-## Of a part's mass, how much comes back out as raw material.
+## The line's machines in work order. A lot goes into the survey, which says grind or
+## refurbish: ground lots go through the grinder into the dust vessel; refurbished ones go
+## through the straightener, the bath and the coater onto an output pallet a trolley puts away.
+const LINE_STATIONS: PackedStringArray = ["survey", "grinder", "straightener", "bath", "coater"]
+## The condition (0..1) a lot leaves each refurbishing machine with, at least.
+const LINE_AFTER := {"straightener": 0.6, "bath": 0.85, "coater": 1.0}
+## The survey sends lots this poor (condition 0..1) or worse to the grinder.
+const GRIND_BELOW := 0.25
+## Stored goods under this condition can go on the line.
+const REFURB_BELOW := 0.995
+## Of a part's mass, how much comes back out of the grinder as dust.
 const RECOVERY := 0.75
-## What a part of each category breaks down into: material id -> share of its mass.
+## Kilograms of dust the vessel holds; on automatic the line sends it off when it is full.
+const DUST_CAPACITY := 3000.0
+## The dust vessel's item id once it is a crate on its way to the stores. It always goes on
+## the bulk floor, so only the large trolley carries it.
+const DUST_ITEM := "DustVessel"
+## What a part of each category grinds down into: material id -> share of its mass.
 const SCRAP_MIX := {
 	"hull": {"steel": 0.8, "alloy": 0.2}, "frame": {"steel": 0.9, "titanium": 0.1},
 	"wiring": {"copper": 0.8, "alloy": 0.2}, "electronics": {"copper": 0.5, "alloy": 0.4, "crystal": 0.1},
@@ -645,23 +688,42 @@ const SCRAP_MIX := {
 	"fasteners": {"steel": 1.0}, "cargo": {"steel": 0.7, "alloy": 0.3}, "modules": {"steel": 0.6, "alloy": 0.2, "copper": 0.2},
 }
 
+## The line: {auto (bool), stations: {id: {} or {lot, state ("waiting", "running" or
+## "done")}}, dust: {material: kg}}. A lot is {item, name, qty, condition, mass (kg a unit),
+## route ("grind" or "refurb", the survey's call)}.
+var _line := {}
 
-## Stored lots poor enough to recycle, worst first: [{location, item, name, qty, condition}].
-func scrap_stock() -> Array[Dictionary]:
+
+## Where the line stands now (a copy; see _line). line_changed follows every change.
+func line_state() -> Dictionary:
+	if _line.is_empty():
+		_line = _new_line()
+	return _line.duplicate(true)
+
+
+## Stored lots that can go on the line, worst first: [{location, item, name, qty,
+## condition, route (what the survey will say)}].
+func line_candidates() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var items := StorageLayout.items()
 	for loc: String in _stock.stock:
 		var have: Dictionary = _stock.stock[loc]
-		if float(have.get("condition", 1.0)) < RECYCLE_BELOW:
+		var cond := float(have.get("condition", 1.0))
+		if cond < REFURB_BELOW:
 			var item := str(have["item"])
 			out.append({"location": loc, "item": item, "name": str(items.get(item, {}).get("name", item)),
-					"qty": int(have["qty"]), "condition": float(have.get("condition", 1.0))})
+					"qty": int(have["qty"]), "condition": cond, "route": survey_route(cond)})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return a.condition < b.condition if a.condition != b.condition else a.location < b.location)
 	return out
 
 
-## The raw materials `qty` of a part breaks down into: material id -> kg.
+## What the survey says for goods in this condition: "grind" or "refurb".
+static func survey_route(condition: float) -> String:
+	return "grind" if condition <= GRIND_BELOW else "refurb"
+
+
+## The dust `qty` of a part grinds down into: material id -> kg.
 static func scrap_materials(item_id: String, qty: int) -> Dictionary:
 	var d: Dictionary = StorageLayout.items().get(item_id, {})
 	var kg := float(d.get("mass", 0.0)) * qty * RECOVERY
@@ -672,42 +734,235 @@ static func scrap_materials(item_id: String, qty: int) -> Dictionary:
 	return out
 
 
-## Puts the lot on a location through the recycler (the whole lot, or `qty` of it): it
-## leaves the stores and scrap_recycled follows with the raw materials.
-func recycle_stock(location_id: String, qty := 0) -> void:
-	var payload := {"location": location_id, "qty": qty}
+## Kilograms of dust in the vessel now.
+func dust_kg() -> float:
+	var kg := 0.0
+	var dust: Dictionary = line_state()["dust"]
+	for m: String in dust:
+		kg += float(dust[m])
+	return kg
+
+
+## Crates the line has set down and no trolley has picked up yet: crate id -> crate
+## ("line" is "out" for a refurbished lot on an output pallet, "dust" for the vessel).
+func line_crates() -> Dictionary:
+	var out := {}
+	for id: String in _stock.crates:
+		var c: Dictionary = _stock.crates[id]
+		if c.has("line") and str(c.get("carrier", "")) == "":
+			out[id] = c.duplicate(true)
+	return out
+
+
+## Asks the line to do something; line_changed follows on every peer. `op`:
+## - "load" {location}: the lot on a storage location goes into the survey (whole)
+## - "start" {station}: the machine holding a lot runs it
+## - "send" {station}: a lot the machine has finished moves on (from the survey to the
+##   grinder or the straightener, by its route; from the coater onto an output pallet)
+## - "route" {route}: overrides the survey's call for the lot in it ("grind" or "refurb")
+## - "auto" {on}: the host's line runs itself (loads, runs, sends, calls trolleys)
+## - "empty_dust": the dust vessel becomes a crate for the large trolley to the stores
+## - "finish" {station}: a machine's run is over (the host's line sends it)
+func line_request(op: String, args: Dictionary = {}) -> void:
+	var payload := args.duplicate()
+	payload["op"] = op
 	if _net:
-		_net.call("request", "ship_bay.recycle", payload)
+		_net.call("request", "ship_bay.line", payload)
 	else:
-		var ok: Variant = _check_recycle(0, payload)
+		var ok: Variant = _check_line(0, payload)
 		if ok is Dictionary:
-			_apply_recycle(ok)
+			_apply_line(ok)
 
 
-func _check_recycle(_sender: int, payload: Dictionary) -> Variant:
-	var have: Dictionary = _stock.stock.get(str(payload.get("location", "")), {})
-	if have.is_empty():
-		return "nothing there"
-	if float(have.get("condition", 1.0)) >= RECYCLE_BELOW:
-		return "too good to recycle"
-	var qty := int(payload.get("qty", 0))
-	if qty <= 0 or qty > int(have["qty"]):
-		qty = int(have["qty"])
-	return {"location": payload["location"], "qty": qty, "item": str(have["item"])}
+## True where the line runs (times its machines and drives it on automatic): the host, or
+## a game without Multiplayer.
+func line_runs_here() -> bool:
+	return _net == null or bool(_net.call("is_host"))
 
 
-func _apply_recycle(payload: Dictionary) -> void:
-	var loc := str(payload.get("location", ""))
-	var have: Dictionary = _stock.stock.get(loc, {})
-	if have.is_empty():
-		return
-	var item := str(have["item"])
-	var qty := mini(int(payload.get("qty", 0)), int(have["qty"]))
-	have["qty"] = int(have["qty"]) - qty
-	if int(have["qty"]) <= 0:
-		_stock.stock.erase(loc)
-	stock_changed.emit()
-	scrap_recycled.emit(item, qty, scrap_materials(item, qty))
+## Sends a free trolley that can carry it to put a line crate away. Returns its id, or ""
+## when none is free.
+func call_trolley_for(crate_id: String) -> String:
+	var c: Dictionary = _stock.crates.get(crate_id, {})
+	if c.is_empty() or fleet == null or not is_instance_valid(fleet):
+		return ""
+	var at := crate_position(crate_id)
+	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(float(c.get("mass", 0.0))), at, _beam_claims.values()))
+	if id != "":
+		command_trolley(id, "put_away")
+	return id
+
+
+func _new_line() -> Dictionary:
+	var stations := {}
+	for s in LINE_STATIONS:
+		stations[s] = {}
+	return {"auto": false, "stations": stations, "dust": {}}
+
+
+## Where a finished lot goes from a station: another station, "out", or "".
+static func _line_next(station: String, lot: Dictionary) -> String:
+	match station:
+		"survey":
+			return "grinder" if str(lot.get("route", "")) == "grind" else "straightener"
+		"straightener":
+			return "bath"
+		"bath":
+			return "coater"
+		"coater":
+			return "out"
+	return ""
+
+
+## The first output pallet no waiting crate stands on, or -1.
+func _free_out_spot() -> int:
+	var taken := {}
+	for c: Dictionary in line_crates().values():
+		if str(c["line"]) == "out":
+			taken[int(c.get("out_spot", 0))] = true
+	for i in RefurbLine.OUT_SPOTS.size():
+		if not taken.has(i):
+			return i
+	return -1
+
+
+func _check_line(sender: int, payload: Dictionary) -> Variant:
+	var line := line_state()
+	var st: Dictionary = line["stations"]
+	var op := str(payload.get("op", ""))
+	var s := str(payload.get("station", ""))
+	var at: Dictionary = st.get(s, {})
+	match op:
+		"load":
+			if not (st["survey"] as Dictionary).is_empty():
+				return "the survey has a lot in it"
+			var loc := str(payload.get("location", ""))
+			var have: Dictionary = _stock.stock.get(loc, {})
+			if have.is_empty():
+				return "nothing there"
+			if float(have.get("condition", 1.0)) >= REFURB_BELOW:
+				return "already like new"
+			return {"op": op, "location": loc}
+		"start":
+			if at.is_empty() or str(at["state"]) != "waiting":
+				return "nothing to start"
+			return {"op": op, "station": s}
+		"finish":
+			if sender != 0 and _net and sender != int(_net.call("local_peer_id")):
+				return "the host's machines say when they finish"
+			if at.is_empty() or str(at["state"]) != "running":
+				return "not running"
+			return {"op": op, "station": s}
+		"send":
+			if at.is_empty() or str(at["state"]) != "done":
+				return "nothing finished to send"
+			var to := _line_next(s, at["lot"])
+			if to == "":
+				return "nowhere to send it"
+			if to == "out":
+				var spot := _free_out_spot()
+				if spot < 0:
+					return "the output pallets are full"
+				return {"op": op, "station": s, "to": to, "spot": spot}
+			if not (st[to] as Dictionary).is_empty():
+				return "the next machine is busy"
+			return {"op": op, "station": s, "to": to}
+		"route":
+			var survey: Dictionary = st["survey"]
+			var route := str(payload.get("route", ""))
+			if survey.is_empty() or str(survey["state"]) == "running" or not ["grind", "refurb"].has(route):
+				return "no lot to route"
+			return {"op": op, "route": route}
+		"auto":
+			return {"op": op, "on": bool(payload.get("on", false))}
+		"empty_dust":
+			if dust_kg() <= 0.0:
+				return "the vessel is empty"
+			for c: Dictionary in line_crates().values():
+				if str(c["line"]) == "dust":
+					return "a full vessel is still waiting"
+			return {"op": op}
+	return "unknown line request"
+
+
+func _apply_line(payload: Dictionary) -> void:
+	line_state()
+	var st: Dictionary = _line["stations"]
+	var s := str(payload.get("station", ""))
+	var stock_moved := false
+	match str(payload.get("op", "")):
+		"load":
+			var loc := str(payload["location"])
+			var have: Dictionary = _stock.stock.get(loc, {})
+			if have.is_empty() or not (st["survey"] as Dictionary).is_empty():
+				return
+			var item := str(have["item"])
+			var known: Dictionary = StorageLayout.items().get(item, {})
+			var cond := float(have.get("condition", 1.0))
+			st["survey"] = {"state": "waiting", "lot": {"item": item, "name": str(known.get("name", item)),
+					"qty": int(have["qty"]), "condition": cond, "mass": float(known.get("mass", 0.0)),
+					"route": survey_route(cond)}}
+			_stock.stock.erase(loc)
+			stock_moved = true
+		"start":
+			if not (st.get(s, {}) as Dictionary).is_empty():
+				st[s]["state"] = "running"
+		"finish":
+			var at: Dictionary = st.get(s, {})
+			if at.is_empty():
+				return
+			var lot: Dictionary = at["lot"]
+			if s == "grinder":
+				var mats := scrap_materials(str(lot["item"]), int(lot["qty"]))
+				var dust: Dictionary = _line["dust"]
+				for m: String in mats:
+					dust[m] = snappedf(float(dust.get(m, 0.0)) + float(mats[m]), 0.1)
+				st[s] = {}
+			else:
+				if LINE_AFTER.has(s):
+					lot["condition"] = maxf(float(lot["condition"]), float(LINE_AFTER[s]))
+					lot["stage"] = s
+				at["state"] = "done"
+		"send":
+			var at: Dictionary = st.get(s, {})
+			if at.is_empty():
+				return
+			var to := str(payload["to"])
+			if to == "out":
+				var lot: Dictionary = at["lot"]
+				var p: Vector3 = RefurbLine.OUT_SPOTS[int(payload.get("spot", 0))]
+				_stock.crates[_line_crate_id()] = {"order_id": "line", "item": lot["item"], "qty": int(lot["qty"]),
+						"name": lot["name"], "condition": clampf(float(lot["condition"]), 0.0, 1.0), "grade": "refurbished",
+						"mass": float(lot["mass"]), "spot": -1, "carrier": "", "at": [p.x, p.y, p.z],
+						"line": "out", "out_spot": int(payload.get("spot", 0))}
+				stock_moved = true
+			else:
+				st[to] = {"state": "waiting", "lot": at["lot"]}
+			st[s] = {}
+		"route":
+			if not (st["survey"] as Dictionary).is_empty():
+				st["survey"]["lot"]["route"] = str(payload["route"])
+		"auto":
+			_line["auto"] = bool(payload["on"])
+		"empty_dust":
+			var kg := dust_kg()
+			var p: Vector3 = RefurbLine.DUST_SPOT
+			_stock.crates[_line_crate_id()] = {"order_id": "line", "item": DUST_ITEM, "qty": 1,
+					"name": "Dust vessel", "condition": 1.0, "grade": "%d kg dust" % roundi(kg),
+					"mass": maxf(kg + RefurbLine.VESSEL_TARE, StorageLayout.PALLET_MAX + 1.0), "spot": -1, "carrier": "",
+					"at": [p.x, p.y, p.z], "line": "dust", "materials": (_line["dust"] as Dictionary).duplicate()}
+			_line["dust"] = {}
+			stock_moved = true
+	if stock_moved:
+		stock_changed.emit()
+	line_changed.emit()
+
+
+func _line_crate_id() -> String:
+	var n := 1
+	while _stock.crates.has("line/%d" % n):
+		n += 1
+	return "line/%d" % n
 
 
 func _sample_delivery() -> void:
@@ -747,6 +1002,14 @@ func _check_store(_sender: int, payload: Dictionary) -> Variant:
 
 func _apply_store(payload: Dictionary) -> void:
 	var id := str(payload.get("crate_id", ""))
+	var c: Dictionary = _stock.crates.get(id, {})
+	if c.has("materials"):
+		# A dust vessel: its dust joins the raw materials for sale (Business keeps them).
+		_stock.crates.erase(id)
+		stock_changed.emit()
+		crate_stored.emit(id, str(payload.get("location", "")))
+		scrap_recycled.emit(DUST_ITEM, 1, c["materials"])
+		return
 	var loc := _stock.store(id, str(payload.get("location", "")))
 	if loc != "":
 		stock_changed.emit()
