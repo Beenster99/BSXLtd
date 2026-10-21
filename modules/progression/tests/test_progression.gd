@@ -158,7 +158,7 @@ func run_tests() -> void:
 	# Loader: Progression only loads with its chain on.
 	var saved := Flags.all()
 	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "trades": true,
-			"quality": true, "business": true, "progression": true})
+			"quality": true, "business": true, "multiplayer": true, "progression": true})
 	Modules.load_all()
 	check(Modules.bus("progression") is ProgressionBus, "progression loads with its chain on")
 	Flags.use(saved)
