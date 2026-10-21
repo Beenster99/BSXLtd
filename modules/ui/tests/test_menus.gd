@@ -80,6 +80,7 @@ func run_tests() -> void:
 	await _test_holo()
 	_test_terminal_kit()
 	await _test_key_binds()
+	await _test_settings_pages()
 
 	HudSlots.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
 	var hud := HudLayer.new()
@@ -348,6 +349,39 @@ func _test_key_binds() -> void:
 		panel.press(KEY_ESCAPE)
 		check(Keys.key_of(Keys.JUMP) == KEY_K, "Esc cancels a rebind")
 		Keys.rebind(Keys.JUMP, was)
+	settings.queue_free()
+
+
+func _test_settings_pages() -> void:
+	check(not Menu.settings_page(Menu.CHARACTER).is_empty(), "UI gives Settings a Character page")
+	Menu.register_settings_section(Menu.CHARACTER, "_payslips", "Payslips", func() -> Control:
+		var l := Label.new()
+		l.name = "Slip"
+		l.text = "CR 1,200"
+		return l, 30)
+	Menu.register_settings_page("_company", "Company", func() -> Control: return Label.new(), 20)
+	var settings: Control = (load(Router.scene_path(UiBus.SETTINGS)) as PackedScene).instantiate()
+	add_child(settings)
+	await frames(2)
+	var pages := settings.find_child("Pages", true, false)
+	check(pages.find_child("Page_character", false, false) != null and pages.find_child("Page__company", false, false) != null,
+			"each page has a button on the Settings menu")
+	(pages.find_child("Page_character", false, false) as Button).pressed.emit()
+	await frames(1)
+	var over := settings.find_child("Page_character_Overlay", true, false)
+	check(over != null and over.find_child("PageControls", true, false) != null
+			and over.find_child("Section__payslips", true, false) != null, "Character shows its controls and module sections")
+	Menu.register_settings_section(Menu.CHARACTER, "_level", "Level", func() -> Control: return Label.new(), 10)
+	await frames(1)
+	var body := over.find_child("PageBody", true, false)
+	check(body.get_child_count() == 3 and body.get_child(1).name == "Section__level", "sections added later slot in by order")
+	(over.find_child("Done", true, false) as Button).pressed.emit()
+	Menu.unregister_settings_page("_company")
+	await frames(1)
+	check(pages.find_child("Page__company", false, false) == null, "an unregistered page leaves the menu")
+	Menu.unregister_settings_section(Menu.CHARACTER, "_payslips")
+	Menu.unregister_settings_section(Menu.CHARACTER, "_level")
+	check(Menu.settings_sections(Menu.CHARACTER).is_empty(), "sections unregister")
 	settings.queue_free()
 
 

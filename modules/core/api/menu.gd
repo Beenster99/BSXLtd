@@ -6,8 +6,20 @@ extends Node
 ## set up differently. Entries with the same `group` are listed together under that heading
 ## (one bench, a button per trade):
 ##   Menu.register_entry("bench_welding", "Welding", "workbench", 12, {"trade": "welding"}, "Workbench")
+##
+## Settings pages: each is a button on the Settings menu that opens the page. A module adds
+## a page of its own, or a section to someone else's (UI owns "character", the player's
+## profile: name, level, payslips...). Factories build a Control; they're called with no
+## arguments, so the same one can serve the wrist screen if it takes `glass := false`.
+##   Menu.register_settings_page("business.company", "Company", func() -> Control: ..., 20)
+##   Menu.register_settings_section(Menu.CHARACTER, "business.payslips", "Payslips", factory, 30)
 
 signal entries_changed
+signal settings_pages_changed
+signal settings_sections_changed(page: String)
+
+## The player's profile page in Settings (UI's); modules add sections to it.
+const CHARACTER := "character"
 
 var _entries: Array[Dictionary] = []
 var _start: Dictionary = {}
@@ -50,3 +62,54 @@ func entries() -> Array[Dictionary]:
 func unregister_entry(id: String) -> void:
 	_entries = _entries.filter(func(e): return e.id != id)
 	entries_changed.emit()
+
+
+var _pages: Array[Dictionary] = []
+var _sections: Array[Dictionary] = []
+
+
+## A page on the Settings menu. `factory` may be an empty Callable for a page of sections only.
+func register_settings_page(id: String, label: String, factory: Callable = Callable(), order: int = 0) -> void:
+	_pages = _pages.filter(func(p): return p.id != id)
+	_pages.append({"id": id, "label": label, "factory": factory, "order": order})
+	_pages.sort_custom(func(a, b): return a.order < b.order)
+	settings_pages_changed.emit()
+
+
+func unregister_settings_page(id: String) -> void:
+	var before := _pages.size()
+	_pages = _pages.filter(func(p): return p.id != id)
+	if _pages.size() != before:
+		settings_pages_changed.emit()
+
+
+func settings_pages() -> Array[Dictionary]:
+	return _pages.duplicate()
+
+
+## {id, label, factory, order}, or {} if there is no such page.
+func settings_page(id: String) -> Dictionary:
+	for p in _pages:
+		if p.id == id:
+			return p
+	return {}
+
+
+## A section on a Settings page, shown under the page's own controls in `order`. The page
+## needn't exist yet; the section shows once it does.
+func register_settings_section(page: String, id: String, label: String, factory: Callable, order: int = 0) -> void:
+	_sections = _sections.filter(func(c): return not (c.page == page and c.id == id))
+	_sections.append({"page": page, "id": id, "label": label, "factory": factory, "order": order})
+	_sections.sort_custom(func(a, b): return a.order < b.order)
+	settings_sections_changed.emit(page)
+
+
+func unregister_settings_section(page: String, id: String) -> void:
+	var before := _sections.size()
+	_sections = _sections.filter(func(c): return not (c.page == page and c.id == id))
+	if _sections.size() != before:
+		settings_sections_changed.emit(page)
+
+
+func settings_sections(page: String) -> Array[Dictionary]:
+	return _sections.filter(func(c): return c.page == page)
