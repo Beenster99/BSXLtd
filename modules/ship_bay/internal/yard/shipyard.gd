@@ -20,6 +20,7 @@ const Walker := preload("res://modules/ship_bay/internal/yard/yard_walker.gd")
 const TrolleyFleet := preload("res://modules/ship_bay/internal/yard/trolley_fleet.gd")
 const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
+const Recycler := preload("res://modules/ship_bay/internal/yard/recycler.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
 	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
@@ -57,6 +58,8 @@ const ROOMS := {
 ## origin is on the floor and whose +Z faces where the worker stands (a bench's back edge).
 ## Other modules get these through ShipBayBus.shipyard_spot() and add their nodes to the
 ## yard when ShipBayBus.shipyard_ready fires.
+## The recycler in Pre-assembly (yard space, on the floor; its front faces the hall, -X).
+const RECYCLER_AT := Vector3(46.4, 0, -7.6)
 const SPOTS := {
 	"bench_preassembly": Transform3D(Basis.IDENTITY, Vector3(34, 0, -20.5)),
 	"bench_prep": Transform3D(Basis.IDENTITY, Vector3(18, 0, -29)),
@@ -94,9 +97,8 @@ const VIEWS := {
 	"picking_lift": [Vector3(-20.0, 1.7, -25.6), Vector3(-20.55, 5.8, -34.3)],
 	"trolley_tv": [Vector3(-34.0, 1.9, 12.0), Vector3(-28.3, 2.5, 12.0)],
 	"hover_truck": [Vector3(-74.0, 4.5, 22.0), Vector3(-60.0, 1.8, 8.0)],
-	# Dock 1: the overlook, the launch towers out on the plain.
+	# Dock 1 and the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
-	"overlook": [Vector3(-3, 7.1, -22.4), Vector3(1, 1.5, 4)],
 	"launch_towers": [Vector3(72, 2.0, 40), Vector3(150, 32, -450)],
 }
 
@@ -124,6 +126,8 @@ const FACE_NX := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
+## The recycler in Pre-assembly (recycler.gd).
+var recycler: Node3D
 ## False while another module has control (ShipBayBus.set_walker_active).
 var walker_active := true
 var _walker_layers := Vector2i(1, 1)
@@ -1226,6 +1230,10 @@ func _build_prep() -> void:
 
 
 func _build_preassembly() -> void:
+	# The recycler between the jigs, its front to the hall: poor stored goods into raw materials.
+	recycler = Recycler.new()
+	recycler.transform = Transform3D(Basis(Vector3.UP, -PI * 0.5), RECYCLER_AT)
+	add_child(recycler)
 	# Assembly jigs: an I-beam base frame, posts and top rails round a module going together.
 	var post := _lib("ibeam/jig_post", func() -> PartShapes.PartShape:
 			return PartShapes.i_beam(3.5, 0.25, 0.25))
@@ -1399,69 +1407,15 @@ func _build_crane() -> void:
 			return PartShapes.ring(0.16, 0.26, 0.1)), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(4, 7.3, bridge_z)), _bare, false)
 
 
-## Dock 1, after a planetary shipyard's dry docks: an overlook balcony on the north wall with a
-## stair down into the courtyard, and launch towers out on the plain. Work at height on the
+## Dock 1, after a planetary shipyard's dry docks: launch towers out on the plain (the overlook
+## balcony and its stair came out in 0.3.8, beenster's call). Work at height on the
 ## ship is done from the scissor lift (and mobile scaffolds), which drive out of the way, so
 ## the dock has no fixed gantries: it takes ships much bigger than the Kestrel.
 const DOCK := "D1"
-const OVERLOOK := Rect2(-8.0, -23.75, 16.0, 1.8)   # x, z, length, depth of the balcony
-const OVERLOOK_Y := 5.2
 
 
 func _build_dock() -> void:
-	_build_overlook()
 	_build_launch_towers()
-
-
-## A railed balcony along the courtyard's north wall under the name board, on brackets,
-## with a stair down to the courtyard at its west end, lamps over it.
-func _build_overlook() -> void:
-	var o := OVERLOOK
-	var cx := o.position.x + o.size.x * 0.5
-	var cz := o.position.y + o.size.y * 0.5
-	_put(_lib("grating/overlook", func() -> PartShapes.PartShape:
-			return WreckParts.grating(o.size.y, o.size.x, 0.08)), Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(cx, OVERLOOK_Y, cz)), _galv, false)
-	_collide(Vector3(cx, OVERLOOK_Y - 0.04, cz), Vector3(o.size.x, 0.1, o.size.y))
-	# The edge beam, brackets back to the wall, the guard rail along the front and the east end.
-	_put(_box(Vector3(o.size.x, 0.3, 0.2)), _at(Vector3(cx, OVERLOOK_Y - 0.2, o.end.y - 0.1)), _trim, false)
-	var x := o.position.x + 1.0
-	while x < o.end.x:
-		_put(_box(Vector3(0.12, 1.2, 0.12)), Transform3D(Basis(Vector3.RIGHT, -0.75), Vector3(x, OVERLOOK_Y - 0.7, o.position.y + 0.55)), _frame, false)
-		x += 3.0
-	var guard := _lib("railing/overlook", func() -> PartShapes.PartShape:
-			return WreckParts.railing(4.0, 1.1))
-	x = o.position.x + 2.0 + 1.3
-	while x < o.end.x - 1.0:
-		_put(guard, _at(Vector3(x, OVERLOOK_Y + 0.55, o.end.y - 0.05)), _hazard, false)
-		x += 4.0
-	_put(_lib("railing/overlook_end", func() -> PartShapes.PartShape:
-			return WreckParts.railing(o.size.y, 1.1)), _at(Vector3(o.end.x - 0.05, OVERLOOK_Y + 0.55, cz), PI * 0.5), _hazard, false)
-	_collide(Vector3(cx + 1.3, OVERLOOK_Y + 0.55, o.end.y - 0.05), Vector3(o.size.x - 2.6, 1.1, 0.06))
-	_collide(Vector3(o.end.x - 0.05, OVERLOOK_Y + 0.55, cz), Vector3(0.06, 1.1, o.size.y))
-	# The stair: down from the west end towards the bay, its top at the balcony's front edge.
-	var run := OVERLOOK_Y / 0.72
-	var width := 1.3
-	var stair := _lib("stair/overlook", func() -> PartShapes.PartShape:
-			return WreckParts.stair(width, OVERLOOK_Y, run))
-	var sx := o.position.x + width * 0.5
-	_put(stair, Transform3D(Basis.IDENTITY, Vector3(sx, OVERLOOK_Y * 0.5, o.end.y + run * 0.5)), _galv)
-	var side_rail := _lib("railing/overlook_stair", func() -> PartShapes.PartShape:
-			return WreckParts.railing(sqrt(run * run + OVERLOOK_Y * OVERLOOK_Y), 1.0))
-	var pitch := atan2(OVERLOOK_Y, run)
-	for k: float in [-1.0, 1.0]:
-		var basis := Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.BACK, -pitch)
-		_put(side_rail, Transform3D(basis, Vector3(sx + k * (width * 0.5 + 0.03), OVERLOOK_Y * 0.5 + 0.55, o.end.y + run * 0.5)), _hazard, false)
-	# Lamps under the name board light the balcony.
-	for lx: float in [-5.0, 0.0, 5.0]:
-		var lamp := OmniLight3D.new()
-		lamp.position = Vector3(lx, OVERLOOK_Y + 2.4, o.position.y + 0.6)
-		lamp.light_color = LAMP
-		lamp.light_energy = 1.2
-		lamp.omni_range = 5.0
-		lamp.set_meta("gfx_no_shadow", true)
-		add_child(lamp)
-		_night(lamp)
-		_put(_box(Vector3(0.5, 0.08, 0.25)), _at(Vector3(lx, OVERLOOK_Y + 2.5, o.position.y + 0.25)), _glow_mat(LAMP, 2.0), false)
 
 
 ## Launch towers far out on the plain to the north, each with a ship standing in it: a

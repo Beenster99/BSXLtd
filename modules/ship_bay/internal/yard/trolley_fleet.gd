@@ -45,6 +45,8 @@ const TV_SIZE := Vector2(4.0, 2.25)
 const TV_PIXELS := Vector2(1280, 720)
 ## How long a trolley waits held up before it plans a new way round, seconds.
 const REPLAN_AFTER := 3.0
+## How far behind you a following trolley keeps, past its own radius, metres.
+const FOLLOW_GAP := 1.6
 
 ## How far the remote control's Page Up and Page Down move the deck per second, metres.
 @export var remote_lift_rate := 0.8
@@ -58,6 +60,10 @@ var nav: Nav
 var remote_id := ""
 ## The picture-in-picture window while driving on remote, else null.
 var remote_view: CanvasLayer
+## The trolley following this player ("" for none), and where it was last told they are.
+var following := ""
+var _follow_sent := Vector3.INF
+var _follow_clock := 0.0
 var _mouse_turn := 0.0
 var yard: Node3D
 var _bus: ShipBayBus
@@ -152,9 +158,12 @@ func build_nav() -> void:
 func _physics_process(delta: float) -> void:
 	if nav == null:
 		build_nav()
+	_lead(delta)
 	for id: String in trolleys:
 		var t: Trolley = trolleys[id]
 		t.lift_step(delta)
+		if id != remote_id:
+			_ride_keys(t, delta)
 		t.driving = _drives(id)
 		if not t.driving:
 			t.sync_yaw()
@@ -163,6 +172,7 @@ func _physics_process(delta: float) -> void:
 			_remote_input(t, delta)
 		else:
 			t.drive_input = Vector2.ZERO
+			t.boost = false
 			_run_job(id, t)
 		t.step(delta, _obstacles(t))
 		if t.blocked_for > REPLAN_AFTER and not t.path.is_empty() and not _has_way(t):
@@ -215,6 +225,56 @@ func call_to_me(id: String) -> void:
 		_bus.command_trolley(id, "come", {"to": _player_position()})
 
 
+## FOLLOW ME: the trolley follows this player at a safe distance until told to stop (the
+## button again, STOP FOLLOWING, or any other job for it).
+func toggle_follow(id: String) -> void:
+	if following == id:
+		stop_following()
+		if _bus:
+			_bus.command_trolley(id, "stop")
+		return
+	stop_following()
+	if remote_id == id:
+		toggle_remote(id)
+	following = id
+	_follow_sent = _player_position()
+	_follow_clock = 0.0
+	trolleys[id].show_following(true)
+	if _bus:
+		_bus.command_trolley(id, "follow", {"to": _follow_sent, "by": _me()})
+
+
+func stop_following() -> void:
+	if following == "":
+		return
+	trolleys[following].show_following(false)
+	following = ""
+
+
+## While a trolley follows this player: tell its driver where they are as they move.
+func _lead(delta: float) -> void:
+	if following == "" or _bus == null:
+		return
+	_follow_clock -= delta
+	if _follow_clock > 0.0:
+		return
+	_follow_clock = 0.3
+	var here := _player_position()
+	if here.distance_to(_follow_sent) > 0.5:
+		_follow_sent = here
+		_bus.command_trolley(following, "follow", {"to": here, "by": _me()})
+
+
+## FAST on a trolley's screen: its fast mode on or off (every peer is told).
+func toggle_fast(id: String) -> void:
+	if _bus:
+		_bus.command_trolley(id, "fast", {"on": not trolleys[id].fast})
+
+
+func _me() -> int:
+	return multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+
+
 ## F on a trolley: take the goods it brought you, or else take it on remote control (or let
 ## it go again).
 func use_trolley(id: String) -> void:
@@ -229,7 +289,9 @@ func use_trolley(id: String) -> void:
 func _on_screen_action(action: String, id: String) -> void:
 	match action:
 		"call":
-			call_to_me(id)
+			toggle_follow(id)
+		"fast":
+			toggle_fast(id)
 		"park":
 			park(id)
 		"remote":
@@ -251,6 +313,8 @@ func toggle_remote(id: String) -> void:
 		return
 	if remote_id != "":
 		toggle_remote(remote_id)
+	if following == id:
+		stop_following()
 	remote_id = id
 	if _bus:
 		_bus.command_trolley(id, "stop")
@@ -328,16 +392,34 @@ func _remote_input(t: Trolley, delta: float) -> void:
 	_mouse_turn = 0.0
 	var drive := Vector2(clampf(turn, -1.0, 1.0), _held(Keys.FORWARD, KEY_W) - _held(Keys.BACK, KEY_S))
 	t.drive_input = drive
-	var lift := maxf(_held(Keys.JUMP, KEY_SPACE), _held("ship_bay.raise", KEY_PAGEUP)) - maxf(_held(Keys.CROUCH, KEY_C), _held("ship_bay.lower", KEY_PAGEDOWN))
-	if lift != 0.0:
-		t.set_deck_target(t.deck_target + lift * remote_lift_rate * delta)
-		_deck_send -= delta
-		if _deck_send <= 0.0:
-			_deck_send = 0.25
-			_bus.command_trolley(t.kind, "deck", {"height": t.deck_target + lift * remote_lift_rate * 0.25})
+	t.boost = _held(Keys.RUN, KEY_SHIFT) > 0.0
+	_deck_keys(t, delta)
 	if remote_view:
 		remote_view.call("set_status", "DECK %.1f M" % t.deck_height)
 	t.show_status("REMOTE")
+
+
+## Up and Down (the raise and lower keys) move a trolley's deck: the one on remote, or the one
+## you stand on.
+func _deck_keys(t: Trolley, delta: float) -> void:
+	var lift := _held("ship_bay.raise", KEY_UP) - _held("ship_bay.lower", KEY_DOWN)
+	if lift == 0.0:
+		return
+	t.set_deck_target(t.deck_target + lift * remote_lift_rate * delta)
+	_deck_send -= delta
+	if _deck_send <= 0.0 and _bus:
+		_deck_send = 0.25
+		_bus.command_trolley(t.kind, "deck", {"height": t.deck_target + lift * remote_lift_rate * 0.25})
+
+
+func _ride_keys(t: Trolley, delta: float) -> void:
+	var walker := yard.get("walker") as Node3D if yard else null
+	if walker == null or not bool(yard.get("walker_active")) or t.deck == null:
+		return
+	var local := t.deck.global_transform.affine_inverse() * walker.global_position
+	var d: Vector2 = t.spec["deck"]
+	if absf(local.x) < d.x * 0.5 + 0.1 and absf(local.z) < d.y * 0.5 + 0.1 and local.y > -0.2 and local.y < 0.6:
+		_deck_keys(t, delta)
 
 
 # --- Jobs (on the driving peer) ---------------------------------------------------------
@@ -351,6 +433,13 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		if args.has("reach"):
 			t.reach(float(args["reach"]) != 0.0, float(args["reach"]))
 		return
+	if command == "fast":
+		t.set_fast(bool(args.get("on", false)))
+		return
+	# Any other job for the trolley following this player (or someone else calling it to
+	# follow them) ends the following here.
+	if id == following and not (command == "follow" and int(args.get("by", 0)) == _me()):
+		stop_following()
 	if not _drives(id):
 		return
 	if command == "put_away" and t.is_picker():
@@ -371,10 +460,16 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		if ["fetch", "deliver"].has((jobs[id] as Dictionary).get("do")) or _bus.trolley_cargo(id) != "":
 			(_queue.get_or_add(id, []) as Array).append(args.duplicate())
 			return
+	if command == "follow" and str((jobs[id] as Dictionary).get("do", "")) == "follow":
+		(jobs[id] as Dictionary)["to"] = args.get("to", t.global_position)
+		return
 	_release(id)
 	t.path = PackedVector3Array()
 	t.final_yaw = NAN
 	match command:
+		"follow":
+			jobs[id] = {"do": "follow", "to": args.get("to", t.global_position)}
+			t.show_status("FOLLOWING")
 		"come":
 			jobs[id] = {"do": "come"}
 			_go_to_person(t, args.get("to", t.global_position))
@@ -421,6 +516,8 @@ func _run_job(id: String, t: Trolley) -> void:
 			if _arrived(t):
 				jobs[id] = {}
 				t.show_status("HERE")
+		"follow":
+			_follow(t, job)
 		"park":
 			if _arrived(t):
 				jobs[id] = {}
@@ -433,6 +530,24 @@ func _run_job(id: String, t: Trolley) -> void:
 			_deliver(id, t, job)
 		"beam":
 			_beam(id, t, job)
+
+
+## Following a player: stays where it is while within a safe distance of them, else heads for
+## a spot that far short of them (replanned once they have moved on a metre).
+func _follow(t: Trolley, job: Dictionary) -> void:
+	var to: Vector3 = job.get("to", t.global_position)
+	var flat := to - t.global_position
+	flat.y = 0.0
+	var keep := t.radius() + FOLLOW_GAP
+	if flat.length() <= keep + 0.4:
+		if not t.path.is_empty():
+			t.path = PackedVector3Array()
+			t.final_yaw = NAN
+		job.erase("goal")
+	elif t.path.is_empty() or (job.get("goal", Vector3.INF) as Vector3).distance_to(to) > 1.0:
+		job["goal"] = to
+		_go(t, to - flat.normalized() * keep, atan2(-flat.x, -flat.z))
+	t.show_status("FOLLOWING")
 
 
 ## The fetch job (the picking lift, or the large trolley for bulk goods).

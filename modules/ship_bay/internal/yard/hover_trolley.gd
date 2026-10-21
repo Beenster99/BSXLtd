@@ -1,8 +1,8 @@
 extends AnimatableBody3D
 ## A hover trolley: a chassis floating on four lift pads, a telescopic mast under a railed
 ## grating deck, a control box with its size letter and a status lamp. Three sizes (SPECS):
-## small and medium decks rise to the top rack level for work at height (you can ride
-## them), the large one carries bulk parts low. The picking lift ("p") is the same chassis
+## every deck rises to the top rack level for work at height (you can ride them); the large
+## one also carries bulk parts. The picking lift ("p") is the same chassis
 ## with a tall twin-column mast: its carriage rides up the columns to any shelf and a shuttle
 ## fork reaches sideways into the rack to pull goods off it.
 ##
@@ -14,7 +14,8 @@ extends AnimatableBody3D
 const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 
-## A button on its touch screen was pressed: "call", "park" or "remote" (the fleet acts).
+## A button on its touch screen was pressed: "call" (follow me), "park", "fast" or "remote"
+## (the fleet acts).
 signal screen_action(action: String)
 
 const SPECS := {
@@ -23,7 +24,7 @@ const SPECS := {
 	"m": {"name": "Medium hover trolley", "letter": "M", "deck": Vector2(1.25, 1.7), "radius": 0.85,
 			"speed": 2.0, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(1.0, 0.55, 0.16)},
 	"l": {"name": "Large hover trolley", "letter": "L", "deck": Vector2(2.6, 4.4), "radius": 1.3,
-			"speed": 1.4, "lift": 2.5, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
+			"speed": 1.4, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
 	"p": {"name": "Picking lift", "letter": "P", "deck": Vector2(1.1, 1.3), "radius": 0.8,
 			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true},
 }
@@ -42,7 +43,13 @@ const MAST_SECTIONS := 4
 ## Acceleration, metres per second squared, and the deck's lift speed, metres per second.
 @export var accel := 1.6
 @export var lift_speed := 0.8
+## How much faster it goes in fast mode (FAST on its screen, or Shift while on remote).
+@export var fast_scale := 2.2
 
+## Fast mode: top speed times fast_scale (every peer is told, like the deck).
+var fast := false
+## Fast while on remote with Run held (only the driving peer, which moves it).
+var boost := false
 var kind := "m"
 var spec: Dictionary
 var deck: AnimatableBody3D
@@ -81,6 +88,9 @@ func setup(p_kind: String, at: Vector3, yaw: float) -> void:
 	kind = p_kind
 	spec = SPECS[kind]
 	name = "Trolley_" + kind.to_upper()
+	# Graphics lights what you can use under the pointer, and finds it again for pings.
+	add_to_group("gfx_interactable")
+	set_meta("gfx_id", "trolley:" + kind)
 	sync_to_physics = false
 	_yaw = yaw
 	_mats = {
@@ -96,6 +106,11 @@ func setup(p_kind: String, at: Vector3, yaw: float) -> void:
 	_build()
 	global_transform = Transform3D(Basis(Vector3.UP, _yaw), Vector3(at.x, 0.0, at.z))
 	_set_deck(DECK_MIN)
+
+
+## Its speed along its nose this moment, metres per second (negative backing up).
+func speed() -> float:
+	return _speed
 
 
 func radius() -> float:
@@ -154,7 +169,7 @@ func set_cargo(c: Dictionary) -> void:
 ## Moves it for one physics step: remote input or the path, slowing for `obstacles`
 ## (floor points with a radius each: [[Vector3, float], ...]).
 func step(delta: float, obstacles: Array) -> void:
-	var top := float(spec["speed"]) * speed_scale
+	var top := float(spec["speed"]) * speed_scale * (fast_scale if fast or boost else 1.0)
 	var want := 0.0
 	var turn := 0.0
 	var here := global_position
@@ -236,6 +251,19 @@ func is_picker() -> bool:
 	return bool(spec.get("picker", false))
 
 
+## Fast mode on or off; the FAST button lights while it is on.
+func set_fast(on: bool) -> void:
+	fast = on
+	if screen:
+		screen.call("set_button", "fast", "FAST", on)
+
+
+## The FOLLOW ME button reads STOP FOLLOWING while it follows you.
+func show_following(on: bool) -> void:
+	if screen:
+		screen.call("set_button", "call", "STOP FOLLOWING" if on else "FOLLOW ME", on)
+
+
 func set_deck_target(h: float) -> void:
 	deck_target = clampf(h, DECK_MIN, float(spec["lift"]))
 
@@ -253,7 +281,7 @@ func show_status(text: String) -> void:
 	status = text
 	if screen and text != _shown:
 		_shown = text
-		var colour := T.CYAN if text == "REMOTE" else (T.GOOD if ["PARKED", "ALL PUT AWAY", "HERE", "STOPPED"].has(text) else T.AMBER)
+		var colour := T.CYAN if text == "REMOTE" or text == "FOLLOWING" else (T.GOOD if ["PARKED", "ALL PUT AWAY", "HERE", "STOPPED"].has(text) else T.AMBER)
 		screen.call("set_status", text.left(14), colour)
 	if _lamp:
 		_lamp.material_override = _mats["go"] if not path.is_empty() or drive_input != Vector2.ZERO else _mats["wait"]
@@ -295,8 +323,8 @@ func _build() -> void:
 	screen.name = "Screen"
 	screen.transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -0.25), Vector3(0, CHASSIS_TOP + 0.26, front - 0.055))
 	add_child(screen)
-	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else "PICKER", 3 if box_w > 0.6 else 1)
-	for b: Array in [["call", "COME"], ["park", "PARK"], ["remote", "DRIVE"]]:
+	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else "PICKER", 2)
+	for b: Array in [["call", "FOLLOW ME"], ["park", "PARK"], ["fast", "FAST"], ["remote", "REMOTE CONTROL"]]:
 		screen.call("add_button", b[0], b[1], func() -> void: screen_action.emit(b[0]), b[0] == "remote")
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()

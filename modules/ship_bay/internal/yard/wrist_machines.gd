@@ -1,8 +1,9 @@
 extends VBoxContainer
 ## The Machines channel on the wrist screen, drawn on glass with UI's TerminalKit: a row per
 ## yard machine (the hover trolleys, the picking lift, the scissor lift, the power unit and
-## the scaffold rigs) with what it is doing, where it is, and its buttons: DRIVE takes a
-## trolley on remote and PUSH takes hold of the bay's kit (both put the wrist away), COME TO ME, BRING <part> TO ME (the picking lift
+## the scaffold rigs) with what it is doing, where it is, and its buttons: REMOTE CONTROL
+## takes a trolley on remote and PUSH takes hold of the bay's kit (both put the wrist away),
+## FOLLOW ME, FAST, BRING <part> TO ME (the picking lift
 ## fetches the next part the ship in the bay takes), PUT AWAY / TO STORES, and the lift's and
 ## power unit's own controls.
 
@@ -45,7 +46,7 @@ func machines() -> Array:
 		var trolleys: Dictionary = fleet.get("trolleys")
 		for id: String in trolleys:
 			var t: Node = trolleys[id]
-			var acts := ["drive", "come", "bring", "stores"] if bool(t.call("is_picker")) else ["drive", "come", "put_away"]
+			var acts := ["drive", "come", "fast", "bring", "stores"] if bool(t.call("is_picker")) else ["drive", "come", "fast", "put_away"]
 			out.append(["trolley:" + id, str(t.get("spec")["name"]), acts])
 	var access := _access()
 	if access:
@@ -184,9 +185,12 @@ func _position_of(id: String) -> Vector3:
 func _label_for(id: String, action: String) -> String:
 	match action:
 		"drive":
-			return "DRIVE" if id.begins_with("trolley:") else "PUSH"
+			return "REMOTE CONTROL" if id.begins_with("trolley:") else "PUSH"
 		"come":
-			return "COME TO ME"
+			return "STOP FOLLOWING" if fleet and str(fleet.get("following")) == id.trim_prefix("trolley:") else "FOLLOW ME"
+		"fast":
+			var t: Node = fleet.get("trolleys").get(id.trim_prefix("trolley:")) if fleet else null
+			return "FAST ON" if t and bool(t.get("fast")) else "FAST"
 		"bring":
 			var part := str(fleet.call("next_part_for_ship")) if fleet else ""
 			var part_name := str(Layout.items().get(part, {}).get("name", part)) if part != "" else "PART"
@@ -225,7 +229,9 @@ func press(id: String, action: String) -> void:
 				if taking:
 					close_requested.emit()
 		"come":
-			fleet.call("call_to_me", trolley)
+			fleet.call("toggle_follow", trolley)
+		"fast":
+			fleet.call("toggle_fast", trolley)
 		"bring":
 			fleet.call("fetch_for_ship")
 		"stores":

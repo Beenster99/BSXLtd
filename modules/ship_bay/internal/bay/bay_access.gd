@@ -68,7 +68,9 @@ const INFO_ID := "ship_bay.pushing"
 ## Where the scaffold rigs stand to start with (bay space, the ship's starboard side, out of
 ## the way): [origin, yaw]. Each rig runs along its z from its origin; yaw PI turns its open
 ## work face to the ship.
-const RIG_PARKING := [[Vector3(7.6, 0, -1.0), PI], [Vector3(7.6, 0, 5.2), PI]]
+## Where the two scaffold rigs park: off to the east side of the courtyard, out of the way
+## (bay space, which is the yard's courtyard space in the shipyard).
+const RIG_PARKING := [[Vector3(22.0, 0, 12.0), PI], [Vector3(22.0, 0, 18.0), PI]]
 
 var deck := 1.6
 ## The lift: its root (moved when driven), chassis and platform bodies, the platform's target.
@@ -96,6 +98,7 @@ var unit_screen: Node3D
 var _grip := Transform3D()
 ## +1 while RAISE is held, -1 while LOWER is, else 0.
 var _holding := 0
+var _key_way := 0   # the lift's way while Up or Down is held (1, -1, 0)
 ## The ship's root (in the bay): the plug clips only to it.
 var ship: Node3D
 var _arms: Array[MeshInstance3D] = []
@@ -143,6 +146,8 @@ func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root:
 		var rig: Node3D = Rig.new()
 		rig.name = "Scaffold%d" % (i + 1)
 		rig.set("label", str(i + 1))
+		rig.add_to_group("gfx_interactable")
+		rig.set_meta("gfx_id", "bay:rig%d" % (i + 1))
 		rig.transform = Transform3D(Basis(Vector3.UP, RIG_PARKING[i][1]), RIG_PARKING[i][0])
 		add_child(rig)
 		rig.connect("change_requested", _ask_rig.bind(i))
@@ -181,6 +186,8 @@ func _exit_tree() -> void:
 func _build_lift(at: Transform3D) -> void:
 	lift = Node3D.new()
 	lift.name = "ScissorLift"
+	lift.add_to_group("gfx_interactable")
+	lift.set_meta("gfx_id", "bay:lift")
 	lift.transform = at
 	add_child(lift)
 	chassis = AnimatableBody3D.new()
@@ -482,6 +489,7 @@ func _clear(bodies: Array, from: Transform3D, to: Transform3D) -> bool:
 func _physics_process(delta: float) -> void:
 	if platform == null:
 		return
+	_lift_keys()
 	# The platform toward its target, stopping where something is in the way.
 	var y := lift_height()
 	var moving_deck := false
@@ -510,6 +518,35 @@ func _physics_process(delta: float) -> void:
 	for i in scaffolds.size():
 		_hum("rig%d" % i, moving == "rig%d" % i)
 	_update_plug()
+
+
+## Up and Down (the raise and lower keys) hold the scissor lift's RAISE and LOWER while you
+## stand on it or by it, like its screens.
+func _lift_keys() -> void:
+	var way := 0
+	if InputMap.has_action("ship_bay.raise") and Input.is_action_pressed("ship_bay.raise"):
+		way += 1
+	if InputMap.has_action("ship_bay.lower") and Input.is_action_pressed("ship_bay.lower"):
+		way -= 1
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if way != 0 and ((bus and bus.remote_driving) or not _by_lift()):
+		way = 0
+	if way == _key_way:
+		return
+	if _key_way != 0:
+		hold_lift(false, _key_way)
+	_key_way = way
+	if way != 0:
+		hold_lift(true, way)
+
+
+## Is this player on the lift's platform or within reach of it?
+func _by_lift() -> bool:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or lift == null:
+		return false
+	var local := lift.global_transform.affine_inverse() * cam.global_position
+	return Vector2(local.x, local.z).length() < USE_REACH or (absf(local.x) < W * 0.5 + 0.2 and absf(local.z) < L * 0.5 + 0.2)
 
 
 func _clear_lift(dy: float) -> bool:
@@ -560,6 +597,8 @@ func _build_power_unit(socket: Vector3) -> void:
 	_socket = socket
 	unit = Node3D.new()
 	unit.name = "PowerUnit"
+	unit.add_to_group("gfx_interactable")
+	unit.set_meta("gfx_id", "bay:unit")
 	unit.position = Vector3(socket.x + 2.1, 0, socket.z + 1.6)
 	add_child(unit)
 	unit_body = AnimatableBody3D.new()
@@ -616,6 +655,8 @@ func _build_power_unit(socket: Vector3) -> void:
 	# The plug: a magnetic puck on the cable's end.
 	plug = Node3D.new()
 	plug.name = "Plug"
+	plug.add_to_group("gfx_interactable")
+	plug.set_meta("gfx_id", "bay:plug")
 	add_child(plug)
 	_part(PartShapes.prism(14, 0.06, 0.08), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, 0, -0.04)), _dark, plug)
 	_part(PartShapes.prism(14, 0.045, 0.012), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, 0, -0.086)), _lit_wait, plug)
