@@ -57,7 +57,7 @@ func register_module() -> void:
 	attach_net(Modules.bus("multiplayer") as MultiplayerBus)
 	Saves.register_section(SAVE_SECTION, self)
 	Menu.register_settings_section(Menu.CHARACTER, PROFILE_SECTION, "Skills",
-			func() -> Control: return ProfilePanel.new(self), 20)
+			func() -> Control: return ProfilePanel.new(self), 10)
 
 
 func unregister_module() -> void:
