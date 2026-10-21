@@ -18,6 +18,20 @@ func run_tests() -> void:
 	net.set_activity("Riveting")
 	check(net.activity(1) == "Riveting", "activity recorded")
 
+	var got: Array[Dictionary] = []
+	var on_ping := func(p: Dictionary) -> void: got.append(p)
+	net.ping_received.connect(on_ping)
+	net.ping(Vector3(1, 0, 2), "unit:reactor_2", Vector3(0, 2, 0))
+	net.ping(Vector3(5, 0, 5))
+	check(got.size() == 1 and got[0].at == Vector3(1, 0, 2) and got[0].object_id == "unit:reactor_2",
+			"solo ping reaches this player at once: %s" % str(got))
+	check(got[0].peer == 1 and got[0].normal == Vector3.UP and got[0].colour == net.player_colour(1),
+			"ping stamped with player, colour and a unit normal")
+	check(net.pings().size() == 1, "a second ping within 0.25 s is dropped")
+	net.ping(Vector3(INF, 0, 0))
+	check(got.size() == 1, "a ping with no real place is refused")
+	net.ping_received.disconnect(on_ping)
+
 	HudSlots.register_holo_section(MultiplayerBus.CREW_CHANNEL, "_test_transfer", "Transfer money",
 			func(_glass: bool) -> Control: return Label.new())
 	var factory: Callable = HudSlots.holo_channel(MultiplayerBus.CREW_CHANNEL).factory
@@ -71,6 +85,14 @@ func _two_players() -> void:
 	check(a.chat_log().back().name == "Ben", "line carries the sender's name")
 	a.say("go")
 	check(await _until(func(): return b.chat_log().back().text == "go"), "client hears the host")
+	var a_saw: Array[Dictionary] = []
+	a.ping_received.connect(func(p: Dictionary) -> void: a_saw.append(p))
+	b.ping(Vector3(2, 1, -3), "trolley:large_1", Vector3.FORWARD)
+	check(await _until(func(): return a_saw.size() == 1), "host sees the client's ping")
+	check(a_saw[0].peer == b_id and a_saw[0].object_id == "trolley:large_1" and a_saw[0].name == b.player_name(b_id),
+			"ping carries who sent it and what it points at")
+	check(await _until(func(): return b.pings().size() == 1), "the sender sees their own ping back")
+	check(a.player_colour(1) != a.player_colour(b_id), "each player has their own ping colour")
 	b.set_activity("Bucking bar")
 	check(await _until(func(): return a.activity(b_id) == "Bucking bar"), "activity reaches the host")
 
