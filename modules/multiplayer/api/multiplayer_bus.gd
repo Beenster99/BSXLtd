@@ -34,6 +34,10 @@ signal hold_changed(object_id: String, info: Dictionary)
 ## A line in the crew text channel: {"time": "22:14", "peer", "name", "text"}.
 signal chat_received(line: Dictionary)
 signal activity_changed(peer_id: int, text: String)
+## Someone pinged (the sender too, solo play included): {"peer", "name", "colour": Color,
+## "at": Vector3, "normal": Vector3, "object_id": String ("" for bare floor), "time": host
+## clock}. Draw the marker and highlight from this signal, not from the click. See ping().
+signal ping_received(ping: Dictionary)
 
 const ONLINE_FLAG := "multiplayer.online"
 const DEFAULT_PORT := 24570
@@ -42,6 +46,8 @@ const MAX_CREW := 4
 ## The wrist screen's Crew channel (behind the flag of the same name). Other modules add
 ## dockets to it with HudSlots.register_holo_section(CREW_CHANNEL, ...).
 const CREW_CHANNEL := "multiplayer.crew"
+## How long a ping marker shows.
+const PING_LIFE := 6.0
 const CREW_SCREEN := preload("res://modules/multiplayer/internal/crew/crew_screen.gd")
 
 var _crew: Node
@@ -65,6 +71,7 @@ func register_module() -> void:
 	_crew.net = self
 	_crew.chat_received.connect(chat_received.emit)
 	_crew.activity_changed.connect(activity_changed.emit)
+	_crew.ping_received.connect(ping_received.emit)
 	add_child(_crew)
 	if Flags.is_on(CREW_CHANNEL):
 		HudSlots.register_holo_channel(CREW_CHANNEL, "Crew", _crew_screen, 45)
@@ -257,6 +264,23 @@ func activity(peer_id: int) -> String:
 
 func player_name(peer_id: int) -> String:
 	return _crew.player_name(peer_id)
+
+
+## This player's crew colour (host orange, then cyan, green, amber), for markers and names.
+func player_colour(peer_id: int) -> Color:
+	return _crew.player_colour(peer_id)
+
+
+## "Look here" for the whole crew: the middle mouse button's hit point, the data id of what
+## is under the mouse ("" for bare floor; never a node path) and the surface normal. The host
+## allows one ping per player every 0.25 s; ping_received follows on every peer.
+func ping(at: Vector3, object_id := "", normal := Vector3.UP) -> void:
+	_crew.ping(at, object_id, normal)
+
+
+## Pings still showing (younger than PING_LIFE), oldest first, for things made after one arrived.
+func pings() -> Array[Dictionary]:
+	return _crew.pings()
 
 
 func _crew_screen(glass: bool) -> Control:

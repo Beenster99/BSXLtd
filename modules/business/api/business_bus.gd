@@ -43,6 +43,9 @@ signal purchase_failed(order_id: String, reason: String)
 signal day_closed(day: int)
 ## Today's listings changed (a new day, or something was bought).
 signal market_changed
+## Parts put into stock from the yard (Ship and Bay's recycler turning scrap into raw
+## materials), not from a delivery.
+signal stock_added(part: String, condition: String, qty: int, source: String)
 ## The business clock moved (game minutes since the company started).
 signal clock_changed(minute: int)
 ## A player's wallet changed (a transfer in or out).
@@ -122,6 +125,9 @@ func register_module() -> void:
 	# Ship and Bay's wrist Stock prices what's held at Void Salvage's value for a new part.
 	if yard_bus and yard_bus.has_method("set_part_values"):
 		yard_bus.call("set_part_values", func(item_id: String) -> int: return get_catalogue().value_of(item_id))
+	# The recycler's raw materials come into stock by the kilo.
+	if yard_bus and yard_bus.has_signal("scrap_recycled") and not yard_bus.is_connected("scrap_recycled", _on_scrap_recycled):
+		yard_bus.connect("scrap_recycled", _on_scrap_recycled)
 	if Flags.is_on("business.market") and Router.has_scene(ShipBayBus.SHIPYARD_SCENE):
 		Shots.register("business_terminal", ShipBayBus.SHIPYARD_SCENE, _shot_terminal, 40)
 		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
@@ -136,6 +142,9 @@ func register_module() -> void:
 
 
 func unregister_module() -> void:
+	var yard_bus := Modules.bus("ship_bay")
+	if yard_bus and yard_bus.has_signal("scrap_recycled") and yard_bus.is_connected("scrap_recycled", _on_scrap_recycled):
+		yard_bus.disconnect("scrap_recycled", _on_scrap_recycled)
 	var net := _net()
 	if net:
 		for e in [TRANSFER_EVENT, OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT]:
@@ -564,6 +573,32 @@ func get_stock_detail() -> Dictionary:
 	return _books.stock.duplicate(true)
 
 
+## Stock id for a raw material held by the kilo ("raw_steel": kg of steel).
+const RAW_PREFIX := "raw_"
+
+
+## Ship and Bay's recycler turned an item into materials (Void Salvage material id -> kg).
+## Every peer hears it; the host puts the kilos into stock as "raw_<material>".
+func _on_scrap_recycled(item_id: String, _qty: int, materials: Dictionary) -> void:
+	if not _is_authority():
+		return
+	for material: String in materials:
+		var kg := roundi(float(materials[material]))
+		if kg > 0:
+			add_stock(RAW_PREFIX + material, kg, PartCondition.NEW, "recycler:" + item_id)
+
+
+## Puts parts into stock that didn't come by delivery: Ship and Bay's recycler hands its raw
+## materials over here. Host only. Returns how many of that part are now in stock.
+##   Modules.bus("business").call("add_stock", "steel_plate", 4, "new", "recycler")
+func add_stock(part: String, qty: int, condition := "new", source := "recycler") -> int:
+	if not _is_authority() or part == "" or qty <= 0 or not condition in PartCondition.ALL:
+		return _books.stock_total(part)
+	_books.add_stock(part, condition, qty)
+	stock_added.emit(part, condition, qty, source)
+	return _books.stock_total(part)
+
+
 ## The parts the market deals in (Void Salvage's catalogue).
 func get_catalogue() -> MarketCatalogue:
 	return _books.catalogue
@@ -598,6 +633,8 @@ func listing_category(l: MarketListing) -> String:
 
 
 func part_name(part: String) -> String:
+	if part.begins_with(RAW_PREFIX):
+		return "%s (raw, kg)" % part.trim_prefix(RAW_PREFIX).capitalize()
 	if _books.catalogue.has_part(part):
 		return _books.catalogue.display_name(part)
 	return str(_books.prices.names.get(part, part))

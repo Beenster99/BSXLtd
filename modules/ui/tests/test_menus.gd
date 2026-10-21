@@ -83,6 +83,7 @@ func run_tests() -> void:
 	await _test_settings_pages()
 	await _test_info_panel()
 	await _test_pause()
+	await _test_look_hints()
 	await _test_touch_screen()
 
 	HudSlots.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
@@ -234,7 +235,8 @@ func _test_holo() -> void:
 			"the wrist screen has the terminal's header and footer")
 	var first := holo.tabs.get_child(0) as Button
 	check(first != null and first.text == "01  ORDERS", "tabs are numbered like the terminal's")
-	check(holo.tabs.find_child("Ch_ui_settings", false, false) != null, "UI's settings tab is there")
+	check(holo.tabs.get_children().all(func(b: Node) -> bool: return b.name != "Ch_ui_settings"),
+			"the wrist screen has no Settings tab")
 	check((holo.root.find_child("Readouts", true, false) as Label).text.contains("CR 1,234"), "readouts show in the header")
 	var os := holo.root.find_child("OsInfo", true, false) as Label
 	check(os != null and os.text.begins_with("BSX-OS") and BuildInfo.version() in os.text,
@@ -267,10 +269,6 @@ func _test_holo() -> void:
 	check(holo.get_node_or_null("HoloVanishing") == null, "and then it's gone")
 	HudSlots.open_holo()
 	check(holo.channel == "_stock", "the wrist screen comes back on the last channel")
-	HudSlots.open_holo(UiBus.SETTINGS_CHANNEL)
-	await frames(1)
-	check(holo.channel == UiBus.SETTINGS_CHANNEL and holo.content.find_child("TimeOfDay", true, false) != null
-			and holo.content.find_child("KeyBindsPanel", true, false) != null, "Settings has the time and the keys")
 	HudSlots.register_holo_channel("_closing", "Closing", func() -> Control: return Closing.new(), 3)
 	HudSlots.open_holo("_closing")
 	(holo.content.find_child("Channel", false, false) as Closing).close_requested.emit()
@@ -428,12 +426,63 @@ func _test_pause() -> void:
 	var esc := InputEventKey.new()
 	esc.physical_keycode = Keys.key_of(Keys.CANCEL)
 	esc.pressed = true
+	pause._unhandled_input(esc)
+	check(pause.is_open, "the Esc a scene opened it with doesn't close it again when it falls through")
+	await frames(1)
+	(pause.root.find_child("Settings", true, false) as Button).pressed.emit()
+	check(pause.root.find_child("TimeOfDay", true, false) != null and pause.root.find_child("KeyBindsPanel", true, false) != null
+			and not (pause.root.find_child("Body", true, false) as Control).visible, "Settings shows the time of day and key binds")
+	pause._input(esc)
+	check(pause.is_open and (pause.root.find_child("Body", true, false) as Control).visible, "Esc goes back out of Settings")
 	pause._input(esc)
 	check(not pause.is_open and not get_tree().paused and not HudSlots.pointer_claimed(), "Esc resumes where you were")
+	await frames(1)
 	pause._unhandled_input(esc)
 	check(pause.is_open, "an Esc nothing else used opens it")
 	(pause.root.find_child("Resume", true, false) as Button).pressed.emit()
 	check(not pause.is_open, "Resume closes it")
+	await frames(1)
+
+
+func _test_look_hints() -> void:
+	var ui := Modules.bus("ui") as UiBus
+	var before := Router.current_id
+	Router.current_id = "_game"
+	var cam := Camera3D.new()
+	add_child(cam)
+	cam.make_current()
+	var box := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	shape.shape = BoxShape3D.new()
+	box.add_child(shape)
+	box.position = Vector3(0, 0, -2.0)
+	var part := Node3D.new()
+	part.set_script(Hinted)
+	part.add_child(box)
+	add_child(part)
+	await frames(3)
+	ui.look.refresh()
+	var card := HudSlots.infos().filter(func(c): return c.id == LookHints.CARD)
+	check(card.size() == 1 and card[0].title == "Shore power" and "Push it" in str(card[0].text)
+			and Keys.prompt(Keys.INTERACT) in str(card[0].text) and "[LMB]  Switch on" in str(card[0].text),
+			"looking at something shows what it is and its keys")
+	check(HudSlots.infos()[0].id == LookHints.CARD, "the look card sits above the others")
+	HudSlots.register_look_hint("_override", func(hit: Dictionary) -> Dictionary:
+		return {"title": "Override"} if hit.collider == box else {})
+	ui.look.refresh()
+	check(ui.look.current.get("title") == "Override", "a registered provider is asked first")
+	HudSlots.unregister_look_hint("_override")
+	box.set_meta("look_hint", {"title": "Meta"})
+	ui.look.refresh()
+	check(ui.look.current.get("title") == "Meta", "meta look_hint works too, nearest node first")
+	cam.rotation.y = deg_to_rad(90)
+	await frames(2)
+	ui.look.refresh()
+	check(HudSlots.infos().all(func(c): return c.id != LookHints.CARD), "looking at nothing shows no card")
+	part.queue_free()
+	cam.queue_free()
+	Router.current_id = before
+	ui.look.refresh()
 	await frames(1)
 
 
@@ -508,6 +557,11 @@ func _test_touch_screen() -> void:
 	cam.queue_free()
 	await frames(2)
 	check(not HudSlots.pointer_claimed(), "a freed screen gives the pointer back")
+
+
+class Hinted extends Node3D:
+	func look_hint() -> Dictionary:
+		return {"title": "Shore power", "text": "Off", "keys": [[Keys.INTERACT, "Push it"], ["LMB", "Switch on"]]}
 
 
 class Walker extends CharacterBody3D:

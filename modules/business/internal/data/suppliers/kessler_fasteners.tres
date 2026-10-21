@@ -18,7 +18,7 @@ conditions = {
 }
 listings_per_day = 10
 trade_factor = 0.95
-lead_hours = 24
+lead_hours = 4
 reliability = 0.95
 min_reputation = 0.0
 cancellation_refund_percent = 75

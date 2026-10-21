@@ -563,8 +563,9 @@ func _update_aim() -> void:
 			best_d = d
 	if best != aimed:
 		aimed = best
+		# What the tool does to it is in the tips (actions); the old hint goes.
+		bay.hint("")
 		if aimed >= 0:
-			bay.hint(_aim_hint(points[aimed]))
 			# The wrench's screen and panel show the torque the bolt under the aim wants.
 			var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
 			if wrench and points[aimed].kind == "bolt":
@@ -573,20 +574,62 @@ func _update_aim() -> void:
 		bay.refresh_hud()
 
 
-func _aim_hint(f: FastenerPoint) -> String:
+## What the aim is on, for the tips' heading: "M12 bolt, tight", or "" for nothing.
+func aim_title(tool: StringName) -> String:
+	if tool == &"tractor":
+		return tractor.aim_title()
+	if aimed < 0:
+		return ""
+	var f := points[aimed]
+	return "%s %s, %s" % [f.spec.to_upper(), f.kind, _state_word(f).to_lower()]
+
+
+## The tips for the joint under the aim with `tool` in hand: what it does to it now, or
+## which tool to take up for it.
+func actions(tool: StringName) -> Array:
+	if tool == &"tractor":
+		return tractor.actions()
+	if aimed < 0:
+		return []
+	var f := points[aimed]
+	if _working >= 0:
+		return [["Let go", "stop"]]
 	if _slot_empty(f):
-		return "The part is off this mount. Hands (1) and left click put it back."
+		return [[TradesBay.CLICK, "put the part back"]] if tool == &"hands" else [[bay.tool_action(&"hands"), "hands, to put the part back"]]
 	var tight := _bus.is_joint_tight(f.joint_id)
+	var out: Array = []
 	match f.kind:
 		"bolt":
-			return "Torque wrench (2): right click breaks it loose." if tight else "Torque wrench (2): hold left click and pull back to torque it."
+			if tool == &"torque_wrench":
+				out.append([TradesBay.HOLD_RIGHT, "break it loose"] if tight else [TradesBay.HOLD_CLICK + ", pull back", "torque it till it clicks"])
 		"rivet":
-			return "Drill (3): left click drills it out." if tight else "Squeezer (4): hold left click to set a rivet."
+			if tool == &"drill" and tight:
+				out.append([TradesBay.HOLD_CLICK, "drill it out"])
+			elif tool == &"rivet_squeezer" and not tight:
+				out.append([TradesBay.HOLD_CLICK, "set a rivet"])
 		"weld":
-			return "Welder (5): hold right click to cut the weld out." if tight else "Welder (5): hold left click to lay the bead."
+			if tool == &"welder":
+				if not tight:
+					out.append([TradesBay.HOLD_CLICK, "lay the bead"])
+				elif Flags.is_on("trades.unweld"):
+					out.append([TradesBay.HOLD_RIGHT, "cut the weld out"])
 		"connector":
-			return "%s line: right click unplugs it." % f.spec.capitalize() if tight else "%s line: left click plugs it in." % f.spec.capitalize()
-	return ""
+			if tool == &"hands" or tool == &"wire_tool":
+				out.append([TradesBay.RIGHT_CLICK, "unplug it"] if tight else [TradesBay.CLICK, "plug it in"])
+	if out.is_empty():
+		var want: StringName = &""
+		match f.kind:
+			"bolt":
+				want = &"torque_wrench"
+			"rivet":
+				want = &"drill" if tight else &"rivet_squeezer"
+			"weld":
+				want = &"welder"
+			"connector":
+				want = &"hands"
+		if want != tool:
+			out.append([bay.tool_action(want), "take the %s" % String(TradesBay.TOOL_LABELS.get(want, want)).to_lower()])
+	return out
 
 
 func _place_marker() -> void:

@@ -109,7 +109,12 @@ func run_tests() -> void:
 		halls[room] = true
 		# Flat on a wall: a ray from in front of the screen to its back hits the wall there.
 		var from := m.global_position + m.global_basis.z * 1.5
-		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, m.global_position - m.global_basis.z * 0.2))
+		var ray := PhysicsRayQueryParameters3D.create(from, m.global_position - m.global_basis.z * 0.2)
+		ray.exclude = [(m.get_node("Body") as StaticBody3D).get_rid()]
+		var hit := space.intersect_ray(ray)
+		check(m.is_in_group("gfx_interactable") and str(m.get_meta("gfx_id", "")).begins_with("business.tv."), "%s lights up when looked at" % m.name)
+		var tip := HudSlots.look_hint_for({"collider": m.get_node("Body")})
+		check(tip.get("title") == "Hall TV" and (tip.keys as Array).size() == 2, "%s says what it does when looked at" % m.name)
 		check(not hit.is_empty() and hit.position.distance_to(m.global_position) < 0.1, "%s is flat on the wall" % m.name)
 		# Nothing stands in front of it within reach.
 		var box := BoxShape3D.new()
