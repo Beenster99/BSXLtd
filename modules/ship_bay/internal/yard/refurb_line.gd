@@ -54,6 +54,15 @@ const WIDTH := 1.6
 const TITLES := {"survey": "SURVEY  SV-1", "grinder": "GRINDER  GX-9", "straightener": "STRAIGHTENER  PR-4",
 		"bath": "CHEMICAL BATH  CB-2", "coater": "COATER  PC-3"}
 
+## What each machine does, for the tip shown while you look at it.
+const HINTS := {
+	"survey": "Pick a worn lot from the stores, LOAD and SCAN it: it says grind or refurbish. ROUTE overrides it.",
+	"grinder": "Grinds a lot to dust in the vessel beside it. The dust goes to the stores as raw materials.",
+	"straightener": "Presses the dents and bends out of a lot (to 60%).",
+	"bath": "Strips a lot back to bare metal (to 85%).",
+	"coater": "Sprays on the protective coats: the lot comes out at 100%.",
+}
+
 ## Seconds a machine takes over a lot, and a lot takes from one machine to the next.
 @export var run_time := 5.0
 @export var travel_time := 1.4
@@ -662,6 +671,8 @@ func _build_machine(s: String) -> void:
 	root.name = s.capitalize().replace(" ", "")
 	root.add_to_group("gfx_interactable")
 	root.set_meta("gfx_id", "line:" + s)
+	root.set_meta("look_hint", {"title": str(TITLES[s]).get_slice("  ", 0).capitalize(), "text": str(HINTS[s]),
+			"keys": [["LMB", "Press a button on its screen"]]})
 	# Local +Z along the travel; the grinder's front faces south (+Z yard) so it has side +1.
 	var yaw := atan2(travel.x, travel.z)
 	root.transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(at.x, 0, at.z))

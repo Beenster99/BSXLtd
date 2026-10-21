@@ -23,6 +23,8 @@ func run_tests() -> void:
 		var m: Node3D = (machines.get(s, {}) as Dictionary).get("node")
 		check(m != null and pre.has_point(m.global_position + Vector3(0, 0.5, 0)) and m.is_in_group("gfx_interactable"),
 				"the %s stands in Pre-assembly and lights up under the pointer" % s)
+	var tip := HudSlots.look_hint_for({"collider": (machines["bath"].node as Node).get_node("Body")})
+	check(str(tip.get("title", "")) == "Chemical Bath" and str(tip.get("text", "")).contains("bare metal"), "looking at a machine says what it does: %s" % [tip])
 	check(pre.has_point(line.get("DUST_SPOT") + Vector3(0, 0.5, 0)), "so does the dust vessel")
 	var rooms := yard.get_tree().get_nodes_in_group("gfx_room")
 	check(rooms.size() == 4 and (rooms[0].get_meta("gfx_box") is AABB), "the four halls are tagged for Graphics' room lighting")
