@@ -226,7 +226,7 @@ func _ready() -> void:
 	var start: String = Router.args.get("view", "")
 	if VIEWS.has(start):
 		show_view(start)
-	elif DisplayServer.get_name() != "headless":
+	elif DisplayServer.get_name() != "headless" and not HudSlots.pointer_claimed():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
@@ -374,7 +374,7 @@ func set_walker_active(on: bool) -> void:
 	var cam := walker.get("camera") as Camera3D
 	if on:
 		cam.current = true
-		if DisplayServer.get_name() != "headless":
+		if DisplayServer.get_name() != "headless" and not HudSlots.pointer_claimed():
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	else:
 		# Without handing the view on to the yard's other camera.
@@ -389,14 +389,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			walker.call("look", event.relative)
 	elif event is InputEventMouseButton and event.pressed:
+		# A screen that has the mouse (the wrist, a menu) keeps it free.
+		if HudSlots.pointer_claimed():
+			return
 		_walk_again()
 		if DisplayServer.get_name() != "headless":
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == KEY_ESCAPE:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			if Router.has_scene("main_menu"):
-				Router.goto("main_menu")
+			# The pause menu: Resume carries on where you stand.
+			get_viewport().set_input_as_handled()
+			Menu.open_pause()
 		else:
 			_walk_again()
 

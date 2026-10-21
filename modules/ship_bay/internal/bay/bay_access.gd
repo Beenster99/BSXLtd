@@ -63,6 +63,8 @@ const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 ## How far a pushed vehicle may lag where your hands hold it before you lose your grip, metres.
 const GRIP_SLACK := 1.2
+## Its card in the right-hand info panel while you push something.
+const INFO_ID := "ship_bay.pushing"
 ## Where the scaffold rigs stand to start with (bay space, the ship's starboard side, out of
 ## the way): [origin, yaw]. Each rig runs along its z from its origin; yaw PI turns its open
 ## work face to the ship.
@@ -104,7 +106,6 @@ var _switch_lamp: MeshInstance3D
 var _socket := Vector3.ZERO          # the ship's power socket, bay space
 var _plug_body: StaticBody3D
 var _plug_shape: CollisionShape3D
-var _hud: Label
 var _hums: Dictionary = {}       # vehicle -> AudioStreamPlayer3D
 var _net: Node
 var _lit_on: Material
@@ -158,16 +159,10 @@ func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root:
 			_net.call("register_mover", pair[0], pair[1])
 		for i in scaffolds.size():
 			_net.call("register_mover", "bay_rig%d" % i, scaffolds[i])
-	var layer := CanvasLayer.new()
-	layer.layer = 5
-	add_child(layer)
-	_hud = BsxTheme.hud_label("", 18)
-	_hud.position = Vector2(24, 24)
-	_hud.visible = false
-	layer.add_child(_hud)
 
 
 func _exit_tree() -> void:
+	HudSlots.clear_info(INFO_ID)
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus and bus.kit_changed.is_connected(_on_kit):
 		bus.kit_changed.disconnect(_on_kit)
@@ -362,8 +357,7 @@ func toggle_drive(which: String) -> void:
 		_claim(id)
 	_grip = _hands().affine_inverse() * root.global_transform
 	var names := {"lift": "the scissor lift", "unit": "the power unit"}
-	_hud.text = "Pushing %s  ·  F lets go" % names.get(which, "scaffold %s" % root.get("label"))
-	_hud.visible = true
+	HudSlots.set_info(INFO_ID, "Pushing " + str(names.get(which, "scaffold %s" % root.get("label"))), "Walk to steer it · F lets go", 20)
 	Sfx.play("click", root)
 
 
@@ -413,8 +407,7 @@ func _let_go() -> void:
 		for id: String in _movers_of(driving):
 			_net.call("release", id)
 	driving = ""
-	_hud.visible = false
-	_hud.text = ""
+	HudSlots.clear_info(INFO_ID)
 
 
 func _movers_of(which: String) -> Array:
