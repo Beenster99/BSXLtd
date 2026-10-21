@@ -44,6 +44,14 @@ const KIND_HELP := {
 	"connector": "hands (1) or crimper (6)",
 }
 
+## The powered wrench (trades.power_wrench, TradesPowerWrench): seconds to run a bolt up to
+## its setting; how long the trigger can stay down after the clutch slips before the thread
+## strips; the odds that a run stalls, and the share of the spec's middle a setting may be
+## off before Quality marks it down (they grade it; this is the ship's own quality figure).
+const RUN_S := 1.2
+const STRIP_S := 1.0
+const STALL_CHANCE := 0.04
+
 ## Ship space to this station's world: set from the yard on every ship_loaded.
 var ship_xform := Transform3D.IDENTITY
 ## The loaded ship's joints and where each one is in the world.
@@ -61,6 +69,10 @@ var _pull_px := 0.0
 var _clicked := false
 ## A screenshot holds the job where it is.
 var _frozen := false
+## The powered wrench's run: seconds in when it stalls (-1: it won't), and seconds since its
+## clutch slipped (-1: not yet).
+var _stall_at := -1.0
+var _clutch_s := -1.0
 ## slot_id -> the component that came off it (so hands can put it back).
 var _removed: Dictionary = {}
 var _marker: MeshInstance3D
@@ -132,7 +144,8 @@ func status_line() -> String:
 		return "Ship: %d joints, %d tight" % [points.size(), _tight_count()] if not points.is_empty() else ""
 	var f := points[aimed]
 	var line := "%s  %s %s  %s" % [f.joint_id.to_upper(), f.spec.to_upper(), f.kind.to_upper(), _state_word(f)]
-	if f.kind == "bolt":
+	# The powered wrench's setting is the player's to find (Tab, the wrist's Specs channel).
+	if f.kind == "bolt" and not powered():
 		var nm := torque_range(f.spec)
 		line += "  [%d-%d N m]" % [roundi(nm.x), roundi(nm.y)]
 	return line
@@ -158,6 +171,15 @@ static func torque_range(spec_id: String) -> Vector2:
 	return Vector2(40.0, 60.0)
 
 
+## The rivet head height (mm) a rivet spec wants: half its shank diameter, the usual formed
+## head, or 2 mm without Shared Components.
+static func head_target_mm(spec_id: String) -> float:
+	var shared: Node = Modules.bus("shared_components")
+	var spec: Object = shared.call("fastener", spec_id) if shared and shared.has_method("fastener") else null
+	var dia: Variant = spec.get("diameter_mm") if spec else null
+	return float(dia) * 0.5 if dia is float and float(dia) > 0.0 else 2.0
+
+
 # --- Input --------------------------------------------------------------------------------
 
 func press(tool: StringName) -> void:
@@ -174,6 +196,9 @@ func press(tool: StringName) -> void:
 			bay.hint("The part is off. Hands (1) on one of its joints puts it back.")
 		return
 	var tight := _bus.is_joint_tight(f.joint_id)
+	if f.kind == "bolt" and tool == &"torque_wrench" and powered():
+		_press_power(f, tight)
+		return
 	if not (KIND_TOOLS[f.kind] as Array).has(tool):
 		bay.hint("That's a %s: %s." % [f.kind, KIND_HELP[f.kind]])
 		return
@@ -193,6 +218,10 @@ func press(tool: StringName) -> void:
 func release() -> void:
 	tractor.release()
 	if _working < 0:
+		return
+	if _working_power():
+		_release_power(points[_working])
+		_stop()
 		return
 	if not _undoing and points[_working].kind == "bolt" and not _clicked:
 		bay.hint("Not torqued yet: hold left click and pull back until it clicks.")
@@ -233,6 +262,14 @@ func back_out(tool: StringName) -> void:
 	_begin(true, tool)
 
 
+## Wheel with the powered wrench on a bolt: its torque setting.
+func wheel_setting(tool: StringName, step: int) -> bool:
+	if tool != &"torque_wrench" or not powered() or aimed < 0 or points[aimed].kind != "bolt" or _working >= 0:
+		return false
+	_power().step_setting(-step)
+	return true
+
+
 ## Wheel while the beam holds a part: pull it in or push it out.
 func turn_held(step: int, _snap: bool) -> bool:
 	return tractor.push(step)
@@ -271,7 +308,9 @@ func update(delta: float) -> void:
 	if not _frozen:
 		_held_s += delta
 	var bus := bay.bus()
-	if f.kind == "bolt" and not _undoing:
+	if _working_power():
+		_work_power(f, at, n, delta)
+	elif f.kind == "bolt" and not _undoing:
 		_work_bolt(f, at, n)
 	else:
 		var need := _seconds(f.kind)
@@ -310,6 +349,142 @@ func _work_bolt(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 		bay.hint("Click. %s torqued to %d N m." % [f.spec, roundi(target)])
 
 
+# --- The powered wrench ------------------------------------------------------------------
+
+## The powered wrench is the wrench (trades.power_wrench).
+static func powered() -> bool:
+	return Flags.is_on("trades.power_wrench")
+
+
+func _power() -> TradesPowerWrench:
+	return bay.tool_node(&"torque_wrench") as TradesPowerWrench
+
+
+## A bolt being worked with the powered wrench.
+func _working_power() -> bool:
+	return _working >= 0 and points[_working].kind == "bolt" and _tool_held == &"torque_wrench" and _power() != null
+
+
+## The torque middle of a bolt's spec (N m): what the wrench should be set to.
+static func torque_target(spec_id: String) -> float:
+	var nm := torque_range(spec_id)
+	return (nm.x + nm.y) * 0.5
+
+
+## Left click with the powered wrench: run the bolt in, or out in undo mode.
+func _press_power(f: FastenerPoint, tight: bool) -> void:
+	var w := _power()
+	if w.undo:
+		if tight:
+			_begin(true, &"torque_wrench")
+		else:
+			bay.hint("Nothing to undo: this bolt is out. %s switches the wrench to fasten." % Keys.prompt(TradesBus.KEY_MODE))
+	elif tight:
+		bay.hint("Already tight. %s switches the wrench to undo." % Keys.prompt(TradesBus.KEY_MODE))
+	elif _first_joint(f) and tractor.blocks_first_joint(FastenerPoint.slot_of(f.joint_id)):
+		bay.hint("The beam holding this part has it out of line. Its first joint waits until it's in line.")
+	else:
+		_begin(false, &"torque_wrench")
+
+
+## Each frame of a run: the motor drives the torque up to the setting, the clutch slips,
+## and held on past STRIP_S the thread strips. Undo runs it out. A stall stops it dead.
+func _work_power(f: FastenerPoint, at: Vector3, n: Vector3, delta: float) -> void:
+	var w := _power()
+	var xform := _on_surface(at, n, 0.0)
+	bay.place_tool(&"torque_wrench", xform)
+	bay.worker.right_hand.reach_to(xform * TradesPowerWrench.POWER_GRIP, n)
+	bay.worker.right_hand.set_grip(1.0)
+	if w.state == TradesPowerWrench.State.STALLED:
+		return
+	if _stall_at >= 0.0 and _held_s >= _stall_at:
+		w.state = TradesPowerWrench.State.STALLED
+		bay.loop(&"impact", false)
+		bay.play(&"stall")
+		bay.worker.kick(0.006)
+		bay.hint("The wrench stalled. Let go and pull the trigger again.")
+		return
+	var bus := bay.bus()
+	if _undoing:
+		var out := clampf(_held_s / BREAK_S, 0.0, 1.0)
+		w.turned -= delta * 35.0
+		w.applied_nm = w.set_nm * (1.0 - out)
+		bay.loop(&"impact", true, 0.9)
+		if bus:
+			bus.joint_progress.emit(StringName(f.joint_id), out)
+		if out >= 1.0:
+			_finish(f)
+		return
+	if _clutch_s < 0.0:
+		var share := clampf(_held_s / RUN_S, 0.0, 1.0)
+		w.applied_nm = w.set_nm * share
+		w.turned += delta * 40.0 * (1.0 - share * 0.8)
+		bay.loop(&"impact", true, 1.0 + share * 0.25)
+		if bus:
+			bus.joint_progress.emit(StringName(f.joint_id), share)
+		if share >= 1.0:
+			_clutch_s = 0.0
+			w.state = TradesPowerWrench.State.CLUTCH
+			w.click()
+			bay.play(&"click")
+			bay.worker.kick(0.008)
+			bay.hint("Clutch: let go now.")
+		return
+	# Clutch slipping: it ratchets on the bolt; too long and the thread goes.
+	if not _frozen:
+		_clutch_s += delta
+	w.turned += delta * 4.0
+	bay.loop(&"impact", true, 1.6)
+	if _clutch_s >= STRIP_S:
+		w.state = TradesPowerWrench.State.STRIPPED
+		_bolt_made(f, w.set_nm, true)
+		bay.play(&"clunk", 0.7)
+		bay.hint("Held on too long: the thread stripped. The quality survey will find it.")
+		_stop()
+
+
+## Letting go of the trigger: past the clutch the bolt is in at the setting; before it, not.
+func _release_power(f: FastenerPoint) -> void:
+	var w := _power()
+	if _undoing or w.state == TradesPowerWrench.State.STALLED:
+		return
+	if _clutch_s >= 0.0:
+		_bolt_made(f, w.set_nm, false)
+		bay.play(&"clunk", 1.2)
+		bay.hint("%s in at %d N m." % [f.spec, roundi(w.set_nm)])
+	else:
+		bay.hint("Let go before the clutch: not tight yet.")
+
+
+## A bolt in at `nm` (stripped or not): the ship's quality figure and Quality's readings.
+func _bolt_made(f: FastenerPoint, nm: float, stripped: bool) -> void:
+	var spec := torque_range(f.spec)
+	var target := torque_target(f.spec)
+	var off := maxf(spec.x - nm, nm - spec.y) / maxf(target, 1.0)
+	var quality := 1.0 - clampf(off * 3.0, 0.0, 0.7) if off > 0.0 else 1.0
+	if stripped:
+		quality = minf(quality, 0.15)
+	_made(f, quality)
+	_report(f, &"BOLT", {"torque_nm": [nm], "torque_target_nm": target, "sequence_ok": true,
+			"cross_threaded": [stripped], "stripped_thread": [stripped], "washer": [true],
+			"needs_washer": false, "fastener_ids": [f.spec], "fastener_spec_id": f.spec})
+
+
+## Tells Quality (through Tools' joint_completed) what was built on the ship.
+func _report(f: FastenerPoint, trade: StringName, measurements: Dictionary) -> void:
+	var bus := bay.bus()
+	if bus == null:
+		return
+	var site := JointSite.new()
+	site.joint_id = StringName(f.joint_id)
+	site.component_id = StringName(_bus.get_component(FastenerPoint.slot_of(f.joint_id)))
+	site.mount_id = StringName(FastenerPoint.slot_of(f.joint_id))
+	site.spec = JointSpec.new()
+	site.spec.trade = trade
+	bus.complete_joint(site, measurements)
+	site.free()
+
+
 # --- Doing the work -------------------------------------------------------------------------
 
 func _begin(undo: bool, tool: StringName) -> void:
@@ -320,12 +495,21 @@ func _begin(undo: bool, tool: StringName) -> void:
 	_pull_px = 0.0
 	_clicked = false
 	bay.worker.look_locked = points[_working].kind == "bolt" and not undo
+	if _working_power():
+		var w := _power()
+		w.state = TradesPowerWrench.State.RUNNING
+		w.applied_nm = 0.0
+		_clutch_s = -1.0
+		_stall_at = randf_range(0.15, 0.85) * (BREAK_S if undo else RUN_S) if randf() < STALL_CHANCE else -1.0
 	var bus := bay.bus()
 	if bus and not undo:
 		bus.joint_started.emit(StringName(points[_working].joint_id), StringName(points[_working].kind), 1)
 	match points[_working].kind:
 		"bolt":
-			bay.hint("Breaking it loose..." if undo else "Pull the mouse back until the wrench clicks.")
+			if _working_power():
+				bay.hint("Undoing..." if undo else "Running it in: let go when the clutch slips.")
+			else:
+				bay.hint("Breaking it loose..." if undo else "Pull the mouse back until the wrench clicks.")
 		"rivet":
 			bay.hint("Drilling it out..." if undo else "Squeezing...")
 		"weld":
@@ -388,6 +572,9 @@ func _stop() -> void:
 	var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
 	if wrench:
 		wrench.applied_nm = 0.0
+	if wrench is TradesPowerWrench and (wrench as TradesPowerWrench).state != TradesPowerWrench.State.STRIPPED:
+		(wrench as TradesPowerWrench).state = TradesPowerWrench.State.READY
+	bay.loop(&"impact", false)
 	bay.loop(&"drill", false)
 	bay.loop(&"arc", false)
 	if bay.worker:
@@ -600,7 +787,14 @@ func actions(tool: StringName) -> Array:
 	var out: Array = []
 	match f.kind:
 		"bolt":
-			if tool == &"torque_wrench":
+			if tool == &"torque_wrench" and powered():
+				var w := _power()
+				if w.undo == tight:
+					out.append([TradesBay.HOLD_CLICK, "undo it" if tight else "run it in, let go at the clutch"])
+				if not tight and not w.undo:
+					out.append([TradesBay.WHEEL, "set the torque (%d N m now)" % roundi(w.set_nm)])
+				out.append([TradesBus.KEY_MODE, "switch to fasten" if w.undo else "switch to undo"])
+			elif tool == &"torque_wrench":
 				out.append([TradesBay.HOLD_RIGHT, "break it loose"] if tight else [TradesBay.HOLD_CLICK + ", pull back", "torque it till it clicks"])
 		"rivet":
 			if tool == &"drill" and tight:
@@ -628,7 +822,7 @@ func actions(tool: StringName) -> Array:
 			"connector":
 				want = &"hands"
 		if want != tool:
-			out.append([bay.tool_action(want), "take the %s" % String(TradesBay.TOOL_LABELS.get(want, want)).to_lower()])
+			out.append([bay.tool_action(want), "take the %s" % TradesBay.label_of(want).to_lower()])
 	return out
 
 

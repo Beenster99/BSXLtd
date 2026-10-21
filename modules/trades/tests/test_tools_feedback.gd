@@ -34,7 +34,7 @@ func run_tests() -> void:
 	rig.set_tool(&"torque_wrench")
 	await frames(2)
 	var panel := _display(rig, &"torque_wrench")
-	check(panel.contains("TORQUE WRENCH") and panel.contains("SET") and panel.contains("N m") and panel.contains("READY"),
+	check(panel.contains(TradesBay.label_of(&"torque_wrench").to_upper()) and panel.contains("SET") and panel.contains("N m") and panel.contains("READY"),
 			"the wrench's display names it and labels its readings")
 	check(rig.tool_panel_text() == "", "and the HUD has no tool panel any more")
 	rig.set_tool(&"welder")
