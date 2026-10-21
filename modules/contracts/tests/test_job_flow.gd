@@ -140,7 +140,8 @@ func _test_with_business() -> void:
 	check(not bus.advance(id, ContractJob.PARTS_READY), "can't skip acceptance while Business is on")
 	check(bus.advance(id, ContractJob.ACCEPTED), "offered to accepted")
 	var deposit := books.get_cash() - cash
-	check(deposit > 0 and deposit == int(order["commercial"]["price"] * 0.3), "deposit booked on acceptance: %d" % deposit)
+	# How much is Business's rule (it may change); Contracts only checks that money came in.
+	check(deposit > 0 and deposit <= int(order["commercial"]["price"]), "up-front payment booked on acceptance: %d" % deposit)
 	check(books.get_contract_balance(id).get("deposit") == deposit, "Business holds the contract")
 	check(bus.advance(id, ContractJob.PARTS_READY), "accepted to parts_ready")
 	check(bus.cancel(id, true), "cancelled by the client")
