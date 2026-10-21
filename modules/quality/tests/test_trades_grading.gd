@@ -75,6 +75,11 @@ func _wiring() -> void:
 	check(_grade(&"WIRE", _wire(2, {"polarity_ok": false})).grade == JointRecord.FAIL, "reversed polarity fails")
 	check(_grade(&"WIRE", _wire(2, {"insulation_mohm": 10.0})).grade == JointRecord.FAIL, "a short fails")
 
+	var plug := _grade(&"WIRE", _wire(2, {"continuity_ohm": -1.0, "pins_ok": [true, false],
+			"terminals": ["+28V", "RTN"]}))
+	check(plug.grade == JointRecord.FAIL and plug.faults.any(func(f): return f.text == "Pin RTN wired wrong"),
+			"diagram wiring names the wrong pin: %s" % [plug.faults])
+
 	var warm := _grade(&"WIRE", _wire(2, {"continuity_ohm": 0.75}))
 	# Twice-ish the 0.5 ohm maximum: (1.5 - 1) / 1 = 0.5 marks -> 12.5 of 25.
 	check(warm.score == 88 and _codes(warm).has("resistance"), "high resistance costs marks: %d" % warm.score)
