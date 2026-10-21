@@ -20,7 +20,7 @@ const Walker := preload("res://modules/ship_bay/internal/yard/yard_walker.gd")
 const TrolleyFleet := preload("res://modules/ship_bay/internal/yard/trolley_fleet.gd")
 const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
-const Recycler := preload("res://modules/ship_bay/internal/yard/recycler.gd")
+const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
 	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
@@ -58,8 +58,6 @@ const ROOMS := {
 ## origin is on the floor and whose +Z faces where the worker stands (a bench's back edge).
 ## Other modules get these through ShipBayBus.shipyard_spot() and add their nodes to the
 ## yard when ShipBayBus.shipyard_ready fires.
-## The recycler in Pre-assembly (yard space, on the floor; its front faces the hall, -X).
-const RECYCLER_AT := Vector3(46.4, 0, -7.6)
 const SPOTS := {
 	"bench_preassembly": Transform3D(Basis.IDENTITY, Vector3(34, 0, -20.5)),
 	"bench_prep": Transform3D(Basis.IDENTITY, Vector3(18, 0, -29)),
@@ -126,8 +124,8 @@ const FACE_NX := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
-## The recycler in Pre-assembly (recycler.gd).
-var recycler: Node3D
+## The refurbishment line in Pre-assembly (refurb_line.gd).
+var line: Node3D
 ## False while another module has control (ShipBayBus.set_walker_active).
 var walker_active := true
 var _walker_layers := Vector2i(1, 1)
@@ -195,6 +193,7 @@ func _ready() -> void:
 	_build_stock()
 	_build_prep()
 	_build_preassembly()
+	_tag_rooms()
 	_build_courtyard()
 	_build_crane()
 	_build_dock()
@@ -1229,11 +1228,23 @@ func _build_prep() -> void:
 		_put(_lib("workbench", func() -> PartShapes.PartShape: return WreckParts.workbench()), _at(Vector3(x, 0.975, -25.1)), _parts)
 
 
+## Marks the four enclosed halls for Graphics (a reflection probe and baked bounce light
+## each): a node per hall at the yard origin, in group "gfx_room", meta "gfx_box" its
+## inside. The bay is the open courtyard, so it has none.
+func _tag_rooms() -> void:
+	for id: String in ["deliveries", "stock", "prep", "preassembly"]:
+		var room := Node3D.new()
+		room.name = "Room_" + id
+		room.add_to_group("gfx_room")
+		room.set_meta("gfx_box", ROOMS[id]["box"])
+		room.set_meta("gfx_id", "room:" + id)
+		add_child(room)
+
+
 func _build_preassembly() -> void:
-	# The recycler between the jigs, its front to the hall: poor stored goods into raw materials.
-	recycler = Recycler.new()
-	recycler.transform = Transform3D(Basis(Vector3.UP, -PI * 0.5), RECYCLER_AT)
-	add_child(recycler)
+	# The refurbishment line down the east side, its grind branch along the north wall.
+	line = RefurbLine.new()
+	add_child(line)
 	# Assembly jigs: an I-beam base frame, posts and top rails round a module going together.
 	var post := _lib("ibeam/jig_post", func() -> PartShapes.PartShape:
 			return PartShapes.i_beam(3.5, 0.25, 0.25))
@@ -1241,8 +1252,7 @@ func _build_preassembly() -> void:
 			return PartShapes.i_beam(5.25, 0.22, 0.25))
 	var rail_z := _lib("ibeam/jig_z", func() -> PartShapes.PartShape:
 			return PartShapes.i_beam(6.25, 0.22, 0.25))
-	for z: float in [-14.0, 6.0]:
-		var at := Vector3(42, 0, z)
+	for at: Vector3 in [Vector3(35, 0, -9), Vector3(42, 0, 6)]:
 		for corner: Vector3 in [Vector3(-2.5, 0, -3), Vector3(2.5, 0, -3), Vector3(-2.5, 0, 3), Vector3(2.5, 0, 3)]:
 			_put(post, Transform3D(UPRIGHT, at + corner + Vector3(0, 1.75, 0)), _trim)
 			_put(_box(Vector3(0.5, 0.03, 0.5)), _at(at + corner + Vector3(0, 0.015, 0)), _bare, false)
@@ -1253,7 +1263,7 @@ func _build_preassembly() -> void:
 				_put(rail_z, Transform3D(Basis(Vector3.UP, PI * 0.5), at + Vector3(side, y, 0)), _trim, false)
 	# In the north jig an engine module (a cowl, a tank and a bell, like the Kestrel's) on a
 	# stand; in the south a frame section going together.
-	var engine := Vector3(42, 0, -14)
+	var engine := Vector3(35, 0, -9)
 	_put(_lib("cbox/engine_stand", func() -> PartShapes.PartShape:
 			return PartShapes.chamfer_box(Vector3(2.0, 1.1, 3.0), 0.05)), _at(engine + Vector3(0, 0.55, 0)), _paint(DARK, 0.4, 0.5, "gunmetal"))
 	_put(_lib("tank/engine", func() -> PartShapes.PartShape: return WreckParts.tank(0.7, 2.2)),
@@ -1626,8 +1636,8 @@ func _refresh_stores() -> void:
 	var crates := _bus.delivered_crates()
 	for id: String in crates:
 		var c: Dictionary = crates[id]
-		if str(c.get("carrier", "")) != "":
-			continue   # on a trolley's deck: the trolley draws it
+		if str(c.get("carrier", "")) != "" or c.has("line"):
+			continue   # on a trolley's deck (the trolley draws it) or the line's (it does)
 		var at := _bus.crate_position(id)
 		var kind := StorageLayout.kind_for(float(c["mass"]))
 		var cat := str(StorageLayout.items().get(c["item"], {}).get("category", ""))
