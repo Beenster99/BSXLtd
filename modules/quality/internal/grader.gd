@@ -39,7 +39,8 @@ func grade(r: JointRecord, modifiers: Dictionary = {}) -> void:
 
 
 ## Bolting keys (Trades spec 4.3): torque_nm, torque_target_nm, sequence_ok, cross_threaded,
-## washer, fastener_ids; optional fastener_spec_id and needs_washer copied from the spec.
+## washer, fastener_ids; optional fastener_spec_id and needs_washer copied from the spec,
+## and stripped_thread from the powered wrench.
 ## torque_tolerance (a fraction of target) widens both torque bands by that many percent;
 ## the over-torque fail line never moves, since a yielded bolt fails whoever fitted it.
 func _grade_bolting(r: JointRecord, modifiers: Dictionary) -> void:
@@ -98,9 +99,15 @@ func _grade_bolting(r: JointRecord, modifiers: Dictionary) -> void:
 			right_parts += 1
 	r.breakdown["fastener"] = rules.weight_fastener * right_parts / holes
 
+	# A stripped thread (powered wrench held past its clutch) also sets cross_threaded;
+	# name it as what it is.
+	var stripped: Array = m.get("stripped_thread", [])
 	var clean := 0
 	for i in holes:
-		if i < cross.size() and bool(cross[i]):
+		if bool(_at(stripped, i, false)):
+			auto_fail = true
+			r.faults.append(_fault("stripped_thread", i, "Hole %d thread stripped" % (i + 1)))
+		elif i < cross.size() and bool(cross[i]):
 			auto_fail = true
 			r.faults.append(_fault("cross_threaded", i, "Hole %d cross-threaded" % (i + 1)))
 		else:
