@@ -40,7 +40,10 @@ const KEY_INSPECT := "trades.inspect"
 ## The practice bench's: start the job again, the next part in the tray.
 const KEY_RESET := "trades.reset"
 const KEY_NEXT := "trades.next"
+const KEY_MODE := "trades.mode"           # the powered tools' mode: fasten / undo
 const KEY_GROUP := "Tools"
+## The wrist screen's Specs channel: torque windows and rivet heights (its flag too).
+const SPECS_CHANNEL := "trades.specs"
 const HOTBAR_KEYS := 9
 
 var _sites: Dictionary = {}
@@ -58,6 +61,10 @@ func register_module() -> void:
 	Keys.register(KEY_INSPECT, "Show part details (hold)", KEY_TAB, KEY_GROUP)
 	Keys.register(KEY_RESET, "Start the bench job again", KEY_BACKSPACE, KEY_GROUP)
 	Keys.register(KEY_NEXT, "Next part in the tray", KEY_G, KEY_GROUP)
+	Keys.register(KEY_MODE, "Tool mode: fasten / undo", KEY_X, KEY_GROUP)
+	if Flags.is_on(SPECS_CHANNEL):
+		HudSlots.register_holo_channel(SPECS_CHANNEL, "Specs",
+				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
 	if TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t)):
 		Router.register_scene(WORKBENCH, BENCH_SCENE)
 	if Flags.is_on("trades.shipyard"):

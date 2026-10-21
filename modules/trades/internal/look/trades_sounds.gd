@@ -41,6 +41,26 @@ static func hum(seconds: float, volume: float, tone_hz: float, noise_hz: float) 
 	return _wav(data, rate, true)
 
 
+## A looping impact-wrench rattle: a motor tone hammered on and off `blows_hz` times a second.
+static func rattle(seconds: float, volume: float, tone_hz: float, blows_hz: float) -> AudioStreamWAV:
+	var rate := 22050
+	var cycles := maxi(1, roundi(seconds * blows_hz))
+	var n := int(round(cycles * rate / blows_hz))
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 13
+	var y := 0.0
+	for i in n:
+		var t := float(i) / rate
+		var phase := fmod(t * blows_hz, 1.0)
+		var blow := exp(-phase * 14.0)
+		y += 0.35 * (rng.randf_range(-1.0, 1.0) - y)
+		var tone := sin(TAU * tone_hz * t) * 0.4 + sin(TAU * tone_hz * 2.0 * t) * 0.2
+		data.encode_s16(i * 2, int(clampf((tone * 0.5 + y * blow * 2.2) * volume, -1.0, 1.0) * 32767))
+	return _wav(data, rate, true)
+
+
 static func _wav(data: PackedByteArray, rate: int, looped: bool) -> AudioStreamWAV:
 	var wav := AudioStreamWAV.new()
 	wav.format = AudioStreamWAV.FORMAT_16_BITS

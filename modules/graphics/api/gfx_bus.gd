@@ -154,7 +154,7 @@ func _walk(n: Node) -> void:
 ## Bakes a room's bounce light soon (after BAKE_DELAY, one room per frame).
 func queue_bake(gi: VoxelGI) -> void:
 	for b in _bakes:
-		if b.gi == gi:
+		if is_instance_valid(b.gi) and b.gi == gi:
 			return
 	_bakes.append({"gi": gi, "at": Time.get_ticks_msec() / 1000.0 + BAKE_DELAY})
 
@@ -168,7 +168,10 @@ func _process(_delta: float) -> void:
 	if _bakes.is_empty():
 		return
 	var now := Time.get_ticks_msec() / 1000.0
-	for b in _bakes:
+	for b in _bakes.duplicate():
+		if not is_instance_valid(b.gi):
+			_bakes.erase(b)   # its room left (the yard unloaded) before the bake
+			continue
 		if now >= float(b.at):
 			_bakes.erase(b)
 			RoomLight.bake(b.gi)

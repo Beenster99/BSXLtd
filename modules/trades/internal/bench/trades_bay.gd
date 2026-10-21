@@ -28,6 +28,14 @@ const TOOL_LABELS := {
 	&"hands": "Hands", &"torque_wrench": "Torque wrench", &"drill": "Drill",
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
 }
+## A tool's name on the hotbar and its display: the wrench is the powered one with
+## trades.power_wrench.
+static func label_of(id: StringName) -> String:
+	if id == &"torque_wrench" and TradesShipJoints.powered():
+		return "Power wrench"
+	return String(TOOL_LABELS.get(id, id))
+
+
 ## The stations, left to right: id, script, where along the bench, and the flag that ships it.
 const STATIONS := [
 	[&"bolting", preload("res://modules/trades/internal/bolting/bolting_station.gd"), -1.7, "trades.bolting"],
@@ -248,7 +256,21 @@ func cycle_tool(step: int) -> void:
 func wheel(step: int) -> void:
 	if _pressed and _pressed.turn_held(step, turn_snap):
 		return
+	if _pressed == null and _focus and _focus.wheel_setting(tool, step):
+		_refresh_hud()
+		return
 	cycle_tool(step)
+
+
+## The powered tool in hand between its modes (the wrench: fasten / undo).
+func toggle_mode() -> void:
+	var t := tool_node(tool)
+	if t is TradesPowerWrench:
+		var w := t as TradesPowerWrench
+		w.undo = not w.undo
+		play(&"tick")
+		hint("Wrench in undo: it takes bolts out." if w.undo else "Wrench in fasten: it runs bolts in.")
+		_refresh_hud()
 
 
 ## Middle click: turning held parts freely or in quarter turns.
@@ -310,7 +332,7 @@ func _handle_input(event: InputEvent) -> void:
 ## The key actions the bay reads (Settings > Key binds can move any of them).
 func _actions() -> Array[String]:
 	var out: Array[String] = [TradesBus.KEY_VIEW, TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT,
-			TradesBus.KEY_RESET, TradesBus.KEY_NEXT, Keys.INTERACT, Keys.CANCEL]
+			TradesBus.KEY_RESET, TradesBus.KEY_NEXT, TradesBus.KEY_MODE, Keys.INTERACT, Keys.CANCEL]
 	for i in hotbar.size():
 		out.append(TradesBus.KEY_TOOL + str(i + 1))
 	return out
@@ -329,6 +351,8 @@ func _on_action(action: String) -> void:
 		TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT:
 			if _focus and _focus.adjust(1 if action == TradesBus.KEY_TURN_RIGHT else -1):
 				_refresh_hud()
+		TradesBus.KEY_MODE:
+			toggle_mode()
 		TradesBus.KEY_RESET:
 			if _focus and not in_yard:
 				_focus.reset()
@@ -400,7 +424,7 @@ func _update_tool_panel() -> void:
 	if _tool_panel == null:
 		return
 	var t: TradesTool = tool_nodes.get(tool)
-	_tool_title.text = String(TOOL_LABELS[tool]).to_upper()
+	_tool_title.text = label_of(tool).to_upper()
 	var rows: Array = t.panel_rows() if t else []
 	var lines := PackedStringArray()
 	for r: Array in rows:
@@ -738,12 +762,12 @@ func _on_hand_snapped() -> void:
 
 func _build_tools() -> void:
 	var scripts := {
-		&"torque_wrench": TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetSqueezer,
+		&"torque_wrench": TradesPowerWrench if TradesShipJoints.powered() else TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetSqueezer,
 		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool,
 	}
 	for id: StringName in scripts:
 		var t: TradesTool = (scripts[id] as GDScript).new()
-		t.title = String(TOOL_LABELS.get(id, id))
+		t.title = label_of(id)
 		t.top_level = true
 		t.visible = false
 		add_child(t)
@@ -757,6 +781,8 @@ func _build_audio() -> void:
 	_loops[&"drill"] = _player(TradesSounds.hum(0.5, 0.25, 180.0, 2200.0))
 	_loops[&"arc"] = _player(TradesSounds.hum(0.5, 0.35, 120.0, 6000.0))
 	_loops[&"beam"] = _player(TradesSounds.hum(0.5, 0.2, 70.0, 900.0))
+	_loops[&"impact"] = _player(TradesSounds.rattle(0.5, 0.35, 95.0, 22.0))
+	_players[&"stall"] = _player(TradesSounds.burst(0.25, 0.7, 300.0))
 
 
 func _player(stream: AudioStream) -> AudioStreamPlayer:
@@ -936,7 +962,7 @@ func _build_hud() -> void:
 		var label := TradesLook.hud_label(18)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.custom_minimum_size = Vector2(112, 0)
-		label.text = "%d  %s" % [i + 1, String(TOOL_LABELS[hotbar[i]]).to_upper()]
+		label.text = "%d  %s" % [i + 1, label_of(hotbar[i]).to_upper()]
 		slot.add_child(label)
 		bar.add_child(slot)
 		_slots.append(slot)
@@ -1032,7 +1058,7 @@ func refresh_hud() -> void:
 func _refresh_hud() -> void:
 	if _tool_label == null:
 		return
-	_tool_label.text = "TOOL    %s" % String(TOOL_LABELS[tool]).to_upper()
+	_tool_label.text = "TOOL    %s" % label_of(tool).to_upper()
 	if tool == &"hands" and not in_yard:
 		_tool_label.text += "    TURN %s" % ("90°" if turn_snap else "FREE")
 	_status_label.text = _focus.status_line() if _focus else ""
