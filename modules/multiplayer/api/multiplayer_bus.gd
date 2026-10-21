@@ -266,6 +266,14 @@ func player_name(peer_id: int) -> String:
 	return _crew.player_name(peer_id)
 
 
+## Another player's avatar head (face toward -Z, centre at the origin) for hanging gear on,
+## such as a welding shield or helmet torch; null for this player or when there is no avatar.
+func avatar_head(peer_id: int) -> Node3D:
+	if peer_id == local_peer_id():
+		return null
+	return _crew.head_of(peer_id)
+
+
 ## This player's crew colour (host orange, then cyan, green, amber), for markers and names.
 func player_colour(peer_id: int) -> Color:
 	return _crew.player_colour(peer_id)

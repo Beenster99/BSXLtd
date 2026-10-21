@@ -103,6 +103,8 @@ func _two_players() -> void:
 	var tagged := get_tree().get_nodes_in_group("crew_head").filter(func(n: Node) -> bool:
 		return n.get_meta("peer_id", 0) == b_id)
 	check(tagged.size() == 1 and tagged[0] == a._crew.head_of(b_id), "Ben's avatar head is in crew_head with his peer id")
+	check(a.avatar_head(b_id) == tagged[0] and a.avatar_head(1) == null and a.avatar_head(99) == null,
+			"avatar_head gives Ben's head, not your own or a stranger's")
 	var screen: Control = a._crew_screen(true)
 	add_child(screen)
 	check(await _until(func(): return screen.cam_peer == b_id), "helmet cam picks the other player")
