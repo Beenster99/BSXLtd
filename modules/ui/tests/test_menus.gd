@@ -81,6 +81,9 @@ func run_tests() -> void:
 	_test_terminal_kit()
 	await _test_key_binds()
 	await _test_settings_pages()
+	await _test_info_panel()
+	await _test_pause()
+	await _test_touch_screen()
 
 	HudSlots.register_panel("_panel", "res://modules/ui/tests/fixture_panel.tscn", "top_bar")
 	var hud := HudLayer.new()
@@ -249,12 +252,17 @@ func _test_holo() -> void:
 	await get_tree().create_timer(0.6).timeout
 	check(is_equal_approx(holo.pane.scale.y, 1.0) and is_equal_approx((holo.pane.get_child(0) as Control).modulate.a, 1.0),
 			"the screen has finished coming up")
-	(holo.tabs.find_child("Ch__stock", false, false) as Button).pressed.emit()
+	check(HudSlots.pointer_claimed() and HudSlots.pointer_claimed("_other"), "the wrist screen claims the pointer")
+	var stock_tab := holo.tabs.find_child("Ch__stock", false, false) as Button
+	stock_tab.pressed.emit()
+	check(is_instance_valid(stock_tab) and not stock_tab.is_queued_for_deletion(),
+			"the tab pressed outlives its own click, so the release can't fall through to the game")
 	await frames(1)
 	check(holo.channel == "_stock", "a tab brings up its channel")
 	check(holo.content.find_child("Channel", false, false) is Label, "the channel's screen shows")
 	holo.close()
 	check(holo.root == null and holo.get_node_or_null("HoloVanishing") != null, "closing leaves the old screen folding away")
+	check(not HudSlots.pointer_claimed(), "and gives the pointer back")
 	await get_tree().create_timer(0.4).timeout
 	check(holo.get_node_or_null("HoloVanishing") == null, "and then it's gone")
 	HudSlots.open_holo()
@@ -385,6 +393,121 @@ func _test_settings_pages() -> void:
 	Menu.unregister_settings_section(Menu.CHARACTER, "_level")
 	check(Menu.settings_sections(Menu.CHARACTER).all(func(c): return not str(c.id).begins_with("_")), "sections unregister")
 	settings.queue_free()
+
+
+func _test_info_panel() -> void:
+	var ui := Modules.bus("ui") as UiBus
+	check(ui.info != null and ui.info.is_inside_tree(), "the UI bus owns the info panel")
+	HudSlots.set_info("_b", "Second", "", 20)
+	HudSlots.set_info("_a", "Driving the lift", "W A S D drive", 10)
+	await frames(1)
+	var a := ui.info.box.find_child("Info__a", false, false)
+	var b := ui.info.box.find_child("Info__b", false, false)
+	check(a != null and b != null and a.get_index() < b.get_index(), "info cards stack in order")
+	check((a.find_child("Text", true, false) as Label).text == "W A S D drive", "a card shows its text")
+	HudSlots.set_info("_a", "Driving the lift", "F lets go", 10)
+	await frames(1)
+	check(ui.info.box.find_child("Info__a", false, false) == a and (a.find_child("Text", true, false) as Label).text == "F lets go",
+			"setting a card again updates it in place")
+	check(is_equal_approx(ui.info.box.anchor_left, 1.0) and ui.info.box.offset_right < 0.0,
+			"the cards sit on the right")
+	HudSlots.clear_info("_a")
+	HudSlots.clear_info("_b")
+	await frames(1)
+	check(ui.info.box.find_child("Info__a", false, false) == null and HudSlots.infos().is_empty(), "cleared cards go")
+
+
+func _test_pause() -> void:
+	var ui := Modules.bus("ui") as UiBus
+	var pause := ui.pause
+	check(pause != null, "the UI bus owns the pause menu")
+	Menu.open_pause()
+	check(pause.is_open and pause.root.find_child("Resume", true, false) != null
+			and pause.root.find_child("Mainmenu", true, false) != null, "Menu.open_pause() brings up the pause menu")
+	check(HudSlots.pointer_claimed() and get_tree().paused, "it takes the pointer and holds the game still offline")
+	var esc := InputEventKey.new()
+	esc.physical_keycode = Keys.key_of(Keys.CANCEL)
+	esc.pressed = true
+	pause._input(esc)
+	check(not pause.is_open and not get_tree().paused and not HudSlots.pointer_claimed(), "Esc resumes where you were")
+	pause._unhandled_input(esc)
+	check(pause.is_open, "an Esc nothing else used opens it")
+	(pause.root.find_child("Resume", true, false) as Button).pressed.emit()
+	check(not pause.is_open, "Resume closes it")
+	await frames(1)
+
+
+func _test_touch_screen() -> void:
+	var cam := Camera3D.new()
+	add_child(cam)
+	cam.make_current()
+	var term := HoloTerminal.new(false, "HALL TERMINAL")
+	var tv := TouchScreen.new(term, Vector2i(1280, 720), Vector2(2.4, 1.35))
+	tv.position = Vector3(0, 0, -2.0)
+	add_child(tv)
+	HudSlots.register_holo_channel("_tv", "TV", func(glass: bool) -> Control:
+		var l := Label.new()
+		l.text = "glass" if glass else "plain"
+		return l, 1)
+	term.show_channel("_tv")
+	await frames(3)
+	check(term.content.find_child("Channel", false, false) is Label
+			and (term.content.find_child("Channel", false, false) as Label).text == "plain",
+			"a TV shows the wrist screen's channels, opaque")
+	check(term.tabs.find_child("Close", false, false) == null and term.tabs.find_child("Ch__tv", false, false) != null,
+			"a TV's terminal has the tabs but no CLOSE")
+	check(tv.is_aimed() and TouchScreen.current() == tv, "looking at a screen within reach aims at it")
+	check(tv.pointer.visible and tv.pointer_px.distance_to(Vector2(640, 360)) < 2.0, "the pointer sits where the view meets it")
+	check(HudSlots.pointer_claimed() and not HudSlots.pointer_claimed(tv._claim_id()), "an aimed screen claims the pointer")
+	cam.rotation.y = deg_to_rad(90)
+	await frames(3)
+	check(not tv.is_aimed() and not tv.pointer.visible and not HudSlots.pointer_claimed(), "looking away lets it go")
+	cam.rotation.y = 0.0
+	tv.position.z = -6.0
+	await frames(3)
+	check(not tv.is_aimed(), "out of reach, it isn't aimed")
+	tv.queue_free()
+	HudSlots.unregister_holo_channel("_tv")
+
+	var presses: Array = []
+	var holds: Array = []
+	var panel := TouchScreen.buttons([{id = "power", label = "SHORE POWER", toggle = true},
+			{id = "up", label = "RAISE", hold = true}], Vector2(0.3, 0.2))
+	panel.position = Vector3(0, 0, -1.0)
+	panel.button_pressed.connect(func(id: String, on: bool) -> void: presses.append([id, on]))
+	panel.button_held.connect(func(id: String, down: bool) -> void: holds.append([id, down]))
+	add_child(panel)
+	await frames(3)
+	check(panel.is_aimed(), "an LED button panel is aimed at like a TV")
+	var power := panel.button("power")
+	var at := power.get_global_rect().get_center()
+	panel.click_at(at)
+	await frames(1)
+	check(presses == [["power", true]] and power.button_pressed, "left click turns a toggle on")
+	panel.click_at(at)
+	await frames(1)
+	check(presses.back() == ["power", false] and not power.button_pressed, "and off again")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	panel.pointer_px = panel.button("up").get_global_rect().get_center()
+	var motion := InputEventMouseMotion.new()
+	motion.position = panel.pointer_px
+	panel.viewport.push_input(motion, true)
+	panel._input(click)
+	check(holds == [["up", true]], "a hold button says when it's pressed down")
+	var release := click.duplicate() as InputEventMouseButton
+	release.pressed = false
+	panel._input(release)
+	check(holds.back() == ["up", false], "and when it's let go")
+	var before := presses.size()
+	panel.set_on("power", true)
+	check(power.button_pressed and presses.size() == before, "set_on lights a toggle without a press")
+	check(power.get_theme_stylebox("pressed") != power.get_theme_stylebox("normal"), "LED buttons light up when on")
+	panel.queue_free()
+	cam.queue_free()
+	await frames(2)
+	check(not HudSlots.pointer_claimed(), "a freed screen gives the pointer back")
 
 
 class Walker extends CharacterBody3D:

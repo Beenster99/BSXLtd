@@ -107,7 +107,7 @@ static func press(control: Node, volume_db: float = -10.0) -> Node:
 	var n := control
 	while n != null:
 		if n.has_meta("holo"):
-			return play("tick", null, volume_db + 2.0, randf_range(0.97, 1.04))
+			return play("tick", null, volume_db - 4.0, randf_range(0.97, 1.04))
 		n = n.get_parent()
 	return play("click", null, volume_db)
 

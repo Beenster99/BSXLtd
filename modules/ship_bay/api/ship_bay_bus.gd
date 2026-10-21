@@ -41,6 +41,10 @@ signal part_beamed(crate_id: String, trolley_id: String, component: String, slot
 signal kit_changed(payload: Dictionary)
 ## The shipyard scene has built itself; add your own nodes to `yard` (at shipyard_spot()s).
 signal shipyard_ready(yard: Node3D)
+## This player took a hover trolley on remote control (on) or handed it back (off). While
+## `remote_driving` is true, W A S D and the mouse drive the trolley (its camera shows in a
+## picture-in-picture window): the player's own walker should stand still and not look round.
+signal remote_driving_changed(on: bool)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -71,6 +75,8 @@ var _stock := StorageStock.new()
 var _part_values := Callable()
 ## The yard's trolley fleet while the shipyard is up (it sets this), for beam_to_trolley.
 var fleet: Node
+## True while this player drives a hover trolley on remote (see remote_driving_changed).
+var remote_driving := false
 ## Slot id -> the trolley sent for a part beamed off the ship, until it lands or is called off.
 var _beam_claims: Dictionary = {}
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay

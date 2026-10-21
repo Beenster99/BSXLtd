@@ -25,6 +25,7 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 const Screen := preload("res://modules/ship_bay/internal/yard/trolley_panel.gd")
 const WristStock := preload("res://modules/ship_bay/internal/yard/wrist_stock.gd")
 const WristMachines := preload("res://modules/ship_bay/internal/yard/wrist_machines.gd")
+const RemoteView := preload("res://modules/ship_bay/internal/yard/remote_view.gd")
 
 ## Parking bays in Deliveries, by the east wall: trolley id -> [floor point, yaw].
 const PARKING := {
@@ -47,12 +48,17 @@ const REPLAN_AFTER := 3.0
 
 ## How far the remote control's Page Up and Page Down move the deck per second, metres.
 @export var remote_lift_rate := 0.8
+## How much a pixel of mouse movement turns a trolley on remote (1 = full turn input).
+@export var remote_mouse_turn := 0.06
 
 var trolleys: Dictionary = {}       # id -> HoverTrolley
 var jobs: Dictionary = {}           # id -> {do, phase, crate, place, goal, yaw}
 var nav: Nav
 ## The trolley this player drives by remote control, or "".
 var remote_id := ""
+## The picture-in-picture window while driving on remote, else null.
+var remote_view: CanvasLayer
+var _mouse_turn := 0.0
 var yard: Node3D
 var _bus: ShipBayBus
 var _net: Node
@@ -62,7 +68,6 @@ var _reserved_crates: Dictionary = {}   # crate id -> trolley id
 var _aisles: Dictionary = {}
 ## Fetches waiting for a trolley that is busy: id -> [args, ...].
 var _queue: Dictionary = {}
-var _hud: Label
 ## The screen a player opened with F on the TV (null when shut), and the one on the TV.
 var panel: Screen
 var tv_panel: Screen
@@ -83,6 +88,7 @@ func _ready() -> void:
 		var use := Callable(self, "use_trolley").bind(id)
 		t.set_meta("ship_bay_use", use)
 		t.deck.set_meta("ship_bay_use", use)
+		t.screen_action.connect(_on_screen_action.bind(id))
 		trolleys[id] = t
 		jobs[id] = {}
 		if _net:
@@ -94,16 +100,6 @@ func _ready() -> void:
 			return WristStock.new(_bus, self, glass), 20)
 	HudSlots.register_holo_channel("ship_bay.machines", "Machines", func(glass: bool) -> Control:
 		return WristMachines.new(self, glass), 40)
-	var layer := CanvasLayer.new()
-	layer.layer = 5
-	add_child(layer)
-	_hud = Label.new()
-	_hud.position = Vector2(24, 24)
-	_hud.add_theme_font_size_override("font_size", 18)
-	_hud.add_theme_color_override("font_outline_color", Color.BLACK)
-	_hud.add_theme_constant_override("outline_size", 6)
-	_hud.visible = false
-	layer.add_child(_hud)
 	if _bus:
 		_bus.fleet = self
 		_bus.part_beamed.connect(_on_beamed)
@@ -229,14 +225,29 @@ func use_trolley(id: String) -> void:
 	toggle_remote(id)
 
 
-## Takes a trolley on remote control, or lets it go again.
+## A button on a trolley's own touch screen.
+func _on_screen_action(action: String, id: String) -> void:
+	match action:
+		"call":
+			call_to_me(id)
+		"park":
+			park(id)
+		"remote":
+			toggle_remote(id)
+
+
+## Takes a trolley on remote control, or lets it go again. On remote its camera shows in a
+## picture-in-picture window and W A S D and the mouse drive it; you stand still meanwhile.
 func toggle_remote(id: String) -> void:
 	if remote_id == id:
 		remote_id = ""
 		trolleys[id].drive_input = Vector2.ZERO
 		if _net:
 			_net.call("release", "trolley:" + id)
-		_hud.visible = false
+		if remote_view:
+			remote_view.queue_free()
+			remote_view = null
+		_set_remote_driving(false)
 		return
 	if remote_id != "":
 		toggle_remote(remote_id)
@@ -245,8 +256,32 @@ func toggle_remote(id: String) -> void:
 		_bus.command_trolley(id, "stop")
 	if _net:
 		_net.call("claim", "trolley:" + id)
-	_hud.text = "Remote control: %s\nArrow keys drive  ·  Page Up / Page Down raise and lower the deck\nF on the trolley lets it go" % trolleys[id].spec["name"]
-	_hud.visible = true
+	remote_view = RemoteView.new()
+	add_child(remote_view)
+	remote_view.call("show_trolley", trolleys[id], str(trolleys[id].spec["name"]))
+	_mouse_turn = 0.0
+	_set_remote_driving(true)
+
+
+func _set_remote_driving(on: bool) -> void:
+	if _bus and _bus.remote_driving != on:
+		_bus.remote_driving = on
+		_bus.remote_driving_changed.emit(on)
+
+
+## While on remote: the mouse turns the trolley instead of your head, and F hands it back.
+func _input(event: InputEvent) -> void:
+	if remote_id == "":
+		return
+	var motion := event as InputEventMouseMotion
+	if motion:
+		_mouse_turn += motion.relative.x
+		get_viewport().set_input_as_handled()
+		return
+	var key := event as InputEventKey
+	if key and key.pressed and not key.echo and (event.is_action_pressed(Keys.INTERACT) if InputMap.has_action(Keys.INTERACT) else key.physical_keycode == KEY_F):
+		toggle_remote(remote_id)
+		get_viewport().set_input_as_handled()
 
 
 ## 1 while a bound action (or `key`, before the key map is in) is held.
@@ -289,16 +324,19 @@ func _obstacles(t: Trolley) -> Array:
 
 
 func _remote_input(t: Trolley, delta: float) -> void:
-	var drive := Vector2(_held("ship_bay.drive_right", KEY_RIGHT) - _held("ship_bay.drive_left", KEY_LEFT),
-			_held("ship_bay.drive_forward", KEY_UP) - _held("ship_bay.drive_back", KEY_DOWN))
+	var turn := _held(Keys.RIGHT, KEY_D) - _held(Keys.LEFT, KEY_A) + clampf(_mouse_turn * remote_mouse_turn, -1.0, 1.0)
+	_mouse_turn = 0.0
+	var drive := Vector2(clampf(turn, -1.0, 1.0), _held(Keys.FORWARD, KEY_W) - _held(Keys.BACK, KEY_S))
 	t.drive_input = drive
-	var lift := _held("ship_bay.raise", KEY_PAGEUP) - _held("ship_bay.lower", KEY_PAGEDOWN)
+	var lift := maxf(_held(Keys.JUMP, KEY_SPACE), _held("ship_bay.raise", KEY_PAGEUP)) - maxf(_held(Keys.CROUCH, KEY_C), _held("ship_bay.lower", KEY_PAGEDOWN))
 	if lift != 0.0:
 		t.set_deck_target(t.deck_target + lift * remote_lift_rate * delta)
 		_deck_send -= delta
 		if _deck_send <= 0.0:
 			_deck_send = 0.25
 			_bus.command_trolley(t.kind, "deck", {"height": t.deck_target + lift * remote_lift_rate * 0.25})
+	if remote_view:
+		remote_view.call("set_status", "DECK %.1f M" % t.deck_height)
 	t.show_status("REMOTE")
 
 

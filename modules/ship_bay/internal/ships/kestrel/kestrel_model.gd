@@ -115,25 +115,87 @@ func access_points() -> Dictionary:
 	return {"side_door": SIDE_DOOR_SILL, "power_socket": POWER_SOCKET}
 
 
-## Lamps, screens, lit edges and text on or off. Off they read as dark glass and paint.
-func set_powered(on: bool) -> void:
+## Lamps, screens, lit edges and text on or off. Off they read as dark glass and paint. On,
+## the ship powers up: everything lit comes on bow to stern over `power_up_time` seconds with
+## a flicker, and a quiet hum starts (`instant` skips the show: loading, screenshots).
+func set_powered(on: bool, instant := false) -> void:
 	powered = on
-	for l in _lamps:
-		l.visible = on
-	for t in _texts:
-		t.visible = on
-	for mi in _lit:
-		if on:
-			mi.material_override = mi.get_meta("lit_mat", mi.material_override)
-			continue
-		var lit := mi.material_override as StandardMaterial3D
-		if not mi.has_meta("lit_mat"):
-			mi.set_meta("lit_mat", lit)
-		lit = mi.get_meta("lit_mat")
-		if not _dark_mats.has(lit):
-			var d := ShipKit.paint(lit.emission.darkened(0.82), 0.3, 0.35)
-			_dark_mats[lit] = ShipSurface.of(d)
-		mi.material_override = _dark_mats[lit]
+	if _power_tween:
+		_power_tween.kill()
+		_power_tween = null
+	_power_hum(on)
+	if not on or instant or not is_inside_tree():
+		for n: Node3D in _lamps + _texts + _lit:
+			_light(n, on)
+		return
+	# Off first, then on in a sweep along the ship.
+	var all: Array[Node3D] = []
+	for n: Node3D in _lamps + _texts + _lit:
+		_light(n, false)
+		all.append(n)
+	if all.is_empty():
+		return
+	var zs := all.map(func(n: Node3D) -> float: return to_local(n.global_position).z)
+	var z0: float = zs.min()
+	var span: float = maxf(float(zs.max()) - z0, 0.01)
+	var order := range(all.size())
+	order.sort_custom(func(a: int, b: int) -> bool: return zs[a] < zs[b])
+	_power_tween = create_tween()
+	var t := 0.0
+	for i: int in order:
+		var at := 0.12 + power_up_time * (float(zs[i]) - z0) / span
+		if at > t:
+			_power_tween.tween_interval(at - t)
+			t = at
+		var n := all[i]
+		_power_tween.tween_callback(_light.bind(n, true))
+	# A flicker of the whole ship as the bus settles, then on for good.
+	_power_tween.tween_interval(0.12)
+	_power_tween.tween_callback(func() -> void:
+		for n: Node3D in all:
+			_light(n, false))
+	_power_tween.tween_interval(0.07)
+	_power_tween.tween_callback(func() -> void:
+		for n: Node3D in all:
+			_light(n, true))
+
+
+## Seconds the power-up sweep takes from bow to stern.
+@export var power_up_time := 1.4
+var _power_tween: Tween
+var _hum: AudioStreamPlayer3D
+
+
+func _light(n: Node3D, on: bool) -> void:
+	if n is Light3D or n is Label3D:
+		n.visible = on
+		return
+	var mi := n as MeshInstance3D
+	if on:
+		mi.material_override = mi.get_meta("lit_mat", mi.material_override)
+		return
+	var lit := mi.material_override as StandardMaterial3D
+	if not mi.has_meta("lit_mat"):
+		mi.set_meta("lit_mat", lit)
+	lit = mi.get_meta("lit_mat")
+	if not _dark_mats.has(lit):
+		var d := ShipKit.paint(lit.emission.darkened(0.82), 0.3, 0.35)
+		_dark_mats[lit] = ShipSurface.of(d)
+	mi.material_override = _dark_mats[lit]
+
+
+## The quiet hum of a powered ship, from amidships.
+func _power_hum(on: bool) -> void:
+	if on and _hum == null and is_inside_tree():
+		_hum = Sfx.loop("hover_drive", self, -27.0)
+		_hum.name = "PowerHum"
+		_hum.pitch_scale = 0.42
+		_hum.position = Vector3(0, 1.2, 1.0)
+		_hum.unit_size = 4.0
+		_hum.max_distance = 25.0
+	elif not on and _hum:
+		_hum.queue_free()
+		_hum = null
 
 
 ## The shore power socket low on the right flank, aft of the fuel port: a recessed box with a

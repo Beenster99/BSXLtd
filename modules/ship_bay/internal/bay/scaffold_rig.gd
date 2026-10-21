@@ -6,8 +6,8 @@ extends Node3D
 ## side of the first bay; climb past the top and you step onto the top deck. Two rigs with
 ## their facing ends open, the same height and driven end to end make one long floor.
 ##
-## Its control post on the outboard side: BAY + / BAY -, LIFT + / LIFT -, ENDS (cycles which
-## ends are open) and the handle, which takes it for driving (bay_access drives it). A change
+## Its control post on the outboard side: a touch screen with BAY + / BAY -, LIFT + / LIFT -,
+## ENDS (cycles which ends are open), and a push handle (F: bay_access pushes it). A change
 ## that would grow it into something is refused. Built and rebuilt by `configure`; the frame
 ## is one AnimatableBody3D (`body`), the ladder an Area3D the walker climbs in.
 
@@ -28,12 +28,16 @@ const CLEAR := 0.06
 const LADDER_Z := 0.9
 const LADDER_W := 0.5
 ## ENDS: 0 both closed, 1 the -Z end open, 2 the +Z end open, 3 both open.
+const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
+const T := preload("res://modules/ui/api/terminal_kit.gd")
 const END_NAMES := ["BOTH ENDS RAILED", "FRONT END OPEN", "BACK END OPEN", "BOTH ENDS OPEN"]
 
 var bays := 2
 var lifts := 2
 var ends := 0
 var label := "1"
+## The post's touch screen (rebuilt with the rig).
+var post_screen: Node3D
 var body: AnimatableBody3D
 var ladder: Area3D
 var _look: Node3D
@@ -227,28 +231,30 @@ func _build() -> void:
 
 
 ## The control post on the outboard side by the far end (clear of both ends, so rigs can
-## join end to end): five buttons and MOVE.
+## join end to end): a touch screen with BAY + / BAY -, LIFT + / LIFT - and ENDS, and a push
+## handle (F on the post takes the rig to push).
 func _build_post() -> void:
 	var at := Vector3(-WIDTH * 0.5 - 0.25, 0, length() - 0.5)
 	_tube(at + Vector3(0, BASE, 0), at + Vector3(0, 1.1, 0), 0.03, _mats["dark"])
 	_tube(at + Vector3(0, BASE - 0.05, 0), at + Vector3(0.25, BASE - 0.05, 0.2), 0.03, _mats["dark"])
-	var panel := Transform3D(Basis(Vector3.UP, -PI * 0.5), at + Vector3(0, 1.25, 0))
-	_mesh(PartShapes.chamfer_box(Vector3(0.36, 0.4, 0.08), 0.02).mesh, panel, _mats["dark"])
-	var title := _sign("SCAFFOLD %s\n%d BAY%s × %d LIFT%s\n%s" % [label, bays, "" if bays == 1 else "S", lifts, "" if lifts == 1 else "S", END_NAMES[ends]],
-			panel * Transform3D(Basis(), Vector3(0, 0.12, 0.045)), 13)
-	title.name = "Title"
-	var buttons := [["BAY +", Vector2(-0.09, 0.0), add_bay], ["BAY -", Vector2(0.09, 0.0), remove_bay],
-			["LIFT +", Vector2(-0.09, -0.08), add_lift], ["LIFT -", Vector2(0.09, -0.08), remove_lift],
-			["ENDS", Vector2(-0.09, -0.16), cycle_ends], ["MOVE", Vector2(0.09, -0.16), func() -> void: drive_requested.emit()]]
-	for b: Array in buttons:
-		var p: Vector2 = b[1]
-		var xf := panel * Transform3D(Basis(), Vector3(p.x, p.y, 0.05))
-		_mesh(PartShapes.box(Vector3(0.15, 0.06, 0.02)).mesh, xf, ShipKit.glow(Color(1.0, 0.6, 0.15) if b[0] != "MOVE" else Color(0.35, 1.0, 0.5), 1.4))
-		var t := _sign(b[0], xf * Transform3D(Basis(), Vector3(0, 0, 0.012)), 11)
-		t.modulate = Color(0.06, 0.05, 0.04)
-		var col := _collide_xf(Vector3(0.15, 0.06, 0.04), xf)
-		col.set_meta("ship_bay_use", b[2])
-		col.name = "Button_" + str(b[0]).replace(" ", "").replace("+", "_up").replace("-", "_down")
+	_tube(at + Vector3(0, 1.0, -0.22), at + Vector3(0, 1.0, 0.22), 0.025, _mats["rubber"])
+	var grip := _collide_xf(Vector3(0.16, 0.9, 0.5), Transform3D(Basis(), at + Vector3(0, 0.75, 0)))
+	grip.name = "PushHandle"
+	grip.set_meta("ship_bay_use", func() -> void: drive_requested.emit())
+	var panel := Transform3D(Basis(Vector3.UP, -PI * 0.5) * Basis(Vector3.RIGHT, -0.3), at + Vector3(-0.03, 1.3, 0))
+	_mesh(PartShapes.chamfer_box(Vector3(0.38, 0.3, 0.05), 0.02).mesh, panel * Transform3D(Basis(), Vector3(0, 0, -0.035)), _mats["dark"])
+	var screen: Node3D = Touch.new()
+	screen.name = "Screen"
+	screen.transform = panel
+	_look.add_child(screen)
+	screen.call("setup", Vector2(0.34, 0.26), "SCAFFOLD %s" % label, 2)
+	screen.call("set_status", "%d × %d" % [bays, lifts], T.GOOD)
+	for b: Array in [["bay_up", "BAY +", add_bay], ["bay_down", "BAY −", remove_bay],
+			["lift_up", "LIFT +", add_lift], ["lift_down", "LIFT −", remove_lift]]:
+		screen.call("add_button", b[0], b[1], b[2])
+	screen.call("add_button", "ends", END_NAMES[ends], cycle_ends, true)
+	(screen.get("buttons")["ends"] as Button).add_theme_font_size_override("font_size", 17)
+	post_screen = screen
 
 
 func _stations() -> Array[float]:
