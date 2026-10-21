@@ -58,8 +58,10 @@ func _test_listings() -> void:
 	check(all.size() < 2 or all[0].unit_price <= all[1].unit_price, "cheapest first")
 	check(all.back().id.begins_with("S-") and not all[0].id.begins_with("S-"), "staples after the catalogue parts")
 	check(bus.part_name("M10") == "M10 bolts" and bus.part_name("IonThruster") == "Ion thruster", "parts read by name")
-	var engines := bus.get_listings("engines")
-	check(not engines.is_empty() and engines.all(func(l): return bus.listing_category(l) == "engines"), "filter by category")
+	# The day's market is random, so filter by a category it has today.
+	var cat := bus.listing_category(all[0])
+	var in_cat := bus.get_listings(cat)
+	check(not in_cat.is_empty() and in_cat.all(func(l): return bus.listing_category(l) == cat), "filter by category (%s)" % cat)
 	var staples := bus.get_listings("staples")
 	check(staples.any(func(l): return l.part == "M10"), "fasteners always on the counter")
 
