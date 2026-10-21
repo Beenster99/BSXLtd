@@ -43,6 +43,9 @@ signal purchase_failed(order_id: String, reason: String)
 signal day_closed(day: int)
 ## Today's listings changed (a new day, or something was bought).
 signal market_changed
+## Parts put into stock from the yard (Ship and Bay's recycler turning scrap into raw
+## materials), not from a delivery.
+signal stock_added(part: String, condition: String, qty: int, source: String)
 ## The business clock moved (game minutes since the company started).
 signal clock_changed(minute: int)
 ## A player's wallet changed (a transfer in or out).
@@ -562,6 +565,17 @@ func get_stock() -> Dictionary:
 ## Delivered parts on hand by condition (part -> {condition: count}).
 func get_stock_detail() -> Dictionary:
 	return _books.stock.duplicate(true)
+
+
+## Puts parts into stock that didn't come by delivery: Ship and Bay's recycler hands its raw
+## materials over here. Host only. Returns how many of that part are now in stock.
+##   Modules.bus("business").call("add_stock", "steel_plate", 4, "new", "recycler")
+func add_stock(part: String, qty: int, condition := "new", source := "recycler") -> int:
+	if not _is_authority() or part == "" or qty <= 0 or not condition in PartCondition.ALL:
+		return _books.stock_total(part)
+	_books.add_stock(part, condition, qty)
+	stock_added.emit(part, condition, qty, source)
+	return _books.stock_total(part)
 
 
 ## The parts the market deals in (Void Salvage's catalogue).

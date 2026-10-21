@@ -166,6 +166,15 @@ func run_tests() -> void:
 	check(texts.has("Day 1") and texts.has("3") and texts.has(TerminalKit.money(bus.wage_for(3))), "Ana's payslip shows her day, level and wage: %s" % str(texts.slice(0, 12)))
 	slips_page.free()
 
+	# The recycler's raw materials go into stock; deliveries land within half a day.
+	bus.reset()
+	var added: Array = []
+	bus.stock_added.connect(func(part: String, cond: String, qty: int, src: String) -> void: added.append([part, cond, qty, src]))
+	check(bus.add_stock("frame_ring", 3) == 3 and bus.add_stock("frame_ring", 2, "used") == 5, "raw materials go into stock")
+	check(added.size() == 2 and added[0] == ["frame_ring", "new", 3, "recycler"], "and say so: %s" % str(added))
+	check(bus.add_stock("frame_ring", 1, "mint") == 5 and bus.add_stock("frame_ring", 0) == 5, "an unknown condition or nothing adds nothing")
+	check(bus.get_suppliers().all(func(s): return s.lead_hours <= 12), "every supplier delivers within 12 hours")
+
 	bus.test_crew = {}
 	bus.test_levels = {}
 	bus.reset()
