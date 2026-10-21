@@ -213,6 +213,21 @@ func use_along(from: Vector3, direction: Vector3) -> bool:
 ## (its material shows the state); the head is its child, so hiding the ring hides both.
 func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
 	var n := f.normal.normalized()
+	if f.kind == "weld" and f.seam_up != Vector3.ZERO:
+		# A weld is its bead along the seam on a thin strip lit by its state.
+		var along := (f.seam_up - n * f.seam_up.dot(n)).normalized()
+		var strip := MeshInstance3D.new()
+		var length := maxf(f.seam_size.x, 0.02)
+		var width := maxf(f.seam_size.y, 0.006)
+		strip.mesh = PartShapes.box(Vector3(width + 0.012, 0.003, length)).mesh
+		strip.transform = Transform3D(Basis(n.cross(along), n, along), f.position + n * 0.002)
+		strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var bead := MeshInstance3D.new()
+		bead.mesh = PartShapes.prism(6, width * 0.5, length - 0.004).mesh
+		bead.transform = Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, width * 0.25, 0))
+		bead.material_override = _head_mat
+		strip.add_child(bead)
+		return strip
 	var side := Vector3.UP if absf(n.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
 	var x := side.cross(n).normalized()
 	var ring := MeshInstance3D.new()

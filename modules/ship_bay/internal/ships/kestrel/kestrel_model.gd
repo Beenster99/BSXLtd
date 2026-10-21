@@ -435,6 +435,13 @@ func _build_hold() -> void:
 	for z: float in [HATCH.position.y - rim * 0.5, HATCH.end.y + rim * 0.5]:
 		_bolt_line(Vector3(HATCH.position.x, 0.02, z), Vector3(HATCH.end.x, 0.02, z), Vector3.UP, bolt_steel, 0.3)
 	fittings.append(ShipParts.hold_net(kit, 2.72, Rect2(-1.9, 1.95, 3.8, 4.2)))
+	# A shelf bracket welded to the port wall over the side door's panel (slot brk_hold_port_1):
+	# its wall flange's top and side seams are the bay's weld points, so the bay draws the beads.
+	kit.add(PartShapes.box(Vector3(0.012, 0.3, 0.4)), Transform3D(Basis(), Vector3(-IN + 0.01, 2.1, 3.15)), frame_steel, "", null, false)
+	kit.add(PartShapes.box(Vector3(0.3, 0.014, 0.4)), Transform3D(Basis(), Vector3(-IN + 0.166, 1.957, 3.15)), frame_steel, "", null, false)
+	for z: float in [2.97, 3.33]:
+		kit.add(PartShapes.wedge(Vector3(0.01, 0.2, 0.24)), Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-IN + 0.13, 2.05, z)),
+				frame_steel, "", null, false)
 	for z: float in [2.7, 5.0]:
 		ShipParts.lamp(kit, Vector3(0, 2.86, z), 1.6, Vector3.RIGHT, "cold", 1.5, 7.0)
 
@@ -538,6 +545,9 @@ func _build_stern() -> void:
 
 func _build_exterior() -> void:
 	_fuel_port(Transform3D(Basis(), Vector3(W, 1.3, FUEL_PORT_Z)))
+	# A doubler plate welded over the starboard skin (slot plt_hull_stbd_1): the bay draws its
+	# four edge seams as weld beads.
+	kit.add(PartShapes.box(Vector3(0.02, 0.6, 1.0)), Transform3D(Basis(), Vector3(W + 0.012, 1.05, 2.7)), hull_dark, "", null, false)
 	fittings.append(ShipParts.name_board(kit, Transform3D(Basis(), Vector3(W, 1.85, 2.75)), "KESTREL", 1.5, 0.3))
 	fittings.append(ShipParts.name_board(kit, Transform3D(Basis(Vector3.UP, PI), Vector3(-W, 1.85, 5.0)), "KESTREL", 1.5, 0.3))
 	for side: float in [-1.0, 1.0]:

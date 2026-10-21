@@ -14,7 +14,13 @@ func run_tests() -> void:
 		return
 	check(def.model != null, "Kestrel model loads")
 	check(def.slot_ids() == PackedStringArray(["eng_aft_port_1", "eng_aft_stbd_1", "net_hold_dor_1",
-			"att_hold_aft_1", "pnl_roof_hold_1"]), "the 0.3 slots and the riveted roof panel: %s" % def.slot_ids())
+			"att_hold_aft_1", "pnl_roof_hold_1", "brk_hold_port_1", "plt_hull_stbd_1"]),
+			"the 0.3 slots, the riveted roof panel and the welded bracket and doubler plate: %s" % def.slot_ids())
+	for welded: String in ["brk_hold_port_1", "plt_hull_stbd_1"]:
+		var welds := def.slot(welded).fasteners
+		check(welds.size() >= 3 and welds.all(func(f: FastenerPoint) -> bool:
+				return f.kind == "weld" and f.seam_size.x > 0.0 and f.seam_up.is_normalized() and absf(f.seam_up.dot(f.normal)) < 0.01),
+				"%s is welded on: %d seams, each along its surface" % [welded, welds.size()])
 	var panel := def.slot("pnl_roof_hold_1").fasteners
 	check(panel.size() >= 30 and panel.all(func(f: FastenerPoint) -> bool: return f.kind == "rivet" and f.spec == "RIVET_4"),
 			"roof panel is riveted on: %d rivets" % panel.size())
