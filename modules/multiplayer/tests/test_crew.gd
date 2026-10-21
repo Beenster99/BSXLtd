@@ -28,9 +28,9 @@ func run_tests() -> void:
 	check(rows.size() == 1 and rows[0].find_child("Cam_*", true, false) == null, "solo crew list: just you, no CAM")
 	check(screen.find_child("ChatLog", true, false).get_child_count() == 1, "chat log shows earlier lines")
 	check(screen.find_child("Section__test_transfer", true, false) != null, "other modules' sections appear")
-	var box := screen.find_child("SayBox", true, false) as LineEdit
+	var box := screen.find_child("CrewSayBox", true, false) as LineEdit
 	box.text = "from the box"
-	(screen.find_child("Send", true, false) as Button).pressed.emit()
+	(screen.find_child("CrewSend", true, false) as Button).pressed.emit()
 	await frames(2)
 	check(net.chat_log().back().text == "from the box" and box.text == "", "SEND posts and clears the box")
 	check(screen.find_child("ChatLog", true, false).get_child_count() == 2, "new line shows on the screen")

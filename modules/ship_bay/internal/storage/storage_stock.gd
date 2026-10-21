@@ -77,6 +77,22 @@ func pick(loc: String, qty: int, carrier: String, to: Vector3) -> String:
 	return id
 
 
+## A part beamed off the ship onto a trolley's deck: a crate ("beam/<n>", order "beam") that
+## trolley carries, to put away like a delivery. Returns its id, "" when the trolley is full.
+func beam(item: String, condition: float, carrier: String) -> String:
+	if item == "" or carried_by(carrier) != "":
+		return ""
+	var known: Dictionary = Layout.items().get(item, {})
+	var n := 1
+	while crates.has("beam/%d" % n):
+		n += 1
+	var id := "beam/%d" % n
+	crates[id] = {"order_id": "beam", "item": item, "qty": 1, "name": str(known.get("name", item)),
+			"condition": clampf(condition, 0.0, 1.0), "grade": "off the ship", "mass": float(known.get("mass", 0.0)),
+			"spot": -1, "carrier": carrier}
+	return id
+
+
 ## Passes a carried crate to another trolley. False when nothing carries it.
 func hand(crate_id: String, trolley: String) -> bool:
 	var c: Dictionary = crates.get(crate_id, {})
