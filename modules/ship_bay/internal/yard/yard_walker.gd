@@ -69,8 +69,12 @@ func place(at: Vector3, target: Vector3) -> void:
 
 func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
-	input.x = _held(Keys.RIGHT, KEY_D) - _held(Keys.LEFT, KEY_A)
-	input.y = _held(Keys.BACK, KEY_S) - _held(Keys.FORWARD, KEY_W)
+	# While a trolley is on remote, W A S D drive it: you stand still.
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	var free := bus == null or not bus.remote_driving
+	if free:
+		input.x = _held(Keys.RIGHT, KEY_D) - _held(Keys.LEFT, KEY_A)
+		input.y = _held(Keys.BACK, KEY_S) - _held(Keys.FORWARD, KEY_W)
 	var speed := run_speed if _held(Keys.RUN, KEY_SHIFT) > 0.0 else walk_speed
 	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
@@ -84,7 +88,7 @@ func _physics_process(delta: float) -> void:
 			velocity.x = 0.0
 			velocity.z = 0.0
 	elif is_on_floor():
-		if _held(Keys.JUMP, KEY_SPACE) > 0.0:
+		if free and _held(Keys.JUMP, KEY_SPACE) > 0.0:
 			velocity.y = jump_speed
 	else:
 		velocity.y -= gravity * delta

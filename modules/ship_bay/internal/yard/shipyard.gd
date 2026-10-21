@@ -35,6 +35,8 @@ const H := 12.0
 const T := 0.5
 ## The courtyard's half extents (x, z), metres; the wings are WING deep round it.
 const YARD := Vector2(28.0, 24.0)
+## How far door frames stand proud of the wall's cut edges into the opening, metres.
+const FRAME_PROUD := 0.02
 const WING := 22.0
 ## Column and truss spacing, metres; stations sit at BAY * k + BAY / 2 all over the yard.
 const BAY := 6.0
@@ -563,19 +565,23 @@ func _build_shell() -> void:
 	var x1 := YARD.x + WING
 	var roof := _paint(Color(0.32, 0.33, 0.35), 0.4, 0.7, "galvanised")
 	var walk := _paint(HAZARD, 0.0, 0.6, "satin_paint")
+	# Each wing's floor a hair (0.6 mm) higher than the last: they overlap under the
+	# walls, and level they flickered in the doorways between them (Z-fighting).
+	var lift := 0.0
 	for r: Array in [[Vector3(-25, 0, -YARD.y - WING * 0.5), Vector3(50, 0, WING), Color(0.55, 0.55, 0.53)],
 			[Vector3(25, 0, -YARD.y - WING * 0.5), Vector3(50, 0, WING), Color(0.5, 0.53, 0.51)],
 			[Vector3(-YARD.x - WING * 0.5, 0, 0), Vector3(WING, 0, YARD.y * 2.0), Color(0.54, 0.53, 0.5)],
 			[Vector3(YARD.x + WING * 0.5, 0, 0), Vector3(WING, 0, YARD.y * 2.0), Color(0.49, 0.54, 0.51)]]:
 		var c: Vector3 = r[0]
 		var s: Vector3 = r[1]
-		_block(Vector3(c.x, 0.0, c.z), Vector3(s.x + T, 0.04, s.z + T), _paint(r[2], 0.0, 0.8), false)
+		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T, 0.04, s.z + T), _paint(r[2], 0.0, 0.8), false)
 		# Walkway lines down the long way, a metre and a half in from each wall.
 		var long_x := s.x > s.z
 		for k: float in [-1.0, 1.0]:
 			var off := (s.z if long_x else s.x) * 0.5 - 1.6
-			var p := c + (Vector3(0, 0.022, off * k) if long_x else Vector3(off * k, 0.022, 0))
+			var p := c + (Vector3(0, 0.022 + lift, off * k) if long_x else Vector3(off * k, 0.022 + lift, 0))
 			_block(p, Vector3(s.x - 3.0, 0.004, 0.1) if long_x else Vector3(0.1, 0.004, s.z - 3.0), walk, false)
+		lift += 0.0006
 	for r: Array in [[Vector3(0, 0, -YARD.y - WING * 0.5), Vector3(x1 - x0, 0, WING)],
 			[Vector3(-YARD.x - WING * 0.5, 0, 0), Vector3(WING, 0, YARD.y * 2.0)],
 			[Vector3(YARD.x + WING * 0.5, 0, 0), Vector3(WING, 0, YARD.y * 2.0)]]:
@@ -637,13 +643,15 @@ static func _wall_pieces(u0: float, u1: float, openings: Array) -> Array[Rect2]:
 
 
 ## Dark steel jambs and a header round an opening, hazard stripes on the big ones' posts.
+## The frame stands FRAME_PROUD into the opening, so its faces never lie in the same plane
+## as the wall's cut edges (that flickered: Z-fighting).
 func _door_frame(at: Vector3, width: float, height: float, along_x: bool) -> void:
 	var across := Vector3(1, 0, 0) if along_x else Vector3(0, 0, 1)
 	var basis := Basis.IDENTITY if along_x else Basis(Vector3.UP, PI * 0.5)
 	var jamb := _lib("ibeam/jamb/%.1f" % height, func() -> PartShapes.PartShape:
 			return PartShapes.i_beam(height, T + 0.3, 0.3))
 	for side: float in [-1.0, 1.0]:
-		var post := at + across * (width * 0.5 + 0.15) * side
+		var post := at + across * (width * 0.5 + 0.15 - FRAME_PROUD) * side
 		_put(jamb, Transform3D(basis * UPRIGHT, post + Vector3(0, height * 0.5, 0)), _frame, false)
 		if width > 3.0:
 			var band := _box(Vector3(0.32, 0.3, T + 0.34))
@@ -652,7 +660,7 @@ func _door_frame(at: Vector3, width: float, height: float, along_x: bool) -> voi
 					_put(band, Transform3D(basis, post + Vector3(0, 0.3 + k * 0.6, 0)), _hazard, false)
 	var head := _lib("ibeam/head/%.1f" % width, func() -> PartShapes.PartShape:
 			return PartShapes.i_beam(width + 0.6, T + 0.3, 0.3))
-	_put(head, Transform3D(basis, at + Vector3(0, height + 0.15, 0)), _frame, false)
+	_put(head, Transform3D(basis, at + Vector3(0, height + 0.15 - FRAME_PROUD, 0)), _frame, false)
 
 
 ## The steel frame inside: an I-beam column at every station along each outside and
@@ -745,13 +753,13 @@ func _build_doors() -> void:
 			var bottom := maxf(3.2, height * 0.66)
 			var drop := height - bottom
 			var basis := _wall_basis(axis)
-			_put(_box(Vector3(width, drop, 0.03)), Transform3D(basis, _wall_point(axis, wall[1], o[0], bottom + drop * 0.5, face)), curtain, false)
+			_put(_box(Vector3(width - 0.01, drop, 0.03)), Transform3D(basis, _wall_point(axis, wall[1], o[0], bottom + drop * 0.5, face)), curtain, false)
 			var slat := _box(Vector3(width - 0.02, 0.025, 0.05))
 			var y := bottom + 0.1
 			while y < height:
 				_put(slat, Transform3D(basis, _wall_point(axis, wall[1], o[0], y, face)), curtain, false)
 				y += 0.11
-			_put(_box(Vector3(width, 0.12, 0.08)), Transform3D(basis, _wall_point(axis, wall[1], o[0], bottom + 0.06, face)), _hazard, false)
+			_put(_box(Vector3(width - 0.012, 0.12, 0.08)), Transform3D(basis, _wall_point(axis, wall[1], o[0], bottom + 0.055, face)), _hazard, false)
 			_put(_box(Vector3(width + 0.6, 0.7, 0.55)), Transform3D(basis, _wall_point(axis, wall[1], o[0], height + 0.65,
 					float(side if side != 0 else 1) * (T * 0.5 + 0.3))), _frame, false)
 			for k: float in [-1.0, 1.0]:
@@ -836,7 +844,9 @@ func _sign(text: String, at: Vector3, yaw: float, height_m: float, board := true
 		var basis := Basis(Vector3.UP, yaw)
 		var size := Vector3(text.length() * height_m * 0.62 + height_m * 0.8, height_m * 1.3, 0.06)
 		_put(_box(size), Transform3D(basis, at - basis.z * 0.06), _paint(Color(0.1, 0.11, 0.12), 0.3, 0.5, "satin_paint"), false)
-		_put(_box(Vector3(size.x, 0.06, 0.08)), Transform3D(basis, at - basis.z * 0.05 + Vector3(0, -size.y * 0.5 + 0.03, 0)), _trim, false)
+		# The trim strip a touch wider, lower and shallower than the board, so no face of one
+		# lies in the other's plane (that flickered).
+		_put(_box(Vector3(size.x + 0.02, 0.06, 0.078)), Transform3D(basis, at - basis.z * 0.048 + Vector3(0, -size.y * 0.5 + 0.026, 0)), _trim, false)
 	return label
 
 

@@ -166,12 +166,13 @@ func _build_access() -> void:
 			_on_power(on))
 	var on := _bus != null and _bus.ship_powered
 	access.call("set_power", on)
-	_on_power(on)
+	_on_power(on, true)
 
 
-func _on_power(on: bool) -> void:
+## The ship powered or not; `instant` skips its power-up sweep (on loading).
+func _on_power(on: bool, instant := false) -> void:
 	if model and model.has_method("set_powered"):
-		model.call("set_powered", on)
+		model.call("set_powered", on, instant)
 	if access:
 		access.call("set_power", on)
 
@@ -182,18 +183,41 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not use or event.is_echo():
 		return
 	var cam := get_viewport().get_camera_3d()
+	if cam and use_along(cam.global_position, -cam.global_basis.z):
+		get_viewport().set_input_as_handled()
+
+
+## Left click: with the power plug in hand it goes where you look; else the first clickable
+## thing within reach (the plug, its hook). _input, so a held tool doesn't take the click.
+func _input(event: InputEvent) -> void:
+	var mb := event as InputEventMouseButton
+	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	# A screen in front of the view (the wrist holo, a menu) keeps its clicks.
+	if get_viewport().gui_get_hovered_control() != null:
+		return
+	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	# With the power plug in hand, F puts it somewhere instead.
+	if click_along(cam.global_position, -cam.global_basis.z):
+		get_viewport().set_input_as_handled()
+
+
+## A left click along the ray (world space): places the plug in hand, or clicks the first
+## clickable thing within reach. True if it did something.
+func click_along(from: Vector3, direction: Vector3) -> bool:
 	if access and bool(access.call("holding_plug")):
-		access.call("place_plug", cam.global_position, -cam.global_basis.z)
-		get_viewport().set_input_as_handled()
-	elif use_along(cam.global_position, -cam.global_basis.z):
-		get_viewport().set_input_as_handled()
+		access.call("place_plug", from, direction)
+		return true
+	return _call_along(from, direction, "ship_bay_click")
 
 
 ## Use (F): the first usable thing within reach along the ray (world space). True if one was.
 func use_along(from: Vector3, direction: Vector3) -> bool:
+	return _call_along(from, direction, "ship_bay_use")
+
+
+func _call_along(from: Vector3, direction: Vector3, meta: String) -> bool:
 	var q := PhysicsRayQueryParameters3D.create(from, from + direction.normalized() * USE_REACH)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty():
@@ -202,8 +226,8 @@ func use_along(from: Vector3, direction: Vector3) -> bool:
 	var owner_id := body.shape_find_owner(int(hit.shape)) if body else -1
 	var node: Object = body.shape_owner_get_owner(owner_id) if owner_id >= 0 else null
 	for n: Object in [node, body]:
-		if n and n.has_meta("ship_bay_use"):
-			(n.get_meta("ship_bay_use") as Callable).call()
+		if n and n.has_meta(meta):
+			(n.get_meta(meta) as Callable).call()
 			return true
 	return false
 
