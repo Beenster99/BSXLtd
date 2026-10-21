@@ -37,22 +37,27 @@ func run_tests() -> void:
 	check(bus.get_contract_balance("JOB-2").deposit == 50000, "never more up front than the price")
 	books.call("accept_contract", "JOB-3", 50000, 10)
 	check(bus.get_contract_balance("JOB-3").deposit == 50000 * r.deposit_percent / 100, "unpriced parts fall back to the deposit share")
+	check(bus.on_contract_accepted("JOB-4", 10000, 10).is_ok() and bus.get_contract_balance("JOB-4").deposit == 10000 * (r.deposit_percent + r.goodwill_percent) / 100,
+			"a job of ship modules (no market price) gets the deposit share plus goodwill")
 	check(bus.job_materials("NO-SUCH-JOB") == -1, "an unknown job has no parts price")
 
 	# Wages: every day, by skill level, with a payslip each.
 	bus.reset()
 	bus.test_crew = {1: "Ana", 2: "Ben", 3: "Cal"}
 	bus.test_levels = {"Ana": 0, "Ben": 5, "Cal": 12}
-	check(bus.wage_for(0) == 250 and bus.wage_for(5) == 450 and bus.wage_for(100) == r.wage_max, "wage by level, capped")
+	check(bus.wage_for(0) == 200 and bus.wage_for(5) == 275 and bus.wage_for(100) == r.wage_max, "wage by level, capped")
 	cash = bus.get_cash()
 	bus.advance_day()
-	var wages := 250 + 450 + 730
+	var wages := 200 + 275 + 380
 	check(bus.get_cash() == cash - wages - r.bay_rent_per_day, "a day's wages and rent: %d" % (cash - bus.get_cash()))
-	check(bus.get_wallet("Ben") == 1000 + 450, "Ben is paid into his wallet")
+	check(bus.get_wallet("Ben") == 1000 + 275, "Ben is paid into his wallet")
 	var slips := bus.get_payslips("Cal")
-	check(slips.size() == 1 and slips[0].wage == 730 and slips[0].level == 12 and slips[0].day == 0, "Cal has a payslip: %s" % str(slips))
+	check(slips.size() == 1 and slips[0].wage == 380 and slips[0].level == 12 and slips[0].day == 0, "Cal has a payslip: %s" % str(slips))
+	# Progression levels run 0-20 (four tools, five levels each). A full crew of three at the
+	# top costs less a day than the board's jobs bring in (about 1,300 CR per due day each).
 	var three_avg := 3 * bus.wage_for(10) + r.bay_rent_per_day
-	check(three_avg < 2500, "three level-10 players and rent cost %d a day" % three_avg)
+	var three_top := 3 * bus.wage_for(20) + r.bay_rent_per_day
+	check(three_avg <= 1500 and three_top <= 2000, "three players and rent cost %d a day at level 10, %d at 20" % [three_avg, three_top])
 
 	# The owner: the host until handed over. Bonuses with a note, owner only.
 	check(bus.company_owner() == "Ana" and bus.is_owner("Ana"), "the host owns the company")
@@ -60,7 +65,7 @@ func run_tests() -> void:
 	bus.company_refused.connect(func(why: String) -> void: refused.append(why))
 	cash = bus.get_cash()
 	bus.request_bonus(2, 500, "Lovely welds on the Kestrel")
-	check(bus.get_cash() == cash - 500 and bus.get_wallet("Ben") == 1950, "the owner pays Ben a bonus")
+	check(bus.get_cash() == cash - 500 and bus.get_wallet("Ben") == 1775, "the owner pays Ben a bonus")
 	var today: Dictionary = bus.get_payslips("Ben").back()
 	check(today.day == 1 and today.bonuses.size() == 1 and today.bonuses[0].note == "Lovely welds on the Kestrel" and today.bonuses[0].by == "Ana",
 			"the bonus and its note go on Ben's payslip: %s" % str(today))
@@ -97,8 +102,9 @@ func run_tests() -> void:
 	bus.advance_day()
 	var after: Dictionary = bus.get_loans()[0]
 	check(after.paid_months == 1 and after.balance == q.total - q.monthly, "the first month comes out")
-	check(cash - bus.get_cash() == q.monthly + 250 + r.bay_rent_per_day, "a month's repayment with the day's costs")
+	check(cash - bus.get_cash() == q.monthly + bus.wage_for(0) + r.bay_rent_per_day, "a month's repayment with the day's costs")
 	var settle := bus.settle_amount(after.id)
+	books.call("post", -bus.get_cash(), LedgerEntry.PAYMENT, "JOB-8")
 	check(settle < after.balance and settle > 20000, "paying off early skips the interest not yet due: %d of %d" % [settle, after.balance])
 	bus.request_settle(after.id)
 	check(refused.back() == "the company can't pay it off yet" and bus.get_loans().size() == 1, "not without the cash to do it")
