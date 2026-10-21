@@ -250,7 +250,8 @@ func _build_lift(at: Transform3D) -> void:
 		_part(PartShapes.box(Vector3(maxf(size.x, 0.02), 0.12, maxf(size.z, 0.02))), Transform3D(Basis(), r_at + Vector3(0, 0.06, 0)), _yellow, platform)
 		_collide(Vector3(maxf(size.x, 0.04), RAIL_H, maxf(size.z, 0.04)), Transform3D(Basis(), r_at + Vector3(0, RAIL_H * 0.5, 0)), platform)
 	for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1), Vector2(-1, 0)]:
-		_part(PartShapes.box(Vector3(0.04, RAIL_H, 0.04)), Transform3D(Basis(), Vector3(c.x * W * 0.5, RAIL_H * 0.5, c.y * L * 0.5)), _yellow, platform)
+		# Posts a hair thinner than the rails, so their faces don't share a plane.
+		_part(PartShapes.box(Vector3(0.036, RAIL_H, 0.036)), Transform3D(Basis(), Vector3(c.x * W * 0.5, RAIL_H * 0.5, c.y * L * 0.5)), _yellow, platform)
 	_gate_bar = _part(PartShapes.box(Vector3(W, 0.04, 0.04)), Transform3D(Basis(), Vector3(0, RAIL_H, L * 0.5)), _yellow, platform)
 	_gate = _collide(Vector3(W, RAIL_H, 0.04), Transform3D(Basis(), Vector3(0, RAIL_H * 0.5, L * 0.5)), platform)
 	# The platform's screen hangs inside the outboard rail, facing in at whoever stands on it.
@@ -342,7 +343,8 @@ func _set_platform(y: float) -> void:
 				var b := Vector3(x, y0 + stage_h, span * 0.5) if k == 0 else Vector3(x, y0, span * 0.5)
 				var dir := (b - a).normalized()
 				var basis := Basis(Vector3.RIGHT, dir.cross(Vector3.RIGHT), dir * a.distance_to(b))
-				_arms[i].transform = Transform3D(basis, (a + b) * 0.5 + Vector3(0.07 * (float(k) - 0.5), 0, 0))
+				# Each stage 2 mm further out: folded flat, the stages' arms lay in one plane.
+				_arms[i].transform = Transform3D(basis, (a + b) * 0.5 + Vector3(0.07 * (float(k) - 0.5) + 0.002 * float(stage) * (1.0 if side == 1 else -1.0), 0, 0))
 				i += 1
 
 

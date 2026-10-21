@@ -727,7 +727,8 @@ func _build_machine(s: String) -> void:
 			for z: float in [-0.95, 0.95]:
 				for x: float in [-0.75, 0.75]:
 					_part(PartShapes.box(Vector3(0.12, 1.4, 0.12)).mesh, Vector3(x, BED + 0.7, z), paint, root)
-				_part(PartShapes.box(Vector3(1.62, 0.14, 0.14)).mesh, Vector3(0, BED + 1.45, z), paint, root)
+				# A hair shallower than the side bars, so their tops don't meet in one plane.
+				_part(PartShapes.box(Vector3(1.62, 0.136, 0.136)).mesh, Vector3(0, BED + 1.45, z), paint, root)
 			for x: float in [-0.75, 0.75]:
 				_part(PartShapes.box(Vector3(0.14, 0.14, 2.0)).mesh, Vector3(x, BED + 1.45, 0), paint, root)
 			var bar := Node3D.new()
@@ -786,7 +787,7 @@ func _build_machine(s: String) -> void:
 			var liquid := ShipKit.glow(Color(0.35, 0.95, 0.4), 1.2)
 			_part(PartShapes.box(Vector3(WIDTH - 0.16, 0.02, LENGTH - 0.16)).mesh, Vector3(0, BED - 0.1, 0), liquid, root)
 			for k: float in [-1.0, 1.0]:
-				_part(PartShapes.box(Vector3(WIDTH + 0.04, 0.06, 0.06)).mesh, Vector3(0, BED + 0.08, k * LENGTH * 0.5), _mats["steel"], root)
+				_part(PartShapes.box(Vector3(WIDTH + 0.04, 0.056, 0.056)).mesh, Vector3(0, BED + 0.08, k * LENGTH * 0.5), _mats["steel"], root)
 				_part(PartShapes.box(Vector3(0.06, 0.06, LENGTH + 0.04)).mesh, Vector3(k * WIDTH * 0.5, BED + 0.08, 0), _mats["steel"], root)
 			var bubbles := Node3D.new()
 			bubbles.name = "Bubbles"
@@ -801,7 +802,7 @@ func _build_machine(s: String) -> void:
 			for z: float in [-1.0, 1.0]:
 				for x: float in [-0.88, 0.88]:
 					_part(PartShapes.box(Vector3(0.1, 2.0, 0.1)).mesh, Vector3(x, 1.0, z), _mats["steel"], root)
-				_part(PartShapes.box(Vector3(1.86, 0.12, 0.12)).mesh, Vector3(0, 2.0, z), _mats["steel"], root)
+				_part(PartShapes.box(Vector3(1.86, 0.116, 0.116)).mesh, Vector3(0, 2.0, z), _mats["steel"], root)
 			_part(PartShapes.box(Vector3(0.12, 0.12, 2.1)).mesh, Vector3(0, 2.0, 0), _mats["yellow"], root)
 			_part(WreckParts.junction_box(Vector3(0.4, 0.35, 0.35), Color(1.0, 0.6, 0.15)).mesh, Vector3(0, 1.75, 0), _mats["dark"], root)
 			var warn := _plate("CORROSIVE", Color(0.35, 0.95, 0.4))
@@ -811,12 +812,12 @@ func _build_machine(s: String) -> void:
 		"coater":
 			# A spray booth: walls each side, a roof, a ring of nozzles and the mist.
 			# The back wall solid; the front a framed window so you can watch the coats go on.
-			_part(PartShapes.chamfer_box(Vector3(0.16, 2.2, LENGTH), 0.03).mesh, Vector3(-side * 0.82, 1.1, 0), paint, root)
-			_part(PartShapes.chamfer_box(Vector3(0.16, BED + 0.1, LENGTH), 0.03).mesh, Vector3(side * 0.82, (BED + 0.1) * 0.5, 0), paint, root)
+			_part(PartShapes.chamfer_box(Vector3(0.16, 2.2, LENGTH), 0.03).mesh, Vector3(-side * 0.815, 1.1, 0), paint, root)
+			_part(PartShapes.chamfer_box(Vector3(0.16, BED + 0.1, LENGTH), 0.03).mesh, Vector3(side * 0.815, (BED + 0.1) * 0.5, 0), paint, root)
 			for z: float in [-LENGTH * 0.5 + 0.07, LENGTH * 0.5 - 0.07]:
-				_part(PartShapes.box(Vector3(0.16, 2.2 - BED - 0.1, 0.14)).mesh, Vector3(side * 0.82, (2.2 + BED + 0.1) * 0.5, z), paint, root)
-			_part(PartShapes.box(Vector3(0.03, 2.2 - BED - 0.1, LENGTH - 0.28)).mesh, Vector3(side * 0.82, (2.2 + BED + 0.1) * 0.5, 0), Glazing.material(Glazing.Kind.CLEAR), root)
-			for x: float in [-0.82, 0.82]:
+				_part(PartShapes.box(Vector3(0.16, 2.2 - BED - 0.1, 0.14)).mesh, Vector3(side * 0.815, (2.2 + BED + 0.1) * 0.5, z), paint, root)
+			_part(PartShapes.box(Vector3(0.03, 2.2 - BED - 0.1, LENGTH - 0.28)).mesh, Vector3(side * 0.815, (2.2 + BED + 0.1) * 0.5, 0), Glazing.material(Glazing.Kind.CLEAR), root)
+			for x: float in [-0.815, 0.815]:
 				_collide(body, Vector3(0.16, 2.2, LENGTH), Vector3(x, 1.1, 0))
 			_part(PartShapes.chamfer_box(Vector3(1.8, 0.2, LENGTH), 0.03).mesh, Vector3(0, 2.3, 0), paint, root)
 			_part(PartShapes.box(Vector3(1.0, 0.3, 1.0)).mesh, Vector3(0, 2.55, 0), _mats["dark"], root)
@@ -922,7 +923,7 @@ func _build_conveyors() -> void:
 	_part(PartShapes.prism(20, 0.75, BED - 0.12).mesh, Vector3(0, (BED - 0.12) * 0.5, 0), _mats["dark"], turn)
 	_part(PartShapes.prism(20, 0.8, 0.06).mesh, Vector3(0, BED - 0.09, 0), _mats["steel"], turn)
 	for i in 5:
-		_part(PartShapes.prism(10, 0.05, 1.0).mesh, Vector3(-0.4 + i * 0.2, BED - 0.03, 0), _mats["roller"], turn, Basis(Vector3.FORWARD, PI * 0.5))
+		_part(PartShapes.prism(10, 0.05, 1.0).mesh, Vector3(0, BED - 0.03, -0.4 + i * 0.2), _mats["roller"], turn, Basis(Vector3.FORWARD, PI * 0.5))
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(1.6, BED, 1.6)

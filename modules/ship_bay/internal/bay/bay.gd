@@ -73,7 +73,7 @@ func _build_cradles() -> void:
 		_part(cradle, PartShapes.i_beam(3.2, 0.45, 0.22, 0.03), Transform3D(Basis(), Vector3(0, top - 0.2, 0)), yellow)
 		for x: float in [-1.35, 1.35]:
 			_part(cradle, PartShapes.i_beam(top - 0.56, 0.4, 0.3, 0.03), Transform3D(upright, Vector3(x, 0.25 + (top - 0.56) * 0.5, 0)), yellow)
-			_part(cradle, PartShapes.box(Vector3(0.6, 0.03, 0.8)), Transform3D(Basis(), Vector3(x, 0.015, 0)), dark)
+			_part(cradle, PartShapes.box(Vector3(0.6, 0.029, 0.8)), Transform3D(Basis(), Vector3(x, 0.0145, 0)), dark)   # under the flange tops
 		for x: float in [-0.55, 0.55]:
 			_part(cradle, WreckParts.pipe(0.09, top - 0.56, false), Transform3D(Basis(), Vector3(x, 0.25 + (top - 0.56) * 0.5, 0)), steel)
 			_part(cradle, WreckParts.pipe(0.13, 0.3, true), Transform3D(Basis(), Vector3(x, 0.4, 0)), dark)
