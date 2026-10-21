@@ -39,6 +39,10 @@ var value: float
 ## Position and rotation relative to the structure that owns it. When a part splits off into
 ## a new structure, the new body starts with the old body's transform, so this stays valid.
 var local_transform: Transform3D
+## Part space: where the part's mass is centred. Zero as built; a piece cut or torn from a
+## part keeps that part's transform, so its middle is off its origin (SalvageStructure.
+## replace_part sets it, recompute_mass weighs the part there).
+var centroid := Vector3.ZERO
 ## What it's made of: an id into Materials.TABLE (hardness tier, density, price, look).
 ## Steel as built (copper for looms); wrecks get theirs from their design (Materials).
 var material: String = Materials.BUILT

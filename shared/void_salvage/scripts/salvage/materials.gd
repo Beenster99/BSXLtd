@@ -23,7 +23,7 @@ const TABLE: Dictionary = {
 			"look": {}},
 	"glass": {"name": "Glass", "tier": 1, "density": 2500.0, "price": 1.0,
 			"look": {}},
-	"titanium": {"name": "Titanium", "tier": 2, "density": 4500.0, "price": 4.0,
+	"titanium": {"name": "Titanium", "tier": 2, "density": 4500.0, "price": 2.5,
 			"look": {"finish": "titanium", "tint": Color(0.9, 0.92, 1.0), "blend": 0.6}},
 	"crystal": {"name": "Crystal glass", "tier": 2, "density": 2500.0, "price": 3.0,
 			"look": {}},

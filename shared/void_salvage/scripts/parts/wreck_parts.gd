@@ -41,7 +41,8 @@ extends RefCounted
 ##   pipe_elbow    a 90 degree pipe bend: in along -Y, out toward +Z, bolted flanges
 ##   pipe_tee      a short flanged pipe run along Y with a flanged, bolted branch stub out of
 ##                 its -Z side over a welded saddle (sits in a pipe run between two spans)
-##   loom_bend     a wiring loom turning a rounded 90 degree corner (+Y in, +Z out): clip
+##   loom_bend     a wiring loom turning a rounded corner (90 degrees unless `turn` says;
+##                 +Y in, toward +Z out): clip
 ##                 straps with buckles at its ends and a cable tie mid-turn
 ##   junction_box  a wall or deck box: a bevelled lid with corner screws, a hazard tab and a
 ##                 status lamp (front -Z), three cable glands on top (+Y), the middle one
@@ -3174,13 +3175,15 @@ static func pipe_tee(radius: float, length: float = 0.5, stub: float = 0.0) -> P
 ## toward +Z (same frame as pipe_elbow). Wires coloured from `spec`, their ends where the
 ## straight spans' are; a galvanised clip strap with a buckle at each end (like the spans'
 ## clips) and a black nylon cable tie at the middle of the turn.
-static func loom_bend(spec: WiringLoom.Spec, bend: float = 0.25) -> PartShapes.PartShape:
+## `turn`: how far the bundle turns, radians (a quarter turn by default): it enters along
+## +Y at the origin and leaves along (0, cos turn, sin turn).
+static func loom_bend(spec: WiringLoom.Spec, bend: float = 0.25, turn: float = PI * 0.5) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var steps := 6
 	var centres: Array[Vector3] = []
 	var tangents: Array[Vector3] = []
 	for i in steps + 1:
-		var a := PI * 0.5 * float(i) / float(steps)
+		var a := turn * float(i) / float(steps)
 		centres.append(Vector3(0.0, sin(a) * bend, bend - cos(a) * bend))
 		tangents.append(Vector3(0.0, cos(a), sin(a)))
 	var wires: Array = [[-1, spec.core_color, spec.core_radius]]
@@ -3199,7 +3202,7 @@ static func loom_bend(spec: WiringLoom.Spec, bend: float = 0.25) -> PartShapes.P
 			var v := t.cross(u)
 			var c := centres[i]
 			if idx >= 0:
-				var angle := TAU * float(idx) / float(n) + spec.twist * bend * PI * 0.5 * float(i) / float(steps)
+				var angle := TAU * float(idx) / float(n) + spec.twist * bend * turn * float(i) / float(steps)
 				c += (u * cos(angle) + v * sin(angle)) * rr
 			var ring := PackedVector3Array()
 			for j in 6:
@@ -3226,17 +3229,20 @@ static func loom_bend(spec: WiringLoom.Spec, bend: float = 0.25) -> PartShapes.P
 		k.loft(ra, rb)
 	k.color = LIT_CLIP
 	band.call(0.0, 0.02, br + 0.007, 0.022)
-	band.call(PI * 0.5, -0.02, br + 0.007, 0.022)
+	band.call(turn, -0.02, br + 0.007, 0.022)
 	k.color = LIT_TIE
-	band.call(PI * 0.25, 0.0, br + 0.004, 0.012)
+	band.call(turn * 0.5, 0.0, br + 0.004, 0.012)
 	# The clip straps' buckles, on the outside of the turn.
 	k.color = LIT_CLIP
 	var bk := br + 0.007
 	k.box(Vector3(0.026, 0.022, 0.01), Vector3(0.0, 0.02, -bk - 0.004))
-	k.box(Vector3(0.026, 0.01, 0.022), Vector3(0.0, bend + bk + 0.004, bend - 0.02))
+	var end_c := Vector3(0.0, sin(turn) * bend, bend - cos(turn) * bend)
+	var end_t := Vector3(0.0, cos(turn), sin(turn))
+	var outward := Vector3(0.0, sin(turn), -cos(turn))
+	k.box(Vector3(0.026, 0.01, 0.022), end_c - end_t * 0.02 + outward * (bk + 0.004))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
-	shape.volume = PI * br * br * bend * PI * 0.5
+	shape.volume = PI * br * br * bend * turn
 	var col := ConvexPolygonShape3D.new()
 	var pts := PackedVector3Array()
 	for i in centres.size():
