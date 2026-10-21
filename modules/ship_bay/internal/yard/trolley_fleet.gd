@@ -1,8 +1,7 @@
 extends Node3D
 ## The yard's hover trolleys and what they are doing. Built by the shipyard on every peer:
 ## three trolleys (small, medium, large) parked in Deliveries and the picking lift in the
-## stores, a TV on the hall's east wall (F on it opens the trolley screen, trolley_panel.gd),
-## and the route planner (YardNav) once the yard's collision is in.
+## stores, and the route planner (YardNav) once the yard's collision is in.
 ##
 ## Commands come from ShipBayBus.command_trolley (every peer hears them). The peer driving a
 ## trolley (Multiplayer.drives "trolley:<id>": the host, or a player who claimed it for
@@ -38,10 +37,8 @@ const PARKING := {
 ## west) and where the trolley taking them stands (facing it): [floor point, yaw].
 const HANDOFF := [Vector3(-3.2, 0, -27.0), PI * 0.5]
 const HANDOFF_TROLLEY := [Vector3(-6.0, 0, -27.0), -PI * 0.5]
-## The trolleys' TV on Deliveries' east wall, between the frame columns at z 9 and 15
-## (facing -X into the hall): its centre, its picture's size in metres and in pixels.
-const TV := Vector3(-28.32, 2.55, 12.0)
-const TV_SIZE := Vector2(4.0, 2.25)
+## The full-size trolley screen's size, pixels. (Every hall TV, Business's, shows trolley
+## control as the wrist's Machines channel, so the yard has no trolley TV of its own.)
 const TV_PIXELS := Vector2(1280, 720)
 ## How long a trolley waits held up before it plans a new way round, seconds.
 const REPLAN_AFTER := 3.0
@@ -76,8 +73,6 @@ var _aisles: Dictionary = {}
 var _queue: Dictionary = {}
 ## The screen a player opened with F on the TV (null when shut), and the one on the TV.
 var panel: Screen
-var tv_panel: Screen
-var _tv_view: SubViewport
 var _deck_send := 0.0
 
 
@@ -99,7 +94,6 @@ func _ready() -> void:
 		jobs[id] = {}
 		if _net:
 			_net.call("register_mover", "trolley:" + id, t)
-	_build_tv()
 	# The wrist screen's Stock and Machines channels.
 	if _bus:
 		HudSlots.register_holo_channel("ship_bay.stock", "Stock", func(glass: bool) -> Control:
@@ -1006,7 +1000,7 @@ func put_away_all() -> void:
 			_bus.command_trolley(id, "put_away")
 
 
-## F on the TV: the trolley screen full size, with the mouse, until closed.
+## The trolley screen full size, with the mouse, until closed.
 func open_panel() -> void:
 	if panel:
 		return
@@ -1036,78 +1030,3 @@ func close_panel() -> void:
 	panel = null
 	if yard:
 		yard.call("set_walker_active", true)
-
-
-func _build_tv() -> void:
-	var holder := Node3D.new()
-	holder.name = "TrolleyTV"
-	holder.position = TV
-	holder.rotation.y = -PI * 0.5
-	add_child(holder)
-	var dark := ShipSurface.of(ShipKit.paint(Color(0.07, 0.075, 0.085), 0.3, 0.45, "satin_paint"))
-	var steel := ShipSurface.of(ShipKit.paint(Color(0.35, 0.37, 0.4), 0.7, 0.4, "brushed_steel"))
-	var w := TV_SIZE.x
-	var h := TV_SIZE.y
-	# Wall arm, bezel, a lit strip along the bottom edge and a name plate under it.
-	_panel(holder, Vector3(0.5, 0.3, 0.12), Vector3(0, 0, 0.06), steel)
-	_panel(holder, Vector3(w + 0.12, h + 0.12, 0.07), Vector3(0, 0, 0.155), dark)
-	_panel(holder, Vector3(w * 0.6, 0.012, 0.01), Vector3(0, -h * 0.5 - 0.045, 0.195), ShipKit.glow(BsxTheme.ACCENT, 1.4))
-	var plate := _label(holder, "HOVER TROLLEYS  ·  F TO USE", Vector3(0, -h * 0.5 - 0.17, 0.12), 26, Color(1.0, 0.6, 0.2))
-	plate.name = "Plate"
-	_tv_view = SubViewport.new()
-	_tv_view.name = "Screen"
-	_tv_view.size = Vector2i(TV_PIXELS)
-	_tv_view.transparent_bg = false
-	_tv_view.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
-	holder.add_child(_tv_view)
-	var shown := Screen.new()
-	shown.setup(self, false)
-	shown.size = TV_PIXELS
-	_tv_view.add_child(shown)
-	tv_panel = shown
-	var quad := QuadMesh.new()
-	quad.size = Vector2(w, h)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_texture = _tv_view.get_texture()
-	var glass := MeshInstance3D.new()
-	glass.name = "Glass"
-	glass.mesh = quad
-	glass.material_override = mat
-	glass.position = Vector3(0, 0, 0.192)
-	glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	holder.add_child(glass)
-	var body := StaticBody3D.new()
-	body.name = "Use"
-	holder.add_child(body)
-	var col := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(w + 0.12, h + 0.12, 0.08)
-	col.shape = shape
-	col.position = Vector3(0, 0, 0.155)
-	col.set_meta("ship_bay_use", open_panel)
-	body.add_child(col)
-
-
-func _panel(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> void:
-	var mi := MeshInstance3D.new()
-	var b := BoxMesh.new()
-	b.size = size
-	mi.mesh = b
-	mi.material_override = mat
-	mi.position = at
-	parent.add_child(mi)
-
-
-func _label(parent: Node3D, text: String, at: Vector3, size: int, colour: Color) -> Label3D:
-	var l := Label3D.new()
-	l.text = text
-	l.font = ShipKit.mono_font()
-	l.font_size = size
-	l.pixel_size = 0.0035
-	l.modulate = colour
-	l.outline_size = 4
-	l.shaded = false
-	l.position = at
-	parent.add_child(l)
-	return l
