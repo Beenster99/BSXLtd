@@ -259,13 +259,15 @@ func _build_hull() -> void:
 	hull_b.cap(Z_STERN, _stern_pieces(), 1.0, dark)
 
 
-## The stern cap's outlines round the stern door.
+## The stern cap's outlines round the stern door, 6 mm in from the hull's outline so its
+## edges don't share a plane with the side walls and roof (they flickered).
 static func _stern_pieces() -> Array:
 	var out: Array = []
+	var outline := FrameParts.inset(profile(), 0.006)
 	for r: Rect2 in [Rect2(-4.0, -2.0, 4.0 + STERN_DOOR.position.x, 6.0), Rect2(STERN_DOOR.end.x, -2.0, 4.0, 6.0),
 			Rect2(STERN_DOOR.position.x, STERN_DOOR.end.y, STERN_DOOR.size.x, 2.0),
 			Rect2(STERN_DOOR.position.x, -2.0, STERN_DOOR.size.x, 2.0 + STERN_DOOR.position.y)]:
-		var piece := _clip(profile(), r)
+		var piece := _clip(outline, r)
 		if piece.size() >= 3:
 			out.append(piece)
 	return out
