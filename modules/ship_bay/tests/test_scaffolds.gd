@@ -25,23 +25,27 @@ func run_tests() -> void:
 	var hull_x := 2.6
 	check(rig.to_global(Vector3(0.8, 0, 0)).x > hull_x + 3.0, "parked out of the way of the ship")
 
-	# The post's buttons: Use on them changes the rig.
+	# The post's touch screen: its buttons change the rig.
+	var screen: Node3D = rig.get("post_screen")
+	check(screen != null and str(screen.call("text")).contains("BAY +") and str(screen.call("text")).contains("SCAFFOLD 1"),
+			"the post has a touch screen: %s" % (screen.call("text") if screen else "none"))
 	var press := func(button: String) -> void:
-		var col := rig.find_child("Button_" + button, true, false) as Node
-		if col and col.has_meta("ship_bay_use"):
-			(col.get_meta("ship_bay_use") as Callable).call()
-	press.call("BAY_up")
-	press.call("LIFT_up")
+		var s: Node3D = rig.get("post_screen")
+		s.call("press", button)
+	press.call("bay_up")
+	await get_tree().physics_frame
+	press.call("lift_up")
 	await get_tree().physics_frame
 	check(int(rig.get("bays")) == 3 and int(rig.get("lifts")) == 3, "BAY + and LIFT + make it 3 x 3: %d x %d" % [rig.get("bays"), rig.get("lifts")])
 	var deck_hit := yard.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
 			rig.to_global(Vector3(0.3, 8.0, 6.2)), rig.to_global(Vector3(0.3, 0.5, 6.2))))
 	check(absf(float(deck_hit.get("position", Vector3.ZERO).y) - 6.35) < 0.1, "its new top deck is a floor at 6.35 m: %s" % deck_hit.get("position", ""))
-	press.call("ENDS")
+	press.call("ends")
 	await get_tree().physics_frame
 	check(bool(rig.call("end_open", 0)) and not bool(rig.call("end_open", 1)), "ENDS opens the front end to join another rig")
-	for b: String in ["BAY_down", "LIFT_down"]:
+	for b: String in ["bay_down", "lift_down"]:
 		press.call(b)
+		await get_tree().physics_frame
 	await get_tree().physics_frame
 	check(int(rig.get("bays")) == 2 and int(rig.get("lifts")) == 2, "BAY - and LIFT - take it back")
 
@@ -61,9 +65,11 @@ func run_tests() -> void:
 	check(absf(float(moved_hit.get("position", Vector3.ZERO).y) - 4.35) < 0.1, "its frame went with it (the deck is there): %s" % moved_hit.get("position", ""))
 	var grow_ok: bool = rig.call("fits", 2, 3)
 	check(not grow_ok, "against the hull it can't grow another lift into the ship's shoulder")
-	press.call("LIFT_up")
+	press.call("lift_up")
 	await get_tree().physics_frame
 	check(int(rig.get("lifts")) == 2, "so LIFT + is refused there")
+	var handle := rig.find_child("PushHandle", true, false) as Node
+	check(handle != null and handle.has_meta("ship_bay_use"), "F on the post's handle takes it to push")
 
 	# Climbing: the ladder on its outboard side takes you up and onto the top deck.
 	var walker: CharacterBody3D = yard.get("walker")

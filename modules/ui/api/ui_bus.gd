@@ -13,6 +13,10 @@ const SETTINGS_CHANNEL := "ui.settings"
 
 ## The wrist screen (Keys.HOLO in any game scene).
 var holo: WristHolo
+## The see-through info cards on the right (HudSlots.set_info).
+var info: InfoPanel
+## Esc in a game (Menu.open_pause).
+var pause: PauseMenu
 
 
 func register_module() -> void:
@@ -26,6 +30,10 @@ func register_module() -> void:
 	apply_settings()
 	holo = WristHolo.new()
 	add_child(holo)
+	info = InfoPanel.new()
+	add_child(info)
+	pause = PauseMenu.new()
+	add_child(pause)
 	HudSlots.register_holo_channel(SETTINGS_CHANNEL, "Settings", _settings_channel, 900)
 	Menu.register_settings_page(Menu.CHARACTER, "Character", _character_page, 10)
 
@@ -35,6 +43,8 @@ func unregister_module() -> void:
 	Menu.unregister_settings_page(Menu.CHARACTER)
 	if holo:
 		holo.close()
+	if pause:
+		pause.close()
 	if Settings.changed.is_connected(_on_setting_changed):
 		Settings.changed.disconnect(_on_setting_changed)
 

@@ -1,8 +1,9 @@
 extends ModuleTest
-## Ship and Bay: you board the Kestrel on the scissor lift (walk on, UP to the door sill,
-## walk in), the lift steps, stops, drives and won't run into the hull, the ground power unit
-## powers the ship once its plug is clipped to the hull, and the yard's night lights follow
-## the time of day.
+## Ship and Bay: you board the Kestrel on the scissor lift (walk on, hold RAISE on its
+## touch screen to the door sill, walk in), the lift steps, stops, is pushed and won't run
+## into the hull, the touch screens take clicks from the view's pointer, the ground power unit
+## powers the ship up once its plug is clicked onto the hull, and the yard's night lights
+## follow the time of day.
 ##   tools/run_tests.sh ship_bay
 
 
@@ -40,14 +41,27 @@ func run_tests() -> void:
 			break
 	check(absf(walker.position.y - (platform.global_position.y)) < 0.15 and walker.position.z < lift.global_position.z + 0.3,
 			"walked up the ramp onto the platform: y %.2f z %.2f" % [walker.position.y, walker.position.z])
-	var button := platform.to_global(Vector3(-0.7 - 0.06 - 0.085, 1.05 - 0.1 + 0.05, -2.6 * 0.25))
-	check(bool(bay.call("use_along", button + lift.global_basis.x * -1.2, lift.global_basis.x)), "UP on the platform's controls takes Use")
+	var screens: Array = access.get("lift_screens")
+	check(screens.size() == 2, "the lift has two touch screens: %d" % screens.size())
+	var deck_screen: Node3D = screens[1]
+	check(deck_screen.global_basis.z.dot(lift.global_basis.x) > 0.6 and deck_screen.global_basis.z.y > 0.2,
+			"the platform's screen faces in at whoever stands on it, tilted up")
+	# Hold RAISE until the sill comes level, then let go: it stops there.
+	var sill := 1.6
+	deck_screen.call("hold", "raise", true)
 	for i in 400:
 		walker.velocity = Vector3(0, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, 0)
 		walker.move_and_slide()
 		await get_tree().physics_frame
-	var sill := 1.6
-	check(absf(platform.position.y - sill) < 0.01, "it stopped level with the door sill: %.2f" % platform.position.y)
+		if platform.position.y >= sill - 0.005:
+			break
+	deck_screen.call("hold", "raise", false)
+	for i in 20:
+		walker.velocity = Vector3(0, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, 0)
+		walker.move_and_slide()
+		await get_tree().physics_frame
+	check(absf(platform.position.y - sill) < 0.02, "held RAISE, let go at the door sill, it stopped there: %.3f" % platform.position.y)
+	check(str(deck_screen.call("text")).contains("1.6 M"), "its screen shows the height: %s" % deck_screen.call("text"))
 	check(absf(walker.position.y - sill) < 0.15, "riding up on it: y %.2f" % walker.position.y)
 	for i in 240:
 		walker.velocity = Vector3(2.5, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, 0.0)
@@ -82,6 +96,53 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	check(absf(platform.position.y - 0.35) < 0.01, "and goes down to the bottom")
 
+	# Pushing: F on the push bar takes hold; walk and it rolls along in front of you.
+	var cam := Camera3D.new()
+	yard.add_child(cam)
+	cam.current = true
+	var bar := lift.to_global(Vector3(0, 1.05, -2.6 * 0.5 - 0.22))
+	cam.global_transform = Transform3D(Basis.looking_at(lift.global_basis.z), bar - lift.global_basis.z * 1.0)
+	check(bool(bay.call("use_along", cam.global_position, -cam.global_basis.z)) and access.get("driving") == "lift", "F on the lift's push bar takes hold of it")
+	var before := lift.global_position
+	for i in 60:
+		cam.global_position += lift.global_basis.z * 0.025
+		await get_tree().physics_frame
+	check(lift.global_position.distance_to(before) > 1.2 and lift.global_position.distance_to(before) < 1.6,
+			"walked 1.5 m and the lift rolled along ahead: %.2f m" % lift.global_position.distance_to(before))
+	for i in 60:
+		cam.global_position -= lift.global_basis.z * 0.025
+		await get_tree().physics_frame
+	check(lift.global_position.distance_to(before) < 0.05, "and pulled back again: %.2f m off" % lift.global_position.distance_to(before))
+	bay.call("use_along", cam.global_position, -cam.global_basis.z)
+	check(access.get("driving") == "", "F again lets it go")
+
+	# The pointer: looking at a touch screen and clicking presses the button under it.
+	var unit: Node3D = access.get("unit")
+	var unit_screen: Node3D = access.get("unit_screen")
+	var power_button: Button = (unit_screen.get("buttons") as Dictionary)["power"]
+	await frames(2)
+	var centre := power_button.get_global_rect().get_center()
+	var vp_size := Vector2((unit_screen.get("viewport") as SubViewport).size)
+	var size_m: Vector2 = unit_screen.get("size")
+	var on_face := unit_screen.to_global(Vector3((centre.x / vp_size.x - 0.5) * size_m.x, (0.5 - centre.y / vp_size.y) * size_m.y, 0))
+	cam.global_transform = Transform3D(Basis.looking_at(-unit_screen.global_basis.z), on_face + unit_screen.global_basis.z * 0.8)
+	var pointer: Node = get_tree().root.get_node_or_null("ShipBayTouchPointer")
+	check(pointer != null, "the touch pointer is in the tree")
+	await frames(2)
+	var aimed: Array = pointer.call("aim") if pointer else [null]
+	check(aimed[0] == unit_screen and str(unit_screen.call("button_at", aimed[1])) == "power",
+			"looking at the power unit's screen points at its POWER button")
+	check(not bool(access.get("switch_on")), "the unit starts switched off")
+	for down: bool in [true, false]:
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = down
+		pointer.call("_input", click)
+		await frames(1)
+	check(bool(access.get("switch_on")), "a left click there switches it on")
+	access.call("toggle_power")
+	cam.queue_free()
+
 	# Driving: along the hull it goes; it won't drive or rise into the ship.
 	var start := lift.global_position
 	var moved := 0
@@ -89,10 +150,11 @@ func run_tests() -> void:
 		if bool(access.call("drive", "lift", 0.05, 0.0)):
 			moved += 1
 	check(moved == 60 and lift.global_position.distance_to(start) > 2.9, "the lift drives along the hull: %.2f m" % lift.global_position.distance_to(start))
-	await get_tree().physics_frame
+	for i in 2:
+		await get_tree().physics_frame
 	var deck_hit := yard.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
 			platform.global_position + Vector3(0, 3, 0), platform.global_position + Vector3(0, -0.5, 0)))
-	check(not deck_hit.is_empty() and deck_hit.collider == platform, "its platform went with it")
+	check(not deck_hit.is_empty() and deck_hit.collider == platform, "its platform went with it: %s at %s (lift at %s)" % [deck_hit.get("collider"), deck_hit.get("position"), lift.global_position])
 	for i in 60:
 		access.call("drive", "lift", -0.05, 0.0)
 	check(lift.global_position.distance_to(start) < 0.01, "and back to the door")
@@ -108,36 +170,53 @@ func run_tests() -> void:
 	# Shore power: off to start with. The switch alone does nothing; the plug clipped to the
 	# hull (anywhere in reach) with the switch on powers the ship.
 	check(not bus.ship_powered and not bool(model.get("powered")), "the ship is cold in the yard")
-	var unit: Node3D = access.get("unit")
-	var panel := unit.to_global(Vector3(0, 0.95, 0.77))
-	check(bool(bay.call("use_along", panel + Vector3(0, 0, 1.5), Vector3.BACK * -1.0)), "the power unit's switch takes Use")
+	unit_screen.call("press", "power")
 	check(bool(access.get("switch_on")) and not bus.ship_powered, "switched on, the plug still on its hook: no power")
+	check(str(unit_screen.call("text")).contains("NO PLUG") and str(unit_screen.call("text")).contains("POWER OFF"),
+			"its screen says so: %s" % unit_screen.call("text"))
 	var hook := unit.to_global(Vector3(-0.6, 0.85, 0.15))
-	bay.call("use_along", hook + Vector3(-1.5, 0, 0), Vector3.RIGHT)
-	check(bool(access.call("holding_plug")), "F on the hook takes the plug in hand")
+	check(not bool(bay.call("use_along", hook + Vector3(-1.5, 0, 0), Vector3.RIGHT)) or not bool(access.call("holding_plug")), "F doesn't take the plug")
+	bay.call("click_along", hook + Vector3(-1.5, 0, 0), Vector3.RIGHT)
+	check(bool(access.call("holding_plug")), "a left click on the hook takes the plug in hand")
 	check(not bool(access.call("place_plug", Vector3(6, 1.5, 9), Vector3.DOWN)), "the floor won't take it")
 	var hull := Vector3(4.8, 2.6, 3.0)
-	check(bool(access.call("place_plug", hull, Vector3.LEFT)), "it clips on to the hull")
+	check(bool(bay.call("click_along", hull, Vector3.LEFT)) and access.get("plug_state") == "hull", "a left click on the hull clamps it there")
 	check(bus.ship_powered and bool(model.get("powered")), "and the ship powers up")
-	var lamps_on := model.find_children("*", "Light3D", false, false).all(func(l: Light3D) -> bool: return l.visible)
-	check(lamps_on, "every lamp aboard is lit")
-	bay.call("use_along", panel + Vector3(0, 0, 1.5), Vector3.BACK * -1.0)
-	check(not bus.ship_powered and not bool(model.get("powered")), "the switch turns it off")
+	check(model.get_node_or_null("PowerHum") != null, "with a quiet hum")
+	var lamps := model.find_children("*", "Light3D", false, false)
+	check(lamps.size() > 0 and not lamps.all(func(l: Light3D) -> bool: return l.visible), "its lights come on bow to stern, not all at once")
+	for i in 150:
+		await get_tree().physics_frame
+	check(lamps.all(func(l: Light3D) -> bool: return l.visible), "and soon every lamp aboard is lit")
+	check(str(unit_screen.call("text")).contains("LIVE"), "the unit's screen shows LIVE")
+	unit_screen.call("press", "power")
+	check(not bus.ship_powered and not bool(model.get("powered")), "POWER turns it off")
+	check(model.get_node_or_null("PowerHum") == null or (model.get_node("PowerHum") as Node).is_queued_for_deletion(), "and the hum stops")
 	check(bus.snapshot().get("powered") == false, "power is saved with the bay")
-	bay.call("use_along", panel + Vector3(0, 0, 1.5), Vector3.BACK * -1.0)
+	unit_screen.call("press", "power")
 	check(bus.ship_powered, "and on again")
 
-	# Towing the unit: out of the cable's reach the plug pops off and the power goes.
+	# Pushing the unit away: out of the cable's reach the plug pops off and the power goes.
+	var cam2 := Camera3D.new()
+	yard.add_child(cam2)
+	cam2.current = true
+	var handle := unit.to_global(Vector3(0, 0.62, -1.5 * 0.5 - 0.75))
+	cam2.global_transform = Transform3D(Basis.looking_at(unit.global_basis.z), handle + Vector3(0, 1.0, 0) - unit.global_basis.z * 0.8)
 	access.call("toggle_drive", "unit")
-	check(access.get("driving") == "unit", "F on its handle tows the unit")
-	for i in 400:
-		access.call("drive", "unit", -0.05, 0.0)
+	check(access.get("driving") == "unit", "F on its handle takes hold of the unit")
+	# A short cable, so a few metres is out of reach.
+	access.set("cable_length", 4.0)
+	for i in 600:
+		cam2.global_position += Vector3(0.03, 0, 0.0)
 		await get_tree().physics_frame
-		if access.get("plug_state") != "hull":
+		if access.get("plug_state") != "hull" or access.get("driving") == "":
 			break
-	check(access.get("plug_state") == "hook" and not bus.ship_powered, "towed out of reach, the plug reels in and the power goes (%s)" % access.get("plug_state"))
-	access.call("toggle_drive", "unit")
+	check(access.get("plug_state") == "hook" and not bus.ship_powered, "pushed out of reach, the plug reels in and the power goes (%s)" % access.get("plug_state"))
+	if access.get("driving") == "unit":
+		access.call("toggle_drive", "unit")
+	access.set("cable_length", 14.0)
 	check(access.get("driving") == "", "and lets go")
+	cam2.queue_free()
 	access.call("toggle_power")
 
 	# The wrist's Machines channel lists the lift, the power unit and the scaffold rigs too.
@@ -147,10 +226,10 @@ func run_tests() -> void:
 		add_child(wrist)
 		await frames(2)
 		var shown: String = wrist.call("text")
-		check(shown.contains("Scissor lift") and shown.contains("Ground power unit") and shown.contains("Scaffold rig 1") and shown.contains("RAISE"),
+		check(shown.contains("Scissor lift") and shown.contains("Ground power unit") and shown.contains("Scaffold rig 1") and shown.contains("RAISE") and shown.contains("PUSH"),
 				"the Machines screen lists the bay's kit: %s" % shown.left(400))
 		wrist.call("press", "rig0", "drive")
-		check(access.get("driving") == "rig0", "DRIVE there takes a scaffold rig")
+		check(access.get("driving") == "rig0", "PUSH there takes hold of a scaffold rig")
 		wrist.call("press", "rig0", "drive")
 		check(access.get("driving") == "", "and lets it go again")
 		wrist.queue_free()

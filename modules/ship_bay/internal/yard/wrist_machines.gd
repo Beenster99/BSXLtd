@@ -1,8 +1,8 @@
 extends VBoxContainer
 ## The Machines channel on the wrist screen, drawn on glass with UI's TerminalKit: a row per
 ## yard machine (the hover trolleys, the picking lift, the scissor lift, the power unit and
-## the scaffold rigs) with what it is doing, where it is, and its buttons: DRIVE takes it
-## (and puts the wrist away so you can), COME TO ME, BRING <part> TO ME (the picking lift
+## the scaffold rigs) with what it is doing, where it is, and its buttons: DRIVE takes a
+## trolley on remote and PUSH takes hold of the bay's kit (both put the wrist away), COME TO ME, BRING <part> TO ME (the picking lift
 ## fetches the next part the ship in the bay takes), PUT AWAY / TO STORES, and the lift's and
 ## power unit's own controls.
 
@@ -121,7 +121,7 @@ func refresh() -> void:
 				b.disabled = str(fleet.call("next_part_for_ship")) == ""
 		if access and (row.buttons as Dictionary).has("drive"):
 			var mine := str(access.get("driving")) == id if not id.begins_with("trolley:") else str(fleet.get("remote_id")) == id.trim_prefix("trolley:")
-			(row.buttons["drive"] as Button).text = "LET GO" if mine else "DRIVE"
+			(row.buttons["drive"] as Button).text = "LET GO" if mine else _label_for(id, "drive")
 
 
 ## [text, colour] for a machine's state.
@@ -138,7 +138,7 @@ func state_of(id: String) -> Array:
 	if access == null:
 		return ["—", T.DIM]
 	if str(access.get("driving")) == id:
-		return ["driving", T.CYAN]
+		return ["pushed", T.CYAN]
 	match id:
 		"lift":
 			return ["at %.1f m" % float(access.call("lift_height")), T.GOOD]
@@ -184,7 +184,7 @@ func _position_of(id: String) -> Vector3:
 func _label_for(id: String, action: String) -> String:
 	match action:
 		"drive":
-			return "DRIVE"
+			return "DRIVE" if id.begins_with("trolley:") else "PUSH"
 		"come":
 			return "COME TO ME"
 		"bring":

@@ -11,6 +11,12 @@ extends AnimatableBody3D
 ## the Multiplayer mover stream places it. The deck's height follows `deck_target`, which
 ## every peer is told, so all copies raise and lower it the same way.
 
+const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
+const T := preload("res://modules/ui/api/terminal_kit.gd")
+
+## A button on its touch screen was pressed: "call", "park" or "remote" (the fleet acts).
+signal screen_action(action: String)
+
 const SPECS := {
 	"s": {"name": "Small hover trolley", "letter": "S", "deck": Vector2(0.8, 1.1), "radius": 0.6,
 			"speed": 2.4, "lift": 7.6, "carries": ["bin"], "colour": Color(0.25, 0.62, 0.85)},
@@ -65,7 +71,9 @@ var fork_target := 0.0
 var fork_side := 1.0
 var _cargo_mesh: MeshInstance3D
 var _lamp: MeshInstance3D
-var _screen: Label3D
+## The touch screen on its control box (TV style): its letter, status and buttons.
+var screen: Node3D
+var _shown := ""
 var _mats: Dictionary = {}
 
 
@@ -243,8 +251,10 @@ func sync_yaw() -> void:
 
 func show_status(text: String) -> void:
 	status = text
-	if _screen:
-		_screen.text = "%s\n%s" % [spec["letter"], text]
+	if screen and text != _shown:
+		_shown = text
+		var colour := T.CYAN if text == "REMOTE" else (T.GOOD if ["PARKED", "ALL PUT AWAY", "HERE", "STOPPED"].has(text) else T.AMBER)
+		screen.call("set_status", text.left(14), colour)
 	if _lamp:
 		_lamp.material_override = _mats["go"] if not path.is_empty() or drive_input != Vector2.ZERO else _mats["wait"]
 
@@ -279,17 +289,15 @@ func _build() -> void:
 	# The control box on the front end, with the size letter and a status screen.
 	var front := -d.y * 0.5
 	_box(Vector3(minf(d.x * 0.6, 0.8), 0.5, 0.18), Vector3(0, CHASSIS_TOP + 0.25, front + 0.1), _mats["dark"])
-	_lamp = _box(Vector3(0.08, 0.08, 0.04), Vector3(minf(d.x * 0.3, 0.4) - 0.08, CHASSIS_TOP + 0.44, front - 0.005), _mats["wait"])
-	_screen = Label3D.new()
-	_screen.font = ShipKit.mono_font()
-	_screen.font_size = 40
-	_screen.pixel_size = 0.0035
-	_screen.modulate = Color(0.45, 0.95, 1.0)
-	_screen.outline_size = 0
-	_screen.shaded = false
-	_screen.position = Vector3(-0.05, CHASSIS_TOP + 0.25, front - 0.01)
-	_screen.rotation.y = PI
-	add_child(_screen)
+	_lamp = _box(Vector3(0.08, 0.06, 0.08), Vector3(minf(d.x * 0.3, 0.4) - 0.08, CHASSIS_TOP + 0.53, front + 0.1), _mats["wait"])
+	var box_w := minf(d.x * 0.6, 0.8)
+	screen = Touch.new()
+	screen.name = "Screen"
+	screen.transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -0.25), Vector3(0, CHASSIS_TOP + 0.26, front - 0.055))
+	add_child(screen)
+	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else "PICKER", 3 if box_w > 0.6 else 1)
+	for b: Array in [["call", "COME"], ["park", "PARK"], ["remote", "DRIVE"]]:
+		screen.call("add_button", b[0], b[1], func() -> void: screen_action.emit(b[0]), b[0] == "remote")
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(d.x, CHASSIS_TOP - HOVER + 0.5, d.y)
