@@ -27,13 +27,29 @@ func run_tests() -> void:
 	var worker := rig.worker
 	var walker := yard.get("walker") as CharacterBody3D
 
-	# A yard screen closes and hands the walker back: Tools takes the yard again.
+	# The trolleys' screen closes and hands the walker back: Tools takes the yard again.
 	check(not bool(yard.get("walker_active")), "in the yard the worker is you; the yard's walker is stood down")
+	var ship_bus := Modules.bus("ship_bay")
+	var real_fleet: Variant = ship_bus.get("fleet")
+	var fleet := _fake_fleet()
+	ship_bus.set("fleet", fleet)
+	fleet.set("panel", Control.new())
+	await frames(2)
+	(fleet.get("panel") as Control).free()
+	fleet.set("panel", null)
 	yard.call("set_walker_active", true)
 	walker.get_node("Camera3D").set("current", true)
 	await frames(2)
 	check(not bool(yard.get("walker_active")) and worker.camera.current,
-			"a screen handing the walker back doesn't move you: the worker keeps the view")
+			"the trolleys' screen handing the walker back doesn't move you: the worker keeps the view")
+	# Handing the walker back on purpose (no screen closing) is left alone.
+	yard.call("set_walker_active", true)
+	await frames(2)
+	check(bool(yard.get("walker_active")), "the walker handed back on purpose stays the yard's")
+	yard.call("set_walker_active", false)
+	worker.camera.current = true
+	ship_bus.set("fleet", real_fleet)
+	fleet.free()
 
 	# Stand on the floor away from everything, then jump.
 	worker.global_position = Vector3(20, 0.05, 20)
@@ -99,7 +115,6 @@ func run_tests() -> void:
 	rig._handle_input(click)
 
 	# Driving a trolley on remote: W A S D are the trolley's.
-	var ship_bus := Modules.bus("ship_bay")
 	worker.global_position = Vector3(20, 0.05, 20)
 	await physics(10)
 	var stood := worker.global_position
@@ -124,6 +139,15 @@ func run_tests() -> void:
 func physics(n: int) -> void:
 	for i in n:
 		await get_tree().physics_frame
+
+
+func _fake_fleet() -> Node:
+	var script := GDScript.new()
+	script.source_code = "extends Node\nvar panel: Control\n"
+	script.reload()
+	var fleet := Node.new()
+	fleet.set_script(script)
+	return fleet
 
 
 func _fake_yard() -> Node3D:

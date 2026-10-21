@@ -45,6 +45,8 @@ const YARD_SHIP_AT := Vector3(0, 1.6, 0)
 
 ## Set before adding to the tree: you are in the shipyard working on the ship, not at a bench.
 var in_yard := false
+## The trolleys' screen was up last frame (see _keep_the_yard).
+var _screen_was_up := false
 var worker: BenchWorker
 var tool: StringName = &"hands"
 ## The tools on your hotbar (keys 1..n): TOOLS, and in the yard the tractor beam
@@ -157,15 +159,20 @@ func _remote_driving() -> bool:
 	return in_yard and yard_bus != null and bool(yard_bus.get("remote_driving"))
 
 
-## You are the worker in the yard for good. A yard screen (a trolley's or a scaffold's) hands
-## the yard's own walker back when it closes, which used to leave you as that walker at the
-## yard's start point with the worker's hands floating where you stood (0.3.6): stand it
-## down again and take the view and the mouse back.
+## You are the worker in the yard for good. The trolleys' screen hands the yard's own walker
+## back when it closes, which used to leave you as that walker at the yard's start point with
+## the worker's hands floating where you stood (0.3.6): when the walker comes back as that
+## screen closes, stand it down again and take the view and the mouse back. Anyone else
+## handing the walker back on purpose (Ship and Bay's own tests) keeps it.
 func _keep_the_yard() -> void:
 	var yard := get_parent() as Node3D
-	if yard == null or not bool(yard.get("walker_active")):
-		return
 	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	var fleet: Object = yard_bus.get("fleet") if yard_bus else null
+	var screen_up := is_instance_valid(fleet) and fleet.get("panel") != null
+	var closed := _screen_was_up and not screen_up
+	_screen_was_up = screen_up
+	if yard == null or not closed or not bool(yard.get("walker_active")):
+		return
 	if yard_bus:
 		yard_bus.set_walker_active(yard, false)
 	worker.camera.current = true
