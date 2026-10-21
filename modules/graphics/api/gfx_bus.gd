@@ -30,6 +30,10 @@ extends Node
 ##     when a scene has more than its budget. Lift a layer 0.6 mm off what it lies on, or
 ##     give a mesh meant to lie flush (a decal with its own depth offset) meta
 ##     "gfx_coplanar_ok";
+##   - a material with meta "gfx_surface" ("concrete", "ground", "epoxy" or "asphalt") is
+##     drawn as that ground surface, in its own colour and roughness: patches, a tint per
+##     slab, aggregate, dirt, oil stains, scuffs and relief ("graphics.surfaces", G5). Set
+##     the meta on the material (shared paints are fine) before a node using it is added;
 ##   - more groups (gfx_screen...) arrive with later stages.
 ##   Example:  unit.add_to_group("gfx_interactable"); unit.set_meta("gfx_id", "unit:3")
 ## Group names are plain strings, so tagging a node needs no dependency on this module.
@@ -50,6 +54,7 @@ const GI := "graphics.gi"
 const LAMPS := "graphics.lamps"
 const TORCH := "graphics.torch"
 const SKY := "graphics.sky"
+const SURFACES := "graphics.surfaces"
 ## Group of rooms (halls, the bay) that get their own bounce light and reflections.
 const ROOM := "gfx_room"
 ## Meta on a room: its inside as an AABB in the room node's space.
@@ -69,6 +74,7 @@ const LampLook := preload("res://modules/graphics/internal/lamp_look.gd")
 const HelmetTorch := preload("res://modules/graphics/internal/helmet_torch.gd")
 const SkyLook := preload("res://modules/graphics/internal/sky_look.gd")
 const ZFightCheck := preload("res://modules/graphics/internal/zfight_check.gd")
+const SurfaceLook := preload("res://modules/graphics/internal/surface_look.gd")
 ## Seconds after a room appears before its bounce light bakes (its owner may still be
 ## building it).
 const BAKE_DELAY := 0.5
@@ -83,6 +89,7 @@ var torch: Node
 var beams: Array[MeshInstance3D] = []
 var _daylight := -1.0
 var _sky_on := false
+var _surfaces_on := false
 ## VoxelGIs waiting to bake, one per frame after BAKE_DELAY: [{gi, at}].
 var _bakes: Array[Dictionary] = []
 var _sky_hour := -100.0
@@ -159,6 +166,8 @@ func restyle(n: Node) -> void:
 			torch.set_daylight(_daylight)
 	if n.is_in_group("alien_sky"):
 		_dress_sky(n)
+	if n is GeometryInstance3D and Flags.is_on(SURFACES) and SurfaceLook.apply(n as GeometryInstance3D):
+		look_applied.emit(n)
 
 
 ## Puts Graphics's sky on an AlienSky while "graphics.sky" is on, and takes it off when not.
@@ -264,6 +273,11 @@ func _on_node_added(n: Node) -> void:
 	if n.is_in_group(ROOM) or n.is_in_group("alien_sky"):
 		restyle.call_deferred(n)
 		return
+	if n is GeometryInstance3D:
+		var m := (n as GeometryInstance3D).material_override
+		if m and m.has_meta(SurfaceLook.META):
+			restyle.call_deferred(n)
+		return
 	if n is WorldEnvironment or n is DirectionalLight3D or n is SpotLight3D:
 		# Core's Graphics tunes these deferred too; queued after it, so this lands on top.
 		restyle.call_deferred(n)
@@ -287,6 +301,12 @@ func _on_flags() -> void:
 		_sky_on = Flags.is_on(SKY)
 		for sky in get_tree().get_nodes_in_group("alien_sky"):
 			_dress_sky(sky)
+	if is_inside_tree() and Flags.is_on(SURFACES) != _surfaces_on:
+		_surfaces_on = Flags.is_on(SURFACES)
+		if _surfaces_on:
+			apply_all()
+		else:
+			_strip_surfaces(get_tree().root)
 	var torch_on := Flags.is_on(TORCH)
 	if torch_on and torch == null:
 		Keys.register(HelmetTorch.ACTION, "Helmet torch", KEY_L)
@@ -298,6 +318,13 @@ func _on_flags() -> void:
 			torch.set_daylight(_daylight)
 	elif not torch_on:
 		_drop_torch()
+
+
+func _strip_surfaces(n: Node) -> void:
+	if n is GeometryInstance3D:
+		SurfaceLook.remove(n as GeometryInstance3D)
+	for c in n.get_children():
+		_strip_surfaces(c)
 
 
 func _drop_torch() -> void:
