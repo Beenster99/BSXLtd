@@ -149,7 +149,10 @@ func _ask(b: int, l: int, e: int) -> void:
 
 func _build() -> void:
 	if _look:
-		_look.free()
+		# Out now, freed at the end of the frame: its control post's screen may be the one
+		# whose button press asked for this change.
+		_look.get_parent().remove_child(_look)
+		_look.queue_free()
 	for c: Node in body.get_children():
 		c.free()
 	for c: Node in ladder.get_children():

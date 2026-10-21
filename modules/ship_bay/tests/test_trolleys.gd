@@ -184,19 +184,10 @@ func run_tests() -> void:
 	fleet.call("_input", f)
 	check(fleet.get("remote_id") == "" and fleet.get("remote_view") == null and not bus.remote_driving, "F hands it back and the window closes")
 
-	# The TV on Deliveries' east wall: clear of the frame columns, F on it opens the screen.
-	var tv := fleet.get_node_or_null("TrolleyTV") as Node3D
-	check(tv != null and absf(tv.global_position.z - 12.0) < 0.01 and fleet.get("tv_panel") != null, "a TV with the trolley screen on it")
-	var from := Vector3(-32.0, 2.55, 12.0)
-	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3(6, 0, 0))
-	var hit := yard.get_world_3d().direct_space_state.intersect_ray(q)
-	var used: Object = null
-	if not hit.is_empty():
-		var body := hit.collider as CollisionObject3D
-		used = body.shape_owner_get_owner(body.shape_find_owner(int(hit.shape)))
-	check(used != null and used.has_meta("ship_bay_use"), "nothing stands in front of it: looking at it hits %s" % [used])
-	if used and used.has_meta("ship_bay_use"):
-		(used.get_meta("ship_bay_use") as Callable).call()
+	# No trolley TV of its own: Business's hall TVs show the Machines channel. The full-size
+	# screen still opens.
+	check(fleet.get_node_or_null("TrolleyTV") == null, "the yard's own trolley TV is gone")
+	fleet.call("open_panel")
 	var screen: Control = fleet.get("panel")
 	check(screen != null and screen.is_visible_in_tree(), "F on it opens the trolley screen")
 	if screen:

@@ -95,7 +95,6 @@ const VIEWS := {
 	"trolleys": [Vector3(-38.5, 3.4, -25.0), Vector3(-31.0, 0.6, -14.0)],
 	"trolley_lift": [Vector3(-12.2, 1.8, -24.6), Vector3(-10.4, 4.6, -34.0)],
 	"picking_lift": [Vector3(-20.0, 1.7, -25.6), Vector3(-20.55, 5.8, -34.3)],
-	"trolley_tv": [Vector3(-34.0, 1.9, 12.0), Vector3(-28.3, 2.5, 12.0)],
 	"hover_truck": [Vector3(-74.0, 4.5, 22.0), Vector3(-60.0, 1.8, 8.0)],
 	# Dock 1 and the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
