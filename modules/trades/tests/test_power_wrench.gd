@@ -44,6 +44,7 @@ func run_tests() -> void:
 	rig._on_action(TradesBus.KEY_MODE)
 	check(wrench.undo, "%s switches it to undo" % Keys.key_name(TradesBus.KEY_MODE))
 	station.press(&"torque_wrench")
+	station._stall_at = -1.0
 	_run(station, TradesShipJoints.BREAK_S + 0.05)
 	check(not ship_bus.is_joint_tight(f.joint_id), "undo runs the bolt out")
 	rig._on_action(TradesBus.KEY_MODE)

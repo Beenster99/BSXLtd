@@ -1199,7 +1199,8 @@ func _apply_torch(p: Dictionary) -> void:
 	r.at = p.at as Vector3
 	r.cutting = bool(p.cutting)
 	# Their shield, on Multiplayer's avatar of them when it offers the head.
-	if r.helmet == null and net and net.has_method("avatar_head"):
+	# Avatars are rebuilt now and then (a scene change): fetch the head again when ours is gone.
+	if not is_instance_valid(r.helmet) and net and net.has_method("avatar_head"):
 		var head := net.call("avatar_head", peer) as Node3D
 		if head:
 			var h := TradesWeldingHelmet.new()
