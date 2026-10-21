@@ -40,6 +40,8 @@ var third_person := false
 var agile := true
 ## True while a hand is working something: the mouse drives the work, not the view.
 var look_locked := false
+## True while the keys drive something else (a trolley on remote): stand still.
+var held_still := false
 
 var head: Node3D
 var camera: Camera3D
@@ -153,14 +155,14 @@ func aim_dir() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
-	if not look_locked:
+	if not look_locked and not held_still:
 		input.x = Input.get_action_strength(Keys.RIGHT) - Input.get_action_strength(Keys.LEFT)
 		input.y = Input.get_action_strength(Keys.BACK) - Input.get_action_strength(Keys.FORWARD)
 	var speed := run_speed if Input.is_action_pressed(Keys.RUN) else walk_speed
 	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
 	velocity.z = move.z
-	var jump := agile and not look_locked and Input.is_action_pressed(Keys.JUMP)
+	var jump := agile and not look_locked and not held_still and Input.is_action_pressed(Keys.JUMP)
 	if _ladders > 0:
 		# On a ladder: forward or jump climbs, back climbs down; you stay on it unless you're
 		# standing at its foot.

@@ -1,7 +1,9 @@
 extends ModuleTest
 ## You on foot in the yard (beenster's 0.3.6 list): Space jumps, a ladder climbs, and when a
 ## yard screen hands the yard's own walker back on closing, Tools takes the view back so you
-## aren't left at the start point with the worker's hands floating where you stood.
+## aren't left at the start point with the worker's hands floating where you stood. The HUD's
+## text goes to UI's right-hand panel; a screen holding the mouse, or a trolley driven on
+## remote, keeps the worker's hands and feet still.
 
 const FAKE_YARD := """extends Node3D
 var walker: CharacterBody3D
@@ -75,8 +77,46 @@ func run_tests() -> void:
 	worker.set_ladder(-1, deck)
 	check(not worker.on_ladder() and worker.global_position.is_equal_approx(deck), "out of the top: onto the deck")
 
+	# The tool, what you're on and the keys are cards in the right-hand panel.
+	await frames(2)
+	var ids := HudSlots.infos().map(func(c: Dictionary) -> String: return c.id)
+	check(ids.has(TradesBay.INFO_TOOL) and ids.has(TradesBay.INFO_KEYS), "the tool and keys are cards in the right-hand panel")
+	var keys_card: Dictionary = HudSlots.infos().filter(func(c: Dictionary) -> bool: return c.id == TradesBay.INFO_KEYS)[0]
+	check(Keys.key_name(Keys.JUMP) in keys_card.text, "the keys card names the jump key")
+
+	# A screen with the mouse: clicks don't use a tool.
+	rig.set_tool(&"tractor")
+	HudSlots.claim_pointer("test")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	rig._handle_input(click)
+	check(rig.get("_pressed") == null, "while a screen has the mouse, a click doesn't use the tool")
+	HudSlots.release_pointer("test")
+	rig._handle_input(click)
+	check(rig.get("_pressed") != null, "and once it lets go, it does")
+	click.pressed = false
+	rig._handle_input(click)
+
+	# Driving a trolley on remote: W A S D are the trolley's.
+	var ship_bus := Modules.bus("ship_bay")
+	worker.global_position = Vector3(20, 0.05, 20)
+	await physics(10)
+	var stood := worker.global_position
+	ship_bus.set("remote_driving", true)
+	await frames(1)
+	Input.action_press(Keys.FORWARD)
+	await physics(20)
+	Input.action_release(Keys.FORWARD)
+	ship_bus.set("remote_driving", false)
+	check(Vector2(worker.global_position.x - stood.x, worker.global_position.z - stood.z).length() < 0.02,
+			"driving a trolley on remote, the worker stands still")
+	await frames(1)
+
 	yard.queue_free()
 	await frames(1)
+	check(not HudSlots.infos().any(func(c: Dictionary) -> bool: return String(c.id).begins_with("trades.")),
+			"leaving the yard takes Tools' cards away")
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
 

@@ -150,6 +150,13 @@ func _enter_yard() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+## True while you drive a hover trolley on remote (Ship and Bay): W A S D and the mouse are
+## the trolley's, so the worker stands still.
+func _remote_driving() -> bool:
+	var yard_bus := Modules.bus("ship_bay")
+	return in_yard and yard_bus != null and bool(yard_bus.get("remote_driving"))
+
+
 ## You are the worker in the yard for good. A yard screen (a trolley's or a scaffold's) hands
 ## the yard's own walker back when it closes, which used to leave you as that walker at the
 ## yard's start point with the worker's hands floating where you stood (0.3.6): stand it
@@ -185,6 +192,7 @@ func ship_station() -> TradesShipJoints:
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_clear_info()
 	# A screenshot may have left Tab held down.
 	if InputMap.has_action(TradesBus.KEY_INSPECT):
 		Input.action_release(TradesBus.KEY_INSPECT)
@@ -253,9 +261,10 @@ func _keys_line() -> String:
 	var tools := "%s-%s" % [k.call(TradesBus.KEY_TOOL + "1"), k.call(TradesBus.KEY_TOOL + str(hotbar.size()))]
 	var turn := "%s/%s" % [k.call(TradesBus.KEY_TURN_LEFT), k.call(TradesBus.KEY_TURN_RIGHT)]
 	if in_yard:
-		return "%s walk  %s run  %s view  wheel/%s tool  LMB use  RMB take off  %s turn  %s menu" % [
-				walk, k.call(Keys.RUN), k.call(TradesBus.KEY_VIEW), tools, turn, k.call(Keys.CANCEL)]
-	return "%s walk  %s view  wheel/%s tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  %s amps  %s part  %s reset  %s menu" % [
+		return "%s walk  %s run  %s jump / climb  %s view  wheel/%s tool  LMB use  RMB take off  %s turn  %s part details  %s pause" % [
+				walk, k.call(Keys.RUN), k.call(Keys.JUMP), k.call(TradesBus.KEY_VIEW), tools, turn,
+				k.call(TradesBus.KEY_INSPECT), k.call(Keys.CANCEL)]
+	return "%s walk  %s view  wheel/%s tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  %s amps  %s part  %s reset  %s pause" % [
 			walk, k.call(TradesBus.KEY_VIEW), tools, turn, k.call(TradesBus.KEY_NEXT), k.call(TradesBus.KEY_RESET), k.call(Keys.CANCEL)]
 
 
@@ -264,12 +273,18 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _handle_input(event: InputEvent) -> void:
+	# A screen with the mouse (the wrist screen, the pause menu, an aimed touch screen) or a
+	# trolley driven on remote has the mouse: no looking, no capturing it, no tools.
+	if event is InputEventMouse and (HudSlots.pointer_claimed() or _remote_driving()):
+		return
 	if event is InputEventMouseMotion:
 		if not (_focus and _focus.motion(event.relative)):
 			worker.look(event.relative)
 	elif event is InputEventMouseButton:
 		if DisplayServer.get_name() != "headless" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			# Only a press takes the mouse back: a screen's click lets go on its release.
+			if event.pressed:
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
 		_on_mouse_button(event)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -307,9 +322,9 @@ func _on_action(action: String) -> void:
 				hide_result()
 				hint(_focus.start_hint())
 		Keys.CANCEL:
+			# The pause menu (Resume, Save, Main menu, Quit): you stay where you are.
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			if Router.has_scene("main_menu"):
-				Router.goto("main_menu")
+			Menu.open_pause()
 		_:
 			if _focus and _focus.key(action):
 				_refresh_hud()
@@ -356,8 +371,10 @@ func _process(delta: float) -> void:
 			t.global_transform = t.carried(worker.right_hand.palm())
 	if _focus:
 		_status_label.text = _focus.status_line()
+	worker.held_still = _remote_driving()
 	_update_tool_panel()
 	_update_inspect()
+	_post_info()
 
 
 ## Width of the tool panel's fill bar (pixels).
@@ -390,6 +407,7 @@ func _update_inspect() -> void:
 	var on := InputMap.has_action(TradesBus.KEY_INSPECT) and Input.is_action_pressed(TradesBus.KEY_INSPECT)
 	_inspect_panel.visible = on
 	if not on:
+		_inspect_label.text = ""
 		return
 	var lines := _focus.inspect_lines() if _focus else PackedStringArray()
 	if lines.is_empty():
@@ -404,6 +422,39 @@ func tool_panel_text() -> String:
 
 func inspect_text() -> String:
 	return _inspect_label.text if _inspect_panel and _inspect_panel.visible else ""
+
+
+## The ids of Tools' cards in the HUD's right-hand panel (UI's HudSlots.set_info).
+const INFO_TOOL := "trades.tool"
+const INFO_HINT := "trades.hint"
+const INFO_PART := "trades.part"
+const INFO_KEYS := "trades.keys"
+
+
+## What used to be text top left (the tool, what you're working on, the hint, the keys) and
+## the part details go to the HUD's one see-through panel on the right (beenster, 0.3.6:
+## the top-left text overlapped itself). The labels stay as the text's holders.
+func _post_info() -> void:
+	if not _hud.visible:
+		_clear_info()
+		return
+	var status := _status_label.text
+	HudSlots.set_info(INFO_TOOL, "Tool", _tool_label.text.trim_prefix("TOOL").strip_edges()
+			+ ("\n" + status if status != "" else ""), 10)
+	if _hint_label.text != "":
+		HudSlots.set_info(INFO_HINT, "Next", _hint_label.text, 11)
+	else:
+		HudSlots.clear_info(INFO_HINT)
+	if _inspect_label and _inspect_label.text != "":
+		HudSlots.set_info(INFO_PART, "Part details", _inspect_label.text, 12)
+	else:
+		HudSlots.clear_info(INFO_PART)
+	HudSlots.set_info(INFO_KEYS, "Keys", _keys_line().replace("  ", "\n"), 90)
+
+
+func _clear_info() -> void:
+	for id: String in [INFO_TOOL, INFO_HINT, INFO_PART, INFO_KEYS]:
+		HudSlots.clear_info(id)
 
 
 func _update_focus() -> void:
@@ -788,10 +839,12 @@ func _build_hud() -> void:
 	var keys := TradesLook.hud_label(15, TradesLook.HUD_DIM)
 	keys.text = _keys_line()
 	keys.position = Vector2(40, 36)
+	keys.visible = false   # in the right-hand panel (_post_info)
 	root.add_child(keys)
 
 	var box := VBoxContainer.new()
 	box.position = Vector2(40, 80)
+	box.visible = false    # in the right-hand panel (_post_info)
 	box.add_theme_constant_override("separation", 4)
 	root.add_child(box)
 	_tool_label = TradesLook.hud_label(26)
@@ -857,6 +910,7 @@ func _build_hud() -> void:
 		_inspect_label = TradesLook.hud_label(20)
 		details.add_child(_inspect_label)
 		_inspect_panel.visible = false
+		_inspect_panel.modulate.a = 0.0   # shown in the right-hand panel (_post_info)
 
 
 ## The tool in hand's readings, large and labelled, bottom right over the hotbar: its name,
