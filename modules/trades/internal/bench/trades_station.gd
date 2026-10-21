@@ -72,6 +72,21 @@ func inspect_lines() -> PackedStringArray:
 	return PackedStringArray()
 
 
+## What the aim is on, for the tips' heading ("" lets the bay name the station).
+func aim_title(_tool: StringName) -> String:
+	return ""
+
+
+## What you can do now with `tool` on what the aim is on, for the tips in the HUD's
+## right-hand panel: [[input, what it does], ...]; input is a Keys action (shown with its
+## bound key) or a label (TradesBay.CLICK...).
+## Empty while the aim is on nothing this station knows.
+func actions(_tool: StringName) -> Array:
+	if inspect_lines().is_empty():
+		return []
+	return [[TradesBay.HOLD_CLICK, "use it"], [TradesBay.RIGHT_CLICK, "take it off"]]
+
+
 ## A key action the bay doesn't use itself (TradesBus.KEY_*, Keys.*). True when the station used it.
 func key(_action: String) -> bool:
 	return false
