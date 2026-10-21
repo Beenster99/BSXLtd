@@ -1,20 +1,29 @@
 class_name BenchWorker
 extends CharacterBody3D
-## The BSX worker on foot: walk with WASD, look with the mouse, V swaps first and third person.
+## The BSX worker on foot: walk with WASD, Space jumps, look with the mouse, V swaps first and
+## third person. On a ladder (a scaffold's climbing space calls set_ladder) forward or Space
+## climbs and back climbs down.
 ## Two symbolic stretchy hands hang in front of the camera (StretchHand), so you see your own
 ## hands doing the work in either view. The origin is at the feet.
 ##
-## Only the bench uses this for now. A shared player for every scene belongs with Core and
-## Multiplayer once one is needed.
+## In the yard this is the player (TradesBay stands Ship and Bay's walker down).
 
 const EYE := 1.62
 ## The body's chest, where Void Salvage's PlayerModel measures from (its eyes are 0.3 up).
 const CHEST := Vector3(0, EYE - 0.3, 0)
+## Footsteps kept soft (beenster, 0.3.6: "walking sound needs to be more subtle"), dB.
+const STEP_DB := -18.0
 
 @export var walk_speed := 2.4
 ## Holding Shift (m/s): across the yard.
 @export var run_speed := 5.5
 @export var mouse_sensitivity := 0.0025
+## Take-off speed of a jump (m/s): about 0.6 m up, enough to hop onto a low deck.
+@export var jump_speed := 3.6
+## The planet's gravity (m/s²), as the yard has it.
+@export var gravity := 9.0
+## Climbing speed on a ladder (m/s).
+@export var climb_speed := 1.6
 ## Third-person camera: over the right shoulder, in the body's space (metres), looking at
 ## the point the head is aimed at, so the crosshair still points where you work.
 @export var boom := Vector3(1.3, 2.0, 0.55)
@@ -27,8 +36,12 @@ const CHEST := Vector3(0, EYE - 0.3, 0)
 @export var lean_full_deg := 60.0
 
 var third_person := false
+## Jumping and climbing ladders (the bay turns them on with trades.jump).
+var agile := true
 ## True while a hand is working something: the mouse drives the work, not the view.
 var look_locked := false
+## True while the keys drive something else (a trolley on remote): stand still.
+var held_still := false
 
 var head: Node3D
 var camera: Camera3D
@@ -37,6 +50,10 @@ var right_hand: StretchHand
 var _body_model: Node3D
 var _pitch := 0.0
 var _kick := 0.0
+## How many ladders' climbing spaces the worker is in.
+var _ladders := 0
+## Footsteps underfoot (UI's Footsteps: steps by the surface, a thud on landing).
+var footsteps: Footsteps
 
 
 func _ready() -> void:
@@ -47,6 +64,10 @@ func _ready() -> void:
 	shape.shape = capsule
 	shape.position.y = 0.9
 	add_child(shape)
+
+	footsteps = Footsteps.new()
+	footsteps.volume_db = STEP_DB
+	add_child(footsteps)
 
 	head = Node3D.new()
 	head.name = "Head"
@@ -134,15 +155,43 @@ func aim_dir() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
-	if not look_locked:
+	if not look_locked and not held_still:
 		input.x = Input.get_action_strength(Keys.RIGHT) - Input.get_action_strength(Keys.LEFT)
 		input.y = Input.get_action_strength(Keys.BACK) - Input.get_action_strength(Keys.FORWARD)
 	var speed := run_speed if Input.is_action_pressed(Keys.RUN) else walk_speed
 	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
 	velocity.z = move.z
-	velocity.y = 0.0 if is_on_floor() else velocity.y - 9.8 * delta
+	var jump := agile and not look_locked and not held_still and Input.is_action_pressed(Keys.JUMP)
+	if _ladders > 0:
+		# On a ladder: forward or jump climbs, back climbs down; you stay on it unless you're
+		# standing at its foot.
+		var climb := clampf(-input.y + (1.0 if jump else 0.0), -1.0, 1.0)
+		velocity.y = climb * climb_speed
+		if not (is_on_floor() and climb <= 0.0):
+			velocity.x = 0.0
+			velocity.z = 0.0
+	elif is_on_floor():
+		velocity.y = jump_speed if jump else 0.0
+	else:
+		velocity.y -= gravity * delta
 	move_and_slide()
+
+
+## A ladder's climbing space counts the worker in (+1) and out (-1). Leaving one out of its
+## top, it hands over where to step off (`step_to`, else INF). Ship and Bay's scaffold rigs
+## call this on whoever climbs.
+func set_ladder(way: int, step_to: Vector3 = Vector3.INF) -> void:
+	if not agile:
+		return
+	_ladders = maxi(_ladders + way, 0)
+	if way < 0 and step_to.is_finite():
+		global_position = step_to
+		velocity = Vector3.ZERO
+
+
+func on_ladder() -> bool:
+	return _ladders > 0
 
 
 func _hand(side: String, at: Vector3, is_left: bool) -> StretchHand:

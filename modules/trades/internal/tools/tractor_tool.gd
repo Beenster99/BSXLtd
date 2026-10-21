@@ -63,7 +63,11 @@ func _ready() -> void:
 	print_text("BSX", Vector3(-0.0302, -0.13, 0.0), Vector3.LEFT, Vector3.UP, 0.012)
 	# The back end, with the screen looking back at the holder.
 	box(Vector3(0.058, 0.04, 0.03), Vector3(0, -0.17, 0.0), dark)
-	add_screen(Vector3(0, -0.1702, 0.0151), Vector3.BACK, Vector2(0.05, 0.034), 9, 3, Vector3.UP)
+	if Flags.is_on("trades.tool_display"):
+		# The display's arm on the coils' left side: the back end is too near the eye in hand.
+		add_screen(Vector3(-0.031, -0.058, 0), Vector3.LEFT, Vector2(0.05, 0.034), 9, 3, Vector3.UP)
+	else:
+		add_screen(Vector3(0, -0.1702, 0.0151), Vector3.BACK, Vector2(0.05, 0.034), 9, 3, Vector3.UP)
 	# Pistol grip, trigger, and the battery pack under it.
 	box(Vector3(0.028, 0.034, 0.11), Vector3(0, -0.15, 0.07), body, Vector3(0.25, 0, 0))
 	capsule(0.017, 0.1, Vector3(0, -0.156, 0.08), Vector3(PI * 0.5 + 0.25, 0, 0), rubber)
