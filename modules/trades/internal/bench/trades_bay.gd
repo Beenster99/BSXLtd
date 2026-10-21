@@ -84,7 +84,12 @@ var _inspect_panel: PanelContainer
 var _inspect_label: Label
 
 
+## Its look hint provider's id (HudSlots.register_look_hint).
+const LOOK_HINT_ID := "trades.tool"
+
+
 func _ready() -> void:
+	HudSlots.register_look_hint(LOOK_HINT_ID, func(_hit: Dictionary) -> Dictionary: return look_hint(), 10)
 	if not in_yard:
 		_build_room()
 		_build_bench()
@@ -199,6 +204,7 @@ func ship_station() -> TradesShipJoints:
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	HudSlots.unregister_look_hint(LOOK_HINT_ID)
 	_clear_info()
 	# A screenshot may have left Tab held down.
 	if InputMap.has_action(TradesBus.KEY_INSPECT):
@@ -332,6 +338,7 @@ func _on_action(action: String) -> void:
 			# The pause menu (Resume, Save, Main menu, Quit): you stay where you are.
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			Menu.open_pause()
+			get_viewport().set_input_as_handled()
 		_:
 			if _focus and _focus.key(action):
 				_refresh_hud()
@@ -436,7 +443,6 @@ func inspect_text() -> String:
 const INFO_TOOL := "trades.tool"
 const INFO_HINT := "trades.hint"
 const INFO_PART := "trades.part"
-const INFO_KEYS := "trades.keys"
 
 
 ## The mouse in the tips (TradesStation.actions); keys go by their bound names.
@@ -447,10 +453,30 @@ const HOLD_RIGHT := "Hold right click"
 const WHEEL := "Mouse wheel"
 
 
-## The key that takes up a tool from the hotbar ("2"), or "-" when it isn't on it.
-func tool_key(id: StringName) -> String:
+## The action that takes up a tool from the hotbar, or "-" when it isn't on it.
+func tool_action(id: StringName) -> String:
 	var i := hotbar.find(id)
-	return Keys.key_name(TradesBus.KEY_TOOL + str(i + 1)) if i >= 0 else "-"
+	return TradesBus.KEY_TOOL + str(i + 1) if i >= 0 else "-"
+
+
+## The key that takes up a tool from the hotbar ("2"), or "-".
+func tool_key(id: StringName) -> String:
+	var action := tool_action(id)
+	return Keys.key_name(action) if Keys.has(action) else action
+
+
+## What the hint card shows for the tool in hand on what you're looking at (UI's look hint,
+## HudSlots.register_look_hint): {title, keys}, or {} while there's nothing to do.
+func look_hint() -> Dictionary:
+	if _focus == null or not _hud.visible:
+		return {}
+	var keys := _focus.actions(tool)
+	if keys.is_empty():
+		return {}
+	if InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
+		keys.append([TradesBus.KEY_INSPECT, "part details (hold)"])
+	var title := _focus.aim_title(tool)
+	return {"title": title if title != "" else _focus.title, "text": "", "keys": keys}
 
 
 ## What you can do now with the tool in your hand on what you're looking at, with its keys
@@ -458,20 +484,16 @@ func tool_key(id: StringName) -> String:
 ## Empty while there's nothing to do.
 func context_tips() -> PackedStringArray:
 	var out := PackedStringArray()
-	if _focus == null:
-		return out
-	var rows := _focus.actions(tool)
-	for r: Array in rows:
-		out.append("%s: %s" % [r[0], r[1]])
-	if not rows.is_empty() and InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
-		out.append("Hold %s: part details" % Keys.key_name(TradesBus.KEY_INSPECT))
+	for r: Array in look_hint().get("keys", []):
+		var key := str(r[0])
+		out.append("%s: %s" % [Keys.key_name(key) if Keys.has(key) else key, r[1]])
 	return out
 
 
 ## What used to be text top left (the tool, what you're working on, the hint, the keys) and
 ## the part details go to the HUD's one see-through panel on the right (beenster, 0.3.6:
-## the top-left text overlapped itself). The labels stay as the text's holders. The keys card
-## only has the tips for what's under the aim (context_tips).
+## the top-left text overlapped itself). The labels stay as the text's holders. What you can
+## do with the tool on what's under the aim is UI's look card, from look_hint().
 func _post_info() -> void:
 	if not _hud.visible:
 		_clear_info()
@@ -487,15 +509,10 @@ func _post_info() -> void:
 		HudSlots.set_info(INFO_PART, "Part details", _inspect_label.text, 12)
 	else:
 		HudSlots.clear_info(INFO_PART)
-	var tips := context_tips()
-	if tips.is_empty():
-		HudSlots.clear_info(INFO_KEYS)
-	else:
-		HudSlots.set_info(INFO_KEYS, "You can", "\n".join(tips), 13)
 
 
 func _clear_info() -> void:
-	for id: String in [INFO_TOOL, INFO_HINT, INFO_PART, INFO_KEYS]:
+	for id: String in [INFO_TOOL, INFO_HINT, INFO_PART]:
 		HudSlots.clear_info(id)
 
 

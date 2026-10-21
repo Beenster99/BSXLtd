@@ -574,6 +574,16 @@ func _update_aim() -> void:
 		bay.refresh_hud()
 
 
+## What the aim is on, for the tips' heading: "M12 bolt, tight", or "" for nothing.
+func aim_title(tool: StringName) -> String:
+	if tool == &"tractor":
+		return tractor.aim_title()
+	if aimed < 0:
+		return ""
+	var f := points[aimed]
+	return "%s %s, %s" % [f.spec.to_upper(), f.kind, _state_word(f).to_lower()]
+
+
 ## The tips for the joint under the aim with `tool` in hand: what it does to it now, or
 ## which tool to take up for it.
 func actions(tool: StringName) -> Array:
@@ -585,7 +595,7 @@ func actions(tool: StringName) -> Array:
 	if _working >= 0:
 		return [["Let go", "stop"]]
 	if _slot_empty(f):
-		return [[TradesBay.CLICK, "put the part back"]] if tool == &"hands" else [[bay.tool_key(&"hands"), "hands, to put the part back"]]
+		return [[TradesBay.CLICK, "put the part back"]] if tool == &"hands" else [[bay.tool_action(&"hands"), "hands, to put the part back"]]
 	var tight := _bus.is_joint_tight(f.joint_id)
 	var out: Array = []
 	match f.kind:
@@ -618,7 +628,7 @@ func actions(tool: StringName) -> Array:
 			"connector":
 				want = &"hands"
 		if want != tool:
-			out.append([bay.tool_key(want), "take the %s" % String(TradesBay.TOOL_LABELS.get(want, want)).to_lower()])
+			out.append([bay.tool_action(want), "take the %s" % String(TradesBay.TOOL_LABELS.get(want, want)).to_lower()])
 	return out
 
 

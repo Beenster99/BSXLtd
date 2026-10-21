@@ -100,7 +100,7 @@ func run_tests() -> void:
 	await frames(2)
 	var ids := HudSlots.infos().map(func(c: Dictionary) -> String: return c.id)
 	check(ids.has(TradesBay.INFO_TOOL), "the tool is a card in the right-hand panel")
-	check(not ids.has(TradesBay.INFO_KEYS) and rig.context_tips().is_empty(), "looking at nothing: no keys card")
+	check(not ids.has("trades.keys") and rig.look_hint().is_empty(), "looking at nothing: no keys card and no tips")
 
 	# The wrist screen up: you can still walk about (beenster, 0.3.7).
 	await physics(10)

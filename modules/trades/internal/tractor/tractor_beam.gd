@@ -246,6 +246,16 @@ func turn(step: int) -> bool:
 	return true
 
 
+## The part in the beam or under its aim, for the tips' heading ("" for none).
+func aim_title() -> String:
+	var part := held if held else aimed_part()
+	if part == null:
+		return ""
+	var slot := _bus.get_slot(part.slot_id) if _bus else null
+	var what := slot.display_name if slot and slot.display_name != "" else part.slot_id
+	return ("In the beam: %s" if held else "%s, off the ship") % what
+
+
 ## The tips for the beam (TradesStation.actions): holding a part, or what's under the aim.
 func actions() -> Array:
 	if held:

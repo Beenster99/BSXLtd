@@ -64,6 +64,9 @@ func run_tests() -> void:
 	tips = "\n".join(rig.context_tips())
 	check(tips.contains(TradesBay.HOLD_RIGHT + ": break it loose") and tips.contains("part details"),
 			"the wrench on a tight bolt: hold right click breaks it loose (%s)" % tips.replace("\n", " | "))
+	var card := HudSlots.look_hint_for({"collider": null})
+	check(str(card.get("title", "")).contains("bolt, tight"),
+			"UI's look card gets Tools' hint for the aimed bolt: %s" % card.get("title", ""))
 	check(not tips.contains(Keys.key_name(Keys.JUMP)) and not tips.contains("walk"), "no walking or jumping keys in the tips")
 	check(station.status_line().contains("TIGHT"), "the HUD says it's tight")
 	var id := station.points[bolt].joint_id
