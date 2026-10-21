@@ -38,6 +38,12 @@ func run_tests() -> void:
 			"a cross-threaded bolt fails a high-scoring joint: %d %s" % [crossed.score, crossed.grade])
 	check(crossed.faults[0].hole == 1, "fault names the hole")
 
+	var stripped := _bolt([25.0, 25.0, 25.0, 25.0], {"cross_threaded": [false, false, true, false],
+			"stripped_thread": [false, false, true, false]})
+	g.grade(stripped)
+	check(stripped.grade == JointRecord.FAIL and _codes(stripped) == ["stripped_thread"],
+			"a stripped thread fails and is named once: %s" % [_codes(stripped)])
+
 	var yielded := _bolt([25.0, 36.0, 25.0, 25.0])
 	g.grade(yielded)
 	check(yielded.grade == JointRecord.FAIL, "44% over target fails the joint")

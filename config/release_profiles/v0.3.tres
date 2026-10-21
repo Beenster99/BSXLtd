@@ -19,6 +19,7 @@ flags = {
 "graphics.light": true,
 "graphics.ping": true,
 "graphics.profiler": true,
+"graphics.sky": true,
 "graphics.torch": true,
 "multiplayer": true,
 "multiplayer.crew": true,

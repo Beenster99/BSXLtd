@@ -23,6 +23,13 @@ extends Node
 ##   - every player wears a helmet torch, L, on by itself at night ("graphics.torch"). A
 ##     crewmate's shows on their avatar's head: a Node3D in group "crew_head" with meta
 ##     "peer_id";
+##   - the AlienSky (group "alien_sky") gets Graphics's sky: a deep blue day, scattered light,
+##     clouds, more stars, ground haze and a properly dark night ("graphics.sky", G4);
+##   - zfight_scan(scene) lists faces of two meshes that lie in one plane and flicker
+##     (Z-fighting); Graphics's tests run it on every scene with screenshot points and fail
+##     when a scene has more than its budget. Lift a layer 0.6 mm off what it lies on, or
+##     give a mesh meant to lie flush (a decal with its own depth offset) meta
+##     "gfx_coplanar_ok";
 ##   - more groups (gfx_screen...) arrive with later stages.
 ##   Example:  unit.add_to_group("gfx_interactable"); unit.set_meta("gfx_id", "unit:3")
 ## Group names are plain strings, so tagging a node needs no dependency on this module.
@@ -42,6 +49,7 @@ const PROFILER := "graphics.profiler"
 const GI := "graphics.gi"
 const LAMPS := "graphics.lamps"
 const TORCH := "graphics.torch"
+const SKY := "graphics.sky"
 ## Group of rooms (halls, the bay) that get their own bounce light and reflections.
 const ROOM := "gfx_room"
 ## Meta on a room: its inside as an AABB in the room node's space.
@@ -59,6 +67,8 @@ const Profiler := preload("res://modules/graphics/internal/profiler.gd")
 const RoomLight := preload("res://modules/graphics/internal/room_light.gd")
 const LampLook := preload("res://modules/graphics/internal/lamp_look.gd")
 const HelmetTorch := preload("res://modules/graphics/internal/helmet_torch.gd")
+const SkyLook := preload("res://modules/graphics/internal/sky_look.gd")
+const ZFightCheck := preload("res://modules/graphics/internal/zfight_check.gd")
 ## Seconds after a room appears before its bounce light bakes (its owner may still be
 ## building it).
 const BAKE_DELAY := 0.5
@@ -72,6 +82,7 @@ var torch: Node
 ## Lamp beams in the scene, refreshed each frame from their lamps.
 var beams: Array[MeshInstance3D] = []
 var _daylight := -1.0
+var _sky_on := false
 ## VoxelGIs waiting to bake, one per frame after BAKE_DELAY: [{gi, at}].
 var _bakes: Array[Dictionary] = []
 var _sky_hour := -100.0
@@ -146,6 +157,17 @@ func restyle(n: Node) -> void:
 		_daylight = AlienSky.daylight_at(float(n.get("hour")))
 		if torch:
 			torch.set_daylight(_daylight)
+	if n.is_in_group("alien_sky"):
+		_dress_sky(n)
+
+
+## Puts Graphics's sky on an AlienSky while "graphics.sky" is on, and takes it off when not.
+func _dress_sky(sky: Node) -> void:
+	if Flags.is_on(SKY):
+		SkyLook.apply(sky)
+		look_applied.emit(sky)
+	else:
+		SkyLook.remove(sky)
 
 
 ## The usable thing under the pointer now, or null.
@@ -157,6 +179,16 @@ func hover_target() -> Node:
 func ping(at: Vector3, thing: Node = null, normal := Vector3.UP) -> void:
 	if pointer and Flags.is_on(PING):
 		pointer.ping(at, thing, normal)
+
+
+## Faces under root that Z-fight: [{a, b, area, at, normal}], biggest overlap first (a and b
+## the two meshes' paths, area in m², at a point in the overlap). describe_zfights() prints them.
+func zfight_scan(root: Node) -> Array[Dictionary]:
+	return ZFightCheck.scan(root)
+
+
+func describe_zfights(hits: Array[Dictionary], most := 20) -> String:
+	return ZFightCheck.describe(hits, most)
 
 
 ## True for the yard's environment: one under an AlienSky, or tagged "gfx_world".
@@ -215,6 +247,9 @@ func _refresh_beams() -> void:
 
 func _on_sky_time(hour: float, daylight: float) -> void:
 	_daylight = daylight
+	if Flags.is_on(SKY):
+		for sky in get_tree().get_nodes_in_group("alien_sky"):
+			SkyLook.night(sky, hour, daylight)
 	if torch:
 		torch.set_daylight(daylight)
 	if absf(hour - _sky_hour) < RoomLight.REPROBE_HOURS or not Flags.is_on(GI):
@@ -248,6 +283,10 @@ func _on_flags() -> void:
 		profiler.queue_free()
 		profiler = null
 		Keys.unregister(Profiler.ACTION)
+	if is_inside_tree() and Flags.is_on(SKY) != _sky_on:
+		_sky_on = Flags.is_on(SKY)
+		for sky in get_tree().get_nodes_in_group("alien_sky"):
+			_dress_sky(sky)
 	var torch_on := Flags.is_on(TORCH)
 	if torch_on and torch == null:
 		Keys.register(HelmetTorch.ACTION, "Helmet torch", KEY_L)
