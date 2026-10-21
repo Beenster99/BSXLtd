@@ -8,20 +8,38 @@ extends Node
 ## restyles it while a stage's flag is on (off, everything keeps the look its owner gave it):
 ##   - every WorldEnvironment under an AlienSky (group "alien_sky"), or in group "gfx_world",
 ##     gets the outdoor lighting baseline (G1, flag "graphics.light");
+##   - a node in group "gfx_interactable" is something the player can use: it highlights
+##     while the pointer is over it within reach ("graphics.hover") and lights up in the
+##     pinger's colour when pinged ("graphics.ping", middle mouse). Give it meta "gfx_id"
+##     (the same stable data id on every machine, e.g. "trolley:2") so a crewmate's ping
+##     finds it; without one a ping lights the usable thing it lands on or beside;
 ##   - more groups (gfx_lamp, gfx_room, gfx_screen...) arrive with later stages.
+##   Example:  unit.add_to_group("gfx_interactable"); unit.set_meta("gfx_id", "unit:3")
 ## Group names are plain strings, so tagging a node needs no dependency on this module.
 ##
 ## Core's Graphics autoload still applies the player's quality options (shadows, GI, AO...)
 ## first; this module tunes on top of what it set, and again whenever it re-applies them.
 
 signal look_applied(node: Node)
+## The usable thing under the pointer changed (null: nothing). Contextual hints can follow it.
+signal hovered(target: Node)
 
 ## Feature flag of each stage.
 const LIGHT := "graphics.light"
+const HOVER := "graphics.hover"
+const PING := "graphics.ping"
+## Group of things the player can use (highlight on hover, ping targets).
+const INTERACTABLE := "gfx_interactable"
+## Meta on an interactable: its stable id, the same on every machine.
+const ID_META := "gfx_id"
 ## Group that opts a WorldEnvironment outside an AlienSky into the outdoor baseline.
 const WORLD_GROUP := "gfx_world"
 
 const LightBaseline := preload("res://modules/graphics/internal/light_baseline.gd")
+const PointerLook := preload("res://modules/graphics/internal/pointer_look.gd")
+
+## Hover highlight and pings.
+var pointer: Node
 
 
 func register_module() -> void:
@@ -32,9 +50,21 @@ func register_module() -> void:
 	if core_gfx and core_gfx.has_signal("changed") and not core_gfx.changed.is_connected(apply_all):
 		core_gfx.changed.connect(apply_all)
 	apply_all.call_deferred()
+	pointer = PointerLook.new()
+	pointer.name = "Pointer"
+	add_child(pointer)
+	pointer.hovered.connect(func(t: Node) -> void: hovered.emit(t))
+	pointer.attach_net(Modules.bus("multiplayer"))
+	if not Flags.changed.is_connected(_on_flags):
+		Flags.changed.connect(_on_flags)
+	_on_flags()
 
 
 func unregister_module() -> void:
+	if pointer:
+		pointer.detach()
+	if Flags.changed.is_connected(_on_flags):
+		Flags.changed.disconnect(_on_flags)
 	var tree := get_tree()
 	if tree == null:
 		return
@@ -64,6 +94,17 @@ func restyle(n: Node) -> void:
 			look_applied.emit(n)
 
 
+## The usable thing under the pointer now, or null.
+func hover_target() -> Node:
+	return pointer.target if pointer else null
+
+
+## Pings a point (and the usable thing there), as the middle mouse does.
+func ping(at: Vector3, thing: Node = null, normal := Vector3.UP) -> void:
+	if pointer and Flags.is_on(PING):
+		pointer.ping(at, thing, normal)
+
+
 ## True for the yard's environment: one under an AlienSky, or tagged "gfx_world".
 static func is_outdoor(n: Node) -> bool:
 	var p := n
@@ -84,3 +125,10 @@ func _on_node_added(n: Node) -> void:
 	if n is WorldEnvironment or n is DirectionalLight3D:
 		# Core's Graphics tunes these deferred too; queued after it, so this lands on top.
 		restyle.call_deferred(n)
+
+
+func _on_flags() -> void:
+	if pointer:
+		pointer.hover_on = Flags.is_on(HOVER)
+		pointer.ping_on = Flags.is_on(PING)
+		pointer.set_process(pointer.hover_on or pointer.ping_on)
