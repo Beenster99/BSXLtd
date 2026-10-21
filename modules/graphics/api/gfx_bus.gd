@@ -17,7 +17,13 @@ extends Node
 ##     node's own space) gets a reflection probe and baked bounce light ("graphics.gi").
 ##     Tag it before adding it to the tree; its meshes bake BAKE_DELAY after it arrives
 ##     (or call queue_bake again after rebuilding it);
-##   - more groups (gfx_lamp, gfx_screen...) arrive with later stages.
+##   - a SpotLight3D gets a reflector's pool of light, and a big one (range 10 m or more, or
+##     in group "gfx_beam") a soft beam of lit dust that follows it on and off
+##     ("graphics.lamps", G3; meta "gfx_no_beam" keeps a lamp plain);
+##   - every player wears a helmet torch, L, on by itself at night ("graphics.torch"). A
+##     crewmate's shows on their avatar's head: a Node3D in group "crew_head" with meta
+##     "peer_id";
+##   - more groups (gfx_screen...) arrive with later stages.
 ##   Example:  unit.add_to_group("gfx_interactable"); unit.set_meta("gfx_id", "unit:3")
 ## Group names are plain strings, so tagging a node needs no dependency on this module.
 ##
@@ -34,6 +40,8 @@ const HOVER := "graphics.hover"
 const PING := "graphics.ping"
 const PROFILER := "graphics.profiler"
 const GI := "graphics.gi"
+const LAMPS := "graphics.lamps"
+const TORCH := "graphics.torch"
 ## Group of rooms (halls, the bay) that get their own bounce light and reflections.
 const ROOM := "gfx_room"
 ## Meta on a room: its inside as an AABB in the room node's space.
@@ -49,6 +57,8 @@ const LightBaseline := preload("res://modules/graphics/internal/light_baseline.g
 const PointerLook := preload("res://modules/graphics/internal/pointer_look.gd")
 const Profiler := preload("res://modules/graphics/internal/profiler.gd")
 const RoomLight := preload("res://modules/graphics/internal/room_light.gd")
+const LampLook := preload("res://modules/graphics/internal/lamp_look.gd")
+const HelmetTorch := preload("res://modules/graphics/internal/helmet_torch.gd")
 ## Seconds after a room appears before its bounce light bakes (its owner may still be
 ## building it).
 const BAKE_DELAY := 0.5
@@ -57,6 +67,11 @@ const BAKE_DELAY := 0.5
 var pointer: Node
 ## The profiler overlay (null while its flag is off).
 var profiler: CanvasLayer
+## The helmet torch (null while its flag is off).
+var torch: Node
+## Lamp beams in the scene, refreshed each frame from their lamps.
+var beams: Array[MeshInstance3D] = []
+var _daylight := -1.0
 ## VoxelGIs waiting to bake, one per frame after BAKE_DELAY: [{gi, at}].
 var _bakes: Array[Dictionary] = []
 var _sky_hour := -100.0
@@ -83,6 +98,7 @@ func register_module() -> void:
 func unregister_module() -> void:
 	if Keys.has(Profiler.ACTION):
 		Keys.unregister(Profiler.ACTION)
+	_drop_torch()
 	if pointer:
 		pointer.detach()
 	if Flags.changed.is_connected(_on_flags):
@@ -114,6 +130,11 @@ func restyle(n: Node) -> void:
 		elif n is DirectionalLight3D:
 			LightBaseline.apply_sun(n as DirectionalLight3D)
 			look_applied.emit(n)
+	if Flags.is_on(LAMPS) and n is SpotLight3D:
+		var beam := LampLook.apply(n as Light3D)
+		if beam and not beams.has(beam):
+			beams.append(beam)
+		look_applied.emit(n)
 	if n.is_in_group(ROOM) and n is Node3D:
 		if Flags.is_on(GI):
 			var gi := RoomLight.apply(n as Node3D)
@@ -122,6 +143,9 @@ func restyle(n: Node) -> void:
 			look_applied.emit(n)
 	if n.is_in_group("alien_sky") and not n.is_connected("time_changed", _on_sky_time):
 		n.connect("time_changed", _on_sky_time)
+		_daylight = AlienSky.daylight_at(float(n.get("hour")))
+		if torch:
+			torch.set_daylight(_daylight)
 
 
 ## The usable thing under the pointer now, or null.
@@ -165,6 +189,7 @@ func pending_bakes() -> int:
 
 
 func _process(_delta: float) -> void:
+	_refresh_beams()
 	if _bakes.is_empty():
 		return
 	var now := Time.get_ticks_msec() / 1000.0
@@ -178,7 +203,20 @@ func _process(_delta: float) -> void:
 			return
 
 
-func _on_sky_time(hour: float, _daylight: float) -> void:
+## Each beam's colour and brightness from its lamp (night lights come on and dim at dusk).
+func _refresh_beams() -> void:
+	for i in range(beams.size() - 1, -1, -1):
+		var b := beams[i]
+		if not is_instance_valid(b):
+			beams.remove_at(i)
+		elif b.is_visible_in_tree():
+			LampLook.refresh(b)
+
+
+func _on_sky_time(hour: float, daylight: float) -> void:
+	_daylight = daylight
+	if torch:
+		torch.set_daylight(daylight)
 	if absf(hour - _sky_hour) < RoomLight.REPROBE_HOURS or not Flags.is_on(GI):
 		return
 	_sky_hour = hour
@@ -191,7 +229,7 @@ func _on_node_added(n: Node) -> void:
 	if n.is_in_group(ROOM) or n.is_in_group("alien_sky"):
 		restyle.call_deferred(n)
 		return
-	if n is WorldEnvironment or n is DirectionalLight3D:
+	if n is WorldEnvironment or n is DirectionalLight3D or n is SpotLight3D:
 		# Core's Graphics tunes these deferred too; queued after it, so this lands on top.
 		restyle.call_deferred(n)
 
@@ -210,3 +248,24 @@ func _on_flags() -> void:
 		profiler.queue_free()
 		profiler = null
 		Keys.unregister(Profiler.ACTION)
+	var torch_on := Flags.is_on(TORCH)
+	if torch_on and torch == null:
+		Keys.register(HelmetTorch.ACTION, "Helmet torch", KEY_L)
+		torch = HelmetTorch.new()
+		torch.name = "Torch"
+		add_child(torch)
+		torch.attach_net(Modules.bus("multiplayer"))
+		if _daylight >= 0.0:
+			torch.set_daylight(_daylight)
+	elif not torch_on:
+		_drop_torch()
+
+
+func _drop_torch() -> void:
+	if torch == null:
+		return
+	torch.detach()
+	torch.queue_free()
+	torch = null
+	if Keys.has(HelmetTorch.ACTION):
+		Keys.unregister(HelmetTorch.ACTION)
