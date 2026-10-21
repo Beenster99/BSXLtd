@@ -5,7 +5,9 @@ extends VBoxContainer
 ## takes a trolley on remote and PUSH takes hold of the bay's kit (both put the wrist away),
 ## FOLLOW ME, FAST, BRING <part> TO ME (the picking lift
 ## fetches the next part the ship in the bay takes), PUT AWAY / TO STORES, and the lift's and
-## power unit's own controls.
+## power unit's own controls. Over the rows (with "ship_bay.clean_up" on), the loose parts
+## lying about the yard and CLEAN UP, which sends trolleys to sort them: good ones to the
+## stores, worn ones to the refurbishment line's in-feed, scrap to the grinder's.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
@@ -19,6 +21,8 @@ var _list: VBoxContainer
 ## Machine id -> {state: Label, tag: PanelContainer, where: Label, buttons: {action: Button}}.
 var _rows: Dictionary = {}
 var _tick := 0.0
+var _loose_label: Label
+var _clean_button: Button
 
 
 func _init(p_fleet: Node, p_glass := true) -> void:
@@ -27,6 +31,19 @@ func _init(p_fleet: Node, p_glass := true) -> void:
 	name = "MachinesScreen"
 	add_theme_constant_override("separation", 8)
 	mouse_filter = Control.MOUSE_FILTER_PASS
+	if Flags.is_on("ship_bay.clean_up"):
+		var bar := HBoxContainer.new()
+		bar.name = "CleanUp"
+		bar.add_theme_constant_override("separation", 10)
+		_loose_label = T.label("", "mono_medium", 15, T.TEXT)
+		_loose_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_loose_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		bar.add_child(_loose_label)
+		_clean_button = T.button("CLEAN UP", true, 14, false, glass)
+		_clean_button.name = "clean_up"
+		_clean_button.pressed.connect(clean_up)
+		bar.add_child(_clean_button)
+		add_child(bar)
 	add_child(T.columns([["MACHINE", 0], ["STATE", 118], ["WHERE", 118], ["", 372]]))
 	_list = T.list()
 	add_child(_list.get_parent())
@@ -104,6 +121,7 @@ func _process(delta: float) -> void:
 
 ## Updates every row's state, place and button labels in place.
 func refresh() -> void:
+	_refresh_loose()
 	var access := _access()
 	for id: String in _rows:
 		var row: Dictionary = _rows[id]
@@ -123,6 +141,38 @@ func refresh() -> void:
 		if access and (row.buttons as Dictionary).has("drive"):
 			var mine := str(access.get("driving")) == id if not id.begins_with("trolley:") else str(fleet.get("remote_id")) == id.trim_prefix("trolley:")
 			(row.buttons["drive"] as Button).text = "LET GO" if mine else _label_for(id, "drive")
+
+
+func _refresh_loose() -> void:
+	if _loose_label == null:
+		return
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	var parts := bus.loose_parts() if bus else ([] as Array[Dictionary])
+	if parts.is_empty():
+		_loose_label.text = "YARD CLEAR: no loose parts lying about"
+		_loose_label.add_theme_color_override("font_color", T.DIM)
+		_clean_button.disabled = true
+		return
+	var by := {"store": 0, "refurb": 0, "grind": 0}
+	var coming := 0
+	for p: Dictionary in parts:
+		by[str(p.route)] += 1
+		if str(p.trolley) != "":
+			coming += 1
+	_loose_label.text = "LOOSE PARTS %d   STORES %d · REFURB %d · GRINDER %d%s" % [parts.size(), by.store, by.refurb, by.grind,
+			"   (%d TROLLEY%s ON IT)" % [coming, "S" if coming != 1 else ""] if coming > 0 else ""]
+	_loose_label.add_theme_color_override("font_color", T.AMBER)
+	_clean_button.disabled = coming == parts.size()
+
+
+## CLEAN UP: trolleys collect every loose part in the yard and sort it by its condition.
+func clean_up() -> void:
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if bus == null:
+		return
+	Sfx.play("click")
+	bus.clean_up()
+	refresh()
 
 
 ## [text, colour] for a machine's state.
