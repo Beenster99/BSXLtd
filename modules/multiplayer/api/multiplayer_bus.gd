@@ -17,7 +17,8 @@ extends Node
 ## never node paths. Joining players get each registered snapshot provider's state first.
 ##
 ## The module itself is always on (flag "multiplayer"); hosting and joining are the
-## "multiplayer.online" feature, switched on in release 0.4.
+## "multiplayer.online" feature (on since 2026-10-21; HOST and JOIN sit on the wrist's
+## Crew channel).
 
 signal session_started(as_host: bool)
 signal session_ended(reason: String)

@@ -1,7 +1,8 @@
 extends HBoxContainer
 ## The wrist screen's Crew channel: who is on shift (with a CAM button for each other
 ## player), the crew text channel, and a helmet cam looking out of the chosen player's
-## helmet. Other modules add dockets under the crew list (Business: Transfer money) through
+## helmet. While online play is on, a Play together docket under the crew list hosts,
+## joins and leaves a session. Other modules add dockets under the crew list (Business: Transfer money) through
 ## HudSlots.register_holo_section("multiplayer.crew", ...).
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
@@ -20,6 +21,10 @@ var _cam_note: Label
 var _cam_view: SubViewportContainer
 var _cam: Camera3D
 var _cam_empty: Label
+var _online: HBoxContainer
+var _online_note: Label
+var _name_box: LineEdit
+var _address_box: LineEdit
 
 
 func _ready() -> void:
@@ -35,6 +40,8 @@ func _ready() -> void:
 	_crew_list.name = "CrewList"
 	_crew_list.add_theme_constant_override("separation", 3)
 	left.add_child(_crew_list)
+	if Flags.is_on(MultiplayerBus.ONLINE_FLAG):
+		left.add_child(_online_docket())
 	left.add_child(T.sections(CHANNEL, glass))
 	add_child(left)
 
@@ -84,11 +91,13 @@ func _ready() -> void:
 	net.peer_left.connect(_on_crew_changed)
 	net.session_started.connect(_on_session)
 	net.session_ended.connect(_on_session)
+	net.session_ended.connect(_on_session_ended)
 	crew.chat_received.connect(_add_line)
 	crew.activity_changed.connect(_on_activity)
 	for line in crew.chat_log():
 		_add_line(line)
 	_fill_crew()
+	_fill_online()
 
 
 func _process(_delta: float) -> void:
@@ -165,10 +174,114 @@ func _add_line(line: Dictionary) -> void:
 
 func _on_crew_changed(_id: int, _x: Variant) -> void:
 	_fill_crew()
+	_fill_online()
 
 
 func _on_session(_x: Variant) -> void:
 	_fill_crew()
+	_fill_online()
+
+
+# --- Play together: host, join, leave ---------------------------------------------------
+
+func _online_docket() -> Control:
+	var d: Dictionary = T.docket("Play together", "PORT %d" % _port(), glass)
+	d.panel.name = "PlayTogether"
+	_name_box = _field("Your name", str(Settings.get_value("multiplayer", "player_name")), "CrewNameBox")
+	_name_box.text_changed.connect(func(t: String) -> void:
+		if t.strip_edges() != "":
+			Settings.set_value("multiplayer", "player_name", t.strip_edges()))
+	d.body.add_child(_name_box)
+	_address_box = _field("Host's address, e.g. 192.168.1.20",
+			str(Settings.get_value("multiplayer", "last_address")), "CrewAddressBox")
+	_address_box.text_submitted.connect(func(_t: String) -> void: _join())
+	d.body.add_child(_address_box)
+	_online = HBoxContainer.new()
+	d.body.add_child(_online)
+	_online_note = T.label("", "body", 15, T.DIM)
+	_online_note.name = "OnlineNote"
+	_online_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_online_note.custom_minimum_size.x = 260
+	d.body.add_child(_online_note)
+	return d.panel
+
+
+func _field(placeholder: String, value: String, node_name: String) -> LineEdit:
+	var box := T.search(placeholder, func(_t: String) -> void: pass, glass)
+	box.name = node_name
+	box.clear_button_enabled = false
+	box.text = value
+	return box
+
+
+func _fill_online() -> void:
+	if _online == null:
+		return
+	for c in _online.get_children():
+		_online.remove_child(c)  # now, so the new buttons keep their names
+		c.queue_free()
+	var online := net.is_online()
+	_name_box.editable = not online
+	_address_box.editable = not online
+	if online:
+		_online.add_child(_online_button("LEAVE", "CrewLeave", net.leave))
+		if net.is_host():
+			_online_note.text = "Hosting. Crew join with your address and port %d:\n%s" % [_port(), _addresses()]
+		elif net.peers().is_empty():
+			_online_note.text = "Joining %s ..." % _address_box.text.strip_edges()
+		else:
+			_online_note.text = "On shift at %s." % _address_box.text.strip_edges()
+	else:
+		_online.add_child(_online_button("HOST", "CrewHost", _host))
+		_online.add_child(_online_button("JOIN", "CrewJoin", _join))
+		if _online_note.text == "" or _online_note.text.begins_with("Hosting") or _online_note.text.begins_with("On shift"):
+			_online_note.text = "Host to let crew join you, or type the host's address and JOIN."
+
+
+func _online_button(text: String, node_name: String, action: Callable) -> Button:
+	var b := T.button(text, true, 17, false, glass)
+	b.name = node_name
+	b.pressed.connect(action)
+	return b
+
+
+func _host() -> void:
+	var err := net.host(_port())
+	if err != OK:
+		_online_note.text = "Could not host on port %d (%s)." % [_port(), error_string(err)]
+	_fill_online()
+
+
+func _join() -> void:
+	var address := _address_box.text.strip_edges()
+	if address == "":
+		_online_note.text = "Type the host's address first."
+		return
+	Settings.set_value("multiplayer", "last_address", address)
+	var err := net.join(address, _port())
+	if err != OK:
+		_online_note.text = "Could not join %s (%s)." % [address, error_string(err)]
+	_fill_online()
+
+
+func _on_session_ended(reason: String) -> void:
+	if _online == null:
+		return
+	_online_note.text = "" if reason == "left" else "Session ended: %s" % reason
+	_fill_online()
+
+
+func _port() -> int:
+	return int(Settings.get_value("multiplayer", "port"))
+
+
+## This machine's local network addresses, for the host to read out to the crew.
+static func _addresses() -> String:
+	var out: PackedStringArray = []
+	for a in IP.get_local_addresses():
+		if a.contains(".") and not a.begins_with("127.") and not a.begins_with("169.254."):
+			out.append(a)
+	return ", ".join(out) if not out.is_empty() else "127.0.0.1"
 
 
 func _on_activity(_id: int, _text: String) -> void:

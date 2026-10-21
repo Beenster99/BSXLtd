@@ -12,7 +12,7 @@ flags = {
 "core": true,
 "multiplayer": true,
 "multiplayer.crew": true,
-"multiplayer.online": false,
+"multiplayer.online": true,
 "progression": false,
 "quality": true,
 "quality.scores": true,
