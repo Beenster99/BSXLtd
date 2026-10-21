@@ -48,6 +48,8 @@ var camera: Camera3D
 var left_hand: StretchHand
 var right_hand: StretchHand
 var _body_model: Node3D
+## The welder's shield on your head (TradesBay flicks it down while the arc is lit).
+var welding_helmet: TradesWeldingHelmet
 var _pitch := 0.0
 var _kick := 0.0
 ## How many ladders' climbing spaces the worker is in.
@@ -224,6 +226,9 @@ func _build_body() -> Node3D:
 	var up := PI * 0.5
 	_part(_sphere(0.17), Vector3(0, 0.32, 0), suit, root)
 	_part(_sphere(0.14), Vector3(0, 0.33, -0.07), visor, root).scale = Vector3(0.95, 0.72, 0.6)
+	welding_helmet = TradesWeldingHelmet.new()
+	welding_helmet.position = Vector3(0, 0.32, 0)
+	root.add_child(welding_helmet)
 	_part(_cylinder(0.11, 0.06), Vector3(0, 0.15, 0), frame, root)                    # neck ring
 	_part(_capsule(0.19, 0.62), Vector3(0, -0.04, 0), suit, root)
 	_part(_box(Vector3(0.34, 0.16, 0.22)), Vector3(0, -0.4, 0), suit, root)

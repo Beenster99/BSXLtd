@@ -27,12 +27,16 @@ const TOOLS: Array[StringName] = [&"hands", &"torque_wrench", &"drill", &"rivet_
 const TOOL_LABELS := {
 	&"hands": "Hands", &"torque_wrench": "Torque wrench", &"drill": "Drill",
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
+	&"cutter": "Cutter",
 }
 ## A tool's name on the hotbar and its display: the wrench is the powered one with
-## trades.power_wrench.
-static func label_of(id: StringName) -> String:
+## trades.power_wrench, the squeezer the rivet gun in the yard with trades.power_riveter
+## (the bench's riveting lesson keeps the hand squeezer).
+static func label_of(id: StringName, yard := true) -> String:
 	if id == &"torque_wrench" and TradesShipJoints.powered():
 		return "Power wrench"
+	if id == &"rivet_squeezer" and yard and Flags.is_on("trades.power_riveter"):
+		return "Rivet gun"
 	return String(TOOL_LABELS.get(id, id))
 
 
@@ -60,6 +64,8 @@ var tool: StringName = &"hands"
 ## The tools on your hotbar (keys 1..n): TOOLS, and in the yard the tractor beam
 ## (flag "trades.tractor").
 var hotbar: Array[StringName] = []
+## Sparks off the tools, and rivets popping out (presentation only).
+var sparks: TradesSparks
 ## The wheel turns a held part in quarter turns (true) or a few degrees a notch.
 var turn_snap := false
 var stations: Array[TradesStation] = []
@@ -80,6 +86,16 @@ var _slot_labels: Array[Label] = []
 var _result_panel: PanelContainer
 var _result_label: Label
 var _hud: CanvasLayer
+## Looking through the welding shield in first person, and how far down it is (0..1).
+var _weld_view: TradesWeldingView
+var _helmet := 0.0
+## Seconds since the arc went out (the shield stays down a moment).
+var _arc_off_s := 10.0
+## Other players' arcs, by peer: {at, cutting, light, glow, helmet}.
+var remote_torches := {}
+## What we last told the others about our arc, and when.
+var _torch_sent := {}
+var _torch_sent_s := 0.0
 ## The tool panel (the tool in hand's readings, bottom right) and the inspect panel (hold
 ## Tab: key data of what you're looking at).
 var _tool_panel: PanelContainer
@@ -104,7 +120,13 @@ func _ready() -> void:
 	hotbar.assign(TOOLS)
 	if in_yard and Flags.is_on("trades.tractor"):
 		hotbar.append(&"tractor")
+	if in_yard and Flags.is_on("trades.cutter"):
+		hotbar.append(&"cutter")
 	_build_worker()
+	sparks = TradesSparks.new()
+	sparks.name = "Sparks"
+	sparks.exclude.append(worker.get_rid())
+	add_child(sparks)
 	_build_tools()
 	_build_audio()
 	_build_hud()
@@ -160,6 +182,9 @@ func _enter_yard() -> void:
 	worker.face(ship_transform().origin + Vector3(0, -0.4, 0))
 	worker.camera.current = true
 	set_tool(&"hands")
+	var net := _net()
+	if net:
+		net.call("register_event", TORCH_EVENT, _apply_torch, _validate_torch)
 	hint(s.start_hint())
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -211,6 +236,9 @@ func ship_station() -> TradesShipJoints:
 
 
 func _exit_tree() -> void:
+	var net := _net()
+	if net and in_yard:
+		net.call("unregister_event", TORCH_EVENT)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	HudSlots.unregister_look_hint(LOOK_HINT_ID)
 	_clear_info()
@@ -270,6 +298,14 @@ func toggle_mode() -> void:
 		w.undo = not w.undo
 		play(&"tick")
 		hint("Wrench in undo: it takes bolts out." if w.undo else "Wrench in fasten: it runs bolts in.")
+		_refresh_hud()
+
+
+	elif t is TradesWeldTorch and in_yard:
+		var torch := t as TradesWeldTorch
+		torch.unweld = not torch.unweld
+		play(&"tick")
+		hint("Welder on unweld: left click cuts welds out." if torch.unweld else "Welder on weld: left click lays a bead.")
 		_refresh_hud()
 
 
@@ -411,6 +447,8 @@ func _process(delta: float) -> void:
 	if _focus:
 		_status_label.text = _focus.status_line()
 	worker.held_still = _remote_driving()
+	update_helmet(delta)
+	_update_remote_torches()
 	_update_tool_panel()
 	_update_inspect()
 	_post_info()
@@ -424,7 +462,7 @@ func _update_tool_panel() -> void:
 	if _tool_panel == null:
 		return
 	var t: TradesTool = tool_nodes.get(tool)
-	_tool_title.text = label_of(tool).to_upper()
+	_tool_title.text = label_of(tool, in_yard).to_upper()
 	var rows: Array = t.panel_rows() if t else []
 	var lines := PackedStringArray()
 	for r: Array in rows:
@@ -762,12 +800,12 @@ func _on_hand_snapped() -> void:
 
 func _build_tools() -> void:
 	var scripts := {
-		&"torque_wrench": TradesPowerWrench if TradesShipJoints.powered() else TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetSqueezer,
-		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool,
+		&"torque_wrench": TradesPowerWrench if TradesShipJoints.powered() else TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetGun if in_yard and Flags.is_on("trades.power_riveter") else TradesRivetSqueezer,
+		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool, &"cutter": TradesCutter,
 	}
 	for id: StringName in scripts:
 		var t: TradesTool = (scripts[id] as GDScript).new()
-		t.title = label_of(id)
+		t.title = label_of(id, in_yard)
 		t.top_level = true
 		t.visible = false
 		add_child(t)
@@ -783,6 +821,10 @@ func _build_audio() -> void:
 	_loops[&"beam"] = _player(TradesSounds.hum(0.5, 0.2, 70.0, 900.0))
 	_loops[&"impact"] = _player(TradesSounds.rattle(0.5, 0.35, 95.0, 22.0))
 	_players[&"stall"] = _player(TradesSounds.burst(0.25, 0.7, 300.0))
+	_loops[&"pressure"] = _player(TradesSounds.hum(0.5, 0.18, 60.0, 4000.0))
+	_loops[&"grind"] = _player(TradesSounds.hum(0.5, 0.4, 180.0, 7000.0))
+	_players[&"punch"] = _player(TradesSounds.burst(0.12, 1.0, 1400.0))
+	_players[&"pop"] = _player(TradesSounds.burst(0.06, 0.8, 1800.0))
 
 
 func _player(stream: AudioStream) -> AudioStreamPlayer:
@@ -921,6 +963,9 @@ func _build_hud() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(root)
 
+	_weld_view = TradesWeldingView.new()
+	root.add_child(_weld_view)
+
 	var cross := ColorRect.new()
 	cross.color = TradesLook.HUD
 	cross.custom_minimum_size = Vector2(4, 4)
@@ -962,7 +1007,7 @@ func _build_hud() -> void:
 		var label := TradesLook.hud_label(18)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.custom_minimum_size = Vector2(112, 0)
-		label.text = "%d  %s" % [i + 1, label_of(hotbar[i]).to_upper()]
+		label.text = "%d  %s" % [i + 1, label_of(hotbar[i], in_yard).to_upper()]
 		slot.add_child(label)
 		bar.add_child(slot)
 		_slots.append(slot)
@@ -1058,7 +1103,7 @@ func refresh_hud() -> void:
 func _refresh_hud() -> void:
 	if _tool_label == null:
 		return
-	_tool_label.text = "TOOL    %s" % label_of(tool).to_upper()
+	_tool_label.text = "TOOL    %s" % label_of(tool, in_yard).to_upper()
 	if tool == &"hands" and not in_yard:
 		_tool_label.text += "    TURN %s" % ("90°" if turn_snap else "FREE")
 	_status_label.text = _focus.status_line() if _focus else ""
@@ -1070,3 +1115,129 @@ func _refresh_hud() -> void:
 		if not on and not useful.has(hotbar[i]):
 			c = Color(c, 0.15)
 		_slot_labels[i].label_settings.font_color = c
+
+
+# --- The welding shield, and other players' arcs --------------------------------------------
+
+## The event that tells everyone where your arc is (beenster, 0.3.7: "this should be seen by
+## all players"): {on, at, cutting}; the host stamps the sender's peer.
+const TORCH_EVENT := "trades.torch"
+## How fast the shield flicks down and lifts (per second), and how long it stays down after
+## the arc goes out (s).
+const HELMET_DOWN_RATE := 9.0
+const HELMET_UP_RATE := 3.5
+const HELMET_HOLD_S := 0.4
+## How often a moving arc is sent (s) and how far it must have moved (m).
+const TORCH_SEND_S := 0.2
+const TORCH_SEND_M := 0.02
+
+
+## The shield comes down while the arc is lit (welding or unwelding) and lifts after; in first
+## person you look out through its glass. Tells the other players when your arc changes.
+func update_helmet(delta: float) -> void:
+	var torch := tool_node(&"welder") as TradesWeldTorch
+	var lit := torch != null and torch.lit
+	_arc_off_s = 0.0 if lit else _arc_off_s + delta
+	var want := 1.0 if _arc_off_s < HELMET_HOLD_S and Flags.is_on("trades.weld_helmet") else 0.0
+	_helmet = move_toward(_helmet, want, delta * (HELMET_DOWN_RATE if want > _helmet else HELMET_UP_RATE))
+	if worker.welding_helmet:
+		worker.welding_helmet.down = _helmet
+	if _weld_view:
+		_weld_view.down = 0.0 if worker.third_person or not worker.camera.current else _helmet
+	_send_torch(lit, torch.global_position if lit else Vector3.ZERO, lit and torch.cutting, delta)
+
+
+## How far down your shield is (0..1).
+func helmet_down() -> float:
+	return _helmet
+
+
+func _send_torch(on: bool, at: Vector3, cutting: bool, delta: float) -> void:
+	var net := _net()
+	if net == null or not in_yard or not bool(net.call("is_online")):
+		return
+	_torch_sent_s += delta
+	var was_on := bool(_torch_sent.get("on", false))
+	if on == was_on and (not on or _torch_sent_s < TORCH_SEND_S
+			or (at.distance_to(_torch_sent.get("at", Vector3.ZERO)) < TORCH_SEND_M and cutting == bool(_torch_sent.get("cutting")))):
+		return
+	_torch_sent = {"on": on, "at": at, "cutting": cutting}
+	_torch_sent_s = 0.0
+	net.call("request", TORCH_EVENT, _torch_sent)
+
+
+func _validate_torch(sender: int, p: Dictionary) -> Variant:
+	if not p.get("at") is Vector3:
+		return "no arc position"
+	return {"peer": sender, "on": bool(p.get("on")), "at": p.at, "cutting": bool(p.get("cutting"))}
+
+
+## Another player's arc lit, moved or out: draw it, its sparks and their shield.
+func _apply_torch(p: Dictionary) -> void:
+	var net := _net()
+	var peer := int(p.get("peer", 0))
+	if net and peer == int(net.call("local_peer_id")):
+		return
+	var r: Dictionary = remote_torches.get(peer, {})
+	if r.is_empty():
+		var light := OmniLight3D.new()
+		light.light_color = Color(0.7, 0.85, 1.0)
+		light.omni_range = 3.0
+		light.top_level = true
+		add_child(light)
+		var glow := MeshInstance3D.new()
+		var ball := SphereMesh.new()
+		ball.radius = 0.012
+		ball.height = 0.024
+		glow.mesh = ball
+		glow.material_override = TradesLook.glow(Color(0.75, 0.9, 1.0), 8.0)
+		glow.top_level = true
+		add_child(glow)
+		r = {"light": light, "glow": glow, "helmet": null}
+		remote_torches[peer] = r
+	r.on = bool(p.on)
+	r.at = p.at as Vector3
+	r.cutting = bool(p.cutting)
+	# Their shield, on Multiplayer's avatar of them when it offers the head.
+	# Avatars are rebuilt now and then (a scene change): fetch the head again when ours is gone.
+	if not is_instance_valid(r.helmet) and net and net.has_method("avatar_head"):
+		var head := net.call("avatar_head", peer) as Node3D
+		if head:
+			var h := TradesWeldingHelmet.new()
+			head.add_child(h)
+			r.helmet = h
+
+
+func _update_remote_torches() -> void:
+	for peer: int in remote_torches.keys():
+		var r: Dictionary = remote_torches[peer]
+		var light := r.light as OmniLight3D
+		var glow := r.glow as MeshInstance3D
+		var on := bool(r.get("on", false))
+		light.visible = on
+		glow.visible = on
+		if is_instance_valid(r.helmet):
+			var h := r.helmet as TradesWeldingHelmet
+			h.down = move_toward(h.down, 1.0 if on else 0.0, get_process_delta_time() * HELMET_DOWN_RATE)
+		if not on:
+			continue
+		var at: Vector3 = r.at
+		light.global_position = at + Vector3(0, 0.05, 0)
+		light.light_energy = 1.0 + randf() * 0.8
+		glow.global_position = at
+		if sparks:
+			sparks.emit(at, Vector3.UP, TradesShipJoints.SPARKS_CUT if r.cutting else TradesShipJoints.SPARKS_WELD, 3.2, 0.9)
+
+
+## Remote arcs drawn now (tests).
+func remote_arcs() -> int:
+	var n := 0
+	for r: Dictionary in remote_torches.values():
+		n += 1 if r.get("on", false) else 0
+	return n
+
+
+## Multiplayer's bus, when it is loaded.
+func _net() -> Node:
+	var net: Node = Modules.bus("multiplayer")
+	return net if net and net.has_method("register_event") else null
