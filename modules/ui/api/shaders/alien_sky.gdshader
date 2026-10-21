@@ -15,6 +15,8 @@ uniform vec3 zenith_night : source_color = vec3(0.012, 0.008, 0.035);
 uniform vec3 horizon_night : source_color = vec3(0.07, 0.035, 0.11);
 uniform vec3 ground_color : source_color = vec3(0.24, 0.13, 0.09);
 uniform float star_brightness = 3.0;
+// How much daylight air veils the planets (0 = crisp discs).
+uniform float day_veil : hint_range(0.0, 1.0) = 1.0;
 
 // Each planet: direction (normalised in code), angular radius (radians), two colours.
 uniform vec3 giant_dir = vec3(-0.55, 0.42, -0.72);
@@ -167,6 +169,7 @@ void sky() {
 		col += vec3(0.25, 0.08, 0.32) * neb * night * 0.9;
 	}
 	// Planets show by day as pale discs and at night in full colour. Haze near the horizon.
+	vec3 sky = col;
 	float haze = smoothstep(-0.02, 0.25, h);
 	float vis = mix(0.8, 1.0, night) * haze;
 	vec4 moon = planet(v, normalize(moon_dir), moon_radius, moon_a, moon_b, 2);
@@ -186,5 +189,11 @@ void sky() {
 		col = mix(col, col * (1.0 - vis) + giant.rgb * vis + hor * 0.12 * (1.0 - night), giant.a);
 		col = mix(col, ring.rgb * vis + col * (1.0 - vis * 0.7), ring.a * haze);
 	}
+	// By day the planets sit behind the whole depth of the air: veil them toward the sky,
+	// more near the horizon, so the city's hazed far towers read as nearer than the discs
+	// instead of pale cut-outs over a dark planet.
+	float cover = max(max(moon.a, ice.a), max(giant.a, ring.a * haze));
+	float veil = (1.0 - night) * mix(0.62, 0.3, smoothstep(0.0, 0.6, h)) * day_veil;
+	col = mix(col, sky, cover * veil);
 	COLOR = col;
 }
