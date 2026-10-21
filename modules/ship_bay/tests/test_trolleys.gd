@@ -153,6 +153,51 @@ func run_tests() -> void:
 		check(fleet.get("remote_id") == "l" and fleet.get("panel") == null, "REMOTE CONTROL takes the large one and shuts the screen")
 		fleet.call("toggle_remote", "l")
 
+	# On the wrist: Stock lists what the stores hold, Machines every yard machine.
+	check(HudSlots.holo_channel("ship_bay.trolleys").is_empty(), "the old trolleys channel is gone")
+	bus.set_part_values(func(item: String) -> int: return {"IonThruster": 1000, "M10": 2}.get(item, -1))
+	var stock_ch := HudSlots.holo_channel("ship_bay.stock")
+	check(not stock_ch.is_empty(), "the wrist screen has a Stock channel")
+	if not stock_ch.is_empty():
+		var wrist: Control = (stock_ch["factory"] as Callable).call(true)
+		add_child(wrist)
+		await frames(2)
+		var shown: String = wrist.call("text")
+		check(shown.contains("Ion thruster") and shown.contains("M10 bolt") and shown.contains("Reactor"), "it lists the stores' lines: %s" % shown.left(300))
+		check(shown.contains("2,200"), "and values them from what prices the parts (2 thrusters + 100 bolts = CR 2,200)")
+		check(wrist.get_combined_minimum_size().x <= 900.0 and wrist.get_combined_minimum_size().y <= 560.0,
+				"it fits the wrist screen's pane: %s" % wrist.get_combined_minimum_size())
+		wrist.set("query", "ion")
+		wrist.call("refresh")
+		check((wrist.call("shown") as Array).size() == 1, "the search narrows it to the thrusters")
+		wrist.call("select", bus.home_location("IonThruster"))
+		wrist.call("press", "bring")
+		await get_tree().physics_frame
+		check(str(fleet.get("jobs")["p"].get("do", "")) == "fetch" and str(fleet.get("jobs")["p"].get("item", "")) == "IonThruster",
+				"BRING ONE TO ME sends the picking lift for it: %s" % [fleet.get("jobs")["p"]])
+		wrist.queue_free()
+	var machines_ch := HudSlots.holo_channel("ship_bay.machines")
+	check(not machines_ch.is_empty(), "and a Machines channel")
+	if not machines_ch.is_empty():
+		var wrist: Control = (machines_ch["factory"] as Callable).call(true)
+		add_child(wrist)
+		await frames(2)
+		var shown: String = wrist.call("text")
+		check(shown.contains("Small hover trolley") and shown.contains("Picking lift") and shown.contains("COME TO ME") and shown.contains("DRIVE"),
+				"it lists the machines with their buttons: %s" % shown.left(300))
+		check(wrist.get_combined_minimum_size().x <= 900.0 and wrist.get_combined_minimum_size().y <= 560.0,
+				"it fits the wrist screen's pane: %s" % wrist.get_combined_minimum_size())
+		var closed := [false]
+		wrist.connect("close_requested", func() -> void: closed[0] = true)
+		wrist.call("press", "trolley:s", "come")
+		await get_tree().physics_frame
+		check(str(fleet.get("jobs")["s"].get("do", "")) == "come", "COME TO ME sends the small trolley")
+		wrist.call("press", "trolley:m", "drive")
+		check(fleet.get("remote_id") == "m" and closed[0], "DRIVE takes the medium one and puts the wrist away")
+		fleet.call("toggle_remote", "m")
+		wrist.queue_free()
+	bus.set_part_values(Callable())
+
 	bus.crate_carried.disconnect(on_carry)
 	yard.queue_free()
 	await frames(1)

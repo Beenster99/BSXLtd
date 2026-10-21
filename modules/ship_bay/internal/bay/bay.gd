@@ -18,7 +18,7 @@ const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
 const USE_REACH := 3.5
 
 var ship_root: Node3D
-## The ship's model (its root node), and the stairs, lift and power unit round it.
+## The ship's model (its root node), and the lift and power unit round it.
 var model: Node3D
 var access: Node3D
 ## slot_id -> Array of the model's MeshInstance3Ds inside its box.
@@ -146,7 +146,7 @@ func _show_ship(def: ShipDefinition) -> void:
 	_refresh_markers()
 
 
-## Boarding stairs, the lift and the ground power unit, for a model that says where its
+## The scissor lift and the ground power unit, for a model that says where its
 ## side door and power socket are.
 func _build_access() -> void:
 	if access:
@@ -158,7 +158,7 @@ func _build_access() -> void:
 	access = Access.new()
 	access.name = "Access"
 	add_child(access)
-	access.call("build", cradle_height, points["side_door"], points["power_socket"])
+	access.call("build", cradle_height, points["side_door"], points["power_socket"], ship_root)
 	access.connect("power_switched", func(on: bool) -> void:
 		if _bus:
 			_bus.set_ship_powered(on)
@@ -177,10 +177,19 @@ func _on_power(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F:
-		var cam := get_viewport().get_camera_3d()
-		if cam and use_along(cam.global_position, -cam.global_basis.z):
-			get_viewport().set_input_as_handled()
+	var use: bool = event.is_action_pressed(Keys.INTERACT) if InputMap.has_action(Keys.INTERACT) \
+			else (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F)
+	if not use or event.is_echo():
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	# With the power plug in hand, F puts it somewhere instead.
+	if access and bool(access.call("holding_plug")):
+		access.call("place_plug", cam.global_position, -cam.global_basis.z)
+		get_viewport().set_input_as_handled()
+	elif use_along(cam.global_position, -cam.global_basis.z):
+		get_viewport().set_input_as_handled()
 
 
 ## Use (F): the first usable thing within reach along the ray (world space). True if one was.
@@ -204,6 +213,21 @@ func use_along(from: Vector3, direction: Vector3) -> bool:
 ## (its material shows the state); the head is its child, so hiding the ring hides both.
 func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
 	var n := f.normal.normalized()
+	if f.kind == "weld" and f.seam_up != Vector3.ZERO:
+		# A weld is its bead along the seam on a thin strip lit by its state.
+		var along := (f.seam_up - n * f.seam_up.dot(n)).normalized()
+		var strip := MeshInstance3D.new()
+		var length := maxf(f.seam_size.x, 0.02)
+		var width := maxf(f.seam_size.y, 0.006)
+		strip.mesh = PartShapes.box(Vector3(width + 0.012, 0.003, length)).mesh
+		strip.transform = Transform3D(Basis(n.cross(along), n, along), f.position + n * 0.002)
+		strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var bead := MeshInstance3D.new()
+		bead.mesh = PartShapes.prism(6, width * 0.5, length - 0.004).mesh
+		bead.transform = Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, width * 0.25, 0))
+		bead.material_override = _head_mat
+		strip.add_child(bead)
+		return strip
 	var side := Vector3.UP if absf(n.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
 	var x := side.cross(n).normalized()
 	var ring := MeshInstance3D.new()

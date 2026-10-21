@@ -33,6 +33,12 @@ signal crate_collected(crate_id: String, item_id: String, qty: int)
 signal trolley_command(trolley_id: String, command: String, args: Dictionary)
 ## Anything in the stores changed (crates landed or put away, stock taken, a load).
 signal stock_changed
+## A part beamed off the ship landed on a trolley's deck as a crate (`crate_id`, carried by
+## `trolley_id`, which puts it away like a delivery): it is stock now. Every peer hears it.
+signal part_beamed(crate_id: String, trolley_id: String, component: String, slot_id: String)
+## A piece of the bay's kit was changed (a scaffold rig's bays, lifts or open ends): every peer
+## hears it. payload {rig, bays, lifts, ends}.
+signal kit_changed(payload: Dictionary)
 ## The shipyard scene has built itself; add your own nodes to `yard` (at shipyard_spot()s).
 signal shipyard_ready(yard: Node3D)
 
@@ -45,7 +51,7 @@ const SAVE_VERSION := 2
 ## stores. Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
 const TROLLEYS: PackedStringArray = ["s", "m", "l", "p"]
-const TROLLEY_COMMANDS: PackedStringArray = ["come", "put_away", "park", "stop", "deck", "fetch", "deliver"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "put_away", "park", "stop", "deck", "fetch", "deliver", "beam"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
@@ -62,6 +68,11 @@ var _definitions: Dictionary = {}
 ## Whether the ship in the bay is on shore power (its lamps, screens and systems live).
 var ship_powered := false
 var _stock := StorageStock.new()
+var _part_values := Callable()
+## The yard's trolley fleet while the shipyard is up (it sets this), for beam_to_trolley.
+var fleet: Node
+## Slot id -> the trolley sent for a part beamed off the ship, until it lands or is called off.
+var _beam_claims: Dictionary = {}
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
 ## runs without it: tests that switch only part of the game on, and solo builds).
 var _net: Node
@@ -69,6 +80,12 @@ var _net: Node
 
 func register_module() -> void:
 	Saves.register_section("ship_bay", self)
+	# Driving the yard's vehicles (the lift, the power unit, a trolley on remote control).
+	for k: Array in [["ship_bay.drive_forward", "Drive forward", KEY_UP], ["ship_bay.drive_back", "Drive back", KEY_DOWN],
+			["ship_bay.drive_left", "Turn left", KEY_LEFT], ["ship_bay.drive_right", "Turn right", KEY_RIGHT],
+			["ship_bay.raise", "Raise the lift or deck", KEY_PAGEUP], ["ship_bay.lower", "Lower the lift or deck", KEY_PAGEDOWN],
+			["ship_bay.call_trolley", "Call a trolley (Shift: large, Ctrl: small)", KEY_T]]:
+		Keys.register(k[0], k[1], k[2], "Yard vehicles")
 	# Multiplayer may load after this module, so its events are hooked up once all are in.
 	if Modules.ready_done:
 		_hook_net()
@@ -83,12 +100,34 @@ func register_module() -> void:
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
 				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk",
-				"dock", "overlook", "launch_towers"]:
+				"dock", "overlook", "launch_towers", "city", "downtown"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
+		# The lift up at the side door, and the power unit's plug clipped on the hull.
+		Shots.register("shipyard_lift_at_door", SHIPYARD_SCENE, func(scene: Node) -> void:
+			var access: Node = (scene.get("bay") as Node).get("access")
+			access.call("set_lift_height", 1.6)
+			scene.call("show_view", "kestrel_lift"))
+		Shots.register("shipyard_power_plugged", SHIPYARD_SCENE, func(scene: Node) -> void:
+			(scene.get("bay") as Node).get("access").call("set_power", true)
+			scene.call("show_view", "kestrel_power"))
+		# The two scaffold rigs parked, then driven to the starboard flank and joined end to
+		# end into one 10 m floor at the roof's edge.
+		Shots.register("shipyard_scaffolds", SHIPYARD_SCENE, func(scene: Node) -> void:
+			scene.call("show_view", "scaffolds"))
+		Shots.register("shipyard_scaffold_floor", SHIPYARD_SCENE, func(scene: Node) -> void:
+			var rigs: Array = ((scene.get("bay") as Node).get("access") as Node).get("scaffolds")
+			rigs[0].call("configure", 2, 2, 1)
+			rigs[1].call("configure", 2, 2, 2)
+			rigs[0].global_position = Vector3(3.42, 0, -1.0)
+			rigs[1].global_position = Vector3(3.42, 0, 4.03)
+			scene.call("show_view", "scaffolds"))
 		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
 			scene.call("set_time_of_day", 22.0)
 			scene.call("show_view", "courtyard"))
+		Shots.register("shipyard_city_night", SHIPYARD_SCENE, func(scene: Node) -> void:
+			scene.call("set_time_of_day", 21.5)
+			scene.call("show_view", "downtown"))
 		# A sample delivery in the hall, then some of it put away (these change the stores).
 		Shots.register("shipyard_goods_in", SHIPYARD_SCENE, func(scene: Node) -> void:
 			_sample_delivery()
@@ -137,15 +176,20 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.pick", _apply_pick, _check_pick)
 	_net.call("register_event", "ship_bay.hand", _apply_hand, _check_hand)
 	_net.call("register_event", "ship_bay.collect", _apply_collect, _check_collect)
+	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
+	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
+	for k: String in ["ship_bay.drive_forward", "ship_bay.drive_back", "ship_bay.drive_left", "ship_bay.drive_right",
+			"ship_bay.raise", "ship_bay.lower", "ship_bay.call_trolley"]:
+		Keys.unregister(k)
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect"]:
+				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -446,6 +490,49 @@ func hand_crate(crate_id: String, trolley_id: String) -> void:
 		_apply_hand(payload)
 
 
+## Sends a free hover trolley big enough for a part freed off the ship (Tools' tractor beam):
+## it drives over to `from` (yard space, where the part floats), raises its deck, and the part
+## lands on it as a crate it then puts away (part_beamed follows). Returns the trolley's id,
+## or "" when none that fits is free (ask again later) or the yard isn't up.
+func beam_to_trolley(slot_id: String, component: String, condition: float, from: Vector3) -> String:
+	if _beam_claims.has(slot_id):
+		return str(_beam_claims[slot_id])
+	if fleet == null or not is_instance_valid(fleet):
+		return ""
+	var mass := float(StorageLayout.items().get(component, {}).get("mass", 0.0))
+	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(mass), from, _beam_claims.values()))
+	if id == "":
+		return ""
+	_beam_claims[slot_id] = id
+	command_trolley(id, "beam", {"slot": slot_id, "component": component, "condition": condition, "from": from})
+	return id
+
+
+## Calls off the trolley sent for a part (the player took it with their own beam): it parks.
+func cancel_beam(slot_id: String) -> void:
+	if not _beam_claims.has(slot_id):
+		return
+	var id := str(_beam_claims[slot_id])
+	_beam_claims.erase(slot_id)
+	command_trolley(id, "park")
+
+
+## The top of a trolley's deck (yard space), where a beamed part lands; null for no trolley.
+func trolley_deck_position(trolley_id: String) -> Variant:
+	if fleet == null or not is_instance_valid(fleet):
+		return null
+	return fleet.call("deck_position", trolley_id)
+
+
+## The trolley under a beamed part has its deck up: the part lands on it (its driver asks).
+func land_beamed(slot_id: String, trolley_id: String, component: String, condition: float) -> void:
+	var payload := {"slot": slot_id, "trolley": trolley_id, "component": component, "condition": condition}
+	if _net:
+		_net.call("request", "ship_bay.beamed", payload)
+	elif _check_beamed(0, payload) is Dictionary:
+		_apply_beamed(payload)
+
+
 ## Takes a picked crate off the trolley that brought it; crate_collected follows.
 func collect_crate(crate_id: String) -> void:
 	var payload := {"crate_id": crate_id}
@@ -453,6 +540,15 @@ func collect_crate(crate_id: String) -> void:
 		_net.call("request", "ship_bay.collect", payload)
 	elif _check_collect(0, payload) is Dictionary:
 		_apply_collect(payload)
+
+
+## Changes a scaffold rig round the bay: {rig: index, bays: 1..4, lifts: 1..4, ends: 0..3}.
+## kit_changed follows on every peer.
+func change_kit(payload: Dictionary) -> void:
+	if _net:
+		_net.call("request", "ship_bay.kit", payload)
+	elif _check_kit(0, payload) is Dictionary:
+		_apply_kit(payload)
 
 
 ## Crates picked for someone and on their way (or waiting on a trolley): id -> the crate,
@@ -498,6 +594,26 @@ func find_stock(item_id: String) -> PackedStringArray:
 
 func stock_count(item_id: String) -> int:
 	return _stock.count(item_id)
+
+
+## Location ids that hold goods now.
+func stocked_locations() -> PackedStringArray:
+	return PackedStringArray(_stock.stock.keys())
+
+
+## Lets another module price the stores (Business: its catalogue's new value of a part, CR;
+## -1 for one it doesn't know). Until one does, the Stock screen shows no values.
+##   yard_bus.set_part_values(func(item_id: String) -> int: return catalogue.value_of(item_id))
+func set_part_values(getter: Callable) -> void:
+	_part_values = getter
+	stock_changed.emit()
+
+
+## What one new part is worth, CR (-1 when nothing prices it).
+func part_value(item_id: String) -> int:
+	if not _part_values.is_valid():
+		return -1
+	return int(_part_values.call(item_id))
 
 
 ## The parts the stores keep a home for: item id -> {name, category, mass (kg)}.
@@ -626,6 +742,42 @@ func _apply_collect(payload: Dictionary) -> void:
 	if not c.is_empty():
 		stock_changed.emit()
 		crate_collected.emit(str(payload["crate_id"]), str(c["item"]), int(c["qty"]))
+
+
+func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
+	var by := str(payload.get("trolley", ""))
+	if not TROLLEYS.has(by) or _stock.carried_by(by) != "":
+		return "that trolley is full"
+	if str(payload.get("component", "")) == "":
+		return "no part"
+	return {"slot": str(payload.get("slot", "")), "trolley": by, "component": str(payload["component"]),
+			"condition": clampf(float(payload.get("condition", 1.0)), 0.0, 1.0)}
+
+
+func _apply_beamed(payload: Dictionary) -> void:
+	var by := str(payload["trolley"])
+	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by)
+	if _beam_claims.get(str(payload["slot"])) == by:
+		_beam_claims.erase(str(payload["slot"]))
+	if id == "":
+		return
+	stock_changed.emit()
+	crate_carried.emit(id, by)
+	part_beamed.emit(id, by, str(payload["component"]), str(payload["slot"]))
+
+
+func _check_kit(_sender: int, payload: Dictionary) -> Variant:
+	var rig := int(payload.get("rig", -1))
+	var bays := int(payload.get("bays", 0))
+	var lifts := int(payload.get("lifts", 0))
+	var ends := int(payload.get("ends", -1))
+	if rig < 0 or rig > 15 or bays < 1 or bays > 4 or lifts < 1 or lifts > 4 or ends < 0 or ends > 3:
+		return "not a scaffold change"
+	return {"rig": rig, "bays": bays, "lifts": lifts, "ends": ends}
+
+
+func _apply_kit(payload: Dictionary) -> void:
+	kit_changed.emit(payload)
 
 
 func _check_take(_sender: int, payload: Dictionary) -> Variant:

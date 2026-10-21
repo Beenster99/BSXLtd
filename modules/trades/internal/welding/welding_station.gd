@@ -124,7 +124,7 @@ func press(tool: StringName) -> void:
 		_mark_started()
 		bay.hint("Run it along the seam: mouse right to travel, up and down for the arc.")
 	else:
-		bay.hint("This seam is done. Right click grinds it out.")
+		bay.hint("This seam is done. Right click cuts it out (unweld).")
 
 
 func release() -> void:
@@ -142,7 +142,7 @@ func back_out(tool: StringName) -> void:
 		_bus_remove()
 		bay.hide_result()
 	_started = false
-	bay.hint("Bead ground out. Strike again.")
+	bay.hint("Weld cut out. Strike again.")
 
 
 func on_hand_snapped() -> void:

@@ -33,6 +33,10 @@ const KEY_TOOL := "trades.tool_"         # + 1..9: pick a tool off the hotbar
 const KEY_VIEW := "trades.view"
 const KEY_TURN_LEFT := "trades.turn_left"
 const KEY_TURN_RIGHT := "trades.turn_right"
+## Held: the mouse turns the part in the tractor beam instead of the view.
+const KEY_ROTATE := "trades.rotate"
+## Held: the key data of the part or joint you are looking at.
+const KEY_INSPECT := "trades.inspect"
 ## The practice bench's: start the job again, the next part in the tray.
 const KEY_RESET := "trades.reset"
 const KEY_NEXT := "trades.next"
@@ -50,8 +54,10 @@ func register_module() -> void:
 	Keys.register(KEY_VIEW, "First / third person", KEY_V, KEY_GROUP)
 	Keys.register(KEY_TURN_LEFT, "Turn left / amps down", KEY_Q, KEY_GROUP)
 	Keys.register(KEY_TURN_RIGHT, "Turn right / amps up", KEY_E, KEY_GROUP)
-	Keys.register(KEY_RESET, "Start the bench job again", KEY_R, KEY_GROUP)
-	Keys.register(KEY_NEXT, "Next part in the tray", KEY_TAB, KEY_GROUP)
+	Keys.register(KEY_ROTATE, "Rotate the part in the beam (hold)", KEY_R, KEY_GROUP)
+	Keys.register(KEY_INSPECT, "Show part details (hold)", KEY_TAB, KEY_GROUP)
+	Keys.register(KEY_RESET, "Start the bench job again", KEY_BACKSPACE, KEY_GROUP)
+	Keys.register(KEY_NEXT, "Next part in the tray", KEY_G, KEY_GROUP)
 	if TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t)):
 		Router.register_scene(WORKBENCH, BENCH_SCENE)
 	if Flags.is_on("trades.shipyard"):
@@ -62,6 +68,9 @@ func register_module() -> void:
 			for shot: Array in [["bolt", false], ["bolt", true], ["connector", false]]:
 				Shots.register("tools_%s_on_kestrel%s" % [shot[0], "_third_person" if shot[1] else ""], ShipBayBus.SHIPYARD_SCENE,
 						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_on_ship", shot[0], shot[1]), 40)
+			if Flags.is_on("trades.inspect"):
+				Shots.register("tools_inspect_part", ShipBayBus.SHIPYARD_SCENE,
+						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_inspect"), 40)
 			if Flags.is_on("trades.tractor"):
 				Shots.register("tools_tractor_lifting_engine", ShipBayBus.SHIPYARD_SCENE,
 						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_tractor", true), 40)

@@ -159,8 +159,8 @@ func _build() -> void:
 
 	var footer := PanelContainer.new()
 	footer.add_theme_stylebox_override("panel", Look.box(Look.EDGE, Color.TRANSPARENT, 0, 6))
-	var hint := Look.label("[T] OR [ESC] CLOSE    ·    + / − SET QUANTITIES    ·    TRADE PRICES MOVE DAILY    ·    GOODS ARRIVE AT DELIVERIES"
-			if interactive else "WALK UP AND PRESS [T] TO ORDER PARTS", "display_medium", 16, Look.DIM)
+	var hint := Look.label("%s CLOSE    ·    + / − SET QUANTITIES    ·    TRADE PRICES MOVE DAILY    ·    GOODS ARRIVE AT DELIVERIES" % Keys.prompt(Keys.CANCEL)
+			if interactive else "WALK UP AND PRESS %s TO ORDER PARTS" % Keys.prompt(Keys.INTERACT), "display_medium", 16, Look.DIM)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	footer.add_child(hint)
 	col.add_child(footer)
@@ -461,7 +461,9 @@ func place_order() -> BusinessResult:
 		basket.clear()
 		_message = "Order placed: %s for %s CR. Watch GOODS IN." % [", ".join(r.order_ids), Look.money(r.cost)]
 		_message_good = true
+		Sfx.play("chime")
 	else:
+		Sfx.play("error")
 		_message = r.message.left(1).to_upper() + r.message.substr(1) + "."
 		_message_good = false
 	refresh()

@@ -72,6 +72,14 @@ func readout_text() -> String:
 	return "%3.1fmm\n%s\nRPM" % [BIT_MM, rpm]
 
 
+func panel_rows() -> Array:
+	return [["BIT", "%.1f mm" % BIT_MM], ["SPEED", "%d rpm" % roundi(spin * MAX_RPM) if spin > 0.0 else "STOPPED"]]
+
+
+func panel_state() -> String:
+	return "DRILLING" if spin > 0.0 else "READY"
+
+
 func readout_fill() -> float:
 	return spin
 

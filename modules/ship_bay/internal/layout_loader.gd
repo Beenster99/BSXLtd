@@ -63,6 +63,10 @@ static func _fastener(slot_id: String, j: Dictionary) -> FastenerPoint:
 	f.spec = j.get("spec", "")
 	f.position = _vec(j.get("at", [0, 0, 0]))
 	f.normal = _vec(j.get("normal", [0, 1, 0])).normalized()
+	if j.has("seam_up"):
+		f.seam_up = _vec(j["seam_up"]).normalized()
+		var size: Array = j.get("seam_size", [0, 0])
+		f.seam_size = Vector2(float(size[0]), float(size[1]))
 	return f
 
 
