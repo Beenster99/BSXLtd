@@ -18,6 +18,10 @@ func run_tests() -> void:
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var had_flag := Flags.is_on("trades.tractor")
 	Flags.set_flag("trades.tractor", true)
+	# Parts here hover where they came off; Ship and Bay's clean-up drops them
+	# (test_tractor_clean_up.gd).
+	var had_clean_up := Flags.is_on("ship_bay.clean_up")
+	Flags.set_flag("ship_bay.clean_up", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)
@@ -130,6 +134,7 @@ func run_tests() -> void:
 	await frames(1)
 	ship_bus.load_ship("vs_kestrel")
 	Flags.set_flag("trades.tractor", had_flag)
+	Flags.set_flag("ship_bay.clean_up", had_clean_up)
 
 
 func _run(station: TradesShipJoints, n: int) -> void:
