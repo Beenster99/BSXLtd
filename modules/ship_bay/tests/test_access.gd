@@ -244,6 +244,9 @@ func run_tests() -> void:
 	check(lights.size() >= 14, "the yard has night lights: %d" % lights.size())
 	check(lights.all(func(l: Light3D) -> bool: return l.visible and l.light_energy > 1.0), "at 22:00 they are on")
 	check(not (yard.get("_sun") as Light3D).visible, "and the sun is down")
+	var floods := lights.filter(func(l: Light3D) -> bool: return l is SpotLight3D and (l as SpotLight3D).spot_range >= 30.0)
+	check(floods.size() >= 8 and floods.all(func(l: Light3D) -> bool: return not l.has_meta("gfx_no_shadow")),
+			"floodlights on the masts and the crane light the yard and the apron, with shadows: %d" % floods.size())
 	yard.call("set_time_of_day", 12.0)
 	check(lights.all(func(l: Light3D) -> bool: return not l.visible), "at noon they are off")
 	Settings.set_value("world", "time_of_day", 21.0)

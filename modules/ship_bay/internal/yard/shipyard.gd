@@ -1383,6 +1383,12 @@ func _build_crane() -> void:
 			_put(_box(Vector3(1.0, 0.06, 1.0)), _at(Vector3(x, 0.03, z)), _bare, false)
 		_put(girder, Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(x, top + 0.8, 0)), _hazard, false)
 		_put(rail, Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(x, top + 1.69, 0)), _bare, false)
+	# Floodlights hung under the runway girders, between the columns, aimed into the courtyard.
+	var bar := _lib("headlamp/flood", func() -> PartShapes.PartShape:
+			return WreckParts.headlamp_bar(2.4, 4, LAMP))
+	for x: float in [-YARD.x + 1.4, YARD.x - 1.4]:
+		for z: float in [-16.5, 16.5]:
+			_floodlight(bar, Vector3(x, top - 0.3, z), Vector3(x * 0.25, 0, z * 0.4))
 	var bridge_z := -3.0
 	var span := YARD.x * 2.0 - 1.2
 	var bridge := _lib("truss/bridge", func() -> PartShapes.PartShape:
@@ -1455,7 +1461,25 @@ func _build_launch_towers() -> void:
 		_put(_box(Vector3(1.2, 1.2, 1.2)), _at(at + Vector3(12, h + 1.0, 0)), beacon, false)
 
 
-## Outside: floodlight masts at the open corners aimed at the bay, a tank farm and power
+## A floodlight: a lamp bar at `at` facing `target`, with a big warm spot that only burns
+## at night. These are the yard's main lights after dark, so they keep their shadows.
+func _floodlight(bar: String, at: Vector3, target: Vector3) -> void:
+	var basis := Basis.looking_at((target - at).normalized(), Vector3.UP)
+	# The bar's lamps face +Y: tip it so they face the target.
+	_put(bar, Transform3D(basis * Basis(Vector3.RIGHT, -PI * 0.5), at), _parts, false)
+	var flood := SpotLight3D.new()
+	flood.position = at + (target - at).normalized() * 0.25
+	flood.light_color = LAMP
+	flood.light_energy = 10.0
+	flood.spot_range = 40.0   # m
+	flood.spot_angle = 45.0   # degrees
+	flood.spot_attenuation = 0.7
+	add_child(flood)
+	flood.look_at(target)
+	_night(flood)
+
+
+## Outside: floodlight masts at the open corners and on the apron, a tank farm and power
 ## plant off the east wall, landing lights down the apron.
 func _build_outside() -> void:
 	var lattice := _lib("truss/mast", func() -> PartShapes.PartShape:
@@ -1466,26 +1490,17 @@ func _build_outside() -> void:
 			return WreckParts.grating(1.6, 1.6))
 	var ladder := _lib("ladder/mast", func() -> PartShapes.PartShape:
 			return WreckParts.ladder(14.6, 0.45))
-	for x: float in [-YARD.x - 2.0, YARD.x + 2.0]:
-		var foot := Vector3(x, 0, YARD.y + 3.0)
+	# Two at the open corners lighting the courtyard, two on the apron's edges over the pads.
+	for mast: Array in [[Vector3(-YARD.x - 2.0, 0, YARD.y + 3.0), Vector3(-6, 0, 6)], [Vector3(YARD.x + 2.0, 0, YARD.y + 3.0), Vector3(6, 0, 6)],
+			[Vector3(-47, 0, 60), Vector3(-14, 0, 56)], [Vector3(47, 0, 60), Vector3(14, 0, 56)]]:
+		var foot: Vector3 = mast[0]
 		_put(lattice, Transform3D(UPRIGHT, foot + Vector3(0, 7.5, 0)), _galv)
 		_put(_box(Vector3(1.4, 0.4, 1.4)), _at(foot + Vector3(0, 0.2, 0)), _concrete)
 		_put(platform, _at(foot + Vector3(0, 15.0, 0)), _galv, false)
 		_put(ladder, _at(foot + Vector3(0, 7.3, 0.36)), _galv, false)
-		var aim := (Vector3(0, 2.0, 0) - (foot + Vector3(0, 15.6, 0))).normalized()
-		var basis := Basis.looking_at(aim, Vector3.UP)
-		# The bar's lamps face +Y: tip it so they face the bay.
-		_put(head, Transform3D(basis * Basis(Vector3.RIGHT, -PI * 0.5), foot + Vector3(0, 15.6, -0.3)), _parts, false)
-		var flood := SpotLight3D.new()
-		flood.position = foot + Vector3(0, 15.4, -0.5)
-		flood.light_color = LAMP
-		flood.light_energy = 10.0
-		flood.spot_range = 55.0
-		flood.spot_angle = 30.0
-		flood.set_meta("gfx_no_shadow", true)
-		add_child(flood)
-		flood.look_at(Vector3(0, 2.0, 0))
-		_night(flood)
+		var target: Vector3 = mast[1]
+		var to := Vector3(target.x - foot.x, 0, target.z - foot.z).normalized()
+		_floodlight(head, foot + Vector3(0, 15.6, 0) + to * 0.3, target)
 
 	# The tank farm: three upright tanks on plinths, piped to a manifold, with a fence.
 	var tank := _lib("tank/farm", func() -> PartShapes.PartShape: return WreckParts.tank(1.5, 7.0))
