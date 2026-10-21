@@ -18,7 +18,8 @@ extends Node3D
 ## The line's state is the bus's (line_state(), host-authoritative, saved with the bay);
 ## this node draws it, times the machines and, on the host, drives AUTO.
 ##
-## Built in yard space: the node sits at the yard's origin. The main line runs south (+Z)
+## Built in yard space: the node sits at the yard's origin, the survey clear of the floor in
+## front of Business's hall TV on the north wall. The main line runs south (+Z)
 ## along x = LINE_X with the machines' fronts to the hall (-X); the grind branch runs west.
 
 const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
@@ -30,20 +31,20 @@ const LINE_X := 46.4
 const BED := 0.9
 ## Where each machine's lot sits (yard space, on the bed) and which way its lot travels.
 const STATIONS := {
-	"survey": {"at": Vector3(LINE_X, BED, -20.5), "travel": Vector3(0, 0, 1)},
-	"grinder": {"at": Vector3(42.4, BED, -17.4), "travel": Vector3(-1, 0, 0)},
-	"straightener": {"at": Vector3(LINE_X, BED, -14.0), "travel": Vector3(0, 0, 1)},
-	"bath": {"at": Vector3(LINE_X, BED, -10.6), "travel": Vector3(0, 0, 1)},
-	"coater": {"at": Vector3(LINE_X, BED, -7.2), "travel": Vector3(0, 0, 1)},
+	"survey": {"at": Vector3(LINE_X, BED, -19.1), "travel": Vector3(0, 0, 1)},
+	"grinder": {"at": Vector3(42.4, BED, -16.0), "travel": Vector3(-1, 0, 0)},
+	"straightener": {"at": Vector3(LINE_X, BED, -12.6), "travel": Vector3(0, 0, 1)},
+	"bath": {"at": Vector3(LINE_X, BED, -9.2), "travel": Vector3(0, 0, 1)},
+	"coater": {"at": Vector3(LINE_X, BED, -5.8), "travel": Vector3(0, 0, 1)},
 }
 ## The turntable where the grind branch leaves the main line.
-const DIVERTER := Vector3(LINE_X, BED, -17.4)
+const DIVERTER := Vector3(LINE_X, BED, -16.0)
 ## The end of the main line's conveyor, over the output pallets.
-const LINE_END := Vector3(LINE_X, BED, -5.4)
+const LINE_END := Vector3(LINE_X, BED, -4.0)
 ## The output pallets on the floor (yard space): where refurbished lots wait for a trolley.
-const OUT_SPOTS: Array[Vector3] = [Vector3(LINE_X, 0, -3.9), Vector3(LINE_X, 0, -2.2), Vector3(LINE_X, 0, -0.5)]
+const OUT_SPOTS: Array[Vector3] = [Vector3(LINE_X, 0, -2.5), Vector3(LINE_X, 0, -0.8), Vector3(LINE_X, 0, 0.9)]
 ## The dust vessel's place on the floor at the end of the grind branch.
-const DUST_SPOT := Vector3(38.9, 0, -17.4)
+const DUST_SPOT := Vector3(38.9, 0, -16.0)
 ## An empty vessel's own mass, kg.
 const VESSEL_TARE := 900.0
 ## Machine footprint along the line and across it, metres.
@@ -887,8 +888,8 @@ func _build_conveyors() -> void:
 	body.add_child(col)
 	# A run of yellow floor paint round the line, where you stand to work it.
 	var paint: Material = _mats["yellow"]
-	_part(PartShapes.box(Vector3(0.12, 0.01, 18.2)).mesh, Vector3(LINE_X - 2.05, 0.006, -12.4), paint, root)
-	_part(PartShapes.box(Vector3(7.6, 0.01, 0.12)).mesh, Vector3(41.9, 0.006, -15.6), paint, root)
+	_part(PartShapes.box(Vector3(0.12, 0.01, 18.2)).mesh, Vector3(LINE_X - 2.05, 0.006, -11.0), paint, root)
+	_part(PartShapes.box(Vector3(7.6, 0.01, 0.12)).mesh, Vector3(41.9, 0.006, -14.2), paint, root)
 
 
 ## A roller bed `length` long along +Z in `parent`'s frame: side rails, rollers, legs.
@@ -958,7 +959,7 @@ func _build_output() -> void:
 			_part(PartShapes.box(Vector3(1.3, 0.01, 0.08)).mesh, p + Vector3(0, 0.006, k * 0.78), _mats["yellow"], root)
 	# The bed's end: a stop bar over the first pallet.
 	_part(PartShapes.box(Vector3(1.2, 0.12, 0.08)).mesh, LINE_END + Vector3(0, -0.02, 0.34), _mats["yellow"], root)
-	var post := Vector3(LINE_X - 1.3, 0, -4.9)
+	var post := Vector3(LINE_X - 1.3, 0, -3.5)
 	_part(PartShapes.box(Vector3(0.12, 1.1, 0.12)).mesh, post + Vector3(0, 0.55, 0), _mats["dark"], root)
 	var face := Basis(Vector3.UP, -PI * 0.5) * Basis(Vector3.RIGHT, -0.35)
 	_part(PartShapes.chamfer_box(Vector3(0.56, 0.4, 0.06), 0.015).mesh, post + Vector3(0, 1.22, 0), _mats["dark"], root, face)
