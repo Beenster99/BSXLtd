@@ -49,6 +49,12 @@ const KIND_HELP := {
 ## strips; the odds that a run stalls, and the share of the spec's middle a setting may be
 ## off before Quality marks it down (they grade it; this is the ship's own quality figure).
 const RUN_S := 1.2
+## The powered rivet gun (trades.power_riveter): seconds for its air to build to the punch.
+## A rivet heated out with the welder (trades.rivet_heat), or its head ground off with the
+## cutter (trades.cutter): seconds each takes.
+const PRESS_S := 0.8
+const HEAT_S := 1.6
+const GRIND_S := 1.8
 const STRIP_S := 1.0
 const STALL_CHANCE := 0.04
 
@@ -133,7 +139,7 @@ func tools() -> Array[StringName]:
 	if aimed < 0:
 		return bay.hotbar
 	var useful: Array[StringName] = []
-	useful.assign(KIND_TOOLS.get(points[aimed].kind, []))
+	useful.assign(kind_tools(points[aimed].kind))
 	return useful
 
 
@@ -199,7 +205,13 @@ func press(tool: StringName) -> void:
 	if f.kind == "bolt" and tool == &"torque_wrench" and powered():
 		_press_power(f, tight)
 		return
-	if not (KIND_TOOLS[f.kind] as Array).has(tool):
+	if f.kind == "rivet" and tool in [&"welder", &"cutter"] and kind_tools("rivet").has(tool):
+		if not tight:
+			bay.hint("Nothing to take out: this rivet hole is empty.")
+		else:
+			_begin(true, tool)
+		return
+	if not kind_tools(f.kind).has(tool):
 		bay.hint("That's a %s: %s." % [f.kind, KIND_HELP[f.kind]])
 		return
 	if tool == &"drill":
@@ -221,6 +233,10 @@ func release() -> void:
 		return
 	if _working_power():
 		_release_power(points[_working])
+		_stop()
+		return
+	if _working_gun():
+		bay.hint("Let go before it punched: no rivet set.")
 		_stop()
 		return
 	if not _undoing and points[_working].kind == "bolt" and not _clicked:
@@ -245,7 +261,7 @@ func back_out(tool: StringName) -> void:
 				bay.hint("Breaking a bolt loose takes the torque wrench (2).")
 				return
 		"rivet":
-			if tool != &"drill":
+			if not tool in [&"drill", &"welder", &"cutter"] or not kind_tools("rivet").has(tool):
 				bay.hint("Rivets come out with the drill (3).")
 				return
 		"weld":
@@ -264,6 +280,9 @@ func back_out(tool: StringName) -> void:
 
 ## Wheel with the powered wrench on a bolt: its torque setting.
 func wheel_setting(tool: StringName, step: int) -> bool:
+	if aimed >= 0 and _working < 0 and points[aimed].kind == "rivet" and _gun() and tool == &"rivet_squeezer":
+		_gun().step_setting(-step)
+		return true
 	if tool != &"torque_wrench" or not powered() or aimed < 0 or points[aimed].kind != "bolt" or _working >= 0:
 		return false
 	_power().step_setting(-step)
@@ -310,6 +329,10 @@ func update(delta: float) -> void:
 	var bus := bay.bus()
 	if _working_power():
 		_work_power(f, at, n, delta)
+	elif _working_gun():
+		_work_gun(f, at, n)
+	elif f.kind == "rivet" and _undoing and _tool_held in [&"welder", &"cutter"]:
+		_work_rivet_out(f, at, n)
 	elif f.kind == "bolt" and not _undoing:
 		_work_bolt(f, at, n)
 	else:
@@ -485,6 +508,106 @@ func _report(f: FastenerPoint, trade: StringName, measurements: Dictionary) -> v
 	site.free()
 
 
+# --- The rivet gun, heating rivets out, the cutter --------------------------------------------
+
+## The tools that work a kind of joint: the rivet's grow the welder (trades.rivet_heat) and
+## the cutter (trades.cutter, when it's on the hotbar).
+func kind_tools(kind: String) -> Array:
+	var out: Array = (KIND_TOOLS.get(kind, []) as Array).duplicate()
+	if kind == "rivet":
+		if Flags.is_on("trades.rivet_heat"):
+			out.append(&"welder")
+		if bay.hotbar.has(&"cutter"):
+			out.append(&"cutter")
+	return out
+
+
+func _gun() -> TradesRivetGun:
+	return bay.tool_node(&"rivet_squeezer") as TradesRivetGun
+
+
+## A rivet being set with the powered rivet gun.
+func _working_gun() -> bool:
+	return _working >= 0 and not _undoing and points[_working].kind == "rivet" and _tool_held == &"rivet_squeezer" and _gun() != null
+
+
+## The air builds to the punch: bang, jolt, and the rivet is in at the gun's head setting.
+func _work_gun(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
+	var gun := _gun()
+	var xform := _on_surface(at, n, 0.0)
+	bay.place_tool(&"rivet_squeezer", xform)
+	bay.worker.right_hand.reach_to(xform * TradesRivetGun.GRIP, n)
+	bay.worker.right_hand.set_grip(1.0)
+	gun.pressure = clampf(_held_s / PRESS_S, 0.0, 1.0)
+	bay.loop(&"pressure", true, 0.7 + gun.pressure * 0.8)
+	var bus := bay.bus()
+	if bus:
+		bus.joint_progress.emit(StringName(f.joint_id), gun.pressure)
+	if gun.pressure < 1.0:
+		return
+	gun.punch()
+	bay.play(&"punch")
+	bay.worker.kick(0.03)
+	_rivet_made(f, gun.set_mm)
+	bay.hint("Punched: head %.1f mm." % gun.set_mm)
+	_stop()
+
+
+## A rivet set with its head standing `mm` out: the ship's quality figure and Quality's readings.
+func _rivet_made(f: FastenerPoint, mm: float) -> void:
+	var target := head_target_mm(f.spec)
+	var off := absf(mm - target) / maxf(target, 0.1)
+	var quality := 1.0 - clampf((off - 0.1) * 2.0, 0.0, 0.8)
+	_made(f, quality)
+	var dia := target * 3.0
+	_report(f, &"RIVET", {"head_height_mm": [mm], "head_height_target_mm": target,
+			"head_dia_mm": [dia], "head_dia_target_mm": dia, "hole_fit_mm": [0.0],
+			"deburred": [true], "seated": [true], "cracked_head": [false], "fastener_spec_id": f.spec})
+
+
+## Heating a rivet with the welder till it pops out, or grinding its head off with the cutter:
+## sparks fly, and the rivet (or its head) jumps off when it gives.
+func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
+	var heat := _tool_held == &"welder"
+	var need := HEAT_S if heat else GRIND_S
+	var progress := clampf(_held_s / need, 0.0, 1.0)
+	var sparks := bay.sparks
+	if heat:
+		_place(f.kind, at, n, progress)
+		bay.worker.right_hand.reach_to(_grip_point(&"welder", at, n), n)
+		if sparks and randf() < 0.5:
+			sparks.emit(at + n * 0.004, n, 2, 1.5, 0.9)
+	else:
+		var cutter := bay.tool_node(&"cutter") as TradesCutter
+		cutter.spin = 1.0
+		cutter.ground = progress
+		var xform := _on_surface(at, n, 0.0)
+		bay.place_tool(&"cutter", xform)
+		bay.worker.right_hand.reach_to(xform * TradesCutter.GRIP, n)
+		bay.loop(&"grind", true, 0.95 + randf() * 0.1)
+		if sparks:
+			# Off the disc's edge, down along the surface.
+			var down := Vector3.DOWN - n * n.dot(Vector3.DOWN)
+			if down.length() < 0.1:
+				down = xform.basis.z
+			sparks.emit(at + n * 0.003, down.normalized() + n * 0.35, 8, 4.5, 0.25)
+	bay.worker.right_hand.set_grip(1.0)
+	var bus := bay.bus()
+	if bus:
+		bus.joint_progress.emit(StringName(f.joint_id), progress)
+	if progress < 1.0:
+		return
+	if sparks:
+		var rivet := CylinderMesh.new()
+		rivet.top_radius = 0.0045
+		rivet.bottom_radius = 0.0045
+		rivet.height = 0.01 if heat else 0.003
+		var hot := TradesLook.glow(Color(1.0, 0.4, 0.1), 2.0) if heat else TradesTool.steel()
+		sparks.pop(at + n * 0.01, n * (2.0 if heat else 1.0) + Vector3.UP * 1.5, rivet, hot)
+	bay.play(&"pop" if heat else &"clunk", 1.3)
+	_finish(f)
+
+
 # --- Doing the work -------------------------------------------------------------------------
 
 func _begin(undo: bool, tool: StringName) -> void:
@@ -511,7 +634,14 @@ func _begin(undo: bool, tool: StringName) -> void:
 			else:
 				bay.hint("Breaking it loose..." if undo else "Pull the mouse back until the wrench clicks.")
 		"rivet":
-			bay.hint("Drilling it out..." if undo else "Squeezing...")
+			if _working_gun():
+				bay.hint("Pressure building...")
+			elif undo and _tool_held == &"welder":
+				bay.hint("Heating the rivet...")
+			elif undo and _tool_held == &"cutter":
+				bay.hint("Grinding the head off...")
+			else:
+				bay.hint("Drilling it out..." if undo else "Squeezing...")
 		"weld":
 			bay.hint("Cutting the weld out..." if undo else "Laying the bead...")
 		"connector":
@@ -569,6 +699,15 @@ func _stop() -> void:
 	var squeezer := bay.tool_node(&"rivet_squeezer") as TradesRivetSqueezer
 	if squeezer:
 		squeezer.closed = 0.0
+	var gun := bay.tool_node(&"rivet_squeezer") as TradesRivetGun
+	if gun:
+		gun.pressure = 0.0
+	var cutter := bay.tool_node(&"cutter") as TradesCutter
+	if cutter:
+		cutter.spin = 0.0
+		cutter.ground = 0.0
+	bay.loop(&"pressure", false)
+	bay.loop(&"grind", false)
 	var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
 	if wrench:
 		wrench.applied_nm = 0.0
@@ -799,6 +938,13 @@ func actions(tool: StringName) -> Array:
 		"rivet":
 			if tool == &"drill" and tight:
 				out.append([TradesBay.HOLD_CLICK, "drill it out"])
+			elif tool == &"welder" and tight and kind_tools("rivet").has(&"welder"):
+				out.append([TradesBay.HOLD_CLICK, "heat it till it pops out"])
+			elif tool == &"cutter" and tight:
+				out.append([TradesBay.HOLD_CLICK, "grind the head off"])
+			elif tool == &"rivet_squeezer" and not tight and _gun():
+				out.append([TradesBay.HOLD_CLICK, "fire a rivet"])
+				out.append([TradesBay.WHEEL, "set the head height (%.1f mm now)" % _gun().set_mm])
 			elif tool == &"rivet_squeezer" and not tight:
 				out.append([TradesBay.HOLD_CLICK, "set a rivet"])
 		"weld":
@@ -816,7 +962,7 @@ func actions(tool: StringName) -> Array:
 			"bolt":
 				want = &"torque_wrench"
 			"rivet":
-				want = &"drill" if tight else &"rivet_squeezer"
+				want = (&"cutter" if bay.hotbar.has(&"cutter") else &"drill") if tight else &"rivet_squeezer"
 			"weld":
 				want = &"welder"
 			"connector":

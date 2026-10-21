@@ -27,12 +27,16 @@ const TOOLS: Array[StringName] = [&"hands", &"torque_wrench", &"drill", &"rivet_
 const TOOL_LABELS := {
 	&"hands": "Hands", &"torque_wrench": "Torque wrench", &"drill": "Drill",
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
+	&"cutter": "Cutter",
 }
 ## A tool's name on the hotbar and its display: the wrench is the powered one with
-## trades.power_wrench.
-static func label_of(id: StringName) -> String:
+## trades.power_wrench, the squeezer the rivet gun in the yard with trades.power_riveter
+## (the bench's riveting lesson keeps the hand squeezer).
+static func label_of(id: StringName, yard := true) -> String:
 	if id == &"torque_wrench" and TradesShipJoints.powered():
 		return "Power wrench"
+	if id == &"rivet_squeezer" and yard and Flags.is_on("trades.power_riveter"):
+		return "Rivet gun"
 	return String(TOOL_LABELS.get(id, id))
 
 
@@ -60,6 +64,8 @@ var tool: StringName = &"hands"
 ## The tools on your hotbar (keys 1..n): TOOLS, and in the yard the tractor beam
 ## (flag "trades.tractor").
 var hotbar: Array[StringName] = []
+## Sparks off the tools, and rivets popping out (presentation only).
+var sparks: TradesSparks
 ## The wheel turns a held part in quarter turns (true) or a few degrees a notch.
 var turn_snap := false
 var stations: Array[TradesStation] = []
@@ -104,7 +110,13 @@ func _ready() -> void:
 	hotbar.assign(TOOLS)
 	if in_yard and Flags.is_on("trades.tractor"):
 		hotbar.append(&"tractor")
+	if in_yard and Flags.is_on("trades.cutter"):
+		hotbar.append(&"cutter")
 	_build_worker()
+	sparks = TradesSparks.new()
+	sparks.name = "Sparks"
+	sparks.exclude.append(worker.get_rid())
+	add_child(sparks)
 	_build_tools()
 	_build_audio()
 	_build_hud()
@@ -424,7 +436,7 @@ func _update_tool_panel() -> void:
 	if _tool_panel == null:
 		return
 	var t: TradesTool = tool_nodes.get(tool)
-	_tool_title.text = label_of(tool).to_upper()
+	_tool_title.text = label_of(tool, in_yard).to_upper()
 	var rows: Array = t.panel_rows() if t else []
 	var lines := PackedStringArray()
 	for r: Array in rows:
@@ -762,12 +774,12 @@ func _on_hand_snapped() -> void:
 
 func _build_tools() -> void:
 	var scripts := {
-		&"torque_wrench": TradesPowerWrench if TradesShipJoints.powered() else TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetSqueezer,
-		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool,
+		&"torque_wrench": TradesPowerWrench if TradesShipJoints.powered() else TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetGun if in_yard and Flags.is_on("trades.power_riveter") else TradesRivetSqueezer,
+		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool, &"cutter": TradesCutter,
 	}
 	for id: StringName in scripts:
 		var t: TradesTool = (scripts[id] as GDScript).new()
-		t.title = label_of(id)
+		t.title = label_of(id, in_yard)
 		t.top_level = true
 		t.visible = false
 		add_child(t)
@@ -783,6 +795,10 @@ func _build_audio() -> void:
 	_loops[&"beam"] = _player(TradesSounds.hum(0.5, 0.2, 70.0, 900.0))
 	_loops[&"impact"] = _player(TradesSounds.rattle(0.5, 0.35, 95.0, 22.0))
 	_players[&"stall"] = _player(TradesSounds.burst(0.25, 0.7, 300.0))
+	_loops[&"pressure"] = _player(TradesSounds.hum(0.5, 0.18, 60.0, 4000.0))
+	_loops[&"grind"] = _player(TradesSounds.hum(0.5, 0.4, 180.0, 7000.0))
+	_players[&"punch"] = _player(TradesSounds.burst(0.12, 1.0, 1400.0))
+	_players[&"pop"] = _player(TradesSounds.burst(0.06, 0.8, 1800.0))
 
 
 func _player(stream: AudioStream) -> AudioStreamPlayer:
@@ -962,7 +978,7 @@ func _build_hud() -> void:
 		var label := TradesLook.hud_label(18)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.custom_minimum_size = Vector2(112, 0)
-		label.text = "%d  %s" % [i + 1, label_of(hotbar[i]).to_upper()]
+		label.text = "%d  %s" % [i + 1, label_of(hotbar[i], in_yard).to_upper()]
 		slot.add_child(label)
 		bar.add_child(slot)
 		_slots.append(slot)
@@ -1058,7 +1074,7 @@ func refresh_hud() -> void:
 func _refresh_hud() -> void:
 	if _tool_label == null:
 		return
-	_tool_label.text = "TOOL    %s" % label_of(tool).to_upper()
+	_tool_label.text = "TOOL    %s" % label_of(tool, in_yard).to_upper()
 	if tool == &"hands" and not in_yard:
 		_tool_label.text += "    TURN %s" % ("90°" if turn_snap else "FREE")
 	_status_label.text = _focus.status_line() if _focus else ""
