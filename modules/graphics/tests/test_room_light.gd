@@ -44,6 +44,14 @@ func run_tests() -> void:
 	check(plain.get_node_or_null("GfxProbe") == null and plain.get_node_or_null("GfxVoxelGI") == null,
 			"flag off: rooms keep their own light")
 	Flags.set_flag(GfxBus.GI, true)
+
+	# A room freed before its bake (the yard unloading) drops out quietly.
+	var gone := _room(Vector3(0, 0, 30))
+	await frames(3)
+	check(bus.pending_bakes() == 1, "a new room queues a bake")
+	gone.free()
+	await frames(2)
+	check(bus.pending_bakes() == 0, "a freed room's bake is dropped")
 	GraphicsOptions.set_value("gi", gi_was)
 	room.queue_free()
 	plain.queue_free()
