@@ -711,7 +711,13 @@ func advance_day() -> void:
 func on_contract_accepted(contract_id: String, value: int, due_day: int) -> BusinessResult:
 	if not _is_authority():
 		return _not_host()
-	var materials := job_materials(contract_id) if Flags.is_on("business.economy") else -1
+	var materials := -1
+	if Flags.is_on("business.economy"):
+		materials = job_materials(contract_id)
+		# Jobs whose parts aren't on the market (ship modules) still get goodwill, on top of
+		# the deposit share standing in for the parts.
+		if materials < 0:
+			materials = value * get_rules().deposit_percent / 100
 	return _books.accept_contract(contract_id, value, due_day, materials)
 
 
@@ -723,13 +729,16 @@ func job_materials(contract_id: String) -> int:
 	if job == null or job.order == null or job.order.manifest.is_empty():
 		return -1
 	var total := 0
+	var priced := false
 	for line: ManifestLine in job.order.manifest:
 		if line.supplied_by != "bsx" or line.component == null:
 			continue
 		var each := get_catalogue().value_of(line.component.id)
 		if each > 0:
 			total += each * line.qty
-	return total
+			priced = true
+	# Ship modules (a tow winch) aren't market parts; those jobs fall back to the deposit share.
+	return total if priced else -1
 
 
 ## Pays the rest of a contract and moves reputation. quality is 0-1.

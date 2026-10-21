@@ -31,10 +31,10 @@ extends Resource
 
 @export_group("Wages")
 ## A crew member's daily wage: the base plus this much per skill level (all skills added).
-@export var wage_base := 250
-@export var wage_per_level := 40
+@export var wage_base := 200
+@export var wage_per_level := 15
 ## No one is paid more than this a day, whatever their level.
-@export var wage_max := 1200
+@export var wage_max := 500
 ## Payslips kept per player.
 @export var payslips_kept := 60
 
