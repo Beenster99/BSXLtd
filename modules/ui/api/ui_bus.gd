@@ -27,14 +27,27 @@ func register_module() -> void:
 	holo = WristHolo.new()
 	add_child(holo)
 	HudSlots.register_holo_channel(SETTINGS_CHANNEL, "Settings", _settings_channel, 900)
+	Menu.register_settings_page(Menu.CHARACTER, "Character", _character_page, 10)
 
 
 func unregister_module() -> void:
 	HudSlots.unregister_holo_channel(SETTINGS_CHANNEL)
+	Menu.unregister_settings_page(Menu.CHARACTER)
 	if holo:
 		holo.close()
 	if Settings.changed.is_connected(_on_setting_changed):
 		Settings.changed.disconnect(_on_setting_changed)
+
+
+## The top of Settings > Character, over the sections modules add (level, payslips...).
+func _character_page() -> Control:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	var game := Saves.current_name if Saves.current_name != "" else "No game loaded"
+	col.add_child(BsxTheme.muted("Your profile in %s." % game))
+	if Menu.settings_sections(Menu.CHARACTER).is_empty():
+		col.add_child(BsxTheme.muted("Nothing else to show yet."))
+	return col
 
 
 ## Shows a short message in the HUD's notices slot.
