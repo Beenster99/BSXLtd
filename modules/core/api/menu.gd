@@ -15,6 +15,9 @@ extends Node
 ##   Menu.register_settings_section(Menu.CHARACTER, "business.payslips", "Payslips", factory, 30)
 
 signal entries_changed
+## Asks UI's pause menu to open (Esc in a game). Scenes call Menu.open_pause() on Esc when
+## nothing of theirs is open, instead of leaving for the main menu.
+signal pause_requested
 signal settings_pages_changed
 signal settings_sections_changed(page: String)
 
@@ -113,3 +116,8 @@ func unregister_settings_section(page: String, id: String) -> void:
 
 func settings_sections(page: String) -> Array[Dictionary]:
 	return _sections.filter(func(c): return c.page == page)
+
+
+## Opens the pause menu (Resume, Save, Main menu, Quit) over the game. See pause_requested.
+func open_pause() -> void:
+	pause_requested.emit()

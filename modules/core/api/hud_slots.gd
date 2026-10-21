@@ -9,6 +9,15 @@ extends Node
 ## or switches channel); the holo shows it on a semi-transparent pane sized about 900 x 560.
 ##   HudSlots.register_holo_channel("business.orders", "Orders", func() -> Control: return OrdersScreen.new())
 ##   HudSlots.open_holo("business.orders")   # e.g. from a terminal's "show on wrist" button
+## The pointer: a screen that needs the mouse (the wrist screen, a full-screen terminal, a
+## menu) claims it while it's up; walkers, benches and tools leave the mouse alone and fire
+## nothing while pointer_claimed() is true:
+##   HudSlots.claim_pointer("business.terminal") ... HudSlots.release_pointer("business.terminal")
+## Info cards: the one place for status, instructions and tips while playing (what you're
+## driving and its keys, the tool's state, a hint). UI stacks them in a see-through panel
+## on the right; a module sets its card when something starts and clears it when it ends:
+##   HudSlots.set_info("ship_bay.drive", "Driving the scissor lift", "W A S D drive\nF lets it go")
+##   HudSlots.clear_info("ship_bay.drive")
 ## A channel can take sections from other modules without naming them: the owner lays out
 ## TerminalKit.sections("<channel>", glass) and any module adds a docket to it, e.g.
 ##   HudSlots.register_holo_section("multiplayer.crew", "business.transfer", "Transfer money", factory)
@@ -16,6 +25,8 @@ extends Node
 signal panels_changed
 signal holo_channels_changed
 signal holo_sections_changed(channel: String)
+signal info_changed
+signal pointer_changed(claimed: bool)
 ## Asks the UI's wrist screen to open on a channel ("" = its home page).
 signal holo_requested(channel: String)
 
@@ -124,3 +135,59 @@ func unregister_holo_section(channel: String, id: String) -> void:
 ## The sections other modules added to `channel`, in order.
 func holo_sections(channel: String) -> Array[Dictionary]:
 	return _sections.filter(func(c): return c.channel == channel)
+
+
+var _infos: Array[Dictionary] = []
+
+
+## Puts up or updates an info card (see the header); `order` sorts the cards, low on top.
+func set_info(id: String, title: String, text: String = "", order: int = 0) -> void:
+	for c in _infos:
+		if c.id == id:
+			if c.title == title and c.text == text and c.order == order:
+				return
+			c.title = title
+			c.text = text
+			c.order = order
+			_infos.sort_custom(func(a, b): return a.order < b.order)
+			info_changed.emit()
+			return
+	_infos.append({"id": id, "title": title, "text": text, "order": order})
+	_infos.sort_custom(func(a, b): return a.order < b.order)
+	info_changed.emit()
+
+
+func clear_info(id: String) -> void:
+	var before := _infos.size()
+	_infos = _infos.filter(func(c): return c.id != id)
+	if _infos.size() != before:
+		info_changed.emit()
+
+
+## The cards up now, in order: {id, title, text, order}.
+func infos() -> Array[Dictionary]:
+	return _infos.duplicate(true)
+
+
+var _pointer: Dictionary = {}
+
+
+## Says a screen is using the mouse (see the header). Claims nest by id.
+func claim_pointer(id: String) -> void:
+	var was := pointer_claimed()
+	_pointer[id] = true
+	if not was:
+		pointer_changed.emit(true)
+
+
+func release_pointer(id: String) -> void:
+	if not _pointer.erase(id):
+		return
+	if not pointer_claimed():
+		pointer_changed.emit(false)
+
+
+## True while any screen has the mouse: don't capture it, look around or use tools on clicks.
+## `except`: a claim of your own that doesn't count.
+func pointer_claimed(except := "") -> bool:
+	return _pointer.size() > (1 if _pointer.has(except) else 0)
