@@ -182,6 +182,7 @@ func _ready() -> void:
 	_build_planet()
 	_build_shell()
 	_build_frame()
+	_build_services()
 	_build_doors()
 	_build_lights()
 	_build_signs()
@@ -574,7 +575,8 @@ func _build_shell() -> void:
 			[Vector3(YARD.x + WING * 0.5, 0, 0), Vector3(WING, 0, YARD.y * 2.0), Color(0.49, 0.54, 0.51)]]:
 		var c: Vector3 = r[0]
 		var s: Vector3 = r[1]
-		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T, 0.04, s.z + T), _paint(r[2], 0.0, 0.8), false)
+		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T, 0.04, s.z + T), _paint(r[2], 0.0, 0.55, "satin_paint"), false)
+		_hall_joints(Rect2(c.x - s.x * 0.5, c.z - s.z * 0.5, s.x, s.z), lift + 0.0205)
 		# Walkway lines down the long way, a metre and a half in from each wall.
 		var long_x := s.x > s.z
 		for k: float in [-1.0, 1.0]:
@@ -604,6 +606,82 @@ func _build_shell() -> void:
 		var mid: float = (float(wall[2]) + float(wall[3])) * 0.5
 		_block(_wall_point(wall[0], wall[1], mid, H + 0.85, 0.0), _wall_size(wall[0], run + T + 0.7, 0.7, T + 0.25), _trim, false)
 		_block(_wall_point(wall[0], wall[1], mid, H + 1.24, 0.0), _wall_size(wall[0], run + T + 0.8, 0.08, T + 0.35), _galv, false)
+
+
+## Saw-cut joints in a hall's epoxy floor on the column grid, and a darker worn lane down
+## the middle where the trolleys run. `y` is the joints' centre (just over the floor).
+func _hall_joints(area: Rect2, y: float) -> void:
+	var joint := _paint(Color(0.2, 0.2, 0.2), 0.0, 0.9)
+	var x := ceilf((area.position.x + 0.5) / BAY) * BAY
+	while x < area.end.x - 0.5:
+		_block(Vector3(x, y, area.get_center().y), Vector3(0.02, 0.002, area.size.y - 0.6), joint, false)
+		x += BAY
+	var z := ceilf((area.position.y + 0.5) / BAY) * BAY
+	while z < area.end.y - 0.5:
+		_block(Vector3(area.get_center().x, y, z), Vector3(area.size.x - 0.6, 0.002, 0.02), joint, false)
+		z += BAY
+	var long_x := area.size.x > area.size.y
+	var worn := _paint(Color(0.36, 0.36, 0.35), 0.0, 0.45, "satin_paint")
+	var lane := Vector3(area.size.x - 8.0, 0.001, 2.6) if long_x else Vector3(2.6, 0.001, area.size.y - 8.0)
+	_block(Vector3(area.get_center().x, y - 0.0002, area.get_center().y), lane, worn, false)
+
+
+## Services along the inside of every outside and courtyard wall: a cable tray under the
+## eaves with drops down the columns, and a fire point (extinguishers under a lit sign)
+## every other bay where the wall is clear.
+func _build_services() -> void:
+	var tray_mat := _galv
+	var red := _paint(Color(0.78, 0.1, 0.06), 0.2, 0.4, "gloss_paint")
+	var sign_mat := _glow_mat(Color(0.35, 1.0, 0.5), 2.0)
+	var ext := _lib("fire/extinguisher", func() -> PartShapes.PartShape:
+			return WreckParts.pipe(0.08, 0.55, false))
+	var board := _box(Vector3(0.7, 0.9, 0.03))
+	var lit := _box(Vector3(0.36, 0.14, 0.03))
+	var drop := _box(Vector3(0.06, 9.0, 0.04))
+	var tray_y := 9.6
+	for wall: Array in _walls():
+		var side: int = wall[5]
+		if side == 0:
+			continue
+		var axis: String = wall[0]
+		var at: float = wall[1]
+		var basis := _wall_basis(axis)
+		var w_in := float(-side)
+		# The tray: an open U of galvanised sheet on brackets, broken round tall openings.
+		var start: float = float(wall[2]) + 0.6
+		var cuts: Array = []
+		for o: Array in wall[4]:
+			if float(o[2]) > tray_y - 0.4:
+				cuts.append([float(o[0]) - float(o[1]) * 0.5 - 0.4, float(o[0]) + float(o[1]) * 0.5 + 0.4])
+		cuts.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		cuts.append([float(wall[3]) - 0.6, float(wall[3])])
+		for c: Array in cuts:
+			var run: float = float(c[0]) - start
+			if run > 1.0:
+				var mid := start + run * 0.5
+				var off := w_in * (T * 0.5 + 0.72)
+				_block(_wall_point(axis, at, mid, tray_y, off), _wall_size(axis, run, 0.02, 0.36), tray_mat, false)
+				for k: float in [-1.0, 1.0]:
+					_block(_wall_point(axis, at, mid, tray_y + 0.05, off + k * 0.17), _wall_size(axis, run, 0.1, 0.015), tray_mat, false)
+				# Cables in the tray, a bundle of dark and orange.
+				_block(_wall_point(axis, at, mid, tray_y + 0.04, off - 0.05), _wall_size(axis, run, 0.05, 0.12), _rubber, false)
+				_block(_wall_point(axis, at, mid, tray_y + 0.035, off + 0.08), _wall_size(axis, run, 0.04, 0.06), _trim, false)
+			start = c[1]
+		# Fire points and cable drops between the columns.
+		var u := floorf(float(wall[2]) / BAY) * BAY + BAY
+		var n := 0
+		while u < float(wall[3]) - 1.0:
+			if _opening_at(wall[4], u, 1.2).is_empty():
+				n += 1
+				var face := w_in * (T * 0.5 + 0.03)
+				if n % 2 == 1:
+					_put(board, Transform3D(basis, _wall_point(axis, at, u, 1.05, face)), red, false)
+					for k: float in [-0.15, 0.15]:
+						_put(ext, Transform3D(Basis(), _wall_point(axis, at, u + k, 0.75, w_in * (T * 0.5 + 0.13))), red, false)
+					_put(lit, Transform3D(basis, _wall_point(axis, at, u, 1.75, face)), sign_mat, false)
+				else:
+					_put(drop, Transform3D(basis, _wall_point(axis, at, u, 5.0, w_in * (T * 0.5 + 0.2))), tray_mat, false)
+			u += BAY
 
 
 ## The size of a box `along` long, `tall` high and `thick` through a wall on `axis`.

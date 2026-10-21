@@ -200,6 +200,16 @@ func _build_lift(at: Transform3D) -> void:
 	for x: float in [-W * 0.5 + 0.12, W * 0.5 - 0.12]:
 		for z: float in [-L * 0.5 + 0.3, L * 0.5 - 0.3]:
 			_part(PartShapes.prism(14, 0.13, 0.1), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(x, 0.13, z)), _rubber, chassis)
+			_part(PartShapes.prism(12, 0.06, 0.104), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(x, 0.13, z)), _steel, chassis)
+	# Dressing: dark skirts down the sides, rubber corner bumpers, hazard stripes across the
+	# push end and the load plate on the outboard side.
+	var half := Vector3((W - 0.1) * 0.5, 0, (L - 0.2) * 0.5)
+	for sx: float in [-1.0, 1.0]:
+		_part(PartShapes.box(Vector3(0.02, 0.05, L - 0.5)), Transform3D(Basis(), Vector3(sx * (half.x + 0.01), 0.16, 0)), _dark, chassis)
+		for sz: float in [-1.0, 1.0]:
+			_part(PartShapes.chamfer_box(Vector3(0.09, 0.15, 0.09), 0.015), Transform3D(Basis(), Vector3(sx * (half.x - 0.02), 0.21, sz * (half.z - 0.02))), _rubber, chassis)
+	_stripes(W - 0.4, 0.09, Transform3D(Basis(), Vector3(0, 0.21, -half.z - 0.011)), chassis)
+	_sign("SWL 250 KG · 2 PERSONS", Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-half.x - 0.012, 0.215, -0.35)), 28, chassis)
 	# A ramp up onto the platform at its +Z end (the platform rests at the first stop).
 	var low := stops[0]
 	var slope := atan2(low - CLEAR, RAMP)
@@ -572,6 +582,23 @@ func _build_power_unit(socket: Vector3) -> void:
 		for z: float in [-0.55, 0.55]:
 			_part(PartShapes.prism(14, 0.15, 0.1), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(x, 0.15, z)), _rubber, u)
 	_collide(Vector3(body.x, 0.25 + body.y + 0.06 - CLEAR, body.z), Transform3D(Basis(), Vector3(0, (0.25 + body.y + 0.06 + CLEAR) * 0.5, 0)), u)
+	# Dressing: a bumper rail round the base, hazard stripes on the tow end, lifting eyes and
+	# an exhaust stack on the roof, wheel hubs and the rating plate.
+	var top := 0.25 + body.y + 0.06
+	for sx: float in [-1.0, 1.0]:
+		_part(PartShapes.box(Vector3(0.05, 0.08, body.z + 0.02)), Transform3D(Basis(), Vector3(sx * (body.x * 0.5 + 0.03), 0.32, 0)), _dark, u)
+	for sz: float in [-1.0, 1.0]:
+		_part(PartShapes.box(Vector3(body.x + 0.12, 0.08, 0.05)), Transform3D(Basis(), Vector3(0, 0.32, sz * (body.z * 0.5 + 0.03))), _dark, u)
+	_stripes(body.x - 0.2, 0.12, Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0.5, -body.z * 0.5 - 0.006)), u)
+	for z: float in [-0.5, 0.5]:
+		_part(PartShapes.prism(10, 0.045, 0.03), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(-0.3, top + 0.05, z)), _steel, u)
+	var stack := Vector3(0.28, top, -0.5)
+	_part(WreckParts.pipe(0.04, 0.34, false), Transform3D(Basis(), stack + Vector3(0, 0.17, 0)), _dark, u)
+	_part(PartShapes.prism(12, 0.065, 0.03), Transform3D(Basis(), stack + Vector3(0, 0.37, 0)), _dark, u)
+	for x: float in [-0.4, 0.4]:
+		for z: float in [-0.55, 0.55]:
+			_part(PartShapes.prism(12, 0.07, 0.104), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(x, 0.15, z)), _steel, u)
+	_sign("GPU-400  90 kVA", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(body.x * 0.5 + 0.012, 1.0, -0.4)), 28, u)
 	# The tow bar and an upright handle at its end: F on the handle tows the unit.
 	_part(PartShapes.box(Vector3(0.05, 0.05, 0.75)), Transform3D(Basis(), Vector3(0, 0.3, -body.z * 0.5 - 0.37)), _dark, u)
 	var handle := Vector3(0, 0.62, -body.z * 0.5 - 0.75)
@@ -814,6 +841,19 @@ func _collide(size: Vector3, xform: Transform3D, parent: CollisionObject3D) -> C
 	col.transform = xform
 	parent.add_child(col)
 	return col
+
+
+## Hazard stripes, black on the part's yellow, `width` by `height` metres across a face
+## (+Z out of it at `xform`).
+func _stripes(width: float, height: float, xform: Transform3D, parent: Node3D) -> void:
+	var n := int(width / 0.08)
+	for i in n:
+		if i % 2 == 0:
+			continue
+		var x := -width * 0.5 + (float(i) + 0.5) * width / float(n)
+		_part(PartShapes.box(Vector3(width / float(n), height, 0.012)), xform * Transform3D(Basis(), Vector3(x, 0, 0)), _dark, parent)
+	for y: float in [-1.0, 1.0]:
+		_part(PartShapes.box(Vector3(width, 0.012, 0.014)), xform * Transform3D(Basis(), Vector3(0, y * (height * 0.5 + 0.006), 0)), _dark, parent)
 
 
 func _sign(text: String, xform: Transform3D, size: int, parent: Node3D = null) -> Label3D:
