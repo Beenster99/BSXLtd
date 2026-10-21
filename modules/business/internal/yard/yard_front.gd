@@ -11,20 +11,20 @@ const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 ## the door to stock. Stock: the south wall in the clear corner by the door to prep. Prep and
 ## pre-assembly: the north walls, clear of the benches and stations.
 const MONITORS := {
-	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.0, 1.9, -23.75)),
-	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 1.9, -24.25)),
-	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 1.9, -45.75)),
-	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.0, 1.9, -23.75)),
+	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.3, 2.1, -23.75)),
+	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 2.1, -24.25)),
+	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 2.1, -45.75)),
+	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.3, 2.1, -23.75)),
 }
 ## Claimed while a TV is aimed at or full screen, so tools don't fire on the same click.
 const POINTER_ID := "business.tv"
 ## The screen's texture size; the terminal is laid out for it. 16:9 like a TV.
 const SCREEN_PX := Vector2i(1280, 720)
-const SCREEN_M := Vector2(2.9, 1.63)
+const SCREEN_M := Vector2(4.4, 2.475)
 ## How far the screen's face stands off the wall (metres).
 const DEPTH := 0.24
 ## How close (metres) and how square-on a player must be to use a terminal.
-const REACH := 4.5
+const REACH := 6.0
 const FACING := 0.3
 ## Crates for goods in store: a grid in the deliveries hall clear of the pallets, the truck
 ## door and the walkways (x, z of the first crate; spacing; columns; rows).
@@ -312,6 +312,22 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	add_child(m)
 	var w := SCREEN_M.x
 	var h := SCREEN_M.y
+	# Graphics highlights what the player can use when it's looked at or pinged; it finds the
+	# set by this body.
+	m.add_to_group("gfx_interactable")
+	m.set_meta("gfx_id", "business.tv.%s" % hall)
+	m.set_meta("look_hint", {"title": "Hall TV",
+			"text": "The wrist terminal on the wall: orders, goods in, machines, accounts and the rest.",
+			"keys": [["LMB", "Press what the pointer is on"], [Keys.INTERACT, "Full screen"]]})
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(w + 0.07, h + 0.07, DEPTH)
+	shape.shape = box
+	shape.position.z = DEPTH * 0.5
+	body.add_child(shape)
+	m.add_child(body)
 	var gloss := _mat(Color("0b0c0e"), 0.3, 0.18)
 	var dark := _mat(Color("1d2024"), 0.7, 0.45)
 	# Wall plate and arm, the set's back, then a slim gloss-black bezel round the panel.
@@ -499,7 +515,7 @@ func stage_monitor_view(i := 0) -> Camera3D:
 	cam.name = "BusinessShotCamera"
 	add_child(cam)
 	# From a walker's eye height (1.62 m), a few steps back and to one side.
-	var eye := m.global_position + m.global_basis.z * 3.8 + m.global_basis.x * 1.2
+	var eye := m.global_position + m.global_basis.z * 4.8 + m.global_basis.x * 1.2
 	eye.y = 1.62
 	cam.global_position = eye
 	cam.look_at(m.global_position)

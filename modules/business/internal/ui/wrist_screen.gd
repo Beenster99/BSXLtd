@@ -32,7 +32,7 @@ func _init(p_bus: BusinessBus, p_page := "orders", p_glass := true) -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_build()
 	var watch := {"market_changed": 0, "cash_changed": 3, "order_placed": 1, "delivery_arrived": 2,
-			"order_delayed": 1, "reputation_changed": 3, "day_closed": 1}
+			"order_delayed": 1, "reputation_changed": 3, "day_closed": 1, "stock_added": 4}
 	for sig: String in watch:
 		bus.connect(sig, _mark_dirty.unbind(watch[sig]) if watch[sig] > 0 else _mark_dirty)
 
