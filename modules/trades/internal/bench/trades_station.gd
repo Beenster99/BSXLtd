@@ -49,6 +49,12 @@ func back_out(_tool: StringName) -> void:
 	pass
 
 
+## The mouse wheel with `tool` in hand: a setting on the tool (the powered wrench's torque).
+## True when the station used it (otherwise the wheel picks the next tool).
+func wheel_setting(_tool: StringName, _step: int) -> bool:
+	return false
+
+
 ## E (+1) or Q (-1): set the machine (the welder's amps). True when the station used it.
 func adjust(_step: int) -> bool:
 	return false

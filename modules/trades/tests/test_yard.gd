@@ -15,6 +15,9 @@ func run_tests() -> void:
 	var bus := Modules.bus("trades") as TradesBus
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var had_ship := ship_bus.ship != null
+	# The hand torque wrench (test_power_wrench.gd has the powered one).
+	var was_powered := Flags.is_on("trades.power_wrench")
+	Flags.set_flag("trades.power_wrench", false)
 	ship_bus.load_ship("vs_kestrel")
 	var script := GDScript.new()
 	script.source_code = FAKE_YARD
@@ -126,6 +129,7 @@ func run_tests() -> void:
 		check(rig.worker.right_hand.can_reach(at), "a roof rivet is in reach from the floor")
 
 	yard.queue_free()
+	Flags.set_flag("trades.power_wrench", was_powered)
 	await frames(1)
 	if had_ship:
 		ship_bus.load_ship("vs_kestrel")
