@@ -55,6 +55,16 @@ func run_tests() -> void:
 	var bolt := _first(station, "bolt")
 	_aim_at(rig, station, bolt)
 	check(station.aimed == bolt, "aiming at a bolt picks it")
+	# The tips say what the tool in hand does to it, with its keys (beenster, 0.3.7).
+	rig.set_tool(&"hands")
+	var tips := "\n".join(rig.context_tips())
+	check(tips.contains("%s: take the torque wrench" % rig.tool_key(&"torque_wrench")),
+			"the wrong tool in hand: the tips say which key takes up the right one (%s)" % tips.replace("\n", " | "))
+	rig.set_tool(&"torque_wrench")
+	tips = "\n".join(rig.context_tips())
+	check(tips.contains(TradesBay.HOLD_RIGHT + ": break it loose") and tips.contains("part details"),
+			"the wrench on a tight bolt: hold right click breaks it loose (%s)" % tips.replace("\n", " | "))
+	check(not tips.contains(Keys.key_name(Keys.JUMP)) and not tips.contains("walk"), "no walking or jumping keys in the tips")
 	check(station.status_line().contains("TIGHT"), "the HUD says it's tight")
 	var id := station.points[bolt].joint_id
 	rig.set_tool(&"hands")

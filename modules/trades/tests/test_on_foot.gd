@@ -93,12 +93,27 @@ func run_tests() -> void:
 	worker.set_ladder(-1, deck)
 	check(not worker.on_ladder() and worker.global_position.is_equal_approx(deck), "out of the top: onto the deck")
 
-	# The tool, what you're on and the keys are cards in the right-hand panel.
+	# The tool is a card in the right-hand panel; with nothing under the aim there are no
+	# tips (no walking or jumping keys all the time, beenster 0.3.7).
+	worker.global_position = Vector3(20, 0.05, 20)
+	worker.face(Vector3(40, 0.0, 40))
 	await frames(2)
 	var ids := HudSlots.infos().map(func(c: Dictionary) -> String: return c.id)
-	check(ids.has(TradesBay.INFO_TOOL) and ids.has(TradesBay.INFO_KEYS), "the tool and keys are cards in the right-hand panel")
-	var keys_card: Dictionary = HudSlots.infos().filter(func(c: Dictionary) -> bool: return c.id == TradesBay.INFO_KEYS)[0]
-	check(Keys.key_name(Keys.JUMP) in keys_card.text, "the keys card names the jump key")
+	check(ids.has(TradesBay.INFO_TOOL), "the tool is a card in the right-hand panel")
+	check(not ids.has(TradesBay.INFO_KEYS) and rig.context_tips().is_empty(), "looking at nothing: no keys card")
+
+	# The wrist screen up: you can still walk about (beenster, 0.3.7).
+	await physics(10)
+	var holo: Variant = Modules.bus("ui").get("holo")
+	holo.call("open", "")
+	await frames(2)
+	var before := worker.global_position
+	Input.action_press(Keys.FORWARD)
+	await physics(20)
+	Input.action_release(Keys.FORWARD)
+	check(worker.global_position.distance_to(before) > 0.5, "with the wrist screen up you walk on (%.2f m)" % worker.global_position.distance_to(before))
+	holo.call("close")
+	await frames(1)
 
 	# A screen with the mouse: clicks don't use a tool.
 	rig.set_tool(&"tractor")

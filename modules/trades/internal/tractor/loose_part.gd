@@ -29,6 +29,9 @@ func setup(slot: MountSlot, comp: String, visual: Node3D) -> void:
 	slot_id = slot.slot_id
 	component = comp
 	name = "Loose_" + slot.slot_id
+	# Graphics lights it under the pointer, and crewmates' pings find it by its id.
+	add_to_group("gfx_interactable")
+	set_meta("gfx_id", "trades.loose:" + slot.slot_id)
 	outline = slot.mount.affine_inverse() * slot.box
 	mass = maxf(5.0, outline.size.x * outline.size.y * outline.size.z * DENSITY)
 	_shape = CollisionShape3D.new()

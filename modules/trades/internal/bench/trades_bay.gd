@@ -352,7 +352,8 @@ func _on_mouse_button(event: InputEventMouseButton) -> void:
 			if event.pressed:
 				_focus.back_out(tool)
 		MOUSE_BUTTON_MIDDLE:
-			if event.pressed:
+			# In the yard the middle button is the crew's ping (Graphics).
+			if event.pressed and not in_yard:
 				toggle_turn_snap()
 		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 			if event.pressed:
@@ -438,9 +439,39 @@ const INFO_PART := "trades.part"
 const INFO_KEYS := "trades.keys"
 
 
+## The mouse in the tips (TradesStation.actions); keys go by their bound names.
+const CLICK := "Left click"
+const HOLD_CLICK := "Hold left click"
+const RIGHT_CLICK := "Right click"
+const HOLD_RIGHT := "Hold right click"
+const WHEEL := "Mouse wheel"
+
+
+## The key that takes up a tool from the hotbar ("2"), or "-" when it isn't on it.
+func tool_key(id: StringName) -> String:
+	var i := hotbar.find(id)
+	return Keys.key_name(TradesBus.KEY_TOOL + str(i + 1)) if i >= 0 else "-"
+
+
+## What you can do now with the tool in your hand on what you're looking at, with its keys
+## (beenster, 0.3.7: no walking keys all the time, only tips for the thing under the aim).
+## Empty while there's nothing to do.
+func context_tips() -> PackedStringArray:
+	var out := PackedStringArray()
+	if _focus == null:
+		return out
+	var rows := _focus.actions(tool)
+	for r: Array in rows:
+		out.append("%s: %s" % [r[0], r[1]])
+	if not rows.is_empty() and InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
+		out.append("Hold %s: part details" % Keys.key_name(TradesBus.KEY_INSPECT))
+	return out
+
+
 ## What used to be text top left (the tool, what you're working on, the hint, the keys) and
 ## the part details go to the HUD's one see-through panel on the right (beenster, 0.3.6:
-## the top-left text overlapped itself). The labels stay as the text's holders.
+## the top-left text overlapped itself). The labels stay as the text's holders. The keys card
+## only has the tips for what's under the aim (context_tips).
 func _post_info() -> void:
 	if not _hud.visible:
 		_clear_info()
@@ -448,7 +479,7 @@ func _post_info() -> void:
 	var status := _status_label.text
 	HudSlots.set_info(INFO_TOOL, "Tool", _tool_label.text.trim_prefix("TOOL").strip_edges()
 			+ ("\n" + status if status != "" else ""), 10)
-	if _hint_label.text != "":
+	if _hint_label.text != "" and (not in_yard or Time.get_ticks_msec() - _hint_at < HINT_S * 1000.0):
 		HudSlots.set_info(INFO_HINT, "Next", _hint_label.text, 11)
 	else:
 		HudSlots.clear_info(INFO_HINT)
@@ -456,7 +487,11 @@ func _post_info() -> void:
 		HudSlots.set_info(INFO_PART, "Part details", _inspect_label.text, 12)
 	else:
 		HudSlots.clear_info(INFO_PART)
-	HudSlots.set_info(INFO_KEYS, "Keys", _keys_line().replace("  ", "\n"), 90)
+	var tips := context_tips()
+	if tips.is_empty():
+		HudSlots.clear_info(INFO_KEYS)
+	else:
+		HudSlots.set_info(INFO_KEYS, "You can", "\n".join(tips), 13)
 
 
 func _clear_info() -> void:
@@ -493,6 +528,13 @@ func station_under_aim() -> TradesStation:
 
 func hint(text: String) -> void:
 	_hint_label.text = text
+	_hint_at = Time.get_ticks_msec()
+
+
+## How long a hint stays up in the yard's right-hand panel (seconds): long enough to read,
+## then the panel keeps only what's under the aim.
+const HINT_S := 6.0
+var _hint_at := 0
 
 
 ## A station put this tool on the work this frame (so the bay leaves it there).

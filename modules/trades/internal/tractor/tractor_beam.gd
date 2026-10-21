@@ -246,6 +246,23 @@ func turn(step: int) -> bool:
 	return true
 
 
+## The tips for the beam (TradesStation.actions): holding a part, or what's under the aim.
+func actions() -> Array:
+	if held:
+		var rotate := Keys.key_name(TradesBus.KEY_ROTATE) if InputMap.has_action(TradesBus.KEY_ROTATE) else "-"
+		return [["Let go", "lock it in its mount" if aligned else "drop it"],
+				[TradesBay.WHEEL, "pull it in, push it out"],
+				["Hold %s, move the mouse" % rotate, "turn it any way"],
+				["%s / %s" % [Keys.key_name(TradesBus.KEY_TURN_LEFT), Keys.key_name(TradesBus.KEY_TURN_RIGHT)], "turn it a step"],
+				[TradesBay.RIGHT_CLICK, "park it in the air"]]
+	if aimed_part():
+		return [[TradesBay.HOLD_CLICK, "lift it with the beam"]]
+	var slot_id := aimed_slot()
+	if slot_id != "" and _bus and _bus.get_slot_state(slot_id) == ShipBayBus.SlotState.POSITIONED and _tight(slot_id) == 0:
+		return [[TradesBay.HOLD_CLICK, "lift it off its mount"]]
+	return []
+
+
 func status_line() -> String:
 	if held == null:
 		return "Tractor: %d part%s off the ship" % [loose.size(), "" if loose.size() == 1 else "s"]
