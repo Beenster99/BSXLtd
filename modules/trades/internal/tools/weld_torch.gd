@@ -87,7 +87,7 @@ func readout_fill() -> float:
 
 func panel_rows() -> Array:
 	if lit and cutting:
-		return [["MODE", "CUT (UNWELD)"], ["CURRENT", "%d A" % roundi(CUT_AMPS)], ["CUT", "%d %%" % roundi(cut * 100.0)]]
+		return [["MODE", "UNWELD"], ["CURRENT", "%d A" % roundi(CUT_AMPS)], ["CUT", "%d %%" % roundi(cut * 100.0)]]
 	var rows := [["MODE", "UNWELD" if unweld else "WELD"], ["CURRENT", "%d A" % roundi(amps)]]
 	rows.append(["ARC", "%.1f mm" % arc_mm if lit else "-"])
 	return rows

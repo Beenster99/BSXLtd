@@ -14,7 +14,7 @@ const GRAVITY := 9.8
 const BOUNCE := 0.35
 const LIFE_S := Vector2(0.5, 1.4)
 ## A streak's thickness and its length per m/s of speed (m).
-const THICK_M := 0.003
+const THICK_M := 0.004
 const STREAK_S := 0.012
 
 var _pos: PackedVector3Array = []
@@ -41,7 +41,7 @@ func _ready() -> void:
 	sh.code = """shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled;
 void fragment() {
-	ALBEDO = COLOR.rgb * 6.0;
+	ALBEDO = COLOR.rgb * 1.6;
 	ALPHA = COLOR.a;
 }
 """
@@ -157,7 +157,7 @@ func _draw() -> void:
 		var basis := Basis(side * THICK_M, up * THICK_M, along * length)
 		_mm.set_instance_transform(i, Transform3D(basis, _pos[i] - along * length * 0.5))
 		var t := _age[i] / _life[i]
-		var c := Color(1.0, 0.95, 0.75).lerp(Color(1.0, 0.45, 0.08), clampf(t * 2.0, 0.0, 1.0))
+		var c := Color(1.0, 0.85, 0.45).lerp(Color(1.0, 0.4, 0.05), clampf(t * 2.0, 0.0, 1.0))
 		c = c.lerp(Color(0.5, 0.06, 0.0), clampf(t * 2.0 - 1.0, 0.0, 1.0))
 		c.a = 1.0 - clampf(t * 1.5 - 0.5, 0.0, 1.0)
 		_mm.set_instance_color(i, c)

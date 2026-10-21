@@ -29,8 +29,10 @@ void fragment() {
 	float inside = 1.0 - smoothstep(-0.002, 0.002, max(max(d.x, d.y), corner));
 	vec3 c = texture(screen, uv).rgb;
 	float lum = dot(c, vec3(0.3, 0.55, 0.15));
-	// Shade 10 glass: almost black, bright things through in green.
-	vec3 glass = vec3(0.28, 1.0, 0.35) * (lum * 0.05 + pow(max(lum - 0.55, 0.0), 1.2) * 2.4) + c * max(lum - 0.85, 0.0) * 0.8;
+	// Shade 10 glass: almost black, only the brightest things (the arc, hot metal, sparks)
+	// through, in green.
+	float hot = max(lum - 0.84, 0.0) / 0.16;
+	vec3 glass = vec3(0.28, 1.0, 0.35) * (lum * 0.035 + hot * hot * 0.95);
 	float shade = 0.5 + 0.5 * smoothstep(0.0, 0.5, abs(uv.x - 0.5));
 	vec3 shell = vec3(0.018, 0.02, 0.019) * (1.2 - shade * 0.6);
 	COLOR = vec4(mix(shell, glass, inside), 1.0);
