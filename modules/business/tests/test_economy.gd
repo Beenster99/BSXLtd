@@ -122,6 +122,11 @@ func run_tests() -> void:
 	check(bus.get_loans().size() == 1 and bus.get_payslips("Ana").size() > 0, "joining players get the company")
 
 	# The Settings pages: Company (owner, bonus, loans) and Payslips.
+	check(not Menu.settings_page(BusinessBus.COMPANY_PAGE).is_empty(), "the Company page is in Settings")
+	check(Menu.settings_sections(Menu.CHARACTER).any(func(c): return c.id == BusinessBus.PAYSLIPS_SECTION), "payslips are on the Character page")
+	var made: Control = Menu.settings_page(BusinessBus.COMPANY_PAGE).factory.call()
+	check(made != null, "the Company page builds")
+	made.free()
 	bus.reset()
 	bus.test_crew = {1: "Ana", 2: "Ben"}
 	bus.test_levels = {"Ana": 3, "Ben": 7}

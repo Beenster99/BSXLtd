@@ -86,6 +86,10 @@ const LOAN_EVENT := "business.loan"
 const SETTLE_EVENT := "business.settle"
 ## The longest note a bonus may carry.
 const NOTE_MAX := 140
+## The Settings menu: a Company page (owner, bonuses, loans) and payslips on Character.
+const COMPANY_PAGE := "business.company"
+const PAYSLIPS_SECTION := "business.payslips"
+const CompanyPanel := preload("res://modules/business/internal/ui/company_panel.gd")
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
 
@@ -122,6 +126,9 @@ func register_module() -> void:
 		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
 		Shots.register("business_goods_in", ShipBayBus.SHIPYARD_SCENE, _shot_goods, 40)
 	_offer_screen_channels()
+	if Flags.is_on("business.economy"):
+		Menu.register_settings_page(COMPANY_PAGE, "Company", func() -> Control: return CompanyPanel.new(self, "company", false), 20)
+		Menu.register_settings_section(Menu.CHARACTER, PAYSLIPS_SECTION, "Payslips", func() -> Control: return CompanyPanel.new(self, "payslips", false), 30)
 	# Multiplayer may load after Business; wallets need its events.
 	if not Modules.modules_ready.is_connected(_offer_wallets):
 		Modules.modules_ready.connect(_offer_wallets, CONNECT_ONE_SHOT)
@@ -134,6 +141,8 @@ func unregister_module() -> void:
 			net.call("unregister_event", e)
 		net.call("unregister_snapshot_provider", SAVE_SECTION)
 	HudSlots.unregister_holo_section(CREW_CHANNEL, TRANSFER_SECTION)
+	Menu.unregister_settings_page(COMPANY_PAGE)
+	Menu.unregister_settings_section(Menu.CHARACTER, PAYSLIPS_SECTION)
 	Saves.unregister_section(SAVE_SECTION)
 	for id: String in SCREEN_CHANNELS:
 		HudSlots.unregister_holo_channel(id)
