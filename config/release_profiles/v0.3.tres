@@ -12,6 +12,8 @@ flags = {
 "contracts": true,
 "contracts.board": true,
 "core": true,
+"graphics": true,
+"graphics.light": true,
 "multiplayer": true,
 "multiplayer.crew": true,
 "multiplayer.online": true,
