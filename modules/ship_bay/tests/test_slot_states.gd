@@ -20,7 +20,7 @@ func run_tests() -> void:
 	var joints: Array[String] = []
 	for f in bay.get_fasteners(slot):
 		joints.append(f.joint_id)
-	check(joints.size() == 5, "port engine has 4 bolts and a fuel plug: %d" % joints.size())
+	check(joints.size() == 6, "port engine has 4 bolts, a fuel plug and a power plug: %d" % joints.size())
 	check(bay.get_slot_state(slot) == S.FITTED, "arrives fitted")
 	check(bay.get_component(slot) == "KestrelEngine", "with its engine")
 	check(bay.is_joint_tight(joints[0]), "bolts arrive tight")

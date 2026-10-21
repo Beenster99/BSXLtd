@@ -8,14 +8,16 @@
 			{"id": "b2", "kind": "bolt", "spec": "M12", "at": [-1.82, 0.72, 6.54], "normal": [0, 0, 1]},
 			{"id": "b3", "kind": "bolt", "spec": "M12", "at": [-1.82, 1.78, 6.54], "normal": [0, 0, 1]},
 			{"id": "b4", "kind": "bolt", "spec": "M12", "at": [-2.38, 1.78, 6.54], "normal": [0, 0, 1]},
-			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [-2.1, 0.72, 6.54], "normal": [0, 0, 1]}
+			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [-2.1, 0.72, 6.54], "normal": [0, 0, 1]},
+			{"id": "p2", "kind": "connector", "spec": "power", "at": [-2.1, 1.78, 6.54], "normal": [0, 0, 1]}
 		],
 		"eng_aft_stbd_1": [
 			{"id": "b1", "kind": "bolt", "spec": "M12", "at": [1.82, 0.72, 6.54], "normal": [0, 0, 1]},
 			{"id": "b2", "kind": "bolt", "spec": "M12", "at": [2.38, 0.72, 6.54], "normal": [0, 0, 1]},
 			{"id": "b3", "kind": "bolt", "spec": "M12", "at": [2.38, 1.78, 6.54], "normal": [0, 0, 1]},
 			{"id": "b4", "kind": "bolt", "spec": "M12", "at": [1.82, 1.78, 6.54], "normal": [0, 0, 1]},
-			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [2.1, 0.72, 6.54], "normal": [0, 0, 1]}
+			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [2.1, 0.72, 6.54], "normal": [0, 0, 1]},
+			{"id": "p2", "kind": "connector", "spec": "power", "at": [2.1, 1.78, 6.54], "normal": [0, 0, 1]}
 		],
 		"net_hold_dor_1": [
 			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-1.9, 2.84, 1.95], "normal": [0, -1, 0]},
