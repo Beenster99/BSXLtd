@@ -7,7 +7,7 @@ extends ModuleTest
 ## Flickering pairs each scene has today. Lower a budget when its owner fixes some (the test
 ## says so); a scene over budget fails with the new pairs listed.
 const BUDGET := {
-	"ship_bay.shipyard": 57,
+	"ship_bay.shipyard": 3,
 }
 
 
