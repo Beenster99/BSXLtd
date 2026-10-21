@@ -61,12 +61,12 @@ static func girder_corner(arm: float, bend: float, width: float = 0.16, height: 
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	return shape
+	return PartShapes.stamp(shape, "girder_corner", [arm, bend, width, height])
 
 
 ## A joint block where girders meet: a cube with bevelled edges.
 static func node(size: float = 0.26) -> PartShapes.PartShape:
-	return PartShapes.chamfer_box(Vector3.ONE * size, size * 0.22)
+	return PartShapes.stamp(PartShapes.chamfer_box(Vector3.ONE * size, size * 0.22), "node", [size])
 
 
 # --- Plates ---------------------------------------------------------------------------
@@ -98,32 +98,32 @@ static func plate(outline: PackedVector2Array, thickness: float = PLATE_THICKNES
 	pts.append_array(top)
 	col.points = pts
 	shape.collision = col
-	return shape
+	return PartShapes.stamp(shape, "plate", [outline, thickness, bevel, y_top])
 
 
 static func square(side: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return rect(side, side, thickness)
+	return PartShapes.stamp(rect(side, side, thickness), "square", [side, thickness])
 
 
 static func rect(width: float, length: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
 	var w := width * 0.5
 	var l := length * 0.5
-	return plate(PackedVector2Array([Vector2(-w, -l), Vector2(w, -l), Vector2(w, l), Vector2(-w, l)]), thickness)
+	return PartShapes.stamp(plate(PackedVector2Array([Vector2(-w, -l), Vector2(w, -l), Vector2(w, l), Vector2(-w, l)]), thickness), "rect", [width, length, thickness])
 
 
 ## Equal sides; centred on its middle, a point toward -Z.
 static func tri_equilateral(side: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return tri_isosceles(side, side * sqrt(3.0) * 0.5, thickness)
+	return PartShapes.stamp(tri_isosceles(side, side * sqrt(3.0) * 0.5, thickness), "tri_equilateral", [side, thickness])
 
 
 ## A `base` wide, `height` tall triangle with two equal sides; base along X at +Z.
 static func tri_isosceles(base: float, height: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return _centred_plate(PackedVector2Array([Vector2(-base * 0.5, 0), Vector2(base * 0.5, 0), Vector2(0, -height)]), thickness)
+	return PartShapes.stamp(_centred_plate(PackedVector2Array([Vector2(-base * 0.5, 0), Vector2(base * 0.5, 0), Vector2(0, -height)]), thickness), "tri_isosceles", [base, height, thickness])
 
 
 ## A right-angled triangle with legs `a` (along X) and `b` (along Z).
 static func tri_right(a: float, b: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return _centred_plate(PackedVector2Array([Vector2(0, 0), Vector2(a, 0), Vector2(0, -b)]), thickness)
+	return PartShapes.stamp(_centred_plate(PackedVector2Array([Vector2(0, 0), Vector2(a, 0), Vector2(0, -b)]), thickness), "tri_right", [a, b, thickness])
 
 
 ## A triangle from its three side lengths (any shape that can exist).
@@ -131,25 +131,25 @@ static func tri_scalene(a: float, b: float, c: float, thickness: float = PLATE_T
 	# Side a along X; the third corner from the law of cosines.
 	var x := (a * a + c * c - b * b) / (2.0 * a)
 	var y := sqrt(maxf(c * c - x * x, 0.0001))
-	return _centred_plate(PackedVector2Array([Vector2(0, 0), Vector2(a, 0), Vector2(x, -y)]), thickness)
+	return PartShapes.stamp(_centred_plate(PackedVector2Array([Vector2(0, 0), Vector2(a, 0), Vector2(x, -y)]), thickness), "tri_scalene", [a, b, c, thickness])
 
 
 ## `bottom` wide at +Z, `top` wide at -Z, `height` apart. Set top to 0 for a triangle.
 static func trapezoid(bottom: float, top: float, height: float, offset: float = 0.0,
 		thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return _centred_plate(PackedVector2Array([Vector2(-bottom * 0.5, 0), Vector2(bottom * 0.5, 0),
-			Vector2(top * 0.5 + offset, -height), Vector2(-top * 0.5 + offset, -height)]), thickness)
+	return PartShapes.stamp(_centred_plate(PackedVector2Array([Vector2(-bottom * 0.5, 0), Vector2(bottom * 0.5, 0),
+			Vector2(top * 0.5 + offset, -height), Vector2(-top * 0.5 + offset, -height)]), thickness), "plate_trapezoid", [bottom, top, height, offset, thickness])
 
 
 ## A slanted rectangle: `width` by `height`, its far edge shifted `skew` along X.
 static func parallelogram(width: float, height: float, skew: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return trapezoid(width, width, height, skew, thickness)
+	return PartShapes.stamp(trapezoid(width, width, height, skew, thickness), "parallelogram", [width, height, skew, thickness])
 
 
 ## A diamond, `width` by `length`.
 static func rhombus(width: float, length: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return plate(PackedVector2Array([Vector2(0, -length * 0.5), Vector2(width * 0.5, 0), Vector2(0, length * 0.5),
-			Vector2(-width * 0.5, 0)]), thickness)
+	return PartShapes.stamp(plate(PackedVector2Array([Vector2(0, -length * 0.5), Vector2(width * 0.5, 0), Vector2(0, length * 0.5),
+			Vector2(-width * 0.5, 0)]), thickness), "rhombus", [width, length, thickness])
 
 
 ## A regular polygon with `sides` sides (5 = pentagon, 6 = hexagon, 8 = octagon...).
@@ -158,12 +158,12 @@ static func polygon(sides: int, radius: float, thickness: float = PLATE_THICKNES
 	for i in sides:
 		var a := TAU * float(i) / float(sides) - PI * 0.5
 		pts.append(Vector2(cos(a), sin(a)) * radius)
-	return plate(pts, thickness)
+	return PartShapes.stamp(plate(pts, thickness), "polygon", [sides, radius, thickness])
 
 
 ## A rectangle with its corners cut off at 45 degrees.
 static func chamfered_rect(width: float, length: float, chamfer: float, thickness: float = PLATE_THICKNESS) -> PartShapes.PartShape:
-	return plate(PartShapes._chamfer_rect(width, length, chamfer), thickness)
+	return PartShapes.stamp(plate(PartShapes._chamfer_rect(width, length, chamfer), thickness), "chamfered_rect", [width, length, chamfer, thickness])
 
 
 ## A plate over `points` (ship space, on its outer face's plane) built in the given

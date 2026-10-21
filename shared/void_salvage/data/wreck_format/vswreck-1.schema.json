@@ -1,0 +1,302 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/dantheo999/void-salvage/data/wreck_format/vswreck-1.schema.json",
+	"title": "vswreck 1.x: a Void Salvage wreck file",
+	"description": "The prose is docs/WRECK_FORMAT.md. Readers ignore keys they do not know and keep them when they write the file back, so no object here forbids extra keys. Units: metres, kilograms, seconds, litres, credits, radians. Part ids are unique within the file; a joint names its two parts by id. Every xform is {o, b}: an origin and the basis as rows (omitted = identity).",
+	"type": "object",
+	"required": ["format", "version", "generator", "wreck", "materials", "catalogue", "looks", "bodies", "parts", "joints", "power", "wiring", "piping", "doors", "fluids", "cargo", "frames", "as_built", "derived"],
+	"properties": {
+		"format": {"const": "vswreck"},
+		"version": {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 2, "maxItems": 2},
+		"generator": {
+			"type": "object",
+			"required": ["app", "version"],
+			"properties": {"app": {"type": "string"}, "version": {"type": "string"}, "date": {"type": "string"}}
+		},
+		"wreck": {
+			"type": "object",
+			"required": ["design", "name", "size_class", "events", "serial", "as_it_stands"],
+			"properties": {
+				"design": {"type": "string", "description": "a WreckCatalog id"},
+				"name": {"type": "string"},
+				"size_class": {"enum": ["XS", "S", "M", "L", "XL", "Huge"]},
+				"length_m": {"type": "number", "minimum": 0},
+				"reference": {"type": "object", "properties": {"name": {"type": "string"}, "author": {"type": "string"}, "url": {"type": "string"}}},
+				"cargo_role": {"type": "string"},
+				"rollable": {"type": "boolean"},
+				"events": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+				"event_names": {"type": "array", "items": {"type": "string"}},
+				"material_seed": {"type": "integer"},
+				"fluid_seed": {"type": "integer"},
+				"serial": {"type": "string", "pattern": "^VW-[A-Z0-9_]+-[0-9]+$"},
+				"body": {"type": "string", "description": "the name of the body this file describes"},
+				"as_it_stands": {"type": "boolean", "description": "true: written from a wreck in the world as it stood (parts may be gone); false: the design plus its events, as the game builds it"},
+				"site": {"anyOf": [{"type": "null"}, {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "position": {"$ref": "#/$defs/vec3"}, "spin": {"$ref": "#/$defs/vec3"}}}]}
+			}
+		},
+		"materials": {"type": "object", "additionalProperties": {"type": "object", "required": ["name", "tier", "density", "price"], "properties": {
+			"name": {"type": "string"}, "tier": {"type": "integer", "minimum": 1, "maximum": 5}, "density": {"type": "number", "minimum": 0},
+			"price": {"type": "number", "minimum": 0}, "finish": {"type": "string"}}}},
+		"catalogue": {"type": "object", "additionalProperties": {"type": "object", "required": ["name", "category", "named"], "properties": {
+			"name": {"type": "string"}, "category": {"$ref": "#/$defs/category"}, "named": {"type": "boolean"}, "blurb": {"type": "string"}}}},
+		"looks": {"type": "object", "additionalProperties": {"$ref": "#/$defs/look"}},
+		"bodies": {"type": "array", "minItems": 1, "maxItems": 1, "description": "the one body this file describes (a section torn or cut off a wreck is a file of its own)", "items": {"$ref": "#/$defs/body"}},
+		"parts": {"type": "array", "items": {"$ref": "#/$defs/part"}},
+		"joints": {"type": "array", "items": {"$ref": "#/$defs/joint"}},
+		"power": {
+			"type": "object",
+			"required": ["sources", "switches", "consumers", "powered", "circuits"],
+			"properties": {
+				"sources": {"$ref": "#/$defs/ids"},
+				"switches": {"type": "array", "items": {"type": "object", "required": ["id", "closed"], "properties": {"id": {"type": "integer"}, "closed": {"type": "boolean"}}}},
+				"consumers": {"$ref": "#/$defs/ids"},
+				"powered": {"$ref": "#/$defs/ids"},
+				"circuits": {"type": "array", "items": {"type": "object", "required": ["parts", "sources", "switches", "consumers", "live"], "properties": {
+					"parts": {"$ref": "#/$defs/ids"}, "sources": {"$ref": "#/$defs/ids"}, "switches": {"$ref": "#/$defs/ids"},
+					"consumers": {"$ref": "#/$defs/ids"}, "live": {"type": "boolean"}}}}
+			}
+		},
+		"wiring": {
+			"type": "object",
+			"required": ["looms", "leads", "boxes", "routes"],
+			"properties": {
+				"looms": {"type": "array", "items": {"type": "object", "required": ["spans"], "properties": {
+					"spans": {"$ref": "#/$defs/ids"}, "mass_kg": {"type": "number"}, "material": {"type": "string"}}}},
+				"leads": {"type": "array", "items": {"type": "object", "required": ["device", "into", "joint"], "properties": {
+					"device": {"type": "integer"}, "into": {"type": "integer"}, "joint": {"type": "integer"}}}},
+				"boxes": {"$ref": "#/$defs/ids"},
+				"routes": {"type": "array", "items": {"type": "object", "required": ["device", "ok", "points"], "properties": {
+					"device": {"type": "integer"}, "ok": {"type": "boolean"}, "points": {"type": "array", "items": {"$ref": "#/$defs/vec3"}},
+					"framed_m": {"type": "number"}, "free_m": {"type": "number"}, "plug": {"type": ["integer", "null"]}}}},
+				"unrouted": {"type": "integer", "minimum": 0},
+				"hand_typed_leads": {"type": "integer", "minimum": 0}
+			}
+		},
+		"piping": {
+			"type": "object",
+			"required": ["runs"],
+			"properties": {"runs": {"type": "array", "items": {"type": "object", "required": ["parts", "fluid", "tanks"], "properties": {
+				"parts": {"$ref": "#/$defs/ids"}, "fluid": {"enum": ["", "fuel", "coolant"]}, "tanks": {"$ref": "#/$defs/ids"}}}}}
+		},
+		"doors": {"type": "array", "items": {"type": "object", "required": ["panel", "panels", "leaves", "open", "travel_s"], "properties": {
+			"panel": {"type": "integer"}, "panels": {"$ref": "#/$defs/ids"},
+			"leaves": {"type": "array", "items": {"type": "object", "required": ["id", "closed", "open_offset"], "properties": {
+				"id": {"type": "integer"}, "closed": {"$ref": "#/$defs/xform"}, "open_offset": {"$ref": "#/$defs/vec3"}}}},
+			"open": {"type": "boolean"}, "amount": {"type": "number", "minimum": 0, "maximum": 1}, "travel_s": {"type": "number", "minimum": 0},
+			"powered": {"type": "boolean"}}}},
+		"fluids": {
+			"type": "object",
+			"required": ["tanks", "lines", "left_l"],
+			"properties": {
+				"tanks": {"type": "array", "items": {"type": "object", "required": ["id", "fluid", "capacity_l", "level", "litres"], "properties": {
+					"id": {"type": "integer"}, "fluid": {"enum": ["fuel", "coolant"]}, "capacity_l": {"type": "number", "minimum": 0},
+					"level": {"type": "number", "minimum": 0, "maximum": 1}, "litres": {"type": "number", "minimum": 0}}}},
+				"lines": {"$ref": "#/$defs/ids"},
+				"left_l": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0}},
+				"capacity_l": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0}}
+			}
+		},
+		"cargo": {
+			"type": "object",
+			"required": ["role", "holds", "crates", "total_kg", "total_value_cr"],
+			"properties": {
+				"role": {"type": "string"},
+				"holds": {"type": "array", "items": {"$ref": "#/$defs/aabb"}},
+				"crates": {"type": "array", "items": {"type": "object", "required": ["goods", "units", "kg", "value_cr"], "properties": {
+					"goods": {"type": "string"}, "name": {"type": "string"}, "units": {"type": "integer", "minimum": 0},
+					"kg": {"type": "number", "minimum": 0}, "value_cr": {"type": "number", "minimum": 0}}}},
+				"total_kg": {"type": "number", "minimum": 0},
+				"total_value_cr": {"type": "number", "minimum": 0}
+			}
+		},
+		"frames": {
+			"type": "object",
+			"required": ["hulls", "passages", "errors"],
+			"properties": {
+				"hulls": {"type": "array", "items": {"type": "object", "required": ["var", "stations", "rings", "plates"], "properties": {
+					"var": {"type": "string"},
+					"stations": {"type": "array", "items": {"type": "object", "required": ["z", "profile"], "properties": {
+						"z": {"type": "number"}, "profile": {"type": "array", "items": {"$ref": "#/$defs/vec2"}}}}},
+					"skin": {"type": "number"}, "depth": {"type": "number"}, "ring_width": {"type": "number"}, "stringer_size": {"type": "number"},
+					"flush": {"type": "boolean"},
+					"rings": {"type": "array", "description": "per station, per edge: the ring member's part id or null"},
+					"stringers": {"type": "array", "description": "per segment, per edge: the stringers' part ids along that face"},
+					"plates": {"type": "array", "description": "per segment, per edge: the skin plate's part id or null"},
+					"caps": {"type": "array", "description": "[front cap part id or null, back cap part id or null]"},
+					"linings": {"type": "object", "description": "\"segment:edge\" -> the inner panel's part id"}}}},
+				"passages": {"type": "array", "items": {"type": "object", "properties": {
+					"path": {"type": "array", "items": {"$ref": "#/$defs/vec3"}}, "members": {"type": "array"}}}},
+				"errors": {"type": "integer", "minimum": 0}
+			}
+		},
+		"as_built": {
+			"anyOf": [
+				{"type": "null"},
+				{"type": "object", "required": ["parts", "joints", "mass_kg", "value_cr", "matched", "missing", "fragments", "joints_gone"], "properties": {
+					"parts": {"type": "integer", "minimum": 0}, "joints": {"type": "integer", "minimum": 0},
+					"mass_kg": {"type": "number", "minimum": 0}, "value_cr": {"type": "number", "minimum": 0},
+					"id_offset": {"type": "integer"}, "id_matches": {"type": "integer", "minimum": 0},
+					"matched": {"type": "integer", "minimum": 0},
+					"missing": {"type": "array", "items": {"type": "object", "required": ["id", "name", "kind", "mass_kg", "value_cr", "at"], "properties": {
+						"id": {"type": "integer"}, "name": {"type": "string"}, "kind": {"$ref": "#/$defs/kind"}, "material": {"type": "string"},
+						"mass_kg": {"type": "number"}, "value_cr": {"type": "number"}, "at": {"$ref": "#/$defs/vec3"},
+						"state": {"enum": ["gone", "detached", "fragments"], "description": "gone: nothing of it is at the site; detached: off this body but still at the site (cut or torn off, floating beside it); fragments: torn or snapped, its pieces still aboard this body"},
+						"fragments": {"$ref": "#/$defs/ids"}}}},
+					"missing_kg": {"type": "number", "minimum": 0, "description": "of the parts not aboard this body (gone and detached; fragments still aboard are not counted)"},
+					"missing_value_cr": {"type": "number", "minimum": 0},
+					"detached_kg": {"type": "number", "minimum": 0, "description": "the part of missing_kg that is still at the site"},
+					"fragments": {"$ref": "#/$defs/ids"},
+					"joints_gone": {"type": "integer"}}}
+			]
+		},
+		"derived": {
+			"type": "object",
+			"required": ["parts", "joints", "bodies", "mass_kg", "value_cr", "salvage_value_cr", "by_kind", "by_material", "by_category", "joints_by_kind", "bounds", "body_hash"],
+			"properties": {
+				"parts": {"type": "integer", "minimum": 0},
+				"joints": {"type": "integer", "minimum": 0},
+				"bodies": {"type": "integer", "minimum": 1},
+				"mass_kg": {"type": "number", "minimum": 0},
+				"value_cr": {"type": "number", "minimum": 0},
+				"salvage_value_cr": {"type": "number", "minimum": 0},
+				"cargo_value_cr": {"type": "number", "minimum": 0},
+				"by_kind": {"type": "object", "additionalProperties": {"$ref": "#/$defs/tally"}},
+				"by_material": {"type": "object", "additionalProperties": {"$ref": "#/$defs/tally"}},
+				"by_category": {"type": "object", "additionalProperties": {"$ref": "#/$defs/tally"}},
+				"by_layer": {"type": "object", "additionalProperties": {"$ref": "#/$defs/tally"}},
+				"joints_by_kind": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+				"worst": {"type": "object", "properties": {"wear": {"type": "number"}, "scorch": {"type": "number"}}},
+				"hazards": {"type": "object", "properties": {"live_wiring": {"type": "integer"}, "charged_fuel": {"type": "integer"}}},
+				"bounds": {"$ref": "#/$defs/aabb"},
+				"towable_by": {"type": "array", "items": {"type": "string"}, "description": "ShipCatalog ids whose tow line takes this mass"},
+				"body_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+			}
+		}
+	},
+	"$defs": {
+		"vec2": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+		"vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+		"color": {"type": "array", "items": {"type": "number", "minimum": 0}, "minItems": 3, "maxItems": 4},
+		"ids": {"type": "array", "items": {"type": "integer"}},
+		"aabb": {"type": "object", "required": ["pos", "size"], "properties": {"pos": {"$ref": "#/$defs/vec3"}, "size": {"$ref": "#/$defs/vec3"}}},
+		"xform": {
+			"type": "object",
+			"required": ["o"],
+			"description": "origin, and the basis as its rows (omitted = identity)",
+			"properties": {"o": {"$ref": "#/$defs/vec3"}, "b": {"type": "array", "items": {"type": "number"}, "minItems": 9, "maxItems": 9}}
+		},
+		"event": {
+			"type": "array", "minItems": 3, "maxItems": 4,
+			"description": "[name, strength 1..5, seed, place?] (place: where a fire, impact, scrape or tear centres; WreckEvents.PLACES)",
+			"items": {"anyOf": [{"enum": ["weathered", "fire", "impact", "torn", "scraped", "stripped", "abandoned"]}, {"type": "integer"},
+					{"enum": ["any", "aft", "fore", "flank", "port", "starboard", "reactor", "tanks", "cockpit", "hold"]}]}
+		},
+		"kind": {"enum": ["hull", "frame", "hazard", "conduit", "component", "glass"]},
+		"layer": {"enum": ["hull", "frame", "wiring", "piping", "components", "fluids", "cargo"]},
+		"category": {"enum": ["hull", "frame", "glass", "fluids", "wiring", "piping", "fittings", "engines", "machinery", "weapons", "electronics", "cargo"]},
+		"removal": {"enum": ["attached", "intact", "forced", "cut"]},
+		"look": {
+			"type": "object",
+			"anyOf": [
+				{"required": ["paint"], "properties": {"paint": {"$ref": "#/$defs/color"}, "metallic": {"type": "number"}, "roughness": {"type": "number"}, "vertex_colours": {"type": "boolean"}, "finish": {"type": "string"}}},
+				{"required": ["glow", "energy"], "properties": {"glow": {"$ref": "#/$defs/color"}, "energy": {"type": "number", "minimum": 0}}},
+				{"required": ["glass"], "properties": {"glass": {"type": "string"}, "colour": {"$ref": "#/$defs/color"}, "metallic": {"type": "number"}, "roughness": {"type": "number"}}}
+			]
+		},
+		"body": {
+			"type": "object",
+			"required": ["name", "xform", "mass_kg", "centre_of_mass", "parts", "part_ids", "bounds"],
+			"properties": {
+				"name": {"type": "string", "description": "the game's name for the body: \"Ship\", \"Wreck_<n>\", or \"Salvage_<lowest part id>\" for a section cut or torn off one"},
+				"xform": {"$ref": "#/$defs/xform", "description": "identity: wreck space is this body's space"},
+				"mass_kg": {"type": "number", "minimum": 0},
+				"centre_of_mass": {"$ref": "#/$defs/vec3"},
+				"parts": {"type": "integer", "minimum": 0},
+				"part_ids": {"$ref": "#/$defs/ids"},
+				"islands": {"type": "integer", "minimum": 1, "description": "groups of parts joined to each other in this body; more than 1 means parts (or whole assemblies) that nothing holds on, riding along until a joint breaks"},
+				"bounds": {"$ref": "#/$defs/aabb"},
+				"drift": {"type": "object", "required": ["anchor", "velocity", "spin"], "properties": {"anchor": {"type": "integer"}, "velocity": {"$ref": "#/$defs/vec3"}, "spin": {"$ref": "#/$defs/vec3"}}},
+				"torn_at_z": {"type": "number"}
+			}
+		},
+		"shape": {
+			"type": "object",
+			"required": ["type"],
+			"properties": {
+				"type": {"enum": ["box", "cylinder", "sphere", "capsule", "convex", "triangles", "none"]},
+				"size": {"$ref": "#/$defs/vec3"}, "radius": {"type": "number"}, "height": {"type": "number"},
+				"points": {"type": "array", "items": {"$ref": "#/$defs/vec3"}}
+			}
+		},
+		"recipe": {"type": "object", "required": ["shape", "args"], "properties": {"shape": {"type": "string"}, "args": {"type": "array"}}},
+		"geometry": {
+			"type": "object",
+			"required": ["collision"],
+			"properties": {
+				"collision": {"$ref": "#/$defs/shape"},
+				"extra": {"type": "array", "items": {"$ref": "#/$defs/shape"}},
+				"box_size": {"$ref": "#/$defs/vec3"},
+				"recipe": {"$ref": "#/$defs/recipe"},
+				"bounds": {"$ref": "#/$defs/aabb"},
+				"mesh": {"type": "object", "required": ["vertices", "indices", "triangles"], "properties": {
+					"vertices": {"type": "array", "items": {"type": "number"}}, "indices": {"type": "array", "items": {"type": "integer"}},
+					"triangles": {"type": "integer", "minimum": 0}}}
+			}
+		},
+		"part": {
+			"type": "object",
+			"required": ["id", "name", "kind", "layer", "category", "material", "body", "xform", "mass_kg", "value_cr", "salvage_value_cr", "condition", "removal", "geometry"],
+			"properties": {
+				"id": {"type": "integer", "minimum": 1},
+				"name": {"type": "string"},
+				"kind": {"$ref": "#/$defs/kind"},
+				"layer": {"$ref": "#/$defs/layer"},
+				"category": {"$ref": "#/$defs/category"},
+				"material": {"type": "string", "description": "a key of the file's materials"},
+				"body": {"type": "integer", "minimum": 0, "description": "an index into bodies"},
+				"xform": {"$ref": "#/$defs/xform", "description": "the part in its body's space"},
+				"mass_kg": {"type": "number", "minimum": 0},
+				"value_cr": {"type": "number", "minimum": 0, "description": "as new, at Void Salvage's base rates"},
+				"salvage_value_cr": {"type": "number", "minimum": 0, "description": "as it is: value x condition x removal"},
+				"condition": {"type": "object", "required": ["wear", "scorch", "deformation", "torn", "factor"], "properties": {
+					"wear": {"type": "number", "minimum": 0, "maximum": 1}, "scorch": {"type": "number", "minimum": 0, "maximum": 1},
+					"deformation": {"type": "number", "minimum": 0, "maximum": 1}, "torn": {"type": "boolean"},
+					"factor": {"type": "number", "minimum": 0, "maximum": 1},
+					"scorch_at": {"$ref": "#/$defs/vec3"}, "scorch_radius": {"type": "number"},
+					"dents": {"type": "array", "items": {"type": "object", "required": ["at", "push", "depth", "radius", "crumple"], "properties": {
+						"at": {"$ref": "#/$defs/vec3"}, "push": {"$ref": "#/$defs/vec3"}, "depth": {"type": "number"}, "radius": {"type": "number"}, "crumple": {"type": "number"}}}},
+					"bend": {"$ref": "#/$defs/vec3"}}},
+				"removal": {"$ref": "#/$defs/removal"},
+				"power": {"type": "object", "required": ["role", "powered"], "properties": {
+					"role": {"enum": ["source", "conductor", "switch", "consumer"]}, "powered": {"type": "boolean"}, "closed": {"type": "boolean"}}},
+				"fluid": {"type": "object", "required": ["fluid", "tank"], "properties": {
+					"fluid": {"enum": ["fuel", "coolant"]}, "tank": {"type": "boolean"}, "capacity_l": {"type": "number"}, "level": {"type": "number"}, "litres": {"type": "number"}}},
+				"hazard": {"enum": [1, 2], "description": "1 live wiring, 2 charged fuel"},
+				"geometry": {"$ref": "#/$defs/geometry"},
+				"look": {"type": "string", "description": "a key of the file's looks"},
+				"lamp": {"type": "object", "properties": {"colour": {"$ref": "#/$defs/color"}, "energy": {"type": "number"}, "range": {"type": "number"}, "powered": {"type": "boolean"}, "lit": {"type": "boolean"}}}
+			}
+		},
+		"joint": {
+			"type": "object",
+			"required": ["id", "kind", "a", "b", "at", "normal", "health", "max_health"],
+			"properties": {
+				"id": {"type": "integer", "minimum": 1},
+				"kind": {"enum": ["weld", "rivet", "bolt", "connector", "spot"]},
+				"a": {"type": "integer", "description": "the part the head sits on (the plate, for a rivet)"},
+				"b": {"type": "integer"},
+				"at": {"$ref": "#/$defs/vec3", "description": "in the body's space"},
+				"normal": {"$ref": "#/$defs/vec3"},
+				"health": {"type": "number", "minimum": 0},
+				"max_health": {"type": "number", "minimum": 0},
+				"seam": {"type": "object", "required": ["up", "size"], "properties": {"up": {"$ref": "#/$defs/vec3"}, "size": {"$ref": "#/$defs/vec2"}}},
+				"head": {"type": "integer", "minimum": 0, "maximum": 1},
+				"seized": {"type": "boolean"},
+				"tier": {"type": "integer", "minimum": 1, "maximum": 5}
+			}
+		},
+		"tally": {"type": "object", "required": ["parts", "mass_kg", "value_cr", "salvage_value_cr"], "properties": {
+			"parts": {"type": "integer", "minimum": 0}, "mass_kg": {"type": "number", "minimum": 0},
+			"value_cr": {"type": "number", "minimum": 0}, "salvage_value_cr": {"type": "number", "minimum": 0}}}
+	}
+}

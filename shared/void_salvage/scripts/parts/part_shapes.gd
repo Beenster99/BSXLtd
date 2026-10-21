@@ -15,8 +15,6 @@ extends RefCounted
 ##               dome (a cap for noses and pods)
 ##   Details     chamfer_box (bevelled block), ring (duct rim), nozzle (bell with lip),
 ##               louvre (vent with angled slats), inset_panel (raised border, recessed face)
-##   Kit models  KitParts: the Quaternius Modular SciFi MegaKit (assets/megakit, CC0):
-##               walls, floors, stairs, doors, rails, lights, vents, fans, computers, crates
 ##   Windows     window_panel (square-edged frame with a round, hex, rounded-rectangle or
 ##               slot opening: fills a wall's rectangular hole exactly),
 ##               porthole_round, porthole_hex, window_rect (chamfered, with mullions),
@@ -42,9 +40,20 @@ class PartShape:
 	## More collision shapes for one part (a holed plate's convex pieces), same space as
 	## `collision`; SalvageStructure gives the part a collider for each.
 	var extra_collision: Array[Shape3D] = []
+	## How to make it again: {"shape": constructor name, "args": its arguments in order}, set
+	## by every public constructor here and in FrameParts (the ship file writes pieces by
+	## it, docs/SHIP_FORMAT_PLAN.md 4.6). Empty for a shape built by hand from a MeshKit.
+	var recipe: Dictionary = {}
 
 	func aabb() -> AABB:
 		return mesh.get_aabb()
+
+
+## Stamps `shape` with its recipe and returns it (the last constructor to return a shape
+## names it: a prism is a frustum underneath, but its recipe says prism).
+static func stamp(shape: PartShape, shape_name: String, args: Array) -> PartShape:
+	shape.recipe = {"shape": shape_name, "args": args}
+	return shape
 
 
 const DETAIL := Color(0.55, 0.56, 0.58, SurfaceZones.BARE_A)    # bolts and studs, darker than the body (bare metal)
@@ -57,7 +66,7 @@ const ACCENT := Color(1.0, 0.62, 0.15, SurfaceZones.HAZARD_PAINT_A)  # warning t
 static func box(size: Vector3) -> PartShape:
 	var k := MeshKit.new()
 	k.box(size)
-	return _convex(k)
+	return stamp(_convex(k), "box", [size])
 
 
 ## A right-angle wedge: full height at the back (-Z), sloping to nothing at the front (+Z).
@@ -65,14 +74,14 @@ static func box(size: Vector3) -> PartShape:
 static func wedge(size: Vector3) -> PartShape:
 	var h := size * 0.5
 	var outline := PackedVector2Array([Vector2(-h.z, -h.y), Vector2(h.z, -h.y), Vector2(-h.z, h.y)])
-	return _extruded_x(outline, size.x)
+	return stamp(_extruded_x(outline, size.x), "wedge", [size])
 
 
 ## A peaked ridge: a triangle with its apex centred on top, along X.
 static func ridge(size: Vector3) -> PartShape:
 	var h := size * 0.5
 	var outline := PackedVector2Array([Vector2(-h.z, -h.y), Vector2(h.z, -h.y), Vector2(0.0, h.y)])
-	return _extruded_x(outline, size.x)
+	return stamp(_extruded_x(outline, size.x), "ridge", [size])
 
 
 ## A ramp: full height at the back (-Z) dropping to `low` of the height at the front.
@@ -80,7 +89,7 @@ static func slope(size: Vector3, low: float = 0.35) -> PartShape:
 	var h := size * 0.5
 	var outline := PackedVector2Array([Vector2(-h.z, -h.y), Vector2(h.z, -h.y),
 			Vector2(h.z, -h.y + size.y * low), Vector2(-h.z, h.y)])
-	return _extruded_x(outline, size.x)
+	return stamp(_extruded_x(outline, size.x), "slope", [size, low])
 
 
 ## A tapered block: `bottom` wide at the base, `top` wide at the top, `height` tall,
@@ -90,7 +99,7 @@ static func trapezoid(bottom: float, top: float, height: float, depth: float) ->
 			Vector2(top * 0.5, height * 0.5), Vector2(-top * 0.5, height * 0.5)])
 	var k := MeshKit.new()
 	k.extrude(outline, depth)
-	return _convex(k)
+	return stamp(_convex(k), "trapezoid", [bottom, top, height, depth])
 
 
 ## The corner of a cube sliced off diagonally: a right tetrahedron filling `size`.
@@ -105,7 +114,7 @@ static func corner(size: Vector3) -> PartShape:
 	for f: Array in [[o, px, py], [o, py, pz], [o, pz, px], [px, py, pz]]:
 		var centre: Vector3 = (f[0] + f[1] + f[2]) / 3.0
 		k.tri(f[0], f[1], f[2], centre - c)
-	return _convex(k)
+	return stamp(_convex(k), "corner", [size])
 
 
 ## A box with one corner (the +X +Y +Z one) cut off at `cut` of its size: for inside
@@ -122,14 +131,14 @@ static func corner_cut(size: Vector3, cut: float = 0.5) -> PartShape:
 	pts.append(Vector3(h.x - size.x * cut, h.y, h.z))
 	pts.append(Vector3(h.x, h.y - size.y * cut, h.z))
 	pts.append(Vector3(h.x, h.y, h.z - size.z * cut))
-	return _hull(pts)
+	return stamp(_hull(pts), "corner_cut", [size, cut])
 
 
 # --- Beams ----------------------------------------------------------------------------
 
 ## A straight beam with `sides` faces (3 = triangle, 6 = hex, 8 = octagon), along Y.
 static func prism(sides: int, radius: float, length: float) -> PartShape:
-	return frustum(radius, radius, length, sides)
+	return stamp(frustum(radius, radius, length, sides), "prism", [sides, radius, length])
 
 
 ## A cone or tapered beam along Y: `bottom` radius at -Y, `top` at +Y. Nozzles, noses,
@@ -149,10 +158,10 @@ static func frustum(bottom: float, top: float, length: float, sides: int = 16) -
 			var mid := (a[i] + a[j]) * 0.5
 			k.tri(a[i], a[j], tip, Vector3(mid.x, 0.3, mid.z))
 		k.poly(a, Vector3.DOWN)
-		return _convex(k)
+		return stamp(_convex(k), "frustum", [bottom, top, length, sides])
 	var k2 := MeshKit.new()
 	k2.loft(a, b)
-	return _convex(k2)
+	return stamp(_convex(k2), "frustum", [bottom, top, length, sides])
 
 
 ## A box-section girder along X, `width` (Z) by `height` (Y), with each end cut at an angle
@@ -182,7 +191,7 @@ static func girder(length: float, width: float, height: float, cut_start: float 
 		for side: float in [-1.0, 1.0]:
 			k.box(Vector3(height * 0.55, height * 0.45, 0.004), Vector3(x, 0.0, side * (hw + 0.002)))
 	shape.mesh = k.finish()
-	return shape
+	return stamp(shape, "girder", [length, width, height, cut_start, cut_end])
 
 
 ## An I-beam along X: two flanges and a web. Collision is its outer box.
@@ -202,7 +211,7 @@ static func i_beam(length: float, width: float, height: float, flange: float = 0
 	var col := BoxShape3D.new()
 	col.size = Vector3(length, height, width)
 	shape.collision = col
-	return shape
+	return stamp(shape, "i_beam", [length, width, height, flange, web])
 
 
 ## A lattice truss along X: four chords and zig-zag bracing in `bays` bays. Light and
@@ -257,7 +266,7 @@ static func truss(length: float, width: float, height: float, bays: int = 4, mem
 				pts.append(Vector3(length * 0.5 - z * te, y, z))
 		hull.points = pts
 		shape.collision = hull
-	return shape
+	return stamp(shape, "truss", [length, width, height, bays, member, cut_start, cut_end])
 
 
 # --- Curves ---------------------------------------------------------------------------
@@ -311,7 +320,7 @@ static func arc_panel(radius: float, thickness: float, arc: float, depth: float,
 	var col := ConvexPolygonShape3D.new()
 	col.points = _unique(moved.verts)
 	shape.collision = col
-	return shape
+	return stamp(shape, "arc_panel", [radius, thickness, arc, depth, steps])
 
 
 ## Where arc_panel(radius, ...) puts its centre, relative to the tube's axis (add this to the
@@ -361,7 +370,7 @@ static func dome(radius: float, height: float, sides: int = 20, rings: int = 5) 
 	var col := ConvexPolygonShape3D.new()
 	col.points = all
 	shape.collision = col
-	return shape
+	return stamp(shape, "dome", [radius, height, sides, rings])
 
 
 # --- Hull details (0.10 additions) ------------------------------------------------------
@@ -382,7 +391,7 @@ static func chamfer_box(size: Vector3, chamfer: float) -> PartShape:
 	var col := BoxShape3D.new()
 	col.size = size
 	shape.collision = col
-	return shape
+	return stamp(shape, "chamfer_box", [size, chamfer])
 
 
 ## A flat ring round the Y axis (`inner` to `outer` radius, `depth` tall): duct rims, port
@@ -395,7 +404,7 @@ static func ring(inner: float, outer: float, depth: float, segments: int = 32) -
 	shape.mesh = k.finish()
 	shape.volume = PI * (outer * outer - inner * inner) * depth
 	shape.collision = _cylinder_y(outer, depth)
-	return shape
+	return stamp(shape, "ring", [inner, outer, depth, segments])
 
 
 ## A rocket nozzle along Y: a collar at the throat (-Y) flaring to a bell with a rolled lip at
@@ -431,7 +440,7 @@ static func nozzle(throat: float, exit: float, length: float, wall: float = 0.06
 		cp.append(Vector3(cos(a) * (exit + wall * 2.0), length * 0.5, sin(a) * (exit + wall * 2.0)))
 	col.points = cp
 	shape.collision = col
-	return shape
+	return stamp(shape, "nozzle", [throat, exit, length, wall])
 
 
 ## A louvred vent: a frame with `slats` angled blades across it (X wide, Z tall, Y deep;
@@ -463,7 +472,7 @@ static func louvre(width: float, height: float, depth: float = 0.12, slats: int 
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, depth, height)
 	shape.collision = col
-	return shape
+	return stamp(shape, "louvre", [width, height, depth, slats])
 
 
 ## A plate with a raised border round a recessed middle (X wide, Z long, Y thick; face +Y):
@@ -482,7 +491,7 @@ static func inset_panel(width: float, length: float, thickness: float = 0.1, bor
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, thickness, length)
 	shape.collision = col
-	return shape
+	return stamp(shape, "inset_panel", [width, length, thickness, border])
 
 
 # --- Windows --------------------------------------------------------------------------
@@ -508,7 +517,7 @@ static func porthole_round(radius: float, thickness: float = 0.08, bolts: int = 
 	shape.glass = _glass_disc(r0 - 0.005, 0.0, 28, t * 0.4)
 	shape.volume = k.volume() + PI * r0 * r0 * t * 0.4
 	shape.collision = _cylinder_y(r1, t)
-	return shape
+	return stamp(shape, "porthole_round", [radius, thickness, bolts])
 
 
 ## A hexagonal porthole: a flat flange with a bevelled inner frame.
@@ -549,7 +558,7 @@ static func porthole_hex(radius: float, thickness: float = 0.08) -> PartShape:
 			pts.append(Vector3(cos(a) * (radius + flange), y, sin(a) * (radius + flange)))
 	col.points = pts
 	shape.collision = col
-	return shape
+	return stamp(shape, "porthole_hex", [radius, thickness])
 
 
 ## A rectangular window with chamfered corners, a deep frame, and optional mullions
@@ -579,7 +588,7 @@ static func window_rect(width: float, height: float, thickness: float = 0.08,
 	shape.glass = _glass_poly(_scaled(inner, 0.97), 0.0, thickness * 0.3)
 	shape.volume = k.volume() + width * height * thickness * 0.3
 	shape.collision = _slab(outer, thickness)
-	return shape
+	return stamp(shape, "window_rect", [width, height, thickness, chamfer, cross])
 
 
 ## A window that fills a rectangular hole exactly: a square-edged frame plate `width` (X)
@@ -638,7 +647,7 @@ static func window_panel(width: float, height: float, inner: String = "round",
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, thickness, height)
 	shape.collision = col
-	return shape
+	return stamp(shape, "window_panel", [width, height, inner, thickness, opening])
 
 
 ## Rays from the centre through every corner of `hole` (convex, centred) and of a
@@ -711,7 +720,7 @@ static func window_slit(length: float, height: float, thickness: float = 0.08) -
 	for x: float in [-length * 0.5, length * 0.5]:
 		shape.fastener_points.append(Vector3(x, thickness * 0.5, -height * 0.5 - frame * 0.5))
 		shape.fastener_normals.append(Vector3.UP)
-	return shape
+	return stamp(shape, "window_slit", [length, height, thickness])
 
 
 ## A triangular window (for wedge noses and slanted panels), point toward +Z.
@@ -736,7 +745,7 @@ static func window_tri(size: float, thickness: float = 0.08) -> PartShape:
 	shape.glass = _glass_poly(inner, 0.0, thickness * 0.3)
 	shape.volume = k.volume() + 0.43 * size * size * thickness * 0.3
 	shape.collision = _slab(outer, thickness)
-	return shape
+	return stamp(shape, "window_tri", [size, thickness])
 
 
 ## A curved canopy panel: glass on a slice of a tube, with ribs at each end and one in the
@@ -759,7 +768,7 @@ static func canopy_panel(radius: float, arc: float, depth: float, thickness: flo
 	shape.glass = glass_part.mesh
 	shape.volume = ribs.volume() + glass_part.volume
 	shape.collision = glass_part.collision
-	return shape
+	return stamp(shape, "canopy_panel", [radius, arc, depth, thickness])
 
 
 # --- Helpers --------------------------------------------------------------------------
