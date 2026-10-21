@@ -30,6 +30,8 @@ const PANEL_PX_PER_M := 600.0
 ## The picture's brightness (unshaded, so it reads as lit in a dark hall).
 @export var brightness := 1.0
 
+## What the info panel says while it's aimed at (HudSlots look hints).
+var hint := {"title": "Screen", "keys": [["LMB", "Press"]]}
 var size_m := Vector2(1.0, 0.6)
 var px := Vector2i(1000, 600)
 var content: Control
@@ -77,6 +79,10 @@ func _exit_tree() -> void:
 ## The screen being aimed at now, or null.
 static func current() -> TouchScreen:
 	return _current if _current != null and is_instance_valid(_current) else null
+
+
+func look_hint() -> Dictionary:
+	return hint
 
 
 func is_aimed() -> bool:
@@ -220,6 +226,7 @@ static func buttons(specs: Array, p_size_m := Vector2(0.3, 0.2), columns := 1) -
 			(p.y - 28.0 - 10.0 * (rows - 1)) / maxf(1.0, rows))
 	var screen := TouchScreen.new(panel, p, p_size_m)
 	screen.reach = 2.5
+	screen.hint = {"title": "Controls", "keys": [["LMB", "Press a button"]]}
 	for spec: Dictionary in specs:
 		var b := led_button(str(spec.get("label", spec.id)), bool(spec.get("toggle", false)),
 				bool(spec.get("on", false)), int(cell.y * 0.42))

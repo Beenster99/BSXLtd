@@ -18,6 +18,16 @@ extends Node
 ## on the right; a module sets its card when something starts and clears it when it ends:
 ##   HudSlots.set_info("ship_bay.drive", "Driving the scissor lift", "W A S D drive\nF lets it go")
 ##   HudSlots.clear_info("ship_bay.drive")
+## Look hints: the info panel shows a card for whatever the player is looking at (within
+## LOOK_REACH), saying what it is, what can be done with it and the keys, and nothing when
+## they look at nothing. Give the object (its collider or any parent) a method
+##   func look_hint() -> Dictionary: return {title = "Shore power", text = "Off",
+##           keys = [[Keys.INTERACT, "Push it"], ["LMB", "Switch on"]]}
+## (keys: an action, shown with its bound key, or a label as it is), or meta "look_hint"
+## with the same Dictionary; or, for things that aren't colliders, register a provider
+## that's asked first with the view's ray hit {collider, position, normal, from, direction}
+## (collider null when the ray hits nothing) and returns {} when it has nothing:
+##   HudSlots.register_look_hint("trades.tool", func(hit: Dictionary) -> Dictionary: ..., 10)
 ## A channel can take sections from other modules without naming them: the owner lays out
 ## TerminalKit.sections("<channel>", glass) and any module adds a docket to it, e.g.
 ##   HudSlots.register_holo_section("multiplayer.crew", "business.transfer", "Transfer money", factory)
@@ -167,6 +177,48 @@ func clear_info(id: String) -> void:
 ## The cards up now, in order: {id, title, text, order}.
 func infos() -> Array[Dictionary]:
 	return _infos.duplicate(true)
+
+
+## How far the view's ray looks for something to hint about, m.
+const LOOK_REACH := 4.0
+var _look: Array[Dictionary] = []
+
+
+func register_look_hint(id: String, provider: Callable, order: int = 0) -> void:
+	unregister_look_hint(id)
+	_look.append({"id": id, "provider": provider, "order": order})
+	_look.sort_custom(func(a, b): return a.order < b.order)
+
+
+func unregister_look_hint(id: String) -> void:
+	_look = _look.filter(func(c): return c.id != id)
+
+
+## The registered providers in order: {id, provider, order}.
+func look_hinters() -> Array[Dictionary]:
+	return _look.duplicate()
+
+
+## The hint for a ray hit: the first provider with one, else the collider's (or a parent's)
+## look_hint() or meta "look_hint"; {} for none.
+func look_hint_for(hit: Dictionary) -> Dictionary:
+	for c in _look:
+		var p: Callable = c.provider
+		if not p.is_valid():
+			continue
+		var h: Variant = p.call(hit)
+		if h is Dictionary and not (h as Dictionary).is_empty():
+			return h
+	var n := hit.get("collider") as Node
+	while n != null:
+		if n.has_method("look_hint"):
+			var h: Variant = n.call("look_hint")
+			if h is Dictionary and not (h as Dictionary).is_empty():
+				return h
+		if n.has_meta("look_hint"):
+			return n.get_meta("look_hint")
+		n = n.get_parent()
+	return {}
 
 
 var _pointer: Dictionary = {}
