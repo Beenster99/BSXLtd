@@ -1,24 +1,27 @@
 extends Node3D
-## The kit round the ship in the bay: a scissor lift you drive round the hull and raise, a
+## The kit round the ship in the bay: a scissor lift you push round the hull and raise, a
 ## ground power unit on wheels whose cable you clip to the hull by hand, and mobile scaffold
-## rigs (scaffold_rig.gd) you set up as big as you need, drive in to the hull and back out. The lift starts
-## at the side door with its platform down: walk up its ramp, press UP on the platform's
-## control box and it stops level with the door sill, so you can walk aboard (there are no
-## stairs). UP and DOWN on either control box send the platform to the next stop (board,
-## door sill, flank, roof) and stop it if it's moving; F on a box's body takes the lift for
-## driving: the arrow keys drive and turn it, Page Up and Page Down raise and lower it
-## smoothly. Neither vehicle drives or lifts into anything: it stops at the hull, the
+## rigs (scaffold_rig.gd) you set up as big as you need, push in to the hull and back out.
+## Walk up to any of them and press F on it to push it: it rolls along in front of you as you
+## walk and turn (F again lets go). Nothing pushes into anything: it stops at the hull, the
 ## cradles and walls.
 ##
-## The power unit: F on its handle tows it (the arrow keys again). F on the plug on its hook
-## takes the plug in your hand; F on the ship's hull clips it there (a magnetic plug: any
-## point of the hull within the cable's reach); F on it again takes it back, F on the hook
-## hangs it up. Its switch turns the power on; the ship is powered while the switch is on
-## and the plug is on the hull. Drive the unit out of the cable's reach and the plug pops
-## off and reels in.
+## The lift starts at the side door with its platform down: walk up its ramp and hold RAISE
+## on the touch screen inside the platform's rail (it faces you as you stand on it); the
+## platform rises while you hold it and stops where you let go, so you can stop level with
+## the door sill and walk aboard (there are no stairs). LOWER the same. A second screen by
+## the ramp works it from the ground.
 ##
-## Every Use target carries meta "ship_bay_use", a Callable the bay calls. While the plug is
-## in your hand the bay hands F to `place_plug` instead. Bay space: the ship's deck (y = 0 in
+## The power unit: left click the plug on its hook takes it in your hand; left click on the
+## ship's hull clamps it there (a magnetic plug: any point of the hull within the cable's
+## reach); left click it again takes it back, left click the hook hangs it up. POWER on its
+## touch screen switches it; the ship is powered while it is on and the plug is on the hull,
+## and powers up with its lights and a quiet hum. Push the unit out of the cable's reach and
+## the plug pops off and reels in.
+##
+## Every F target carries meta "ship_bay_use", a Callable the bay calls, and every left
+## click target "ship_bay_click". While the plug is in your hand the bay hands the click to
+## `place_plug` instead. Bay space: the ship's deck (y = 0 in
 ## ship space) is `deck` metres up; ship x and z are the bay's. Built by Bay._build_access.
 ## Multiplayer: the lift, its platform, the unit and the plug are movers ("bay_lift",
 ## "bay_lift_deck", "bay_unit", "bay_plug"); whoever drives one claims it.
@@ -31,7 +34,10 @@ signal power_switched(on: bool)
 @export var lift_levels: Array[float] = [0.35, 2.4, 4.5]
 ## How fast the lift platform rises and falls, metres per second.
 @export var lift_speed := 0.6
-## Driving speed and turn rate of the lift and the power unit (m/s, rad/s).
+## Top speed and turn rate of a vehicle you push (m/s, rad/s).
+@export var push_speed := 2.2
+@export var push_turn := 1.6
+## Driving speed and turn rate when a vehicle is moved by `drive` (m/s, rad/s).
 @export var drive_speed := 0.9
 @export var turn_speed := 0.7
 ## The power unit's cable, metres from its outlet.
@@ -43,6 +49,7 @@ const BASE_TOP := 0.3
 const STAGES := 3
 const RAIL_H := 1.05
 const RAMP := 1.3
+const PUSH_BAR := 0.22   # how far the lift's push bar stands off its -Z end
 ## Collision bottoms of the vehicles over the floor, so driving never scrapes it, metres.
 const CLEAR := 0.06
 const UNIT_BODY := Vector3(1.0, 0.95, 1.5)
@@ -52,6 +59,10 @@ const HOOK := Vector3(-0.6, 0.85, 0.15)
 const CABLE_SEGMENTS := 24
 const USE_REACH := 3.5
 const Rig := preload("res://modules/ship_bay/internal/bay/scaffold_rig.gd")
+const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
+const T := preload("res://modules/ui/api/terminal_kit.gd")
+## How far a pushed vehicle may lag where your hands hold it before you lose your grip, metres.
+const GRIP_SLACK := 1.2
 ## Where the scaffold rigs stand to start with (bay space, the ship's starboard side, out of
 ## the way): [origin, yaw]. Each rig runs along its z from its origin; yaw PI turns its open
 ## work face to the ship.
@@ -74,8 +85,15 @@ var switch_on := false
 var power_on := false
 ## The scaffold rigs round the bay.
 var scaffolds: Array[Node3D] = []
-## The vehicle this player drives: "", "lift", "unit" or "rig<i>".
+## The vehicle this player pushes: "", "lift", "unit" or "rig<i>".
 var driving := ""
+## The lift's touch screens (on the platform, by the ramp) and the power unit's.
+var lift_screens: Array[Node3D] = []
+var unit_screen: Node3D
+## Where the pushed vehicle sits relative to your hands (your feet, turned your way).
+var _grip := Transform3D()
+## +1 while RAISE is held, -1 while LOWER is, else 0.
+var _holding := 0
 ## The ship's root (in the bay): the plug clips only to it.
 var ship: Node3D
 var _arms: Array[MeshInstance3D] = []
@@ -177,7 +195,8 @@ func _build_lift(at: Transform3D) -> void:
 	lift.add_child(chassis)
 	# The chassis on four wheels.
 	_part(PartShapes.chamfer_box(Vector3(W - 0.1, BASE_TOP - 0.12, L - 0.2), 0.03), Transform3D(Basis(), Vector3(0, 0.12 + (BASE_TOP - 0.12) * 0.5, 0)), _yellow, chassis)
-	_collide(Vector3(W - 0.1, BASE_TOP - CLEAR, L - 0.2), Transform3D(Basis(), Vector3(0, (BASE_TOP + CLEAR) * 0.5, 0)), chassis)
+	_collide(Vector3(W - 0.1, BASE_TOP - CLEAR, L - 0.2), Transform3D(Basis(), Vector3(0, (BASE_TOP + CLEAR) * 0.5, 0)), chassis) \
+			.set_meta("ship_bay_use", toggle_drive.bind("lift"))
 	for x: float in [-W * 0.5 + 0.12, W * 0.5 - 0.12]:
 		for z: float in [-L * 0.5 + 0.3, L * 0.5 - 0.3]:
 			_part(PartShapes.prism(14, 0.13, 0.1), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(x, 0.13, z)), _rubber, chassis)
@@ -188,10 +207,18 @@ func _build_lift(at: Transform3D) -> void:
 	var ramp_at := Vector3(0, (low + CLEAR) * 0.5, L * 0.5 + RAMP * 0.5)
 	_part(PartShapes.box(Vector3(W - 0.3, 0.04, RAMP + 0.05)), Transform3D(rb, ramp_at + Vector3(0, 0.0, 0)), _tread, chassis)
 	_collide(Vector3(W - 0.3, 0.04, RAMP + 0.08), Transform3D(rb, ramp_at - rb.y * 0.02), chassis)
-	# Ground controls on the outboard side, by the ramp.
-	var ground := Transform3D(Basis(Vector3.UP, PI), Vector3(-W * 0.5 - 0.06, 0.85, L * 0.5 - 0.4))
-	_control_box(ground, chassis, "LIFT")
-	_part(WreckParts.pipe(0.03, 0.6, false), Transform3D(Basis(), Vector3(-W * 0.5 - 0.06, 0.45, L * 0.5 - 0.4)), _dark, chassis)
+	# A push bar across the -Z end, and the ground screen on a post on the outboard side by
+	# the ramp, facing out.
+	# (It stands off the end, clear of the platform's rail.)
+	var bar_z := -L * 0.5 - PUSH_BAR
+	for x: float in [-W * 0.5 + 0.12, W * 0.5 - 0.12]:
+		_part(PartShapes.box(Vector3(0.05, 0.05, PUSH_BAR + 0.1)), Transform3D(Basis(), Vector3(x, BASE_TOP - 0.05, -L * 0.5 + 0.05 - PUSH_BAR * 0.5)), _dark, chassis)
+		_part(WreckParts.pipe(0.022, 0.75, false), Transform3D(Basis(), Vector3(x, BASE_TOP + 0.37, bar_z)), _dark, chassis)
+	_part(WreckParts.pipe(0.028, W - 0.2, false), Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0, BASE_TOP + 0.75, bar_z)), _rubber, chassis)
+	_collide(Vector3(W - 0.2, 0.8, 0.1), Transform3D(Basis(), Vector3(0, BASE_TOP + 0.4, bar_z)), chassis) \
+			.set_meta("ship_bay_use", toggle_drive.bind("lift"))
+	_part(WreckParts.pipe(0.03, 0.75, false), Transform3D(Basis(), Vector3(-W * 0.5 - 0.06, 0.45, L * 0.5 - 0.4)), _dark, chassis)
+	_lift_screen(Transform3D(Basis(Vector3.UP, -PI * 0.5) * Basis(Vector3.RIGHT, -0.35), Vector3(-W * 0.5 - 0.09, 0.95, L * 0.5 - 0.4)), chassis, "LIFT")
 
 	# The platform: a grating deck with toe boards and rails on three sides; its +X side (the
 	# work face, to the hull) is open and its +Z side has a gate bar that closes once it's up.
@@ -214,7 +241,9 @@ func _build_lift(at: Transform3D) -> void:
 		_part(PartShapes.box(Vector3(0.04, RAIL_H, 0.04)), Transform3D(Basis(), Vector3(c.x * W * 0.5, RAIL_H * 0.5, c.y * L * 0.5)), _yellow, platform)
 	_gate_bar = _part(PartShapes.box(Vector3(W, 0.04, 0.04)), Transform3D(Basis(), Vector3(0, RAIL_H, L * 0.5)), _yellow, platform)
 	_gate = _collide(Vector3(W, RAIL_H, 0.04), Transform3D(Basis(), Vector3(0, RAIL_H * 0.5, L * 0.5)), platform)
-	_control_box(Transform3D(Basis(Vector3.UP, PI), Vector3(-W * 0.5 - 0.06, RAIL_H - 0.1, -L * 0.25)), platform, "UP / DOWN")
+	# The platform's screen hangs inside the outboard rail, facing in at whoever stands on it.
+	_part(PartShapes.box(Vector3(0.04, 0.2, 0.03)), Transform3D(Basis(), Vector3(-W * 0.5 + 0.03, RAIL_H - 0.1, -L * 0.25)), _dark, platform)
+	_lift_screen(Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, -0.45), Vector3(-W * 0.5 + 0.07, RAIL_H - 0.08, -L * 0.25)), platform, "PLATFORM")
 	# The scissor arms, two stacks (one each side), redrawn as the platform moves.
 	var arm_mesh := PartShapes.box(Vector3(0.06, 0.08, 1.0)).mesh
 	for side in 2:
@@ -229,12 +258,26 @@ func _build_lift(at: Transform3D) -> void:
 	_set_platform(stops[0])
 
 
-## UP on a control box: on to the next stop above (or stop where it is, if moving).
+## RAISE (`way` 1) or LOWER (-1) held down (true) or let go (false) on a lift screen: the
+## platform moves while it is held and stops where it is let go.
+func hold_lift(down: bool, way: int) -> void:
+	_claim("bay_lift_deck")
+	if down:
+		_holding = way
+		lift_target = stops[stops.size() - 1] if way > 0 else stops[0]
+		Sfx.play("click", platform)
+	elif _holding == way:
+		_holding = 0
+		lift_target = lift_height()
+
+
+## One step up: on to the next stop above (or stop where it is, if moving). The wrist
+## screen's RAISE.
 func lift_up() -> void:
 	_step_lift(1)
 
 
-## DOWN on a control box: down to the next stop below (or stop where it is, if moving).
+## One step down: to the next stop below (or stop where it is, if moving).
 func lift_down() -> void:
 	_step_lift(-1)
 
@@ -293,26 +336,66 @@ func _set_platform(y: float) -> void:
 
 # --- Driving ----------------------------------------------------------------------------------
 
-## F on a control box's body (the lift) or the unit's handle: take it for driving, or let it go.
+## F on a vehicle (the lift's chassis or push bar, the unit's handle, a rig's post): take
+## hold of it and push it as you walk, or let it go.
 func toggle_drive(which: String) -> void:
 	if driving == which:
 		_let_go()
 		return
 	if driving != "":
 		_let_go()
+	var root := _root_of(which)
+	if root == null:
+		return
 	driving = which
 	for id: String in _movers_of(which):
 		_claim(id)
-	if which == "lift":
-		_hud.text = "Driving the scissor lift\nArrow keys drive  ·  %s / %s raise and lower\nF on its controls lets it go" \
-				% [_key_name("ship_bay.raise", "Page Up"), _key_name("ship_bay.lower", "Page Down")]
-	elif which == "unit":
-		_hud.text = "Towing the power unit\nArrow keys drive\nF on its handle lets it go"
-	else:
-		_hud.text = "Moving scaffold %s\nUp / Down along it  ·  Left / Right sideways  ·  hold %s to turn\nMOVE on its post lets it go" \
-				% [_root_of(which).get("label"), _key_name(Keys.RUN, "Shift")]
+	_grip = _hands().affine_inverse() * root.global_transform
+	var names := {"lift": "the scissor lift", "unit": "the power unit"}
+	_hud.text = "Pushing %s  ·  F lets go" % names.get(which, "scaffold %s" % root.get("label"))
 	_hud.visible = true
-	Sfx.play("click", _root_of(which))
+	Sfx.play("click", root)
+
+
+## Where your hands push from: your feet under the camera, turned the way you face (yaw
+## only), world space.
+func _hands() -> Transform3D:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return Transform3D()
+	var f := -cam.global_basis.z
+	var yaw := atan2(-f.x, -f.z)
+	return Transform3D(Basis(Vector3.UP, yaw), Vector3(cam.global_position.x, 0, cam.global_position.z))
+
+
+## Moves the pushed vehicle towards where your hands hold it: as far as it can go this step
+## without hitting anything, a slide along the way if not straight. True if it moved; lets
+## go when you walk off and leave it behind.
+func _push_step(which: String, delta: float) -> bool:
+	var root := _root_of(which)
+	if root == null:
+		return false
+	var want := _hands() * _grip
+	var from := root.global_transform
+	want.origin.y = from.origin.y
+	var to_go := want.origin - from.origin
+	if to_go.length() > GRIP_SLACK:
+		_let_go()
+		Sfx.play("thud", root)
+		return false
+	var step := to_go.limit_length(push_speed * delta)
+	var turn := clampf(wrapf(want.basis.get_euler().y - from.basis.get_euler().y, -PI, PI), -push_turn * delta, push_turn * delta)
+	if step.length() < 0.0005 and absf(turn) < 0.0005:
+		return false
+	var bodies := _bodies_of(which)
+	var basis := from.basis.rotated(Vector3.UP, turn)
+	for tries: Array in [[step, basis], [step, from.basis], [Vector3(step.x, 0, 0), from.basis], [Vector3(0, 0, step.z), from.basis]]:
+		var to := Transform3D(tries[1], from.origin + (tries[0] as Vector3))
+		if _clear(bodies, from, to):
+			root.global_transform = to
+			_cable_dirty()
+			return true
+	return false
 
 
 func _let_go() -> void:
@@ -321,6 +404,7 @@ func _let_go() -> void:
 			_net.call("release", id)
 	driving = ""
 	_hud.visible = false
+	_hud.text = ""
 
 
 func _movers_of(which: String) -> Array:
@@ -399,10 +483,6 @@ func _physics_process(delta: float) -> void:
 	var y := lift_height()
 	var moving_deck := false
 	if _drives("bay_lift_deck"):
-		if driving == "lift":
-			var lift_in := _axis("ship_bay.raise", KEY_PAGEUP, "ship_bay.lower", KEY_PAGEDOWN)
-			if lift_in != 0.0:
-				lift_target = clampf(y + lift_in * lift_speed * 0.25, stops[0], stops[stops.size() - 1])
 		if absf(y - lift_target) > 0.0005:
 			var ny := move_toward(y, lift_target, lift_speed * delta)
 			if _clear_lift(ny - y):
@@ -413,20 +493,15 @@ func _physics_process(delta: float) -> void:
 				Sfx.play("error", platform)
 	else:
 		_set_platform(y)
-	# The vehicle this player drives.
+	var height := "%.1f M" % y
+	for screen: Node3D in lift_screens:
+		screen.call("set_status", height, T.CYAN if absf(y - lift_target) > 0.0005 else T.GOOD)
+	# The vehicle this player pushes.
 	var moving := ""
 	if driving != "" and _drives(_movers_of(driving)[0]):
-		var fwd := _axis("ship_bay.drive_forward", KEY_UP, "ship_bay.drive_back", KEY_DOWN)
-		var turn := _axis("ship_bay.drive_left", KEY_LEFT, "ship_bay.drive_right", KEY_RIGHT)
-		var side := 0.0
-		# A rig crabs sideways on its castors (towards its work face with right); holding run
-		# turns it instead.
-		if driving.begins_with("rig") and _held(Keys.RUN, KEY_SHIFT) == 0.0:
-			side = -turn * drive_speed * delta
-			turn = 0.0
-		if fwd != 0.0 or turn != 0.0 or side != 0.0:
-			if drive(driving, fwd * drive_speed * delta, turn * turn_speed * delta, side):
-				moving = driving
+		var which := driving
+		if _push_step(which, delta):
+			moving = which
 	_hum("lift", moving_deck or moving == "lift")
 	_hum("unit", moving == "unit")
 	for i in scaffolds.size():
@@ -503,17 +578,21 @@ func _build_power_unit(socket: Vector3) -> void:
 	_part(WreckParts.pipe(0.025, 0.66, false), Transform3D(Basis(), handle), _dark, u)
 	_part(WreckParts.pipe(0.03, 0.4, false), Transform3D(Basis(Vector3.BACK, PI * 0.5), handle + Vector3(0, 0.33, 0)), _rubber, u)
 	_collide(Vector3(0.45, 0.75, 0.14), Transform3D(Basis(), handle), u).set_meta("ship_bay_use", toggle_drive.bind("unit"))
-	# The panel on the +Z face: its switch lamp red off, amber on with the plug off the hull,
-	# green while it powers the ship. F on the panel flips the switch.
-	var face := Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0.95, body.z * 0.5 + 0.01))
-	_part(PartShapes.box(Vector3(0.6, 0.4, 0.03)), face * Transform3D(Basis(), Vector3(0, 0, -0.015)), _dark, u)
-	_switch_lamp = _part(PartShapes.box(Vector3(0.14, 0.14, 0.04)), face * Transform3D(Basis(), Vector3(0.15, 0.02, -0.03)), _lit_off, u)
-	_sign("SHORE POWER\n400 Hz", face * Transform3D(Basis(Vector3.UP, PI), Vector3(-0.08, 0.05, -0.035)), 22, u)
-	_collide(Vector3(0.64, 0.44, 0.06), face * Transform3D(Basis(), Vector3(0, 0, -0.02)), u).set_meta("ship_bay_use", toggle_power)
+	# The touch screen on the +Z face (POWER switches it), and a beacon on the roof: red off,
+	# amber on with the plug off the hull, green while it powers the ship.
+	unit_screen = Touch.new()
+	unit_screen.name = "ScreenPower"
+	unit_screen.transform = Transform3D(Basis(Vector3.RIGHT, -0.2), Vector3(0, 0.95, body.z * 0.5 + 0.06))
+	_part(PartShapes.chamfer_box(Vector3(0.5, 0.34, 0.06), 0.015), Transform3D(Basis(Vector3.RIGHT, -0.2), Vector3(0, 0.95, body.z * 0.5 + 0.02)), _dark, u)
+	u.add_child(unit_screen)
+	unit_screen.call("setup", Vector2(0.46, 0.3), "SHORE POWER  400 Hz", 1)
+	unit_screen.call("add_button", "power", "POWER ON", toggle_power, false)
+	_switch_lamp = _part(PartShapes.prism(12, 0.05, 0.08), Transform3D(Basis(), Vector3(0.32, 0.25 + body.y + 0.1, 0.5)), _lit_off, u)
 	# The outlet and the plug's hook on the -X side.
 	_part(PartShapes.box(Vector3(0.06, 0.12, 0.12)), Transform3D(Basis(), OUTLET), _dark, u)
 	_part(PartShapes.box(Vector3(0.12, 0.04, 0.06)), Transform3D(Basis(), HOOK + Vector3(0.04, -0.08, 0)), _steel, u)
-	_collide(Vector3(0.24, 0.3, 0.24), Transform3D(Basis(), HOOK), u).set_meta("ship_bay_use", use_plug)
+	var hook := _collide(Vector3(0.24, 0.3, 0.24), Transform3D(Basis(), HOOK), u)
+	hook.set_meta("ship_bay_click", use_plug)
 	# The plug: a magnetic puck on the cable's end.
 	plug = Node3D.new()
 	plug.name = "Plug"
@@ -523,7 +602,7 @@ func _build_power_unit(socket: Vector3) -> void:
 	_plug_body = StaticBody3D.new()
 	plug.add_child(_plug_body)
 	_plug_shape = _collide(Vector3(0.16, 0.16, 0.12), Transform3D(Basis(), Vector3(0, 0, -0.04)), _plug_body)
-	_plug_shape.set_meta("ship_bay_use", use_plug)
+	_plug_shape.set_meta("ship_bay_click", use_plug)
 	# The cable, redrawn when anything at its ends moves.
 	var cable := ShipSurface.of(ShipKit.paint(Color(0.08, 0.08, 0.09), 0.0, 0.8, "rubber"))
 	var seg := PartShapes.prism(8, 0.022, 1.0).mesh
@@ -535,9 +614,10 @@ func _build_power_unit(socket: Vector3) -> void:
 		add_child(mi)
 		_cable.append(mi)
 	_place_plug_on_hook()
+	_update_power()
 
 
-## F on the plug or its hook: take the plug off the hook or the hull, or hang it up again.
+## A click on the plug or its hook: take the plug off the hook or the hull, or hang it up again.
 func use_plug() -> void:
 	if plug_state == "hand":
 		plug_state = "hook"
@@ -552,12 +632,12 @@ func use_plug() -> void:
 	_update_power()
 
 
-## True while the plug is in this player's hand (the bay sends F to place_plug then).
+## True while the plug is in this player's hand (the bay sends the click to place_plug then).
 func holding_plug() -> bool:
 	return plug_state == "hand"
 
 
-## F with the plug in hand, looking along `direction` from `from` (world space): on the
+## A click with the plug in hand, looking along `direction` from `from` (world space): on the
 ## ship's hull within the cable's reach it clips on there; on the hook it hangs up. True if
 ## it went somewhere.
 func place_plug(from: Vector3, direction: Vector3) -> bool:
@@ -671,6 +751,14 @@ func _update_power() -> void:
 	var on := switch_on and plug_state == "hull"
 	if _switch_lamp:
 		_switch_lamp.material_override = _lit_on if on else (_lit_wait if switch_on else _lit_off)
+	if unit_screen:
+		unit_screen.call("set_button", "power", "POWER OFF" if switch_on else "POWER ON", switch_on)
+		if on:
+			unit_screen.call("set_status", "LIVE", T.GOOD)
+		elif switch_on:
+			unit_screen.call("set_status", "NO PLUG", T.AMBER)
+		else:
+			unit_screen.call("set_status", "OFF", T.DIM)
 	if on == power_on:
 		return
 	power_on = on
@@ -679,18 +767,16 @@ func _update_power() -> void:
 
 # --- Helpers ----------------------------------------------------------------------------------
 
-## A control box with an UP (green) and a DOWN (amber) button under a label. F on a button
-## steps the platform; F on the box takes the lift for driving.
-func _control_box(xform: Transform3D, parent: CollisionObject3D, title: String) -> void:
-	_part(PartShapes.chamfer_box(Vector3(0.12, 0.26, 0.2), 0.02), xform, _dark, parent)
-	_part(PartShapes.box(Vector3(0.03, 0.06, 0.06)), xform * Transform3D(Basis(), Vector3(0.07, 0.05, 0)), ShipKit.glow(Color(0.35, 1.0, 0.5), 1.5), parent)
-	_part(PartShapes.box(Vector3(0.03, 0.06, 0.06)), xform * Transform3D(Basis(), Vector3(0.07, -0.05, 0)), ShipKit.glow(Color(1.0, 0.6, 0.15), 1.5), parent)
-	_sign(title, xform * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0.065, 0.11, 0)), 14, parent)
-	_sign("UP", xform * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0.087, 0.05, -0.065)), 12, parent)
-	_sign("DN", xform * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0.087, -0.05, -0.065)), 12, parent)
-	_collide(Vector3(0.12, 0.3, 0.24), xform, parent).set_meta("ship_bay_use", toggle_drive.bind("lift"))
-	_collide(Vector3(0.05, 0.08, 0.1), xform * Transform3D(Basis(), Vector3(0.085, 0.05, 0)), parent).set_meta("ship_bay_use", lift_up)
-	_collide(Vector3(0.05, 0.08, 0.1), xform * Transform3D(Basis(), Vector3(0.085, -0.05, 0)), parent).set_meta("ship_bay_use", lift_down)
+## A lift touch screen: RAISE and LOWER, each moving the platform while held, and its height.
+func _lift_screen(xform: Transform3D, parent: Node3D, title: String) -> void:
+	var screen: Node3D = Touch.new()
+	screen.name = "Screen" + title.capitalize().replace(" ", "")
+	screen.transform = xform
+	parent.add_child(screen)
+	screen.call("setup", Vector2(0.3, 0.2), title, 2)
+	screen.call("add_button", "raise", "▲  RAISE", Callable(), true, hold_lift.bind(1))
+	screen.call("add_button", "lower", "▼  LOWER", Callable(), false, hold_lift.bind(-1))
+	lift_screens.append(screen)
 
 
 func _drives(id: String) -> bool:
@@ -700,23 +786,6 @@ func _drives(id: String) -> bool:
 func _claim(id: String) -> void:
 	if _net and not bool(_net.call("is_mine", id)):
 		_net.call("claim", id)
-
-
-## A key pair as an axis (+1 for the first): the bound actions, or the keys before Core's
-## key map is in.
-func _axis(plus: String, plus_key: Key, minus: String, minus_key: Key) -> float:
-	return _held(plus, plus_key) - _held(minus, minus_key)
-
-
-func _held(action: String, key: Key) -> float:
-	if InputMap.has_action(action):
-		return 1.0 if Input.is_action_pressed(action) else 0.0
-	return 1.0 if Input.is_physical_key_pressed(key) else 0.0
-
-
-func _key_name(action: String, fallback: String) -> String:
-	var keys := get_node_or_null("/root/Keys")
-	return str(keys.call("key_name", action)) if keys and bool(keys.call("has", action)) else fallback
 
 
 ## A basis with its Y along `d`.

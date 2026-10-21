@@ -110,17 +110,38 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	check(float(m.get("deck_height")) < 0.75, "and down again")
 
-	# Remote control: F on it takes it, the arrow keys drive it, F again lets it go.
-	fleet.call("toggle_remote", "m")
+	# Its own touch screen in the TV style: letter, status, COME / PARK / DRIVE.
+	var own: Node3D = m.get("screen")
+	check(own != null and str(own.call("text")).contains("TROLLEY M") and str(own.call("text")).contains("DRIVE"),
+			"the trolley carries a touch screen: %s" % (own.call("text") if own else "none"))
+
+	# Remote control: DRIVE on its screen takes it and opens its camera in a picture-in-picture
+	# window; W drives it, the mouse turns it, you stand still; F lets it go.
+	own.call("press", "remote")
 	check(fleet.get("remote_id") == "m", "taken on remote control")
+	var view: CanvasLayer = fleet.get("remote_view")
+	check(view != null and (view.get("camera") as Camera3D) != null and bus.remote_driving, "its camera shows in a picture-in-picture window, and you stand still")
 	var start := m.global_position
-	m.set("drive_input", Vector2(0, 1))
-	fleet.set("remote_id", "m")
-	for i in 60:
-		m.call("step", 1.0 / 60.0, [])
-	check(m.global_position.distance_to(start) > 0.5, "it drives forward under remote control")
-	fleet.call("toggle_remote", "m")
-	check(fleet.get("remote_id") == "", "and lets go")
+	var yaw0 := float(m.call("yaw"))
+	Input.action_press(Keys.FORWARD)
+	var spin := InputEventMouseMotion.new()
+	spin.relative = Vector2(40, 0)
+	for i in 120:
+		fleet.call("_input", spin)
+		await get_tree().physics_frame
+	Input.action_release(Keys.FORWARD)
+	check(m.global_position.distance_to(start) > 0.5, "W drives it forward: %.2f m" % m.global_position.distance_to(start))
+	check(absf(wrapf(float(m.call("yaw")) - yaw0, -PI, PI)) > 0.3, "the mouse turns it")
+	await frames(1)
+	var cam := view.get("camera") as Camera3D
+	check(cam.global_position.distance_to(m.global_position) < 5.0 and (-cam.global_basis.z).dot(-m.global_basis.z) > 0.5,
+			"the window's camera rides behind it looking ahead")
+	var f := InputEventKey.new()
+	f.physical_keycode = KEY_F
+	f.keycode = KEY_F
+	f.pressed = true
+	fleet.call("_input", f)
+	check(fleet.get("remote_id") == "" and fleet.get("remote_view") == null and not bus.remote_driving, "F hands it back and the window closes")
 
 	# The TV on Deliveries' east wall: clear of the frame columns, F on it opens the screen.
 	var tv := fleet.get_node_or_null("TrolleyTV") as Node3D
