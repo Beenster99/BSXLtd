@@ -40,7 +40,7 @@ const KIND_TOOLS := {
 const KIND_HELP := {
 	"bolt": "torque wrench (2)",
 	"rivet": "squeezer (4) to set, drill (3) to drill out",
-	"weld": "welder (5): left click welds, right click cuts it",
+	"weld": "welder (5): left click welds; X switches it to unweld, which cuts welds out",
 	"connector": "hands (1) or crimper (6)",
 }
 
@@ -49,14 +49,17 @@ const KIND_HELP := {
 ## strips; the odds that a run stalls, and the share of the spec's middle a setting may be
 ## off before Quality marks it down (they grade it; this is the ship's own quality figure).
 const RUN_S := 1.2
+const STRIP_S := 1.0
+const STALL_CHANCE := 0.04
+## Sparks thrown each frame off the arc, laying a bead and cutting one out.
+const SPARKS_WELD := 4
+const SPARKS_CUT := 9
 ## The powered rivet gun (trades.power_riveter): seconds for its air to build to the punch.
 ## A rivet heated out with the welder (trades.rivet_heat), or its head ground off with the
 ## cutter (trades.cutter): seconds each takes.
 const PRESS_S := 0.8
 const HEAT_S := 1.6
 const GRIND_S := 1.8
-const STRIP_S := 1.0
-const STALL_CHANCE := 0.04
 
 ## Ship space to this station's world: set from the yard on every ship_loaded.
 var ship_xform := Transform3D.IDENTITY
@@ -208,6 +211,14 @@ func press(tool: StringName) -> void:
 	if f.kind == "rivet" and tool in [&"welder", &"cutter"] and kind_tools("rivet").has(tool):
 		if not tight:
 			bay.hint("Nothing to take out: this rivet hole is empty.")
+		else:
+			_begin(true, tool)
+		return
+	if f.kind == "weld" and tool == &"welder" and _torch() and _torch().unweld:
+		if not tight:
+			bay.hint("Nothing to cut out. %s switches the welder back to weld." % Keys.key_name(TradesBus.KEY_MODE))
+		elif not Flags.is_on("trades.unweld"):
+			bay.hint("Cutting welds isn't switched on yet.")
 		else:
 			_begin(true, tool)
 		return
@@ -522,6 +533,10 @@ func kind_tools(kind: String) -> Array:
 	return out
 
 
+func _torch() -> TradesWeldTorch:
+	return bay.tool_node(&"welder") as TradesWeldTorch
+
+
 func _gun() -> TradesRivetGun:
 	return bay.tool_node(&"rivet_squeezer") as TradesRivetGun
 
@@ -756,6 +771,9 @@ func _place(kind: String, at: Vector3, n: Vector3, progress: float) -> StringNam
 			_arc.global_position = at + n * 0.05
 			_arc.light_energy = 1.0 + randf() * 0.8
 			_arc.visible = true
+			# A shower off the arc (beenster, 0.3.7): falling, bouncing, fading. Cutting throws more.
+			if bay.sparks:
+				bay.sparks.emit(at + n * 0.01, n, SPARKS_CUT if _undoing else SPARKS_WELD, 3.2, 0.8)
 			return &"welder"
 		&"wire_tool":
 			bay.place_tool(&"wire_tool", _on_surface(at, n, 0.0))
@@ -949,10 +967,13 @@ func actions(tool: StringName) -> Array:
 				out.append([TradesBay.HOLD_CLICK, "set a rivet"])
 		"weld":
 			if tool == &"welder":
-				if not tight:
+				var unweld := _torch() != null and _torch().unweld
+				if not tight and not unweld:
 					out.append([TradesBay.HOLD_CLICK, "lay the bead"])
-				elif Flags.is_on("trades.unweld"):
-					out.append([TradesBay.HOLD_RIGHT, "cut the weld out"])
+				elif tight and unweld and Flags.is_on("trades.unweld"):
+					out.append([TradesBay.HOLD_CLICK, "cut the weld out"])
+				if Flags.is_on("trades.unweld"):
+					out.append([TradesBus.KEY_MODE, "switch to weld" if unweld else "switch to unweld"])
 		"connector":
 			if tool == &"hands" or tool == &"wire_tool":
 				out.append([TradesBay.RIGHT_CLICK, "unplug it"] if tight else [TradesBay.CLICK, "plug it in"])

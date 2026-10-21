@@ -19,6 +19,8 @@ var amps := 110.0
 var arc_mm := 0.0
 ## Cutting a weld out (unweld) rather than laying one: the arc gouges the bead away.
 var cutting := false
+## Switched to unweld (X, beenster 0.3.7): left click cuts welds out instead of laying them.
+var unweld := false
 ## How far through the cut is (0..1), while cutting.
 var cut := 0.0
 
@@ -76,7 +78,7 @@ func readout_text() -> String:
 		return "%3d A\nCUT\n%3d%%" % [roundi(CUT_AMPS), roundi(cut * 100.0)]
 	if lit:
 		return "%3d A\nARC\n%3.1fmm" % [roundi(amps), arc_mm]
-	return "%3d A\nWIRE\nREADY" % roundi(amps)
+	return "%3d A\n%s\nREADY" % [roundi(amps), "UNWELD" if unweld else "WIRE"]
 
 
 func readout_fill() -> float:
@@ -86,7 +88,7 @@ func readout_fill() -> float:
 func panel_rows() -> Array:
 	if lit and cutting:
 		return [["MODE", "CUT (UNWELD)"], ["CURRENT", "%d A" % roundi(CUT_AMPS)], ["CUT", "%d %%" % roundi(cut * 100.0)]]
-	var rows := [["MODE", "WELD"], ["CURRENT", "%d A" % roundi(amps)]]
+	var rows := [["MODE", "UNWELD" if unweld else "WELD"], ["CURRENT", "%d A" % roundi(amps)]]
 	rows.append(["ARC", "%.1f mm" % arc_mm if lit else "-"])
 	return rows
 
