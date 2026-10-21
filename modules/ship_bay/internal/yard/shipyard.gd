@@ -420,7 +420,7 @@ func _paints_init() -> void:
 	_rubber = _paint(Color(0.07, 0.07, 0.075), 0.0, 0.9, "rubber")
 	_bare = _paint(STEEL, 0.75, 0.42, "bare_steel")
 	_wood = _paint(Color(0.62, 0.48, 0.3), 0.0, 0.85, "wood")
-	_concrete = _paint(Color(0.5, 0.49, 0.47), 0.0, 0.95)
+	_concrete = _surface(_paint(Color(0.5, 0.49, 0.47), 0.0, 0.95), "concrete")
 	_parts = _paint(Color.WHITE, 0.4, 0.55)
 	for c: Color in [Color(0.78, 0.6, 0.4), Color(0.4, 0.55, 0.75), Color(0.72, 0.72, 0.7), Color(1.0, 0.62, 0.28), Color(0.5, 0.64, 0.46)]:
 		_goods.append(_paint(c, 0.2, 0.6))
@@ -444,13 +444,13 @@ func _build_planet() -> void:
 	plane.size = Vector2(4000, 4000)
 	ground.mesh = plane
 	ground.position.y = -0.02
-	ground.material_override = _paint(Color(0.4, 0.26, 0.18), 0.0, 1.0)
+	ground.material_override = _surface(_paint(Color(0.4, 0.26, 0.18), 0.0, 1.0), "ground")
 	add_child(ground)
 	_collide(Vector3(0, -0.5, 0), Vector3(4000, 1.0, 4000))
 	_block(Vector3(0, -0.01, 56), Vector3(90, 0.04, 64), _concrete, false)
 	_slab_joints(Rect2(-45, 24.5, 90, 63.5), 0.0)
-	_block(Vector3(-62, -0.01, 0), Vector3(24, 0.03, 40), _paint(Color(0.24, 0.24, 0.25), 0.0, 0.9, "rubber_tread"), false)
-	_block(Vector3(-110, -0.01, 30), Vector3(130, 0.03, 9), _paint(Color(0.2, 0.2, 0.21), 0.0, 0.9, "rubber_tread"), false)
+	_block(Vector3(-62, -0.01, 0), Vector3(24, 0.03, 40), _surface(_paint(Color(0.24, 0.24, 0.25), 0.0, 0.9, "rubber_tread"), "asphalt"), false)
+	_block(Vector3(-110, -0.01, 30), Vector3(130, 0.03, 9), _surface(_paint(Color(0.2, 0.2, 0.21), 0.0, 0.9, "rubber_tread"), "asphalt"), false)
 	var line := _paint(Color(0.9, 0.85, 0.7), 0.0, 0.8)
 	for i in 10:
 		_put(_box(Vector3(5, 0.02, 0.25)), _at(Vector3(-60 - i * 12.0, 0.02, 30)), line, false)
@@ -585,7 +585,7 @@ func _build_shell() -> void:
 		# The side wings' floors stop 1 mm short across, so their edges under the outer walls
 		# don't lie in one plane with the north wing's.
 		var across := 0.0 if s.x > s.z else 0.002
-		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T - across, 0.04, s.z + T), _paint(r[2], 0.0, 0.55, "satin_paint"), false)
+		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T - across, 0.04, s.z + T), _surface(_paint(r[2], 0.0, 0.55, "satin_paint"), "epoxy"), false)
 		_hall_joints(Rect2(c.x - s.x * 0.5, c.z - s.z * 0.5, s.x, s.z), lift + 0.0205)
 		# Walkway lines down the long way, a metre and a half in from each wall.
 		var long_x := s.x > s.z
@@ -1803,6 +1803,13 @@ static func _at(p: Vector3, yaw := 0.0) -> Transform3D:
 
 
 ## Paint on Void Salvage's ship surface (the salvage shader with a finish, ShipSurface.of).
+## Tags a ground paint for Graphics' ground surfaces (concrete, ground, epoxy, asphalt); with
+## its flag off Graphics leaves the paint as it is.
+func _surface(mat: Material, kind: String) -> Material:
+	mat.set_meta("gfx_surface", kind)
+	return mat
+
+
 func _paint(color: Color, metallic: float, roughness: float, finish := "") -> Material:
 	var key := "%s/%.2f/%.2f/%s" % [color.to_html(), metallic, roughness, finish]
 	if not _paints.has(key):
