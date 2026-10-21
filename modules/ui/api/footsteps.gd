@@ -13,7 +13,7 @@ extends Node3D
 ## Speed (m/s) at and above which strides are run strides.
 @export var run_speed := 6.0
 ## Loudness of a step, dB.
-@export var volume_db := -10.0
+@export var volume_db := -20.0
 ## Falling speed (m/s) at landing that makes a thud rather than a step.
 @export var land_speed := 3.0
 
@@ -74,7 +74,9 @@ func step() -> void:
 	steps += 1
 	_left = not _left
 	var pitch := randf_range(0.92, 1.08) * (1.03 if _left else 0.97)
-	Sfx.play("step_" + surface, self, volume_db, pitch)
+	var p := Sfx.play("step_" + surface, self, volume_db, pitch) as AudioStreamPlayer3D
+	if p:
+		p.unit_size = 2.5  # close and soft: your own feet, not the hall's
 
 
 ## What the walker stands on: "metal", "grating" or "concrete".
