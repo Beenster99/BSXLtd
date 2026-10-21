@@ -5,9 +5,16 @@ extends Node
 
 signal chat_received(line: Dictionary)
 signal activity_changed(peer_id: int, text: String)
+signal ping_received(ping: Dictionary)
 
 const SAY := "crew.say"
 const ACTIVITY := "crew.activity"
+const PING := "crew.ping"
+const PING_LIFE := 6.0
+const PING_GAP := 0.25  # seconds between one player's pings, enforced on the host
+const MAX_ID := 96
+## Crew colours by place on the crew list: host first, then in joining order.
+const COLOURS: Array[Color] = [Color("e8792b"), Color("6fc8e8"), Color("7fd47a"), Color("e8c25a")]
 const LOG_SIZE := 100
 const MAX_CHARS := 200
 const AVATAR := preload("res://modules/multiplayer/internal/crew/crew_avatar.gd")
@@ -19,6 +26,8 @@ var _head := Node3D.new()  # this player's head, copied from the active camera
 var _head_id := ""
 var _avatars: Dictionary = {}  # peer id -> avatar node
 var _check := 0.0
+var _pings: Array[Dictionary] = []
+var _last_ping: Dictionary = {}  # peer id -> host clock time of their last ping
 
 
 func _ready() -> void:
@@ -26,6 +35,7 @@ func _ready() -> void:
 	add_child(_head)
 	net.register_event(SAY, _apply_say, _validate_say)
 	net.register_event(ACTIVITY, _apply_activity, _validate_activity)
+	net.register_event(PING, _apply_ping, _validate_ping)
 	net.register_snapshot_provider("crew", self)
 	for s: Signal in [net.session_started, net.session_ended, net.peer_joined, net.peer_left]:
 		s.connect(func(_a = null, _b = null) -> void: _sync_presence())
@@ -72,6 +82,49 @@ func _apply_say(p: Dictionary) -> void:
 	if _log.size() > LOG_SIZE:
 		_log.pop_front()
 	chat_received.emit(p)
+
+
+# --- Pings: "look here" ---------------------------------------------------------------
+
+func ping(at: Vector3, object_id: String, normal: Vector3) -> void:
+	net.request(PING, {"at": at, "object_id": object_id, "normal": normal})
+
+
+## Pings still showing (younger than PING_LIFE), oldest first.
+func pings() -> Array[Dictionary]:
+	var now := net.server_time()
+	var live: Array[Dictionary] = []
+	live.assign(_pings.filter(func(p: Dictionary) -> bool: return now - float(p.time) < PING_LIFE))
+	return live
+
+
+func player_colour(peer_id: int) -> Color:
+	var ids := net.peers().keys()
+	ids.sort()
+	var i := ids.find(peer_id)
+	return COLOURS[i % COLOURS.size()] if i >= 0 else COLOURS[0]
+
+
+func _validate_ping(sender: int, p: Dictionary) -> Variant:
+	var at: Variant = p.get("at")
+	var normal: Variant = p.get("normal", Vector3.UP)
+	if not at is Vector3 or not (at as Vector3).is_finite():
+		return "no place to ping"
+	if not normal is Vector3 or not (normal as Vector3).is_finite() or (normal as Vector3).is_zero_approx():
+		normal = Vector3.UP
+	var now := net.server_time()
+	if now - float(_last_ping.get(sender, -INF)) < PING_GAP:
+		return "pinging too fast"
+	_last_ping[sender] = now
+	return {"peer": sender, "name": player_name(sender), "colour": player_colour(sender), "at": at,
+			"normal": (normal as Vector3).normalized(), "object_id": str(p.get("object_id", "")).left(MAX_ID),
+			"time": now}
+
+
+func _apply_ping(p: Dictionary) -> void:
+	_pings = pings()
+	_pings.append(p)
+	ping_received.emit(p)
 
 
 # --- Activity --------------------------------------------------------------------------
