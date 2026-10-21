@@ -561,8 +561,10 @@ func _build_shell() -> void:
 		for p: Rect2 in _wall_pieces(wall[2], wall[3], wall[4]):
 			if p.position.y > 0.0:
 				continue
-			_block(_wall_point(axis, at, p.get_center().x, 0.3, float(side) * (T * 0.5 + 0.06)),
-					_wall_size(axis, p.size.x, 0.6, 0.12), plinth, false)
+			# Walls one way stand 2 mm lower so plinths meeting at a corner don't share a top.
+			var tall := 0.6 if axis == "x" else 0.598
+			_block(_wall_point(axis, at, p.get_center().x, tall * 0.5, float(side) * (T * 0.5 + 0.06)),
+					_wall_size(axis, p.size.x, tall, 0.12), plinth, false)
 			_block(_wall_point(axis, at, p.get_center().x, 0.6, float(-side) * (T * 0.5 + 0.02)),
 					_wall_size(axis, p.size.x, 1.2, 0.04), _paint(Color(0.3, 0.32, 0.34), 0.3, 0.6, "satin_paint"), false)
 
@@ -580,7 +582,10 @@ func _build_shell() -> void:
 			[Vector3(YARD.x + WING * 0.5, 0, 0), Vector3(WING, 0, YARD.y * 2.0), Color(0.49, 0.54, 0.51)]]:
 		var c: Vector3 = r[0]
 		var s: Vector3 = r[1]
-		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T, 0.04, s.z + T), _paint(r[2], 0.0, 0.55, "satin_paint"), false)
+		# The side wings' floors stop 1 mm short across, so their edges under the outer walls
+		# don't lie in one plane with the north wing's.
+		var across := 0.0 if s.x > s.z else 0.002
+		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T - across, 0.04, s.z + T), _paint(r[2], 0.0, 0.55, "satin_paint"), false)
 		_hall_joints(Rect2(c.x - s.x * 0.5, c.z - s.z * 0.5, s.x, s.z), lift + 0.0205)
 		# Walkway lines down the long way, a metre and a half in from each wall.
 		var long_x := s.x > s.z
@@ -594,7 +599,15 @@ func _build_shell() -> void:
 			[Vector3(YARD.x + WING * 0.5, 0, 0), Vector3(WING, 0, YARD.y * 2.0)]]:
 		var c: Vector3 = r[0]
 		var s: Vector3 = r[1]
-		_block(Vector3(c.x, H + 0.3, c.z), Vector3(s.x + T + 0.6, 0.6, s.z + T + 0.6), roof)
+		var size := Vector3(s.x + T + 0.6, 0.6, s.z + T + 0.6)
+		var mid := c
+		if s.z > s.x:
+			# A side wing's roof starts where the north wing's ends: overlapping, they flickered.
+			var north_edge := -YARD.y + (T + 0.6) * 0.5
+			var south_edge := c.z + size.z * 0.5
+			mid.z = (north_edge + south_edge) * 0.5
+			size.z = south_edge - north_edge
+		_block(Vector3(mid.x, H + 0.3, mid.z), size, roof)
 		# Standing seams across the roof's top, every metre.
 		var long_x := s.x > s.z
 		var n := int((s.x if long_x else s.z))
@@ -1320,7 +1333,7 @@ func _build_courtyard() -> void:
 	for z: float in [mark.position.y, mark.end.y]:
 		_block(Vector3(0, 0.01, z), Vector3(mark.size.x, 0.01, 0.3), paint, false)
 	for x: float in [mark.position.x, mark.end.x]:
-		_block(Vector3(x, 0.01, mark.get_center().y), Vector3(0.3, 0.01, mark.size.y), paint, false)
+		_block(Vector3(x, 0.01, mark.get_center().y), Vector3(0.3, 0.0115, mark.size.y), paint, false)   # its top clear of the cross lines'
 	var chevron := _box(Vector3(1.6, 0.01, 0.35))
 	for corner: Vector2 in [mark.position, Vector2(mark.end.x, mark.position.y), Vector2(mark.position.x, mark.end.y), mark.end]:
 		for k in 3:
