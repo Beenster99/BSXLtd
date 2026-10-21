@@ -1,6 +1,7 @@
 extends VBoxContainer
-## Settings > Character > Skills: the local player's level in each trade, XP towards the
-## next level, and the certifications they hold. Built with UI's TerminalKit.
+## Settings > Character > Skills: the local player's level with each tool, XP towards the
+## next level, and (with those features on) perks earned and certifications held. Built
+## with UI's TerminalKit.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 
@@ -35,15 +36,18 @@ func refresh() -> void:
 		remove_child(c)
 		c.queue_free()
 	var me := player_id if player_id != &"" else bus.my_player_id()
+	var certs_on := Flags.is_on(ProgressionBus.CERTS)
+	var perks_on := Flags.is_on(ProgressionBus.PERKS)
 	var held := bus.player_certs(me)
 
 	var figs := HBoxContainer.new()
 	figs.add_theme_constant_override("separation", 10)
 	figs.add_child(T.figure("Total level", str(bus.total_level(me)), T.ORANGE, glass))
-	figs.add_child(T.figure("Certifications", str(held.size()), T.TEXT, glass))
+	if certs_on:
+		figs.add_child(T.figure("Certifications", str(held.size()), T.TEXT, glass))
 	add_child(figs)
 
-	add_child(T.columns([["TRADE", 0], ["LEVEL", 70], ["XP", 90], ["NEXT LEVEL", 150]]))
+	add_child(T.columns([["TOOL", 0], ["LEVEL", 70], ["XP", 90], ["NEXT LEVEL", 150]]))
 	var n := 0
 	for s: ProgressionSkill in bus.skills():
 		var xp := bus.skill_xp(me, s.id)
@@ -51,11 +55,13 @@ func refresh() -> void:
 		var next := "MAX"
 		if lvl < s.xp_per_level.size():
 			next = "%d XP to go" % (s.xp_per_level[lvl] - xp)
-		add_child(T.row([T.cell_text(s.display_name, _perk_line(s, lvl)),
+		add_child(T.row([T.cell_text(s.display_name, _perk_line(s, lvl) if perks_on else "Level %d of %d" % [lvl, s.xp_per_level.size()]),
 				T.cell(str(lvl), 70, T.TEXT, "mono_bold"), T.cell(str(xp), 90),
 				T.cell(next, 150, T.GOOD if next == "MAX" else T.DIM)], n % 2 == 1, glass))
 		n += 1
 
+	if not certs_on:
+		return
 	if held.is_empty():
 		add_child(T.label("No certifications yet: pass a certification test job to earn one.",
 				"body", 16, T.DIM))

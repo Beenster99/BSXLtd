@@ -64,6 +64,12 @@ var events: Array = []
 
 
 func run_tests() -> void:
+	var start_flags := Flags.all()
+	var on := start_flags.duplicate()
+	for f in [ProgressionBus.PERKS, ProgressionBus.CERTS, ProgressionBus.UPGRADES]:
+		on[f] = true
+	on["progression"] = true
+	Flags.use(on)
 	var trades := TradesStub.new()
 	var business := BusinessStub.new()
 	var quality := QualityStub.new()
@@ -79,23 +85,23 @@ func run_tests() -> void:
 	bus.upgrade_unlocked.connect(func(u): events.append(["unlocked", u]))
 	bus.upgrade_failed.connect(func(u, why): events.append(["failed", u, why]))
 
-	check(bus.skills().size() == 5, "five trade skills load from data")
+	check(bus.skills().size() == 4, "one skill per joint-making tool loads from data")
 	check(bus.certs().size() >= 1 and bus.upgrades().size() >= 1, "certs and upgrades load")
 
 	# XP: 10 per joint scoring 100, scaled by score; level 1 at 100 XP. Peer 2 is "ana".
 	for i in 9:
-		quality.grade("j%d" % i, &"welding", 2, 100)
+		quality.grade("j%d" % i, &"WELD", 2, 100)
 	check(bus.skill_xp(&"ana", &"welding") == 0, "players are keyed by peer id for now")
 	check(bus.skill_xp(&"2", &"welding") == 90, "nine perfect welds give 90 XP")
 	check(bus.skill_level(&"2", &"welding") == 0, "still level 0 below 100 XP")
-	quality.grade("j9", &"welding", 2, 30)
+	quality.grade("j9", &"WELD", 2, 30)
 	check(bus.skill_xp(&"2", &"welding") == 93, "a score of 30 gives 30% XP")
-	quality.grade("j9", &"welding", 2, 50)
+	quality.grade("j9", &"WELD", 2, 50)
 	check(bus.skill_xp(&"2", &"welding") == 95, "a regraded joint adds only the difference")
-	quality.grade("j9", &"welding", 2, 20)
+	quality.grade("j9", &"WELD", 2, 20)
 	check(bus.skill_xp(&"2", &"welding") == 95, "a worse regrade takes nothing away")
 	quality.record_dropped.emit(&"j9")
-	quality.grade("j9", &"welding", 2, -1)
+	quality.grade("j9", &"WELD", 2, -1)
 	check(bus.skill_xp(&"2", &"welding") == 100, "a rebuilt ungraded joint earns half afresh")
 	check(bus.skill_level(&"2", &"welding") == 1, "level 1 at 100 XP")
 	check(events.has(["level_up", &"2", &"welding", 1]), "level_up emitted")
@@ -103,14 +109,14 @@ func run_tests() -> void:
 	check(trades.modifiers.get(&"2", {}).has(&"weld_bead_stability"), "effects pushed to Trades")
 	check(quality.modifiers.get(&"2", {}).has(&"weld_bead_stability"), "effects pushed to Quality")
 	check(bus.effect(&"3", &"weld_bead_stability") == 0.0, "other players unaffected")
-	quality.grade("j11", &"no_such_trade", 2, 100)
+	quality.grade("j11", &"NO_SUCH_TRADE", 2, 100)
 	check(bus.skill_xp(&"2", &"welding") == 100, "unknown trades ignored")
 
 	# Certs: pressure welding needs welding level 2 and its test job.
 	quality.test_passed.emit(&"cert_test_pressure_weld", [&"2"])
 	check(not bus.has_cert(&"2", &"pressure_welding"), "no cert below the skill level")
 	for i in 20:
-		quality.grade("k%d" % i, &"welding", 2, 100)
+		quality.grade("k%d" % i, &"WELD", 2, 100)
 	check(bus.skill_level(&"2", &"welding") == 2, "level 2 at 300 XP")
 	quality.test_passed.emit(&"cert_test_pressure_weld", [&"2", &"3"])
 	check(bus.has_cert(&"2", &"pressure_welding"), "cert earned on a passed test")
@@ -148,19 +154,32 @@ func run_tests() -> void:
 	Saves.register_section("progression_test", fresh)
 	check(Saves.load_slot(slot) == OK, "load reads")
 	check(fresh.skill_xp(&"2", &"welding") == bus.skill_xp(&"2", &"welding"), "XP survives a save")
-	quality2.grade("j0", &"welding", 2, 100)
+	quality2.grade("j0", &"WELD", 2, 100)
 	check(fresh.skill_xp(&"2", &"welding") == bus.skill_xp(&"2", &"welding"), "regrade after a load gives no XP twice")
 	check(fresh.has_upgrade(&"second_crane"), "upgrades survive a save")
 	check(is_equal_approx(fresh.effect(&"2", &"weld_bead_stability"), 0.05), "effects rebuilt after load")
 	Saves.unregister_section("progression_test")
 	DirAccess.remove_absolute(Saves.path_for(slot))
 
+	# With the features switched off: no perks, no certs, no buying.
+	Flags.use(start_flags)
+	Flags.set_flag("progression", true)
+	check(bus.effect(&"2", &"weld_bead_stability") == 0.0, "no perks with progression.perks off")
+	check(bus.effect(&"3", &"lift_speed") == 0.0, "no upgrade effects with progression.upgrades off")
+	bus.request_upgrade(&"inspection_scanner")
+	check(events.has(["failed", &"inspection_scanner", "upgrades_off"]), "no buying with progression.upgrades off")
+	quality.test_passed.emit(&"cert_test_pressure_weld", [&"2"])
+	check(not bus.has_cert(&"2", &"pressure_welding"), "no certs with progression.certs off")
+	check(bus.skill_level(&"2", &"welding") == 2, "levels still count")
+	Flags.use(on)
+
 	# Loader: Progression only loads with its chain on.
-	var saved := Flags.all()
 	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "trades": true,
 			"quality": true, "business": true, "multiplayer": true, "progression": true})
 	Modules.load_all()
 	check(Modules.bus("progression") is ProgressionBus, "progression loads with its chain on")
-	Flags.use(saved)
+	Flags.use(start_flags)
 	Modules.load_all()
-	check(not Modules.is_loaded("progression"), "progression off by default")
+	check(Modules.is_loaded("progression"), "progression on in the project flags")
+	for f in [ProgressionBus.PERKS, ProgressionBus.CERTS, ProgressionBus.UPGRADES]:
+		check(not Flags.is_on(f), "%s off in the project flags" % f)

@@ -55,7 +55,7 @@ class QualityStub:
 	func grade(joint_id: String, peer_id: int, score: int) -> void:
 		var r := Record.new()
 		r.joint_id = StringName(joint_id)
-		r.trade = &"bolting"
+		r.trade = &"BOLT"
 		r.peer_id = peer_id
 		r.score = score
 		joint_graded.emit(r)
@@ -70,6 +70,12 @@ class Record:
 
 
 func run_tests() -> void:
+	var start_flags := Flags.all()
+	var on := start_flags.duplicate()
+	for f in [ProgressionBus.PERKS, ProgressionBus.CERTS]:
+		on[f] = true
+	on["progression"] = true
+	Flags.use(on)
 	var crew := {1: {"name": "Sam"}, 7: {"name": "Fitter"}, 9: {"name": "Fitter"}}
 	var host_net := NetStub.new()
 	var client_net := NetStub.new()
@@ -114,7 +120,7 @@ func run_tests() -> void:
 	var texts := PackedStringArray()
 	_collect(panel, texts)
 	var all := " ".join(texts)
-	check("Bolting" in all and "200 XP to go" in all, "panel shows the trade, level and XP to go: %s" % all)
+	check("Torque wrench" in all and "200 XP to go" in all, "panel shows the trade, level and XP to go: %s" % all)
 	check("No certifications yet" in all, "panel says when there are no certs")
 	for i in 20:
 		quality.grade("c%d" % i, 7, 100)
@@ -124,8 +130,21 @@ func run_tests() -> void:
 	check("TOTAL LEVEL" in " ".join(texts) and "2" in texts, "panel refreshes when the state changes")
 	panel.queue_free()
 
+	# Levels only (the release set): no perk lines and no certifications.
+	Flags.use(start_flags)
+	Flags.set_flag("progression", true)
+	var lite: Control = client.ProfilePanel.new(client)
+	add_child(lite)
+	texts = PackedStringArray()
+	_collect(lite, texts)
+	all = " ".join(texts)
+	check("LEVEL 2 OF 5" in all and not "CERTIFICATIONS" in all and not "certification" in all,
+			"levels-only panel: %s" % all)
+	lite.queue_free()
+	Flags.use(on)
+
 	# Loaded for real: the section is on the Character page.
-	var saved := Flags.all()
+	var saved := start_flags
 	var flags := saved.duplicate()
 	flags["progression"] = true
 	Flags.use(flags)
@@ -135,10 +154,13 @@ func run_tests() -> void:
 			"Skills section registered on the Character page")
 	var real := Modules.bus("progression") as ProgressionBus
 	check(real.my_player_id() != &"", "solo player has an id: %s" % real.my_player_id())
-	Flags.use(saved)
+	flags["progression"] = false
+	Flags.use(flags)
 	Modules.load_all()
 	ids = Menu.settings_sections(Menu.CHARACTER).map(func(c): return c.id)
 	check(not ProgressionBus.PROFILE_SECTION in ids, "section gone with the module off")
+	Flags.use(saved)
+	Modules.load_all()
 
 
 static func _collect(node: Node, out: PackedStringArray) -> void:

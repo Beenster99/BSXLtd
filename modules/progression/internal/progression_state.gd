@@ -36,23 +36,34 @@ func has_upgrade(upgrade_id: StringName) -> bool:
 
 
 ## Perks from the player's skill levels plus every owned upgrade with this key.
-func effect(player_id: StringName, key: StringName) -> float:
-	return float(effects(player_id).get(key, 0.0))
+func effect(player_id: StringName, key: StringName, perks := true, upgrades := true) -> float:
+	return float(effects(player_id, perks, upgrades).get(key, 0.0))
 
 
-## Every effect key that applies to the player, summed: {effect_key: value}.
-func effects(player_id: StringName) -> Dictionary:
+## Every effect key that applies to the player, summed: {effect_key: value}. Perks or
+## upgrades can be left out while their feature is switched off.
+func effects(player_id: StringName, perks := true, upgrades := true) -> Dictionary:
 	var out := {}
+	if perks:
+		_add_perks(player_id, out)
+	if upgrades:
+		_add_upgrades(out)
+	return out
+
+
+func _add_perks(player_id: StringName, out: Dictionary) -> void:
 	for s: ProgressionSkill in catalog.skills.values():
 		var lvl := level(player_id, s.id)
 		for p in s.perks:
 			if p.level <= lvl:
 				out[p.effect_key] = float(out.get(p.effect_key, 0.0)) + p.value
+
+
+func _add_upgrades(out: Dictionary) -> void:
 	for id in owned:
 		var u: ProgressionUpgrade = catalog.upgrades.get(StringName(id))
 		if u and u.effect_key != &"":
 			out[u.effect_key] = float(out.get(u.effect_key, 0.0)) + u.value
-	return out
 
 
 ## {ok, missing}: missing lists upgrade ids still needed, "owned" or "unknown".

@@ -22,6 +22,9 @@ extends Node
 ## with a new peer id; Trades and Quality still get effects keyed by str(peer_id). Queries
 ## take either. The host keeps the state and sends it to every peer after each change.
 ## Settings > Character shows the local player's skills, levels and certs.
+##
+## The module flag "progression" switches on XP and levels (one track per tool, five
+## levels each). Perks, certifications and upgrades each have their own feature flag.
 
 signal xp_gained(player_id: StringName, skill_id: StringName, amount: int, total: int)
 signal level_up(player_id: StringName, skill_id: StringName, level: int)
@@ -36,6 +39,12 @@ const SAVE_SECTION := "progression"
 const STATE_EVENT := "progression.state"
 const UPGRADE_EVENT := "progression.upgrade"
 const PROFILE_SECTION := "progression.skills"
+## Bonuses from levels (tool speed, tolerance).
+const PERKS := "progression.perks"
+## Certifications from test jobs.
+const CERTS := "progression.certs"
+## Tool and yard upgrades bought through Business.
+const UPGRADES := "progression.upgrades"
 const ORDER_PREFIX := "progression:"
 ## XP scale for a joint Quality has no rules for yet.
 const UNGRADED_QUALITY := 0.5
@@ -159,11 +168,11 @@ func has_upgrade(upgrade_id: StringName) -> bool:
 
 ## Skill perks plus owned upgrades for `key`; 0.0 when nothing applies.
 func effect(player_id: StringName, key: StringName) -> float:
-	return _state.effect(_key(player_id), key)
+	return _state.effect(_key(player_id), key, Flags.is_on(PERKS), Flags.is_on(UPGRADES))
 
 
 func effects(player_id: StringName) -> Dictionary:
-	return _state.effects(_key(player_id))
+	return _state.effects(_key(player_id), Flags.is_on(PERKS), Flags.is_on(UPGRADES))
 
 
 ## {ok: bool, missing: Array[StringName]}; missing holds required upgrade ids, or "owned"
@@ -188,6 +197,9 @@ func upgrades() -> Array:
 
 ## Asks Business to charge for the upgrade; upgrade_unlocked or upgrade_failed follows.
 func request_upgrade(upgrade_id: StringName) -> void:
+	if not Flags.is_on(UPGRADES):
+		upgrade_failed.emit(upgrade_id, "upgrades_off")
+		return
 	if not _is_host():
 		if _net:
 			_net.request(UPGRADE_EVENT, {"id": String(upgrade_id)})
@@ -210,7 +222,7 @@ func request_upgrade(upgrade_id: StringName) -> void:
 
 
 func award_cert(player_id: StringName, cert_id: StringName) -> void:
-	if not _is_host() or not _state.catalog.certs.has(cert_id) or has_cert(player_id, cert_id):
+	if not Flags.is_on(CERTS) or not _is_host() or not _state.catalog.certs.has(cert_id) or has_cert(player_id, cert_id):
 		return
 	_state.award(_key(player_id), cert_id)
 	cert_awarded.emit(_key(player_id), cert_id)
@@ -267,7 +279,7 @@ func _on_record_dropped(joint_id: StringName) -> void:
 
 
 func _on_test_passed(job_id: StringName, player_ids: Array) -> void:
-	if not _is_host():
+	if not Flags.is_on(CERTS) or not _is_host():
 		return
 	var keys := player_ids.map(func(p: Variant) -> StringName: return _key(StringName(str(p))))
 	for pair in _state.pass_test(job_id, keys):
