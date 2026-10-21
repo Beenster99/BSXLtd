@@ -52,6 +52,7 @@ flags = {
 "trades.tractor": true,
 "trades.unweld": true,
 "trades.welding": true,
+"trades.wire_diagram": true,
 "trades.wiring": true,
 "ui": true
 }

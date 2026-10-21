@@ -8,7 +8,9 @@ extends TradesStation
 ##              right click (hold) breaks it loose
 ##   rivet      squeezer: hold left click to set it; drill: hold left click to drill it out
 ##   weld       welder: hold left click to lay it; hold right click to cut it out (unweld)
-##   connector  hands or crimper: left click plugs it, right click unplugs it
+##   connector  hands or crimper: left click plugs it, right click unplugs it; a power or
+##              data plug (trades.wire_diagram) opens its wiring diagram first, where you
+##              drag the loom's wires onto the pins (TradesWireLoom, TradesWiringPanel)
 ##
 ## Ship and Bay hears about every joint made or taken off (note_joint_made/removed) and keeps
 ## the slot's state: take every joint off a part and the part comes off; hands on one of its
@@ -88,6 +90,12 @@ var _marker: MeshInstance3D
 ## The tractor beam (tool 7), for lifting parts that are off the ship.
 var tractor: TradesTractor
 var _arc: OmniLight3D
+## The wiring diagram up on screen (null when none), the joint it's for, and every plug's
+## loom by joint id (what you landed stays when you close it).
+var wiring: TradesWiringPanel
+var _wiring_at := -1
+var _wiring_layer: CanvasLayer
+var _looms: Dictionary = {}
 
 
 func build() -> void:
@@ -165,7 +173,7 @@ func start_hint() -> String:
 
 
 func is_busy() -> bool:
-	return _working >= 0 or tractor.is_holding()
+	return _working >= 0 or tractor.is_holding() or wiring != null
 
 
 ## The torque range (N m) for a bolt spec from Shared Components' fastener specs, or a
@@ -205,6 +213,12 @@ func press(tool: StringName) -> void:
 			bay.hint("The part is off. Hands (1) on one of its joints puts it back.")
 		return
 	var tight := _bus.is_joint_tight(f.joint_id)
+	if uses_diagram(f) and kind_tools(f.kind).has(tool):
+		if tight:
+			bay.hint("Plugged in. Right click pulls the plug to rewire it.")
+		else:
+			open_wiring(aimed)
+		return
 	if f.kind == "bolt" and tool == &"torque_wrench" and powered():
 		_press_power(f, tight)
 		return
@@ -321,6 +335,9 @@ func motion(relative: Vector2) -> bool:
 
 func update(delta: float) -> void:
 	tractor.update(delta)
+	if wiring:
+		_update_wiring()
+		return
 	if _working < 0 and not tractor.is_holding():
 		_update_aim()
 	_place_marker()
@@ -666,6 +683,8 @@ func _begin(undo: bool, tool: StringName) -> void:
 func _finish(f: FastenerPoint) -> void:
 	if _undoing:
 		if _bus.note_joint_removed(f.joint_id):
+			if _looms.has(f.joint_id):
+				(_looms[f.joint_id] as TradesWireLoom).tested = false
 			var bus := bay.bus()
 			if bus:
 				bus.remove_joint(StringName(f.joint_id))
@@ -976,7 +995,8 @@ func actions(tool: StringName) -> Array:
 					out.append([TradesBus.KEY_MODE, "switch to weld" if unweld else "switch to unweld"])
 		"connector":
 			if tool == &"hands" or tool == &"wire_tool":
-				out.append([TradesBay.RIGHT_CLICK, "unplug it"] if tight else [TradesBay.CLICK, "plug it in"])
+				var plug := "open its wiring diagram" if uses_diagram(f) else "plug it in"
+				out.append([TradesBay.RIGHT_CLICK, "unplug it"] if tight else [TradesBay.CLICK, plug])
 	if out.is_empty():
 		var want: StringName = &""
 		match f.kind:
@@ -1081,3 +1101,80 @@ func stage_joint(kind: String, back_m := 1.6) -> Array[Vector3]:
 	_held_s = _seconds(kind) * 0.6
 	_frozen = true
 	return [feet, at]
+
+
+# --- The wiring diagram (trades.wire_diagram) ----------------------------------------------
+
+## True for a plug that's wired up on its diagram: power and data, not fuel.
+func uses_diagram(f: FastenerPoint) -> bool:
+	return f.kind == "connector" and TradesWireLoom.supports(f.spec) and Flags.is_on("trades.wire_diagram")
+
+
+func loom_of(f: FastenerPoint) -> TradesWireLoom:
+	if not _looms.has(f.joint_id):
+		_looms[f.joint_id] = TradesWireLoom.new(f.spec, f.joint_id)
+	return _looms[f.joint_id]
+
+
+## Puts the diagram for joint i up on screen, with the mouse free.
+func open_wiring(i: int) -> TradesWiringPanel:
+	if wiring:
+		return wiring
+	var f := points[i]
+	var loom := loom_of(f)
+	var comp := _bus.get_component(FastenerPoint.slot_of(f.joint_id))
+	_wiring_layer = CanvasLayer.new()
+	_wiring_layer.layer = 30
+	add_child(_wiring_layer)
+	wiring = TradesWiringPanel.new(loom, "WIRING  %s" % (comp if comp != "" else FastenerPoint.slot_of(f.joint_id)).to_upper())
+	wiring.plug_requested.connect(_plug_wiring)
+	wiring.close_requested.connect(close_wiring)
+	_wiring_layer.add_child(wiring)
+	_wiring_at = i
+	HudSlots.claim_pointer("trades.wiring")
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	bay.worker.right_hand.reach_to(points_world[i], ship_xform.basis * f.normal)
+	bay.hint("Drag each wire onto its pin, then plug it in.")
+	return wiring
+
+
+func close_wiring() -> void:
+	if wiring == null:
+		return
+	_wiring_layer.queue_free()
+	_wiring_layer = null
+	wiring = null
+	_wiring_at = -1
+	HudSlots.release_pointer("trades.wiring")
+	if DisplayServer.get_name() != "headless" and not HudSlots.pointer_claimed():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	bay.worker.right_hand.come_back()
+
+
+## PLUG IN AND TEST: the plug goes home with the wires as they are, and Quality hears.
+func _plug_wiring() -> void:
+	if wiring == null or _wiring_at < 0:
+		return
+	var f := points[_wiring_at]
+	var loom := wiring.loom
+	if not loom.all_landed() or _bus.is_joint_tight(f.joint_id):
+		return
+	loom.plug_in()
+	_made(f, 1.0 if loom.is_right() else 0.1)
+	_report(f, &"WIRE", loom.measurements())
+	bay.play(&"click")
+	bay.hint("Plugged in. All pins good." if loom.is_right() else "Plugged in, but some pins test open.")
+	wiring._refresh()
+
+
+## While the diagram's up the hand stays on the plug; walk away and it closes.
+func _update_wiring() -> void:
+	_marker.visible = false
+	if _wiring_at < 0 or _wiring_at >= points.size():
+		close_wiring()
+		return
+	var at := points_world[_wiring_at]
+	var feet := bay.worker.global_position
+	if Vector2(feet.x - at.x, feet.z - at.z).length() > 3.0:
+		close_wiring()
