@@ -1,5 +1,5 @@
 extends ModuleTest
-## beenster's tool feedback in the yard: ball hands, the tool panel's labelled readings,
+## beenster's tool feedback in the yard: ball hands, each tool's own display of labelled readings,
 ## holding Tab for a part's key data, holding the rotate key to turn a part in the beam,
 ## and the welder cutting a weld out (unweld) when the ship has one.
 
@@ -15,7 +15,7 @@ const SLOT := "eng_aft_port_1"
 func run_tests() -> void:
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var saved := {}
-	for flag: String in ["trades.tractor", "trades.sphere_hands", "trades.tool_panel", "trades.inspect", "trades.unweld"]:
+	for flag: String in ["trades.tractor", "trades.sphere_hands", "trades.tool_panel", "trades.tool_display", "trades.inspect", "trades.unweld"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
 	ship_bus.load_ship("vs_kestrel")
@@ -30,15 +30,16 @@ func run_tests() -> void:
 	var glove := rig.worker.right_hand.get_node("Glove")
 	check(glove.has_node("Ball") and glove.get_child_count() == 2, "the hands are balls for now")
 
-	# The tool panel: the tool's name, its readings by name, what it's doing.
+	# The tool's own display: its name, its readings by name, what it's doing; no HUD panel.
 	rig.set_tool(&"torque_wrench")
-	await frames(1)
-	var panel := rig.tool_panel_text()
+	await frames(2)
+	var panel := _display(rig, &"torque_wrench")
 	check(panel.contains("TORQUE WRENCH") and panel.contains("SET") and panel.contains("N m") and panel.contains("READY"),
-			"the tool panel names the tool and labels its readings")
+			"the wrench's display names it and labels its readings")
+	check(rig.tool_panel_text() == "", "and the HUD has no tool panel any more")
 	rig.set_tool(&"welder")
-	await frames(1)
-	check(rig.tool_panel_text().contains("CURRENT") and rig.tool_panel_text().contains("WELD"), "the welder's panel shows its current and mode")
+	await frames(2)
+	check(_display(rig, &"welder").contains("CURRENT") and _display(rig, &"welder").contains("WELD"), "the welder's display shows its current and mode")
 
 	# Hold Tab on a part on the ship: its key data.
 	var slot := ship_bus.get_slot(SLOT)
@@ -98,7 +99,7 @@ func run_tests() -> void:
 		_run(station, 10)
 		await frames(1)
 		var torch := rig.tool_node(&"welder") as TradesWeldTorch
-		check(torch.lit and torch.cutting and rig.tool_panel_text().contains("CUT"), "right click on a weld: the welder cuts")
+		check(torch.lit and torch.cutting and _display(rig, &"welder").contains("CUT"), "right click on a weld: the welder cuts")
 		_run(station, 60)
 		check(not ship_bus.is_joint_tight(w.joint_id), "the weld is cut out")
 	else:
@@ -109,7 +110,7 @@ func run_tests() -> void:
 		torch.cutting = true
 		torch.cut = 0.5
 		await frames(1)
-		check(rig.tool_panel_text().contains("CUT") and rig.tool_panel_text().contains("50 %"), "cutting, the welder's panel shows the cut")
+		check(_display(rig, &"welder").contains("CUT") and _display(rig, &"welder").contains("50 %"), "cutting, the welder's display shows the cut")
 		torch.lit = false
 		torch.cutting = false
 
@@ -118,6 +119,10 @@ func run_tests() -> void:
 	ship_bus.load_ship("vs_kestrel")
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
+
+
+func _display(rig: TradesBay, id: StringName) -> String:
+	return rig.tool_node(id).display_text()
 
 
 func _run(station: TradesShipJoints, n: int) -> void:

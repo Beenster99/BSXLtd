@@ -45,7 +45,11 @@ func _ready() -> void:
 	# The back end: a dark cap with the screen looking up out of it.
 	box(Vector3(0.048, 0.014, 0.05), Vector3(0, 0.19, 0.006), dark)
 	box(Vector3(0.042, 0.004, 0.044), Vector3(0, 0.198, 0.006), dark)
-	add_screen(Vector3(0, 0.2006, 0.004), Vector3.UP, Vector2(0.034, 0.032), 6, 3, Vector3.FORWARD)
+	if Flags.is_on("trades.tool_display"):
+		# The display's arm on the motor's left side, clear of your hand.
+		add_screen(Vector3(-0.0262, 0.11, 0.0), Vector3.LEFT, Vector2(0.034, 0.032), 6, 3, Vector3.UP)
+	else:
+		add_screen(Vector3(0, 0.2006, 0.004), Vector3.UP, Vector2(0.034, 0.032), 6, 3, Vector3.FORWARD)
 	# Pistol grip: an orange spine under rubber, the trigger and the direction switch.
 	box(Vector3(0.026, 0.03, 0.105), Vector3(0, 0.152, 0.075), body, Vector3(0.25, 0, 0))
 	capsule(0.0155, 0.09, Vector3(0, 0.146, 0.085), Vector3(PI * 0.5 + 0.25, 0, 0), rubber)

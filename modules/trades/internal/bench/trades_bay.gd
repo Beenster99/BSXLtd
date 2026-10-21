@@ -150,6 +150,22 @@ func _enter_yard() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+## You are the worker in the yard for good. A yard screen (a trolley's or a scaffold's) hands
+## the yard's own walker back when it closes, which used to leave you as that walker at the
+## yard's start point with the worker's hands floating where you stood (0.3.6): stand it
+## down again and take the view and the mouse back.
+func _keep_the_yard() -> void:
+	var yard := get_parent() as Node3D
+	if yard == null or not bool(yard.get("walker_active")):
+		return
+	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	if yard_bus:
+		yard_bus.set_walker_active(yard, false)
+	worker.camera.current = true
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
 ## Where the ship in the yard is (ship space to world): from Ship and Bay once it says, else
 ## over the yard's origin at the cradles' height.
 func ship_transform() -> Transform3D:
@@ -325,6 +341,7 @@ func _on_mouse_button(event: InputEventMouseButton) -> void:
 
 func _process(delta: float) -> void:
 	if in_yard:
+		_keep_the_yard()
 		# The yard's still views (its screenshots) borrow the screen: no HUD over them.
 		_hud.visible = get_viewport().get_camera_3d() == worker.camera
 	_update_focus()
@@ -588,6 +605,7 @@ func _walk_to(s: TradesStation) -> void:
 func _build_worker() -> void:
 	worker = BenchWorker.new()
 	worker.name = "Worker"
+	worker.agile = Flags.is_on("trades.jump")
 	add_child(worker)
 	for hand: StretchHand in [worker.left_hand, worker.right_hand]:
 		hand.reach_m = HAND_REACH_M
@@ -608,6 +626,7 @@ func _build_tools() -> void:
 	}
 	for id: StringName in scripts:
 		var t: TradesTool = (scripts[id] as GDScript).new()
+		t.title = String(TOOL_LABELS.get(id, id))
 		t.top_level = true
 		t.visible = false
 		add_child(t)
@@ -820,7 +839,8 @@ func _build_hud() -> void:
 	_result_panel.add_child(_result_label)
 	_result_panel.visible = false
 
-	if Flags.is_on("trades.tool_panel"):
+	# The readings live on the tool's own display now; the HUD panel only without one.
+	if Flags.is_on("trades.tool_panel") and not Flags.is_on("trades.tool_display"):
 		_build_tool_panel(root)
 	if Flags.is_on("trades.inspect"):
 		_inspect_panel = _card()
