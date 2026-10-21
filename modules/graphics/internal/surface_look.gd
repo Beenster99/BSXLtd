@@ -76,7 +76,9 @@ static func material_for(src: Material) -> ShaderMaterial:
 			var c := (v as Color).srgb_to_linear()
 			v = Vector3(c.r, c.g, c.b)
 		m.set_shader_parameter(key, v)
-	m.set_meta("gfx_surface_kind", kind)
+	# Still says what it is, for anyone reading the scene (Graphics's own copies are never
+	# restyled again: see apply).
+	m.set_meta(META, kind)
 	_made[src] = m
 	return m
 
@@ -86,7 +88,7 @@ static func apply(g: GeometryInstance3D) -> bool:
 	if g.has_meta(SAVED):
 		return false
 	var src := g.material_override
-	if kind_of(src) == "":
+	if kind_of(src) == "" or (src as ShaderMaterial and (src as ShaderMaterial).shader == GroundShader):
 		return false
 	g.set_meta(SAVED, src)
 	g.material_override = material_for(src)

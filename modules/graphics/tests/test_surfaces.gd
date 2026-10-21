@@ -54,6 +54,10 @@ func run_tests() -> void:
 	var late := _mesh(concrete)
 	await frames(2)
 	check(late.material_override == m, "a slab added later is restyled too")
+	check(str(m.get_meta(look.META, "")) == "concrete", "Graphics's copy still says what it is")
+	var reused := _mesh(m)
+	await frames(2)
+	check(reused.material_override == m and not reused.has_meta(look.SAVED), "a node given Graphics's copy isn't restyled again")
 
 	Flags.set_flag(GfxBus.SURFACES, false)
 	await frames(2)
@@ -62,7 +66,7 @@ func run_tests() -> void:
 	Flags.set_flag(GfxBus.SURFACES, true)
 	await frames(2)
 	check(slab.material_override == m, "flag on again: restyled again")
-	for n in [slab, base, plain, odd, floor_mm, late]:
+	for n in [slab, base, plain, odd, floor_mm, late, reused]:
 		n.queue_free()
 
 
