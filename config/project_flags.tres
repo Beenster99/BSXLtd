@@ -16,6 +16,7 @@ flags = {
 "graphics.hover": true,
 "graphics.light": true,
 "graphics.ping": true,
+"graphics.profiler": true,
 "multiplayer": true,
 "multiplayer.crew": true,
 "multiplayer.online": true,
