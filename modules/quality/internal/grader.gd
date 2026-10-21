@@ -212,7 +212,7 @@ func _grade_welding(r: JointRecord) -> void:
 
 ## Wiring keys: strip_length_mm, strip_length_target_mm, crimp_pull_n, crimp_pull_min_n
 ## (per termination), continuity_ohm, continuity_max_ohm, insulation_mohm,
-## insulation_min_mohm, polarity_ok.
+## insulation_min_mohm, polarity_ok; diagram wiring adds pins_ok and terminals (pin names).
 func _grade_wiring(r: JointRecord) -> void:
 	var m := r.measurements
 	var rules := wiring
@@ -268,6 +268,13 @@ func _grade_wiring(r: JointRecord) -> void:
 		auto_fail = true
 		r.breakdown["polarity"] = 0.0
 		r.faults.append(_fault("polarity", -1, "Wired with reversed polarity"))
+
+	# Diagram wiring (ship plugs) names each pin; say which ones are wrong.
+	var pins_ok: Array = m.get("pins_ok", [])
+	var names: Array = m.get("terminals", [])
+	for i in pins_ok.size():
+		if not bool(pins_ok[i]):
+			r.faults.append(_fault("wrong_pin", i, "Pin %s wired wrong" % str(_at(names, i, i + 1))))
 	_finish(r, _total(r), auto_fail, rules.pass_score, rules.marginal_score)
 
 

@@ -11,6 +11,9 @@ extends Node3D
 ##   BATH         -> a chemical bath that strips the surface back to bare metal (85%)
 ##   COATER       -> a spray booth that lays the protective coats on (100%)
 ##   OUTPUT       -> three pallets at the end of the line; CALL TROLLEY puts them away.
+##   IN-FEED      -> three pallets north of the grinder where a trolley clean-up leaves the
+##                   loose parts it sorted for the line: the survey takes them before the
+##                   stores, and parts sorted for grinding go straight into the grinder.
 ##
 ## By hand each machine's screen has START (run what is in it) and SEND ON (pass a finished
 ## lot on). AUTO (on any screen) runs the whole line: it loads the worst lot in the stores,
@@ -43,6 +46,8 @@ const DIVERTER := Vector3(LINE_X, BED, -16.0)
 const LINE_END := Vector3(LINE_X, BED, -4.0)
 ## The output pallets on the floor (yard space): where refurbished lots wait for a trolley.
 const OUT_SPOTS: Array[Vector3] = [Vector3(LINE_X, 0, -2.5), Vector3(LINE_X, 0, -0.8), Vector3(LINE_X, 0, 0.9)]
+## The in-feed pallets on the floor (yard space): loose parts a clean-up brought for the line.
+const IN_SPOTS: Array[Vector3] = [Vector3(43.6, 0, -21.2), Vector3(41.4, 0, -21.2), Vector3(39.2, 0, -21.2)]
 ## The dust vessel's place on the floor at the end of the grind branch.
 const DUST_SPOT := Vector3(38.9, 0, -16.0)
 ## An empty vessel's own mass, kg.
@@ -129,6 +134,7 @@ func _ready() -> void:
 		_build_machine(s)
 	_build_dust()
 	_build_output()
+	_build_infeed()
 	_crates_root = Node3D.new()
 	_crates_root.name = "Crates"
 	add_child(_crates_root)
@@ -165,7 +171,7 @@ func go(station: String) -> void:
 	var at: Dictionary = _station(station)
 	if at.is_empty():
 		if station == "survey" and pick < lots.size():
-			_bus.line_request("load", {"location": str(lots[pick].location)})
+			_bus.line_request("load", _load_args(lots[pick]))
 			Sfx.play("clunk", machines[station].node)
 			return
 		Sfx.play("error", machines[station].node)
@@ -177,6 +183,11 @@ func go(station: String) -> void:
 			_bus.line_request("send", {"station": station})
 		_:
 			Sfx.play("error", machines[station].node)
+
+
+## What LOAD asks for a lot the survey offers: a stored lot, or a part on the in-feed.
+static func _load_args(lot: Dictionary) -> Dictionary:
+	return {"crate": str(lot.crate)} if lot.has("crate") else {"location": str(lot.location)}
 
 
 ## The survey's ROUTE: swaps its call between grinding and refurbishing.
@@ -250,6 +261,13 @@ func _on_line_changed() -> void:
 				if from != s and str((old[from] as Dictionary).get("state", "")) == "done" and (st.get(from, {}) as Dictionary).is_empty() \
 						and ShipBayBus._line_next(from, old[from].lot) == s:
 					_travel(_path(from, s), old[from].lot)
+	# A part off the in-feed rides across into the survey or the grinder.
+	for id: String in _crate_nodes:
+		if not _bus.line_crates().has(id) and str(_crate_nodes[id].get_meta("line", "")) == "in":
+			for into: String in ["survey", "grinder"]:
+				if str((st.get(into, {}) as Dictionary).get("state", "")) == "waiting" and (old.get(into, {}) as Dictionary).is_empty():
+					var from: Vector3 = (_crate_nodes[id] as Node3D).position
+					_travel([from, from + Vector3(0, BED, 0), _rest(into)], st[into].lot)
 	# A lot off the coater onto an output pallet rides down the end of the line.
 	var coater_was: Dictionary = old.get("coater", {})
 	if str(coater_was.get("state", "")) == "done" and (st.get("coater", {}) as Dictionary).is_empty():
@@ -260,11 +278,11 @@ func _on_line_changed() -> void:
 
 
 func _on_stock_changed() -> void:
-	var was := str(lots[pick].location) if pick < lots.size() else ""
+	var was := _lot_key(lots[pick]) if pick < lots.size() else ""
 	lots = _bus.line_candidates() if _bus else ([] as Array[Dictionary])
 	pick = 0
 	for i in lots.size():
-		if str(lots[i].location) == was:
+		if _lot_key(lots[i]) == was:
 			pick = i
 	for id: String in _called.keys():
 		if not _bus.line_crates().has(id):
@@ -273,6 +291,10 @@ func _on_stock_changed() -> void:
 		_call_dust_trolley()
 	_draw_crates()
 	_show_all()
+
+
+static func _lot_key(lot: Dictionary) -> String:
+	return str(lot.get("crate", lot.location))
 
 
 func _process(delta: float) -> void:
@@ -304,13 +326,19 @@ func _auto_step() -> void:
 			_bus.line_request("send", {"station": s})
 		elif str(at.state) == "waiting":
 			_bus.line_request("start", {"station": s})
-	if (st.get("survey", {}) as Dictionary).is_empty() and not lots.is_empty():
-		_bus.line_request("load", {"location": str(lots[0].location)})
+	# Parts on the in-feed first: those sorted for grinding straight into the grinder.
+	for lot: Dictionary in lots:
+		if lot.has("crate") and str(lot.route) == "grind" and (st.get("grinder", {}) as Dictionary).is_empty() and not _moving():
+			_bus.line_request("load", _load_args(lot))
+			break
+	var next_up := lots.filter(func(l: Dictionary) -> bool: return not (l.has("crate") and str(l.route) == "grind"))
+	if (st.get("survey", {}) as Dictionary).is_empty() and not next_up.is_empty():
+		_bus.line_request("load", _load_args(next_up[0]))
 	if _bus.dust_kg() >= ShipBayBus.DUST_CAPACITY and not _has_crate("dust"):
 		_want_dust_trolley = true
 		_bus.line_request("empty_dust")
 	for id: String in _bus.line_crates():
-		if not _called.has(id):
+		if not _called.has(id) and str(_bus.line_crates()[id].line) != "in":
 			var t := _bus.call_trolley_for(id)
 			if t != "":
 				_called[id] = t
@@ -407,7 +435,8 @@ func _show_survey(screen: Node3D, at: Dictionary) -> void:
 			screen.call("set_body", "Nothing in the stores needs it.\nGoods under 100% come here.", T.DIM)
 		else:
 			var lot: Dictionary = lots[pick]
-			screen.call("set_body", "STORES %d / %d  %s\n%s x%d  %d%%" % [pick + 1, lots.size(), str(lot.location),
+			screen.call("set_body", "%s %d / %d  %s\n%s x%d  %d%%" % ["IN-FEED" if lot.has("crate") else "STORES", pick + 1, lots.size(),
+					"FOR GRINDER" if lot.has("crate") and str(lot.route) == "grind" else ("" if lot.has("crate") else str(lot.location)),
 					str(lot.name).to_upper().left(20), int(lot.qty), roundi(float(lot.condition) * 100.0)])
 		screen.call("set_button", "go", "LOAD", not lots.is_empty())
 		screen.call("set_button", "route", "ROUTE", false)
@@ -576,15 +605,18 @@ func _draw_crates() -> void:
 			_crate_nodes.erase(id)
 	for id: String in crates:
 		var c: Dictionary = crates[id]
-		if str(c.line) != "out" or _crate_nodes.has(id):
+		if not ["out", "in"].has(str(c.line)) or _crate_nodes.has(id):
 			continue
 		var node := Node3D.new()
 		node.name = "Crate_" + id.replace("/", "_")
+		node.set_meta("line", str(c.line))
 		node.position = _bus.crate_position(id) + Vector3(0, 0.15, 0)
 		_crates_root.add_child(node)
-		_dress_lot(node, {"item": c.item, "mass": c.mass, "condition": c.condition, "stage": "coater"})
+		var fed := str(c.line) == "in"
+		_dress_lot(node, {"item": c.item, "mass": c.mass, "condition": c.condition, "stage": "" if fed else "coater"})
 		var tag := Label3D.new()
-		tag.text = "%s  x%d\nREFURBISHED  %d%%" % [c.name, int(c.qty), roundi(float(c.condition) * 100.0)]
+		tag.text = "%s  x%d\n%s  %d%%" % [c.name, int(c.qty), ("FOR GRINDER" if str(c.get("route", "")) == "grind" else "FOR REFURB") if fed else "REFURBISHED",
+				roundi(float(c.condition) * 100.0)]
 		tag.font = ShipKit.mono_font()
 		tag.font_size = 40
 		tag.pixel_size = 0.0025
@@ -695,7 +727,8 @@ func _build_machine(s: String) -> void:
 			for z: float in [-0.95, 0.95]:
 				for x: float in [-0.75, 0.75]:
 					_part(PartShapes.box(Vector3(0.12, 1.4, 0.12)).mesh, Vector3(x, BED + 0.7, z), paint, root)
-				_part(PartShapes.box(Vector3(1.62, 0.14, 0.14)).mesh, Vector3(0, BED + 1.45, z), paint, root)
+				# A hair shallower than the side bars, so their tops don't meet in one plane.
+				_part(PartShapes.box(Vector3(1.62, 0.136, 0.136)).mesh, Vector3(0, BED + 1.45, z), paint, root)
 			for x: float in [-0.75, 0.75]:
 				_part(PartShapes.box(Vector3(0.14, 0.14, 2.0)).mesh, Vector3(x, BED + 1.45, 0), paint, root)
 			var bar := Node3D.new()
@@ -754,7 +787,7 @@ func _build_machine(s: String) -> void:
 			var liquid := ShipKit.glow(Color(0.35, 0.95, 0.4), 1.2)
 			_part(PartShapes.box(Vector3(WIDTH - 0.16, 0.02, LENGTH - 0.16)).mesh, Vector3(0, BED - 0.1, 0), liquid, root)
 			for k: float in [-1.0, 1.0]:
-				_part(PartShapes.box(Vector3(WIDTH + 0.04, 0.06, 0.06)).mesh, Vector3(0, BED + 0.08, k * LENGTH * 0.5), _mats["steel"], root)
+				_part(PartShapes.box(Vector3(WIDTH + 0.04, 0.056, 0.056)).mesh, Vector3(0, BED + 0.08, k * LENGTH * 0.5), _mats["steel"], root)
 				_part(PartShapes.box(Vector3(0.06, 0.06, LENGTH + 0.04)).mesh, Vector3(k * WIDTH * 0.5, BED + 0.08, 0), _mats["steel"], root)
 			var bubbles := Node3D.new()
 			bubbles.name = "Bubbles"
@@ -769,7 +802,7 @@ func _build_machine(s: String) -> void:
 			for z: float in [-1.0, 1.0]:
 				for x: float in [-0.88, 0.88]:
 					_part(PartShapes.box(Vector3(0.1, 2.0, 0.1)).mesh, Vector3(x, 1.0, z), _mats["steel"], root)
-				_part(PartShapes.box(Vector3(1.86, 0.12, 0.12)).mesh, Vector3(0, 2.0, z), _mats["steel"], root)
+				_part(PartShapes.box(Vector3(1.86, 0.116, 0.116)).mesh, Vector3(0, 2.0, z), _mats["steel"], root)
 			_part(PartShapes.box(Vector3(0.12, 0.12, 2.1)).mesh, Vector3(0, 2.0, 0), _mats["yellow"], root)
 			_part(WreckParts.junction_box(Vector3(0.4, 0.35, 0.35), Color(1.0, 0.6, 0.15)).mesh, Vector3(0, 1.75, 0), _mats["dark"], root)
 			var warn := _plate("CORROSIVE", Color(0.35, 0.95, 0.4))
@@ -779,12 +812,12 @@ func _build_machine(s: String) -> void:
 		"coater":
 			# A spray booth: walls each side, a roof, a ring of nozzles and the mist.
 			# The back wall solid; the front a framed window so you can watch the coats go on.
-			_part(PartShapes.chamfer_box(Vector3(0.16, 2.2, LENGTH), 0.03).mesh, Vector3(-side * 0.82, 1.1, 0), paint, root)
-			_part(PartShapes.chamfer_box(Vector3(0.16, BED + 0.1, LENGTH), 0.03).mesh, Vector3(side * 0.82, (BED + 0.1) * 0.5, 0), paint, root)
+			_part(PartShapes.chamfer_box(Vector3(0.16, 2.2, LENGTH), 0.03).mesh, Vector3(-side * 0.815, 1.1, 0), paint, root)
+			_part(PartShapes.chamfer_box(Vector3(0.16, BED + 0.1, LENGTH), 0.03).mesh, Vector3(side * 0.815, (BED + 0.1) * 0.5, 0), paint, root)
 			for z: float in [-LENGTH * 0.5 + 0.07, LENGTH * 0.5 - 0.07]:
-				_part(PartShapes.box(Vector3(0.16, 2.2 - BED - 0.1, 0.14)).mesh, Vector3(side * 0.82, (2.2 + BED + 0.1) * 0.5, z), paint, root)
-			_part(PartShapes.box(Vector3(0.03, 2.2 - BED - 0.1, LENGTH - 0.28)).mesh, Vector3(side * 0.82, (2.2 + BED + 0.1) * 0.5, 0), Glazing.material(Glazing.Kind.CLEAR), root)
-			for x: float in [-0.82, 0.82]:
+				_part(PartShapes.box(Vector3(0.16, 2.2 - BED - 0.1, 0.14)).mesh, Vector3(side * 0.815, (2.2 + BED + 0.1) * 0.5, z), paint, root)
+			_part(PartShapes.box(Vector3(0.03, 2.2 - BED - 0.1, LENGTH - 0.28)).mesh, Vector3(side * 0.815, (2.2 + BED + 0.1) * 0.5, 0), Glazing.material(Glazing.Kind.CLEAR), root)
+			for x: float in [-0.815, 0.815]:
 				_collide(body, Vector3(0.16, 2.2, LENGTH), Vector3(x, 1.1, 0))
 			_part(PartShapes.chamfer_box(Vector3(1.8, 0.2, LENGTH), 0.03).mesh, Vector3(0, 2.3, 0), paint, root)
 			_part(PartShapes.box(Vector3(1.0, 0.3, 1.0)).mesh, Vector3(0, 2.55, 0), _mats["dark"], root)
@@ -890,7 +923,7 @@ func _build_conveyors() -> void:
 	_part(PartShapes.prism(20, 0.75, BED - 0.12).mesh, Vector3(0, (BED - 0.12) * 0.5, 0), _mats["dark"], turn)
 	_part(PartShapes.prism(20, 0.8, 0.06).mesh, Vector3(0, BED - 0.09, 0), _mats["steel"], turn)
 	for i in 5:
-		_part(PartShapes.prism(10, 0.05, 1.0).mesh, Vector3(-0.4 + i * 0.2, BED - 0.03, 0), _mats["roller"], turn, Basis(Vector3.FORWARD, PI * 0.5))
+		_part(PartShapes.prism(10, 0.05, 1.0).mesh, Vector3(0, BED - 0.03, -0.4 + i * 0.2), _mats["roller"], turn, Basis(Vector3.FORWARD, PI * 0.5))
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(1.6, BED, 1.6)
@@ -980,6 +1013,24 @@ func _build_output() -> void:
 	root.add_child(out_screen)
 	out_screen.call("setup", Vector2(0.52, 0.36), "LINE OUTPUT", 1)
 	out_screen.call("add_button", "call", "CALL TROLLEY", call_trolleys, true)
+
+
+## The in-feed: three pallets north of the grinder where a clean-up's trolleys set down
+## the loose parts they sorted for the line, with a sign.
+func _build_infeed() -> void:
+	var root := Node3D.new()
+	root.name = "InFeed"
+	add_child(root)
+	for p: Vector3 in IN_SPOTS:
+		_part(PartShapes.box(Vector3(1.1, 0.14, 1.3)).mesh, p + Vector3(0, 0.07, 0), _mats["wood"], root)
+		for k: float in [-1.0, 1.0]:
+			_part(PartShapes.box(Vector3(0.08, 0.01, 1.5)).mesh, p + Vector3(k * 0.68, 0.006, 0), _mats["yellow"], root)
+	var sign_at := Vector3(41.4, 2.6, -23.85)
+	_part(PartShapes.box(Vector3(3.2, 0.42, 0.06)).mesh, sign_at, _mats["dark"], root)
+	var plate := _plate("LINE IN-FEED", Color(0.95, 0.75, 0.1))
+	plate.position = sign_at + Vector3(0, 0, 0.04)
+	plate.font_size = 64
+	root.add_child(plate)
 
 
 func _stripes(parent: Node3D, at: Vector3, width: float, height: float) -> void:

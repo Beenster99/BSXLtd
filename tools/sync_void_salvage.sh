@@ -16,21 +16,30 @@ DEST=shared/void_salvage
 FILES=(
 	scripts/parts/frame_parts.gd
 	scripts/parts/hull_builder.gd
-	scripts/parts/kit_parts.gd
 	scripts/parts/mesh_kit.gd
 	scripts/parts/part_shapes.gd
 	scripts/parts/ship_parts.gd
 	scripts/parts/wreck_parts.gd
 	scripts/salvage/connection_data.gd
+	scripts/salvage/frame_hull.gd
+	scripts/salvage/frame_member.gd
+	scripts/salvage/frame_style.gd
+	scripts/salvage/frame_target.gd
 	scripts/salvage/glazing.gd
+	scripts/salvage/joint_batch.gd
+	scripts/salvage/joint_view.gd
 	scripts/salvage/materials.gd
 	scripts/salvage/part_data.gd
+	scripts/salvage/part_model.gd
 	scripts/salvage/surface_detail.gd
 	scripts/salvage/surface_finish.gd
 	scripts/salvage/surface_zones.gd
 	scripts/salvage/wiring_loom.gd
 	scripts/ship/ship_kit.gd
+	scripts/ship/ship_recorder.gd
 	scripts/ship/ship_surface.gd
+	data/ship_format/vsship-1.schema.json
+	data/wreck_format/vswreck-1.schema.json
 	shaders/salvage_surface.gdshader
 	shaders/joint_head.gdshader
 	shaders/survey_glass.gdshaderinc

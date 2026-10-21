@@ -27,6 +27,9 @@ var stations: Array[Dictionary] = []
 ## Optional: `frame_skip(station_index, edge) -> bool` leaves out a ring girder (say, where
 ## a cabin opens through the roof). Stringers and nodes are unaffected.
 var frame_skip := Callable()
+## The ship file's record of this section (when the kit records), once `build` has run:
+## caps join it.
+var _record: Dictionary = {}
 
 
 func _init(target: ShipKit, skin_material: Material, frame_material: Material) -> void:
@@ -43,6 +46,8 @@ func add_station(z: float, profile: PackedVector2Array) -> void:
 ## styles the face between station `segment` and the next, along profile edge `edge` (from
 ## point `edge` to the next one). `frames` false = skin only.
 func build(style := Callable(), frames := true) -> void:
+	if kit.recorder:
+		_record = kit.recorder.open("hulls", _record_of(style, frames), kit.group)
 	if frames:
 		_build_frames()
 	for seg in stations.size() - 1:
@@ -64,6 +69,29 @@ func build(style := Callable(), frames := true) -> void:
 			var b1 := Vector3(pb[(e + 1) % n].x, pb[(e + 1) % n].y, b["z"])
 			var out := _edge_outward(pa, e)
 			face([a0, a1, b1, b0], out, mat, tag, solid)
+	if kit.recorder:
+		kit.recorder.close()
+
+
+## This section for the ship file: its sizes, stations, and the style and frame-skip
+## callables evaluated for every face and ring girder (SHIP_FORMAT_PLAN 4.6).
+func _record_of(style: Callable, frames: bool) -> Dictionary:
+	var faces: Array = []
+	for seg in stations.size() - 1:
+		for e in (stations[seg]["profile"] as PackedVector2Array).size():
+			faces.append([seg, e, style.call(seg, e) if style.is_valid() else {}])
+	var skips: Array = []
+	if frames and frame_skip.is_valid():
+		for k in stations.size():
+			for i in (stations[k]["profile"] as PackedVector2Array).size():
+				if frame_skip.call(k, i):
+					skips.append([k, i])
+	var st: Array = []
+	for s in stations:
+		st.append({"z": s["z"], "profile": s["profile"]})
+	return {"skin": skin, "frame_width": frame_width, "frame_height": frame_height, "node_size": node_size,
+			"frames": frames, "skin_mat": skin_mat, "frame_mat": frame_mat, "stations": st, "_faces": faces,
+			"frame_skip": skips, "caps": []}
 
 
 ## Skin over a flat or nearly flat face given by its corners in order (3 or 4 of them).
@@ -88,11 +116,19 @@ func face(corners: Array, outward: Vector3, mat: Material, tag: String = "", sol
 ## An end cap at station z: plates over each convex outline (x, y) in `pieces`, facing
 ## `facing` (-1 = forward, +1 = aft).
 func cap(z: float, pieces: Array, facing: float, mat: Material, tag: String = "") -> void:
+	if kit.recorder and not _record.is_empty():
+		var c := {"z": z, "facing": facing, "mat": mat, "pieces": pieces}
+		if tag != "":
+			c["tag"] = tag
+		(_record["caps"] as Array).append(c)
+		kit.recorder.open("", {}, kit.group)
 	for outline: PackedVector2Array in pieces:
 		var pts: Array = []
 		for p in outline:
 			pts.append(Vector3(p.x, p.y, z))
 		face(pts, Vector3(0, 0, facing), mat, tag)
+	if kit.recorder and not _record.is_empty():
+		kit.recorder.close()
 
 
 func _build_frames() -> void:

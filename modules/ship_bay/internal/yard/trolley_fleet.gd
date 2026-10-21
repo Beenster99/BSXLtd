@@ -25,6 +25,9 @@ const Screen := preload("res://modules/ship_bay/internal/yard/trolley_panel.gd")
 const WristStock := preload("res://modules/ship_bay/internal/yard/wrist_stock.gd")
 const WristMachines := preload("res://modules/ship_bay/internal/yard/wrist_machines.gd")
 const RemoteView := preload("res://modules/ship_bay/internal/yard/remote_view.gd")
+const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
+## While a clean-up has parts no trolley was free for, how often it asks again, seconds.
+const CLEAN_UP_RETRY := 1.5
 
 ## Parking bays in Deliveries, by the east wall: trolley id -> [floor point, yaw].
 const PARKING := {
@@ -74,6 +77,7 @@ var _queue: Dictionary = {}
 ## The screen a player opened with F on the TV (null when shut), and the one on the TV.
 var panel: Screen
 var _deck_send := 0.0
+var _clean_clock := 0.0
 
 
 func _ready() -> void:
@@ -114,7 +118,9 @@ func _ready() -> void:
 			if held == "" or not _drives(id):
 				continue
 			var info := _bus.crate_info(held)
-			if not info.has("to"):
+			if ["refurb", "grind"].has(str(info.get("route", ""))):
+				jobs[id] = {"do": "to_line", "phase": "find", "crate": held}
+			elif not info.has("to"):
 				jobs[id] = {"do": "put_away", "phase": "find"}
 			elif trolleys[id].is_picker():
 				# Picked goods still on the lift: hand them over.
@@ -152,6 +158,11 @@ func build_nav() -> void:
 func _physics_process(delta: float) -> void:
 	if nav == null:
 		build_nav()
+	if _bus and _bus.cleaning:
+		_clean_clock -= delta
+		if _clean_clock <= 0.0:
+			_clean_clock = CLEAN_UP_RETRY
+			_bus.clean_up()
 	_lead(delta)
 	for id: String in trolleys:
 		var t: Trolley = trolleys[id]
@@ -438,7 +449,7 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		return
 	if command == "put_away" and t.is_picker():
 		return   # the picking lift only fetches
-	if command == "beam" and (["fetch", "deliver", "put_away", "beam"].has(str((jobs[id] as Dictionary).get("do", ""))) or _bus.trolley_cargo(id) != ""):
+	if command == "beam" and (["fetch", "deliver", "put_away", "beam", "to_line"].has(str((jobs[id] as Dictionary).get("do", ""))) or _bus.trolley_cargo(id) != ""):
 		var later := args.duplicate()
 		later["command"] = "beam"
 		(_queue.get_or_add(id, []) as Array).append(later)
@@ -481,7 +492,7 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		"beam":
 			var from: Vector3 = args.get("from", t.global_position)
 			jobs[id] = {"do": "beam", "phase": "to_part", "slot": str(args.get("slot", "")), "component": str(args.get("component", "")),
-					"condition": float(args.get("condition", 1.0)), "from": from}
+					"condition": float(args.get("condition", 1.0)), "from": from, "route": str(args.get("route", "store"))}
 			if _go_under(t, from):
 				t.show_status("TO THE SHIP")
 			else:
@@ -524,6 +535,8 @@ func _run_job(id: String, t: Trolley) -> void:
 			_deliver(id, t, job)
 		"beam":
 			_beam(id, t, job)
+		"to_line":
+			_to_line(id, t, job)
 
 
 ## Following a player: stays where it is while within a safe distance of them, else heads for
@@ -674,7 +687,7 @@ func _beam(id: String, t: Trolley, job: Dictionary) -> void:
 		"lifting":
 			if t.deck_ready():
 				job["phase"] = "landing"
-				_bus.land_beamed(str(job["slot"]), id, str(job["component"]), float(job["condition"]))
+				_bus.land_beamed(str(job["slot"]), id, str(job["component"]), float(job["condition"]), str(job.get("route", "store")))
 
 
 ## Plans a way to stand by the part at `from`: beside it first, then further round it.
@@ -699,8 +712,57 @@ func _go_under(t: Trolley, from: Vector3) -> bool:
 func _on_beamed(crate_id: String, trolley_id: String, _component: String, _slot_id: String) -> void:
 	if not trolleys.has(trolley_id) or not _drives(trolley_id):
 		return
-	jobs[trolley_id] = {"do": "put_away", "phase": "find", "crate": crate_id}
 	_bus.command_trolley(trolley_id, "deck", {"height": Trolley.DECK_MIN})
+	if ["refurb", "grind"].has(str(_bus.crate_info(crate_id).get("route", ""))):
+		# A clean-up sorted it for the line: to the in-feed by the grinder.
+		jobs[trolley_id] = {"do": "to_line", "phase": "find", "crate": crate_id}
+		return
+	jobs[trolley_id] = {"do": "put_away", "phase": "find", "crate": crate_id}
+
+
+## The clean-up's line job: take a part sorted for the line to a free in-feed pallet and set
+## it down there (the line's "feed"), waiting while the in-feed is full.
+func _to_line(id: String, t: Trolley, job: Dictionary) -> void:
+	var crate := str(job.get("crate", ""))
+	match str(job.get("phase", "")):
+		"find":
+			if not t.deck_ready():
+				return
+			var spot := _free_in_spot(id)
+			if spot < 0:
+				t.show_status("IN-FEED FULL")
+				return
+			job["spot"] = spot
+			job["phase"] = "to_feed"
+			if not _go(t, RefurbLine.IN_SPOTS[spot], PI * 0.5):
+				_fail(id, t, "NO ROUTE")
+				return
+			t.show_status("TO THE LINE")
+		"to_feed":
+			if _arrived(t):
+				job["phase"] = "setting_down"
+				_bus.line_request("feed", {"crate": crate})
+		"setting_down":
+			if _bus.trolley_cargo(id) != crate:
+				_release(id)
+				jobs[id] = {"do": "park"}
+				_go(t, PARKING[id][0], PARKING[id][1])
+				t.show_status("AT THE LINE")
+
+
+## An in-feed pallet nothing stands on and no other trolley is headed for, or -1.
+func _free_in_spot(id: String) -> int:
+	var taken := {}
+	for c: Dictionary in _bus.line_crates().values():
+		if str(c.line) == "in":
+			taken[int(c.get("in_spot", 0))] = true
+	for o: String in jobs:
+		if o != id and str((jobs[o] as Dictionary).get("do", "")) == "to_line" and (jobs[o] as Dictionary).has("spot"):
+			taken[int(jobs[o]["spot"])] = true
+	for i in RefurbLine.IN_SPOTS.size():
+		if not taken.has(i):
+			return i
+	return -1
 
 
 ## The smallest free hover trolley that carries `goods_kind` (the nearest of a size), or ""
@@ -830,6 +892,8 @@ func _next_crate(id: String, t: Trolley) -> String:
 		var c: Dictionary = crates[cid]
 		if str(c.get("carrier", "")) != "" or (_reserved_crates.has(cid) and _reserved_crates[cid] != id):
 			continue
+		if str(c.get("line", "")) == "in":
+			continue   # waiting on the line's in-feed, not for the stores
 		if not t.carries(Layout.kind_for(float(c["mass"]))):
 			continue
 		# Leave a crate for a smaller trolley that is free to take it.

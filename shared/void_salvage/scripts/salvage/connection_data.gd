@@ -1,12 +1,13 @@
 class_name ConnectionData
 extends RefCounted
-## Game state for one joint holding two parts together: a weld, rivet, bolt, or a plug
-## connector joining two spans of a wiring loom.
+## Game state for one joint holding two parts together: a weld, rivet, bolt, a plug
+## connector joining two spans of a wiring loom, or a spot weld tacking a fitting down.
 ##
 ## Tools (Weekend 4) reduce health. At zero the connection breaks, and if nothing else holds
 ## a part on, the part floats free.
 
-enum Kind { WELD, RIVET, BOLT, CONNECTOR }
+## Append only: the ints are saved and shared (BSX, the wreck and ship files).
+enum Kind { WELD, RIVET, BOLT, CONNECTOR, SPOT }
 
 ## Starting health per kind, in damage points. A grinder or cutter will remove a set
 ## number of points per second, so these decide how long each joint takes to undo.
@@ -15,6 +16,7 @@ const MAX_HEALTH: Dictionary = {
 	Kind.RIVET: 40.0,
 	Kind.BOLT: 80.0,
 	Kind.CONNECTOR: 30.0,
+	Kind.SPOT: 30.0,
 }
 
 const KIND_NAMES: Dictionary = {
@@ -22,7 +24,12 @@ const KIND_NAMES: Dictionary = {
 	Kind.RIVET: "RIVET",
 	Kind.BOLT: "BOLT",
 	Kind.CONNECTOR: "CONNECTOR",
+	Kind.SPOT: "SPOT",
 }
+
+## The share of bolts rusted solid by default (`is_seized`; a socket may be tuned to
+## another share).
+const SEIZED_CHANCE: float = 0.15
 
 var id: int
 var kind: Kind

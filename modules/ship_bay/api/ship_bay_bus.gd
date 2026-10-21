@@ -52,6 +52,9 @@ signal remote_driving_changed(on: bool)
 signal scrap_recycled(item_id: String, qty: int, materials: Dictionary)
 ## The refurbishment line in Pre-assembly changed (line_state()).
 signal line_changed
+## A clean-up sent a trolley for a part lying loose in the yard (Tools adds it to the parts
+## it is waiting on a trolley for, as with beam_to_trolley).
+signal clean_up_claimed(slot_id: String, trolley_id: String)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -87,6 +90,13 @@ var fleet: Node
 var remote_driving := false
 ## Slot id -> the trolley sent for a part beamed off the ship, until it lands or is called off.
 var _beam_claims: Dictionary = {}
+## Slot id -> {component, condition, body (the part's Node3D)}: parts off the ship lying
+## loose in the yard (Tools tells us, note_loose), for a trolley clean-up to sort.
+var _loose: Dictionary = {}
+## Slot id -> the clean-up's route for a part a trolley has been sent for.
+var _clean_routes: Dictionary = {}
+## True from CLEAN UP until every loose part has had a trolley sent for it.
+var cleaning := false
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
 ## runs without it: tests that switch only part of the game on, and solo builds).
 var _net: Node
@@ -526,13 +536,99 @@ func beam_to_trolley(slot_id: String, component: String, condition: float, from:
 		return str(_beam_claims[slot_id])
 	if fleet == null or not is_instance_valid(fleet):
 		return ""
+	return _send_for_part(slot_id, component, condition, from, "store")
+
+
+func _send_for_part(slot_id: String, component: String, condition: float, from: Vector3, route: String) -> String:
 	var mass := float(StorageLayout.items().get(component, {}).get("mass", 0.0))
 	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(mass), from, _beam_claims.values()))
 	if id == "":
 		return ""
 	_beam_claims[slot_id] = id
-	command_trolley(id, "beam", {"slot": slot_id, "component": component, "condition": condition, "from": from})
+	command_trolley(id, "beam", {"slot": slot_id, "component": component, "condition": condition, "from": from, "route": route})
 	return id
+
+
+# --- Cleaning up the yard ------------------------------------------------------------------
+
+## A loose part in this condition (0..1) or better goes back in the stores; worse than
+## that it goes to the refurbishment line, and at the survey's grind cut-off or worse
+## straight to the grinder.
+const STORE_FROM := 0.9
+
+
+## Where a clean-up takes a loose part in this condition: "store", "refurb" or "grind".
+static func clean_up_route(condition: float) -> String:
+	if condition >= STORE_FROM:
+		return "store"
+	return "grind" if condition <= GRIND_BELOW else "refurb"
+
+
+## The condition (0..1) a part fitted in this slot of the ship in the bay is in: the active
+## job's work order says (current_fit), else as new.
+func fitted_condition(slot_id: String) -> float:
+	var contracts := Modules.bus("contracts") as ContractsBus
+	var job := contracts.get_active_job() if contracts else null
+	if job and job.order:
+		for f: Dictionary in job.order.current_fit:
+			if str(f.get("slot", "")) == slot_id:
+				return clampf(float(f.get("condition", 1.0)), 0.0, 1.0)
+	return 1.0
+
+
+## Tools: a part off the ship is lying loose in the yard (or its condition changed: call
+## again). `body` is the part itself, so the clean-up finds it where it has come to rest.
+func note_loose(slot_id: String, component: String, condition: float, body: Node3D) -> void:
+	_loose[slot_id] = {"component": component, "condition": clampf(condition, 0.0, 1.0), "body": body}
+
+
+## Tools: the part is loose no longer (a player's beam took it, it went back in its slot,
+## or it is gone).
+func forget_loose(slot_id: String) -> void:
+	_loose.erase(slot_id)
+
+
+## Parts lying loose in the yard, nearest the bay doors first: [{slot, component, name,
+## condition, at (yard space), route ("store", "refurb", "grind"), trolley (sent, or "")}].
+func loose_parts() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for slot: String in _loose.keys():
+		var p: Dictionary = _loose[slot]
+		var body: Node3D = p["body"] if is_instance_valid(p["body"]) else null
+		if body == null or not body.is_inside_tree():
+			_loose.erase(slot)
+			continue
+		var comp := str(p["component"])
+		var cond := float(p["condition"])
+		var at: Vector3 = body.call("centre") if body.has_method("centre") else body.global_position
+		out.append({"slot": slot, "component": comp, "name": str(StorageLayout.items().get(comp, {}).get("name", comp)),
+				"condition": cond, "at": at, "route": clean_up_route(cond), "trolley": str(_beam_claims.get(slot, ""))})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.slot < b.slot)
+	return out
+
+
+## The wrist's CLEAN UP: sends a free trolley that can carry it for each loose part, which
+## takes it to the stores, the refurbishment line's in-feed or the grinder's by its
+## condition. Parts no trolley is free for wait, and the fleet asks again as trolleys come
+## free (cleaning stays true until all have one). Returns how many trolleys went.
+func clean_up() -> int:
+	if fleet == null or not is_instance_valid(fleet):
+		return 0
+	cleaning = true
+	var sent := 0
+	var waiting := 0
+	for p: Dictionary in loose_parts():
+		if str(p.trolley) != "":
+			continue
+		var id := _send_for_part(str(p.slot), str(p.component), float(p.condition), p.at, str(p.route))
+		if id == "":
+			waiting += 1
+			continue
+		_clean_routes[str(p.slot)] = str(p.route)
+		sent += 1
+		clean_up_claimed.emit(str(p.slot), id)
+	cleaning = waiting > 0
+	return sent
 
 
 ## Calls off the trolley sent for a part (the player took it with their own beam): it parks.
@@ -541,6 +637,7 @@ func cancel_beam(slot_id: String) -> void:
 		return
 	var id := str(_beam_claims[slot_id])
 	_beam_claims.erase(slot_id)
+	_clean_routes.erase(slot_id)
 	command_trolley(id, "park")
 
 
@@ -552,8 +649,8 @@ func trolley_deck_position(trolley_id: String) -> Variant:
 
 
 ## The trolley under a beamed part has its deck up: the part lands on it (its driver asks).
-func land_beamed(slot_id: String, trolley_id: String, component: String, condition: float) -> void:
-	var payload := {"slot": slot_id, "trolley": trolley_id, "component": component, "condition": condition}
+func land_beamed(slot_id: String, trolley_id: String, component: String, condition: float, route := "store") -> void:
+	var payload := {"slot": slot_id, "trolley": trolley_id, "component": component, "condition": condition, "route": route}
 	if _net:
 		_net.call("request", "ship_bay.beamed", payload)
 	elif _check_beamed(0, payload) is Dictionary:
@@ -706,6 +803,14 @@ func line_state() -> Dictionary:
 func line_candidates() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var items := StorageLayout.items()
+	# Parts a clean-up brought to the in-feed come first, in the order they came.
+	var fed := line_crates().keys().filter(func(id: String) -> bool: return str(_stock.crates[id]["line"]) == "in")
+	fed.sort_custom(func(a: String, b: String) -> bool: return int(a.get_slice("/", 1)) < int(b.get_slice("/", 1)))
+	var infeed: Array[Dictionary] = []
+	for id: String in fed:
+		var c: Dictionary = _stock.crates[id]
+		infeed.append({"crate": id, "location": "IN-FEED", "item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]),
+				"condition": float(c["condition"]), "route": str(c.get("route", survey_route(float(c["condition"]))))})
 	for loc: String in _stock.stock:
 		var have: Dictionary = _stock.stock[loc]
 		var cond := float(have.get("condition", 1.0))
@@ -715,7 +820,8 @@ func line_candidates() -> Array[Dictionary]:
 					"qty": int(have["qty"]), "condition": cond, "route": survey_route(cond)})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return a.condition < b.condition if a.condition != b.condition else a.location < b.location)
-	return out
+	infeed.append_array(out)
+	return infeed
 
 
 ## What the survey says for goods in this condition: "grind" or "refurb".
@@ -744,7 +850,8 @@ func dust_kg() -> float:
 
 
 ## Crates the line has set down and no trolley has picked up yet: crate id -> crate
-## ("line" is "out" for a refurbished lot on an output pallet, "dust" for the vessel).
+## ("line" is "out" for a refurbished lot on an output pallet, "dust" for the vessel, "in"
+## for a part a clean-up left on the in-feed, with its "route").
 func line_crates() -> Dictionary:
 	var out := {}
 	for id: String in _stock.crates:
@@ -755,7 +862,9 @@ func line_crates() -> Dictionary:
 
 
 ## Asks the line to do something; line_changed follows on every peer. `op`:
-## - "load" {location}: the lot on a storage location goes into the survey (whole)
+## - "load" {location}: the lot on a storage location goes into the survey (whole); or
+##   {crate} a part waiting on the in-feed: into the survey, or the grinder (route "grind")
+## - "feed" {crate}: a trolley sets a part a clean-up brought down on the in-feed
 ## - "start" {station}: the machine holding a lot runs it
 ## - "send" {station}: a lot the machine has finished moves on (from the survey to the
 ##   grinder or the straightener, by its route; from the coater onto an output pallet)
@@ -826,6 +935,18 @@ func _free_out_spot() -> int:
 	return -1
 
 
+## The first in-feed place no waiting part stands on, or -1.
+func _free_in_spot() -> int:
+	var taken := {}
+	for c: Dictionary in line_crates().values():
+		if str(c["line"]) == "in":
+			taken[int(c.get("in_spot", 0))] = true
+	for i in RefurbLine.IN_SPOTS.size():
+		if not taken.has(i):
+			return i
+	return -1
+
+
 func _check_line(sender: int, payload: Dictionary) -> Variant:
 	var line := line_state()
 	var st: Dictionary = line["stations"]
@@ -834,6 +955,15 @@ func _check_line(sender: int, payload: Dictionary) -> Variant:
 	var at: Dictionary = st.get(s, {})
 	match op:
 		"load":
+			if payload.has("crate"):
+				var cid := str(payload["crate"])
+				var c: Dictionary = _stock.crates.get(cid, {})
+				if str(c.get("line", "")) != "in" or str(c.get("carrier", "")) != "":
+					return "no such part on the in-feed"
+				var into := "grinder" if str(c.get("route", "")) == "grind" else "survey"
+				if not (st[into] as Dictionary).is_empty():
+					return "the %s has a lot in it" % into
+				return {"op": op, "crate": cid, "into": into}
 			if not (st["survey"] as Dictionary).is_empty():
 				return "the survey has a lot in it"
 			var loc := str(payload.get("location", ""))
@@ -875,6 +1005,15 @@ func _check_line(sender: int, payload: Dictionary) -> Variant:
 			return {"op": op, "route": route}
 		"auto":
 			return {"op": op, "on": bool(payload.get("on", false))}
+		"feed":
+			var cid := str(payload.get("crate", ""))
+			var c: Dictionary = _stock.crates.get(cid, {})
+			if c.is_empty() or str(c.get("carrier", "")) == "" or not ["refurb", "grind"].has(str(c.get("route", ""))):
+				return "no part for the line on a trolley"
+			var spot := _free_in_spot()
+			if spot < 0:
+				return "the in-feed is full"
+			return {"op": op, "crate": cid, "spot": spot}
 		"empty_dust":
 			if dust_kg() <= 0.0:
 				return "the vessel is empty"
@@ -892,6 +1031,19 @@ func _apply_line(payload: Dictionary) -> void:
 	var stock_moved := false
 	match str(payload.get("op", "")):
 		"load":
+			if payload.has("crate"):
+				var c: Dictionary = _stock.crates.get(str(payload["crate"]), {})
+				var into := str(payload.get("into", "survey"))
+				if c.is_empty() or not (st[into] as Dictionary).is_empty():
+					return
+				var cond := float(c["condition"])
+				st[into] = {"state": "waiting", "lot": {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]),
+						"condition": cond, "mass": float(c["mass"]), "route": str(c.get("route", survey_route(cond)))}}
+				_stock.crates.erase(str(payload["crate"]))
+				stock_moved = true
+				line_changed.emit()
+				stock_changed.emit()
+				return
 			var loc := str(payload["location"])
 			var have: Dictionary = _stock.stock.get(loc, {})
 			if have.is_empty() or not (st["survey"] as Dictionary).is_empty():
@@ -944,6 +1096,17 @@ func _apply_line(payload: Dictionary) -> void:
 				st["survey"]["lot"]["route"] = str(payload["route"])
 		"auto":
 			_line["auto"] = bool(payload["on"])
+		"feed":
+			var c: Dictionary = _stock.crates.get(str(payload["crate"]), {})
+			if c.is_empty():
+				return
+			var p: Vector3 = RefurbLine.IN_SPOTS[int(payload["spot"])]
+			c["carrier"] = ""
+			c["spot"] = -1
+			c["at"] = [p.x, p.y, p.z]
+			c["line"] = "in"
+			c["in_spot"] = int(payload["spot"])
+			stock_moved = true
 		"empty_dust":
 			var kg := dust_kg()
 			var p: Vector3 = RefurbLine.DUST_SPOT
@@ -1102,8 +1265,9 @@ func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
 		return "that trolley is full"
 	if str(payload.get("component", "")) == "":
 		return "no part"
+	var route := str(payload.get("route", "store"))
 	return {"slot": str(payload.get("slot", "")), "trolley": by, "component": str(payload["component"]),
-			"condition": clampf(float(payload.get("condition", 1.0)), 0.0, 1.0)}
+			"condition": clampf(float(payload.get("condition", 1.0)), 0.0, 1.0), "route": route if ["refurb", "grind"].has(route) else "store"}
 
 
 func _apply_beamed(payload: Dictionary) -> void:
@@ -1111,8 +1275,14 @@ func _apply_beamed(payload: Dictionary) -> void:
 	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by)
 	if _beam_claims.get(str(payload["slot"])) == by:
 		_beam_claims.erase(str(payload["slot"]))
+	_clean_routes.erase(str(payload["slot"]))
+	_loose.erase(str(payload["slot"]))
 	if id == "":
 		return
+	if str(payload.get("route", "store")) != "store":
+		# For the line: the trolley takes it to the in-feed, not the shelves.
+		_stock.crates[id]["route"] = str(payload["route"])
+		_stock.crates[id]["grade"] = "for the grinder" if str(payload["route"]) == "grind" else "for refurbishing"
 	stock_changed.emit()
 	crate_carried.emit(id, by)
 	part_beamed.emit(id, by, str(payload["component"]), str(payload["slot"]))
