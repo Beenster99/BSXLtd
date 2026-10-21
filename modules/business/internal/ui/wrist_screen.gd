@@ -196,6 +196,15 @@ func _centred(c: Control) -> CenterContainer:
 	return box
 
 
+## Text on a docket: light on glass, ink on the paper an opaque screen (a TV) draws.
+func _ink() -> Color:
+	return T.TEXT if glass else T.INK
+
+
+func _ink_dim() -> Color:
+	return T.DIM if glass else T.INK_DIM
+
+
 func _refresh_side() -> void:
 	for c in _side.get_children():
 		c.queue_free()
@@ -203,7 +212,7 @@ func _refresh_side() -> void:
 	var body := po.body as VBoxContainer
 	var lines := basket_as_lines()
 	if lines.is_empty():
-		body.add_child(T.label("Empty. Press + on a part to add it.", "body", 16, T.DIM))
+		body.add_child(T.label("Empty. Press + on a part to add it.", "body", 16, _ink_dim()))
 	for line: Dictionary in lines:
 		body.add_child(_po_line(bus.get_listing(line.listing_id), int(line.qty)))
 	var q := bus.quote_market(lines) if not lines.is_empty() else null
@@ -211,7 +220,7 @@ func _refresh_side() -> void:
 	body.add_child(_sum("DUE AT DELIVERIES", _due_text(q)))
 	body.add_child(_sum("CASH AFTER", "%s CR" % T.money(bus.get_cash() - cost)))
 	var total := HBoxContainer.new()
-	var tl := T.label("TOTAL", "display_bold", 24, T.TEXT)
+	var tl := T.label("TOTAL", "display_bold", 24, _ink())
 	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	total.add_child(tl)
 	total.add_child(T.label("%s CR" % T.money(cost), "mono_bold", 24, T.ORANGE))
@@ -242,9 +251,9 @@ func _refresh_side() -> void:
 	(on.body as VBoxContainer).add_child(list.get_parent())
 	var open := bus.get_orders(PartsOrder.State.PLACED)
 	if open.is_empty():
-		list.add_child(T.label("Nothing on order.", "body", 16, T.DIM))
+		list.add_child(T.label("Nothing on order.", "body", 16, _ink_dim()))
 	for o in open:
-		list.add_child(_order_row(o))
+		list.add_child(_order_row(o, true))
 	_side.add_child(on.panel)
 
 
@@ -252,12 +261,15 @@ func _po_line(l: MarketListing, qty: int) -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 4)
 	var s := bus.supplier(l.supplier_id)
-	h.add_child(T.cell_text(bus.part_name(l.part), "%s  ·  %s" % [s.display_name if s else l.supplier_id, PartCondition.label(l.condition)]))
+	var names := T.cell_text(bus.part_name(l.part), "%s  ·  %s" % [s.display_name if s else l.supplier_id, PartCondition.label(l.condition)])
+	for i in names.get_child_count():
+		(names.get_child(i) as Label).add_theme_color_override("font_color", _ink() if i == 0 else _ink_dim())
+	h.add_child(names)
 	var minus := T.button("−", false, 15, false, glass)
 	minus.custom_minimum_size = Vector2(26, 24)
 	minus.pressed.connect(add_to_basket.bind(l.id, -1))
 	h.add_child(minus)
-	var ql := T.label(str(qty), "mono_bold", 17, T.TEXT)
+	var ql := T.label(str(qty), "mono_bold", 17, _ink())
 	ql.custom_minimum_size.x = 26
 	ql.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	h.add_child(ql)
@@ -266,15 +278,15 @@ func _po_line(l: MarketListing, qty: int) -> Control:
 	plus.disabled = qty >= l.available
 	plus.pressed.connect(add_to_basket.bind(l.id, 1))
 	h.add_child(plus)
-	h.add_child(T.cell(T.money(l.unit_price * qty), 76, T.TEXT))
+	h.add_child(T.cell(T.money(l.unit_price * qty), 76, _ink()))
 	return h
 
 
-func _order_row(o: PartsOrder) -> Control:
+func _order_row(o: PartsOrder, on_paper := false) -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", -2)
 	var top := HBoxContainer.new()
-	var idl := T.label(o.id, "mono_bold", 15, T.TEXT)
+	var idl := T.label(o.id, "mono_bold", 15, _ink() if on_paper else T.TEXT)
 	idl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(idl)
 	top.add_child(T.tag("delayed" if o.delayed else "on its way", T.BAD if o.delayed else T.AMBER, 13))
@@ -284,7 +296,7 @@ func _order_row(o: PartsOrder) -> Control:
 	var names := PackedStringArray()
 	for line in o.lines:
 		names.append("%d× %s" % [line.qty, bus.part_name(line.part)])
-	var w := T.label(", ".join(names), "body", 14, T.DIM)
+	var w := T.label(", ".join(names), "body", 14, _ink_dim() if on_paper else T.DIM)
 	w.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(w)
 	return col
@@ -292,10 +304,10 @@ func _order_row(o: PartsOrder) -> Control:
 
 func _sum(what: String, value: String) -> Control:
 	var h := HBoxContainer.new()
-	var l := T.label(what, "display_medium", 15, T.DIM)
+	var l := T.label(what, "display_medium", 15, _ink_dim())
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(l)
-	h.add_child(T.label(value, "mono_medium", 15, T.TEXT))
+	h.add_child(T.label(value, "mono_medium", 15, _ink()))
 	return h
 
 

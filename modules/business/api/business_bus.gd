@@ -833,12 +833,12 @@ func _shot_terminal(scene: Node) -> void:
 	var front := _front(scene)
 	if front == null:
 		return
-	var screen: Control = front.call("open_terminal")
-	var picked := 0
+	# The purchase order is the wrist's (shared with the TVs): fill it, then open on it.
+	wrist_basket.clear()
 	for l in get_listings():
-		if l.available >= 2 and picked < 4 and not l.id.begins_with("S-"):
-			screen.call("add_to_basket", l.id, 1 + picked % 2)
-			picked += 1
+		if l.available >= 2 and wrist_basket.size() < 4 and not l.id.begins_with("S-"):
+			wrist_basket[l.id] = 1 + wrist_basket.size() % 2
+	front.call("open_terminal")
 
 
 func _shot_monitor(scene: Node) -> void:
