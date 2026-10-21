@@ -12,10 +12,10 @@ const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 ## the door to stock. Stock: the south wall in the clear corner by the door to prep. Prep and
 ## pre-assembly: the north walls, clear of the benches and stations.
 const MONITORS := {
-	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.0, 2.85, -23.75)),
-	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 2.7, -24.25)),
-	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 2.7, -45.75)),
-	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.0, 2.85, -23.75)),
+	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.0, 1.9, -23.75)),
+	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 1.9, -24.25)),
+	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 1.9, -45.75)),
+	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.0, 1.9, -23.75)),
 }
 ## The screen's texture size; the terminal is laid out for it. 16:9 like a TV.
 const SCREEN_PX := Vector2i(1280, 720)
@@ -305,7 +305,8 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	for x: float in [-0.18, 0.18]:
 		_box(m, Vector3(0.06, 0.3, 0.1), Vector3(x, 0, 0.1), dark)
 	_box(m, Vector3(w - 0.4, h - 0.3, 0.06), Vector3(0, 0, 0.17), gloss)
-	_box(m, Vector3(w + 0.07, h + 0.07, 0.04), Vector3(0, 0, DEPTH - 0.02), gloss)
+	# The bezel stops a centimetre short of the screen so the two never share a plane.
+	_box(m, Vector3(w + 0.07, h + 0.07, 0.04), Vector3(0, 0, DEPTH - 0.03), gloss)
 	# A chin under the panel: BSX in orange and a standby light.
 	_box(m, Vector3(w + 0.07, 0.07, 0.035), Vector3(0, -h * 0.5 - 0.07, DEPTH - 0.025), gloss)
 	var badge := Label3D.new()
@@ -483,8 +484,11 @@ func stage_monitor_view(i := 0) -> Camera3D:
 	var cam := Camera3D.new()
 	cam.name = "BusinessShotCamera"
 	add_child(cam)
-	cam.global_position = m.global_position + m.global_basis.z * 3.8 + m.global_basis.x * 1.2 + Vector3(0, -1.1, 0)
-	cam.look_at(m.global_position + Vector3(0, -0.15, 0))
+	# From a walker's eye height (1.62 m), a few steps back and to one side.
+	var eye := m.global_position + m.global_basis.z * 3.8 + m.global_basis.x * 1.2
+	eye.y = 1.62
+	cam.global_position = eye
+	cam.look_at(m.global_position)
 	cam.fov = 60
 	cam.current = true
 	(m.get_node("Prompt") as Label3D).visible = true
