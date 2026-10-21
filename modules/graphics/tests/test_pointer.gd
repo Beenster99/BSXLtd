@@ -73,6 +73,18 @@ func run_tests() -> void:
 	check(get_tree().get_nodes_in_group("gfx_ping").filter(func(n): return not n.is_queued_for_deletion()).is_empty(),
 			"markers are gone")
 
+	# Through Multiplayer (solo): ping() comes back as ping_received and is drawn from it.
+	var net := Modules.bus("multiplayer")
+	if net and net.has_method("ping"):
+		pointer.attach_net(net)
+		bus.ping(Vector3(0, 1.5, -7.5), crate)
+		await frames(3)
+		check(pointer.live.size() == 1, "a ping through Multiplayer comes back and is drawn")
+		check(pointer.highlighter.is_lit(crate), "the crate lights from the crew ping (by its id)")
+		pointer.detach()
+		pointer.attach_net(null)
+		check(mesh.material_overlay == null, "detach clears pings and highlights")
+
 	# Switched off, nothing highlights.
 	Flags.set_flag(GfxBus.HOVER, false)
 	crate.global_position = Vector3(0, 1.5, -2.5)
