@@ -20,7 +20,20 @@ var anchored := false
 ## in: the ship shows the part, so this copy hides and stops colliding.
 var seated := false
 
+## How good it still is (0..1): Ship and Bay's fitted condition when it came off, knocked down
+## by hard landings (ship_bay.clean_up). Their clean-up trolleys sort parts by it.
+var condition := 1.0
+
+## Landings harder than this (m/s of speed lost in a step) knock the condition down, by
+## KNOCK_PER_MS for each m/s over it.
+const KNOCK_MS := 4.0
+const KNOCK_PER_MS := 0.04
+
 var _shape: CollisionShape3D
+var _last_velocity := Vector3.ZERO
+
+## It hit something hard and lost condition.
+signal knocked(part: TradesLoosePart)
 
 
 ## Builds the part from its slot: Ship and Bay's copy of the model pieces when it offers one,
@@ -80,12 +93,30 @@ func take_hold() -> void:
 	freeze = true
 
 
-## Let go: physics has it again and it drops.
-func drop() -> void:
+## Let go: physics has it again and it drops, moving at `velocity` (a throw).
+func drop(velocity := Vector3.ZERO) -> void:
 	held = false
 	anchored = false
 	freeze = false
 	sleeping = false
+	linear_velocity = velocity
+	_last_velocity = velocity
+
+
+func _physics_process(_delta: float) -> void:
+	if freeze:
+		_last_velocity = Vector3.ZERO
+		return
+	knock((_last_velocity - linear_velocity).length())
+	_last_velocity = linear_velocity
+
+
+## A hit that took `speed_lost` m/s off it: hard enough, the condition drops.
+func knock(speed_lost: float) -> void:
+	if speed_lost <= KNOCK_MS:
+		return
+	condition = maxf(0.0, condition - (speed_lost - KNOCK_MS) * KNOCK_PER_MS)
+	knocked.emit(self)
 
 
 ## Where the aim line from `from` along `dir` first meets its outline, or null.

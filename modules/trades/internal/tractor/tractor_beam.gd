@@ -82,6 +82,8 @@ func _ready() -> void:
 		# Ship and Bay's, once it has trolleys that take parts.
 		if _bus.has_signal("part_beamed"):
 			_bus.connect("part_beamed", _on_part_beamed)
+		if _bus.has_signal("clean_up_claimed"):
+			_bus.connect("clean_up_claimed", _on_clean_up_claimed)
 	_beam_mat = StandardMaterial3D.new()
 	_beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -159,6 +161,10 @@ func press() -> void:
 	_take(part)
 
 
+## How fast the held part is moving (m/s), so letting go throws it.
+var _held_velocity := Vector3.ZERO
+
+
 func release() -> void:
 	if held == null:
 		return
@@ -168,9 +174,12 @@ func release() -> void:
 	if part.seated:
 		_lock(part)
 	else:
-		part.drop()
+		part.drop(_held_velocity if clean_up() else Vector3.ZERO)
 		_end_hold(part)
-		_send_to_trolley(part)
+		if clean_up():
+			_note_loose(part)
+		else:
+			_send_to_trolley(part)
 		station.bay.hint("Let go.")
 	aligned = false
 	_emit(part, false)
@@ -188,6 +197,8 @@ func park() -> bool:
 	else:
 		part.anchor()
 		_end_hold(part)
+		if clean_up():
+			_note_loose(part)
 		station.bay.hint("Parked in the air. Hold left click on it to take it again.")
 	aligned = false
 	_emit(part, false)
@@ -308,7 +319,10 @@ func update(delta: float) -> void:
 		if aligned:
 			target = home
 	var t := 1.0 - exp(-FOLLOW * delta)
+	var was := held.global_position
 	held.global_transform = held.global_transform.interpolate_with(target, t)
+	if delta > 0.0:
+		_held_velocity = (held.global_position - was) / delta
 	var state := _bus.get_slot_state(held.slot_id)
 	if aligned and not held.seated and state == ShipBayBus.SlotState.EMPTY:
 		if _bus.try_position(held.slot_id, held.component):
@@ -339,6 +353,8 @@ func _beam_frame() -> Transform3D:
 
 
 func _take(part: TradesLoosePart) -> void:
+	_forget_loose(part.slot_id)
+	_held_velocity = Vector3.ZERO
 	held = part
 	part.take_hold()
 	_distance = clampf(station.bay.worker.aim_origin().distance_to(part.centre()), MIN_M, RANGE_M)
@@ -437,7 +453,15 @@ func _on_component_removed(slot_id: String, comp: String) -> void:
 	var net := _net()
 	if net:
 		net.call("register_mover", unit_id(slot_id), part)
-	_send_to_trolley(part)
+	if clean_up():
+		# Ship and Bay's clean-up (beenster, 0.3.8): it falls where it comes off and lies there,
+		# losing condition on hard landings, until a trolley is told to clear the yard.
+		part.condition = float(_api().call("fitted_condition", slot_id)) if _has("fitted_condition") else 1.0
+		part.knocked.connect(_note_loose)
+		part.drop()
+		_note_loose(part)
+	else:
+		_send_to_trolley(part)
 
 
 ## In its slot again. Seated by the beam, the copy stays (hidden) until the first joint is
@@ -459,6 +483,7 @@ func _finish(part: TradesLoosePart) -> void:
 		_stop_beam()
 	_end_hold(part)
 	_cancel_trolley(part.slot_id)
+	_forget_loose(part.slot_id)
 	loose.erase(part.slot_id)
 	var net := _net()
 	if net:
@@ -534,7 +559,7 @@ func _send_to_trolley(part: TradesLoosePart) -> void:
 	_retry.erase(part.slot_id)
 	if not _has("beam_to_trolley") or to_trolley.has(part.slot_id):
 		return
-	var id := str(_api().call("beam_to_trolley", part.slot_id, part.component, 1.0, part.centre()))
+	var id := str(_api().call("beam_to_trolley", part.slot_id, part.component, part.condition, part.centre()))
 	if id == "":
 		_retry[part.slot_id] = TROLLEY_RETRY_S
 		return
@@ -562,6 +587,31 @@ func _on_part_beamed(_crate_id: String, trolley_id: String, _component: String, 
 		return
 	to_trolley.erase(slot_id)
 	_finish(part)
+
+
+# --- Clean-up (Ship and Bay's flag ship_bay.clean_up) -------------------------------------------
+
+## Loose parts lie where they fall and Ship and Bay's trolleys clear them on request, instead
+## of a trolley coming for each part the moment it's off.
+func clean_up() -> bool:
+	return Flags.is_on("ship_bay.clean_up") and _has("note_loose")
+
+
+## Tells Ship and Bay a part is lying loose (again, with its latest condition).
+func _note_loose(part: TradesLoosePart) -> void:
+	if clean_up() and part != held and loose.get(part.slot_id) == part:
+		_api().call("note_loose", part.slot_id, part.component, part.condition, part)
+
+
+func _forget_loose(slot_id: String) -> void:
+	if Flags.is_on("ship_bay.clean_up") and _has("forget_loose"):
+		_api().call("forget_loose", slot_id)
+
+
+## A clean-up trolley is coming for it: the yard beam draws it on, part_beamed frees it.
+func _on_clean_up_claimed(slot_id: String, trolley_id: String) -> void:
+	if loose.has(slot_id) and loose[slot_id] != held:
+		to_trolley[slot_id] = trolley_id
 
 
 func _update_trolleys(delta: float) -> void:
