@@ -104,6 +104,20 @@ func run_tests() -> void:
 	other.queue_free()
 	yard.call("show_view", "deliveries")
 	check(yard.get("view_camera").current, "a view takes the camera")
+	var kinds := {}
+	for m: MeshInstance3D in yard.find_children("*", "MeshInstance3D", true, false):
+		var mats: Array = [m.material_override]
+		if m.mesh:
+			for i in m.mesh.get_surface_count():
+				mats.append(m.get_active_material(i))
+		for mat: Material in mats:
+			if mat and mat.has_meta("gfx_surface"):
+				kinds[mat] = str(mat.get_meta("gfx_surface"))
+	var counts := {}
+	for k: String in kinds.values():
+		counts[k] = int(counts.get(k, 0)) + 1
+	check(counts == {"concrete": 1, "ground": 1, "epoxy": 4, "asphalt": 2},
+			"the ground paints are tagged for Graphics' surfaces: %s" % [counts])
 	yard.queue_free()
 	await frames(1)
 	bay.unload_ship()
