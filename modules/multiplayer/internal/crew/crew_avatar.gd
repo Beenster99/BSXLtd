@@ -1,7 +1,10 @@
 extends Node3D
 ## Another player in the world: a suit, a helmet and a name tag. The Head child is the mover
-## the player's own camera drives; the body stands under it and turns with it.
+## the player's own camera drives (looking down -Z, like a camera); the body stands under it
+## and turns with it. Other modules find heads by the group HEAD_GROUP, each with the meta
+## "peer_id" (Graphics hangs crewmates' helmet torches on them).
 
+const HEAD_GROUP := "crew_head"
 const EYE_HEIGHT := 1.65
 const SUIT := Color("e8792b")
 const VISOR := Color("16191c")
@@ -12,6 +15,8 @@ var head := Node3D.new()
 func _ready() -> void:
 	head.name = "Head"
 	head.top_level = true
+	head.add_to_group(HEAD_GROUP)
+	head.set_meta("peer_id", int(get_meta("peer_id", 0)))
 	add_child(head)
 	var helmet := _mesh(SphereMesh.new(), SUIT.lightened(0.15))
 	(helmet.mesh as SphereMesh).radius = 0.17

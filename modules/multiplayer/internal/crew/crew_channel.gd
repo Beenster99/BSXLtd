@@ -213,6 +213,7 @@ func _place_avatars() -> void:
 		a = AVATAR.new()
 		a.name = "Crew_%d" % id
 		a.set_meta("player_name", player_name(id))
+		a.set_meta("peer_id", id)
 		world.add_child(a)
 		_avatars[id] = a
 		net.register_mover(head_id(id), a.get_node("Head"))
