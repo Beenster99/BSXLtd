@@ -28,6 +28,7 @@ signal hovered(target: Node)
 const LIGHT := "graphics.light"
 const HOVER := "graphics.hover"
 const PING := "graphics.ping"
+const PROFILER := "graphics.profiler"
 ## Group of things the player can use (highlight on hover, ping targets).
 const INTERACTABLE := "gfx_interactable"
 ## Meta on an interactable: its stable id, the same on every machine.
@@ -37,9 +38,12 @@ const WORLD_GROUP := "gfx_world"
 
 const LightBaseline := preload("res://modules/graphics/internal/light_baseline.gd")
 const PointerLook := preload("res://modules/graphics/internal/pointer_look.gd")
+const Profiler := preload("res://modules/graphics/internal/profiler.gd")
 
 ## Hover highlight and pings.
 var pointer: Node
+## The profiler overlay (null while its flag is off).
+var profiler: CanvasLayer
 
 
 func register_module() -> void:
@@ -61,6 +65,8 @@ func register_module() -> void:
 
 
 func unregister_module() -> void:
+	if Keys.has(Profiler.ACTION):
+		Keys.unregister(Profiler.ACTION)
 	if pointer:
 		pointer.detach()
 	if Flags.changed.is_connected(_on_flags):
@@ -132,3 +138,12 @@ func _on_flags() -> void:
 		pointer.hover_on = Flags.is_on(HOVER)
 		pointer.ping_on = Flags.is_on(PING)
 		pointer.set_process(pointer.hover_on or pointer.ping_on)
+	var want := Flags.is_on(PROFILER)
+	if want and profiler == null:
+		Keys.register(Profiler.ACTION, "Profiler (frame rate, GPU time)", KEY_F3)
+		profiler = Profiler.new()
+		add_child(profiler)
+	elif not want and profiler:
+		profiler.queue_free()
+		profiler = null
+		Keys.unregister(Profiler.ACTION)
