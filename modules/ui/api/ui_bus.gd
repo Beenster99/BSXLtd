@@ -8,8 +8,6 @@ signal notice_posted(text: String)
 
 const MAIN_MENU := "main_menu"
 const SETTINGS := "settings"
-## The wrist screen's own channel: time of day and key binds.
-const SETTINGS_CHANNEL := "ui.settings"
 
 ## The wrist screen (Keys.HOLO in any game scene).
 var holo: WristHolo
@@ -17,6 +15,8 @@ var holo: WristHolo
 var info: InfoPanel
 ## Esc in a game (Menu.open_pause).
 var pause: PauseMenu
+## The "what you're looking at" card (HudSlots look hints).
+var look: LookHints
 
 
 func register_module() -> void:
@@ -34,12 +34,12 @@ func register_module() -> void:
 	add_child(info)
 	pause = PauseMenu.new()
 	add_child(pause)
-	HudSlots.register_holo_channel(SETTINGS_CHANNEL, "Settings", _settings_channel, 900)
+	look = LookHints.new()
+	add_child(look)
 	Menu.register_settings_page(Menu.CHARACTER, "Character", _character_page, 10)
 
 
 func unregister_module() -> void:
-	HudSlots.unregister_holo_channel(SETTINGS_CHANNEL)
 	Menu.unregister_settings_page(Menu.CHARACTER)
 	if holo:
 		holo.close()
@@ -74,9 +74,9 @@ func _on_setting_changed(_section: String, _key: String, _value: Variant) -> voi
 	apply_settings()
 
 
-## The wrist screen's Settings: the time of day on the left, key binds on the right, on
-## the terminal's see-through plates.
-func _settings_channel(glass: bool) -> Control:
+## The in-game settings (the pause menu's Settings): the time of day on the left, key binds
+## on the right, on the terminal's plates (see-through on glass).
+func settings_panel(glass: bool) -> Control:
 	var T := TerminalKit
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
