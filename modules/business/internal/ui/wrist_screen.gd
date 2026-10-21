@@ -2,6 +2,7 @@ extends HBoxContainer
 ## Business's channels on the wrist holo screen, drawn on glass with UI's TerminalKit so they
 ## match the yard terminal. The wrist draws the header and tabs; this is only the body.
 ##   "orders":   the market (search, categories, +), the purchase order, what's on order
+##   "goods":    what's on order and when it lands, and what's in the store
 ##   "accounts": cash, reputation, rent and the ledger
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
@@ -17,6 +18,7 @@ var _search: LineEdit
 var _chips: Control
 var _list: VBoxContainer
 var _side: VBoxContainer
+var _store: VBoxContainer
 var _message := ""
 var _message_good := true
 var _dirty := false
@@ -73,6 +75,11 @@ func _build() -> void:
 		top.add_child(_chips)
 		main.add_child(top)
 		main.add_child(T.columns([["PART  /  SUPPLIER", 0], ["COND.", 92], ["DUE", 58], ["LEFT", 52], ["UNIT CR", 96], ["", 46]]))
+	elif page == "goods":
+		main.add_child(T.columns([["ON ORDER", 0], ["LANDS", 112]]))
+		_side.add_child(T.columns([["IN STORE", 0], ["COND.", 92], ["QTY", 60]]))
+		_store = T.list()
+		_side.add_child(_store.get_parent())
 	else:
 		_side.size_flags_stretch_ratio = 1.6
 		main.size_flags_stretch_ratio = 1.0
@@ -91,6 +98,8 @@ func refresh() -> void:
 		_refresh_chips()
 		_refresh_list()
 		_refresh_side()
+	elif page == "goods":
+		_refresh_goods()
 	else:
 		_refresh_accounts()
 
@@ -350,6 +359,35 @@ func _prune_basket() -> void:
 
 
 # --- ACCOUNTS -------------------------------------------------------------------------------
+
+# --- GOODS IN -------------------------------------------------------------------------------
+
+func _refresh_goods() -> void:
+	for c in _list.get_children():
+		c.queue_free()
+	var open := bus.get_orders(PartsOrder.State.PLACED)
+	if open.is_empty():
+		_list.add_child(T.label("Nothing on order.", "body", 18, T.DIM))
+	for o in open:
+		_list.add_child(_order_row(o))
+	for c in _store.get_children():
+		c.queue_free()
+	var stock := bus.get_stock_detail()
+	var parts := stock.keys()
+	parts.sort()
+	if parts.is_empty():
+		_store.add_child(T.label("The store is empty.", "body", 18, T.DIM))
+	var n := 0
+	for part in parts:
+		for c: String in PartCondition.ALL:
+			if stock[part].has(c):
+				var name_l := T.label(bus.part_name(part), "body_medium", 16, T.TEXT)
+				name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				name_l.clip_text = true
+				_store.add_child(T.row([name_l, _width(T.tag(c, _condition_colour(c), 12), 92),
+						T.cell("×%d" % int(stock[part][c]), 60, T.TEXT, "mono_bold")], n % 2 == 1, glass))
+				n += 1
+
 
 func _refresh_accounts() -> void:
 	var figures := get_child(0) as VBoxContainer
