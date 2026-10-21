@@ -174,6 +174,10 @@ func run_tests() -> void:
 	check(added.size() == 2 and added[0] == ["frame_ring", "new", 3, "recycler"], "and say so: %s" % str(added))
 	check(bus.add_stock("frame_ring", 1, "mint") == 5 and bus.add_stock("frame_ring", 0) == 5, "an unknown condition or nothing adds nothing")
 	check(bus.get_suppliers().all(func(s): return s.lead_hours <= 12), "every supplier delivers within 12 hours")
+	bus.call("_on_scrap_recycled", "hull_plate", 1, {"steel": 41.6, "copper": 0.2, "glass": 3.0})
+	var st := bus.get_stock()
+	check(st.get("raw_steel") == 42 and st.get("raw_glass") == 3 and not st.has("raw_copper"), "the recycler's kilos go into stock: %s" % str(st))
+	check(bus.part_name("raw_steel") == "Steel (raw, kg)", "raw materials have a name: %s" % bus.part_name("raw_steel"))
 
 	bus.test_crew = {}
 	bus.test_levels = {}
