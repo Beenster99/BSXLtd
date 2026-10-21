@@ -204,6 +204,7 @@ func run_tests() -> void:
 	cam2.global_transform = Transform3D(Basis.looking_at(unit.global_basis.z), handle + Vector3(0, 1.0, 0) - unit.global_basis.z * 0.8)
 	access.call("toggle_drive", "unit")
 	check(access.get("driving") == "unit", "F on its handle takes hold of the unit")
+	check(HudSlots.infos().any(func(c: Dictionary) -> bool: return c.id == "ship_bay.pushing"), "pushing shows a card in the right-hand info panel")
 	# A short cable, so a few metres is out of reach.
 	access.set("cable_length", 4.0)
 	for i in 600:
@@ -216,6 +217,7 @@ func run_tests() -> void:
 		access.call("toggle_drive", "unit")
 	access.set("cable_length", 14.0)
 	check(access.get("driving") == "", "and lets go")
+	check(not HudSlots.infos().any(func(c: Dictionary) -> bool: return c.id == "ship_bay.pushing"), "and the card goes")
 	cam2.queue_free()
 	access.call("toggle_power")
 

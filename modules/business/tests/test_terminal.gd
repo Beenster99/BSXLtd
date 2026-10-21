@@ -143,7 +143,8 @@ func run_tests() -> void:
 	await frames(2)
 	check(front.get("aimed") == 0 and front.call("is_awake", 0), "aiming at a TV wakes its terminal")
 	var live: Control = tv0.get_node("Viewport/Terminal")
-	live.call("show_channel", "orders")
+	check(live is HoloTerminal and str(live.get("channel")).begins_with("business."), "the TV shows the wrist terminal: %s" % str(live.get("channel")))
+	live.call("show_channel", "business.orders")
 	await frames(2)
 	var plus: Button = null
 	for b: Button in live.find_children("*", "Button", true, false):
@@ -163,18 +164,25 @@ func run_tests() -> void:
 		click.pressed = false
 		front.call("_input", click)
 		await frames(2)
-		check((live.get("basket") as Dictionary).size() == 1, "clicking + with the pointer adds to the order: %s" % str(live.get("basket")))
+		check(bus.wrist_basket.size() == 1, "clicking + with the pointer adds to the order: %s" % str(bus.wrist_basket))
+		check(HudSlots.pointer_claimed(), "tools leave the click alone while a TV is aimed at")
 		var full: Control = front.call("open_full", 0)
-		check((full.get("basket") as Dictionary).size() == 1 and not front.call("is_awake", 0), "F takes it full screen with the order")
-		full.set("basket", {})
+		check(full is HoloTerminal and full.get("channel") == "business.orders" and bus.wrist_basket.size() == 1 and not front.call("is_awake", 0),
+				"F takes it full screen with the order")
+		bus.wrist_basket.clear()
 		front.call("close_terminal")
 	cam.global_position += cam.global_basis.z * 8
 	await frames(2)
-	check(front.get("aimed") == -1, "looking away drops the pointer")
+	check(front.get("aimed") == -1 and not HudSlots.pointer_claimed(), "looking away drops the pointer and gives the click back")
 
 	# The full terminal: add two listings, set quantities, place the order.
-	var screen: Control = front.call("open_terminal")
-	check(front.get("overlay") != null and screen != null, "the terminal opens full size")
+	var term: Control = front.call("open_terminal")
+	check(front.get("overlay") != null and term != null, "the terminal opens full size")
+	await frames(2)
+	var tabs := term.find_children("*", "Button", true, false).map(func(b): return b.text)
+	check(tabs.any(func(x): return "GOODS IN" in str(x).to_upper()) and tabs.any(func(x): return "ACCOUNTS" in str(x).to_upper()),
+			"every wrist channel is a tab, goods in too: %s" % str(tabs))
+	var screen: Control = term.find_child("Channel", true, false)
 	var picks := bus.get_listings().filter(func(l): return not l.id.begins_with("S-") and l.unit_price < 2000 and l.available >= 3)
 	screen.call("add_to_basket", picks[0].id, 1)
 	screen.call("add_to_basket", picks[0].id, 1)
@@ -186,7 +194,7 @@ func run_tests() -> void:
 	var cash := bus.get_cash()
 	var r: BusinessResult = screen.call("place_order")
 	check(r.is_ok() and bus.get_cash() == cash - expected, "the order is placed for the bill shown")
-	check((screen.get("basket") as Dictionary).is_empty(), "the purchase order clears")
+	check(bus.wrist_basket.is_empty(), "the purchase order clears")
 	front.call("close_terminal")
 	check(front.get("overlay") == null and not get_tree().paused, "closing gives the game back")
 

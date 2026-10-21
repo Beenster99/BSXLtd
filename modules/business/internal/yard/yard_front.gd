@@ -3,7 +3,6 @@ extends Node3D
 ## and, until Ship and Bay takes deliveries itself, crates in the deliveries hall for what
 ## is in store. Added by BusinessBus when Ship and Bay builds its shipyard.
 
-const Screen := preload("res://modules/business/internal/ui/terminal_screen.gd")
 const Look := preload("res://modules/business/internal/ui/terminal_look.gd")
 const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 
@@ -12,11 +11,13 @@ const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 ## the door to stock. Stock: the south wall in the clear corner by the door to prep. Prep and
 ## pre-assembly: the north walls, clear of the benches and stations.
 const MONITORS := {
-	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.0, 2.85, -23.75)),
-	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 2.7, -24.25)),
-	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 2.7, -45.75)),
-	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.0, 2.85, -23.75)),
+	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.0, 1.9, -23.75)),
+	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 1.9, -24.25)),
+	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 1.9, -45.75)),
+	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.0, 1.9, -23.75)),
 }
+## Claimed while a TV is aimed at or full screen, so tools don't fire on the same click.
+const POINTER_ID := "business.tv"
 ## The screen's texture size; the terminal is laid out for it. 16:9 like a TV.
 const SCREEN_PX := Vector2i(1280, 720)
 const SCREEN_M := Vector2(2.9, 1.63)
@@ -64,6 +65,7 @@ func setup(p_bus: BusinessBus, yard: Node3D) -> void:
 
 func _exit_tree() -> void:
 	close_terminal()
+	HudSlots.release_pointer(POINTER_ID)
 
 
 func _process(delta: float) -> void:
@@ -115,21 +117,29 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## Takes TV `i` full screen, carrying on where it was (channel and purchase order).
+## Takes TV `i` full screen on the channel it shows. The purchase order is the wrist's, so
+## it carries on.
 func open_full(i: int) -> Control:
 	var vp := _viewport(i)
-	var from: Control = vp.get_node("Terminal") if is_awake(i) else vp.get_node("Broadcast")
-	var screen := open_terminal(str(from.get("channel")))
-	if is_awake(i):
-		screen.set("basket", (from.get("basket") as Dictionary).duplicate())
-		screen.set("category", from.get("category"))
-		screen.call("refresh")
-		sleep(i)
-	return screen
+	var channel := str(vp.get_node("Terminal").get("channel")) if is_awake(i) else holo_channel(str(vp.get_node("Broadcast").get("channel")))
+	sleep(i)
+	return open_terminal(channel)
+
+
+## The wrist channel for a broadcast channel ("orders" -> "business.orders").
+static func holo_channel(broadcast: String) -> String:
+	return broadcast if broadcast.contains(".") else "business." + broadcast
+
+
+## The wrist terminal (every wrist channel as a tab) on an opaque panel, as a TV shows it.
+func _terminal(unit: String, closable: bool) -> Control:
+	var term := HoloTerminal.new(false, "HALL TERMINAL", unit)
+	term.closable = closable
+	return term
 
 
 ## Puts the terminal up full size. Offline, the game holds still while you order.
-func open_terminal(channel := "orders") -> Control:
+func open_terminal(channel := "business.orders") -> Control:
 	if overlay:
 		return overlay.get_node("Screen")
 	overlay = CanvasLayer.new()
@@ -139,16 +149,16 @@ func open_terminal(channel := "orders") -> Control:
 	dim.color = Color(0, 0, 0, 0.6)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(dim)
-	var screen: Control = Screen.new()
+	var screen := _terminal("HALL TV", true)
 	screen.name = "Screen"
 	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
 	for side: String in ["left", "right", "top", "bottom"]:
 		screen.set("offset_" + side, 36.0 if side in ["left", "top"] else -36.0)
 	overlay.add_child(screen)
 	add_child(overlay)
-	screen.call("setup", bus, true)
-	screen.call("show_channel", channel)
+	screen.call("show_channel", holo_channel(channel))
 	screen.connect("close_requested", close_terminal)
+	HudSlots.claim_pointer(POINTER_ID)
 	_mouse_before = Input.mouse_mode
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_was_paused = get_tree().paused
@@ -165,6 +175,7 @@ func close_terminal() -> void:
 		return
 	overlay.queue_free()
 	overlay = null
+	HudSlots.release_pointer(POINTER_ID)
 	if is_inside_tree():
 		get_tree().paused = _was_paused
 		if DisplayServer.get_name() != "headless":
@@ -206,6 +217,11 @@ func _update_pointer(delta: float) -> void:
 	var hit := aim()
 	var was := aimed
 	aimed = hit[0]
+	# Tools leave the click alone while it's on a TV.
+	if aimed >= 0 and was < 0:
+		HudSlots.claim_pointer(POINTER_ID)
+	elif aimed < 0 and was >= 0:
+		HudSlots.release_pointer(POINTER_ID)
 	if aimed >= 0:
 		var moved: bool = aimed != was or (hit[1] as Vector2).distance_to(aimed_px) > 0.5
 		aimed_px = hit[1]
@@ -250,14 +266,12 @@ func wake(i: int) -> Control:
 	var tv := vp.get_node("Broadcast") as Control
 	tv.visible = false
 	tv.process_mode = Node.PROCESS_MODE_DISABLED
-	var screen: Control = Screen.new()
+	var screen := _terminal("HALL %d TV" % (i + 1), false)
 	screen.name = "Terminal"
 	screen.size = Vector2(SCREEN_PX)
 	vp.add_child(screen)
 	vp.move_child(screen, vp.get_node("Pointer").get_index())
-	screen.call("setup", bus, true)
-	screen.call("show_channel", tv.get("channel"))
-	screen.connect("close_requested", sleep.bind(i))
+	screen.call("show_channel", holo_channel(str(tv.get("channel"))))
 	_idle[i] = 0.0
 	return screen
 
@@ -305,7 +319,8 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	for x: float in [-0.18, 0.18]:
 		_box(m, Vector3(0.06, 0.3, 0.1), Vector3(x, 0, 0.1), dark)
 	_box(m, Vector3(w - 0.4, h - 0.3, 0.06), Vector3(0, 0, 0.17), gloss)
-	_box(m, Vector3(w + 0.07, h + 0.07, 0.04), Vector3(0, 0, DEPTH - 0.02), gloss)
+	# The bezel stops a centimetre short of the screen so the two never share a plane.
+	_box(m, Vector3(w + 0.07, h + 0.07, 0.04), Vector3(0, 0, DEPTH - 0.03), gloss)
 	# A chin under the panel: BSX in orange and a standby light.
 	_box(m, Vector3(w + 0.07, 0.07, 0.035), Vector3(0, -h * 0.5 - 0.07, DEPTH - 0.025), gloss)
 	var badge := Label3D.new()
@@ -483,8 +498,11 @@ func stage_monitor_view(i := 0) -> Camera3D:
 	var cam := Camera3D.new()
 	cam.name = "BusinessShotCamera"
 	add_child(cam)
-	cam.global_position = m.global_position + m.global_basis.z * 3.8 + m.global_basis.x * 1.2 + Vector3(0, -1.1, 0)
-	cam.look_at(m.global_position + Vector3(0, -0.15, 0))
+	# From a walker's eye height (1.62 m), a few steps back and to one side.
+	var eye := m.global_position + m.global_basis.z * 3.8 + m.global_basis.x * 1.2
+	eye.y = 1.62
+	cam.global_position = eye
+	cam.look_at(m.global_position)
 	cam.fov = 60
 	cam.current = true
 	(m.get_node("Prompt") as Label3D).visible = true
