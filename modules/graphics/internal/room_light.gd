@@ -73,11 +73,13 @@ static func apply(room: Node3D) -> VoxelGI:
 	return gi if rebake else null
 
 
-## Bakes a room's VoxelGI from its room (the meshes under the room node).
+## Bakes a room's VoxelGI from every static mesh in the scene inside its box (the room
+## node can be an empty marker; the hall's walls may live anywhere in the scene).
 static func bake(gi: VoxelGI) -> void:
 	if not is_instance_valid(gi) or not gi.is_inside_tree():
 		return
-	gi.bake(gi.get_parent())
+	var scene := gi.get_tree().current_scene
+	gi.bake(scene if scene and scene.is_ancestor_of(gi) else gi.get_parent())
 	if gi.data:
 		gi.data.energy = GI_ENERGY
 		gi.data.propagation = GI_PROPAGATION
