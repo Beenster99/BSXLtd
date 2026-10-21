@@ -70,6 +70,7 @@ const WristScreen := preload("res://modules/business/internal/ui/wrist_screen.gd
 ## between them at 20 to 40.
 const SCREEN_CHANNELS := {
 	"business.orders": ["Orders", "orders", 10],
+	"business.goods": ["Goods in", "goods", 30],
 	"business.accounts": ["Accounts", "accounts", 50],
 }
 const CASH_READOUT := "business.cash"
