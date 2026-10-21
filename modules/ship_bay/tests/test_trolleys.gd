@@ -110,10 +110,45 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	check(float(m.get("deck_height")) < 0.75, "and down again")
 
-	# Its own touch screen in the TV style: letter, status, COME / PARK / DRIVE.
+	# Its own touch screen in the TV style: letter, status, FOLLOW ME / PARK / FAST / REMOTE CONTROL.
 	var own: Node3D = m.get("screen")
-	check(own != null and str(own.call("text")).contains("TROLLEY M") and str(own.call("text")).contains("DRIVE"),
-			"the trolley carries a touch screen: %s" % (own.call("text") if own else "none"))
+	var own_text: String = own.call("text") if own else ""
+	check(own_text.contains("TROLLEY M") and own_text.contains("FOLLOW ME") and own_text.contains("FAST") and own_text.contains("REMOTE CONTROL"),
+			"the trolley carries a touch screen: %s" % own_text)
+
+	# FOLLOW ME: it follows you at a safe distance until told to stop.
+	own.call("press", "call")
+	await get_tree().physics_frame
+	check(str(fleet.get("jobs")["m"].get("do", "")) == "follow" and fleet.get("following") == "m" and str(own.call("text")).contains("STOP FOLLOWING"),
+			"FOLLOW ME has it follow you: %s" % [fleet.get("jobs")["m"]])
+	fleet.set("following", "")   # the test moves "you" itself from here
+	var lead := Vector3(-6, 0, 4)
+	bus.command_trolley("m", "follow", {"to": lead})
+	var close := INF
+	for i in 1800:
+		await get_tree().physics_frame
+		close = minf(close, Vector2(m.global_position.x - lead.x, m.global_position.z - lead.z).length())
+		if i > 600 and (m.get("path") as PackedVector3Array).is_empty():
+			break
+	var held := Vector2(m.global_position.x - lead.x, m.global_position.z - lead.z).length()
+	check(held < float(m.call("radius")) + 2.6 and close > float(m.call("radius")) + 0.8,
+			"it caught up and keeps a safe distance: %.1f m now, never under %.1f m" % [held, close])
+	fleet.set("following", "m")
+	own.call("press", "call")
+	await get_tree().physics_frame
+	check(fleet.get("following") == "" and str(fleet.get("jobs")["m"].get("do", "")) != "follow" and str(own.call("text")).contains("FOLLOW ME"),
+			"pressed again, it stops following")
+
+	# FAST: fast mode on and off.
+	own.call("press", "fast")
+	await get_tree().physics_frame
+	check(bool(m.get("fast")), "FAST puts it in fast mode")
+	own.call("press", "fast")
+	await get_tree().physics_frame
+	check(not bool(m.get("fast")), "and out again")
+
+	# The large trolley's deck goes up as high as the others now.
+	check(float(trolleys["l"].get("spec")["lift"]) >= 7.5, "the large trolley's deck rises to %.1f m" % trolleys["l"].get("spec")["lift"])
 
 	# Remote control: DRIVE on its screen takes it and opens its camera in a picture-in-picture
 	# window; W drives it, the mouse turns it, you stand still; F lets it go.
@@ -131,6 +166,12 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	Input.action_release(Keys.FORWARD)
 	check(m.global_position.distance_to(start) > 0.5, "W drives it forward: %.2f m" % m.global_position.distance_to(start))
+	var deck0 := float(m.get("deck_height"))
+	Input.action_press("ship_bay.raise")
+	for i in 60:
+		await get_tree().physics_frame
+	Input.action_release("ship_bay.raise")
+	check(float(m.get("deck_height")) > deck0 + 0.3, "the Up key raises its deck: %.2f -> %.2f m" % [deck0, m.get("deck_height")])
 	check(absf(wrapf(float(m.call("yaw")) - yaw0, -PI, PI)) > 0.3, "the mouse turns it")
 	await frames(1)
 	var cam := view.get("camera") as Camera3D
@@ -204,7 +245,7 @@ func run_tests() -> void:
 		add_child(wrist)
 		await frames(2)
 		var shown: String = wrist.call("text")
-		check(shown.contains("Small hover trolley") and shown.contains("Picking lift") and shown.contains("COME TO ME") and shown.contains("DRIVE"),
+		check(shown.contains("Small hover trolley") and shown.contains("Picking lift") and shown.contains("FOLLOW ME") and shown.contains("REMOTE CONTROL") and shown.contains("FAST"),
 				"it lists the machines with their buttons: %s" % shown.left(300))
 		check(wrist.get_combined_minimum_size().x <= 900.0 and wrist.get_combined_minimum_size().y <= 560.0,
 				"it fits the wrist screen's pane: %s" % wrist.get_combined_minimum_size())
@@ -212,9 +253,12 @@ func run_tests() -> void:
 		wrist.connect("close_requested", func() -> void: closed[0] = true)
 		wrist.call("press", "trolley:s", "come")
 		await get_tree().physics_frame
-		check(str(fleet.get("jobs")["s"].get("do", "")) == "come", "COME TO ME sends the small trolley")
+		check(str(fleet.get("jobs")["s"].get("do", "")) == "follow", "FOLLOW ME has the small trolley follow you")
+		wrist.call("press", "trolley:s", "come")
+		await get_tree().physics_frame
+		check(fleet.get("following") == "", "and STOP FOLLOWING lets it go")
 		wrist.call("press", "trolley:m", "drive")
-		check(fleet.get("remote_id") == "m" and closed[0], "DRIVE takes the medium one and puts the wrist away")
+		check(fleet.get("remote_id") == "m" and closed[0], "REMOTE CONTROL takes the medium one and puts the wrist away")
 		fleet.call("toggle_remote", "m")
 		wrist.queue_free()
 	bus.set_part_values(Callable())

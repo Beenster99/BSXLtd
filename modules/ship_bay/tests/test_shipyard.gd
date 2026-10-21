@@ -66,17 +66,12 @@ func run_tests() -> void:
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(wall[1], wall[2]))
 		check(not hit.is_empty(), "%s is a wall" % wall[0])
 
-	# Dock 1: no fixed gantries round the ship (bigger ships come in); the overlook and its
-	# stair are floors to walk on.
+	# Dock 1: no fixed gantries round the ship (bigger ships come in), and no balcony stair.
 	for z: float in [-8.6, 11.2]:
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-7.0, 1, z + 1.5), Vector3(-7.0, 1, z - 1.5)))
 		check(hit.is_empty(), "the dock is clear at z %.1f" % z)
-	var deck_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(0, 8, -22.9), Vector3(0, 0, -22.9)))
-	check(absf(float(deck_hit.get("position", Vector3.ZERO).y) - Yard.OVERLOOK_Y) < 0.1, "the overlook is a floor at %.1f m: %s" % [Yard.OVERLOOK_Y, deck_hit.get("position", "")])
-	var stair_x: float = Yard.OVERLOOK.position.x + 0.65
-	var stair_z: float = Yard.OVERLOOK.end.y + Yard.OVERLOOK_Y / 0.72 * 0.5
-	var stair_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(stair_x, 8, stair_z), Vector3(stair_x, -1, stair_z)))
-	check(absf(float(stair_hit.get("position", Vector3.ZERO).y) - Yard.OVERLOOK_Y * 0.5) < 0.4, "its stair climbs half way by the middle: %s" % stair_hit.get("position", ""))
+	var gone := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(0, 8, -22.9), Vector3(0, 0.5, -22.9)))
+	check(gone.is_empty(), "the overlook balcony and its stair are gone: %s" % gone.get("position", ""))
 
 	# The walker stands on the courtyard.
 	var walker: CharacterBody3D = yard.get("walker")

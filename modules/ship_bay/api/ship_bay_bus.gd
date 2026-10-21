@@ -45,6 +45,10 @@ signal shipyard_ready(yard: Node3D)
 ## `remote_driving` is true, W A S D and the mouse drive the trolley (its camera shows in a
 ## picture-in-picture window): the player's own walker should stand still and not look round.
 signal remote_driving_changed(on: bool)
+## The recycler in Pre-assembly broke `qty` of a stored part down into raw materials:
+## materials is {Void Salvage material id ("steel", "copper", ...): kg}. Every player hears
+## it; Business adds the raw materials to its stock (on the host, once).
+signal scrap_recycled(item_id: String, qty: int, materials: Dictionary)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -55,7 +59,7 @@ const SAVE_VERSION := 2
 ## stores. Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
 const TROLLEYS: PackedStringArray = ["s", "m", "l", "p"]
-const TROLLEY_COMMANDS: PackedStringArray = ["come", "put_away", "park", "stop", "deck", "fetch", "deliver", "beam"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
@@ -87,9 +91,7 @@ var _net: Node
 func register_module() -> void:
 	Saves.register_section("ship_bay", self)
 	# Driving the yard's vehicles (the lift, the power unit, a trolley on remote control).
-	for k: Array in [["ship_bay.drive_forward", "Drive forward", KEY_UP], ["ship_bay.drive_back", "Drive back", KEY_DOWN],
-			["ship_bay.drive_left", "Turn left", KEY_LEFT], ["ship_bay.drive_right", "Turn right", KEY_RIGHT],
-			["ship_bay.raise", "Raise the lift or deck", KEY_PAGEUP], ["ship_bay.lower", "Lower the lift or deck", KEY_PAGEDOWN],
+	for k: Array in [["ship_bay.raise", "Raise the lift or deck", KEY_UP], ["ship_bay.lower", "Lower the lift or deck", KEY_DOWN],
 			["ship_bay.call_trolley", "Call a trolley (Shift: large, Ctrl: small)", KEY_T]]:
 		Keys.register(k[0], k[1], k[2], "Yard vehicles")
 	# Multiplayer may load after this module, so its events are hooked up once all are in.
@@ -106,7 +108,7 @@ func register_module() -> void:
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
 				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk",
-				"dock", "overlook", "launch_towers", "city", "downtown"]:
+				"dock", "launch_towers", "city", "downtown"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 		# The lift up at the side door, and the power unit's plug clipped on the hull.
@@ -184,18 +186,18 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.collect", _apply_collect, _check_collect)
 	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
 	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
+	_net.call("register_event", "ship_bay.recycle", _apply_recycle, _check_recycle)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
-	for k: String in ["ship_bay.drive_forward", "ship_bay.drive_back", "ship_bay.drive_left", "ship_bay.drive_right",
-			"ship_bay.raise", "ship_bay.lower", "ship_bay.call_trolley"]:
+	for k: String in ["ship_bay.raise", "ship_bay.lower", "ship_bay.call_trolley"]:
 		Keys.unregister(k)
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed"]:
+				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.recycle"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -448,6 +450,9 @@ func take_stock(item_id: String, qty := 1) -> void:
 ## Tells a hover trolley ("s", "m", "l") what to do; every player's yard hears it and the
 ## one driving the trolley carries it out:
 ## - "come" {to: Vector3}: come to a place (a player's feet) and wait there
+## - "follow" {to: Vector3, by: peer id}: follow a player at a safe distance; their peer
+##   sends it again as they move, and any other command ends it
+## - "fast" {on: bool}: fast mode on or off
 ## - "put_away": take delivered crates it can carry to their places in the stores, one by one
 ## - "park": go back to its parking bay in Deliveries; "stop": stop where it is
 ## - "deck" {height}: raise or lower its deck (metres, its top over the floor)
@@ -625,6 +630,87 @@ func part_value(item_id: String) -> int:
 ## The parts the stores keep a home for: item id -> {name, category, mass (kg)}.
 func storage_items() -> Dictionary:
 	return StorageLayout.items().duplicate(true)
+
+
+# --- The recycler (Pre-assembly) -----------------------------------------------------
+
+## Stored goods this poor (condition 0..1) or worse can go in the recycler.
+const RECYCLE_BELOW := 0.4
+## Of a part's mass, how much comes back out as raw material.
+const RECOVERY := 0.75
+## What a part of each category breaks down into: material id -> share of its mass.
+const SCRAP_MIX := {
+	"hull": {"steel": 0.8, "alloy": 0.2}, "frame": {"steel": 0.9, "titanium": 0.1},
+	"wiring": {"copper": 0.8, "alloy": 0.2}, "electronics": {"copper": 0.5, "alloy": 0.4, "crystal": 0.1},
+	"machinery": {"steel": 0.6, "copper": 0.2, "alloy": 0.2}, "engines": {"steel": 0.5, "titanium": 0.3, "copper": 0.2},
+	"glass": {"glass": 1.0}, "piping": {"steel": 0.6, "copper": 0.4}, "fluids": {"steel": 0.8, "alloy": 0.2},
+	"weapons": {"steel": 0.6, "tungsten": 0.2, "alloy": 0.2}, "fittings": {"steel": 0.5, "alloy": 0.5},
+	"fasteners": {"steel": 1.0}, "cargo": {"steel": 0.7, "alloy": 0.3}, "modules": {"steel": 0.6, "alloy": 0.2, "copper": 0.2},
+}
+
+
+## Stored lots poor enough to recycle, worst first: [{location, item, name, qty, condition}].
+func scrap_stock() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var items := StorageLayout.items()
+	for loc: String in _stock.stock:
+		var have: Dictionary = _stock.stock[loc]
+		if float(have.get("condition", 1.0)) < RECYCLE_BELOW:
+			var item := str(have["item"])
+			out.append({"location": loc, "item": item, "name": str(items.get(item, {}).get("name", item)),
+					"qty": int(have["qty"]), "condition": float(have.get("condition", 1.0))})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a.condition < b.condition if a.condition != b.condition else a.location < b.location)
+	return out
+
+
+## The raw materials `qty` of a part breaks down into: material id -> kg.
+static func scrap_materials(item_id: String, qty: int) -> Dictionary:
+	var d: Dictionary = StorageLayout.items().get(item_id, {})
+	var kg := float(d.get("mass", 0.0)) * qty * RECOVERY
+	var out := {}
+	var mix: Dictionary = SCRAP_MIX.get(str(d.get("category", "")), {"steel": 1.0})
+	for m: String in mix:
+		out[m] = snappedf(kg * float(mix[m]), 0.1)
+	return out
+
+
+## Puts the lot on a location through the recycler (the whole lot, or `qty` of it): it
+## leaves the stores and scrap_recycled follows with the raw materials.
+func recycle_stock(location_id: String, qty := 0) -> void:
+	var payload := {"location": location_id, "qty": qty}
+	if _net:
+		_net.call("request", "ship_bay.recycle", payload)
+	else:
+		var ok: Variant = _check_recycle(0, payload)
+		if ok is Dictionary:
+			_apply_recycle(ok)
+
+
+func _check_recycle(_sender: int, payload: Dictionary) -> Variant:
+	var have: Dictionary = _stock.stock.get(str(payload.get("location", "")), {})
+	if have.is_empty():
+		return "nothing there"
+	if float(have.get("condition", 1.0)) >= RECYCLE_BELOW:
+		return "too good to recycle"
+	var qty := int(payload.get("qty", 0))
+	if qty <= 0 or qty > int(have["qty"]):
+		qty = int(have["qty"])
+	return {"location": payload["location"], "qty": qty, "item": str(have["item"])}
+
+
+func _apply_recycle(payload: Dictionary) -> void:
+	var loc := str(payload.get("location", ""))
+	var have: Dictionary = _stock.stock.get(loc, {})
+	if have.is_empty():
+		return
+	var item := str(have["item"])
+	var qty := mini(int(payload.get("qty", 0)), int(have["qty"]))
+	have["qty"] = int(have["qty"]) - qty
+	if int(have["qty"]) <= 0:
+		_stock.stock.erase(loc)
+	stock_changed.emit()
+	scrap_recycled.emit(item, qty, scrap_materials(item, qty))
 
 
 func _sample_delivery() -> void:

@@ -23,6 +23,7 @@ var _title: Label
 var _status: Label
 var _chip: PanelContainer
 var _grid: GridContainer
+var _body: Label
 var _pointer: Control
 var _holds: Dictionary = {}     # id -> Callable(down: bool)
 var _face: MeshInstance3D
@@ -74,6 +75,10 @@ func setup(p_size: Vector2, title: String, columns := 2) -> void:
 	rule.color = T.ORANGE
 	rule.custom_minimum_size = Vector2(0, 3)
 	col.add_child(rule)
+	# A few lines of text over the buttons (set_body), hidden while empty.
+	_body = T.label("", "mono_medium", 20, T.TEXT)
+	_body.visible = false
+	col.add_child(_body)
 	_grid = GridContainer.new()
 	_grid.columns = columns
 	_grid.add_theme_constant_override("h_separation", 8)
@@ -137,6 +142,14 @@ func set_status(text: String, colour := T.GOOD) -> void:
 	st.border_color = colour
 
 
+## The text over the buttons ("" hides it).
+func set_body(text: String, colour := T.TEXT) -> void:
+	_body.visible = text != ""
+	_body.text = text
+	_body.add_theme_color_override("font_color", colour)
+	_fit.call_deferred()
+
+
 func set_title(text: String) -> void:
 	_title.text = text
 	_fit.call_deferred()
@@ -195,7 +208,7 @@ func button_at(px: Vector2) -> String:
 
 ## Every label's and button's text, for tests.
 func text() -> String:
-	var out := PackedStringArray([_title.text, _status.text])
+	var out := PackedStringArray([_title.text, _status.text, _body.text])
 	for id: String in buttons:
 		out.append((buttons[id] as Button).text)
 	return " | ".join(out)

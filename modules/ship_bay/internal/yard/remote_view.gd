@@ -19,6 +19,8 @@ var viewport: SubViewport
 var _frame: PanelContainer
 var _title: Label
 var _status: Label
+## 0 looking where its nose points, 1 turned round to look back while it backs up.
+var _back := 0.0
 
 
 func _init() -> void:
@@ -62,7 +64,8 @@ func _ready() -> void:
 	camera.far = 3000.0
 	viewport.add_child(camera)
 	camera.current = true
-	var keys := T.label("W S drive · A D / mouse turn · SPACE C deck · F hand back", "mono", 14, T.DIM)
+	var deck_keys := "%s %s" % [Keys.key_name("ship_bay.raise"), Keys.key_name("ship_bay.lower")] if Keys.has("ship_bay.raise") else "UP DOWN"
+	var keys := T.label("W S drive · A D / mouse turn · %s deck · SHIFT fast · F hand back" % deck_keys.to_upper(), "mono", 14, T.DIM)
 	keys.clip_text = true
 	keys.custom_minimum_size.x = WINDOW.x
 	keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -82,7 +85,11 @@ func set_status(text: String) -> void:
 	_status.text = text
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if trolley and is_instance_valid(trolley) and trolley.has_method("speed"):
+		var v := float(trolley.call("speed"))
+		if absf(v) > 0.15:
+			_back = move_toward(_back, 1.0 if v < 0.0 else 0.0, delta * 1.5)
 	_follow()
 
 
@@ -94,9 +101,13 @@ func _follow() -> void:
 	var fwd := -b.z
 	fwd.y = 0.0
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
-	var eye := at - fwd * BEHIND + Vector3(0, ABOVE, 0)
+	# The camera looks the way it travels: round behind it while it backs up.
+	fwd = fwd.rotated(Vector3.UP, smoothstep(0.0, 1.0, _back) * PI)
+	# Bigger trolleys (the large one's long deck) put it further back and higher.
+	var k := maxf(1.0, float(trolley.call("radius")) / 0.85) if trolley.has_method("radius") else 1.0
+	var eye := at - fwd * BEHIND * k + Vector3(0, ABOVE * k, 0)
 	# Pulled in short of a wall behind it, so the view never looks through one.
-	var top := at + Vector3(0, ABOVE, 0)
+	var top := at + Vector3(0, ABOVE * k, 0)
 	var q := PhysicsRayQueryParameters3D.create(top, eye)
 	q.exclude = [(trolley as CollisionObject3D).get_rid()] if trolley is CollisionObject3D else []
 	var hit := trolley.get_world_3d().direct_space_state.intersect_ray(q)

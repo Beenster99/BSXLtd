@@ -23,7 +23,11 @@ func run_tests() -> void:
 	check(int(rig.get("bays")) == 2 and int(rig.get("lifts")) == 2 and is_equal_approx(float(rig.call("top")), 4.35),
 			"each starts 2 bays long and 2 lifts high (top deck at %.2f m)" % rig.call("top"))
 	var hull_x := 2.6
-	check(rig.to_global(Vector3(0.8, 0, 0)).x > hull_x + 3.0, "parked out of the way of the ship")
+	check(rig.to_global(Vector3(0.8, 0, 0)).x > hull_x + 15.0, "parked off to the side of the yard, well clear of the ship")
+	# Pushed over beside the ship to work on it (where it once parked).
+	rig.global_transform = Transform3D(Basis(Vector3.UP, PI), Vector3(7.6, 0, -1.0))
+	for i in 3:
+		await get_tree().physics_frame
 
 	# The post's touch screen: its buttons change the rig.
 	var screen: Node3D = rig.get("post_screen")
