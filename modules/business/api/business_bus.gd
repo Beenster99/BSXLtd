@@ -49,6 +49,15 @@ signal clock_changed(minute: int)
 signal wallet_changed(player: String, balance: int, delta: int)
 ## A transfer the host refused, on the player who asked.
 signal transfer_refused(reason: String)
+## A day's pay went out to a player: the payslip {day, level, wage, bonuses, total}.
+signal payslip_issued(player: String, slip: Dictionary)
+signal bonus_awarded(player: String, amount: int, note: String, by: String)
+signal loan_taken(loan: Dictionary)
+## A repayment went to a loan; balance 0 means it's paid off.
+signal loan_repaid(loan_id: String, amount: int, balance: int)
+signal owner_changed(player: String)
+## The host refused a company request (owner, bonus, loan) from this player.
+signal company_refused(reason: String)
 
 const SAVE_SECTION := "business"
 const DATA_DIR := "res://modules/business/internal/data"
@@ -70,6 +79,13 @@ const TRANSFER_EVENT := "business.transfer"
 ## The crew tab the transfer docket sits in (Multiplayer's).
 const CREW_CHANNEL := "multiplayer.crew"
 const TRANSFER_SECTION := "business.transfer"
+## Company requests, checked by the host: who owns it, bonuses, loans and paying one off.
+const OWNER_EVENT := "business.owner"
+const BONUS_EVENT := "business.bonus"
+const LOAN_EVENT := "business.loan"
+const SETTLE_EVENT := "business.settle"
+## The longest note a bonus may carry.
+const NOTE_MAX := 140
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
 
@@ -114,7 +130,8 @@ func register_module() -> void:
 func unregister_module() -> void:
 	var net := _net()
 	if net:
-		net.call("unregister_event", TRANSFER_EVENT)
+		for e in [TRANSFER_EVENT, OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT]:
+			net.call("unregister_event", e)
 		net.call("unregister_snapshot_provider", SAVE_SECTION)
 	HudSlots.unregister_holo_section(CREW_CHANNEL, TRANSFER_SECTION)
 	Saves.unregister_section(SAVE_SECTION)
@@ -146,6 +163,11 @@ func _offer_wallets() -> void:
 	if net == null:
 		return
 	net.call("register_event", TRANSFER_EVENT, _apply_transfer, _validate_transfer)
+	if Flags.is_on("business.economy"):
+		net.call("register_event", OWNER_EVENT, _apply_owner, _validate_owner)
+		net.call("register_event", BONUS_EVENT, _apply_bonus, _validate_bonus)
+		net.call("register_event", LOAN_EVENT, _apply_loan, _validate_loan)
+		net.call("register_event", SETTLE_EVENT, _apply_settle, _validate_settle)
 	net.call("register_snapshot_provider", SAVE_SECTION, self)
 	if not net.is_connected("request_rejected", _on_request_rejected):
 		net.connect("request_rejected", _on_request_rejected)
@@ -233,14 +255,201 @@ func _apply_transfer(p: Dictionary) -> void:
 func _on_request_rejected(event_name: String, reason: String) -> void:
 	if event_name == TRANSFER_EVENT:
 		transfer_refused.emit(reason)
+	elif event_name in [OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT]:
+		company_refused.emit(reason)
+
+
+# --- The company: owner, wages, bonuses, payslips, loans ---------------------------------
+
+## Tests set players' skill levels here (name -> level) instead of asking Progression.
+var test_levels: Dictionary = {}
+
+
+## Who owns the company: the named owner, else whoever hosts.
+func company_owner() -> String:
+	return _books.company.owner if _books.company.owner != "" else player_name(1)
+
+
+func is_owner(player: String) -> bool:
+	return player != "" and player == company_owner()
+
+
+## A player's skill level for pay: their levels in every skill added up (Progression's,
+## when it's running; 0 otherwise).
+func player_level(player: String) -> int:
+	if test_levels.has(player):
+		return int(test_levels[player])
+	var progression := Modules.bus("progression")
+	if progression == null or not progression.has_method("skills"):
+		return 0
+	var peer := -1
+	var crew := crew_names()
+	for id: int in crew:
+		if crew[id] == player:
+			peer = id
+	if peer < 0:
+		return 0
+	var total := 0
+	for skill in progression.call("skills"):
+		total += int(progression.call("skill_level", StringName(str(peer)), skill.id))
+	return total
+
+
+## Everyone on shift and their level, for the day's wages (none with the economy off).
+func crew_levels() -> Dictionary:
+	var out := {}
+	if not Flags.is_on("business.economy"):
+		return out
+	for id: int in crew_names():
+		var player := player_name(id)
+		out[player] = player_level(player)
+	return out
+
+
+func wage_for(level: int) -> int:
+	return _books.company.wage_for(level)
+
+
+## A player's payslips, newest last.
+func get_payslips(player: String) -> Array:
+	return (_books.company.payslips.get(player, []) as Array).duplicate(true)
+
+
+func get_loans() -> Array[Dictionary]:
+	return _books.company.loans.duplicate(true)
+
+
+## How much more the company may borrow.
+func loan_room() -> int:
+	return _books.company.loan_room(_books.reputation)
+
+
+## {monthly, total} for a loan of `amount` over `months`.
+func loan_quote(amount: int, months: int) -> Dictionary:
+	var m := _books.company.monthly_for(amount, maxi(1, months), _books.rules.loan_apr_percent)
+	return {"monthly": m, "total": m * maxi(1, months), "apr": _books.rules.loan_apr_percent}
+
+
+## What paying a loan off now would cost.
+func settle_amount(loan_id: String) -> int:
+	var loan := _books.company.find_loan(loan_id)
+	return _books.company.settle_amount(loan) if not loan.is_empty() else 0
+
+
+func request_owner(to_peer: int) -> void:
+	_company_request(OWNER_EVENT, {"to": to_peer})
+
+
+func request_bonus(to_peer: int, amount: int, note: String) -> void:
+	_company_request(BONUS_EVENT, {"to": to_peer, "amount": amount, "note": note})
+
+
+func request_loan(amount: int, months: int) -> void:
+	_company_request(LOAN_EVENT, {"amount": amount, "months": months})
+
+
+func request_settle(loan_id: String) -> void:
+	_company_request(SETTLE_EVENT, {"loan": loan_id})
+
+
+func _company_request(event_name: String, payload: Dictionary) -> void:
+	var net := _net()
+	if net == null or not Flags.is_on("business.economy"):
+		company_refused.emit("the company books aren't open")
+		return
+	net.call("request", event_name, payload)
+
+
+## Only the owner, or the host when no one else is, runs the company.
+func _check_owner(sender: int) -> String:
+	var who := player_name(sender)
+	if who == "":
+		return "that player isn't here"
+	if not is_owner(who):
+		return "only the owner (%s) can do that" % company_owner()
+	return ""
+
+
+func _validate_owner(sender: int, p: Dictionary) -> Variant:
+	var who := player_name(sender)
+	if not is_owner(who) and sender != 1:
+		return "only the owner or the host can hand the company over"
+	var to := player_name(int(p.get("to", 0)))
+	if to == "":
+		return "that player isn't here"
+	return {"owner": to}
+
+
+func _apply_owner(p: Dictionary) -> void:
+	_books.company.owner = str(p.owner)
+	owner_changed.emit(_books.company.owner)
+
+
+func _validate_bonus(sender: int, p: Dictionary) -> Variant:
+	var why := _check_owner(sender)
+	if why != "":
+		return why
+	var to := player_name(int(p.get("to", 0)))
+	var amount := int(p.get("amount", 0))
+	var note := str(p.get("note", "")).strip_edges().left(NOTE_MAX)
+	if to == "":
+		return "pick a crew member"
+	if amount <= 0:
+		return "enter an amount"
+	if _books.insolvent or amount > _books.cash:
+		return "the company can't pay that"
+	return {"to": to, "amount": amount, "note": note, "by": player_name(sender)}
+
+
+func _apply_bonus(p: Dictionary) -> void:
+	_books.company.award_bonus(str(p.to), int(p.amount), str(p.note), str(p.by), _books.day)
+
+
+func _validate_loan(sender: int, p: Dictionary) -> Variant:
+	var why := _check_owner(sender)
+	if why != "":
+		return why
+	var amount := int(p.get("amount", 0))
+	var months := int(p.get("months", 0))
+	var r := _books.rules
+	if months < 1 or months > r.loan_months_max:
+		return "a loan runs 1 to %d months" % r.loan_months_max
+	if amount < r.loan_min:
+		return "the bank lends from %s CR" % TerminalKit.money(r.loan_min)
+	if amount > loan_room():
+		return "the bank will lend up to %s CR more" % TerminalKit.money(loan_room())
+	return {"amount": amount, "months": months}
+
+
+func _apply_loan(p: Dictionary) -> void:
+	_books.company.take_loan(int(p.amount), int(p.months), _books.day)
+
+
+func _validate_settle(sender: int, p: Dictionary) -> Variant:
+	var why := _check_owner(sender)
+	if why != "":
+		return why
+	var loan := _books.company.find_loan(str(p.get("loan", "")))
+	if loan.is_empty():
+		return "no such loan"
+	if _books.company.settle_amount(loan) > _books.cash:
+		return "the company can't pay it off yet"
+	return {"loan": loan.id}
+
+
+func _apply_settle(p: Dictionary) -> void:
+	_books.company.settle(str(p.loan))
 
 
 ## Joining players get everyone's wallets from the host.
 func get_net_snapshot() -> Dictionary:
-	return {"wallets": _books.wallets.duplicate()}
+	return {"wallets": _books.wallets.duplicate(), "company": _books.company.save_data()}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
+	if data.has("company"):
+		_books.company.load_data(data.company)
+		owner_changed.emit(company_owner())
 	for player in data.get("wallets", {}):
 		_books.wallets[str(player)] = int(data.wallets[player])
 		wallet_changed.emit(str(player), _books.wallets[str(player)], 0)
@@ -493,7 +702,25 @@ func advance_day() -> void:
 func on_contract_accepted(contract_id: String, value: int, due_day: int) -> BusinessResult:
 	if not _is_authority():
 		return _not_host()
-	return _books.accept_contract(contract_id, value, due_day)
+	var materials := job_materials(contract_id) if Flags.is_on("business.economy") else -1
+	return _books.accept_contract(contract_id, value, due_day, materials)
+
+
+## What the parts BSX supplies for a job cost at market value, CR; -1 if the job or its
+## manifest isn't known. Parts the client sends are left out.
+func job_materials(contract_id: String) -> int:
+	var contracts := Modules.bus("contracts") as ContractsBus
+	var job := contracts.get_job(contract_id) if contracts else null
+	if job == null or job.order == null or job.order.manifest.is_empty():
+		return -1
+	var total := 0
+	for line: ManifestLine in job.order.manifest:
+		if line.supplied_by != "bsx" or line.component == null:
+			continue
+		var each := get_catalogue().value_of(line.component.id)
+		if each > 0:
+			total += each * line.qty
+	return total
 
 
 ## Pays the rest of a contract and moves reputation. quality is 0-1.

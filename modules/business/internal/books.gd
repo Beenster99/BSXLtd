@@ -9,6 +9,7 @@ const MINUTES_PER_DAY := 1440
 const DELAY_MINUTES := 12 * 60
 ## What a player has in their wallet the first time they join, CR.
 const WALLET_START := 1000
+const Company := preload("res://modules/business/internal/company.gd")
 
 var rules: BusinessRules
 var prices: PriceList
@@ -37,6 +38,8 @@ var insolvent := false
 ## Each player's own money: player name -> CR. Players are known by name, so a wallet
 ## follows its owner from one session to the next.
 var wallets: Dictionary = {}
+## Owner, wages, payslips and loans.
+var company: Company
 
 var _bus: Node
 var _next_order := 1
@@ -44,6 +47,7 @@ var _next_order := 1
 
 func _init(bus: Node, p_rules: BusinessRules, p_prices: PriceList, p_catalogue: MarketCatalogue, p_suppliers: Array) -> void:
 	_bus = bus
+	company = Company.new(self)
 	rules = p_rules
 	prices = p_prices
 	catalogue = p_catalogue
@@ -64,6 +68,7 @@ func reset() -> void:
 	days_in_debt = 0
 	insolvent = false
 	wallets = {}
+	company.reset()
 	_next_order = 1
 	rng.randomize()
 	market_seed = rng.randi()
@@ -413,15 +418,28 @@ func _land_orders() -> void:
 
 # --- Contracts ---
 
-func accept_contract(contract_id: String, value: int, due_day: int) -> BusinessResult:
+## Books a won contract. The client pays up front for the parts (`materials`, CR at market
+## value) plus goodwill, never more than the price; -1 materials (unpriced) falls back to
+## deposit_percent of the price.
+func accept_contract(contract_id: String, value: int, due_day: int, materials := -1) -> BusinessResult:
 	if contracts.has(contract_id):
 		return BusinessResult.fail(ERR_ALREADY_EXISTS, "contract %s already on the books" % contract_id)
 	if value < 0:
 		return BusinessResult.fail(ERR_INVALID_PARAMETER, "contract value must not be negative")
-	var deposit := value * rules.deposit_percent / 100
-	contracts[contract_id] = {"value": value, "due_day": due_day, "deposit": deposit, "penalties": 0, "state": "open"}
-	if deposit > 0:
-		post(deposit, LedgerEntry.DEPOSIT, contract_id)
+	var parts := 0
+	var goodwill := 0
+	if materials < 0:
+		parts = value * rules.deposit_percent / 100
+	else:
+		parts = mini(materials, value)
+		goodwill = mini(value * rules.goodwill_percent / 100, value - parts)
+	var deposit := parts + goodwill
+	contracts[contract_id] = {"value": value, "due_day": due_day, "deposit": deposit, "penalties": 0, "state": "open",
+			"materials": parts if materials >= 0 else -1, "goodwill": goodwill}
+	if parts > 0:
+		post(parts, LedgerEntry.DEPOSIT, contract_id, "parts" if materials >= 0 else "")
+	if goodwill > 0:
+		post(goodwill, LedgerEntry.GOODWILL, contract_id)
 	_bus.deposit_received.emit(contract_id, deposit)
 	return BusinessResult.success()
 
@@ -519,6 +537,9 @@ func _close_day() -> void:
 		post(-rules.bay_rent_per_day, LedgerEntry.RENT)
 		_bus.rent_charged.emit(day, rules.bay_rent_per_day)
 	_charge_late_penalties()
+	# The clock already reads the new day; wages and repayments belong to the one closing.
+	company.pay_wages(_bus.crew_levels(), day - 1)
+	company.collect_repayments(day - 1)
 	_check_solvency()
 	refresh_market()
 	_bus.day_closed.emit(day)
@@ -550,6 +571,7 @@ func save_data() -> Dictionary:
 		"market_seed": market_seed, "listings": listings.values().map(func(l): return l.to_dict()),
 		"days_in_debt": days_in_debt, "insolvent": insolvent, "next_order": _next_order,
 		"wallets": wallets.duplicate(),
+		"company": company.save_data(),
 	}
 
 
@@ -572,6 +594,7 @@ func load_data(d: Dictionary, from_version: int) -> void:
 			"value": int(c.get("value", 0)), "due_day": int(c.get("due_day", 0)),
 			"deposit": int(c.get("deposit", 0)), "penalties": int(c.get("penalties", 0)),
 			"state": str(c.get("state", "open")),
+			"materials": int(c.get("materials", -1)), "goodwill": int(c.get("goodwill", 0)),
 		}
 	for part in d.get("stock", {}):
 		var held: Variant = d.stock[part]
@@ -584,6 +607,7 @@ func load_data(d: Dictionary, from_version: int) -> void:
 	insolvent = bool(d.get("insolvent", false))
 	_next_order = int(d.get("next_order", orders.size() + 1))
 	market_seed = int(d.get("market_seed", market_seed))
+	company.load_data(d.get("company", {}))
 	for player in d.get("wallets", {}):
 		wallets[str(player)] = int(d.wallets[player])
 	if d.has("listings"):

@@ -9,6 +9,11 @@ const RENT := "rent"
 const PENALTY := "penalty"
 const REFUND := "refund"
 const UPGRADE := "upgrade"
+const GOODWILL := "goodwill"
+const WAGES := "wages"
+const BONUS := "bonus"
+const LOAN := "loan"
+const REPAYMENT := "repayment"
 
 var day := 0
 var amount := 0
