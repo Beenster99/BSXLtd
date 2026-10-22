@@ -9,7 +9,7 @@ extends Node3D
 ##   var city := YardCity.new(); yard.add_child(city); city.set_night(0.8)
 
 ## The yard and its apron, props and road stay clear of the city (x, z, metres).
-const KEEP_OUT := Rect2(-200, -100, 330, 220)
+const KEEP_OUT := Rect2(-200, -100, 400, 270)
 ## The road from the truck doors runs west through the city along this z, metres.
 const ROAD_Z := 30.0
 const ROAD_HALF := 12.0
