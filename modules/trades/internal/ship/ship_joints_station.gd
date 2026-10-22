@@ -9,8 +9,9 @@ extends TradesStation
 ##   rivet      squeezer: hold left click to set it; drill: hold left click to drill it out
 ##   weld       welder: hold left click to lay it; hold right click to cut it out (unweld)
 ##   connector  hands or crimper: left click plugs it, right click unplugs it; a power or
-##              data plug (trades.wire_diagram) opens its wiring diagram first, where you
-##              drag the loom's wires onto the pins (TradesWireLoom, TradesWiringPanel)
+##              data plug (trades.wire_diagram) unfolds the wiring tool in front of you, on
+##              whose screen you drag the loom's wires onto the pins (TradesWireLoom,
+##              TradesWiringPanel, TradesWiringTablet)
 ##
 ## Ship and Bay hears about every joint made or taken off (note_joint_made/removed) and keeps
 ## the slot's state: take every joint off a part and the part comes off; hands on one of its
@@ -54,8 +55,11 @@ const RUN_S := 1.2
 const STRIP_S := 1.0
 const STALL_CHANCE := 0.04
 ## Sparks thrown each frame off the arc, laying a bead and cutting one out.
-const SPARKS_WELD := 4
-const SPARKS_CUT := 9
+## (beenster, 2026-10-22: "lots more sparks")
+const SPARKS_WELD := 12
+const SPARKS_CUT := 26
+const SPARKS_HEAT := 5
+const SPARKS_GRIND := 22
 ## The powered rivet gun (trades.power_riveter): seconds for its air to build to the punch.
 ## A rivet heated out with the welder (trades.rivet_heat), or its head ground off with the
 ## cutter (trades.cutter): seconds each takes.
@@ -94,7 +98,7 @@ var _arc: OmniLight3D
 ## loom by joint id (what you landed stays when you close it).
 var wiring: TradesWiringPanel
 var _wiring_at := -1
-var _wiring_layer: CanvasLayer
+var tablet: TradesWiringTablet
 var _looms: Dictionary = {}
 
 
@@ -120,7 +124,7 @@ func build() -> void:
 	add_child(_marker)
 	_arc = OmniLight3D.new()
 	_arc.light_color = Color(0.7, 0.85, 1.0)
-	_arc.omni_range = 3.0
+	_arc.omni_range = 5.0
 	_arc.top_level = true
 	_arc.visible = false
 	add_child(_arc)
@@ -607,8 +611,8 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 	if heat:
 		_place(f.kind, at, n, progress)
 		bay.worker.right_hand.reach_to(_grip_point(&"welder", at, n), n)
-		if sparks and randf() < 0.5:
-			sparks.emit(at + n * 0.004, n, 2, 1.5, 0.9)
+		if sparks:
+			sparks.emit(at + n * 0.004, n, SPARKS_HEAT, 1.8, 0.9)
 	else:
 		var cutter := bay.tool_node(&"cutter") as TradesCutter
 		cutter.spin = 1.0
@@ -622,7 +626,7 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 			var down := Vector3.DOWN - n * n.dot(Vector3.DOWN)
 			if down.length() < 0.1:
 				down = xform.basis.z
-			sparks.emit(at + n * 0.003, down.normalized() + n * 0.35, 8, 4.5, 0.25)
+			sparks.emit(at + n * 0.003, down.normalized() + n * 0.35, SPARKS_GRIND, 4.5, 0.3)
 	bay.worker.right_hand.set_grip(1.0)
 	var bus := bay.bus()
 	if bus:
@@ -781,6 +785,7 @@ func _place(kind: String, at: Vector3, n: Vector3, progress: float) -> StringNam
 		&"welder":
 			var torch := bay.tool_node(&"welder") as TradesWeldTorch
 			torch.lit = true
+			torch.on_rivet = kind == "rivet"
 			torch.arc_mm = 3.0
 			torch.cutting = _undoing
 			torch.cut = progress if _undoing else 0.0
@@ -788,7 +793,7 @@ func _place(kind: String, at: Vector3, n: Vector3, progress: float) -> StringNam
 			bay.place_tool(&"welder", xform)
 			bay.loop(&"arc", true, 0.9 + randf() * 0.2)
 			_arc.global_position = at + n * 0.05
-			_arc.light_energy = 1.0 + randf() * 0.8
+			_arc.light_energy = 1.8 + randf() * 1.0
 			_arc.visible = true
 			# A shower off the arc (beenster, 0.3.7): falling, bouncing, fading. Cutting throws more.
 			if bay.sparks:
@@ -945,6 +950,35 @@ func aim_title(tool: StringName) -> String:
 		return ""
 	var f := points[aimed]
 	return "%s %s, %s" % [f.spec.to_upper(), f.kind, _state_word(f).to_lower()]
+
+
+## The spec of the joint under the aim and the part it holds, for the look card.
+func aim_spec(tool: StringName) -> String:
+	if tool == &"tractor" or aimed < 0 or _bus == null:
+		return ""
+	var f := points[aimed]
+	var lines := PackedStringArray([spec_line(f)])
+	var comp := _bus.get_component(FastenerPoint.slot_of(f.joint_id))
+	if comp != "":
+		lines.append("Holds %s" % comp)
+	return "\n".join(lines)
+
+
+## One line of what a joint's spec asks for: "M12 bolt: 80-95 N m, aim for 88".
+static func spec_line(f: FastenerPoint) -> String:
+	match f.kind:
+		"bolt":
+			var nm := torque_range(f.spec)
+			return "%s bolt: %d-%d N m, aim for %d" % [f.spec, roundi(nm.x), roundi(nm.y), roundi(torque_target(f.spec))]
+		"rivet":
+			return "%s rivet: head %.1f mm" % [f.spec, head_target_mm(f.spec)]
+		"weld":
+			return "Weld seam: %d mm, both ends" % roundi(f.seam_size.x * 1000.0) if f.seam_size.x > 0.0 else "Weld seam"
+		"connector":
+			if TradesWireLoom.supports(f.spec):
+				return "%s plug: %d pins, wire it to its diagram" % [f.spec.capitalize(), TradesWireLoom.LOOMS[f.spec].size()]
+			return "%s plug: push it home" % f.spec.capitalize()
+	return f.spec
 
 
 ## The tips for the joint under the aim with `tool` in hand: what it does to it now, or
@@ -1123,18 +1157,18 @@ func open_wiring(i: int) -> TradesWiringPanel:
 	var f := points[i]
 	var loom := loom_of(f)
 	var comp := _bus.get_component(FastenerPoint.slot_of(f.joint_id))
-	_wiring_layer = CanvasLayer.new()
-	_wiring_layer.layer = 30
-	add_child(_wiring_layer)
 	wiring = TradesWiringPanel.new(loom, "WIRING  %s" % (comp if comp != "" else FastenerPoint.slot_of(f.joint_id)).to_upper())
 	wiring.plug_requested.connect(_plug_wiring)
 	wiring.close_requested.connect(close_wiring)
-	_wiring_layer.add_child(wiring)
+	# The wiring tool unfolds out of your hand into a steady screen in front of you.
+	tablet = TradesWiringTablet.new(wiring, bay.worker)
+	add_child(tablet)
 	_wiring_at = i
 	HudSlots.claim_pointer("trades.wiring")
+	bay.worker.look_locked = true
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	bay.worker.right_hand.reach_to(points_world[i], ship_xform.basis * f.normal)
+	bay.play(&"click", 0.7)
 	bay.hint("Drag each wire onto its pin, then plug it in.")
 	return wiring
 
@@ -1142,14 +1176,17 @@ func open_wiring(i: int) -> TradesWiringPanel:
 func close_wiring() -> void:
 	if wiring == null:
 		return
-	_wiring_layer.queue_free()
-	_wiring_layer = null
+	if is_instance_valid(tablet):
+		tablet.fold()
+	tablet = null
 	wiring = null
 	_wiring_at = -1
 	HudSlots.release_pointer("trades.wiring")
+	bay.worker.look_locked = false
 	if DisplayServer.get_name() != "headless" and not HudSlots.pointer_claimed():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	bay.worker.right_hand.come_back()
+	bay.worker.left_hand.come_back()
 
 
 ## PLUG IN AND TEST: the plug goes home with the wires as they are, and Quality hears.
@@ -1168,7 +1205,8 @@ func _plug_wiring() -> void:
 	wiring._refresh()
 
 
-## While the diagram's up the hand stays on the plug; walk away and it closes.
+## While the wiring tool's open your hands are on it (TradesWiringTablet); walk away and it
+## folds up.
 func _update_wiring() -> void:
 	_marker.visible = false
 	if _wiring_at < 0 or _wiring_at >= points.size():

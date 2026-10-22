@@ -137,6 +137,14 @@ const DISPLAY_LOW := 0.45
 const DISPLAY_NEAR := 0.5
 ## The furthest it stays from the eye (metres).
 const DISPLAY_FAR := 0.65
+## Close up (first person) the display stands off to one side of where you're pointing
+## (beenster, 2026-10-22: "right in the way of where we are pointing"): its middle this share
+## of the half width left of the view's middle and this share of the half height above it, at
+## DISPLAY_NEAR from the eye. In third person it keeps to its knuckle.
+const SIDE_X := 0.62
+const SIDE_Y := 0.1
+## Looking through the worker's own eyes (the bay sets it each frame).
+static var first_person := true
 
 var _swivel: Node3D
 var _knuckle: Node3D
@@ -199,7 +207,12 @@ func _turn_swivel() -> void:
 	# Out on the work the arm telescopes back toward you like your hands do, holding the display
 	# within DISPLAY_FAR so it still reads.
 	var local := cam.global_transform.affine_inverse() * at
-	if -local.z < DISPLAY_NEAR:
+	if first_person:
+		var tan_v := tan(deg_to_rad(cam.fov) * 0.5)
+		var view_px := get_viewport().get_visible_rect().size
+		var aspect := view_px.x / maxf(1.0, view_px.y)
+		local = Vector3(-SIDE_X * DISPLAY_NEAR * tan_v * aspect, SIDE_Y * DISPLAY_NEAR * tan_v, -DISPLAY_NEAR)
+	elif -local.z < DISPLAY_NEAR:
 		local.z = -DISPLAY_NEAR
 	if local.length() > DISPLAY_FAR:
 		local *= DISPLAY_FAR / local.length()

@@ -32,6 +32,9 @@ var out := false
 var level := 0.0
 ## What the hand holds, carried at its palm (any Node3D; null for nothing).
 var held: Node3D
+## Where the stretchy forearm starts (world): the body's elbow in third person, or INF for
+## the mount in front of the camera (first person).
+var arm_root := Vector3.INF
 
 var _glove: Node3D
 var _fingers: Array[Node3D] = []
@@ -189,7 +192,8 @@ func _process(delta: float) -> void:
 		f.rotation.x = -_grip * 1.2
 	if held:
 		held.global_position = _glove.global_transform * Vector3(0, -0.02, -0.06)
-	_draw_sleeve(rest.origin, _glove.global_transform * Vector3(0, 0, 0.08), eased)
+	var elbow := arm_root.is_finite()
+	_draw_sleeve(arm_root if elbow else rest.origin, _glove.global_transform * Vector3(0, 0, 0.08), 1.0 if elbow else eased)
 
 
 func _draw_sleeve(a: Vector3, b: Vector3, eased: float) -> void:

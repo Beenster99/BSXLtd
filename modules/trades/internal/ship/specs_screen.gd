@@ -1,13 +1,15 @@
 class_name TradesSpecsScreen
-extends VBoxContainer
+extends HBoxContainer
 ## The wrist screen's Specs channel (beenster, 0.3.7: "the required torque is provided by
 ## inspecting the spec, and available on the player's wrist HUD"): the joint you're looking
 ## at and what its tool should be set to, then every fastener on the ship in the bay with its
-## torque window or rivet head height.
+## torque window or rivet head height. On the right (trades.spec_sheet, beenster 2026-10-22)
+## the spec sheet of the part you're looking at, as a paper doc (TradesSpecSheet).
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 
 var _glass := false
+var _col: VBoxContainer
 
 
 func _init(glass := false) -> void:
@@ -15,25 +17,32 @@ func _init(glass := false) -> void:
 	name = "TradesSpecs"
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_theme_constant_override("separation", 10)
+	add_theme_constant_override("separation", 18)
 
 
 func _ready() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	var rig := get_tree().current_scene.get_node_or_null(TradesBus.YARD_RIG) as TradesBay if get_tree().current_scene else null
 	var station := rig.ship_station() if rig else null
+	_col = VBoxContainer.new()
+	_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_col.add_theme_constant_override("separation", 10)
+	add_child(_col)
+	if Flags.is_on("trades.spec_sheet"):
+		add_child(TradesSpecSheet.new(station))
 	# The joint under the aim, if any.
 	if station and station.aimed >= 0:
 		var f := station.points[station.aimed]
 		var d := T.docket("Looking at", f.joint_id, _glass)
-		add_child(d.panel)
+		_col.add_child(d.panel)
 		var col: VBoxContainer = d.body
 		col.add_child(T.label("%s %s" % [f.spec, f.kind], "display_bold", 30, T.TEXT if _glass else T.INK))
 		col.add_child(T.label(setting_text(f.kind, f.spec), "mono_medium", 22, T.ORANGE))
 	# Every fastener on the ship, by spec.
-	add_child(T.columns([["FASTENER", 0], ["JOINTS", 110], ["SET THE TOOL TO", 260]]))
+	_col.add_child(T.columns([["FASTENER", 0], ["JOINTS", 110], ["SET THE TOOL TO", 260]]))
 	var rows := T.list()
-	add_child(rows.get_parent())
+	_col.add_child(rows.get_parent())
 	var counts := {}
 	if bus and bus.ship:
 		for slot in bus.get_slots():

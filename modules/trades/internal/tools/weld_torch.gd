@@ -23,6 +23,8 @@ var cutting := false
 var unweld := false
 ## How far through the cut is (0..1), while cutting.
 var cut := 0.0
+## Heating a rivet out rather than working a seam: no shield needed (beenster, 2026-10-22).
+var on_rivet := false
 
 var _tip: MeshInstance3D
 var _wire: Material

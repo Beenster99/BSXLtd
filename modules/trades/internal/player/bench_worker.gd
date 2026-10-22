@@ -11,6 +11,8 @@ extends CharacterBody3D
 const EYE := 1.62
 ## The body's chest, where Void Salvage's PlayerModel measures from (its eyes are 0.3 up).
 const CHEST := Vector3(0, EYE - 0.3, 0)
+## The upper arm, shoulder to elbow (metres); the stretchy forearm goes on from the elbow.
+const UPPER_ARM_M := 0.3
 ## Footsteps kept soft (beenster, 0.3.6: "walking sound needs to be more subtle"), dB.
 const STEP_DB := -18.0
 
@@ -50,6 +52,9 @@ var right_hand: StretchHand
 var _body_model: Node3D
 ## The welder's shield on your head (TradesBay flicks it down while the arc is lit).
 var welding_helmet: TradesWeldingHelmet
+## Each upper arm, swung to point at its hand (beenster, 2026-10-22): {shoulder (body
+## space), upper, strut, joint (meshes), hand}.
+var _arms: Array[Dictionary] = []
 var _pitch := 0.0
 var _kick := 0.0
 ## How many ladders' climbing spaces the worker is in.
@@ -106,6 +111,7 @@ func _process(delta: float) -> void:
 	_kick = move_toward(_kick, 0.0, delta * 0.15)
 	_lean()
 	_place_camera()
+	_pose_arms()
 
 
 func _lean() -> void:
@@ -237,7 +243,7 @@ func _build_body() -> Node3D:
 	for side: float in [-1.0, 1.0]:
 		var shoulder := Vector3(side * 0.24, 0.12, 0.0)
 		var elbow := Vector3(side * 0.3, -0.1, -0.22)
-		_limb(shoulder, elbow, 0.065, suit, root)
+		var upper := _limb(shoulder, elbow, 0.065, suit, root)
 		_part(_box(Vector3(0.07, 0.03, 0.14)), Vector3(side * 0.24, 0.2, 0), accent, root)   # shoulder flash
 		var hip := Vector3(side * 0.11, -0.45, 0.0)
 		var knee := Vector3(side * 0.12, -0.84, -0.06)
@@ -250,8 +256,11 @@ func _build_body() -> Node3D:
 		_limb(Vector3(strut_x, -0.42, 0.04), Vector3(strut_x, -0.84, -0.02), 0.022, frame, root)
 		_limb(Vector3(strut_x, -0.84, -0.02), Vector3(strut_x, -1.14, 0.05), 0.022, frame, root)
 		_part(_cylinder(0.05, 0.05), Vector3(strut_x, -0.84, -0.02), accent, root).rotation.z = up
-		_limb(shoulder + Vector3(side * 0.06, 0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), 0.018, frame, root)
-		_part(_cylinder(0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), accent, root).rotation.z = up
+		var strut := _limb(shoulder + Vector3(side * 0.06, 0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), 0.018, frame, root)
+		var joint := _part(_cylinder(0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), accent, root)
+		joint.rotation.z = up
+		_arms.append({"shoulder": shoulder, "upper": upper, "strut": strut, "joint": joint,
+				"hand": left_hand if side < 0.0 else right_hand, "side": side})
 		for y: float in [0.12, -0.24]:
 			var jet := Vector3(side * 0.2, y, 0.3)
 			_part(_cylinder(0.045, 0.1), jet, frame, root).rotation.x = up
@@ -267,14 +276,47 @@ func _build_body() -> Node3D:
 
 
 ## A capsule from a to b (a limb or strut).
-func _limb(a: Vector3, b: Vector3, radius: float, mat: Material, parent: Node3D) -> void:
+func _limb(a: Vector3, b: Vector3, radius: float, mat: Material, parent: Node3D) -> MeshInstance3D:
 	var m := _part(_capsule(radius, maxf(a.distance_to(b) + radius * 2.0, radius * 2.0)), (a + b) * 0.5, mat, parent)
+	_pose_limb(m, a, b)
+	return m
+
+
+## Lays a limb's capsule from a to b (its parent's space), keeping its length.
+static func _pose_limb(m: Node3D, a: Vector3, b: Vector3) -> void:
 	var along := (b - a).normalized()
 	var side := along.cross(Vector3.FORWARD)
 	if side.length() < 0.01:
 		side = along.cross(Vector3.RIGHT)
 	side = side.normalized()
 	m.basis = Basis(side, along, side.cross(along))
+	m.position = (a + b) * 0.5
+
+
+## Swings each upper arm from its shoulder toward its hand, so the arm points at the work
+## (beenster, 2026-10-22: "an arm by the waist with the elastic hands going over the head is
+## wrong"), and in third person starts the hand's stretchy forearm at that elbow.
+func _pose_arms() -> void:
+	if _body_model == null:
+		return
+	var to_body := _body_model.global_transform.affine_inverse()
+	for arm in _arms:
+		var hand := arm.hand as StretchHand
+		if hand == null or not hand.is_inside_tree():
+			continue
+		var shoulder: Vector3 = arm.shoulder
+		var side := float(arm.side)
+		var wrist := to_body * hand.palm().origin
+		var dir := wrist - shoulder
+		if dir.length() < 0.05:
+			continue
+		dir = dir.normalized()
+		var elbow := shoulder + dir * UPPER_ARM_M
+		_pose_limb(arm.upper, shoulder, elbow)
+		var off := Vector3(side * 0.06, 0.0, 0.03)
+		_pose_limb(arm.strut, shoulder + off + Vector3(0, 0.04, 0.02), elbow + off)
+		(arm.joint as Node3D).position = elbow + off
+		hand.arm_root = _body_model.global_transform * elbow if third_person else Vector3.INF
 
 
 func _part(mesh: Mesh, at: Vector3, mat: Material, parent: Node3D) -> MeshInstance3D:

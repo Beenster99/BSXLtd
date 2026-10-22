@@ -1,16 +1,17 @@
 class_name TradesWiringPanel
 extends Control
-## The wiring diagram on screen, with the mouse free: the plug's diagram on the left (each
-## pin's signal and wire colour), the loom's tails and the plug face on the right. Drag a
-## tail's end onto a pin; drag a landed wire off its pin to take it back. PLUG IN pushes the
-## plug home and tests every pin; Esc or CLOSE puts the panel away (what you landed stays).
-## The station owns it and does the plugging (TradesShipJoints._open_wiring).
+## The wiring diagram's picture, shown on the wiring tool's screen (TradesWiringTablet): the
+## plug's diagram on the left (each pin's signal and wire colour), the loom's tails and the
+## plug face on the right. Drag a tail's end onto a pin; drag a landed wire off its pin to
+## take it back. PLUG IN pushes the plug home and tests every pin; Esc or CLOSE folds the tool
+## away (what you landed stays). The station owns it and does the plugging
+## (TradesShipJoints.open_wiring).
 
 signal plug_requested
 signal close_requested
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
-## The card's design size; it scales to fit the window.
+## The picture's size (pixels).
 const CARD := Vector2(1180, 700)
 
 var loom: TradesWireLoom
@@ -26,13 +27,8 @@ func _init(p_loom: TradesWireLoom, p_title: String) -> void:
 	loom = p_loom
 	title = p_title
 	name = "TradesWiring"
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	size = CARD
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dim)
 	_card = PanelContainer.new()
 	_card.add_theme_stylebox_override("panel", T.plate(18.0))
 	_card.size = CARD
@@ -73,24 +69,6 @@ func _init(p_loom: TradesWireLoom, p_title: String) -> void:
 	_plug.pressed.connect(func() -> void: plug_requested.emit())
 	foot.add_child(_plug)
 	_refresh()
-
-
-func _ready() -> void:
-	get_viewport().size_changed.connect(_fit)
-	_fit()
-
-
-func _fit() -> void:
-	var view := get_viewport_rect().size
-	var s := minf(1.0, minf((view.x - 32.0) / CARD.x, (view.y - 32.0) / CARD.y))
-	_card.scale = Vector2(s, s)
-	_card.position = (view - CARD * s) * 0.5
-
-
-func _input(event: InputEvent) -> void:
-	if not event is InputEventMouse and event.is_action_pressed(Keys.CANCEL) and not event.is_echo():
-		close_requested.emit()
-		get_viewport().set_input_as_handled()
 
 
 ## Called by the station after the plug went in, and whenever the wires change.

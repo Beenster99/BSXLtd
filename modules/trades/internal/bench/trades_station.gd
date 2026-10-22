@@ -83,6 +83,12 @@ func aim_title(_tool: StringName) -> String:
 	return ""
 
 
+## The spec of what the aim is on, shown under the tips' heading (trades.hover_specs); "" for
+## none.
+func aim_spec(_tool: StringName) -> String:
+	return ""
+
+
 ## What you can do now with `tool` on what the aim is on, for the tips in the HUD's
 ## right-hand panel: [[input, what it does], ...]; input is a Keys action (shown with its
 ## bound key) or a label (TradesBay.CLICK...).

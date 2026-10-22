@@ -448,6 +448,7 @@ func _process(delta: float) -> void:
 		_status_label.text = _focus.status_line()
 	worker.held_still = _remote_driving()
 	update_helmet(delta)
+	TradesTool.first_person = not worker.third_person
 	_update_remote_torches()
 	_update_tool_panel()
 	_update_inspect()
@@ -538,7 +539,9 @@ func look_hint() -> Dictionary:
 	if InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
 		keys.append([TradesBus.KEY_INSPECT, "part details (hold)"])
 	var title := _focus.aim_title(tool)
-	return {"title": title if title != "" else _focus.title, "text": "", "keys": keys}
+	# The spec of what you're looking at, tool in hand (beenster, 2026-10-22).
+	var spec := _focus.aim_spec(tool) if Flags.is_on("trades.hover_specs") else ""
+	return {"title": title if title != "" else _focus.title, "text": spec, "keys": keys}
 
 
 ## What you can do now with the tool in your hand on what you're looking at, with its keys
@@ -1137,14 +1140,15 @@ const TORCH_SEND_M := 0.02
 func update_helmet(delta: float) -> void:
 	var torch := tool_node(&"welder") as TradesWeldTorch
 	var lit := torch != null and torch.lit
-	_arc_off_s = 0.0 if lit else _arc_off_s + delta
+	# Heating a rivet out is a small, short glow: the shield stays up (beenster, 2026-10-22).
+	_arc_off_s = 0.0 if lit and not torch.on_rivet else _arc_off_s + delta
 	var want := 1.0 if _arc_off_s < HELMET_HOLD_S and Flags.is_on("trades.weld_helmet") else 0.0
 	_helmet = move_toward(_helmet, want, delta * (HELMET_DOWN_RATE if want > _helmet else HELMET_UP_RATE))
 	if worker.welding_helmet:
 		worker.welding_helmet.down = _helmet
 	if _weld_view:
 		_weld_view.down = 0.0 if worker.third_person or not worker.camera.current else _helmet
-	_send_torch(lit, torch.global_position if lit else Vector3.ZERO, lit and torch.cutting, delta)
+	_send_torch(lit, torch.global_position if lit else Vector3.ZERO, lit and torch.cutting, delta, lit and not torch.on_rivet)
 
 
 ## How far down your shield is (0..1).
@@ -1152,7 +1156,7 @@ func helmet_down() -> float:
 	return _helmet
 
 
-func _send_torch(on: bool, at: Vector3, cutting: bool, delta: float) -> void:
+func _send_torch(on: bool, at: Vector3, cutting: bool, delta: float, shield := true) -> void:
 	var net := _net()
 	if net == null or not in_yard or not bool(net.call("is_online")):
 		return
@@ -1161,7 +1165,7 @@ func _send_torch(on: bool, at: Vector3, cutting: bool, delta: float) -> void:
 	if on == was_on and (not on or _torch_sent_s < TORCH_SEND_S
 			or (at.distance_to(_torch_sent.get("at", Vector3.ZERO)) < TORCH_SEND_M and cutting == bool(_torch_sent.get("cutting")))):
 		return
-	_torch_sent = {"on": on, "at": at, "cutting": cutting}
+	_torch_sent = {"on": on, "at": at, "cutting": cutting, "shield": shield}
 	_torch_sent_s = 0.0
 	net.call("request", TORCH_EVENT, _torch_sent)
 
@@ -1169,7 +1173,8 @@ func _send_torch(on: bool, at: Vector3, cutting: bool, delta: float) -> void:
 func _validate_torch(sender: int, p: Dictionary) -> Variant:
 	if not p.get("at") is Vector3:
 		return "no arc position"
-	return {"peer": sender, "on": bool(p.get("on")), "at": p.at, "cutting": bool(p.get("cutting"))}
+	return {"peer": sender, "on": bool(p.get("on")), "at": p.at, "cutting": bool(p.get("cutting")),
+			"shield": bool(p.get("shield", true))}
 
 
 ## Another player's arc lit, moved or out: draw it, its sparks and their shield.
@@ -1198,6 +1203,7 @@ func _apply_torch(p: Dictionary) -> void:
 	r.on = bool(p.on)
 	r.at = p.at as Vector3
 	r.cutting = bool(p.cutting)
+	r.shield = bool(p.get("shield", true))
 	# Their shield, on Multiplayer's avatar of them when it offers the head.
 	# Avatars are rebuilt now and then (a scene change): fetch the head again when ours is gone.
 	if not is_instance_valid(r.helmet) and net and net.has_method("avatar_head"):
@@ -1218,7 +1224,8 @@ func _update_remote_torches() -> void:
 		glow.visible = on
 		if is_instance_valid(r.helmet):
 			var h := r.helmet as TradesWeldingHelmet
-			h.down = move_toward(h.down, 1.0 if on else 0.0, get_process_delta_time() * HELMET_DOWN_RATE)
+			var want := 1.0 if on and bool(r.get("shield", true)) else 0.0
+			h.down = move_toward(h.down, want, get_process_delta_time() * HELMET_DOWN_RATE)
 		if not on:
 			continue
 		var at: Vector3 = r.at
