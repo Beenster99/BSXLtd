@@ -65,6 +65,15 @@ static func stream(sound: String) -> AudioStreamWAV:
 	return wav
 
 
+## The audio bus game sounds go to (Settings > Sound > Effects), made by the UI bus; Master
+## until it exists. Other modules' players can use it too: player.bus = Sfx.bus()
+const BUS := &"Effects"
+
+
+static func bus() -> StringName:
+	return BUS if AudioServer.get_bus_index(BUS) >= 0 else &"Master"
+
+
 ## Plays a sound once. `at`: a Node3D to follow, a Vector3 in the current scene, or null
 ## for a flat (2D) sound. Returns the player (it frees itself when done).
 static func play(sound: String, at: Variant = null, volume_db: float = 0.0, pitch: float = 1.0) -> Node:
@@ -79,6 +88,7 @@ static func play(sound: String, at: Variant = null, volume_db: float = 0.0, pitc
 		p3.pitch_scale = pitch
 		p3.unit_size = 6.0
 		p3.max_distance = 60.0
+		p3.bus = bus()
 		player = p3
 		if at is Node3D and (at as Node3D).is_inside_tree():
 			(at as Node3D).add_child(p3)
@@ -92,6 +102,7 @@ static func play(sound: String, at: Variant = null, volume_db: float = 0.0, pitc
 		p2.stream = stream(sound)
 		p2.volume_db = volume_db
 		p2.pitch_scale = pitch
+		p2.bus = bus()
 		player = p2
 		tree.root.add_child(p2)
 	player.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -119,6 +130,7 @@ static func loop(sound: String, parent: Node3D, volume_db: float = -6.0) -> Audi
 	p.volume_db = volume_db
 	p.unit_size = 6.0
 	p.max_distance = 60.0
+	p.bus = bus()
 	p.autoplay = true
 	parent.add_child(p)
 	return p

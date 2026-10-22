@@ -1,8 +1,9 @@
 class_name PauseMenu
 extends CanvasLayer
 ## Esc in a game: the pause menu, in the terminal's look over a dimmed view. Resume (or Esc
-## again) carries on where you were; Save game saves now; Settings has the time of day and
-## key binds; Main menu saves and leaves; Quit saves and closes the game. Offline, the game holds still while it's up. Opens on
+## again) carries on where you were; Save game saves now; Settings has Graphics, Key binds,
+## Sound and Gameplay tabs (SettingsTabs); Main menu saves and leaves; Quit saves and closes
+## the game. Offline, the game holds still while it's up. Opens on
 ## Menu.open_pause() or an Esc nothing else used. The UI bus owns one for the whole game.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
@@ -113,14 +114,13 @@ func show_settings(on: bool = true) -> void:
 		return
 	var list := root.find_child("Body", true, false) as Control
 	if on and _settings == null:
-		var ui := Modules.bus("ui") as UiBus
 		var pane := root.find_child("Pane", true, false) as Control
-		pane.custom_minimum_size = Vector2(1100, 620)
+		pane.custom_minimum_size = Vector2(1100, 720)
 		_settings = VBoxContainer.new()
 		_settings.name = "Settings"
 		_settings.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		_settings.add_theme_constant_override("separation", 12)
-		var panel: Control = ui.settings_panel(false) if ui else Control.new()
+		var panel := SettingsTabs.new()
 		panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		_settings.add_child(panel)
 		var done := T.button("BACK", true, 20)
@@ -129,11 +129,13 @@ func show_settings(on: bool = true) -> void:
 		done.pressed.connect(show_settings.bind(false))
 		_settings.add_child(done)
 		list.get_parent().add_child(_settings)
+		(list.get_parent() as Control).size_flags_vertical = Control.SIZE_EXPAND_FILL
 		list.visible = false
 	elif not on and _settings:
 		_settings.queue_free()
 		_settings = null
 		list.visible = true
+		(list.get_parent() as Control).size_flags_vertical = Control.SIZE_FILL
 		(root.find_child("Pane", true, false) as Control).custom_minimum_size = Vector2(440, 0)
 
 

@@ -429,9 +429,35 @@ func _test_pause() -> void:
 	pause._unhandled_input(esc)
 	check(pause.is_open, "the Esc a scene opened it with doesn't close it again when it falls through")
 	await frames(1)
+	Menu.register_settings_section(Menu.GAMEPLAY, "_mouse", "Mouse", func() -> Control:
+		var l := Label.new()
+		l.text = "speed"
+		return l, 10)
 	(pause.root.find_child("Settings", true, false) as Button).pressed.emit()
-	check(pause.root.find_child("TimeOfDay", true, false) != null and pause.root.find_child("KeyBindsPanel", true, false) != null
-			and not (pause.root.find_child("Body", true, false) as Control).visible, "Settings shows the time of day and key binds")
+	await frames(1)
+	var st := pause.root.find_child("SettingsTabs", true, false) as SettingsTabs
+	check(st != null and not (pause.root.find_child("Body", true, false) as Control).visible,
+			"Settings replaces the menu's buttons")
+	var names := st.tabs.get_children().map(func(b: Node) -> String: return str(b.name))
+	check(names.slice(0, 4) == ["Tab_graphics", "Tab_keys", "Tab_sound", "Tab_gameplay"] and "Tab_character" in names,
+			"Settings has Graphics, Key binds, Sound and Gameplay tabs, then the pages")
+	check(st.body.find_child("Tab_graphics", false, false) is GraphicsPanel, "it opens on Graphics")
+	(st.tabs.find_child("Tab_keys", false, false) as Button).pressed.emit()
+	await frames(1)
+	check(st.current == "keys" and st.body.get_child(0) is KeyBindsPanel, "Key binds lists the keys")
+	st.open_tab(Menu.SOUND)
+	var master := st.body.find_child("MasterVolume", true, false) as HSlider
+	var effects := st.body.find_child("EffectsVolume", true, false) as HSlider
+	check(master != null and effects != null, "Sound has master and effects volume")
+	var was: Variant = Settings.get_value("audio", "effects")
+	effects.value = 0.5
+	check(is_equal_approx(AudioServer.get_bus_volume_db(AudioServer.get_bus_index(Sfx.BUS)), linear_to_db(0.5))
+			and Sfx.bus() == Sfx.BUS, "the effects slider sets the Effects bus the game's sounds play on")
+	effects.value = float(was) if was != null else 1.0
+	st.open_tab(Menu.GAMEPLAY)
+	check(st.body.find_child("TimeOfDay", true, false) != null and st.body.find_child("Section__mouse", true, false) != null,
+			"Gameplay has the time of day and the sections modules add")
+	Menu.unregister_settings_section(Menu.GAMEPLAY, "_mouse")
 	pause._input(esc)
 	check(pause.is_open and (pause.root.find_child("Body", true, false) as Control).visible, "Esc goes back out of Settings")
 	pause._input(esc)
