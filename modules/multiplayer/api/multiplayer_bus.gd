@@ -17,8 +17,8 @@ extends Node
 ## never node paths. Joining players get each registered snapshot provider's state first.
 ##
 ## The module itself is always on (flag "multiplayer"); hosting and joining are the
-## "multiplayer.online" feature (on since 2026-10-21; HOST and JOIN sit on the wrist's
-## Crew channel).
+## "multiplayer.online" feature (on since 2026-10-21; Host and Join are on the title
+## screen's Play Online).
 
 signal session_started(as_host: bool)
 signal session_ended(reason: String)
@@ -34,10 +34,13 @@ signal hold_changed(object_id: String, info: Dictionary)
 ## A line in the crew text channel: {"time": "22:14", "peer", "name", "text"}.
 signal chat_received(line: Dictionary)
 signal activity_changed(peer_id: int, text: String)
-## Someone pinged (the sender too, solo play included): {"peer", "name", "colour": Color,
-## "at": Vector3, "normal": Vector3, "object_id": String ("" for bare floor), "time": host
-## clock}. Draw the marker and highlight from this signal, not from the click. See ping().
+## Someone pinged (the sender too, solo play included): {"id": int, "peer", "name",
+## "colour": Color, "at": Vector3, "normal": Vector3, "object_id": String ("" for bare
+## floor), "label": what the object is called ("" for none), "time": host clock}. Draw the
+## marker, highlight and label from this signal, not from the click, for PING_LIFE. See ping().
 signal ping_received(ping: Dictionary)
+## A player's sixth live ping replaced their oldest: take that marker down now.
+signal ping_removed(ping_id: int)
 ## The home router's port for hosting changed: see router_info().
 signal router_changed(info: Dictionary)
 
@@ -48,9 +51,10 @@ const MAX_CREW := 4
 ## The wrist screen's Crew channel (behind the flag of the same name). Other modules add
 ## dockets to it with HudSlots.register_holo_section(CREW_CHANNEL, ...).
 const CREW_CHANNEL := "multiplayer.crew"
-## How long a ping marker shows.
-const PING_LIFE := 6.0
-## The title screen's Play Together screen (host or join), there while online play is on.
+## How long a ping marker shows, and how many each player can have showing at once.
+const PING_LIFE := 10.0
+const PINGS_EACH := 5
+## The title screen's Play Online screen (host or join), there while online play is on.
 const PLAY_SCENE := "multiplayer.play_together"
 const CREW_SCREEN := preload("res://modules/multiplayer/internal/crew/crew_screen.gd")
 
@@ -79,12 +83,13 @@ func register_module() -> void:
 	_crew.chat_received.connect(chat_received.emit)
 	_crew.activity_changed.connect(activity_changed.emit)
 	_crew.ping_received.connect(ping_received.emit)
+	_crew.ping_removed.connect(ping_removed.emit)
 	add_child(_crew)
 	if Flags.is_on(CREW_CHANNEL):
 		HudSlots.register_holo_channel(CREW_CHANNEL, "Crew", _crew_screen, 45)
 	if Flags.is_on(ONLINE_FLAG):
 		Router.register_scene(PLAY_SCENE, "res://modules/multiplayer/internal/lobby/play_together.tscn")
-		Menu.register_entry(PLAY_SCENE, "Play Together", PLAY_SCENE, 5)
+		Menu.register_entry(PLAY_SCENE, "Play Online", PLAY_SCENE, 5)
 	_router = preload("res://modules/multiplayer/internal/net_router.gd").new()
 	_router.name = "Router"
 	_router.changed.connect(router_changed.emit)
@@ -104,7 +109,7 @@ func unregister_module() -> void:
 
 
 ## A player who joined someone's yard has no game of their own there, so when the session
-## ends (the host left, or they did) they go back to Play Together, which says why.
+## ends (the host left, or they did) they go back to Play Online, which says why.
 func _on_session_ended(reason: String) -> void:
 	_router.close()
 	var was_client := _was_client
@@ -321,9 +326,11 @@ func player_colour(peer_id: int) -> Color:
 
 ## "Look here" for the whole crew: the middle mouse button's hit point, the data id of what
 ## is under the mouse ("" for bare floor; never a node path) and the surface normal. The host
-## allows one ping per player every 0.25 s; ping_received follows on every peer.
-func ping(at: Vector3, object_id := "", normal := Vector3.UP) -> void:
-	_crew.ping(at, object_id, normal)
+## allows one ping per player every 0.25 s and PINGS_EACH showing at once (a new one
+## replaces their oldest, with ping_removed); ping_received follows on every peer. `label` is
+## what the pinged object is called ("Reactor housing"), shown with the marker.
+func ping(at: Vector3, object_id := "", normal := Vector3.UP, label := "") -> void:
+	_crew.ping(at, object_id, normal, label)
 
 
 ## Pings still showing (younger than PING_LIFE), oldest first, for things made after one arrived.

@@ -29,12 +29,17 @@ func run_tests() -> void:
 	check(bus.host(PORT) == OK, "hosts")
 	await frames(2)
 	check(bus.router_info().state == "off", "open_router off: the router is not asked")
-	var screen: Control = bus._crew_screen(true)
+	var screen: Control = load(Router.scene_path(MultiplayerBus.PLAY_SCENE)).instantiate()
 	add_child(screen)
-	await frames(2)
-	var note := str(screen.find_child("OnlineNote", true, false).text)
+	await frames(1)
+	screen.net = bus
+	screen._show()
+	check(screen.find_child("Hosting", true, false).visible and not screen.find_child("Host", true, false).is_visible_in_tree(),
+			"Play Online shows where crew reach you instead of Host and Join")
+	var note := str(screen.find_child("Reach", true, false).text)
 	check(note.contains("Same network") and note.contains(str(PORT)), "host told how crew reach them: %s" % note)
-	check(screen.find_child("CrewCopyAddress", true, false) != null, "COPY button for the address")
+	check(screen.find_child("CopyAddress", true, false) != null and screen.find_child("EnterYard", true, false) != null,
+			"Copy address and Enter the yard buttons")
 	screen.queue_free()
 	bus.leave()
 	await frames(2)

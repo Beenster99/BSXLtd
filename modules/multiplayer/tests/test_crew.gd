@@ -28,8 +28,23 @@ func run_tests() -> void:
 	check(got[0].peer == 1 and got[0].normal == Vector3.UP and got[0].colour == net.player_colour(1),
 			"ping stamped with player, colour and a unit normal")
 	check(net.pings().size() == 1, "a second ping within 0.25 s is dropped")
+	var removed: Array[int] = []
+	var refused: Array[String] = []
+	net.request_rejected.connect(func(n: String, why: String) -> void: refused.append("%s %s" % [n, why]))
+	var on_removed := func(id: int) -> void: removed.append(id)
+	net.ping_removed.connect(on_removed)
+	for i in 5:
+		await _wait_real(0.3)
+		net.ping(Vector3(i, 0, 0), "", Vector3.UP, "Rivet gun" if i == 4 else "")
+	check(net.pings().size() == 5, "at most 5 pings showing per player: %d" % net.pings().size())
+	check(got.size() == 6 and removed == [got[0].id], "the sixth ping replaced the oldest: %d sent, removed %s, refused %s" % [got.size(), str(removed), str(refused)])
+	check(got.back().label == "Rivet gun" and got[1].label == "", "ping carries the object's name")
+	check(MultiplayerBus.PING_LIFE == 10.0, "pings last 10 seconds")
+	net.ping_removed.disconnect(on_removed)
+	var before := got.size()
+	await _wait_real(0.3)
 	net.ping(Vector3(INF, 0, 0))
-	check(got.size() == 1, "a ping with no real place is refused")
+	check(got.size() == before, "a ping with no real place is refused")
 	net.ping_received.disconnect(on_ping)
 
 	HudSlots.register_holo_section(MultiplayerBus.CREW_CHANNEL, "_test_transfer", "Transfer money",
@@ -40,8 +55,7 @@ func run_tests() -> void:
 	await frames(2)
 	var rows := screen.find_child("CrewList", true, false).get_children()
 	check(rows.size() == 1 and rows[0].find_child("Cam_*", true, false) == null, "solo crew list: just you, no CAM")
-	check((screen.find_child("PlayTogether", true, false) != null) == Flags.is_on(MultiplayerBus.ONLINE_FLAG),
-			"Play together docket follows the online flag")
+	check(screen.find_child("PlayTogether", true, false) == null, "no host/join section on the Crew tab")
 	check(screen.find_child("ChatLog", true, false).get_child_count() == 1, "chat log shows earlier lines")
 	check(screen.find_child("Section__test_transfer", true, false) != null, "other modules' sections appear")
 	var box := screen.find_child("CrewSayBox", true, false) as LineEdit
@@ -61,20 +75,7 @@ func _two_players() -> void:
 	Flags.set_flag(MultiplayerBus.ONLINE_FLAG, true)
 	var a := _bus("BusA", "Ana")
 	var b := _bus("BusB", "Ben")
-	var port_was: Variant = Settings.get_value("multiplayer", "port")
-	Settings.set_value("multiplayer", "port", PORT)
-	var a_screen: Control = a._crew_screen(true)
-	add_child(a_screen)
-	await frames(2)
-	check(a_screen.find_child("PlayTogether", true, false) != null, "Play together docket while online play is on")
-	(a_screen.find_child("CrewHost", true, false) as Button).pressed.emit()
-	check(a.is_online() and a.is_host(), "HOST starts a session")
-	await frames(2)
-	check(a_screen.find_child("CrewLeave", true, false) != null and a_screen.find_child("CrewJoin", true, false) == null,
-			"hosting swaps HOST and JOIN for LEAVE")
-	check(str(a_screen.find_child("OnlineNote", true, false).text).contains(str(PORT)), "host sees the port to give the crew")
-	a_screen.queue_free()
-	Settings.set_value("multiplayer", "port", port_was)
+	check(a.host(PORT) == OK, "host starts")
 	b.join("127.0.0.1", PORT)
 	check(await _until(func(): return b.peers().size() == 2 and a.peers().size() == 2), "client joins")
 	var b_id := b.local_peer_id()
@@ -128,6 +129,13 @@ func _bus(node_name: String, player: String) -> MultiplayerBus:
 	Settings.set_value("multiplayer", "player_name", player)
 	bus._refresh_identity()
 	return bus
+
+
+## Real seconds: the host's ping limit runs on the wall clock, which tests can outpace.
+func _wait_real(seconds: float) -> void:
+	var end := Time.get_ticks_msec() + int(seconds * 1000)
+	while Time.get_ticks_msec() < end:
+		await get_tree().process_frame
 
 
 func _until(cond: Callable, timeout := 5.0) -> bool:
