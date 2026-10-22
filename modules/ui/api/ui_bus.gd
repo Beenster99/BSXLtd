@@ -36,6 +36,7 @@ func register_module() -> void:
 	add_child(pause)
 	look = LookHints.new()
 	add_child(look)
+	Router.scene_changed.connect(_on_scene_changed)
 	Menu.register_settings_page(Menu.CHARACTER, "Character", _character_page, 10)
 
 
@@ -47,6 +48,14 @@ func unregister_module() -> void:
 		pause.close()
 	if Settings.changed.is_connected(_on_setting_changed):
 		Settings.changed.disconnect(_on_setting_changed)
+	if Router.scene_changed.is_connected(_on_scene_changed):
+		Router.scene_changed.disconnect(_on_scene_changed)
+
+
+## Off to a menu: the wrist screen goes (it lives on its own layer, over any scene).
+func _on_scene_changed(_id: String) -> void:
+	if holo and holo.is_open and not holo.allowed():
+		holo.close()
 
 
 ## The top of Settings > Character, over the sections modules add (level, payslips...).

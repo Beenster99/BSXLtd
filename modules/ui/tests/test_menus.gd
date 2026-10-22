@@ -293,6 +293,12 @@ func _test_holo() -> void:
 	esc.pressed = true
 	holo._input(esc)
 	check(not holo.is_open and holo.root == null, "Esc puts the wrist screen away")
+	holo._input(key)
+	var was := Router.current_id
+	Router.current_id = UiBus.SETTINGS
+	Router.scene_changed.emit(UiBus.SETTINGS)
+	check(not holo.is_open, "going to a menu puts the wrist screen away")
+	Router.current_id = was
 
 
 func _test_terminal_kit() -> void:
