@@ -1,8 +1,8 @@
 class_name SettingsTabs
 extends VBoxContainer
 ## The settings in a game (Esc > Settings): a row of tabs, Graphics, Key binds, Sound and
-## Gameplay, then one per Menu settings page (Character, modules' own), and the open tab's
-## controls under it. Sound and Gameplay show their own controls, then the sections modules
+## Gameplay, then one per Menu settings page (Character, modules' own), then Debug (flag
+## ui.debug_tab), and the open tab's controls under it. Sound and Gameplay show their own controls, then the sections modules
 ## added (Menu.register_settings_section(Menu.SOUND / Menu.GAMEPLAY, ...)). Changes apply
 ## and save straight away.
 
@@ -45,6 +45,8 @@ func tab_list() -> Array:
 	var out: Array = [[GRAPHICS, "Graphics"], [KEYS, "Key binds"], [Menu.SOUND, "Sound"], [Menu.GAMEPLAY, "Gameplay"]]
 	for p: Dictionary in Menu.settings_pages():
 		out.append([str(p.id), str(p.label)])
+	if Flags.is_on("ui.debug_tab"):
+		out.append([Menu.DEBUG, "Debug"])
 	return out
 
 
@@ -66,6 +68,8 @@ func open_tab(id: String) -> void:
 			page = _with_sections(_sound(), id)
 		Menu.GAMEPLAY:
 			page = _with_sections(_gameplay(), id)
+		Menu.DEBUG:
+			page = _with_sections(T.label("Testing shortcuts. They change this game's save.", "body", 18, T.DIM), id)
 		_:
 			var p := Menu.settings_page(id)
 			var own: Variant = (p.factory as Callable).call() if not p.is_empty() and (p.factory as Callable).is_valid() else null
