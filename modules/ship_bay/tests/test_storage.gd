@@ -1,5 +1,6 @@
 extends ModuleTest
-## Ship and Bay: the storage hall has a labelled home for every part BSX can buy, starts
+## Ship and Bay: the storage hall has a labelled home for every small part BSX can buy and a
+## large or heavy rack place for every big one, starts
 ## empty on a new game, takes Business's deliveries into the Deliveries hall, puts crates
 ## away on their homes (or spare places), gives stock out, and saves it all.
 ##   tools/run_tests.sh ship_bay
@@ -12,24 +13,42 @@ func run_tests() -> void:
 	bus.reset_data()
 	check(bus.get("_net") != null or not Modules.is_loaded("multiplayer"), "changes to the stores go through Multiplayer")
 
-	# The layout: a home for every item, one item to a home, each of the right kind.
+	# The layout: a home for every small item, one item to a home, each of the right kind and
+	# big enough for it; every big item fits a place on the large or heavy racks.
 	var items := bus.storage_items()
 	var locations := bus.storage_locations()
 	check(items.size() >= 190, "the stores know every part BSX can buy: %d" % items.size())
 	check(items.has("IonThruster") and items.has("M10") and items.has("tow_winch"), "parts, fasteners and ship modules")
+	var look: GDScript = load("res://modules/ship_bay/internal/yard/item_look.gd")
+	var stale := PackedStringArray()
+	for id: String in items:
+		if Layout.size_of(id).distance_to(look.call("size_of", id)) > 0.01:
+			stale.append(id)
+	check(stale.is_empty(), "item_sizes.json matches how each part is drawn (run make_item_sizes.gd): %s" % [stale])
 	var homes := {}
 	var wrong := PackedStringArray()
+	var bulk := 0
 	for id: String in items:
+		var kind := Layout.kind_of(id)
 		var loc := bus.home_location(id)
+		if kind == "bulk":
+			bulk += 1
+			var place := bus.place_for(id)
+			if loc != "" or place == "" or locations[place]["kind"] != "bulk" or not Layout.fits(Layout.size_of(id), locations[place]["size"]):
+				wrong.append(id)
+			continue
 		if loc == "" or homes.has(loc):
 			wrong.append(id)
 			continue
 		homes[loc] = id
-		if locations[loc]["kind"] != Layout.kind_for(float(items[id]["mass"])):
+		if locations[loc]["kind"] != kind or (kind == "pallet" and not Layout.fits(Layout.size_of(id), locations[loc]["size"])):
 			wrong.append(id)
-	check(wrong.is_empty(), "every part has its own home of its kind: %s" % [wrong])
-	check(bus.home_location("M10").begins_with("D2-0"), "fasteners are in the bins in D2: %s" % bus.home_location("M10"))
-	check(bus.home_location("CutterDrum").begins_with("Z-"), "a cutter drum goes on the bulk floor")
+	check(wrong.is_empty(), "every part has its own home, or a big rack place, that it fits: %s" % [wrong])
+	check(bulk > 50, "the big parts go on the large and heavy racks: %d" % bulk)
+	check(bus.home_location("M10").begins_with("C2-0"), "fasteners are in the bins in C2: %s" % bus.home_location("M10"))
+	check(bus.place_for("CutterDrum").begins_with("H") and bus.place_for("CutterDrum").ends_with("-1-1"), "a cutter drum goes on a heavy rack's ground level: %s" % bus.place_for("CutterDrum"))
+	check(bus.place_for("DrillMotor").begins_with("W") or bus.place_for("DrillMotor").begins_with("X"), "a drill motor on a large rack: %s" % bus.place_for("DrillMotor"))
+	check(locations[bus.place_for("CargoContainer")]["size"].z > 5.0, "a cargo container takes a long bay: %s" % bus.place_for("CargoContainer"))
 	var spare := 0
 	for loc: String in locations:
 		if locations[loc]["home"] == "":
@@ -111,11 +130,16 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	var space := yard.get_world_3d().direct_space_state
 	var z := Layout.bay_z(2)
-	for aisle: String in ["A", "B", "C", "D"]:
+	var parked: Array[RID] = []
+	for t: Node in (yard.get("trolleys").get("trolleys") as Dictionary).values():
+		parked.append((t as CollisionObject3D).get_rid())
+	for aisle: String in ["A", "B", "C", "W", "X", "H"]:
 		var x := Layout.aisle_x(aisle)
-		var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(x, 1, Layout.TRANSFER_Z), Vector3(x, 1, Layout.BACK_Z)))
+		var ray := PhysicsRayQueryParameters3D.create(Vector3(x, 1, Layout.TRANSFER_Z), Vector3(x, 1, Layout.BACK_Z))
+		ray.exclude = parked   # the lifts park at the back of their aisles
+		var down := space.intersect_ray(ray)
 		check(down.is_empty(), "aisle %s is clear end to end: %s" % [aisle, down.get("position", "")])
-		var across := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(x, 1, z), Vector3(x - 3.0, 1, z)))
+		var across := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(x, 1, z), Vector3(x - Layout.aisle_width(aisle) * 0.5 - 1.0, 1, z)))
 		check(not across.is_empty(), "a rack stands beside aisle %s" % aisle)
 	var transfer := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-36, 1, Layout.TRANSFER_Z), Vector3(-2, 1, Layout.TRANSFER_Z)))
 	check(transfer.is_empty(), "the transfer aisle is clear: %s" % transfer.get("position", ""))

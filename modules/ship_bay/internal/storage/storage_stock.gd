@@ -5,8 +5,8 @@ extends RefCounted
 
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 ## How many goods each trolley takes at once (a tote of small parts counts as one); the
-## picking lift takes one crate at a time.
-const LOAD := {"s": 20, "m": 20, "l": 20, "p": 1, "a": 50, "b": 50}
+## picking and heavy lifts take one crate at a time.
+const LOAD := {"s": 20, "m": 20, "l": 20, "p": 1, "h": 1, "a": 50, "b": 50}
 
 ## Location id -> {item, qty, condition (0..1, the average of what is there)}.
 var stock: Dictionary = {}
@@ -131,7 +131,7 @@ func load_of(trolley: String) -> PackedStringArray:
 
 ## How many goods a crate is on a deck: its parts one by one, or one tote of small parts.
 static func goods_in(c: Dictionary) -> int:
-	return 1 if Layout.kind_for(float(c.get("mass", 0.0))) == "bin" else maxi(1, int(c.get("qty", 1)))
+	return 1 if Layout.kind_for(float(c.get("mass", 0.0)), str(c.get("item", ""))) == "bin" else maxi(1, int(c.get("qty", 1)))
 
 
 ## How many goods a trolley has aboard.
@@ -152,7 +152,9 @@ func has_room(trolley: String, c: Dictionary) -> bool:
 
 
 ## Where a crate's goods go: the item's home if it is free or already holds the same item,
-## else a free spare location of its kind, else any free spare one; "" when the hall is full.
+## else a place already holding it, else a free spare location of its kind (bulk goods: the
+## smallest free place on the large and heavy racks they fit), else any free spare one they
+## fit; "" when the hall is full.
 func place_for(item: String, mass := -1.0) -> String:
 	var layout := Layout.get_layout()
 	var home: String = layout["homes"].get(item, "")
@@ -163,17 +165,28 @@ func place_for(item: String, mass := -1.0) -> String:
 			return loc
 	if mass < 0.0:
 		mass = float(Layout.items().get(item, {}).get("mass", 0.0))
-	var kind := Layout.kind_for(mass)
+	var kind := Layout.kind_for(mass, item)
+	var size := Layout.size_of(item)
+	var best := ""
+	var best_room := INF
 	var fallback := ""
 	for loc: String in layout["locations"]:
 		var l: Dictionary = layout["locations"][loc]
 		if l["home"] != "" or stock.has(loc):
 			continue
-		if l["kind"] == kind:
-			return loc
-		if fallback == "" and (kind == "bin" or l["kind"] != "bin"):
+		var room: Vector3 = l["size"]
+		var fit: bool = size == Vector3.ZERO or l["kind"] == "bin" or Layout.fits(size, room)
+		if l["kind"] == kind and fit:
+			if kind != "bulk":
+				return loc
+			# Bulk goods take the smallest place they fit, so the big ones stay free.
+			var v := room.x * room.y * room.z
+			if v < best_room - 0.001:
+				best_room = v
+				best = loc
+		elif fallback == "" and fit and (kind == "bin" or l["kind"] != "bin") and not (kind == "bulk" and l["kind"] != "bulk"):
 			fallback = loc
-	return fallback
+	return best if best != "" else fallback
 
 
 ## Puts a delivered crate's goods away (on `loc`, or where place_for says). Returns the
