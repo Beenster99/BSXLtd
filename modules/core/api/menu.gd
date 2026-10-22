@@ -29,6 +29,9 @@ const CHARACTER := "character"
 ## Esc > Settings tabs that take sections (they aren't pages of the main menu's Settings).
 const SOUND := "sound"
 const GAMEPLAY := "gameplay"
+## Testing shortcuts (max XP, money, reputation...): modules add sections of buttons. The tab
+## shows while the ui.debug_tab flag is on.
+const DEBUG := "debug"
 
 var _entries: Array[Dictionary] = []
 var _start: Dictionary = {}
