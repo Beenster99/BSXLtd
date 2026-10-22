@@ -134,6 +134,14 @@ func forget_joint(joint_id: StringName) -> void:
 	joint_xp.erase(String(joint_id))
 
 
+## Testing: every skill at its top level.
+func max_out(player_id: StringName) -> void:
+	var p := _player(player_id, true)
+	for s: ProgressionSkill in catalog.skills.values():
+		if not s.xp_per_level.is_empty():
+			p.skills[String(s.id)] = maxi(xp(player_id, s.id), s.xp_per_level[-1])
+
+
 func own(upgrade_id: StringName) -> void:
 	if not has_upgrade(upgrade_id):
 		owned.append(String(upgrade_id))
