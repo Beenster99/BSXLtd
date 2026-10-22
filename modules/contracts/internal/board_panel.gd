@@ -11,6 +11,8 @@ var bus: ContractsBus
 var glass := true
 var tab := "void salvage"
 var selected := ""
+## The job pack document open in the docket, "" for the summary.
+var doc := ""
 
 
 func _init(p_bus: ContractsBus, p_glass := true) -> void:
@@ -38,7 +40,15 @@ func pick_tab(t: String) -> void:
 
 
 func pick(job_id: String) -> void:
+	if job_id != selected:
+		doc = ""
 	selected = job_id
+	refresh()
+
+
+## Opens one of the job pack's documents in the docket ("" for the summary).
+func open_doc(doc_id: String) -> void:
+	doc = doc_id
 	refresh()
 
 
@@ -79,8 +89,19 @@ func refresh() -> void:
 
 func _row(job: ContractJob, alt: bool) -> Control:
 	var o := job.order
-	var r := T.row([T.cell_text(job_title(job), client_line(job)), T.cell(subject_name(o), 120, T.TEXT),
-			T.cell(due_text(o), 80), T.cell(T.money(int(o.commercial.get("price", 0))), 110, T.ORANGE, "mono_bold")], alt, glass)
+	var title := T.cell_text(job_title(job), client_line(job))
+	# The title takes the job kind's colour; a hazard shows on the line.
+	var title_label := title.get_child(0) as Label
+	if title_label:
+		title_label.add_theme_color_override("font_color", ContractDocumentView.tone_colour(String(ContractJobPack.KIND_TONES.get(o.kind, "plain"))) if not o.is_fit() else T.TEXT)
+		if not o.hazards.is_empty():
+			title_label.text += "  ⚠"
+	var due_colour := T.DIM
+	var due_day := int(o.commercial.get("due_day", ContractsBus.NO_DUE_DAY))
+	if due_day < ContractsBus.NO_DUE_DAY and due_day - bus.cycle() <= 3:
+		due_colour = T.AMBER if due_day >= bus.cycle() else T.BAD
+	var r := T.row([title, T.cell(subject_name(o), 120, T.TEXT),
+			T.cell(due_text(o), 80, due_colour), T.cell(T.money(int(o.commercial.get("price", 0))), 110, T.ORANGE, "mono_bold")], alt, glass)
 	r.name = "Row_" + job.job_id.validate_node_name()
 	if job.job_id == selected:
 		var st := (r.get_theme_stylebox("panel") as StyleBoxFlat).duplicate() as StyleBoxFlat
@@ -95,69 +116,112 @@ func _row(job: ContractJob, alt: bool) -> Control:
 
 
 func _docket(job: ContractJob) -> Control:
-	var d := T.docket("Spec sheet", job.job_id.to_upper() if job else "", glass)
+	var d := T.docket("Job pack" if doc != "" else "Spec sheet", job.job_id.to_upper() if job else "", glass)
 	var body: VBoxContainer = d.body
 	(d.panel as Control).size_flags_vertical = Control.SIZE_EXPAND_FILL
 	if job == null:
-		body.add_child(T.label("Pick a job to see its spec sheet.", "body", 17, T.DIM))
+		body.add_child(T.label("Pick a job to see its spec sheet.", "body", 14, T.DIM))
 		return d.panel
 	var o := job.order
 	var ink := T.TEXT if glass else T.INK
 	var dim := T.DIM if glass else T.INK_DIM
-	body.add_child(T.label("%s  ·  %s" % [String(o.client.get("display_name", o.client.get("company", ""))), subject_name(o)], "body_medium", 18, ink))
+	# Header: client, subject, and coloured tags for the kind, state, tier and hazards.
+	body.add_child(T.label("%s  ·  %s" % [String(o.client.get("display_name", o.client.get("company", ""))), subject_name(o)], "body_medium", 16, ink))
+	var tags := HFlowContainer.new()
+	tags.add_theme_constant_override("h_separation", 6)
+	tags.name = "Tags"
+	tags.add_child(T.tag(o.kind, ContractDocumentView.tone_colour(String(ContractJobPack.KIND_TONES.get(o.kind, "plain"))), 12))
+	if job.state != ContractJob.OFFERED:
+		tags.add_child(T.tag(job.state.replace("_", " "), T.GOOD if bus.get_active_job() == job else T.STEEL, 12))
+	var tier := int((o.raw.get("offer", {}) as Dictionary).get("tier", 0))
+	if tier > 0:
+		tags.add_child(T.tag("tier %d" % tier, T.CYAN, 12))
+	for h in o.hazards:
+		tags.add_child(T.tag(h, T.BAD, 12))
+	body.add_child(tags)
 	if Flags.is_on(ContractsBus.CLIENTS_FLAG):
 		var client_id := String(o.client.get("company", ""))
 		var standing := "Standing: %s (%d)" % [ContractClients.level_name(bus.level_of(client_id)), bus.standing_of(client_id)]
 		if job.expires >= 0 and job.state == ContractJob.OFFERED:
 			standing += "  ·  on the board until cycle %d" % job.expires
-		body.add_child(T.label(standing, "mono_medium", 14, dim))
-		var blurb := String(ContractClients.TABLE.get(client_id, {}).get("blurb", ""))
-		if blurb != "":
-			body.add_child(_wrap(T.label(blurb, "body", 15, dim)))
-	if not o.is_fit():
-		body.add_child(_wrap(T.label(subject_text(o), "body", 17, ink)))
-		body.add_child(T.label("CLIENT WANTS", "display_medium", 15, dim))
-		for w in o.wants:
-			body.add_child(_wrap(T.label(want_text(w), "body", 15, ink)))
-		body.add_child(T.label(keeps_text(o), "body", 15, dim))
-		if not o.hazards.is_empty():
-			body.add_child(T.tag("HAZARDS  " + "  ".join(o.hazards).to_upper(), T.ORANGE))
-	for c in o.changes:
-		var line := T.label(change_text(c), "body", 17, ink)
-		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		body.add_child(line)
-		var spec := spec_text(job, c.change_id)
-		if spec != "":
-			body.add_child(T.label(spec, "mono_medium", 14, dim))
-		if c.notes != "":
-			body.add_child(_wrap(T.label("“%s”" % c.notes, "body", 15, dim)))
-	for n in o.notes:
-		if String(n.get("change_id", "")) == "":
-			body.add_child(_wrap(T.label("“%s”" % String(n.get("text", "")), "body", 15, dim)))
-	if not o.manifest.is_empty():
-		body.add_child(T.label("PARTS MANIFEST", "display_medium", 15, dim))
-	for m in o.manifest:
-		body.add_child(_wrap(T.label("%d × %s  ·  %s" % [m.qty, part_name(m.component.id),
-				("BSX supplies, " + " or ".join(m.allowed_sources)) if m.supplied_by == "bsx" else "client supplies"], "body", 15, ink)))
+		body.add_child(T.label(standing, "mono_medium", 12, dim))
 	var pay := int(o.commercial.get("price", 0))
 	var dep := int(o.commercial.get("deposit_pct", 0))
-	body.add_child(T.label("PAYS CR %s  ·  %d%% DEPOSIT  ·  %s" % [T.money(pay), dep, due_text(o)], "mono_bold", 16, T.ORANGE))
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(spacer)
+	body.add_child(T.label("PAYS CR %s  ·  %d%% DEPOSIT  ·  %s" % [T.money(pay), dep, due_text(o)], "mono_bold", 14, T.ORANGE))
+
+	# The job pack: one chip per document; the open one draws below, else the summary.
+	var pack := bus.job_pack(job.job_id)
+	var names := PackedStringArray(["summary"])
+	var ids := {"summary": ""}
+	for p in pack:
+		var short := String(p.get("title", "")).replace("Spec sheet: ", "spec: ").to_lower()
+		names.append(short)
+		ids[short] = String(p.get("id", ""))
+	var current := "summary"
+	for n in ids:
+		if ids[n] == doc and doc != "":
+			current = n
+	body.add_child(T.label("JOB PACK  ·  %d documents" % pack.size(), "display_medium", 12, dim))
+	var chips := T.chips(names, current, func(n: String) -> void: open_doc(String(ids.get(n, ""))), glass, false)
+	chips.name = "Pack"
+	body.add_child(chips)
+	var sheet := T.list()
+	body.add_child(sheet.get_parent())
+	if doc != "":
+		sheet.add_child(ContractDocumentView.new(bus.document(job.job_id, doc), glass))
+	else:
+		_summary(job, sheet, ink, dim)
+
 	if job.state == ContractJob.OFFERED:
-		var b := T.button("ACCEPT JOB", true, 22, false, glass)
+		var b := T.button("ACCEPT JOB", true, 20, false, glass)
 		b.name = "Accept"
 		b.pressed.connect(act)
 		body.add_child(b)
 	elif bus.get_active_job() == job:
-		body.add_child(T.tag("Active job · " + job.state.replace("_", " "), T.GOOD))
+		body.add_child(T.tag("Active job · " + job.state.replace("_", " "), T.GOOD, 13))
 	else:
-		var b := T.button("MAKE ACTIVE JOB", false, 20, false, glass)
+		var b := T.button("MAKE ACTIVE JOB", false, 18, false, glass)
 		b.name = "MakeActive"
 		b.pressed.connect(act)
 		body.add_child(b)
 	return d.panel
+
+
+## The docket's summary: what the job is in a few lines, before any document is opened.
+func _summary(job: ContractJob, body: VBoxContainer, ink: Color, dim: Color) -> void:
+	var o := job.order
+	var client_id := String(o.client.get("company", ""))
+	var blurb := String(ContractClients.TABLE.get(client_id, {}).get("blurb", ""))
+	if blurb != "" and Flags.is_on(ContractsBus.CLIENTS_FLAG):
+		body.add_child(_wrap(T.label(blurb, "body", 13, dim)))
+	if not o.is_fit():
+		body.add_child(_wrap(T.label(subject_text(o), "body", 14, ink)))
+		body.add_child(T.label("CLIENT WANTS", "display_medium", 12, dim))
+		for w in o.wants:
+			body.add_child(_wrap(T.label(want_text(w), "body", 14, ink)))
+		body.add_child(T.label(keeps_text(o), "body", 13, dim))
+	for c in o.changes:
+		body.add_child(_wrap(T.label(change_text(c), "body", 14, ink)))
+		var spec := spec_text(job, c.change_id)
+		if spec != "":
+			body.add_child(T.label(spec, "mono_medium", 12, dim))
+		if c.notes != "":
+			body.add_child(_wrap(T.label("“%s”" % c.notes, "body", 13, dim)))
+	for n in o.notes:
+		if String(n.get("change_id", "")) == "":
+			body.add_child(_wrap(T.label("“%s”" % String(n.get("text", "")), "body", 13, dim)))
+	if not o.manifest.is_empty():
+		body.add_child(T.label("PARTS MANIFEST", "display_medium", 12, dim))
+	for m in o.manifest:
+		body.add_child(_wrap(T.label("%d × %s  ·  %s" % [m.qty, part_name(m.component.id),
+				("BSX supplies, " + " or ".join(m.allowed_sources)) if m.supplied_by == "bsx" else "client supplies"], "body", 13, ink)))
+	if job.state != ContractJob.OFFERED and not o.is_fit():
+		var missing := job.missing_wants()
+		body.add_child(T.label("STILL TO DO", "display_medium", 12, dim))
+		if missing.is_empty():
+			body.add_child(T.label("The wants are met", "body", 13, T.GOOD))
+		for m in missing:
+			body.add_child(_wrap(T.label(m, "body", 13, T.AMBER)))
 
 
 func _wrap(l: Label) -> Label:
