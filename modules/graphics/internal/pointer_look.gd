@@ -2,7 +2,8 @@ extends Node
 ## Graphics: what the pointer is over, and pings. Lives under GfxBus.
 ##   - Hover (flag "graphics.hover"): whatever you can use under the pointer (the screen
 ##     centre while the mouse is captured, the mouse where it is free) within REACH gets the
-##     highlight. Usable things are nodes in group GfxBus.INTERACTABLE.
+##     subtle highlight: a thin soft outline. Usable things are nodes in group
+##     GfxBus.INTERACTABLE.
 ##   - Ping (flag "graphics.ping"): the middle mouse button pings the point under the
 ##     pointer, and the usable thing there if any. Sent through Multiplayer's net.ping() when
 ##     it offers one, so the crew sees it; everyone draws pings only from ping_received.
@@ -83,7 +84,7 @@ func set_target(t: Node) -> void:
 		highlighter.unlight(target, "hover")
 	target = t
 	if target:
-		highlighter.light(target, "hover", HOVER_COLOUR)
+		highlighter.light(target, "hover", HOVER_COLOUR, Highlighter.SUBTLE)
 	hovered.emit(target)
 
 

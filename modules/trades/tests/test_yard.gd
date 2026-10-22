@@ -42,14 +42,16 @@ func run_tests() -> void:
 
 	var rig: TradesBay = yard.get_node_or_null(TradesBus.YARD_RIG)
 	check(rig != null and rig.in_yard, "the shipyard gets you, the worker with the tools")
-	check(rig.find_children("*", "StaticBody3D", true, false).is_empty(), "no bench, no room: nothing built round you")
+	check(rig.find_children("*", "StaticBody3D", true, false).all(func(b: Node) -> bool: return b.get_parent() is TradesTestStand),
+			"no bench, no room: nothing built round you but the test stand")
 	check(not yard.get("walker_active") and rig.worker.camera.current, "the yard's walker stands down; your view is current")
 	check(rig.worker.global_position.distance_to(Vector3(3, 0, 6)) < 0.3, "you start where the walker stood")
 	var station := rig.ship_station()
 	var expected := 0
 	for slot in ship_bus.get_slots():
 		expected += ship_bus.get_fasteners(slot.slot_id).size()
-	check(station != null and station.points.size() == expected and expected > 0,
+	var practice := station.test_stand.joints.size() if station and station.test_stand else 0
+	check(station != null and station.points.size() - practice == expected and expected > 0,
 			"the ship is the station: all %d of its joints" % expected)
 	rig.wheel(1)
 	check(rig.tool == &"torque_wrench", "the mouse wheel moves along the tools")

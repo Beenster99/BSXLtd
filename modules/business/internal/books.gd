@@ -40,6 +40,8 @@ var insolvent := false
 var wallets: Dictionary = {}
 ## Owner, wages, payslips and loans.
 var company: Company
+## Testing: orders land the moment they're placed, on time and undamaged.
+var instant_deliveries := false
 
 var _bus: Node
 var _next_order := 1
@@ -182,7 +184,18 @@ func _open_order(supplier_id: String, lines: Array[OrderLine], cost: int, eta_mi
 	orders[o.id] = o
 	post(-o.cost, LedgerEntry.PARTS, o.id, suppliers[supplier_id].display_name)
 	_bus.order_placed.emit(o)
+	if instant_deliveries:
+		deliver_now()
 	return o
+
+
+## Testing: lands every order still on its way, now.
+func deliver_now() -> void:
+	for o: PartsOrder in orders.values():
+		if o.state == PartsOrder.State.PLACED:
+			o.eta_minute = minute
+			o.eta_day = day
+	_land_orders()
 
 
 func cancel_order(order_id: String) -> BusinessResult:
@@ -398,7 +411,7 @@ func _land_orders() -> void:
 		if o.state != PartsOrder.State.PLACED or o.eta_minute > minute:
 			continue
 		var s: SupplierDef = suppliers[o.supplier_id]
-		var on_time := rng.randf() < s.reliability
+		var on_time := instant_deliveries or rng.randf() < s.reliability
 		if not on_time and not o.delayed:
 			o.delayed = true
 			o.eta_minute = minute + DELAY_MINUTES

@@ -97,6 +97,8 @@ func _schedule() -> void:
 	var seen := {}
 	if station:
 		for f in station.points:
+			if TradesShipJoints.is_practice(f):
+				continue
 			var key := "%s|%s" % [f.kind, f.spec]
 			if seen.has(key):
 				seen[key][0] += 1

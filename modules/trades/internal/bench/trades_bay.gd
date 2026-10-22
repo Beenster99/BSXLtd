@@ -54,6 +54,8 @@ const YARD_STRETCH_M := 3.4
 ## Bolts on the ship (Ship and Bay's FastenerPoints) are in ship space; without the yard
 ## telling us where the ship is, it sits this far over the yard's origin (the bay's cradles).
 const YARD_SHIP_AT := Vector3(0, 1.6, 0)
+## Where the tool test stand goes (Ship and Bay's shipyard_spot: the Pre-assembly wing).
+const TEST_STAND_SPOT := "bench_preassembly"
 
 ## Set before adding to the tree: you are in the shipyard working on the ship, not at a bench.
 var in_yard := false
@@ -174,6 +176,8 @@ func _enter_yard() -> void:
 	s.ship_xform = ship_transform()
 	s.build()
 	stations.append(s)
+	if Flags.is_on("trades.test_stand") and yard and yard_bus:
+		s.add_test_stand(yard.global_transform * yard_bus.shipyard_spot(TEST_STAND_SPOT))
 	_focus = s
 	if yard_bus:
 		yard_bus.set_walker_active(yard, false)
@@ -745,6 +749,23 @@ func stage_inspect() -> void:
 	worker.global_position = view[0]
 	worker.face(view[1])
 	Input.action_press(TradesBus.KEY_INSPECT)
+	for i in 30:
+		await get_tree().process_frame
+
+
+## Release screenshot in the yard: the tool test stand, from just in front of it (first
+## person, aiming at a bolt with the power wrench) or from behind you (third person).
+func stage_test_stand(third_person: bool = false) -> void:
+	var s := ship_station()
+	if s == null or s.test_stand == null:
+		return
+	var stand := s.test_stand
+	var at := stand.global_transform * Vector3(0, 1.25, 0)
+	var feet := stand.global_transform * Vector3(-0.5 if not third_person else 0.0, 0.0, 1.0 if not third_person else 1.7)
+	worker.global_position = feet
+	worker.face(stand.global_transform * Vector3(-0.85, 1.25, 0) if not third_person else at)
+	worker.set_view(third_person)
+	set_tool(&"torque_wrench")
 	for i in 30:
 		await get_tree().process_frame
 
