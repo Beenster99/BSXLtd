@@ -101,6 +101,9 @@ func run_tests() -> void:
 			"out on the work it comes back to read, still clear of where you point")
 
 	# The wrist's Specs channel: a paper spec sheet on its right.
+	# The ship-wide layout (the job pack one is test_specs_job_pack).
+	var had_pack := Flags.is_on("trades.job_pack_specs")
+	Flags.set_flag("trades.job_pack_specs", false)
 	var screen := TradesSpecsScreen.new(true)
 	yard.add_child(screen)
 	var sheets := screen.find_children("SpecSheet", "TradesSpecSheet", true, false)
@@ -112,6 +115,7 @@ func run_tests() -> void:
 	check((sheet.paper.get_theme_stylebox("panel") as StyleBoxFlat).bg_color == TradesSpecSheet.PAPER, "on paper")
 	sheet.free()
 	screen.queue_free()
+	Flags.set_flag("trades.job_pack_specs", had_pack)
 	var ship_sheet := TradesSpecSheet.new(null)
 	check(ship_sheet.text().contains("FASTENER SCHEDULE"), "looking at nothing: the ship's fastener schedule")
 	ship_sheet.free()
