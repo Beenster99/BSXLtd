@@ -13,6 +13,9 @@ extends Node
 ## arguments, so the same one can serve the wrist screen if it takes `glass := false`.
 ##   Menu.register_settings_page("business.company", "Company", func() -> Control: ..., 20)
 ##   Menu.register_settings_section(Menu.CHARACTER, "business.payslips", "Payslips", factory, 30)
+## In a game, Esc > Settings shows Graphics, Key binds, Sound and Gameplay tabs, then a tab
+## per page. Sound and Gameplay take sections too (a module's own volume, mouse speed...):
+##   Menu.register_settings_section(Menu.GAMEPLAY, "trades.mouse", "Mouse", factory, 20)
 
 signal entries_changed
 ## Asks UI's pause menu to open (Esc in a game). Scenes call Menu.open_pause() on Esc when
@@ -23,6 +26,9 @@ signal settings_sections_changed(page: String)
 
 ## The player's profile page in Settings (UI's); modules add sections to it.
 const CHARACTER := "character"
+## Esc > Settings tabs that take sections (they aren't pages of the main menu's Settings).
+const SOUND := "sound"
+const GAMEPLAY := "gameplay"
 
 var _entries: Array[Dictionary] = []
 var _start: Dictionary = {}
