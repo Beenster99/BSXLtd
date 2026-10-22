@@ -8,6 +8,9 @@ extends ModuleTest
 ##   tools/run_tests.sh ship_bay
 
 
+const RefurbLineScript := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
+
+
 func run_tests() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
@@ -64,7 +67,15 @@ func run_tests() -> void:
 	for s: String in ["straightener", "bath", "coater"]:
 		var screen: Node3D = machines[s].screen
 		screen.call("press", "go")
+		if s == "bath":
+			await frames(3)
+			var fizz: Array = machines["bath"].fizz
+			check(fizz.all(func(p: CPUParticles3D) -> bool: return p.emitting) and (machines["bath"].fizz_sound as AudioStreamPlayer3D).playing,
+					"the bath bubbles, steams and simmers while it runs")
+			check((machines["bath"].spreader as Node3D).position.y < RefurbLineScript.BED + 0.5, "its hoist lowers the lot in")
 		await _wait_for(bus, s, "done")
+		if s == "bath":
+			check(not (machines["bath"].fizz[0] as CPUParticles3D).emitting, "and goes still when it is done")
 		var cond := float(bus.line_state().stations[s].lot.condition)
 		check(absf(cond - float(ShipBayBus.LINE_AFTER[s])) < 0.001, "the %s brings it to %d%%" % [s, roundi(cond * 100.0)])
 		screen.call("press", "go")
@@ -95,7 +106,18 @@ func run_tests() -> void:
 	await frames(2)
 	check(str(bus.line_state().stations.grinder.state) == "waiting", "SEND ON passes it to the grinder")
 	machines["grinder"].screen.call("press", "go")
+	var turned := false
+	var sparked := false
+	for i in 20:
+		await frames(1)
+		var rotors: Array = machines["grinder"].rotors
+		turned = turned or signf((rotors[0] as Node3D).rotation.x) == -signf((rotors[1] as Node3D).rotation.x) and absf((rotors[0] as Node3D).rotation.x) > 0.0
+		sparked = sparked or (machines["grinder"].sparks as CPUParticles3D).emitting
+	check(turned and sparked and (machines["grinder"].grind as AudioStreamPlayer3D).playing,
+			"the grinder's rotors turn into each other, sparks fly and it crunches")
 	await _wait_for(bus, "grinder", "")
+	check(not (machines["grinder"].sparks as CPUParticles3D).emitting and not (machines["grinder"].grind as AudioStreamPlayer3D).playing,
+			"and it stops when the lot is dust")
 	var want := ShipBayBus.scrap_materials("IonThruster", 2)
 	var kg := bus.dust_kg()
 	var mass := float(bus.storage_items().get("IonThruster", {}).get("mass", 0.0))
