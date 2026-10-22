@@ -55,12 +55,21 @@ signal line_changed
 ## A clean-up sent a trolley for a part lying loose in the yard (Tools adds it to the parts
 ## it is waiting on a trolley for, as with beam_to_trolley).
 signal clean_up_claimed(slot_id: String, trolley_id: String)
+## A transporter's deck, steering mode or status changed (the yard's Transporters applies it).
+signal transporter_state(payload: Dictionary)
+## A transport cradle's pins were thrown, or a dolly picked it up or set it down.
+signal cradle_state(payload: Dictionary)
+## Where the transporters and cradles stand came back from a save or the host.
+signal transport_restored(state: Dictionary)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
 ## Router scene id of the shipyard round the bay (registered while "ship_bay.shipyard" is on).
 const SHIPYARD_SCENE := "ship_bay.shipyard"
 const SAVE_VERSION := 2
+## Deliveries made for a contract's subject (scrapyard S1) carry this order id prefix, then
+## the job id.
+const SUBJECT_ORDER := "subject:"
 ## The yard's hover trolleys, small, medium and large, and "p" the picking lift in the
 ## stores. Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
@@ -97,6 +106,12 @@ var _loose: Dictionary = {}
 var _clean_routes: Dictionary = {}
 ## True from CLEAN UP until every loose part has had a trolley sent for it.
 var cleaning := false
+## Where the transporters and cradles stand: {transporters: {kind: {xform, deck, mode}},
+## cradles: {name: {xform, pins, on}}}. Kept by the yard's Transporters; saved and sent to
+## players who join.
+var transport_state: Dictionary = {}
+## The Contracts bus once it has subject_due (scrapyard S1), else null.
+var _contracts: Node
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
 ## runs without it: tests that switch only part of the game on, and solo builds).
 var _net: Node
@@ -106,13 +121,21 @@ func register_module() -> void:
 	Saves.register_section("ship_bay", self)
 	# Driving the yard's vehicles (the lift, the power unit, a trolley on remote control).
 	for k: Array in [["ship_bay.raise", "Raise the lift or deck", KEY_UP], ["ship_bay.lower", "Lower the lift or deck", KEY_DOWN],
-			["ship_bay.call_trolley", "Call a trolley (Shift: large, Ctrl: small)", KEY_T]]:
+			["ship_bay.call_trolley", "Call a trolley (Shift: large, Ctrl: small)", KEY_T],
+			["ship_bay.dolly_ahead", "Dolly on remote: ahead", KEY_UP], ["ship_bay.dolly_back", "Dolly on remote: back", KEY_DOWN],
+			["ship_bay.dolly_left", "Dolly on remote: steer left", KEY_LEFT], ["ship_bay.dolly_right", "Dolly on remote: steer right", KEY_RIGHT],
+			["ship_bay.dolly_up", "Dolly: raise the deck", KEY_PAGEUP], ["ship_bay.dolly_down", "Dolly: lower the deck", KEY_PAGEDOWN],
+			["ship_bay.dolly_mode", "Dolly: steering mode", KEY_M]]:
 		Keys.register(k[0], k[1], k[2], "Yard vehicles")
 	# Multiplayer may load after this module, so its events are hooked up once all are in.
 	if Modules.ready_done:
 		_hook_net()
-	elif not Modules.modules_ready.is_connected(_hook_net):
-		Modules.modules_ready.connect(_hook_net, CONNECT_ONE_SHOT)
+		_hook_contracts()
+	else:
+		if not Modules.modules_ready.is_connected(_hook_net):
+			Modules.modules_ready.connect(_hook_net, CONNECT_ONE_SHOT)
+		if not Modules.modules_ready.is_connected(_hook_contracts):
+			Modules.modules_ready.connect(_hook_contracts, CONNECT_ONE_SHOT)
 	if Flags.is_on("ship_bay.bay_view"):
 		Router.register_scene(BAY_SCENE, "res://modules/ship_bay/internal/bay/bay.tscn")
 		Shots.register("kestrel_in_bay", BAY_SCENE)
@@ -198,17 +221,58 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
 	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
 	_net.call("register_event", "ship_bay.line", _apply_line, _check_line)
+	_net.call("register_event", "ship_bay.transporter", _apply_transporter, _pass)
+	_net.call("register_event", "ship_bay.cradle", _apply_cradle, _pass)
 	_net.call("register_snapshot_provider", "ship_bay", self)
+
+
+## Scrapyard S1: when Contracts says a job's subject is due (a part to strip or refurbish),
+## it lands in Deliveries as a crate and Contracts hears it is in. Hooked by duck typing, only
+## once Contracts has the signal.
+func _hook_contracts() -> void:
+	var contracts := Modules.bus("contracts")
+	if contracts == null or not contracts.has_signal("subject_due") or _contracts == contracts:
+		return
+	_contracts = contracts
+	contracts.connect("subject_due", _on_subject_due)
+	if not delivery_landed.is_connected(_on_subject_landed):
+		delivery_landed.connect(_on_subject_landed)
+
+
+## A job's subject is due: {type: "part", component: {id, material}, condition, mass_kg}.
+## The host sets it down in Deliveries (other players' calls are ignored, as deliveries are).
+func _on_subject_due(job_id: String, subject: Dictionary) -> void:
+	if str(subject.get("type", "")) != "part":
+		return
+	var component: Dictionary = subject.get("component", {})
+	var id := str(component.get("id", ""))
+	if id == "":
+		return
+	receive_delivery(SUBJECT_ORDER + job_id, [{"item_id": id, "qty": 1, "condition": float(subject.get("condition", 1.0)),
+			"name": str(component.get("name", id)), "grade": str(component.get("material", "")),
+			"mass": float(subject.get("mass_kg", 0.0))}])
+
+
+func _on_subject_landed(order_id: String, _crate_ids: PackedStringArray) -> void:
+	if not order_id.begins_with(SUBJECT_ORDER) or _contracts == null:
+		return
+	if _net == null or bool(_net.call("is_host")):
+		if _contracts.has_method("subject_landed"):
+			_contracts.call("subject_landed", order_id.substr(SUBJECT_ORDER.length()))
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
-	for k: String in ["ship_bay.raise", "ship_bay.lower", "ship_bay.call_trolley"]:
+	if _contracts and _contracts.is_connected("subject_due", _on_subject_due):
+		_contracts.disconnect("subject_due", _on_subject_due)
+	_contracts = null
+	for k: String in ["ship_bay.raise", "ship_bay.lower", "ship_bay.call_trolley", "ship_bay.dolly_ahead", "ship_bay.dolly_back",
+			"ship_bay.dolly_left", "ship_bay.dolly_right", "ship_bay.dolly_up", "ship_bay.dolly_down", "ship_bay.dolly_mode"]:
 		Keys.unregister(k)
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line"]:
+				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -353,7 +417,7 @@ func set_ship_powered(on: bool) -> void:
 
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
-	var out := {"storage": _stock.to_dict(), "line": line_state()}
+	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true)}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -374,6 +438,8 @@ func restore(state: Dictionary) -> void:
 			_line["stations"][s] = at
 	stock_changed.emit()
 	line_changed.emit()
+	transport_state = (state.get("transport", {}) as Dictionary).duplicate(true)
+	transport_restored.emit(transport_state)
 	var id: String = state.get("ship_id", "")
 	if id == "":
 		unload_ship()
@@ -1194,6 +1260,34 @@ func _apply_carry(payload: Dictionary) -> void:
 	if _stock.carry(str(payload.get("crate_id", "")), str(payload.get("trolley", ""))):
 		stock_changed.emit()
 		crate_carried.emit(str(payload["crate_id"]), str(payload["trolley"]))
+
+
+## A transporter's deck, steering and status (the driving player sends it as it changes).
+func send_transporter(payload: Dictionary) -> void:
+	if _net:
+		_net.call("request", "ship_bay.transporter", payload)
+	else:
+		_apply_transporter(payload)
+
+
+## A cradle's pins, or a dolly picking it up ("dolly": kind) or setting it down ("dolly": "").
+func send_cradle(payload: Dictionary) -> void:
+	if _net:
+		_net.call("request", "ship_bay.cradle", payload)
+	else:
+		_apply_cradle(payload)
+
+
+func _pass(_sender: int, payload: Dictionary) -> Variant:
+	return payload
+
+
+func _apply_transporter(payload: Dictionary) -> void:
+	transporter_state.emit(payload)
+
+
+func _apply_cradle(payload: Dictionary) -> void:
+	cradle_state.emit(payload)
 
 
 func _check_trolley(_sender: int, payload: Dictionary) -> Variant:
