@@ -42,6 +42,9 @@ func _ready() -> void:
 	_host.name = "Host"
 	_host.custom_minimum_size.y = 52
 	box.add_child(_host)
+	var reach := BsxTheme.muted("Your router's port is opened for you where it allows it; the wrist Crew tab shows the address to give the crew.")
+	reach.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(reach)
 
 	box.add_child(BsxTheme.muted("Join a crew: the host's address"))
 	_address = _field("e.g. 192.168.1.20", str(Settings.get_value("multiplayer", "last_address")), "Address")

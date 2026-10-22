@@ -92,6 +92,7 @@ func _ready() -> void:
 	net.session_started.connect(_on_session)
 	net.session_ended.connect(_on_session)
 	net.session_ended.connect(_on_session_ended)
+	net.router_changed.connect(func(_i: Dictionary) -> void: _fill_online())
 	crew.chat_received.connect(_add_line)
 	crew.activity_changed.connect(_on_activity)
 	for line in crew.chat_log():
@@ -226,7 +227,10 @@ func _fill_online() -> void:
 	if online:
 		_online.add_child(_online_button("LEAVE", "CrewLeave", net.leave))
 		if net.is_host():
-			_online_note.text = "Hosting. Crew join with your address and port %d:\n%s" % [_port(), _addresses()]
+			_online_note.text = _hosting_note(net.router_info())
+			var copy := _online_button("COPY", "CrewCopyAddress", func() -> void:
+				DisplayServer.clipboard_set(_best_address(net.router_info())))
+			_online.add_child(copy)
 		elif net.peers().is_empty():
 			_online_note.text = "Joining %s ..." % _address_box.text.strip_edges()
 		else:
@@ -236,6 +240,25 @@ func _fill_online() -> void:
 		_online.add_child(_online_button("JOIN", "CrewJoin", _join))
 		if _online_note.text == "" or _online_note.text.begins_with("Hosting") or _online_note.text.begins_with("On shift"):
 			_online_note.text = "Host to let crew join you, or type the host's address and JOIN."
+
+
+## Where the crew can reach this host: over the internet once the router opened the port,
+## and on the same network always.
+func _hosting_note(router: Dictionary) -> String:
+	var lines: PackedStringArray = ["Hosting on port %d." % _port()]
+	match str(router.get("state", "off")):
+		"open":
+			lines.append("Over the internet: %s" % router.external)
+		"opening":
+			lines.append("Opening the port on your router...")
+		"failed":
+			lines.append("Internet play needs port %d (UDP) forwarded to this PC by hand: %s." % [_port(), router.reason])
+	lines.append("Same network: %s" % _addresses())
+	return "\n".join(lines)
+
+
+func _best_address(router: Dictionary) -> String:
+	return str(router.external) if router.get("state") == "open" else _addresses().get_slice(",", 0)
 
 
 func _online_button(text: String, node_name: String, action: Callable) -> Button:

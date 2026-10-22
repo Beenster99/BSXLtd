@@ -38,6 +38,8 @@ signal activity_changed(peer_id: int, text: String)
 ## "at": Vector3, "normal": Vector3, "object_id": String ("" for bare floor), "time": host
 ## clock}. Draw the marker and highlight from this signal, not from the click. See ping().
 signal ping_received(ping: Dictionary)
+## The home router's port for hosting changed: see router_info().
+signal router_changed(info: Dictionary)
 
 const ONLINE_FLAG := "multiplayer.online"
 const DEFAULT_PORT := 24570
@@ -54,13 +56,15 @@ const CREW_SCREEN := preload("res://modules/multiplayer/internal/crew/crew_scree
 
 var _crew: Node
 var _was_client := false
+var _router: Node
+var _host_port := DEFAULT_PORT
 
 var _session: NetSession
 
 
 func register_module() -> void:
 	Settings.register("multiplayer", {"player_name": "Fitter", "port": DEFAULT_PORT,
-			"last_address": "127.0.0.1"})
+			"last_address": "127.0.0.1", "open_router": true})
 	_session = NetSession.new()
 	_session.name = "Session"
 	_session.compat = compat_info()
@@ -81,7 +85,14 @@ func register_module() -> void:
 	if Flags.is_on(ONLINE_FLAG):
 		Router.register_scene(PLAY_SCENE, "res://modules/multiplayer/internal/lobby/play_together.tscn")
 		Menu.register_entry(PLAY_SCENE, "Play Together", PLAY_SCENE, 5)
-	session_started.connect(func(as_host: bool) -> void: _was_client = not as_host)
+	_router = preload("res://modules/multiplayer/internal/net_router.gd").new()
+	_router.name = "Router"
+	_router.changed.connect(router_changed.emit)
+	add_child(_router)
+	session_started.connect(func(as_host: bool) -> void:
+		_was_client = not as_host
+		if as_host and bool(Settings.get_value("multiplayer", "open_router")):
+			_router.open(_host_port))
 	session_ended.connect(_on_session_ended)
 
 
@@ -95,6 +106,7 @@ func unregister_module() -> void:
 ## A player who joined someone's yard has no game of their own there, so when the session
 ## ends (the host left, or they did) they go back to Play Together, which says why.
 func _on_session_ended(reason: String) -> void:
+	_router.close()
 	var was_client := _was_client
 	_was_client = false
 	if was_client and Modules.bus("multiplayer") == self and Router.has_scene(PLAY_SCENE) \
@@ -109,6 +121,7 @@ func host(port: int = DEFAULT_PORT) -> Error:
 	if not Flags.is_on(ONLINE_FLAG):
 		return ERR_UNAVAILABLE
 	_refresh_identity()
+	_host_port = port
 	return _session.host(port, MAX_CREW - 1)
 
 
@@ -149,6 +162,14 @@ func server_time() -> float:
 
 func round_trip() -> float:
 	return _session.round_trip()
+
+
+## Hosting over the internet: when hosting starts, the game asks the home router (UPnP) to
+## open the port and for its internet address. {"state": "off" | "opening" | "open" |
+## "failed", "external": the address crew type to join from outside, "port", "reason"}.
+## Settings "multiplayer" / "open_router" = false skips the router.
+func router_info() -> Dictionary:
+	return _router.info.duplicate()
 
 
 # --- Events ----------------------------------------------------------------------------
