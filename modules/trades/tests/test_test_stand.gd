@@ -9,7 +9,8 @@ var walker_active := true
 func set_walker_active(on: bool) -> void:
 	walker_active = on
 """
-const FLAGS := ["trades.test_stand", "trades.power_wrench", "trades.wire_diagram", "trades.power_riveter"]
+const FLAGS := ["trades.test_stand", "trades.power_wrench", "trades.wire_diagram", "trades.power_riveter",
+		"trades.rivet_heat", "trades.slim_hotbar"]
 
 
 func run_tests() -> void:
@@ -59,13 +60,19 @@ func run_tests() -> void:
 	check(reported.is_empty(), "nor does Quality")
 	check(rig._hint_label.text.contains("in at"), "the hint says how tight: %s" % rig._hint_label.text)
 
-	# A set rivet: drill it out.
+	# The slim hotbar (beenster, 22 Oct): no drill, crimper or cutter.
+	check(not rig.hotbar.has(&"drill") and not rig.hotbar.has(&"wire_tool") and not rig.hotbar.has(&"cutter")
+			and rig.hotbar.has(&"welder") and rig.hotbar.has(&"hands"), "no drill, crimper or cutter on the hotbar")
+
+	# A set rivet: heat it out with the welder.
 	var r := _first(station, "rivet", true)
 	_aim_at(rig, station, r)
-	rig.set_tool(&"drill")
-	station.press(&"drill")
-	_run(station, TradesShipJoints.DRILL_S + 0.1)
-	check(not station.is_tight(station.points[r]), "a stand rivet drills out")
+	check(station.kind_tools("rivet") == [&"rivet_squeezer", &"welder"], "rivets: the rivet gun sets them, the welder takes them out")
+	check(station.kind_help("rivet").contains("welder (%s) to take out" % rig.tool_key(&"welder")), "the help names the welder and its key")
+	rig.set_tool(&"welder")
+	station.press(&"welder")
+	_run(station, TradesShipJoints.HEAT_S + 0.2)
+	check(not station.is_tight(station.points[r]), "a stand rivet heats out")
 
 	# The open weld seam: lay a bead.
 	var w := _first(station, "weld", false)

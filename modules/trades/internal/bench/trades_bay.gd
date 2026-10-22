@@ -29,6 +29,8 @@ const TOOL_LABELS := {
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
 	&"cutter": "Cutter",
 }
+## The tools trades.slim_hotbar leaves off the yard's hotbar.
+const SLIM_DROPS: Array[StringName] = [&"drill", &"wire_tool", &"cutter"]
 ## A tool's name on the hotbar and its display: the wrench is the powered one with
 ## trades.power_wrench, the squeezer the rivet gun in the yard with trades.power_riveter
 ## (the bench's riveting lesson keeps the hand squeezer).
@@ -120,9 +122,13 @@ func _ready() -> void:
 		_build_room()
 		_build_bench()
 	hotbar.assign(TOOLS)
+	if in_yard and Flags.is_on("trades.slim_hotbar"):
+		# beenster, 22 Oct: welds come out with the welder's unweld, rivets by heating them
+		# with the welder, and plugs are wired by hand; so no drill, crimper or cutter.
+		hotbar.assign(hotbar.filter(func(t: StringName) -> bool: return not t in SLIM_DROPS))
 	if in_yard and Flags.is_on("trades.tractor"):
 		hotbar.append(&"tractor")
-	if in_yard and Flags.is_on("trades.cutter"):
+	if in_yard and Flags.is_on("trades.cutter") and not Flags.is_on("trades.slim_hotbar"):
 		hotbar.append(&"cutter")
 	_build_worker()
 	sparks = TradesSparks.new()

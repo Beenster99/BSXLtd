@@ -63,6 +63,7 @@ flags = {
 "trades.hover_specs": true,
 "trades.spec_sheet": true,
 "trades.test_stand": true,
+"trades.slim_hotbar": true,
 "trades.wiring": true,
 "ui": true
 }

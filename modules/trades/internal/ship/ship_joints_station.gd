@@ -42,12 +42,6 @@ const KIND_TOOLS := {
 	"weld": [&"welder"],
 	"connector": [&"hands", &"wire_tool"],
 }
-const KIND_HELP := {
-	"bolt": "torque wrench (2)",
-	"rivet": "squeezer (4) to set, drill (3) to drill out",
-	"weld": "welder (5): left click welds; X switches it to unweld, which cuts welds out",
-	"connector": "hands (1) or crimper (6)",
-}
 
 ## The powered wrench (trades.power_wrench, TradesPowerWrench): seconds to run a bolt up to
 ## its setting; how long the trigger can stay down after the clutch slips before the thread
@@ -280,7 +274,7 @@ func press(tool: StringName) -> void:
 		if tool == &"hands":
 			_refit(f)
 		else:
-			bay.hint("The part is off. Hands (1) on one of its joints puts it back.")
+			bay.hint("The part is off. %s on one of its joints puts it back." % _named(&"hands").capitalize())
 		return
 	var tight := is_tight(f)
 	if uses_diagram(f) and kind_tools(f.kind).has(tool):
@@ -307,11 +301,11 @@ func press(tool: StringName) -> void:
 			_begin(true, tool)
 		return
 	if not kind_tools(f.kind).has(tool):
-		bay.hint("That's a %s: %s." % [f.kind, KIND_HELP[f.kind]])
+		bay.hint("That's a %s: %s." % [f.kind, kind_help(f.kind)])
 		return
 	if tool == &"drill":
 		if not tight:
-			bay.hint("Nothing to drill out: this rivet hole is empty. Squeezer (4) sets a new one.")
+			bay.hint("Nothing to drill out: this rivet hole is empty. The %s sets a new one." % _named(&"rivet_squeezer"))
 			return
 		_begin(true, tool)
 	elif tight:
@@ -353,22 +347,22 @@ func back_out(tool: StringName) -> void:
 	match f.kind:
 		"bolt":
 			if tool != &"torque_wrench":
-				bay.hint("Breaking a bolt loose takes the torque wrench (2).")
+				bay.hint("Breaking a bolt loose takes the %s." % _named(&"torque_wrench"))
 				return
 		"rivet":
 			if not tool in [&"drill", &"welder", &"cutter"] or not kind_tools("rivet").has(tool):
-				bay.hint("Rivets come out with the drill (3).")
+				bay.hint("Rivets come out with the %s." % " or the ".join(_out_tools("rivet").map(_named)))
 				return
 		"weld":
 			if tool != &"welder":
-				bay.hint("Cut a weld out with the welder (5).")
+				bay.hint("Cut a weld out with the %s." % _named(&"welder"))
 				return
 			if not Flags.is_on("trades.unweld"):
 				bay.hint("Cutting welds isn't switched on yet.")
 				return
 		"connector":
 			if tool != &"hands" and tool != &"wire_tool":
-				bay.hint("Unplug it with your hands (1).")
+				bay.hint("Unplug it with your %s." % _named(&"hands"))
 				return
 	_begin(true, tool)
 
@@ -615,9 +609,33 @@ func kind_tools(kind: String) -> Array:
 	if kind == "rivet":
 		if Flags.is_on("trades.rivet_heat"):
 			out.append(&"welder")
-		if bay.hotbar.has(&"cutter"):
-			out.append(&"cutter")
-	return out
+		out.append(&"cutter")
+	# Only what's on the hotbar (trades.slim_hotbar leaves the drill, crimper and cutter off).
+	return out.filter(func(t: StringName) -> bool: return bay.hotbar.has(t))
+
+
+## The tools that take a made joint of `kind` off.
+func _out_tools(kind: String) -> Array:
+	if kind == "rivet":
+		return kind_tools(kind).filter(func(t: StringName) -> bool: return t != &"rivet_squeezer")
+	return kind_tools(kind)
+
+
+## Which tools work a kind of joint, for hints and the inspect sheet: "rivet gun (3) to set,
+## welder (4) to take out".
+func kind_help(kind: String) -> String:
+	match kind:
+		"rivet":
+			return "%s to set, %s to take out" % [_named(&"rivet_squeezer"), " or ".join(_out_tools(kind).map(_named))]
+		"weld":
+			return "%s: left click welds; %s switches it to unweld, which cuts welds out" \
+					% [_named(&"welder"), Keys.key_name(TradesBus.KEY_MODE)]
+	return " or ".join(kind_tools(kind).map(_named))
+
+
+## A tool's name and key: "welder (4)".
+func _named(tool: StringName) -> String:
+	return "%s (%s)" % [TradesBay.label_of(tool).to_lower(), bay.tool_key(tool)]
 
 
 func _torch() -> TradesWeldTorch:
@@ -781,7 +799,7 @@ func _made(f: FastenerPoint, quality: float) -> void:
 func _refit(f: FastenerPoint) -> void:
 	var slot_id := FastenerPoint.slot_of(f.joint_id)
 	if not tractor.near_mount(slot_id):
-		bay.hint("The part isn't at its mount. Bring it back with the tractor beam (7).")
+		bay.hint("The part isn't at its mount. Bring it back with the %s." % _named(&"tractor"))
 		return
 	var comp: String = _removed.get(slot_id, "")
 	if comp == "":
@@ -973,7 +991,7 @@ func inspect_lines() -> PackedStringArray:
 	if joint:
 		lines.append("")
 		lines.append("%-9s %s  %s %s  %s" % ["JOINT", joint.joint_id, joint.spec, joint.kind, _state_word(joint)])
-		lines.append("%-9s %s" % ["TOOL", KIND_HELP.get(joint.kind, "-")])
+		lines.append("%-9s %s" % ["TOOL", kind_help(joint.kind)])
 	if not slot.accepts.is_empty():
 		lines.append("%-9s %s" % ["TAKES", ", ".join(slot.accepts)])
 	return lines
@@ -998,7 +1016,7 @@ func _practice_lines(joint: FastenerPoint) -> PackedStringArray:
 		first = false
 	lines.append("")
 	lines.append("%-9s %s  %s %s  %s" % ["JOINT", joint.joint_id, joint.spec, joint.kind, _state_word(joint)])
-	lines.append("%-9s %s" % ["TOOL", KIND_HELP.get(joint.kind, "-")])
+	lines.append("%-9s %s" % ["TOOL", kind_help(joint.kind)])
 	return lines
 
 
@@ -1134,12 +1152,13 @@ func actions(tool: StringName) -> Array:
 			"bolt":
 				want = &"torque_wrench"
 			"rivet":
-				want = (&"cutter" if bay.hotbar.has(&"cutter") else &"drill") if tight else &"rivet_squeezer"
+				var out_tools := _out_tools("rivet")
+				want = (out_tools[0] if not out_tools.is_empty() else &"") if tight else &"rivet_squeezer"
 			"weld":
 				want = &"welder"
 			"connector":
 				want = &"hands"
-		if want != tool:
+		if want != &"" and want != tool:
 			out.append([bay.tool_action(want), "take the %s" % TradesBay.label_of(want).to_lower()])
 	return out
 
