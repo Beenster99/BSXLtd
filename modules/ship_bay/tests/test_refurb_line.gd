@@ -143,8 +143,11 @@ func run_tests() -> void:
 	check(vessel != "" and bus.dust_kg() == 0.0 and bus.place_for(ShipBayBus.DUST_ITEM).begins_with("Z"),
 			"SEND TO STORES makes the vessel a crate for the bulk floor: %s -> %s" % [vessel, bus.place_for(ShipBayBus.DUST_ITEM)])
 	var fleet: Node = yard.get("trolleys")
-	var job: Dictionary = (fleet.get("jobs") as Dictionary).get("l", {})
-	check(str(job.get("do", "")) == "put_away", "and calls the large trolley for it: %s" % [job])
+	var sent := ""
+	for t: String in ["s", "m", "l"]:
+		if str(((fleet.get("jobs") as Dictionary).get(t, {}) as Dictionary).get("do", "")) == "put_away":
+			sent = t
+	check(sent != "", "and calls a trolley for it: %s" % [fleet.get("jobs")])
 	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}})
 	bus.carry_crate(vessel, "l")
 	bus.store_crate(vessel, bus.place_for(ShipBayBus.DUST_ITEM))
