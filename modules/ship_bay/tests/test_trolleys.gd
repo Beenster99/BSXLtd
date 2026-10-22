@@ -22,7 +22,7 @@ func run_tests() -> void:
 		yard.queue_free()
 		return
 	var trolleys: Dictionary = fleet.get("trolleys")
-	check(trolleys.keys() == ["s", "m", "l", "p"], "small, medium, large and the picking lift: %s" % [trolleys.keys()])
+	check(trolleys.keys() == ["s", "m", "l", "p", "a", "b"], "small, medium, large, the picking lift and the two lines' trolleys: %s" % [trolleys.keys()])
 	var hall: AABB = bus.shipyard_rooms()["deliveries"]["box"]
 	var haulers: Array = [trolleys["s"], trolleys["m"], trolleys["l"]]
 	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))),

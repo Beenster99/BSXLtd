@@ -11,8 +11,9 @@ const CELL := 0.25
 ## Metres over the floor that count as in the way.
 const BAND_LOW := 0.12
 const BAND_HIGH := 2.2
-## The planned area (x, z, width, depth), metres: the three wings, the courtyard and the apron.
-const AREA := Rect2(-50.0, -46.0, 100.0, 98.0)
+## The planned area (x, z, width, depth), metres: the three wings, the courtyard, the apron
+## in front and the crusher bay off the east wing's end.
+const AREA := Rect2(-50.0, -46.0, 120.0, 98.0)
 
 var size := Vector2i.ZERO
 ## Blocked cells (1) as a flat array, row by row (z).
