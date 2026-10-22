@@ -74,7 +74,7 @@ const SUBJECT_ORDER := "subject:"
 ## stores. Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
 const TROLLEYS: PackedStringArray = ["s", "m", "l", "p"]
-const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
@@ -551,6 +551,8 @@ func take_stock(item_id: String, qty := 1) -> void:
 ## - "fetch" {item, qty, to: Vector3} (the picking lift "p"): pick the goods off their shelf
 ##   and hand them to a trolley that brings them to `to`; it waits there until collected
 ## - "deliver" {crate, to}: (the lift asks a trolley) take a picked crate from the lift to `to`
+## - "shelve" {from} (the picking lift): take the goods off a loaded trolley standing at the
+##   stores' hand-in one by one and put each on its shelf
 func command_trolley(trolley_id: String, command: String, args: Dictionary = {}) -> void:
 	var payload := {"trolley": trolley_id, "command": command, "args": args.duplicate()}
 	if _net:
@@ -751,9 +753,28 @@ func picked_crates() -> Dictionary:
 	return out
 
 
-## The delivered crate a trolley carries now, or "".
+## The delivered crate a trolley carries now (the first, when it has several), or "".
 func trolley_cargo(trolley_id: String) -> String:
 	return _stock.carried_by(trolley_id)
+
+
+## Every crate a trolley carries now, in the order it took them.
+func trolley_load(trolley_id: String) -> PackedStringArray:
+	return _stock.load_of(trolley_id)
+
+
+## How many goods a trolley has aboard, and how many it takes at most.
+func trolley_goods(trolley_id: String) -> int:
+	return _stock.goods_on(trolley_id)
+
+
+func trolley_capacity(trolley_id: String) -> int:
+	return int(StorageStock.LOAD.get(trolley_id, 1))
+
+
+## Could a trolley take this crate on top of what it carries?
+func trolley_has_room(trolley_id: String, crate_id: String) -> bool:
+	return _stock.crates.has(crate_id) and _stock.has_room(trolley_id, _stock.crates[crate_id])
 
 
 ## Every storage location: id -> {id, kind ("bin", "pallet", "bulk"), rack, bay, level, pos,
@@ -1253,6 +1274,8 @@ func _check_carry(_sender: int, payload: Dictionary) -> Variant:
 		return "already on a trolley"
 	if not TROLLEYS.has(str(payload.get("trolley", ""))):
 		return "no such trolley"
+	if not _stock.has_room(str(payload["trolley"]), _stock.crates[id]):
+		return "that trolley is full"
 	return payload
 
 
@@ -1331,7 +1354,7 @@ func _check_hand(_sender: int, payload: Dictionary) -> Variant:
 	if str(_stock.crates.get(id, {}).get("carrier", "")) == "":
 		return "nothing carries that crate"
 	var to := str(payload.get("trolley", ""))
-	if not TROLLEYS.has(to) or _stock.carried_by(to) != "":
+	if not TROLLEYS.has(to) or not _stock.has_room(to, _stock.crates[id]):
 		return "that trolley can't take it"
 	return payload
 
@@ -1355,7 +1378,8 @@ func _apply_collect(payload: Dictionary) -> void:
 
 func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
 	var by := str(payload.get("trolley", ""))
-	if not TROLLEYS.has(by) or _stock.carried_by(by) != "":
+	var mass := float(StorageLayout.items().get(str(payload.get("component", "")), {}).get("mass", 0.0))
+	if not TROLLEYS.has(by) or not _stock.has_room(by, {"qty": 1, "mass": mass}):
 		return "that trolley is full"
 	if str(payload.get("component", "")) == "":
 		return "no part"

@@ -4,6 +4,9 @@ extends RefCounted
 ## order on every machine, and it saves with the bay. A new game starts with it empty.
 
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
+## How many goods each trolley takes at once (a tote of small parts counts as one); the
+## picking lift takes one crate at a time.
+const LOAD := {"s": 20, "m": 20, "l": 20, "p": 1}
 
 ## Location id -> {item, qty, condition (0..1, the average of what is there)}.
 var stock: Dictionary = {}
@@ -49,7 +52,7 @@ func land(order_id: String, lines: Array) -> PackedStringArray:
 ## something already carries it.
 func carry(crate_id: String, trolley: String) -> bool:
 	var c: Dictionary = crates.get(crate_id, {})
-	if c.is_empty() or str(c.get("carrier", "")) != "":
+	if c.is_empty() or str(c.get("carrier", "")) != "" or not has_room(trolley, c):
 		return false
 	c["carrier"] = trolley
 	c["spot"] = -1
@@ -80,7 +83,7 @@ func pick(loc: String, qty: int, carrier: String, to: Vector3) -> String:
 ## A part beamed off the ship onto a trolley's deck: a crate ("beam/<n>", order "beam") that
 ## trolley carries, to put away like a delivery. Returns its id, "" when the trolley is full.
 func beam(item: String, condition: float, carrier: String) -> String:
-	if item == "" or carried_by(carrier) != "":
+	if item == "" or not has_room(carrier, {"qty": 1, "mass": float(Layout.items().get(item, {}).get("mass", 0.0))}):
 		return ""
 	var known: Dictionary = Layout.items().get(item, {})
 	var n := 1
@@ -109,12 +112,43 @@ func collect(crate_id: String) -> Dictionary:
 	return c
 
 
-## The crate a trolley carries, or "".
+## The crate a trolley carries (the first it took when it has several), or "".
 func carried_by(trolley: String) -> String:
 	for id: String in crates:
 		if str(crates[id].get("carrier", "")) == trolley:
 			return id
 	return ""
+
+
+## Every crate a trolley carries, in the order it took them.
+func load_of(trolley: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	for id: String in crates:
+		if str(crates[id].get("carrier", "")) == trolley:
+			out.append(id)
+	return out
+
+
+## How many goods a crate is on a deck: its parts one by one, or one tote of small parts.
+static func goods_in(c: Dictionary) -> int:
+	return 1 if Layout.kind_for(float(c.get("mass", 0.0))) == "bin" else maxi(1, int(c.get("qty", 1)))
+
+
+## How many goods a trolley has aboard.
+func goods_on(trolley: String) -> int:
+	var n := 0
+	for id in load_of(trolley):
+		n += goods_in(crates[id])
+	return n
+
+
+## Can `trolley` take crate `c` on top of what it carries?
+func has_room(trolley: String, c: Dictionary) -> bool:
+	var cap := int(LOAD.get(trolley, 1))
+	var on := goods_on(trolley)
+	if on == 0:
+		return true   # an empty trolley takes any one crate, however many goods it holds
+	return cap > 1 and on + goods_in(c) <= cap
 
 
 ## Where a crate's goods go: the item's home if it is free or already holds the same item,
