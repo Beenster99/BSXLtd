@@ -6,6 +6,7 @@
 script = ExtResource("1")
 flags = {
 "business": true,
+"business.debug": true,
 "business.economy": true,
 "business.market": true,
 "business.wallets": true,
