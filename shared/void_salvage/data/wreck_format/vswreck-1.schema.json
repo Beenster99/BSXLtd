@@ -268,15 +268,24 @@
 					"bend": {"$ref": "#/$defs/vec3"}}},
 				"removal": {"$ref": "#/$defs/removal"},
 				"power": {"type": "object", "required": ["role", "powered"], "properties": {
-					"role": {"enum": ["source", "conductor", "switch", "consumer"]}, "powered": {"type": "boolean"}, "closed": {"type": "boolean"}}},
+					"role": {"enum": ["source", "conductor", "switch", "consumer"]}, "powered": {"type": "boolean"}, "closed": {"type": "boolean"},
+					"level": {"type": "number", "minimum": 0, "maximum": 1, "description": "what it runs at, 0..1 (the highest source level reaching it)"},
+					"output": {"type": "number", "minimum": 0, "maximum": 1, "description": "a source's output, 0 dead, 0.15 low, 1 live"}}},
+				"cell": {"type": "object", "required": ["charge"], "description": "a battery cell of its own (a lamp's, an emergency backup's)", "properties": {
+					"charge": {"type": "number", "minimum": 0, "maximum": 1}}},
+				"faults": {"type": "integer", "minimum": 0, "description": "fault bit flags: 1 dead lamp"},
 				"fluid": {"type": "object", "required": ["fluid", "tank"], "properties": {
 					"fluid": {"enum": ["fuel", "coolant"]}, "tank": {"type": "boolean"}, "capacity_l": {"type": "number"}, "level": {"type": "number"}, "litres": {"type": "number"}}},
 				"hazard": {"enum": [1, 2], "description": "1 live wiring, 2 charged fuel"},
 				"geometry": {"$ref": "#/$defs/geometry"},
 				"look": {"type": "string", "description": "a key of the file's looks"},
-				"lamp": {"type": "object", "properties": {"colour": {"$ref": "#/$defs/color"}, "energy": {"type": "number"}, "range": {"type": "number"}, "powered": {"type": "boolean"}, "lit": {"type": "boolean"}}}
+				"lamp": {"$ref": "#/$defs/lamp"},
+				"backup_lamp": {"$ref": "#/$defs/lamp"}
 			}
 		},
+		"lamp": {"type": "object", "properties": {"colour": {"$ref": "#/$defs/color"}, "energy": {"type": "number"}, "range": {"type": "number"},
+			"powered": {"type": "boolean", "description": "on the grid"}, "lit": {"type": "boolean"},
+			"feed": {"enum": ["cell", "backup"], "description": "cell: off its own cell; backup: off its cell while the grid gives it under 0.6"}}},
 		"joint": {
 			"type": "object",
 			"required": ["id", "kind", "a", "b", "at", "normal", "health", "max_health"],

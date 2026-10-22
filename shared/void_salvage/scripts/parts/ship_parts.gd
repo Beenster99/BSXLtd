@@ -119,7 +119,9 @@ static func console(kit: ShipKit, frame: Transform3D, width: float, depth: float
 	var face := Basis(Vector3.UP, PI)   # the slope's high side away from the operator
 	kit.add(PartShapes.slope(Vector3(width, height, depth), 0.62), frame * Transform3D(face, Vector3(0, height * 0.5, -depth * 0.5)),
 			mat("dark"))
-	_box(kit, frame, Vector3(0, height * 0.31, -0.02), Vector3(width - 0.1, height * 0.6, 0.04), mat("shell"), false)
+	# The shell panel stands 0.6 mm proud of the slope's tall face: flush, the two faces
+	# flicker on renderers with less depth precision than ours (BSX's yard, Compatibility).
+	_box(kit, frame, Vector3(0, height * 0.31, -0.0194), Vector3(width - 0.1, height * 0.6, 0.04), mat("shell"), false)
 	_box(kit, frame, Vector3(0, height * 0.62 + 0.005, 0.0), Vector3(width, 0.01, 0.02), mat("edge"), false)
 	_box(kit, frame, Vector3(0, 0.04, -0.03), Vector3(width - 0.2, 0.08, 0.02), mat("trim"), false)
 	return kit.end_fitting(_fitting("console", frame, Vector3(-width * 0.5, 0, -depth), Vector3(width * 0.5, height, 0.02)))
