@@ -53,8 +53,9 @@ var _shank_item: JointBatch.Item
 
 
 ## Builds the view for `c` on part `part_xform` (relative to the structure), drawn by
-## `batch`.
-func setup(c: ConnectionData, part_xform: Transform3D, batch: JointBatch) -> void:
+## `batch`. A subtle head (style 4) takes `paint`, its part's surface, so it reads as a
+## bump in the plate rather than a bright fastener.
+func setup(c: ConnectionData, part_xform: Transform3D, batch: JointBatch, paint: Material = null) -> void:
 	connection = c
 	_batch = batch
 	_part_xform = part_xform
@@ -68,7 +69,8 @@ func setup(c: ConnectionData, part_xform: Transform3D, batch: JointBatch) -> voi
 		var z := c.seam_up.cross(y).normalized()
 		basis = Basis(y.cross(z).normalized(), y, z)
 	_anchor = part_xform.affine_inverse() * Transform3D(basis, c.local_position)
-	item = JointBatch.Item.new(_mesh_for(c.kind, c.head), head_material(c.kind, c.head), Transform3D.IDENTITY)
+	var surface := painted_material(paint) if c.head == 4 and paint else head_material(c.kind, c.head)
+	item = JointBatch.Item.new(_mesh_for(c.kind, c.head), surface, Transform3D.IDENTITY)
 	item.custom = Color(0.0, _seized_flag(), 0.0, 0.0)
 	_apply_wear()
 	_batch.add(item)
@@ -309,6 +311,18 @@ const BOLT_SCALE: float = 0.65
 ## A flush rivet (head style 1): a low dome this wide and this high, metres.
 const FLUSH_RADIUS: float = 0.024
 const FLUSH_HEIGHT: float = 0.007
+## A subtle rivet (head style 4, the frame builds' skin): the flush bump made smaller and
+## flatter, in the plate's own paint (`painted_material`).
+const SUBTLE_RADIUS: float = 0.011
+const SUBTLE_HEIGHT: float = 0.002
+## How far a subtle head's shading leans toward its plate's (0 = a true dome, more = flatter).
+const SUBTLE_FLAT: float = 2.5
+## A subtle head's colour against its plate's paint (the plate's detail layer darkens it a
+## little on screen; 1 = the flat paint).
+const SUBTLE_SHADE: float = 0.85
+## A flush bolt (a bolt with head style 4, the frame builds' linings): a low socket head.
+const FLUSH_BOLT_RADIUS: float = 0.02
+const FLUSH_BOLT_HEIGHT: float = 0.005
 ## A spot weld's puddle: this wide across and this high off the plate, metres.
 const SPOT_RADIUS: float = 0.014
 const SPOT_HEIGHT: float = 0.004
@@ -319,8 +333,12 @@ static func _height_for(kind: ConnectionData.Kind, head: int = 0) -> float:
 		ConnectionData.Kind.RIVET:
 			if head == 1:
 				return FLUSH_HEIGHT
+			if head == 4:
+				return SUBTLE_HEIGHT
 			return 0.032 * RIVET_SCALE   # metres
 		ConnectionData.Kind.BOLT:
+			if head == 4:
+				return FLUSH_BOLT_HEIGHT
 			return 0.042 * BOLT_SCALE
 		ConnectionData.Kind.CONNECTOR:
 			return 0.1
@@ -358,6 +376,40 @@ static func head_material(kind: ConnectionData.Kind, head: int) -> ShaderMateria
 	return _materials[key]
 
 
+## A head in a part's own paint (subtle heads, style 4), so it reads as a bump in the plate:
+## the joint shader in `paint`'s colour (a shade darker, `SUBTLE_SHADE`: the plate's surface
+## tones its paint down with its detail layer), metal and roughness. Not the plate's surface
+## itself: that projects its detail in the part's space, and a head is a mesh of its own, so
+## each would take one arbitrary (often dark) detail value. One material per paint, so each
+## colour is one more batch.
+static func painted_material(paint: Material) -> ShaderMaterial:
+	if _materials.has(paint):
+		return _materials[paint]
+	# The joint shader takes its albedo as a Vector3 the way the surfaces do (linear).
+	var colour := Color(0.62, 0.62, 0.6)
+	var metallic := 0.4
+	var roughness := 0.55
+	var std := paint as StandardMaterial3D
+	var sm := paint as ShaderMaterial
+	if std:
+		colour = std.albedo_color.srgb_to_linear()
+		metallic = std.metallic
+		roughness = std.roughness
+	elif sm:
+		var a: Variant = sm.get_shader_parameter("albedo")
+		if a is Vector3:
+			colour = Color((a as Vector3).x, (a as Vector3).y, (a as Vector3).z)
+		elif a is Color:
+			colour = (a as Color).srgb_to_linear()
+		var mv: Variant = sm.get_shader_parameter("metallic")
+		var rv: Variant = sm.get_shader_parameter("roughness")
+		metallic = float(mv) if mv != null else metallic
+		roughness = float(rv) if rv != null else roughness
+	var m := _make_material(colour * SUBTLE_SHADE, metallic, roughness)
+	_materials[paint] = m
+	return m
+
+
 ## Dark, ground-flat remains of a cut weld.
 static func scar_material() -> ShaderMaterial:
 	if not _materials.has("scar"):
@@ -370,6 +422,49 @@ static func stub_material() -> ShaderMaterial:
 	if not _materials.has("stub"):
 		_materials["stub"] = _make_material(Color(0.5, 0.48, 0.45), 0.9, 0.3)
 	return _materials["stub"]
+
+
+## Frayed wire ends where a plug broke (docs/DAMAGE_PLAN.md 9.3.3): five short insulated
+## wires splaying out along +Y from the plug's spot, bare copper at their tips, in a loom's
+## wire colours. One mesh for every fray; the structure turns each about Y for variety.
+const FRAY_WIRES: Array[Color] = [Color(0.72, 0.08, 0.06), Color(0.08, 0.08, 0.08),
+		Color(0.9, 0.42, 0.06), Color(0.12, 0.3, 0.8), Color(0.15, 0.6, 0.2)]
+const FRAY_COPPER := Color(0.85, 0.45, 0.2)
+## Wire thickness and how far the wires reach, metres.
+const FRAY_THICK: float = 0.009
+const FRAY_LENGTH: float = 0.11
+static var _fray_mesh: ArrayMesh
+static var _fray_material: StandardMaterial3D
+
+
+static func fray_mesh() -> ArrayMesh:
+	if _fray_mesh == null:
+		var k := MeshKit.new()
+		for i in FRAY_WIRES.size():
+			var turn := TAU * float(i) / float(FRAY_WIRES.size()) + 0.4 * float(i % 2)
+			var lean := deg_to_rad(18.0 + 9.0 * float((i * 3) % 4))
+			var length := FRAY_LENGTH * (0.65 + 0.1 * float((i * 7) % 5))
+			var dir := Vector3(sin(lean) * cos(turn), cos(lean), sin(lean) * sin(turn))
+			var base := Vector3(cos(turn), 0.0, sin(turn)) * FRAY_THICK * 0.6
+			# A kink part way out, as a torn wire has.
+			var kink := base + dir * length * 0.55 + Vector3(cos(turn + 1.3), 0.0, sin(turn + 1.3)) * length * 0.12
+			var tip := kink + (dir + Vector3(cos(turn), 0.0, sin(turn)) * 0.4).normalized() * length * 0.45
+			k.color = FRAY_WIRES[i]
+			k.strut(base, kink, FRAY_THICK)
+			k.strut(kink, kink.lerp(tip, 0.75), FRAY_THICK)
+			k.color = FRAY_COPPER
+			k.strut(kink.lerp(tip, 0.75), tip, FRAY_THICK * 0.55)
+		_fray_mesh = k.finish()
+	return _fray_mesh
+
+
+static func fray_material() -> StandardMaterial3D:
+	if _fray_material == null:
+		_fray_material = StandardMaterial3D.new()
+		_fray_material.vertex_color_use_as_albedo = true
+		_fray_material.metallic = 0.3
+		_fray_material.roughness = 0.5
+	return _fray_material
 
 
 static func _make_material(color: Color, metallic: float, roughness: float) -> ShaderMaterial:
@@ -504,11 +599,14 @@ static func _mesh_for(kind: ConnectionData.Kind, head: int = 0) -> Mesh:
 		return _meshes[key]
 	var m: Mesh
 	match kind:
-		ConnectionData.Kind.RIVET when head == 1:
-			# A flush rivet: a shallow dome, more a bump in the skin than a head.
+		ConnectionData.Kind.RIVET when head == 1 or head == 4:
+			# A flush rivet: a shallow dome, more a bump in the skin than a head (smaller on
+			# a subtle one).
+			var r := SUBTLE_RADIUS if head == 4 else FLUSH_RADIUS
+			var h := SUBTLE_HEIGHT if head == 4 else FLUSH_HEIGHT
 			var dome := SphereMesh.new()
-			dome.radius = FLUSH_RADIUS
-			dome.height = FLUSH_HEIGHT * 2.0
+			dome.radius = r
+			dome.height = h * 2.0
 			dome.radial_segments = 8
 			dome.rings = 2
 			dome.is_hemisphere = true
@@ -519,11 +617,26 @@ static func _mesh_for(kind: ConnectionData.Kind, head: int = 0) -> Mesh:
 			var arrays := st.commit_to_arrays()
 			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 			for i in verts.size():
-				verts[i].y -= FLUSH_HEIGHT * 0.5
+				verts[i].y -= h * 0.5
 			arrays[Mesh.ARRAY_VERTEX] = verts
+			if head == 4:
+				# Shaded nearly as the plate round it is: only a soft bump catches the light.
+				var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+				for i in normals.size():
+					normals[i] = (normals[i] + Vector3.UP * SUBTLE_FLAT).normalized()
+				arrays[Mesh.ARRAY_NORMAL] = normals
 			var am := ArrayMesh.new()
 			am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 			m = am
+		ConnectionData.Kind.BOLT when head == 4:
+			# A flush bolt: a low round socket head, barely off the panel.
+			var low := CylinderMesh.new()
+			low.top_radius = FLUSH_BOLT_RADIUS * 0.85
+			low.bottom_radius = FLUSH_BOLT_RADIUS
+			low.height = FLUSH_BOLT_HEIGHT
+			low.radial_segments = 8
+			low.rings = 1
+			m = low
 		ConnectionData.Kind.RIVET:
 			var rivet := CylinderMesh.new()
 			rivet.top_radius = 0.036 * RIVET_SCALE

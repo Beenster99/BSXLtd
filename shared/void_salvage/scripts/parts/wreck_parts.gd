@@ -432,6 +432,8 @@ extends RefCounted
 const DETAIL := PartShapes.DETAIL
 const DARK := Color(0.16, 0.16, 0.17)
 const GLOWING := Color(1.0, 0.55, 0.2)
+## A warning flasher's red (PartShapes emissive kind "warning").
+const RED_WARNING := Color(1.0, 0.12, 0.08)
 # Finish zones: a colour's alpha carries a SurfaceFinish code (SurfaceZones.<FINISH>_A), so
 # the salvage surface draws that area as that finish: chrome, anodised alloy, ribbed rubber,
 # leather, glazed ceramic, solar silicon... instead of the part's own paint. A colour with no
@@ -837,8 +839,7 @@ static func thruster_grid(cols: int, rows: int, cell: float, depth: float,
 	col.size = Vector3(w, depth + cell * 0.5, d)
 	shape.collision = col
 	# Collision centred on the block; nozzles stick out a little on +Y.
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -1153,8 +1154,7 @@ static func engine_bell(radius: float, length: float, glow := Color(1.0, 0.72, 0
 	# The glow: the floor between the boss and the ring.
 	var g := MeshKit.new()
 	_thrusters_ring(g, rf * 0.2, rf * 0.6, y_fl + 0.002, y_fl + 0.002 + clampf(length * 0.006, 0.003, 0.012), 20)
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -1745,6 +1745,7 @@ static func console(width: float, height: float = 1.0, depth: float = 0.7,
 	var n := maxi(1, int(round(width / 1.0)))
 	var sec := (width - 0.08) / float(n)
 	var g := MeshKit.new()
+	var leds := MeshKit.new()
 	for i in n:
 		var x := -w + 0.04 + sec * (float(i) + 0.5)
 		var c := mid + Vector3(x, 0.0, 0.0)
@@ -1761,7 +1762,7 @@ static func console(width: float, height: float = 1.0, depth: float = 0.7,
 		_seating_pad(g, c + nrm * 0.0115 + v * slen * 0.06, Vector3.RIGHT, v, nrm, sec * 0.36, slen * 0.29, 0.004)
 		for j in 3:
 			var at := c + nrm * 0.0115 - v * slen * 0.32 + Vector3(sec * 0.3 - 0.04 * float(j), 0.0, 0.0)
-			_seating_pad(g, at, Vector3.RIGHT, v, nrm, 0.012, 0.01, 0.004)
+			_seating_pad(leds, at, Vector3.RIGHT, v, nrm, 0.012, 0.01, 0.004)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	var area := depth * (y_desk - y_body) + (h - y_desk) * ((2.0 * d - shelf) + (d - zt)) * 0.5
@@ -1774,8 +1775,8 @@ static func console(width: float, height: float = 1.0, depth: float = 0.7,
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "screen", g.finish(), glow)
+	PartShapes.emissive(shape, "led", leds.finish(), glow)
 	return shape
 
 
@@ -2153,8 +2154,7 @@ static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 
 	_thrusters_ring(g, lerpf(r2, r_in, 0.2), lerpf(r2, r_in, 0.6), ym, ym + 0.004, 20)
 	for sx: float in [-1.0, 1.0]:
 		g.box(Vector3(led, led, 0.004), Vector3(sx * led * 1.2, led_y, -bz - 0.004))
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -2255,8 +2255,7 @@ static func headlamp_bar(length: float, lamps: int = 4, glow := Color(1.0, 0.97,
 	var col := BoxShape3D.new()
 	col.size = Vector3(length, 0.26, 0.31)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "lamp", g.finish(), glow)
 	return shape
 
 
@@ -2591,8 +2590,11 @@ static func generator(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShape
 	var seg := size.x * 0.42 / 5.0
 	for i in 5:
 		g.box(Vector3(seg * 0.72, 0.05, 0.006), Vector3(-size.x * 0.21 + seg * (float(i) + 0.5), strip_y, front - 0.015))
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "led", g.finish(), glow)
+	# The warning flasher beside the strip (red, blinks on low power).
+	var warn := MeshKit.new()
+	warn.box(Vector3(0.04, 0.04, 0.008), Vector3(size.x * 0.33, strip_y, front - 0.004))
+	PartShapes.emissive(shape, "warning", warn.finish(), RED_WARNING)
 	return shape
 
 
@@ -2684,8 +2686,11 @@ static func switch_cabinet(size: Vector3 = Vector3(0.7, 1.4, 0.35), glow := Colo
 	var g := MeshKit.new()
 	for sx: float in [-1.0, 1.0]:
 		g.box(Vector3(0.05, 0.05, 0.006), Vector3(sx * size.x * 0.25, lamp_y, df - 0.011))
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "led", g.finish(), glow)
+	# The warning flasher in the cap's front (red, blinks on low power).
+	var warn := MeshKit.new()
+	warn.box(Vector3(0.06, cap * 0.6, 0.006), Vector3(-size.x * 0.3, h - cap * 0.5, front - 0.015))
+	PartShapes.emissive(shape, "warning", warn.finish(), RED_WARNING)
 	return shape
 
 
@@ -2737,8 +2742,7 @@ static func battery_rack(width: float = 1.2, height: float = 1.4, depth: float =
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, height, depth)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "led", g.finish(), glow)
 	return shape
 
 
@@ -3326,8 +3330,7 @@ static func junction_box(size: Vector3 = Vector3(0.4, 0.3, 0.2), glow := Color(0
 	shape.collision = col
 	var g := MeshKit.new()
 	g.box(Vector3(bz * 0.55, bz * 0.55, 0.006), Vector3(led.x, led.y, lf - 0.009))
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "led", g.finish(), glow)
 	return shape
 
 
@@ -3570,8 +3573,7 @@ static func docking_port(radius: float = 0.8, depth: float = 0.3) -> PartShapes.
 	var col := BoxShape3D.new()
 	col.size = Vector3(side, depth, side)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = Color(0.3, 1.0, 0.45)
+	PartShapes.emissive(shape, "lamp", g.finish(), Color(0.3, 1.0, 0.45))
 	return shape
 
 
@@ -3665,8 +3667,7 @@ static func thruster_pod(width: float, height: float, depth: float, glow := Colo
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, depth + 0.1, height)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -3903,8 +3904,7 @@ static func light_strip(length: float, width: float = 0.14, thickness: float = 0
 		var x0 := -run * 0.5 + gap + (cell + gap) * float(i)
 		g.quad(Vector3(x0, gy, -gz), Vector3(x0 + cell, gy, -gz), Vector3(x0 + cell, gy, gz), Vector3(x0, gy, gz),
 				Vector3.UP)
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "strip", g.finish(), glow)
 	# A frosted diffuser over the whole run of cells, a hair proud of them and still under
 	# the lips' tops, sitting between the lips.
 	var dk := MeshKit.new()
@@ -4040,13 +4040,18 @@ static func reactor(radius: float, height: float, glow := Color(1.0, 0.25, 0.2))
 		var am := (a0 + a1) * 0.5
 		g.quad(at.call(a0, -wh * 0.8, rg), at.call(a1, -wh * 0.8, rg), at.call(a1, wh * 0.8, rg), at.call(a0, wh * 0.8, rg),
 				Vector3(cos(am), 0.0, -sin(am)))
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
+	g = MeshKit.new()
 	var cells := 5
 	var span := gl - 0.12 * u
 	for i in cells:
 		var y := gy - span * 0.5 + span * (float(i) + 0.5) / float(cells)
 		g.box(Vector3(gw * 0.6, span / float(cells) * 0.62, 0.006), Vector3(0.0, y, gz - gd - 0.003))
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "led", g.finish(), glow)
+	# The warning flasher over the gauge strip (red, blinks on low power).
+	var warn := MeshKit.new()
+	warn.box(Vector3(gw * 0.6, 0.035 * u, 0.006), Vector3(0.0, gy + span * 0.5 + 0.04 * u, gz - gd - 0.003))
+	PartShapes.emissive(shape, "warning", warn.finish(), RED_WARNING)
 	return shape
 
 
@@ -4948,8 +4953,7 @@ static func landing_clamp(size: float = 0.9, depth: float = 0.45, glow := Color(
 	var g := MeshKit.new()
 	for sx: float in [-1.0, 1.0]:
 		g.box(Vector3(led, led, 0.006), Vector3(s * 0.2 + sx * led * 0.8, ly, -hb - 0.01))
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "led", g.finish(), glow)
 	return shape
 
 
@@ -5454,12 +5458,13 @@ static func survival_kit(size: Vector3 = Vector3(1.1, 2.0, 0.9)) -> PartShapes.P
 	shape.collision = col
 	var g := MeshKit.new()
 	g.box(Vector3(size.x * 0.44, size.y * 0.15, 0.01), screen - Vector3(0.0, 0.0, 0.035))
-	g.box(Vector3(0.12, 0.04, 0.008), Vector3(size.x * 0.22, lamp_y, lamp_z - 0.009))
-	g.box(Vector3(0.04, 0.12, 0.006), Vector3(size.x * 0.22, lamp_y, lamp_z - 0.008))
+	var lamps := MeshKit.new()
+	lamps.box(Vector3(0.12, 0.04, 0.008), Vector3(size.x * 0.22, lamp_y, lamp_z - 0.009))
+	lamps.box(Vector3(0.04, 0.12, 0.006), Vector3(size.x * 0.22, lamp_y, lamp_z - 0.008))
 	for i in 3:
-		g.box(Vector3(0.03, 0.025, 0.006), Vector3(-size.x * 0.2 - 0.06 + 0.06 * float(i), lamp_y, lamp_z - 0.008))
-	shape.glow = g.finish()
-	shape.glow_color = Color(0.35, 0.75, 1.0)
+		lamps.box(Vector3(0.03, 0.025, 0.006), Vector3(-size.x * 0.2 - 0.06 + 0.06 * float(i), lamp_y, lamp_z - 0.008))
+	PartShapes.emissive(shape, "screen", g.finish(), Color(0.35, 0.75, 1.0))
+	PartShapes.emissive(shape, "led", lamps.finish(), Color(0.35, 0.75, 1.0))
 	return shape
 
 
@@ -6062,8 +6067,7 @@ static func nozzle_cluster(count: int = 3, radius: float = 0.15, length: float =
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, length, radius * 2.6)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -6216,8 +6220,7 @@ static func conveyor_junction(size: float = 0.6, glow := Color(0.3, 1.0, 0.45)) 
 		var s := Vector3(hb * 0.55, hb * 0.55, hb * 0.55)
 		s[n.abs().max_axis_index()] = 0.006
 		g.box(s, c)
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "led", g.finish(), glow)
 	return shape
 
 
@@ -6583,8 +6586,7 @@ static func media_wall(width: float = 4.0, height: float = 2.4, depth: float = 0
 	shape.collision = col
 	var g := MeshKit.new()
 	g.box(Vector3(sw - 0.12, sh - 0.12, 0.004), Vector3(0.0, sy, zf - 0.004 - sd - 0.002))
-	shape.glow = g.finish()
-	shape.glow_color = Color(0.16, 0.3, 0.52)
+	PartShapes.emissive(shape, "screen", g.finish(), Color(0.16, 0.3, 0.52))
 	return shape
 
 
@@ -6607,6 +6609,8 @@ static func galley_counter(length: float = 3.0, height: float = 0.95, depth: flo
 		glow := Color(1.0, 0.4, 0.15)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
+	var leds := MeshKit.new()
+	var screen := MeshKit.new()
 	var back_h := 1.0                 # back unit above the worktop, m
 	var total := height + back_h
 	var y0 := -total * 0.5
@@ -6730,8 +6734,8 @@ static func galley_counter(length: float = 3.0, height: float = 0.95, depth: flo
 		_seating_pad(k, Vector3(xm, top_y + 0.27, zm), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, 0.07, 0.03, 0.004)
 		k.color = DETAIL
 		k.box(Vector3(0.2, 0.02, 0.07), Vector3(xm, top_y + 0.01, zm - 0.03))
-		_seating_pad(g, Vector3(xm - 0.015, top_y + 0.27, zm - 0.004), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, 0.04, 0.014, 0.004)
-		_seating_pad(g, Vector3(xm + 0.05, top_y + 0.27, zm - 0.004), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, 0.008, 0.008, 0.004)
+		_seating_pad(leds, Vector3(xm - 0.015, top_y + 0.27, zm - 0.004), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, 0.04, 0.014, 0.004)
+		_seating_pad(leds, Vector3(xm + 0.05, top_y + 0.27, zm - 0.004), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, 0.008, 0.008, 0.004)
 	# The screen: a steel bezel, a dark face, three lines of readout.
 	var y_screen := top_y + 0.48
 	k.color = DETAIL
@@ -6740,15 +6744,16 @@ static func galley_counter(length: float = 3.0, height: float = 0.95, depth: flo
 	k.box(Vector3(0.36, 0.18, 0.004), Vector3(x_screen, y_screen, wall - 0.022))
 	for j in 3:
 		var lw := [0.26, 0.2, 0.14][j] as float
-		g.box(Vector3(lw, 0.016, 0.003), Vector3(x_screen - 0.15 + lw * 0.5, y_screen + 0.05 - 0.045 * float(j), wall - 0.0255))
+		screen.box(Vector3(lw, 0.016, 0.003), Vector3(x_screen - 0.15 + lw * 0.5, y_screen + 0.05 - 0.045 * float(j), wall - 0.0255))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = length * depth * height * 0.4 + length * back_h * bt
 	var col := BoxShape3D.new()
 	col.size = Vector3(length, total, depth)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "lamp", g.finish(), glow)   # the hob rings
+	PartShapes.emissive(shape, "led", leds.finish(), glow)
+	PartShapes.emissive(shape, "screen", screen.finish(), glow)
 	return shape
 
 
@@ -7461,8 +7466,7 @@ static func cup_thruster(radius: float = 0.45, length: float = 0.7, glow := Colo
 	# The glow: the throat's floor.
 	var g := MeshKit.new()
 	_thrusters_ring(g, 0.0, rf * 0.92, y_floor + 0.002, y_floor + 0.002 + clampf(length * 0.02, 0.004, 0.02), 16)
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -7705,8 +7709,7 @@ static func octagon_thruster(width: float = 1.6, depth: float = 0.8, glow := Col
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -8606,8 +8609,7 @@ static func hydrogen_engine(radius: float = 1.6, length: float = 2.2, glow := Co
 	shape.collision = col
 	var g := MeshKit.new()
 	_thrusters_ring(g, 0.0, rf * 0.75, deep + 0.003, deep + 0.003 + clampf(length * 0.015, 0.006, 0.03), 20)
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -8857,8 +8859,7 @@ static func oval_engine(width: float = 2.6, height: float = 1.5, depth: float = 
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -9894,10 +9895,11 @@ static func med_station(width: float = 1.6, height: float = 2.2, depth: float = 
 	g.box(Vector3(sw * 0.12, sh * 0.16, 0.004), Vector3(sw * 0.36, sy + sh * 0.34, tz))
 	for i in 2:
 		g.box(Vector3(cab_w * (0.36 - 0.12 * float(i)), 0.025, 0.004), lsc + Vector3(-cab_w * 0.04 * float(i), 0.025 - 0.05 * float(i), -0.007))
+	var leds := MeshKit.new()
 	for sx: float in [-1.0, 1.0]:
-		g.box(Vector3(0.028, 0.028, 0.004), Vector3(sx * gx, sy + gh * 0.02, gz - 0.007))
-	shape.glow = g.finish()
-	shape.glow_color = Color(0.4, 0.85, 1.0)
+		leds.box(Vector3(0.028, 0.028, 0.004), Vector3(sx * gx, sy + gh * 0.02, gz - 0.007))
+	PartShapes.emissive(shape, "screen", g.finish(), Color(0.4, 0.85, 1.0))
+	PartShapes.emissive(shape, "led", leds.finish(), Color(0.4, 0.85, 1.0))
 	return shape
 
 
@@ -10373,8 +10375,7 @@ static func turbine_engine(radius: float = 1.1, length: float = 1.6, body := Col
 	# The glow: a ring round the spinner's foot, seen between the blade roots.
 	var g := MeshKit.new()
 	_thrusters_ring(g, r * 0.19, r * 0.36, face + 0.002, face + 0.008, 24)
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 
@@ -12847,8 +12848,7 @@ static func reactor_core(size: Vector3 = Vector3(2.0, 2.4, 1.4), glow := Color(0
 	var cw := size.x * 0.36 / float(cells)
 	for i in cells:
 		g.box(Vector3(cw * 0.7, 0.05, 0.006), Vector3(-size.x * 0.18 + cw * (float(i) + 0.5), hy - 0.08, cowl_front - 0.023))
-	shape.glow = g.finish()
-	shape.glow_color = glow
+	PartShapes.emissive(shape, "hot", g.finish(), glow)
 	return shape
 
 

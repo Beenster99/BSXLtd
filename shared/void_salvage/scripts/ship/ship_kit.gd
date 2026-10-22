@@ -88,15 +88,17 @@ func add(shape: PartShapes.PartShape, xform: Transform3D, mat: Material, tag: St
 ## Adds `shape` at `xform` (ship space) as one part named `part_name` of `kind`, with its
 ## look (`mat` on the ship surface) and collision; `fill` is how solid it is (its mass is
 ## its volume of steel times that). Tagged like a piece: `kit.tagged[tag]` gets {mesh,
-## shape, xform, part}, and `BaseShip._place` moves the part with its joint heads.
+## shape, xform, part}, and `BaseShip._place` moves the part with its joint heads. `path`
+## names it (PartData.path, docs/SHIP_FRAME_PLAN.md 4.7).
 func part(part_name: String, kind: PartData.Kind, shape: PartShapes.PartShape, xform: Transform3D,
-		mat: Material, tag: String = "", fill: float = 1.0, glass_mat: Material = null) -> PartData:
+		mat: Material, tag: String = "", fill: float = 1.0, glass_mat: Material = null, path: String = "") -> PartData:
 	piece_count += 1
 	shape_count += 1 + shape.extra_collision.size()
 	if recorder:
 		recorder.on_piece(shape, xform, mat, tag, glass_mat, true, group)
 	var made := model.add_part(part_name, kind, maxf(shape.volume * PART_DENSITY * fill, 0.1), 0.0, xform,
 			shape.mesh, shape.collision, ShipSurface.of(mat))
+	made.path = path
 	if not shape.extra_collision.is_empty():
 		model.add_extra_collision(made, shape.extra_collision)
 	if shape.glass and glass_mat:
@@ -107,18 +109,25 @@ func part(part_name: String, kind: PartData.Kind, shape: PartShapes.PartShape, x
 
 
 ## Joins two parts with a joint of `kind` at `at`, facing `normal` (ship space); its head
-## hangs on `a`. Welds: `seam_up` and `seam_size` as in ConnectionData.
+## hangs on `a`. Welds: `seam_up` and `seam_size` as in ConnectionData. `path` names it.
 func join(a: PartData, b: PartData, kind: ConnectionData.Kind, at: Vector3, normal: Vector3,
-		seam_up := Vector3.ZERO, seam_size := Vector2.ZERO) -> ConnectionData:
-	return model.connect_parts(a, b, kind, at, normal, seam_up, seam_size)
+		seam_up := Vector3.ZERO, seam_size := Vector2.ZERO, path: String = "") -> ConnectionData:
+	var made := model.connect_parts(a, b, kind, at, normal, seam_up, seam_size)
+	if made:
+		made.path = path
+	return made
 
 
 ## Tacks `fitting` to the plate it stands on (`onto`) with a spot weld at each of `points`
-## (ship space, on the plate's face), the puddles facing `normal`. Returns the welds.
-func tack(fitting: PartData, onto: PartData, points: Array, normal := Vector3.UP) -> Array[ConnectionData]:
+## (ship space, on the plate's face), the puddles facing `normal`. Returns the welds; with a
+## `path`, the k-th is named "<path>/spot/<k>".
+func tack(fitting: PartData, onto: PartData, points: Array, normal := Vector3.UP, path: String = "") -> Array[ConnectionData]:
 	var made: Array[ConnectionData] = []
 	for p: Vector3 in points:
-		made.append(model.connect_parts(fitting, onto, ConnectionData.Kind.SPOT, p, normal))
+		var c := model.connect_parts(fitting, onto, ConnectionData.Kind.SPOT, p, normal)
+		if c and path != "":
+			c.path = "%s/spot/%d" % [path, made.size()]
+		made.append(c)
 	return made
 
 

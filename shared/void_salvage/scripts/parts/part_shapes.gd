@@ -34,6 +34,11 @@ class PartShape:
 	## emissive material of `glow_color`.
 	var glow: ArrayMesh
 	var glow_color := Color(0.4, 0.75, 1.0)
+	## The lit details by kind (docs/DAMAGE_PLAN.md 9.3.2), so each kind can behave on
+	## low power: [{"kind", "mesh", "color"}], kinds from EMISSIVE_KINDS. Empty for a part
+	## nobody has tagged yet: its `glow` counts as one "led". Once tagged, `glow` is the
+	## union of these (for anything that only draws one glow).
+	var emissives: Array = []
 	## Windows: where to put fasteners, and which way they face (shape space).
 	var fastener_points: PackedVector3Array = PackedVector3Array()
 	var fastener_normals: PackedVector3Array = PackedVector3Array()
@@ -47,6 +52,29 @@ class PartShape:
 
 	func aabb() -> AABB:
 		return mesh.get_aabb()
+
+
+## The kinds of lit detail (PartShape.emissives):
+##   led     status lights (blink slowly on low power)
+##   screen  readouts and monitors (a frozen readout or static on low power; can blow)
+##   strip   recessed and floor strips, exit signs (amber at a third on low power)
+##   lamp    lenses of nav and head lamps
+##   hot     thruster floors, reactor cores: lit as built whatever the power
+##   warning a red flasher (slow blink on low power, steady on full, off when dead)
+const EMISSIVE_KINDS := ["led", "screen", "strip", "lamp", "hot", "warning"]
+
+
+## Tags `mesh` on `shape` as lit detail of `kind` (EMISSIVE_KINDS) in `color`, and adds it
+## to the shape's `glow` (the union); the first one tagged sets `glow_color`.
+static func emissive(shape: PartShape, kind: String, mesh: ArrayMesh, color: Color) -> void:
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	shape.emissives.append({"kind": kind, "mesh": mesh, "color": color})
+	if shape.glow == null:
+		shape.glow = ArrayMesh.new()
+		shape.glow_color = color
+	for i in mesh.get_surface_count():
+		shape.glow.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh.surface_get_arrays(i))
 
 
 ## Stamps `shape` with its recipe and returns it (the last constructor to return a shape

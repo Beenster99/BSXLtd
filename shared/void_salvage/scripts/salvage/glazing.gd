@@ -46,3 +46,37 @@ static func material(kind: int) -> StandardMaterial3D:
 static func display_name(kind: int) -> String:
 	return ["Clear glass", "Tinted glass", "Frosted glass", "Armoured glass", "Amber lens", "Red lens",
 			"Solar cover glass"][clampi(kind, 0, Kind.size() - 1)]
+
+
+## Most crack points a cracked pane draws (the shader's array).
+const MAX_CRACKS: int = 8
+static var _cracked_shader: Shader
+
+
+## A crazed copy of the glass `base` (docs/DAMAGE_PLAN.md 9.3.3): radial lines and broken
+## rings spreading from each of `cracks` ([[point in the mesh's space, radius m], ...]),
+## milky near each point. One per pane (a wreck has tens, not thousands).
+static func cracked(base: Material, cracks: Array) -> ShaderMaterial:
+	if _cracked_shader == null:
+		_cracked_shader = load("res://shared/void_salvage/shaders/glass_cracked.gdshader")
+	var colour := Color(0.5, 0.72, 0.9, 0.28)
+	var metallic := 0.3
+	var roughness := 0.05
+	var std := base as StandardMaterial3D
+	if std:
+		colour = std.albedo_color
+		metallic = std.metallic
+		roughness = std.roughness
+	var m := ShaderMaterial.new()
+	m.shader = _cracked_shader
+	m.set_shader_parameter("albedo", colour)
+	m.set_shader_parameter("metallic", metallic)
+	m.set_shader_parameter("roughness", roughness)
+	var points := PackedVector4Array()
+	for c: Array in cracks.slice(0, MAX_CRACKS):
+		var p: Vector3 = c[0]
+		points.append(Vector4(p.x, p.y, p.z, float(c[1])))
+	m.set_shader_parameter("crack_count", points.size())
+	points.resize(MAX_CRACKS)
+	m.set_shader_parameter("cracks", points)
+	return m
