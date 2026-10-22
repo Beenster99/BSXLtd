@@ -342,9 +342,10 @@ func _keys_line() -> String:
 	var tools := "%s-%s" % [k.call(TradesBus.KEY_TOOL + "1"), k.call(TradesBus.KEY_TOOL + str(hotbar.size()))]
 	var turn := "%s/%s" % [k.call(TradesBus.KEY_TURN_LEFT), k.call(TradesBus.KEY_TURN_RIGHT)]
 	if in_yard:
-		return "%s walk  %s run  %s jump / climb  %s view  wheel/%s tool  LMB use  RMB take off  %s turn  %s part details  %s pause" % [
+		var details := "  %s part details" % k.call(TradesBus.KEY_INSPECT) if Flags.is_on("trades.inspect") else ""
+		return "%s walk  %s run  %s jump / climb  %s view  wheel/%s tool  LMB use  RMB take off  %s turn%s  %s pause" % [
 				walk, k.call(Keys.RUN), k.call(Keys.JUMP), k.call(TradesBus.KEY_VIEW), tools, turn,
-				k.call(TradesBus.KEY_INSPECT), k.call(Keys.CANCEL)]
+				details, k.call(Keys.CANCEL)]
 	return "%s walk  %s view  wheel/%s tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  %s amps  %s part  %s reset  %s pause" % [
 			walk, k.call(TradesBus.KEY_VIEW), tools, turn, k.call(TradesBus.KEY_NEXT), k.call(TradesBus.KEY_RESET), k.call(Keys.CANCEL)]
 
@@ -546,7 +547,7 @@ func look_hint() -> Dictionary:
 	var keys := _focus.actions(tool)
 	if keys.is_empty():
 		return {}
-	if InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
+	if Flags.is_on("trades.inspect") and InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
 		keys.append([TradesBus.KEY_INSPECT, "part details (hold)"])
 	var title := _focus.aim_title(tool)
 	# The spec of what you're looking at, tool in hand (beenster, 2026-10-22).

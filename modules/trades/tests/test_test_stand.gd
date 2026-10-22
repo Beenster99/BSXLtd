@@ -102,6 +102,8 @@ func run_tests() -> void:
 	var lines := station.inspect_lines()
 	check(lines.size() > 3 and lines[0] == "TOOL TEST STAND", "Tab shows the stand's sheet")
 	check(station.aim_spec(&"torque_wrench").contains("Holds Test panel"), "the look card names the panel")
+	check(station.aim_spec(&"torque_wrench").contains("of %d joints in" % stand.joints.size()),
+			"and the part's key details, with no Tab sheet: %s" % station.aim_spec(&"torque_wrench"))
 	check(reported.is_empty(), "still nothing sent to Quality")
 	var marker := stand._markers[station.points[b].joint_id] as MeshInstance3D
 	check((marker.get_child(0) as Node3D).visible, "a made joint shows its head on the stand")

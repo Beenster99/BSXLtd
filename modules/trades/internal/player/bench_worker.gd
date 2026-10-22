@@ -89,8 +89,8 @@ func _ready() -> void:
 	camera.current = true
 	head.add_child(camera)
 
-	left_hand = _hand("Left", Vector3(-0.24, -0.3, -0.42), true)
-	right_hand = _hand("Right", Vector3(0.24, -0.3, -0.42), false)
+	left_hand = _hand("Left", Vector3(-0.26, -0.23, -0.46), true)
+	right_hand = _hand("Right", Vector3(0.26, -0.23, -0.46), false)
 	_body_model = _build_body()
 	set_view(false)
 

@@ -1076,7 +1076,28 @@ func aim_spec(tool: StringName) -> String:
 	var comp := _component_of(f)
 	if comp != "":
 		lines.append("Holds %s" % comp)
+	# The part's key details on the card, now there's no Tab sheet (beenster, 22 Oct).
+	var part := _part_line(f)
+	if part != "":
+		lines.append(part)
 	return "\n".join(lines)
+
+
+## The part a joint holds, in a line: "Fitted, 3 of 6 joints in".
+func _part_line(f: FastenerPoint) -> String:
+	var all: Array[FastenerPoint] = []
+	var state := ""
+	if is_practice(f):
+		all = test_stand.joints
+		state = "Practice panel"
+	elif _bus:
+		var slot_id := FastenerPoint.slot_of(f.joint_id)
+		all = _bus.get_fasteners(slot_id)
+		state = str(SLOT_STATES.get(_bus.get_slot_state(slot_id), "")).capitalize()
+	if all.is_empty():
+		return ""
+	var tight := all.filter(func(g: FastenerPoint) -> bool: return is_tight(g)).size()
+	return "%s, %d of %d joints in" % [state, tight, all.size()] if state != "" else "%d of %d joints in" % [tight, all.size()]
 
 
 ## One line of what a joint's spec asks for: "M12 bolt: 80-95 N m, aim for 88".
