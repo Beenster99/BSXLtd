@@ -101,13 +101,13 @@ const VIEWS := {
 	# Dock 1 and the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
 	"launch_towers": [Vector3(72, 2.0, 40), Vector3(150, 32, -450)],
-	# The apron (with "ship_bay.apron"): the whole of it, the pad's hulk, the holding lane,
-	# the cutting bay and the scrap lane.
+	# The apron (with "ship_bay.apron"): the whole of it, the pad's hulk, the holding lane;
+	# the crusher house east of Pre-assembly, outside and in.
 	"apron_overview": [Vector3(30, 70, 200), Vector3(25, 0, 80)],
 	"pad": [Vector3(18, 6, 112), Vector3(0, 3, 90)],
 	"holding": [Vector3(115, 9, 140), Vector3(148, 1.5, 92)],
-	"cutting_bay": [Vector3(-80, 7, 46), Vector3(-95, 4, 10)],
-	"scrap_lane": [Vector3(-76, 6, -2), Vector3(-96, 1, -18)],
+	"crusher_house": [Vector3(44, 9, 46), Vector3(66, 3, 14)],
+	"crusher": [Vector3(52, 5.5, 22), Vector3(72, 2.5, 2)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)
@@ -1289,7 +1289,7 @@ func _tag_rooms() -> void:
 
 func _build_preassembly() -> void:
 	# The two refurbishment lines side by side down the hall, intake bays at the north end,
-	# their trolleys at the south end; the crusher bay outside the south door.
+	# their trolleys at the south end; the crusher in its own house against the east wall.
 	for id: String in RefurbLine.LINES:
 		var l: Node3D = RefurbLine.new(id)
 		add_child(l)
@@ -1297,11 +1297,7 @@ func _build_preassembly() -> void:
 	line = lines["a"]
 	crusher = CrusherPlant.new()
 	add_child(crusher)
-	# The apron's concrete runs under the bay from z = 35; pave the strip north of it that the
-	# courtyard's front strip stops short of, flush with both.
-	var strip := Rect2(45.0, CrusherPlant.BAY.position.y - 1.0, CrusherPlant.BAY.end.x + 1.0 - 45.0, 35.0 - (CrusherPlant.BAY.position.y - 1.0))
-	_block(Vector3(strip.get_center().x, -0.01, strip.get_center().y), Vector3(strip.size.x, 0.04, strip.size.y), _concrete, false)
-	_slab_joints(strip, 0.0)
+	_build_crusher_house()
 	# Benches and shelving along the east wall.
 	for z: float in [16.0, 19.0]:
 		_put(_lib("workbench", func() -> PartShapes.PartShape: return WreckParts.workbench()),
@@ -1309,6 +1305,77 @@ func _build_preassembly() -> void:
 	for i in 3:
 		_put(_lib("shelf_rack", func() -> PartShapes.PartShape: return WreckParts.shelf_rack()),
 				_at(Vector3(49.44, 1.0, 10.0 + i * 1.7), PI * 0.5), _parts)
+
+
+## The crusher house: a clad shed on portal frames against Pre-assembly's east wall (that
+## wall is its west side, its small door the way through), open onto the front strip by a
+## roller door at the west end of its south wall, lamps under the rafters. The plant inside
+## is CrusherPlant's.
+func _build_crusher_house() -> void:
+	var r := CrusherPlant.HOUSE
+	var hh := CrusherPlant.HOUSE_H
+	var door := CrusherPlant.HOUSE_DOOR   # centre x, width, height
+	var t := 0.3
+	var clad := _paint(Color(0.36, 0.39, 0.42), 0.4, 0.55, "satin_paint")
+	var top := hh - 0.02
+	# The floor slab and the strip of concrete in front of it out to the apron.
+	# (Its edges run a little under the building's wall and past its own, so no side lies in a
+	# wall's plane.)
+	var slab := Rect2(r.position.x - 0.05, r.position.y - 0.05, r.size.x + 0.1, r.size.y + 0.1)
+	_block(Vector3(slab.get_center().x, -0.01, slab.get_center().y), Vector3(slab.size.x, 0.04, slab.size.y), _concrete, false)
+	_slab_joints(r, 0.0)
+	var front := Rect2(45.0, YARD.y + 0.5, r.end.x + 2.0 - 45.0, 35.0 - (YARD.y + 0.5))
+	_block(Vector3(front.get_center().x, -0.01, front.get_center().y), Vector3(front.size.x, 0.04, front.size.y), _concrete, false)
+	_slab_joints(front, 0.0)
+	# Walls: north and east, and the south either side of the door and over it; the west is
+	# the building's own east wall. They start just clear of its cladding ribs.
+	var x0 := r.position.x + 0.08
+	_block(Vector3((x0 + r.end.x) * 0.5, top * 0.5, r.position.y + t * 0.5), Vector3(r.end.x - x0, top, t), clad)
+	_block(Vector3(r.end.x - t * 0.5, top * 0.5, r.get_center().y), Vector3(t, top, r.size.y - t * 2.0), clad)
+	var zs := r.end.y - t * 0.5 - 0.02   # its face 2 cm in from the building's wall end
+	var dl := door.x - door.y * 0.5
+	var dr := door.x + door.y * 0.5
+	_block(Vector3((x0 + dl) * 0.5, top * 0.5, zs), Vector3(dl - x0, top, t), clad)
+	_block(Vector3((dr + r.end.x - t) * 0.5, top * 0.5, zs), Vector3(r.end.x - t - dr, top, t), clad)
+	_block(Vector3(door.x, (door.z + top) * 0.5, zs), Vector3(door.y, top - door.z, t), clad)
+	# The roof, overhanging east and south, and an orange fascia along its front.
+	_block(Vector3(r.get_center().x + 0.2, hh + 0.15, r.get_center().y + 0.2), Vector3(r.size.x + 0.4, 0.3, r.size.y + 0.4),
+			_paint(Color(0.3, 0.32, 0.34), 0.4, 0.6, "satin_paint"))
+	_put(_box(Vector3(r.size.x + 0.44, 0.5, 0.1)), Transform3D(Basis(), Vector3(r.get_center().x + 0.2, hh + 0.1, r.end.y + 0.45)), _trim, false)
+	# Portal frames: a column at each end and a rafter across the depth every 6 m.
+	var col := _lib("ibeam/house_col", func() -> PartShapes.PartShape:
+			return PartShapes.i_beam(top - 0.5, 0.4, 0.5, 0.03))
+	var rafter := _lib("ibeam/house_rafter", func() -> PartShapes.PartShape:
+			return PartShapes.i_beam(r.size.y - t * 2.0 - 0.02, 0.4, 0.5, 0.03))
+	var upright := Basis(Vector3(0, 1, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1))
+	var x := r.position.x + 6.0
+	while x < r.end.x - 1.0:
+		for z: float in [r.position.y + t + 0.27, r.end.y - t - 0.27]:
+			if z > r.end.y - 1.0 and absf(x - door.x) < door.y * 0.5 + 0.4:
+				continue   # no column in the doorway
+			_put(col, Transform3D(upright, Vector3(x, (top - 0.5) * 0.5, z)), _frame, false)
+		_put(rafter, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(x, top - 0.26, r.get_center().y)), _frame, false)
+		x += 6.0
+	# The rolled-up shutter over the door, hazard stripes up its jambs, the sign over it.
+	_put(_lib("prism/house_shutter", func() -> PartShapes.PartShape:
+			return PartShapes.prism(16, 0.45, door.y + 0.6)), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(door.x, door.z + 0.5, r.end.y - t - 0.5)), _frame, false)
+	for k: float in [-1.0, 1.0]:
+		for i in 5:
+			_put(_box(Vector3(0.2, 0.6, 0.06)), Transform3D(Basis(), Vector3(door.x + k * (door.y * 0.5 + 0.1), 0.4 + i * 1.2, r.end.y + 0.031)), _hazard, false)
+	_sign("CRUSHER HOUSE", Vector3(r.position.x + 22.0, door.z + 1.6, r.end.y + 0.12), 0.0, 1.5)
+	# Lamps under the rafters (shadowless; they burn all day).
+	for lx: float in [r.position.x + 9.0, r.get_center().x + 4.0, r.end.x - 7.0]:
+		for lz: float in [r.position.y + 7.0, r.end.y - 9.0]:
+			var p := Vector3(lx, top - 1.0, lz)
+			var lamp := OmniLight3D.new()
+			lamp.position = p
+			lamp.light_color = Color(1.0, 0.93, 0.82)
+			lamp.light_energy = 2.0
+			lamp.omni_range = 16.0   # m
+			lamp.shadow_enabled = false
+			lamp.set_meta("gfx_no_shadow", true)
+			add_child(lamp)
+			_put(_box(Vector3(1.4, 0.12, 0.4)), Transform3D(Basis(), p + Vector3(0, 0.1, 0)), _glow_mat(Color(1.0, 0.93, 0.82), 2.5), false)
 
 
 func _build_courtyard() -> void:

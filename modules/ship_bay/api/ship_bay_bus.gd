@@ -146,7 +146,7 @@ func register_module() -> void:
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
 				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk",
-				"dock", "launch_towers", "city", "downtown"]:
+				"dock", "launch_towers", "city", "downtown", "crusher_house", "crusher"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 		# The lift up at the side door, and the power unit's plug clipped on the hull.
@@ -1305,10 +1305,16 @@ func _line_crate_id() -> String:
 
 func _sample_delivery() -> void:
 	var lines: Array = []
+	# Components, fasteners, and the raw build material a ship is made of: hull plates and
+	# wall panels, frame members, glass panes and cable.
+	var material := {"HullPlate": 20, "DeckPlate": 6, "CabinWall": 4, "Stringer": 12, "DeckJoist": 8,
+			"WindowPane": 4, "CockpitPane": 2, "MainLoom": 3, "CoolantPipe": 6}
 	for item: String in ["IonThruster", "SideThruster", "LiftThruster", "HydrogenThruster", "DriveEngine",
-			"BatteryRack", "Gyroscope", "HelmConsole", "M10", "M12", "RIVET_4", "Reactor", "FuelPump"]:
+			"BatteryRack", "Gyroscope", "HelmConsole", "M10", "M12", "RIVET_4", "Reactor", "FuelPump"] + material.keys():
 		var d: Dictionary = StorageLayout.items().get(item, {})
-		lines.append({"item_id": item, "qty": 1 if float(d.get("mass", 0.0)) > 40.0 else 250,
+		if d.is_empty():
+			continue
+		lines.append({"item_id": item, "qty": int(material[item]) if material.has(item) else (1 if float(d.get("mass", 0.0)) > 40.0 else 250),
 				"condition": 1.0, "name": d.get("name", item), "grade": "new", "mass": d.get("mass", 0.0)})
 	receive_delivery("PO-%d" % (delivered_crates().size() + 1001), lines)
 
