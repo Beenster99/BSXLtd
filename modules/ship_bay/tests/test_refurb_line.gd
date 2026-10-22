@@ -66,9 +66,15 @@ func run_tests() -> void:
 	check(bus.line_state().stations.survey.is_empty() and str(bus.line_state().stations.straightener.state) == "waiting", "SEND ON passes it to the straightener")
 	for s: String in ["straightener", "bath", "coater"]:
 		var screen: Node3D = machines[s].screen
+		# The bath runs long enough to catch it mid-dip on a slow runner: wait for the hoist to
+		# come down rather than a fixed few frames.
+		line.set("run_time", 3.0 if s == "bath" else 0.2)
 		screen.call("press", "go")
 		if s == "bath":
-			await frames(3)
+			for i in 600:
+				if (machines["bath"].spreader as Node3D).position.y < RefurbLineScript.BED + 0.3 or str(bus.line_state().stations.bath.state) != "running":
+					break
+				await get_tree().physics_frame
 			var fizz: Array = machines["bath"].fizz
 			check(fizz.all(func(p: CPUParticles3D) -> bool: return p.emitting) and (machines["bath"].fizz_sound as AudioStreamPlayer3D).playing,
 					"the bath bubbles, steams and simmers while it runs")
@@ -80,6 +86,7 @@ func run_tests() -> void:
 		check(absf(cond - float(ShipBayBus.LINE_AFTER[s])) < 0.001, "the %s brings it to %d%%" % [s, roundi(cond * 100.0)])
 		screen.call("press", "go")
 		await frames(2)
+	line.set("run_time", 0.2)
 	var out := bus.line_crates()
 	check(out.size() == 1 and str(out.values()[0].line) == "out" and float(out.values()[0].condition) == 1.0 and str(out.values()[0].item) == "Gyroscope",
 			"the coater sends it onto an output pallet at 100%%: %s" % [out])
