@@ -79,7 +79,7 @@ func refresh() -> void:
 
 func _row(job: ContractJob, alt: bool) -> Control:
 	var o := job.order
-	var r := T.row([T.cell_text(job_title(job), client_line(job)), T.cell(ship_name(o.design), 120, T.TEXT),
+	var r := T.row([T.cell_text(job_title(job), client_line(job)), T.cell(subject_name(o), 120, T.TEXT),
 			T.cell(due_text(o), 80), T.cell(T.money(int(o.commercial.get("price", 0))), 110, T.ORANGE, "mono_bold")], alt, glass)
 	r.name = "Row_" + job.job_id.validate_node_name()
 	if job.job_id == selected:
@@ -104,7 +104,15 @@ func _docket(job: ContractJob) -> Control:
 	var o := job.order
 	var ink := T.TEXT if glass else T.INK
 	var dim := T.DIM if glass else T.INK_DIM
-	body.add_child(T.label("%s  ·  %s" % [String(o.client.get("display_name", o.client.get("company", ""))), ship_name(o.design)], "body_medium", 18, ink))
+	body.add_child(T.label("%s  ·  %s" % [String(o.client.get("display_name", o.client.get("company", ""))), subject_name(o)], "body_medium", 18, ink))
+	if not o.is_fit():
+		body.add_child(_wrap(T.label(subject_text(o), "body", 17, ink)))
+		body.add_child(T.label("CLIENT WANTS", "display_medium", 15, dim))
+		for w in o.wants:
+			body.add_child(_wrap(T.label(want_text(w), "body", 15, ink)))
+		body.add_child(T.label(keeps_text(o), "body", 15, dim))
+		if not o.hazards.is_empty():
+			body.add_child(T.tag("HAZARDS  " + "  ".join(o.hazards).to_upper(), T.ORANGE))
 	for c in o.changes:
 		var line := T.label(change_text(c), "body", 17, ink)
 		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -117,7 +125,8 @@ func _docket(job: ContractJob) -> Control:
 	for n in o.notes:
 		if String(n.get("change_id", "")) == "":
 			body.add_child(_wrap(T.label("“%s”" % String(n.get("text", "")), "body", 15, dim)))
-	body.add_child(T.label("PARTS MANIFEST", "display_medium", 15, dim))
+	if not o.manifest.is_empty():
+		body.add_child(T.label("PARTS MANIFEST", "display_medium", 15, dim))
 	for m in o.manifest:
 		body.add_child(_wrap(T.label("%d × %s  ·  %s" % [m.qty, part_name(m.component.id),
 				("BSX supplies, " + " or ".join(m.allowed_sources)) if m.supplied_by == "bsx" else "client supplies"], "body", 15, ink)))
@@ -171,7 +180,8 @@ static func _tab_key(t: String) -> String:
 
 static func part_name(id: String) -> String:
 	var marks := {"1": "Mk I", "2": "Mk II", "3": "Mk III"}
-	var words := id.split("_")
+	# "NavalTurret" (a Void Salvage part name) -> "naval_turret" first.
+	var words := id.to_snake_case().split("_")
 	if words.size() > 1 and marks.has(words[-1]):
 		words[-1] = marks[words[-1]]
 	var s := " ".join(words)
@@ -182,7 +192,48 @@ static func ship_name(design: String) -> String:
 	return design.capitalize()
 
 
+## The board's SHIP column: the ship a fit job is about, or where a part job happens.
+static func subject_name(o: WorkOrder) -> String:
+	if o.is_fit():
+		return ship_name(o.design)
+	if String(o.subject.get("type", "")) == "part":
+		return "Bench"
+	return ship_name(String(o.subject.get("design", o.design)))
+
+
+## "Naval turret, 55%, 6.2 t" for a part subject; the design for a ship or wreck.
+static func subject_text(o: WorkOrder) -> String:
+	var s := o.subject
+	var what := part_name(o.subject_part().id) if o.subject_part() else ship_name(String(s.get("design", o.design)))
+	var bits := PackedStringArray([what, "%d%%" % int(round(float(s.get("condition", 1.0)) * 100.0))])
+	var kg := float(s.get("mass_kg", 0.0))
+	if kg > 0.0:
+		bits.append("%.1f t" % (kg / 1000.0) if kg >= 1000.0 else "%d kg" % int(kg))
+	return "Arrives: " + ", ".join(bits)
+
+
+static func want_text(w: Dictionary) -> String:
+	match String(w.get("what", "")):
+		"part":
+			var ref: ComponentRef = w.get("component")
+			var line := "%d × %s back" % [int(w.get("qty", 1)), part_name(ref.id) if ref else "part"]
+			if float(w.get("min_condition", 0.0)) > 0.0:
+				line += ", %d%% or better" % int(round(float(w.get("min_condition", 0.0)) * 100.0))
+			return line
+		"material":
+			return "%s kg of %s" % [T.money(int(w.get("kg", 0.0))), String(w.get("material", ""))]
+		"condition":
+			return "The subject back at %d%% or better" % int(round(float(w.get("min_condition", 1.0)) * 100.0))
+	return "The subject gone: scrapped or destroyed"
+
+
+static func keeps_text(o: WorkOrder) -> String:
+	return "BSX keeps the rest" if o.keeps == "bsx" else "Everything else goes back to the client"
+
+
 static func job_title(job: ContractJob) -> String:
+	if not job.order.is_fit():
+		return kind_title(job.order)
 	var c := job.order.changes[0] if not job.order.changes.is_empty() else null
 	if c == null:
 		return job.job_id
@@ -191,6 +242,22 @@ static func job_title(job: ContractJob) -> String:
 	if job.order.changes.size() > 1:
 		title += " and %d more" % (job.order.changes.size() - 1)
 	return title
+
+
+## "Break a naval turret", "Scrap hull plating", "Refurbish a main thruster", "Dispose of a fuel tank".
+static func kind_title(o: WorkOrder) -> String:
+	var what := part_name(o.subject_part().id) if o.subject_part() else ship_name(String(o.subject.get("design", o.design)))
+	what = what.substr(0, 1).to_lower() + what.substr(1)
+	match o.kind:
+		WorkOrder.BREAK:
+			return "Break a " + what
+		WorkOrder.SCRAP:
+			return "Scrap " + what
+		WorkOrder.REFURBISH:
+			return "Refurbish a " + what
+		WorkOrder.DISPOSE:
+			return "Dispose of a " + what
+	return o.kind.capitalize() + " " + what
 
 
 static func client_line(job: ContractJob) -> String:

@@ -1,0 +1,47 @@
+{
+  "schema": "bsx.work_order",
+  "schema_version": 1,
+  "contract_id": "brine_fuels.sd302",
+  "issued_at": "2026-10-21T10:00:00Z",
+  "kind": "dispose",
+  "client": {
+    "company": "brine_fuels",
+    "display_name": "Brine Fuels",
+    "game": "void_salvage"
+  },
+  "subject": {
+    "type": "part",
+    "component": {
+      "id": "FuelTank",
+      "material": "steel"
+    },
+    "condition": 0.3,
+    "mass_kg": 3800
+  },
+  "wants": [
+    {
+      "what": "gone"
+    }
+  ],
+  "keeps": "bsx",
+  "hazards": [
+    "fuel",
+    "pressure"
+  ],
+  "manifest": [],
+  "spec_sheet": {
+    "library": true,
+    "overrides": []
+  },
+  "notes": [
+    {
+      "text": "Tank came off a Mule with a quarter load still in it. Drain it, cut it up, keep the steel. We just want it gone."
+    }
+  ],
+  "commercial": {
+    "price": 2600,
+    "currency": "cr",
+    "deposit_pct": 30,
+    "due_day": 6
+  }
+}
