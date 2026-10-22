@@ -32,6 +32,8 @@ const CANCELLABLE: PackedStringArray = [OFFERED, ACCEPTED, ARRIVING, PARTS_READY
 @export var job_id := ""
 @export var order: WorkOrder
 @export var state := OFFERED
+## For a generated offer: the cycle it leaves the board if nobody takes it (-1: never).
+@export var expires := -1
 ## change_id -> ChangeItem status.
 @export var change_status: Dictionary = {}
 ## change_id -> InstallRecord.

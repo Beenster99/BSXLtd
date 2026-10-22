@@ -31,6 +31,12 @@ signal subject_due(job_id: String, subject: Dictionary)
 ## Something came out of a job's subject (record_recovery / record_scrap): Business and
 ## Progression read job.recoveries. line: the recovery as appended to it.
 signal recovery_recorded(job_id: String, line: Dictionary)
+## Clients and standing (plan stage S4). standing_changed fires when points move; level is
+## 0 (new) to 3 (preferred), see ContractClients.LEVEL_NAMES. offer_expired: a generated
+## offer left the board untaken. cycle_advanced: new offers were posted for a cycle.
+signal standing_changed(client_id: String, points: int, level: int)
+signal offer_expired(job_id: String)
+signal cycle_advanced(cycle: int)
 
 const SAVE_VERSION := 1
 const NO_DUE_DAY := 1_000_000
@@ -39,11 +45,16 @@ const Reader := preload("res://modules/contracts/internal/work_order_reader.gd")
 const Writer := preload("res://modules/contracts/internal/as_built_writer.gd")
 const Store := preload("res://modules/contracts/internal/job_store.gd")
 const BoardPanel := preload("res://modules/contracts/internal/board_panel.gd")
+const Generator := preload("res://modules/contracts/internal/offer_generator.gd")
 ## Work orders on offer when a game starts: Void Salvage crews' and local yards' jobs.
 const BOARD_DIR := "res://modules/contracts/data/board"
 const BOARD_CHANNEL := "contracts.board"
 ## Break, scrap, refurbish and dispose jobs (plan stage S1); off, the board offers fit jobs only.
 const KINDS_FLAG := "contracts.kinds"
+## Clients post offers each cycle and standing with them unlocks tiers (plan stage S4).
+const CLIENTS_FLAG := "contracts.clients"
+## Open generated offers a client keeps on the board at once.
+const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
 const VOID_SALVAGE := "void_salvage"
 const LOCAL := "local"
@@ -56,6 +67,12 @@ var _active := ""
 ## work order's overrides alone. Wired to Shared Components once that module is a dependency.
 var _component_exists: Callable
 var _library_spec: Callable
+## client id -> standing points (S4).
+var _standing: Dictionary = {}
+## The board's cycle: the game day when Business runs the clock (day_closed), else a count
+## of advance_cycle() calls.
+var _cycle := 0
+var _generator := Generator.new()
 
 
 func register_module() -> void:
@@ -64,11 +81,42 @@ func register_module() -> void:
 	if Flags.is_on(BOARD_CHANNEL):
 		HudSlots.register_holo_channel(BOARD_CHANNEL, "Contracts",
 				func(glass: bool) -> Control: return BoardPanel.new(self, glass), 30)
+	if Flags.is_on(CLIENTS_FLAG):
+		if not Modules.modules_ready.is_connected(_hook_clock):
+			Modules.modules_ready.connect(_hook_clock)
+		if _cycle == 0:
+			advance_cycle(1)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section("contracts")
 	HudSlots.unregister_holo_channel(BOARD_CHANNEL)
+	if Modules.modules_ready.is_connected(_hook_clock):
+		Modules.modules_ready.disconnect(_hook_clock)
+
+
+## Business runs the day clock when it is on; its day_closed is the board's cycle. Found
+## by name once every module has loaded (Business depends on Contracts, so it loads after).
+func _hook_clock() -> void:
+	var business := Modules.bus("business")
+	if business == null or not business.has_signal("day_closed"):
+		return
+	if not business.is_connected("day_closed", _on_day_closed):
+		business.connect("day_closed", _on_day_closed)
+	if business.has_method("labour_price"):
+		set_pricer(func(kind: String, size: String, t: float) -> int: return int(business.call("labour_price", kind, size, t)))
+
+
+func _on_day_closed(day: int) -> void:
+	advance_cycle(day + 1)
+
+
+## Callable(kind, size, t) -> int: what a generated offer pays. Business wires its labour
+## rules in; unset, the generator's own bands apply.
+func set_pricer(pricer: Callable) -> void:
+	_generator.pricer = pricer
+
+
 
 
 func set_component_library(exists: Callable, library_spec: Callable = Callable()) -> void:
@@ -229,6 +277,69 @@ func subject_landed(job_id: String) -> bool:
 	return advance(job_id, ContractJob.PARTS_READY)
 
 
+# Clients and standing (S4)
+
+func cycle() -> int:
+	return _cycle
+
+
+func standing_of(client_id: String) -> int:
+	return int(_standing.get(client_id, 0))
+
+
+func level_of(client_id: String) -> int:
+	return ContractClients.level_for(standing_of(client_id))
+
+
+func add_standing(client_id: String, points: int) -> void:
+	if client_id == "" or points == 0:
+		return
+	_standing[client_id] = maxi(0, standing_of(client_id) + points)
+	standing_changed.emit(client_id, standing_of(client_id), level_of(client_id))
+
+
+## A new cycle on the board: untaken generated offers past their life leave it, and each
+## client that posts this cycle (seeded) puts up an offer at its unlocked tier, up to
+## OFFERS_PER_CLIENT. Host only. The cycle is the game day when Business is on.
+func advance_cycle(to_cycle := -1) -> void:
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
+	_cycle = to_cycle if to_cycle >= 0 else _cycle + 1
+	for id: String in _jobs.keys():
+		var job: ContractJob = _jobs[id]
+		if job.state == ContractJob.OFFERED and job.expires >= 0 and job.expires <= _cycle:
+			_jobs.erase(id)
+			offer_expired.emit(id)
+	if Flags.is_on(CLIENTS_FLAG) and Flags.is_on(KINDS_FLAG):
+		for client_id: String in ContractClients.TABLE:
+			if not Generator.posts(client_id, _cycle) or _open_offers(client_id) >= OFFERS_PER_CLIENT:
+				continue
+			_post_generated(client_id, _cycle, 0)
+	cycle_advanced.emit(_cycle)
+
+
+## Generated offers a client has on the board.
+func _open_offers(client_id: String) -> int:
+	var n := 0
+	for job: ContractJob in _jobs.values():
+		if job.state == ContractJob.OFFERED and job.expires >= 0 and String(job.order.client.get("company", "")) == client_id:
+			n += 1
+	return n
+
+
+func _post_generated(client_id: String, at_cycle: int, slot: int) -> String:
+	var tier := maxi(1, level_of(client_id))
+	var data := _generator.make(client_id, at_cycle, slot, tier)
+	if data.is_empty() or _jobs.has(String(data.get("contract_id", ""))):
+		return ""
+	var result := import_text(JSON.stringify(data))
+	if not result.ok():
+		push_warning("Contracts: generated offer for %s: %s" % [client_id, "; ".join(result.errors)])
+		return ""
+	get_job(result.job_id).expires = int((data.get("offer", {}) as Dictionary).get("expires", -1))
+	return result.job_id
+
+
 # Changing jobs
 
 ## Moves a job to another state; false if the move is not allowed (see ContractJob.NEXT).
@@ -251,7 +362,7 @@ func advance(job_id: String, to_state: String, by_client := false) -> bool:
 			if job.change_status[id] == ChangeItem.FAILED:
 				set_change_status(job_id, id, ChangeItem.INSTALLED)
 	job_state_changed.emit(job_id, from_state, to_state)
-	_emit_milestone(job, to_state, by_client)
+	_emit_milestone(job, to_state, by_client, from_state != ContractJob.OFFERED)
 	return true
 
 
@@ -260,7 +371,7 @@ func cancel(job_id: String, by_client: bool) -> bool:
 	return advance(job_id, ContractJob.CANCELLED, by_client)
 
 
-func _emit_milestone(job: ContractJob, to_state: String, by_client: bool) -> void:
+func _emit_milestone(job: ContractJob, to_state: String, by_client: bool, from_state_was_taken := false) -> void:
 	match to_state:
 		ContractJob.ACCEPTED:
 			var c := job.order.commercial
@@ -268,8 +379,12 @@ func _emit_milestone(job: ContractJob, to_state: String, by_client: bool) -> voi
 		ContractJob.HANDED_OVER:
 			var quality := job.mean_quality() if job.order.is_fit() else job.returned_condition()
 			contract_handed_over.emit(job.job_id, quality, job.open_snags)
+			add_standing(String(job.order.client.get("company", "")),
+					maxi(ContractClients.HANDOVER_MIN, int(roundf(ContractClients.HANDOVER_POINTS * quality))))
 		ContractJob.CANCELLED:
 			contract_cancelled.emit(job.job_id, by_client)
+			if not by_client and from_state_was_taken:
+				add_standing(String(job.order.client.get("company", "")), -ContractClients.CANCEL_POINTS)
 		ContractJob.CLOSED:
 			job_closed.emit(job.job_id)
 
@@ -398,7 +513,7 @@ func save_data() -> Dictionary:
 	var jobs := {}
 	for id: String in _jobs:
 		jobs[id] = Store.to_save(_jobs[id])
-	return {"jobs": jobs, "active": _active}
+	return {"jobs": jobs, "active": _active, "standing": _standing, "cycle": _cycle}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -412,4 +527,8 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 			push_warning("Contracts: dropped saved job %s: %s" % [id, "; ".join(errors)])
 	_active = ""
 	set_active_job(String(data.get("active", "")))
+	_standing = {}
+	for id: String in data.get("standing", {}):
+		_standing[id] = int(data["standing"][id])
+	_cycle = int(data.get("cycle", 0))
 	seed_board()

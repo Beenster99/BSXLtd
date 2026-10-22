@@ -105,6 +105,15 @@ func _docket(job: ContractJob) -> Control:
 	var ink := T.TEXT if glass else T.INK
 	var dim := T.DIM if glass else T.INK_DIM
 	body.add_child(T.label("%s  ·  %s" % [String(o.client.get("display_name", o.client.get("company", ""))), subject_name(o)], "body_medium", 18, ink))
+	if Flags.is_on(ContractsBus.CLIENTS_FLAG):
+		var client_id := String(o.client.get("company", ""))
+		var standing := "Standing: %s (%d)" % [ContractClients.level_name(bus.level_of(client_id)), bus.standing_of(client_id)]
+		if job.expires >= 0 and job.state == ContractJob.OFFERED:
+			standing += "  ·  on the board until cycle %d" % job.expires
+		body.add_child(T.label(standing, "mono_medium", 14, dim))
+		var blurb := String(ContractClients.TABLE.get(client_id, {}).get("blurb", ""))
+		if blurb != "":
+			body.add_child(_wrap(T.label(blurb, "body", 15, dim)))
 	if not o.is_fit():
 		body.add_child(_wrap(T.label(subject_text(o), "body", 17, ink)))
 		body.add_child(T.label("CLIENT WANTS", "display_medium", 15, dim))
@@ -232,6 +241,8 @@ static func keeps_text(o: WorkOrder) -> String:
 
 
 static func job_title(job: ContractJob) -> String:
+	if job.order.title != "":
+		return job.order.title
 	if not job.order.is_fit():
 		return kind_title(job.order)
 	var c := job.order.changes[0] if not job.order.changes.is_empty() else null
