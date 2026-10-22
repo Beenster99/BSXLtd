@@ -70,7 +70,7 @@ func _ready() -> void:
 	var apron: Node = yard.get("apron") if yard else null
 	if apron:
 		cradles.append(apron.get("pad_cradle"))
-		for c: Node3D in apron.get("holding_cradles"):
+		for c: Node3D in apron.get("holding_cradles") + apron.get("dock_cradles"):
 			cradles.append(c)
 	for c: Node3D in cradles:
 		for i in (c as Cradle).levers.size():
@@ -272,8 +272,9 @@ func _clear_way(lin: Vector3, turn: float, d: Dolly) -> String:
 			skip.append(hull.get_rid())
 		# The cradle's frame and the hull on it, from the beams' underside up.
 		var c_local := d.global_transform.affine_inverse() * d.load_cradle.global_transform
-		var tall := Cradle.SADDLE_TOP + (4.0 if hull else 0.0)
-		boxes.append([c_local * Vector3(0, tall * 0.5, 0), Vector3(Cradle.SIDE_X * 2.0 + 0.6, tall, Cradle.LENGTH)])
+		var lc := d.load_cradle as Cradle
+		var tall := lc.saddle_top + (4.0 if hull else 0.0)
+		boxes.append([c_local * Vector3(0, tall * 0.5, 0), Vector3(lc.side_x * 2.0 + 0.6, tall, lc.length)])
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsShapeQueryParameters3D.new()
 	q.exclude = skip
@@ -307,7 +308,7 @@ func _cradle_over(d: Dolly) -> Node3D:
 		return d.load_cradle
 	for c: Node3D in cradles:
 		var local := c.global_transform.affine_inverse() * d.global_position
-		if absf(local.x) < Cradle.SIDE_X - 0.2 and absf(local.z) < Cradle.LENGTH * 0.5 and c.global_position.y > d.deck_height - 0.05:
+		if absf(local.x) < (c as Cradle).side_x - 0.2 and absf(local.z) < (c as Cradle).length * 0.5 and c.global_position.y > d.deck_height - 0.05:
 			return c
 	return null
 

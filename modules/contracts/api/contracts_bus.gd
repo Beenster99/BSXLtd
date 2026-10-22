@@ -202,6 +202,24 @@ func get_spec(job_id: String, change_id: String) -> SpecEntry:
 	return spec
 
 
+## The job pack: every document that comes with a job (ContractJobPack), for the board,
+## the wrist Specs channel and Quality. Empty for an unknown job.
+func job_pack(job_id: String) -> Array[Dictionary]:
+	var job := get_job(job_id)
+	if job == null:
+		return []
+	return ContractJobPack.documents(job, get_spec)
+
+
+## One document of a job's pack by id ("order", "spec:c1", "spec:subject", "wants",
+## "manifest", "hazards", "notes", "progress"), or {}.
+func document(job_id: String, doc_id: String) -> Dictionary:
+	var job := get_job(job_id)
+	if job == null:
+		return {}
+	return ContractJobPack.document(job, doc_id, get_spec)
+
+
 ## The contracts board: offered Void Salvage jobs (VOID_SALVAGE), offered local yard jobs
 ## (LOCAL), or jobs taken on and not yet handed over (TAKEN). Void Salvage first, then by
 ## due day.

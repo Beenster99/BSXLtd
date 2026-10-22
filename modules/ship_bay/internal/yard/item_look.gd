@@ -10,12 +10,16 @@ extends RefCounted
 ## Item space: origin at the bottom centre of the item's box, +Y up.
 
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
+const LineParts := preload("res://modules/ship_bay/internal/yard/line_parts.gd")
 
 ## Rough density for sizing stand-ins, kg per cubic metre.
 const DENSITY := 700.0
 ## Biggest and smallest edge of a stand-in, metres.
 const MAX_EDGE := 5.0
 const MIN_EDGE := 0.2
+## Steel and glass, kg per cubic metre, for sizing plates, beams and panes from their mass.
+const STEEL := 7850.0
+const GLASS := 2500.0
 ## Lays a part built along Y (tanks, thrusters, engines) down along Z.
 const LAY := Basis(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, -1, 0))
 
@@ -79,6 +83,8 @@ static func _entry(item: String, mass: float) -> Dictionary:
 	if _shapes.has(key):
 		return _shapes[key]
 	var made: Array = _build(item)
+	if made.is_empty():
+		made = _material_goods(item, str(info.get("category", "")), kg)
 	if made.is_empty():
 		made = _stand_in(str(info.get("category", "")), kg)
 	var shape: PartShapes.PartShape = made[0]
@@ -162,8 +168,6 @@ static func _build(item: String) -> Array:
 		"SternGrille": return [WreckParts.radiator_grille(1.6, 0.8)]
 		"SuitLocker", "SurvivalLocker": return [WreckParts.survival_locker()]
 		"Toilet": return [WreckParts.toilet()]
-		# Glass
-		"WindscreenPane": return [WreckParts.mesh_panel(2.0, 1.2, 0.06), Basis(Vector3.RIGHT, -PI * 0.5)]
 		# Hull
 		"Grating": return [WreckParts.grating(1.2, 2.4)]
 		"ThrusterBlock": return [WreckParts.thruster_pod(1.6, 1.4, 1.8)]
@@ -209,6 +213,57 @@ static func _build(item: String) -> Array:
 		"RailMuzzle": return [WreckParts.rail_muzzle(1.4, 1.2)]
 		"Turret": return [WreckParts.dome_turret()]
 	return []
+
+
+## The ship's raw build material as it comes from the supplier, sized from its mass: hull
+## plates and wall panels as flat steel sheets, frame members as I-beams, glass as framed
+## panes lying flat, looms and cable as a cable drum. [] for anything else.
+static func _material_goods(item: String, category: String, kg: float) -> Array:
+	match category:
+		"hull":
+			if item == "Spine":
+				return [PartShapes.i_beam(MAX_EDGE, 0.9, 1.1, 0.06), Basis(Vector3.UP, PI * 0.5)]
+			return [_sheet(kg)]
+		"glass":
+			var t := 0.03 if kg < 200.0 else 0.06
+			var area := clampf(kg / (GLASS * t), 0.3, 9.0)
+			var w := sqrt(area / 1.6)
+			return [PartShapes.window_rect(w * 1.6, w, t * 1.6)]
+		"frame":
+			# Light members (joists, stringers, rings) come as 3 m lengths of I-beam, heavier
+			# ones longer and deeper.
+			var depth := clampf(pow(kg / 40.0, 0.5) * 0.16, 0.12, 0.5)
+			var l := clampf(kg / (STEEL * depth * depth * 0.18), 3.0, MAX_EDGE)
+			return [PartShapes.i_beam(l, depth * 0.8, depth, 0.02), Basis(Vector3.UP, PI * 0.5)]
+		"wiring":
+			if item.contains("Loom"):
+				return [_cable_drum(clampf(pow(kg / 20.0, 0.33) * 0.45, 0.35, 0.9))]
+	return []
+
+
+## A steel sheet of `kg`: thicker the heavier it is, at most 4.8 x 2.4 m.
+static func _sheet(kg: float) -> PartShapes.PartShape:
+	var t := 0.006 if kg < 40.0 else (0.012 if kg < 250.0 else 0.02)
+	var area := kg / (STEEL * t)
+	var w := clampf(sqrt(area / 2.0), 0.4, 2.4)
+	var l := clampf(area / w, 0.8, 4.8)
+	t = clampf(kg / (STEEL * w * l), 0.004, 0.06)
+	return PartShapes.chamfer_box(Vector3(w, t, l), minf(t * 0.4, 0.004))
+
+
+## A cable drum standing on its rim: two plywood flanges of `radius` and a barrel wound full
+## of black cable between them, lying along X.
+static func _cable_drum(radius: float) -> PartShapes.PartShape:
+	var width := radius * 1.1
+	var axis := Basis(Vector3.FORWARD, PI * 0.5)
+	var pieces: Array = []
+	for k: float in [-1.0, 1.0]:
+		pieces.append([PartShapes.prism(20, radius, 0.04).mesh, Transform3D(axis, Vector3(k * (width * 0.5 - 0.02), radius, 0))])
+	pieces.append([PartShapes.prism(20, radius * 0.82, width - 0.1).mesh, Transform3D(axis, Vector3(0, radius, 0))])
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = LineParts.merged(pieces)
+	shape.volume = PI * radius * radius * width
+	return shape
 
 
 ## A category's stand-in for a part with no builder of its own, sized from its mass.

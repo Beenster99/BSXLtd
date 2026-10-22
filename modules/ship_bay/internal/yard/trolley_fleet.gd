@@ -28,6 +28,8 @@ const WristMachines := preload("res://modules/ship_bay/internal/yard/wrist_machi
 const RemoteView := preload("res://modules/ship_bay/internal/yard/remote_view.gd")
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 const CrusherPlant := preload("res://modules/ship_bay/internal/yard/crusher_plant.gd")
+const CargoBeam := preload("res://modules/ship_bay/internal/yard/cargo_beam.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 ## While a clean-up has parts no trolley was free for, how often it asks again, seconds.
 const CLEAN_UP_RETRY := 1.5
 
@@ -83,6 +85,16 @@ var _queue: Dictionary = {}
 ## The screen a player opened with F on the TV (null when shut), and the one on the TV.
 var panel: Screen
 var _deck_send := 0.0
+## Goods being beamed between trolleys, the floor and the shelves (presentation).
+var beams: CargoBeam
+## Where each crate was last drawn: crate id -> {"t": trolley id} or {"at": Vector3}, with
+## its goods {item, qty, condition}; and those a trolley just gave up into the stores
+## (crate_stored says where).
+var _where: Dictionary = {}
+var _left: Dictionary = {}
+## Location id -> how many goods are still in the air on their way onto it (the shipyard
+## draws the shelf without them till they land).
+var arriving: Dictionary = {}
 var _clean_clock := 0.0
 
 
@@ -92,6 +104,9 @@ func _ready() -> void:
 	_net = Modules.bus("multiplayer")
 	if _net and not _net.has_method("register_mover"):
 		_net = null
+	beams = CargoBeam.new()
+	beams.name = "CargoBeams"
+	add_child(beams)
 	for id: String in ["s", "m", "l", "p", "a", "b"]:
 		var t := Trolley.new()
 		add_child(t)
@@ -116,6 +131,8 @@ func _ready() -> void:
 		_bus.trolley_command.connect(_on_command)
 		_bus.crate_carried.connect(_on_carried)
 		_bus.crate_stored.connect(_on_stored)
+		_bus.crate_stored.connect(_beam_into_stores)
+		_bus.stock_picked.connect(_beam_off_shelf)
 		_bus.stock_changed.connect(_refresh_cargo)
 		_refresh_cargo()
 		# A trolley that was carrying a delivered crate when the game was saved finishes the job.
@@ -141,7 +158,8 @@ func _exit_tree() -> void:
 		if _bus.fleet == self:
 			_bus.fleet = null
 		for pair: Array in [[_bus.part_beamed, _on_beamed], [_bus.trolley_command, _on_command], [_bus.crate_carried, _on_carried],
-				[_bus.crate_stored, _on_stored], [_bus.stock_changed, _refresh_cargo]]:
+				[_bus.crate_stored, _on_stored], [_bus.stock_changed, _refresh_cargo],
+				[_bus.crate_stored, _beam_into_stores], [_bus.stock_picked, _beam_off_shelf]]:
 			if (pair[0] as Signal).is_connected(pair[1]):
 				(pair[0] as Signal).disconnect(pair[1])
 	if _net:
@@ -625,6 +643,8 @@ func _fetch(id: String, t: Trolley, job: Dictionary) -> void:
 				_bus.pick_stock(str(job["place"]), int(job["qty"]), job["to"], id)
 		"picking":
 			var held := _bus.trolley_cargo(id)
+			if held != "" and beaming(id):
+				return
 			if held != "":
 				job["crate"] = held
 				job["phase"] = "lowering"
@@ -673,7 +693,7 @@ func _deliver(id: String, t: Trolley, job: Dictionary) -> void:
 				job["phase"] = "loading"
 				_bus.hand_crate(str(job["crate"]), id)
 		"loading":
-			if _bus.trolley_cargo(id) == str(job["crate"]):
+			if _bus.trolley_cargo(id) == str(job["crate"]) and not beaming(id):
 				job["phase"] = "bringing"
 				_go_to_person(t, job["to"])
 				t.show_status("BRINGING")
@@ -769,7 +789,7 @@ func _to_line(id: String, t: Trolley, job: Dictionary) -> void:
 				job["phase"] = "setting_down"
 				_bus.line_request("feed", {"crate": crate, "line": job["line"], "spot": job["spot"]})
 		"setting_down":
-			if not _bus.trolley_load(id).has(crate):
+			if not _bus.trolley_load(id).has(crate) and not beaming(id):
 				_release(id)
 				t.show_status("SET DOWN")
 				_next_job(id, t)
@@ -883,7 +903,8 @@ func _put_away(id: String, t: Trolley, job: Dictionary) -> void:
 			_reserved_crates[crate] = id
 			job["crate"] = crate
 			job["phase"] = "to_crate"
-			if not _go(t, _bus.crate_position(crate), NAN):
+			# It parks beside the goods and beams them up onto its deck.
+			if not _go_under(t, _bus.crate_position(crate)) and not _go(t, _bus.crate_position(crate), NAN):
 				_fail(id, t, "NO ROUTE")
 				return
 			t.show_status("TO CRATE")
@@ -893,7 +914,11 @@ func _put_away(id: String, t: Trolley, job: Dictionary) -> void:
 				job["wait"] = 0
 				_bus.carry_crate(str(job["crate"]), id)
 		"loading":
-			# The crate came aboard (or someone else took it, or it didn't fit): look again.
+			# The crate came aboard (or someone else took it, or it didn't fit): look again,
+			# once its goods have been beamed up.
+			if beaming(id):
+				t.show_status("BEAMING UP")
+				return
 			job["wait"] = int(job.get("wait", 0)) + 1
 			var on := str(_bus.crate_info(str(job["crate"])).get("carrier", ""))
 			if on != "" or int(job["wait"]) > 120:
@@ -914,7 +939,7 @@ func _put_away(id: String, t: Trolley, job: Dictionary) -> void:
 				job["phase"] = "storing"
 				_bus.store_crate(str(job["crate"]), str(job["place"]))
 		"lowering":
-			if t.deck_ready():
+			if t.deck_ready() and not beaming(id):
 				job["phase"] = "find"
 		"waiting":
 			_head_for_place(id, t, job)
@@ -1020,6 +1045,8 @@ func _shelve(id: String, t: Trolley, job: Dictionary) -> void:
 			_bus.hand_crate(goods[0], id)
 			t.show_status("TAKING " + str(_bus.crate_info(goods[0]).get("name", "")).to_upper().left(10))
 		"took":
+			if beaming(id):
+				return
 			job["wait"] = int(job.get("wait", 0)) + 1
 			if _bus.trolley_cargo(id) == str(job["crate"]):
 				jobs[id] = {"do": "put_away", "phase": "find", "shelve_from": from}
@@ -1207,9 +1234,45 @@ func _release(id: String) -> void:
 func _refresh_cargo() -> void:
 	if _bus == null:
 		return
+	_left.clear()
+	var crates := _bus.delivered_crates()
+	# Goods that moved since they were last drawn are beamed across.
+	var now := {}
+	for cid: String in crates:
+		var c: Dictionary = crates[cid]
+		var carrier := str(c.get("carrier", ""))
+		now[cid] = {"t": carrier} if trolleys.has(carrier) else {"at": _bus.crate_position(cid)}
+		now[cid].merge({"item": str(c.get("item", "")), "qty": int(c.get("qty", 1)), "condition": float(c.get("condition", 1.0))})
+	for cid: String in _where:
+		var was: Dictionary = _where[cid]
+		var is_now: Dictionary = now.get(cid, {})
+		if not was.has("t"):
+			if is_now.has("t"):
+				_beam_crate(cid, was["at"], trolleys[is_now["t"]], trolleys[is_now["t"]], [])
+			continue
+		var from: Trolley = trolleys.get(str(was["t"]))
+		if from == null:
+			continue
+		if is_now.is_empty():
+			_left[cid] = was   # into the stores (crate_stored follows), or collected
+		elif is_now.has("t") and is_now["t"] != was["t"]:
+			var to: Trolley = trolleys[is_now["t"]]
+			_beam_crate(cid, from.deck, to, to if to.is_picker() else from, [from])
+		elif is_now.has("at") and (is_now["at"] as Vector3) != Vector3.ZERO:
+			_beam_crate(cid, from.deck, is_now["at"], from, [])
+	_where = now
+	_show_cargo()
+
+
+## Draws each trolley's load, leaving out goods still being beamed onto it.
+func _show_cargo() -> void:
 	for id: String in trolleys:
 		var t: Trolley = trolleys[id]
-		var load := _bus.trolley_load(id)
+		var load := PackedStringArray()
+		for cid in _bus.trolley_load(id):
+			var f := beams.flight("crate:" + cid)
+			if f.is_empty() or f["to"] != t.deck:
+				load.append(cid)
 		if load.is_empty():
 			if not t.cargo.is_empty():
 				t.set_cargo({})
@@ -1229,6 +1292,61 @@ func _refresh_cargo() -> void:
 			name += "  +%d MORE" % (load.size() - 1)
 		t.set_cargo({"key": key, "crate_id": load[0], "kind": Layout.kind_for(float(first.get("mass", 0.0))), "mass": mass,
 				"name": name, "lots": lots})
+
+
+## Beams a crate's goods from `from` to `to` (a point, or a trolley: onto its deck), the
+## beam coming from `emitter`; `ends` are other trolleys that wait for it to land.
+func _beam_crate(cid: String, from: Variant, to: Variant, emitter: Trolley, ends: Array, done := Callable()) -> void:
+	var c := _bus.crate_info(cid)
+	var lots := [{"item": str(c.get("item", "")), "count": int(c.get("qty", 1)),
+			"look": ItemLook.look_for(float(c.get("condition", 1.0)))}]
+	var target: Variant = (to as Trolley).deck if to is Trolley else to
+	var all := ends.duplicate()
+	if to is Trolley and not all.has(to):
+		all.append(to)
+	beams.fly("crate:" + cid, lots, from, target, emitter, all, func() -> void:
+		_show_cargo()
+		if done.is_valid():
+			done.call())
+
+
+## A crate a trolley carried went onto a shelf or bay: beam it across from the deck, the
+## place drawn without it until it lands.
+func _beam_into_stores(crate_id: String, location: String) -> void:
+	var was: Dictionary = _left.get(crate_id, {})
+	var from: Trolley = trolleys.get(str(was.get("t", "")))
+	var loc: Dictionary = Layout.get_layout()["locations"].get(location, {})
+	if from == null or loc.is_empty():
+		return
+	var qty := int(was.get("qty", 1))
+	arriving[location] = int(arriving.get(location, 0)) + qty
+	_redraw_stores()
+	var lots := [{"item": str(was.get("item", "")), "count": qty, "look": ItemLook.look_for(float(was.get("condition", 1.0)))}]
+	beams.fly("crate:" + crate_id, lots, from.deck, (loc["at"] as Vector3), from, [], func() -> void:
+		arriving[location] = int(arriving.get(location, 0)) - qty
+		if int(arriving[location]) <= 0:
+			arriving.erase(location)
+		_redraw_stores())
+
+
+## Goods picked off a shelf onto the lift's fork: beam them across from the place.
+func _beam_off_shelf(crate_id: String, location: String) -> void:
+	var loc: Dictionary = Layout.get_layout()["locations"].get(location, {})
+	var by := str(_bus.crate_info(crate_id).get("carrier", ""))
+	if loc.is_empty() or not trolleys.has(by):
+		return
+	_beam_crate(crate_id, (loc["at"] as Vector3) + Vector3(0, 0.1, 0), trolleys[by], trolleys[by], [])
+	_show_cargo()
+
+
+func _redraw_stores() -> void:
+	if yard and yard.has_method("_refresh_stores"):
+		yard.call("_refresh_stores")
+
+
+## True while goods are being beamed off or onto trolley `id` (it waits for them).
+func beaming(id: String) -> bool:
+	return trolleys.has(id) and beams.busy(trolleys[id])
 
 
 # --- The screen --------------------------------------------------------------------------

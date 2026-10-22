@@ -5,6 +5,7 @@ extends ModuleTest
 ##   tools/run_tests.sh ship_bay
 
 const Yard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
+const CrusherPlant := preload("res://modules/ship_bay/internal/yard/crusher_plant.gd")
 const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 
 
@@ -151,16 +152,23 @@ func _check_apron(yard: Node3D) -> void:
 	check(pad.global_position.is_equal_approx(pad_at + Vector3(0, 1.6, 0)), "the pad cradle stands on its pedestals at the pad: %s" % pad.global_position)
 	var holding: Array = apron.get("holding_cradles")
 	check(holding.size() == 3, "three cradles in the holding lane")
-	for c: Node3D in holding + [pad]:
-		for side: float in [-4.2, 4.2]:
-			var foot := c.global_position + Vector3(side, 0, 5.8)
+	var docked: Array = apron.get("dock_cradles")
+	check(holding.map(func(c: Node3D) -> String: return str(c.get("size"))) == ["s", "m", "m"] and docked.size() == 1 and str(docked[0].get("size")) == "l",
+			"a small and two medium cradles wait in the holding lane, a large one in Dock 3")
+	check(float(docked[0].get("length")) > 70.0 and float(holding[1].get("length")) > 25.0, "the big ones are much longer than the Kestrel's")
+	for c: Node3D in holding + docked + [pad]:
+		for foot: Vector3 in c.call("pedestal_points"):
 			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(foot + Vector3(0, -0.8, -1.5), foot + Vector3(0, -0.8, 1.5)))
-			check(not hit.is_empty(), "%s has a pedestal under it" % c.name)
+			check(not hit.is_empty(), "%s has a pedestal under it at %s" % [c.name, foot])
 	# A 6 m wide dolly fits between a cradle's pedestals, under its cross beams.
 	var under := space.intersect_ray(PhysicsRayQueryParameters3D.create(pad.global_position + Vector3(0, -0.4, -10), pad.global_position + Vector3(0, -0.4, 10)))
 	check(under.is_empty() or under.collider == hulk, "the way under the pad cradle is clear: %s" % under.get("position", ""))
-	var cut: Rect2 = Apron.CUTTING
-	var door := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(cut.get_center().x + 8, 1, cut.end.y + 4), Vector3(cut.get_center().x + 8, 1, cut.end.y - 3)))
-	check(door.is_empty(), "the cutting bay's door is open to the road: %s" % door.get("position", ""))
-	var wall := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(cut.position.x - 3, 1, cut.get_center().y), Vector3(cut.position.x + 3, 1, cut.get_center().y)))
-	check(not wall.is_empty(), "the cutting bay has walls")
+	var house: Rect2 = CrusherPlant.HOUSE
+	var hd: Vector3 = CrusherPlant.HOUSE_DOOR
+	var door := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(hd.x, 1, house.end.y + 4), Vector3(hd.x, 1, house.end.y - 3)))
+	check(door.is_empty(), "the crusher house's door is open to the front strip: %s" % door.get("position", ""))
+	var wall := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(house.end.x + 3, 1, house.get_center().y), Vector3(house.end.x - 3, 1, house.get_center().y)))
+	check(not wall.is_empty(), "the crusher house has walls")
+	var through := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(48.5, 1, 0), Vector3(52.5, 1, 0)))
+	check(through.is_empty(), "Pre-assembly's east door leads into it: %s" % through.get("position", ""))
+	check(house.encloses(Rect2(CrusherPlant.BAY.position.x, CrusherPlant.BAY.position.y, CrusherPlant.BAY.size.x, CrusherPlant.BAY.size.y)), "the crusher plant is inside it")
