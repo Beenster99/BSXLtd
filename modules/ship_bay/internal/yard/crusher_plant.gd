@@ -375,7 +375,7 @@ func _build_pad() -> void:
 	for z: float in [BAY.position.y, BAY.end.y]:
 		_part(PartShapes.box(Vector3(BAY.size.x, 0.01, 0.2)).mesh, Vector3(BAY.get_center().x, 0.006, z), _mats["yellow"], root)
 	for x: float in [BAY.position.x, BAY.end.x]:
-		_part(PartShapes.box(Vector3(0.2, 0.01, BAY.size.y)).mesh, Vector3(x, 0.006, BAY.get_center().y), _mats["yellow"], root)
+		_part(PartShapes.box(Vector3(0.2, 0.01, BAY.size.y)).mesh, Vector3(x, 0.0068, BAY.get_center().y), _mats["yellow"], root)
 	for p: Vector3 in FEED_SPOTS:
 		_part(PartShapes.box(Vector3(1.6, 0.14, 1.8)).mesh, p + Vector3(0, 0.07, 0), _mats["wood"], root)
 		for k: float in [-1.0, 1.0]:
@@ -488,13 +488,13 @@ func _build_crusher() -> void:
 	for x: float in [-0.74, 0.74]:
 		for z: float in [cz - 0.7, cz + 0.7]:
 			_part(PartShapes.box(Vector3(0.05, 0.32, 0.05)).mesh, Vector3(x, top + 0.16, z), _mats["yellow"], _housing)
-		_part(PartShapes.box(Vector3(0.04, 0.04, 1.44)).mesh, Vector3(x, top + 0.3, cz), _mats["yellow"], _housing)
+		_part(PartShapes.box(Vector3(0.04, 0.04, 1.44)).mesh, Vector3(x, top + 0.298, cz), _mats["yellow"], _housing)
 	for z: float in [cz - 0.7, cz + 0.7]:
-		_part(PartShapes.box(Vector3(1.44, 0.038, 0.038)).mesh, Vector3(0, top + 0.3, z), _mats["yellow"], _housing)
+		_part(PartShapes.box(Vector3(1.44, 0.038, 0.038)).mesh, Vector3(0, top + 0.296, z), _mats["yellow"], _housing)
 	# The hopper over the mouth that the ramp tips into.
 	_part(PartShapes.frustum(0.62, 0.42, 0.5, 4).mesh, Vector3(0, top + 0.25, -0.62), _mats["yellow"], frame, Basis(Vector3.UP, PI * 0.25))
 	# The motor behind, and the mouth's bed.
-	_part(WreckParts.generator(Vector3(1.0, 0.8, 0.9)).mesh, Vector3(-side * 1.55, 0.55, 0.3), _mats["dark"], frame)
+	_part(WreckParts.generator(Vector3(1.0, 0.8, 0.9)).mesh, Vector3(-side * 1.54, 0.55, 0.3), _mats["dark"], frame)
 	_mouth = _part(PartShapes.box(Vector3(1.0, 0.06, 0.6)).mesh, Vector3(0, BED - 0.03, -0.8), _mats["roller"], frame)
 	_sparks = LineParts.sparks(Vector3(0.55, 0.02, 0.06) * K)
 	_sparks.position = Vector3(0, (BED + 0.28) * K, 0)
@@ -572,7 +572,7 @@ func _build_smelter() -> void:
 	var down := CONVEYOR_Z - SMELTER.z - spout.z
 	_conveyor(root, spout + Vector3(0, 0, down * 0.5), down, 0.0, belt)
 	var west := SMELTER.x - (BAY.position.x + 1.0)
-	_conveyor(root, Vector3(-west * 0.5, 0, CONVEYOR_Z - SMELTER.z), west, PI * 0.5, belt)
+	_conveyor(root, Vector3(-west * 0.5, -0.004, CONVEYOR_Z - SMELTER.z), west, PI * 0.5, belt)
 
 
 ## A low belt conveyor `length` long centred on `at` (in `parent`'s frame), turned `yaw`.

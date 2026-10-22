@@ -1297,9 +1297,11 @@ func _build_preassembly() -> void:
 	line = lines["a"]
 	crusher = CrusherPlant.new()
 	add_child(crusher)
-	_block(Vector3(CrusherPlant.BAY.get_center().x, -0.005, CrusherPlant.BAY.get_center().y),
-			Vector3(CrusherPlant.BAY.size.x + 2.0, 0.03, CrusherPlant.BAY.size.y + 2.0), _concrete, false)
-	_slab_joints(CrusherPlant.BAY.grow(1.0), 0.0)
+	# The apron's concrete runs under the bay from z = 35; pave the strip north of it that the
+	# courtyard's front strip stops short of, flush with both.
+	var strip := Rect2(45.0, CrusherPlant.BAY.position.y - 1.0, CrusherPlant.BAY.end.x + 1.0 - 45.0, 35.0 - (CrusherPlant.BAY.position.y - 1.0))
+	_block(Vector3(strip.get_center().x, -0.01, strip.get_center().y), Vector3(strip.size.x, 0.04, strip.size.y), _concrete, false)
+	_slab_joints(strip, 0.0)
 	# Benches and shelving along the east wall.
 	for z: float in [16.0, 19.0]:
 		_put(_lib("workbench", func() -> PartShapes.PartShape: return WreckParts.workbench()),

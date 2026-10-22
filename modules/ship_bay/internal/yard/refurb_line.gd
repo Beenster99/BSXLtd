@@ -689,8 +689,9 @@ func _build_machine(s: String) -> void:
 			for z: float in [-0.95, 0.95]:
 				for x: float in [-0.75, 0.75]:
 					_part(PartShapes.box(Vector3(0.12, 1.4, 0.12)).mesh, Vector3(x, BED + 0.7, z), paint, frame)
-				# A hair shallower than the side bars, so their tops don't meet in one plane.
-				_part(PartShapes.box(Vector3(1.62, 0.136, 0.136)).mesh, Vector3(0, BED + 1.45, z), paint, frame)
+				# A hair shallower than the side bars and shorter than the posts' outer faces, so
+				# no two faces meet in one plane.
+				_part(PartShapes.box(Vector3(1.614, 0.136, 0.136)).mesh, Vector3(0, BED + 1.45, z), paint, frame)
 			for x: float in [-0.75, 0.75]:
 				_part(PartShapes.box(Vector3(0.14, 0.14, 2.0)).mesh, Vector3(x, BED + 1.45, 0), paint, frame)
 			var bar := Node3D.new()
@@ -782,7 +783,7 @@ func _build_machine(s: String) -> void:
 			for z: float in [-1.0, 1.0]:
 				for x: float in [-0.88, 0.88]:
 					_part(PartShapes.box(Vector3(0.1, 2.0, 0.1)).mesh, Vector3(x, 1.0, z), _mats["steel"], frame)
-				_part(PartShapes.box(Vector3(1.86, 0.116, 0.116)).mesh, Vector3(0, 2.0, z), _mats["steel"], frame)
+				_part(PartShapes.box(Vector3(1.854, 0.116, 0.116)).mesh, Vector3(0, 2.0, z), _mats["steel"], frame)
 			_part(PartShapes.box(Vector3(0.12, 0.12, 2.1)).mesh, Vector3(0, 2.0, 0), _mats["yellow"], frame)
 			_part(WreckParts.junction_box(Vector3(0.4, 0.35, 0.35), Color(1.0, 0.6, 0.15)).mesh, Vector3(0, 1.75, 0), _mats["dark"], frame)
 			var cables: Array[Node3D] = []

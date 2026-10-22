@@ -32,7 +32,7 @@ static func rotor(length: float, radius: float, discs: int, teeth: int, offset: 
 			var b := Basis(Vector3.RIGHT, TAU * t / teeth + i * 0.95)
 			# A hook: tall at its back, sloping away along the turn, standing off the rim.
 			pieces.append([PartShapes.wedge(Vector3(pitch * 0.4, radius * 0.36, radius * 0.5)).mesh,
-					Transform3D(b, b * Vector3(0, radius * 0.84, 0))])
+					Transform3D(b, b * Vector3(0, radius * 0.84, 0) + Vector3(x, 0, 0))])
 	return merged(pieces)
 
 
