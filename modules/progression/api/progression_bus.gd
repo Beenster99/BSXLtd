@@ -53,6 +53,7 @@ const UNGRADED_QUALITY := 0.5
 const Catalog := preload("res://modules/progression/internal/catalog.gd")
 const State := preload("res://modules/progression/internal/progression_state.gd")
 const ProfilePanel := preload("res://modules/progression/internal/ui/profile_panel.gd")
+const DebugPanel := preload("res://modules/progression/internal/ui/debug_panel.gd")
 
 var _state: RefCounted = State.new(Catalog.from_data())
 var _trades: Node
@@ -69,11 +70,14 @@ func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, self)
 	Menu.register_settings_section(Menu.CHARACTER, PROFILE_SECTION, "Skills",
 			func() -> Control: return ProfilePanel.new(self), 10)
+	Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Progression",
+			func() -> Control: return DebugPanel.new(self), 10)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
 	Menu.unregister_settings_section(Menu.CHARACTER, PROFILE_SECTION)
+	Menu.unregister_settings_section(Menu.DEBUG, DEBUG_SECTION)
 	if _net:
 		_net.unregister_event(STATE_EVENT)
 		_net.unregister_event(UPGRADE_EVENT)

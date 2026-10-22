@@ -164,6 +164,16 @@ func run_tests() -> void:
 	var ids := Menu.settings_sections(Menu.CHARACTER).map(func(c): return c.id)
 	check(Modules.is_loaded("progression") and ProgressionBus.PROFILE_SECTION in ids,
 			"Skills section registered on the Character page")
+	var dbg := Menu.settings_sections(Menu.DEBUG).filter(func(c): return c.id == ProgressionBus.DEBUG_SECTION)
+	check(dbg.size() == 1, "Progression section on the Debug tab")
+	if dbg.size() == 1:
+		var dp: Control = (dbg[0].factory as Callable).call()
+		add_child(dp)
+		var me := Modules.bus("progression").my_player_id() as StringName
+		(dp.find_child("MaxXp", true, false) as Button).pressed.emit()
+		await frames(2)
+		check(Modules.bus("progression").total_level(me) == top, "Max XP button maxes the local player: %d" % Modules.bus("progression").total_level(me))
+		dp.queue_free()
 	var real := Modules.bus("progression") as ProgressionBus
 	check(real.my_player_id() != &"", "solo player has an id: %s" % real.my_player_id())
 	flags["progression"] = false
