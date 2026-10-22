@@ -295,6 +295,44 @@ static func stack(size: Vector3, count: int, area: Vector2, max_height := 2.4, g
 	return out
 
 
+## Several lots on one deck (a trolley's load): each lot `{item, count, look}` gets a band
+## across the deck, front to back in load order, its goods in rows across it and layered up
+## to `max_height`; a lot with too little deck left stacks higher. Returns
+## [[item, look, transform], ...] (deck space, like stack()).
+static func stack_lots(lots: Array, area: Vector2, max_height := 2.4, gap := 0.06) -> Array:
+	var out: Array = []
+	var z := -area.y * 0.5
+	for lot: Dictionary in lots:
+		var item := str(lot.get("item", ""))
+		var count := maxi(1, int(lot.get("count", 1)))
+		var s := size_of(item)
+		var basis := Basis()
+		# Long goods lie across the deck so a lot's band stays short.
+		if s.z > s.x and s.z <= area.x:
+			basis = Basis(Vector3.UP, PI * 0.5)
+			s = Vector3(s.z, s.y, s.x)
+		var across := maxi(1, floori((area.x + 0.04) / (s.x + 0.04)))
+		var layers := maxi(1, floori((max_height + 0.001) / (s.y + 0.02)))
+		var left := area.y * 0.5 - z
+		var rows := ceili(float(count) / (across * layers))
+		var room := maxi(1, floori((left + gap) / (s.z + gap)))
+		if rows > room:
+			rows = room
+			layers = ceili(float(count) / (across * rows))
+		var x0 := -(across * (s.x + 0.04) - 0.04) * 0.5 + s.x * 0.5
+		var placed := 0
+		for layer in layers:
+			for j in rows:
+				for i in across:
+					if placed >= count:
+						break
+					out.append([item, lot.get("look", Look.NEW), Transform3D(basis,
+							Vector3(x0 + i * (s.x + 0.04), layer * (s.y + 0.02), z + s.z * 0.5 + j * (s.z + gap)))])
+					placed += 1
+		z = minf(z + rows * (s.z + gap), area.y * 0.5 - 0.2)
+	return out
+
+
 ## The look for goods in this condition (0..1) at this point on the line ("" when not on it).
 static func look_for(condition: float, stage := "") -> int:
 	match stage:

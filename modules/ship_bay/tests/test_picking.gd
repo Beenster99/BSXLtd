@@ -65,27 +65,36 @@ func run_tests() -> void:
 	bus.fetch_stock("IonThruster", 1, me)
 	var high := 0.0
 	var reached := 0.0
-	var m: Node3D = trolleys["m"]
+	# Whichever hauler is free and smallest brings it.
+	var courier := func(item: String) -> String:
+		for id: String in ["s", "m", "l"]:
+			var held := bus.trolley_cargo(id)
+			if held != "" and bus.crate_info(held).get("item") == item and trolleys[id].get("status") == "HERE":
+				return id
+		return ""
+	var by := ""
 	for i in 6000:
 		await get_tree().physics_frame
 		high = maxf(high, float(p.get("deck_height")))
 		reached = maxf(reached, float(p.get("fork_out")))
-		if m.get("status") == "HERE" and bus.trolley_cargo("m") != "":
+		by = courier.call("IonThruster")
+		if by != "":
 			break
+	var m: Node3D = trolleys.get(by if by != "" else "s")
 	var level := (Layout.get_layout()["locations"][top]["at"] as Vector3).y
 	check(high >= level - 0.02, "the lift raised its carriage to the top shelf: %.2f of %.2f" % [high, level])
 	check(reached > 0.99, "and reached into the rack")
 	check(picked.values() == [top], "picked off %s: %s" % [top, picked])
 	check(bus.stock_at(top).get("qty") == 1, "one thruster left on the shelf")
-	var cid := bus.trolley_cargo("m")
+	var cid := bus.trolley_cargo(by)
 	var gap := Vector2(m.global_position.x - me.x, m.global_position.z - me.z).length()
 	check(cid != "" and m.get("status") == "HERE" and gap < 2.6,
-			"the medium trolley brought it: %.1f m away (%s; lift %s)" % [gap, m.get("status"), p.get("status")])
+			"a trolley (%s) brought it: %.1f m away (%s; lift %s)" % [by, gap, m.get("status"), p.get("status")])
 	check(bus.crate_info(cid).get("item") == "IonThruster" and is_equal_approx(float(bus.crate_info(cid).get("condition", 0)), 0.9),
 			"the crate is the thruster, in the condition it was stored")
 	check(bus.delivered_crates().is_empty() and bus.picked_crates().size() == 1, "picked goods are not deliveries")
-	fleet.call("use_trolley", "m")
-	check(collected == {"IonThruster": 1} and bus.trolley_cargo("m") == "", "F on the trolley takes it: %s" % [collected])
+	fleet.call("use_trolley", by)
+	check(collected == {"IonThruster": 1} and bus.trolley_cargo(by) == "", "F on the trolley takes it: %s" % [collected])
 	check(fleet.get("remote_id") == "", "(and doesn't take the trolley on remote)")
 	for i in 2400:
 		await get_tree().physics_frame
@@ -93,16 +102,17 @@ func run_tests() -> void:
 			break
 	check(p.get("status") == "PARKED", "the lift goes back to its bay: %s" % p.get("status"))
 
-	# Bolts from the bins come on the small trolley; a reactor on the large one.
+	# Bolts from the bins come on a trolley; a reactor on the large one, which fetches it itself.
 	bus.fetch_stock("M10", 40, me)
 	bus.fetch_stock("Reactor", 1, me + Vector3(6, 0, 0))
-	var s: Node3D = trolleys["s"]
 	var l: Node3D = trolleys["l"]
+	var bolts := ""
 	for i in 8000:
 		await get_tree().physics_frame
-		if s.get("status") == "HERE" and l.get("status") == "HERE" and bus.trolley_cargo("s") != "" and bus.trolley_cargo("l") != "":
+		bolts = courier.call("M10")
+		if bolts != "" and l.get("status") == "HERE" and bus.trolley_cargo("l") != "":
 			break
-	check(bus.crate_info(bus.trolley_cargo("s")).get("qty") == 40, "40 bolts came on the small trolley (%s, lift %s)" % [s.get("status"), p.get("status")])
+	check(bolts != "" and bus.crate_info(bus.trolley_cargo(bolts)).get("qty") == 40, "40 bolts came on a trolley (%s, lift %s)" % [bolts, p.get("status")])
 	check(bus.crate_info(bus.trolley_cargo("l")).get("item") == "Reactor", "the large trolley fetched the reactor itself (%s)" % l.get("status"))
 	check(bus.stock_count("M10") == 60 and bus.stock_count("Reactor") == 0, "the stores are down by what left")
 	var before := bus.picked_crates().size()

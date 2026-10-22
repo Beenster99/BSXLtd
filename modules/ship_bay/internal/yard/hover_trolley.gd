@@ -20,11 +20,11 @@ const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 signal screen_action(action: String)
 
 const SPECS := {
-	"s": {"name": "Small hover trolley", "letter": "S", "deck": Vector2(0.8, 1.1), "radius": 0.6,
-			"speed": 2.4, "lift": 7.6, "carries": ["bin"], "colour": Color(0.25, 0.62, 0.85)},
-	"m": {"name": "Medium hover trolley", "letter": "M", "deck": Vector2(1.25, 1.7), "radius": 0.85,
-			"speed": 2.0, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(1.0, 0.55, 0.16)},
-	"l": {"name": "Large hover trolley", "letter": "L", "deck": Vector2(2.6, 4.4), "radius": 1.3,
+	"s": {"name": "Small hover trolley", "letter": "S", "deck": Vector2(2.6, 4.4), "radius": 1.3,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.25, 0.62, 0.85)},
+	"m": {"name": "Medium hover trolley", "letter": "M", "deck": Vector2(2.8, 6.4), "radius": 1.4, "clear": 1.3,
+			"speed": 1.6, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(1.0, 0.55, 0.16)},
+	"l": {"name": "Large hover trolley", "letter": "L", "deck": Vector2(3.0, 8.8), "radius": 1.45, "clear": 1.3,
 			"speed": 1.4, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
 	"p": {"name": "Picking lift", "letter": "P", "deck": Vector2(1.1, 1.3), "radius": 0.8,
 			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true},
@@ -118,6 +118,12 @@ func radius() -> float:
 	return float(spec["radius"])
 
 
+## How much room it needs either side on a route, metres: the bigger trolleys squeeze down
+## the bulk floor's lanes with a hand's width to spare.
+func clearance() -> float:
+	return float(spec.get("clear", spec["radius"]))
+
+
 func yaw() -> float:
 	return _yaw
 
@@ -149,22 +155,18 @@ func set_cargo(c: Dictionary) -> void:
 		_cargo_mesh = null
 	if cargo.is_empty():
 		return
-	# The goods themselves, as they are, stacked neatly on the deck.
+	# The goods themselves, as they are, each lot stacked neatly on the deck.
 	var d: Vector2 = spec["deck"]
-	var item := str(cargo.get("item", ""))
-	var count := maxi(1, int(cargo.get("qty", 1)))
-	var look := ItemLook.look_for(float(cargo.get("condition", 1.0)))
-	var size := ItemLook.size_of(item)
 	_cargo_mesh = Node3D.new()
 	_cargo_mesh.name = "Cargo"
 	_cargo_mesh.position = Vector3(0, 0.06, 0)
 	deck.add_child(_cargo_mesh)
-	var spots := ItemLook.stack(size, count, Vector2(d.x - 0.1, d.y - 0.1), 2.4)
-	if spots.is_empty():
-		spots = [Transform3D()]
-	for xf: Transform3D in spots:
-		var n := ItemLook.make(item, look)
-		n.transform = xf
+	var lots: Array = []
+	for lot: Dictionary in cargo.get("lots", [cargo]):
+		lots.append({"item": lot.get("item", ""), "count": lot.get("count", 1), "look": ItemLook.look_for(float(lot.get("condition", 1.0)))})
+	for placed: Array in ItemLook.stack_lots(lots, Vector2(d.x - 0.12, d.y - 0.12), 2.4):
+		var n := ItemLook.make(str(placed[0]), placed[1])
+		n.transform = placed[2]
 		_cargo_mesh.add_child(n)
 
 

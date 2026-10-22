@@ -35,18 +35,24 @@ func run_tests() -> void:
 	var nav: RefCounted = fleet.get("nav")
 	check(nav != null, "the route planner is built")
 	var m: Node3D = trolleys["m"]
+	# The aisles are the picking lift's: it shelves what the trolleys bring to the stores.
+	var lift: Node3D = trolleys["p"]
 	var place := bus.home_location("IonThruster")
 	var to := Vector3(Layout.aisle_x(str(place).substr(0, 1)), 0, (Layout.get_layout()["locations"][place]["at"] as Vector3).z)
-	var path: PackedVector3Array = nav.call("route", m.global_position, to, m.call("radius"))
-	check(path.size() >= 2 and path[path.size() - 1].distance_to(to) < 0.1, "a route from Deliveries down aisle %s: %d points" % [str(place).substr(0, 1), path.size()])
+	var from: Vector3 = fleet.get("HANDOFF")[0]
+	var path: PackedVector3Array = nav.call("route", from, to, lift.call("radius"))
+	check(path.size() >= 2 and path[path.size() - 1].distance_to(to) < 0.1, "a route from the stores' doorway down aisle %s: %d points" % [str(place).substr(0, 1), path.size()])
 	var clear := true
-	var prev := m.global_position
+	var prev := from
 	for p in path:
 		for k in 10:
-			if not bool(nav.call("is_free", prev.lerp(p, k / 10.0), float(m.call("radius")) - 0.05)):
+			if not bool(nav.call("is_free", prev.lerp(p, k / 10.0), float(lift.call("radius")) - 0.05)):
 				clear = false
 		prev = p
-	check(clear, "the route keeps its trolley clear of walls and racks")
+	check(clear, "the route keeps the lift clear of walls and racks")
+	var stand: Array = fleet.call("stores_in", trolleys["l"])
+	check(not (nav.call("route", trolleys["l"].global_position, stand[0], trolleys["l"].call("radius")) as PackedVector3Array).is_empty(),
+			"the large trolley has a way to the stores' hand-in")
 	var court: PackedVector3Array = nav.call("route", m.global_position, Vector3(-6, 0, 16), float(trolleys["l"].call("radius")))
 	check(not court.is_empty(), "even the large trolley finds a way into the courtyard")
 	check(not bool(nav.call("is_free", Vector3(Layout.rack_x("B1"), 0, Layout.bay_z(2)), 0.3)), "racks are in the way")
@@ -63,7 +69,12 @@ func run_tests() -> void:
 			{"item_id": "Reactor", "qty": 1, "condition": 1.0, "name": "Reactor", "grade": "new", "mass": 11953.0}])
 	var carried := {}
 	var lifted := {}
-	var on_carry := func(crate_id: String, trolley_id: String) -> void: carried[crate_id] = trolley_id
+	var shelved := {}
+	var on_carry := func(crate_id: String, trolley_id: String) -> void:
+		if not carried.has(crate_id):
+			carried[crate_id] = trolley_id
+		elif trolley_id == "p":
+			shelved[crate_id] = true
 	bus.crate_carried.connect(on_carry)
 	for id: String in ["s", "m", "l", "p"]:
 		bus.command_trolley(id, "put_away")
@@ -77,8 +88,10 @@ func run_tests() -> void:
 	for id: String in trolleys:
 		states[id] = "%s at %s" % [trolleys[id].get("status"), trolleys[id].global_position.snapped(Vector3(0.1, 0.1, 0.1))]
 	check(bus.delivered_crates().is_empty(), "every crate put away: %s (%s)" % [bus.delivered_crates().keys(), states])
-	check(carried.get("PO-21/1") == "m" and carried.get("PO-21/2") == "s" and carried.get("PO-21/3") == "l",
-			"each carried by the trolley its size needs: %s" % [carried])
+	check(carried.size() == 3 and carried.values().all(func(by: String) -> bool: return by != "p"),
+			"hover trolleys load them off the goods-in floor: %s" % [carried])
+	check(shelved.has("PO-21/1") and shelved.has("PO-21/2") and not shelved.has("PO-21/3"),
+			"the picking lift takes the shelf goods off the trolley, the reactor goes on the floor with it: %s" % [shelved])
 	check(bus.stock_at(bus.home_location("IonThruster")).get("qty") == 2, "the thrusters are on their home")
 	check(bus.stock_count("M10") == 100 and bus.stock_count("Reactor") == 1, "the bolts in their bin, the reactor on the bulk floor")
 	var level: float = (Layout.get_layout()["locations"][place]["at"] as Vector3).y
@@ -175,7 +188,7 @@ func run_tests() -> void:
 	check(absf(wrapf(float(m.call("yaw")) - yaw0, -PI, PI)) > 0.3, "the mouse turns it")
 	await frames(1)
 	var cam := view.get("camera") as Camera3D
-	check(cam.global_position.distance_to(m.global_position) < 5.0 and (-cam.global_basis.z).dot(-m.global_basis.z) > 0.5,
+	check(cam.global_position.distance_to(m.global_position) < 3.0 + (m.get("spec")["deck"] as Vector2).y and (-cam.global_basis.z).dot(-m.global_basis.z) > 0.5,
 			"the window's camera rides behind it looking ahead")
 	var f := InputEventKey.new()
 	f.physical_keycode = KEY_F
