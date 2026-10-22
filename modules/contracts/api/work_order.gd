@@ -8,8 +8,36 @@ const SCHEMA := "bsx.work_order"
 ## The newest schema_version this build reads. Older files are upgraded on import.
 const SCHEMA_VERSION := 1
 
+## What the client wants done (the scrapyard loop, plan stage S1). FIT is the original
+## job: change what is fitted to a ship. The others take a subject in and give back what
+## `wants` says.
+const FIT := "fit"
+const BREAK := "break"
+const SCRAP := "scrap"
+const REFURBISH := "refurbish"
+const DISPOSE := "dispose"
+const KINDS: PackedStringArray = [FIT, BREAK, SCRAP, REFURBISH, DISPOSE]
+## What arrives: a ship (the crew's, by design), a wreck (a Void Salvage wreck file; stage
+## S3), or a part on a trolley (S1).
+const SUBJECT_TYPES: PackedStringArray = ["ship", "wreck", "part"]
+## What a `wants` line asks for: a named part back (break), kilograms of a material
+## (scrap), the subject back at a condition (refurbish), or the subject gone (dispose).
+const WANT_TYPES: PackedStringArray = ["part", "material", "condition", "gone"]
+
 @export var contract_id := ""
 @export var issued_at := ""
+## One of KINDS; files without one are FIT.
+@export var kind := FIT
+## {type (SUBJECT_TYPES), component (ComponentRef, for a part), condition (0 to 1),
+## mass_kg, design (for a ship or wreck), file (a wreck file path, S3)}. A FIT order's
+## subject is its ship.
+@export var subject: Dictionary = {}
+## Each {what (WANT_TYPES), component (ComponentRef)?, qty?, min_condition?, material?, kg?}.
+@export var wants: Array[Dictionary] = []
+## Who keeps whatever `wants` does not name: "bsx" or "client".
+@export var keeps := "bsx"
+## Hazards the subject carries: "fuel", "coolant", "power", "weapons", "pressure".
+@export var hazards: PackedStringArray = []
 ## {company, display_name, game ("void_salvage" or "bsx_generated")}.
 @export var client: Dictionary = {}
 ## "<company>/<design>", for example "rook_salvage/kestrel".
@@ -30,6 +58,15 @@ const SCHEMA_VERSION := 1
 @export var commercial: Dictionary = {}
 ## The file's data after upgrading, unknown fields included, so a re-save keeps them.
 @export var raw: Dictionary = {}
+
+
+func is_fit() -> bool:
+	return kind == FIT
+
+
+## The part that arrives, for a part subject; null for a ship or wreck.
+func subject_part() -> ComponentRef:
+	return subject.get("component") if subject.get("component") is ComponentRef else null
 
 
 func change(change_id: String) -> ChangeItem:

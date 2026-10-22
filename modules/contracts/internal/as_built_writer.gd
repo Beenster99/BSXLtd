@@ -6,6 +6,13 @@ const SCHEMA := "bsx.as_built"
 const SCHEMA_VERSION := 1
 
 
+static func _subject(o: WorkOrder) -> Dictionary:
+	var out := o.subject.duplicate()
+	if out.get("component") is ComponentRef:
+		out["component"] = (out["component"] as ComponentRef).to_dict()
+	return out
+
+
 static func build(job: ContractJob, business_on: bool) -> Dictionary:
 	var installed: Array = []
 	var removed: Array = []
@@ -35,7 +42,10 @@ static func build(job: ContractJob, business_on: bool) -> Dictionary:
 		"schema": SCHEMA,
 		"schema_version": SCHEMA_VERSION,
 		"contract_id": job.order.contract_id,
+		"kind": job.order.kind,
 		"ship_id": job.order.ship_id,
+		"subject": _subject(job.order),
+		"recovered": job.recoveries,
 		"completed_at": job.completed_at,
 		"signed_by": job.signed_by,
 		"installed": installed,
