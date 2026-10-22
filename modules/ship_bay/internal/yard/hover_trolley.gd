@@ -28,6 +28,12 @@ const SPECS := {
 			"speed": 1.4, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
 	"p": {"name": "Picking lift", "letter": "P", "deck": Vector2(1.1, 1.3), "radius": 0.8,
 			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true},
+	# The refurbishment lines' own trolleys: finished lots are stacked on them at the end
+	# of their line, and they take them to the stores.
+	"a": {"name": "Line A trolley", "letter": "A", "deck": Vector2(3.4, 10.0), "radius": 1.7, "clear": 1.3,
+			"speed": 1.3, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.3, 0.78, 0.42), "line": "a"},
+	"b": {"name": "Line B trolley", "letter": "B", "deck": Vector2(3.4, 10.0), "radius": 1.7, "clear": 1.3,
+			"speed": 1.3, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.62, 0.45, 0.92), "line": "b"},
 }
 ## The picking lift's mast height over the floor (under the aisle signs), metres.
 const PICKER_MAST := 8.9
@@ -253,6 +259,11 @@ func fork_ready() -> bool:
 
 func is_picker() -> bool:
 	return bool(spec.get("picker", false))
+
+
+## True for a refurbishment line's own trolley.
+func is_line() -> bool:
+	return spec.has("line")
 
 
 ## Fast mode on or off; the FAST button lights while it is on.

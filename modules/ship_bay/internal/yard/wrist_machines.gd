@@ -7,7 +7,7 @@ extends VBoxContainer
 ## fetches the next part the ship in the bay takes), PUT AWAY / TO STORES, and the lift's and
 ## power unit's own controls. Over the rows (with "ship_bay.clean_up" on), the loose parts
 ## lying about the yard and CLEAN UP, which sends trolleys to sort them: good ones to the
-## stores, worn ones to the refurbishment line's in-feed, scrap to the grinder's.
+## stores, worn ones to the refurbishment line's in-feed, scrap out to the crusher.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
@@ -159,7 +159,7 @@ func _refresh_loose() -> void:
 		by[str(p.route)] += 1
 		if str(p.trolley) != "":
 			coming += 1
-	_loose_label.text = "LOOSE PARTS %d   STORES %d · REFURB %d · GRINDER %d%s" % [parts.size(), by.store, by.refurb, by.grind,
+	_loose_label.text = "LOOSE PARTS %d   STORES %d · REFURB %d · CRUSHER %d%s" % [parts.size(), by.store, by.refurb, by.grind,
 			"   (%d TROLLEY%s ON IT)" % [coming, "S" if coming != 1 else ""] if coming > 0 else ""]
 	_loose_label.add_theme_color_override("font_color", T.AMBER)
 	_clean_button.disabled = coming == parts.size()

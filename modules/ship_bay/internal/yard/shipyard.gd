@@ -21,6 +21,7 @@ const TrolleyFleet := preload("res://modules/ship_bay/internal/yard/trolley_flee
 const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
+const CrusherPlant := preload("res://modules/ship_bay/internal/yard/crusher_plant.gd")
 const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 const Transporters := preload("res://modules/ship_bay/internal/yard/transporters.gd")
@@ -62,7 +63,7 @@ const ROOMS := {
 ## Other modules get these through ShipBayBus.shipyard_spot() and add their nodes to the
 ## yard when ShipBayBus.shipyard_ready fires.
 const SPOTS := {
-	"bench_preassembly": Transform3D(Basis.IDENTITY, Vector3(34, 0, -20.5)),
+	"bench_preassembly": Transform3D(Basis.IDENTITY, Vector3(40, 0, 12.6)),
 	"bench_prep": Transform3D(Basis.IDENTITY, Vector3(18, 0, -29)),
 }
 ## Camera views for screenshots and a quick look round: id -> [eye, target].
@@ -133,8 +134,12 @@ const FACE_NX := Basis(Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, -1, 0))
 var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
-## The refurbishment line in Pre-assembly (refurb_line.gd).
+## The refurbishment lines in Pre-assembly (refurb_line.gd): line id -> node; `line` is
+## line A.
+var lines: Dictionary = {}
 var line: Node3D
+## The crusher bay outside Pre-assembly's south door (crusher_plant.gd).
+var crusher: Node3D
 ## False while another module has control (ShipBayBus.set_walker_active).
 var walker_active := true
 var _walker_layers := Vector2i(1, 1)
@@ -1283,73 +1288,25 @@ func _tag_rooms() -> void:
 
 
 func _build_preassembly() -> void:
-	# The refurbishment line down the east side, its grind branch along the north wall.
-	line = RefurbLine.new()
-	add_child(line)
-	# Assembly jigs: an I-beam base frame, posts and top rails round a module going together.
-	var post := _lib("ibeam/jig_post", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(3.5, 0.25, 0.25))
-	var rail_x := _lib("ibeam/jig_x", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(5.25, 0.22, 0.25))
-	var rail_z := _lib("ibeam/jig_z", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(6.25, 0.22, 0.25))
-	for at: Vector3 in [Vector3(35, 0, -9), Vector3(42, 0, 6)]:
-		for corner: Vector3 in [Vector3(-2.5, 0, -3), Vector3(2.5, 0, -3), Vector3(-2.5, 0, 3), Vector3(2.5, 0, 3)]:
-			_put(post, Transform3D(UPRIGHT, at + corner + Vector3(0, 1.75, 0)), _trim)
-			_put(_box(Vector3(0.5, 0.03, 0.5)), _at(at + corner + Vector3(0, 0.015, 0)), _bare, false)
-		for y: float in [0.13, 3.4]:
-			for side: float in [-3.0, 3.0]:
-				_put(rail_x, _at(at + Vector3(0, y, side)), _trim, false)
-			for side: float in [-2.5, 2.5]:
-				_put(rail_z, Transform3D(Basis(Vector3.UP, PI * 0.5), at + Vector3(side, y, 0)), _trim, false)
-	# In the north jig an engine module (a cowl, a tank and a bell, like the Kestrel's) on a
-	# stand; in the south a frame section going together.
-	var engine := Vector3(35, 0, -9)
-	_put(_lib("cbox/engine_stand", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(2.0, 1.1, 3.0), 0.05)), _at(engine + Vector3(0, 0.55, 0)), _paint(DARK, 0.4, 0.5, "gunmetal"))
-	_put(_lib("tank/engine", func() -> PartShapes.PartShape: return WreckParts.tank(0.7, 2.2)),
-			Transform3D(Y_TO_Z, engine + Vector3(0, 1.85, -0.4)), _parts, false)
-	_put(_lib("engine_bell/module", func() -> PartShapes.PartShape: return WreckParts.engine_bell(0.8, 1.6)),
-			Transform3D(Y_TO_Z, engine + Vector3(0, 1.85, 1.5)), _parts, false)
-	_put(_lib("generator/engine", func() -> PartShapes.PartShape:
-			return WreckParts.generator(Vector3(1.2, 0.8, 1.0))), _at(engine + Vector3(0, 1.5, -2.0)), _parts, false)
-	var net := Vector3(42, 0, 6)
-	var member := _lib("ibeam/frame_member", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(3.6, 0.1, 0.16))
-	var upright := _lib("ibeam/frame_upright", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(2.6, 0.1, 0.16))
-	for k in 4:
-		_put(member, _at(net + Vector3(0, 0.6 + k * 0.8, 0)), _galv, false)
-	for k in 5:
-		_put(upright, Transform3D(UPRIGHT, net + Vector3(-1.75 + k * 0.875, 1.8, 0)), _galv, false)
-	_put(_lib("window/section", func() -> PartShapes.PartShape:
-			return PartShapes.window_rect(1.4, 0.9, 0.06)), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), net + Vector3(0, 2.2, 0.12)), _frame, false)
-	# A jib crane: a column, a boom, a hoist and its hook.
-	var jib := Vector3(48.5, 0, -4)
-	_put(_lib("ibeam/jib_col", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(7.0, 0.4, 0.5)), Transform3D(UPRIGHT, jib + Vector3(0, 3.5, 0)), _hazard)
-	_put(_lib("ibeam/jib_boom", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(6.0, 0.25, 0.4)), _at(jib + Vector3(-3.0, 6.6, 0)), _hazard, false)
-	_put(_lib("jbox/hoist", func() -> PartShapes.PartShape:
-			return WreckParts.junction_box(Vector3(0.5, 0.45, 0.4), Color(1.0, 0.6, 0.15))), _at(jib + Vector3(-4.6, 6.1, 0)), _parts, false)
-	_put(_lib("pipe/hoist_cable", func() -> PartShapes.PartShape:
-			return WreckParts.pipe(0.012, 1.8, false)), _at(jib + Vector3(-4.6, 4.95, 0)), _frame, false)
-	_put(_lib("cbox/hook", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(0.3, 0.35, 0.22), 0.04)), _at(jib + Vector3(-4.6, 3.9, 0)), _hazard, false)
-	_put(_lib("ring/hook", func() -> PartShapes.PartShape:
-			return PartShapes.ring(0.08, 0.13, 0.05)), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), jib + Vector3(-4.6, 3.6, 0)), _bare, false)
-	# Benches and shelving along the east wall, a tank module on a cradle, a parts cart.
+	# The two refurbishment lines side by side down the hall, intake bays at the north end,
+	# their trolleys at the south end; the crusher bay outside the south door.
+	for id: String in RefurbLine.LINES:
+		var l: Node3D = RefurbLine.new(id)
+		add_child(l)
+		lines[id] = l
+	line = lines["a"]
+	crusher = CrusherPlant.new()
+	add_child(crusher)
+	_block(Vector3(CrusherPlant.BAY.get_center().x, -0.005, CrusherPlant.BAY.get_center().y),
+			Vector3(CrusherPlant.BAY.size.x + 2.0, 0.03, CrusherPlant.BAY.size.y + 2.0), _concrete, false)
+	_slab_joints(CrusherPlant.BAY.grow(1.0), 0.0)
+	# Benches and shelving along the east wall.
 	for z: float in [16.0, 19.0]:
 		_put(_lib("workbench", func() -> PartShapes.PartShape: return WreckParts.workbench()),
 				_at(Vector3(49.35, 0.975, z), PI * 0.5), _parts)
 	for i in 3:
 		_put(_lib("shelf_rack", func() -> PartShapes.PartShape: return WreckParts.shelf_rack()),
 				_at(Vector3(49.44, 1.0, 10.0 + i * 1.7), PI * 0.5), _parts)
-	_put(_lib("tank/module", func() -> PartShapes.PartShape: return WreckParts.tank(0.8, 3.2)),
-			Transform3D(Y_TO_Z, Vector3(38, 1.25, 18)), _parts)
-	for k: float in [-1.0, 1.0]:
-		_put(_box(Vector3(1.6, 0.45, 0.3)), _at(Vector3(38, 0.225, 18 + k * 1.0)), _trim)
-	_cart(Vector3(33, 0, 14))
 
 
 func _build_courtyard() -> void:

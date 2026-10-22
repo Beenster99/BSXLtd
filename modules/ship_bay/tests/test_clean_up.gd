@@ -2,9 +2,12 @@ extends ModuleTest
 ## Ship and Bay: CLEAN UP on the wrist's Machines channel (beenster, 0.3.8). Parts off the
 ## ship lie loose in the yard (Tools tells the bus, note_loose); CLEAN UP sends trolleys to
 ## collect them and sort each by its condition: good ones into the stores, worn ones to the
-## refurbishment line's in-feed, scrap to the grinder. The line takes in-feed parts first,
-## grinding ones straight into the grinder.
+## refurbishment lines' intake bays, scrap out to the crusher's feed pad. The lines take
+## their bays' parts first; the crusher takes what is on its pad by itself.
 ##   tools/run_tests.sh ship_bay
+
+
+const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 
 
 func run_tests() -> void:
@@ -13,7 +16,7 @@ func run_tests() -> void:
 	var was_on := Flags.is_on("ship_bay.clean_up")
 	Flags.set_flag("ship_bay.clean_up", true)
 	check(ShipBayBus.clean_up_route(0.95) == "store" and ShipBayBus.clean_up_route(0.5) == "refurb" and ShipBayBus.clean_up_route(0.1) == "grind",
-			"the trolleys sort by condition: stores, refurbishing, grinder")
+			"the trolleys sort by condition: stores, refurbishing, crusher")
 	check(is_equal_approx(bus.fitted_condition("hold_panel_1"), 1.0), "with no work order a fitted part counts as new")
 	var yard := (load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene).instantiate() as Node3D
 	add_child(yard)
@@ -47,7 +50,7 @@ func run_tests() -> void:
 	check(bus.loose_parts().size() == 3, "the bus knows the loose parts: %s" % [bus.loose_parts()])
 	wrist.call("refresh")
 	var text := str(wrist.call("text"))
-	check(text.contains("LOOSE PARTS 3") and text.contains("STORES 1") and text.contains("REFURB 1") and text.contains("GRINDER 1"),
+	check(text.contains("LOOSE PARTS 3") and text.contains("STORES 1") and text.contains("REFURB 1") and text.contains("CRUSHER 1"),
 			"the wrist counts them by where they'll go: %s" % text.left(120))
 
 	var claimed := []
@@ -58,28 +61,41 @@ func run_tests() -> void:
 
 	for i in 7200:
 		await get_tree().physics_frame
-		if bus.loose_parts().is_empty() and _in_feed(bus).size() == 2 and bus.stock_count("IonThruster") == 1:
+		if bus.loose_parts().is_empty() and _in_feed(bus).size() == 1 and _at_crusher(bus) and bus.stock_count("IonThruster") == 1:
 			break
 	check(bus.stock_count("IonThruster") == 1 and float(bus.stock_at(bus.find_stock("IonThruster")[0]).condition) > 0.94,
 			"the good thruster went into the stores")
 	var fed := _in_feed(bus)
-	var items := fed.values().map(func(c: Dictionary) -> String: return "%s:%s" % [c.item, c.route])
-	check(fed.size() == 2 and items.has("Gyroscope:refurb") and items.has("FuelPump:grind"),
-			"the worn gyroscope and the scrap pump are on the line's in-feed: %s" % [items])
+	var pad := _on_pad(bus)
+	check(fed.size() == 1 and str(fed.values()[0].item) == "Gyroscope", "the worn gyroscope is in a line's intake bay: %s" % [fed])
+	check(_at_crusher(bus), "the scrap pump went out to the crusher (on its pad or in it): %s %s" % [pad, bus.line_state().crusher])
 	check(bus.loose_parts().is_empty() and not bus.cleaning, "the yard is clean")
+	var bay := ""
 	for id: String in fed:
-		check(line.get("IN_SPOTS").any(func(p: Vector3) -> bool: return p.distance_to(bus.crate_position(id)) < 0.01),
-				"%s stands on an in-feed pallet" % fed[id].item)
+		bay = str(fed[id].get("line_id", ""))
+		check(RefurbLine.in_spots(bay).any(func(p: Vector3) -> bool: return p.distance_to(bus.crate_position(id)) < 0.01),
+				"%s stands on an intake pallet of line %s" % [fed[id].item, bay])
+	line = (yard.get("lines") as Dictionary).get(bay, line)
+	line.set("run_time", 0.2)
+	line.set("travel_time", 0.05)
 	var lots: Array = line.get("lots")
-	check(not lots.is_empty() and lots[0].has("crate"), "the survey offers the in-feed before the stores: %s" % [lots])
+	check(not lots.is_empty() and lots[0].has("crate"), "the survey offers the bay's parts before the stores: %s" % [lots])
 
-	# The line takes them: the pump straight into the grinder, the gyroscope into the survey.
+	# The line takes the gyroscope into its survey; the crusher takes the pump by itself.
+	var crusher: Node3D = yard.get("crusher")
+	crusher.set("crush_time", 0.3)
+	crusher.set("feed_time", 0.1)
 	bus.line_request("auto", {"on": true})
 	var t := 0.0
-	while t < 10.0 and (not _in_feed(bus).is_empty() or bus.dust_kg() <= 0.0):
+	while t < 10.0 and (not _in_feed(bus).is_empty() or not _on_pad(bus).is_empty() or str(bus.line_state().crusher.state) != ""):
 		await get_tree().create_timer(0.1).timeout
 		t += 0.1
-	check(bus.dust_kg() > 0.0, "the scrap pump went through the grinder into the dust (%.1f kg)" % bus.dust_kg())
+	var dust := 0.0
+	for m: String in bus.line_state().crusher.dust:
+		dust += float(bus.line_state().crusher.dust[m])
+	for m: String in bus.ingots():
+		dust += int(bus.ingots()[m]) * ShipBayBus.INGOT_KG
+	check(dust > 0.0, "the scrap pump went through the crusher (%.1f kg)" % dust)
 	check(_in_feed(bus).is_empty(), "and the gyroscope went on down the line")
 	bus.line_request("auto", {"on": false})
 
@@ -89,6 +105,23 @@ func run_tests() -> void:
 	await frames(1)
 	Flags.set_flag("ship_bay.clean_up", was_on)
 	bus.reset_data()
+
+
+## True once the pump is on the crusher's pad or the crusher has taken it in.
+func _at_crusher(bus: ShipBayBus) -> bool:
+	var pad := _on_pad(bus)
+	if pad.size() == 1 and str(pad.values()[0].item) == "FuelPump":
+		return true
+	var crusher: Dictionary = bus.line_state().crusher
+	return str((crusher.get("lot", {}) as Dictionary).get("item", "")) == "FuelPump" or not (crusher.dust as Dictionary).is_empty() or not (crusher.ingots as Dictionary).is_empty()
+
+
+func _on_pad(bus: ShipBayBus) -> Dictionary:
+	var out := {}
+	for id: String in bus.line_crates():
+		if str(bus.line_crates()[id].line) == "crush":
+			out[id] = bus.line_crates()[id]
+	return out
 
 
 func _in_feed(bus: ShipBayBus) -> Dictionary:

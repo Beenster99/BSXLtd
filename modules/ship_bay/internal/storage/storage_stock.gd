@@ -6,7 +6,7 @@ extends RefCounted
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 ## How many goods each trolley takes at once (a tote of small parts counts as one); the
 ## picking lift takes one crate at a time.
-const LOAD := {"s": 20, "m": 20, "l": 20, "p": 1}
+const LOAD := {"s": 20, "m": 20, "l": 20, "p": 1, "a": 50, "b": 50}
 
 ## Location id -> {item, qty, condition (0..1, the average of what is there)}.
 var stock: Dictionary = {}
