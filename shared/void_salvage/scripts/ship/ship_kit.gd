@@ -39,6 +39,30 @@ var _open_part: PartData
 var _open_name: String = ""
 var _open_kind: PartData.Kind = PartData.Kind.COMPONENT
 var _opened: bool = false
+## Folding (docs/SHIP_FRAME_PLAN.md 4.4): with `fold` on (a frame build), every fitting
+## (`begin_fitting`), system (`begin_system`) and unit a design opens itself (`begin_unit`: a
+## door leaf, an engine) is built as one part instead of loose pieces: its first solid piece
+## is the part, the rest ride on it. Tagged pieces inside keep their own look and shape under
+## their tag (a seat's cushion, a panel's buttons); a unit opened inside another folds into
+## the outer one. When a unit's part is made, `mount(part, unit)` (the design's) fastens it
+## where it stands; a unit of looks only (no solid piece: a lamp, a name board) makes no part,
+## and `mount(null, unit)` says what it rides on (unit["onto"]; its looks go on that part).
+## Off (the default), these calls change nothing.
+var fold: bool = false
+var mount := Callable()
+## The design's slot ids (a unit built under one of them as `group` is named "slot:<id>/...").
+var slot_ids: Array = []
+## Every unit folded into a part, or riding on one: {kind, name, key, group, path, part or
+## onto}.
+var units: Array[Dictionary] = []
+## Part id -> the build step (`group`) it was made in.
+var groups: Dictionary = {}
+var _stack: Array[Dictionary] = []
+## The unit `end_unit` last closed ({} if it closed none): its path names a fitting's record.
+var last_unit: Dictionary = {}
+## Looks added inside a unit before its first solid piece: [MeshInstance3D, xform, tag].
+var _pending: Array = []
+var _unit_paths: Dictionary = {}
 ## Steel's density for a part's mass from its volume, kg/m^3 (the parts' masses are for BSX's
 ## pricing; the ship flies at its tuned `ship_mass`).
 const PART_DENSITY: float = 7800.0
@@ -94,11 +118,25 @@ func part(part_name: String, kind: PartData.Kind, shape: PartShapes.PartShape, x
 		mat: Material, tag: String = "", fill: float = 1.0, glass_mat: Material = null, path: String = "") -> PartData:
 	piece_count += 1
 	shape_count += 1 + shape.extra_collision.size()
+	var by := builder()
 	if recorder:
-		recorder.on_piece(shape, xform, mat, tag, glass_mat, true, group)
+		if by != "":
+			# A builder's part (a frame member, a deck plate, a stud): the file writes the builder's
+			# recipe and the part among the derived ones, not a piece.
+			recorder.open("", {}, group)
+			recorder.on_piece(shape, xform, mat, tag, glass_mat, true, group)
+			recorder.close()
+		else:
+			# A design's own part (outside a unit: a ceiling panel) is a piece that is a part.
+			var info := {} if not _stack.is_empty() else {"name": part_name, "kind": PartData.Kind.keys()[kind].to_lower(),
+					"path": path, "fill": fill}
+			recorder.on_piece(shape, xform, mat, tag, glass_mat, true, group, true, info)
 	var made := model.add_part(part_name, kind, maxf(shape.volume * PART_DENSITY * fill, 0.1), 0.0, xform,
 			shape.mesh, shape.collision, ShipSurface.of(mat))
 	made.path = path
+	groups[made.id] = group
+	if recorder:
+		recorder.on_part(made.id, shape, mat, glass_mat, by)
 	if not shape.extra_collision.is_empty():
 		model.add_extra_collision(made, shape.extra_collision)
 	if shape.glass and glass_mat:
@@ -115,6 +153,54 @@ func join(a: PartData, b: PartData, kind: ConnectionData.Kind, at: Vector3, norm
 	var made := model.connect_parts(a, b, kind, at, normal, seam_up, seam_size)
 	if made:
 		made.path = path
+	return made
+
+
+## FrameTarget: a loom span's part on the ship (wiring, in the loom's own look, casting no
+## shadow as on the wrecks), in the current group. Counted in the ship file but not written:
+## the file writes the services from F7.
+func _wire_part(part_name: String, kg: float, xform: Transform3D, mesh: Mesh, shape: Shape3D) -> PartData:
+	piece_count += 1
+	shape_count += 1
+	if recorder:
+		# Counted, not recorded (no shape recipe yet: vsship 2.0 writes the services).
+		recorder.open("", {}, group)
+		recorder.on_piece(_shape(mesh, shape, 0.0), xform, WiringLoom.material(), "", null, true, group)
+		recorder.close()
+	var made := model.add_part(part_name, PartData.Kind.CONDUIT, kg, 0.0, xform, mesh, shape, WiringLoom.material())
+	groups[made.id] = group
+	if recorder:
+		# Its look is the loom's own (WiringLoom): the file names it by its length (the services
+		# block says how the loom runs).
+		var span := PartShapes.PartShape.new()
+		span.recipe = {"shape": "loom_span", "args": [snappedf(mesh.get_aabb().size.y, 0.0001)]}
+		recorder.on_part(made.id, span, WiringLoom.material(), null, builder())
+	var look := model.part_visual(made.id)
+	if look:
+		look.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return made
+
+
+## FrameTarget: a pipe part on the ship (PipeRouter's spans, elbows and unions) in the ship's
+## paint, in the current group. Counted in the ship file but not written, like a loom span:
+## the file writes the services from F7.
+func pipe_part(part_name: String, shape: PartShapes.PartShape, xform: Transform3D, mat: Material,
+		path: String = "") -> PartData:
+	piece_count += 1
+	shape_count += 1 + shape.extra_collision.size()
+	if recorder:
+		recorder.open("", {}, group)
+		recorder.on_piece(shape, xform, mat, "", null, true, group)
+		recorder.close()
+	var made := model.add_part(part_name, PartData.Kind.CONDUIT, maxf(shape.volume * PART_DENSITY, 0.05), 0.0, xform,
+			shape.mesh, shape.collision, ShipSurface.of(mat))
+	made.path = path
+	groups[made.id] = group
+	if recorder:
+		recorder.on_part(made.id, shape, mat, null, builder())
+	if not shape.extra_collision.is_empty():
+		model.add_extra_collision(made, shape.extra_collision)
+	volume += shape.volume
 	return made
 
 
@@ -152,14 +238,33 @@ func end_part() -> PartData:
 
 func _add_to_part(shape: PartShapes.PartShape, xform: Transform3D, mat: Material, tag: String,
 		glass_mat: Material, solid: bool) -> Dictionary:
+	if not _stack.is_empty() and tag != "":
+		(_owner()["tags"] as Array).append(tag)
 	if _open_part == null:
 		if not solid:
-			# A look before any solid piece: hold the part open for one that is.
-			_opened = false
-			var loose := add(shape, xform, mat, tag, glass_mat, solid)
-			_opened = true
-			return loose
+			# A look before any solid piece: held until one makes the part (or put on the body
+			# as a piece if none does).
+			piece_count += 1
+			if recorder:
+				recorder.on_piece(shape, xform, mat, tag, glass_mat, solid, group)
+			var held := MeshInstance3D.new()
+			held.mesh = shape.mesh
+			held.material_override = ShipSurface.of(mat)
+			if shape.glass and glass_mat:
+				_glass_on(held, shape, glass_mat, Transform3D.IDENTITY)
+			var entry := {"mesh": held, "xform": xform, "vis": Transform3D.IDENTITY}
+			_pending.append([held, xform, tag, entry, shape.volume])
+			if tag != "":
+				(tagged.get_or_add(tag, []) as Array).append(entry)
+			return entry
 		_open_part = part(_open_name, _open_kind, shape, xform, mat, tag, 1.0, glass_mat)
+		for held: Array in _pending:
+			var mi := held[0] as MeshInstance3D
+			mi.transform = _open_part.local_transform.affine_inverse() * (held[1] as Transform3D)
+			model.attach_to_part(_open_part, mi)
+			(held[3] as Dictionary)["piece_of"] = _open_part.id
+			volume += float(held[4])
+		_pending.clear()
 		return {"mesh": model.part_visual(_open_part.id), "xform": xform, "part": _open_part.id,
 				"shape": model.part_collider(_open_part.id)}
 	piece_count += 1
@@ -173,15 +278,157 @@ func _add_to_part(shape: PartShapes.PartShape, xform: Transform3D, mat: Material
 	model.attach_to_part(_open_part, mi)
 	if shape.glass and glass_mat:
 		_glass_on(mi, shape, glass_mat, Transform3D.IDENTITY)
+	var own: CollisionShape3D = null
 	if solid:
 		var shapes: Array[Shape3D] = [shape.collision]
 		shapes.append_array(shape.extra_collision)
 		model.add_extra_collision(_open_part, shapes, offset)
 		shape_count += shapes.size()
+		var extras := model.extra_colliders(_open_part.id)
+		own = extras[extras.size() - shapes.size()]
 	_open_part.mass += shape.volume * PART_DENSITY
 	volume += shape.volume
-	_tag_part(_open_part, tag)
-	return {"mesh": mi, "xform": _open_part.local_transform, "part": _open_part.id}
+	var entry := {"mesh": mi, "xform": xform, "vis": Transform3D.IDENTITY, "piece_of": _open_part.id}
+	if own:
+		entry["shape"] = own
+	# A piece under the part's own tag is the part (tagged once); under another tag, itself.
+	if tag != "" and not _part_tagged(_open_part, tag):
+		(tagged.get_or_add(tag, []) as Array).append(entry)
+	return entry
+
+
+func _part_tagged(made: PartData, tag: String) -> bool:
+	for piece: Dictionary in tagged.get(tag, []):
+		if piece.get("part", -1) == made.id:
+			return true
+	return false
+
+
+## Opens a unit (see `fold`): every piece until the matching `end_unit` folds into one part
+## named `unit_name`, of `kind` "fitting", "system", "leaf" (a system's moving part: a door
+## leaf, a hatch's) or "slot"; `key`, the thing it belongs to, comes first in its path
+## ("system:door_bulkhead/leaf"). A fitting's or system's `frame` and `args` ride in the unit
+## (its `ports`, ShipParts.ports, are in that frame). A unit opened inside another folds into
+## it, except a leaf: a system's moving part (the lift's platform) is a part of its own, and the
+## outer unit's part goes on after it.
+## Does nothing unless `fold` is on.
+func begin_unit(kind: String, unit_name: String, key: String = "", frame: Variant = null, args: Array = []) -> void:
+	if not fold or model == null:
+		return
+	var unit := {"kind": kind, "name": unit_name, "key": key, "group": group, "tags": [], "frame": frame, "args": args}
+	# Opened outside a fitting's or system's record (a door's leaf, an engine): the ship file
+	# marks its pieces with the unit they fold into.
+	if recorder and not recorder.is_open() and (_stack.is_empty() or kind == "leaf"):
+		unit["mark"] = recorder.begin_unit(kind, unit_name, key)
+	if not _stack.is_empty() and kind == "leaf":
+		unit["outer"] = [_open_part, _open_name, _open_kind, _opened, _pending]
+		_pending = []
+		_stack.append(unit)
+		begin_part(unit_name)
+		return
+	_stack.append(unit)
+	if _stack.size() == 1:
+		begin_part(unit_name)
+
+
+## The unit whose part the pieces fold into now: the innermost leaf of its own, else the outermost.
+func _owner() -> Dictionary:
+	for i in range(_stack.size() - 1, -1, -1):
+		if _stack[i].has("outer"):
+			return _stack[i]
+	return _stack[0]
+
+
+## Closes the unit `begin_unit` opened: names its part, notes its group and has the design
+## `mount` it. Returns the part (null if none was made, or folding is off, or it was nested).
+func end_unit() -> PartData:
+	last_unit = {}
+	if not fold or model == null or _stack.is_empty():
+		return null
+	var unit: Dictionary = _stack.pop_back()
+	last_unit = unit
+	if unit.has("outer"):
+		var leaf := _finish(unit)
+		if recorder and unit.has("mark"):
+			recorder.end_unit(unit["mark"], unit.get("path", ""))
+		var outer: Array = unit["outer"]
+		_open_part = outer[0]
+		_open_name = outer[1]
+		_open_kind = outer[2]
+		_opened = outer[3]
+		_pending = outer[4]
+		return leaf
+	if not _stack.is_empty():
+		return null
+	var made := _finish(unit)
+	if recorder and unit.has("mark"):
+		recorder.end_unit(unit["mark"], unit.get("path", ""))
+	return made
+
+
+## Ends the part a unit folded into, names it and has the design `mount` it (or what it rides on).
+func _finish(unit: Dictionary) -> PartData:
+	var made := end_part()
+	if made == null and not _pending.is_empty() and mount.is_valid():
+		# Looks only (a lamp, a name board, a screen): they ride on the part the design finds
+		# them fixed to (`mount` with no part sets unit["onto"]).
+		var box := AABB()
+		for i in _pending.size():
+			var held: Array = _pending[i]
+			var b := (held[1] as Transform3D) * (held[0] as MeshInstance3D).mesh.get_aabb()
+			box = b if i == 0 else box.merge(b)
+		unit["box"] = box
+		unit["path"] = _unit_path(unit)
+		mount.call(null, unit)
+		var onto: PartData = unit.get("onto")
+		if onto:
+			for held: Array in _pending:
+				var mi := held[0] as MeshInstance3D
+				mi.transform = onto.local_transform.affine_inverse() * (held[1] as Transform3D)
+				model.attach_to_part(onto, mi)
+				(held[3] as Dictionary)["piece_of"] = onto.id
+				volume += float(held[4])
+			_pending.clear()
+			units.append(unit)
+	for held: Array in _pending:
+		# No solid piece came and nothing holds them: pieces on the body after all.
+		var mi := held[0] as MeshInstance3D
+		mi.transform = held[1]
+		body.add_child(mi)
+		volume += float(held[4])
+	_pending.clear()
+	if made == null:
+		return null
+	made.path = _unit_path(unit)
+	unit["path"] = made.path
+	unit["part"] = made
+	units.append(unit)
+	if mount.is_valid():
+		var phase_was := phase
+		phase = "fitting"
+		mount.call(made, unit)
+		phase = phase_was
+	return made
+
+
+## A unit's path (docs/SHIP_FRAME_PLAN.md 4.7): "fitting:<its tag or name>",
+## "system:<name>" ("system:<key>/<name>" for a panel working a key: a door's), under a
+## slot "slot:<id>/<name>"; "/1", "/2" for the second and third of the same name.
+func _unit_path(unit: Dictionary) -> String:
+	var tags: Array = unit["tags"]
+	var unit_name: String = unit["name"]
+	var key: String = unit["key"]
+	var base: String
+	match unit["kind"]:
+		"fitting":
+			base = String(tags[0]) if not tags.is_empty() else unit_name
+		_:
+			base = "%s/%s" % [key, unit_name] if key != "" else unit_name
+	var path := "slot:%s/%s" % [unit["group"], base] if slot_ids.has(unit["group"]) else "%s:%s" % [
+			"fitting" if unit["kind"] == "fitting" else "system", base]
+	var n: int = _unit_paths.get(path, 0)
+	_unit_paths[path] = n + 1
+	return path if n == 0 else "%s/%d" % [path, n]
 
 
 func _glass_on(mi: Node3D, shape: PartShapes.PartShape, glass_mat: Material, at: Transform3D) -> void:
@@ -229,13 +476,17 @@ func begin_fitting(fitting_name: String, frame: Variant, args: Array) -> void:
 		if frame != null:
 			record["frame"] = frame
 		recorder.open("fittings", record, group)
+	begin_unit("fitting", fitting_name, "", frame, args)
 
 
 ## Closes the fitting `begin_fitting` opened with what it returned ({name, box, label?}),
 ## and returns that.
 func end_fitting(made: Dictionary) -> Dictionary:
+	end_unit()
 	if recorder:
 		var extra := {"box": made.get("box", AABB())}
+		if last_unit.get("path", "") != "":
+			extra["path"] = last_unit["path"]
 		if made.has("label"):
 			extra["_label"] = made["label"]
 		recorder.close(extra)
@@ -254,11 +505,14 @@ func begin_system(system_name: String, frame: Variant = null, args: Array = [], 
 		if not args.is_empty():
 			record["args"] = args
 		recorder.open("systems", record, group)
+	# A door's panel is named by the door it works ("system:door_bulkhead/door_panel").
+	begin_unit("system", system_name, key if system_name.ends_with("_panel") else "", frame, args)
 
 
 func end_system() -> void:
+	end_unit()
 	if recorder:
-		recorder.close()
+		recorder.close({"path": last_unit["path"]} if last_unit.get("path", "") != "" else {})
 
 
 ## Pieces added until `end_quiet` are counted but not recorded (what the layout rebuilds:

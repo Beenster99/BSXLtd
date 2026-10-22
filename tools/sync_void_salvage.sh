@@ -21,6 +21,8 @@ FILES=(
 	scripts/parts/ship_parts.gd
 	scripts/parts/wreck_parts.gd
 	scripts/salvage/connection_data.gd
+	scripts/salvage/deck_frame.gd
+	scripts/salvage/frame_graph.gd
 	scripts/salvage/frame_hull.gd
 	scripts/salvage/frame_member.gd
 	scripts/salvage/frame_style.gd
@@ -31,14 +33,18 @@ FILES=(
 	scripts/salvage/materials.gd
 	scripts/salvage/part_data.gd
 	scripts/salvage/part_model.gd
+	scripts/salvage/pipe_router.gd
+	scripts/salvage/stud_wall.gd
 	scripts/salvage/surface_detail.gd
 	scripts/salvage/surface_finish.gd
 	scripts/salvage/surface_zones.gd
 	scripts/salvage/wiring_loom.gd
+	scripts/ship/json_schema.gd
 	scripts/ship/ship_kit.gd
 	scripts/ship/ship_recorder.gd
 	scripts/ship/ship_surface.gd
 	data/ship_format/vsship-1.schema.json
+	data/ship_format/vsship-2.schema.json
 	data/wreck_format/vswreck-1.schema.json
 	shaders/salvage_surface.gdshader
 	shaders/joint_head.gdshader

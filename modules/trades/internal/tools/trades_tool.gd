@@ -137,12 +137,13 @@ const DISPLAY_LOW := 0.45
 const DISPLAY_NEAR := 0.5
 ## The furthest it stays from the eye (metres).
 const DISPLAY_FAR := 0.65
-## Close up (first person) the display stands off to one side of where you're pointing
-## (beenster, 2026-10-22: "right in the way of where we are pointing"): its middle this share
-## of the half width left of the view's middle and this share of the half height above it, at
-## DISPLAY_NEAR from the eye. In third person it keeps to its knuckle.
-const SIDE_X := 0.62
-const SIDE_Y := 0.1
+## Close up (first person) the display rides just above the tool, where you see it in your
+## hand (beenster, 0.3.14: "close to the actual tool and not floating in space"): this far
+## left and up of the knuckle as the view sees it (metres), but never within CLEAR of the view's
+## middle (a share of the half height), so it stays out of the way of where you're pointing
+## (beenster, 2026-10-22). In third person it keeps to its knuckle.
+const BESIDE := Vector2(-0.015, 0.085)
+const CLEAR := 0.32
 ## Looking through the worker's own eyes (the bay sets it each frame).
 static var first_person := true
 
@@ -191,6 +192,22 @@ func _build_swivel(base: Node3D, accent: Color) -> void:
 	_display.build(s, accent)
 
 
+## First person: the display's place in the view, beside the knuckle at `k` (view space).
+## Out on the work it's drawn back toward the eye along the line to the knuckle, so it still
+## reads and still sits by the tool as you see it.
+func _beside_tool(cam: Camera3D, k: Vector3) -> Vector3:
+	var depth := clampf(-k.z, DISPLAY_NEAR, DISPLAY_FAR)
+	var shrink := depth / maxf(-k.z, 0.01)
+	var at := Vector3(k.x * shrink + BESIDE.x, k.y * shrink + BESIDE.y, -depth)
+	var clear := depth * tan(deg_to_rad(cam.fov) * 0.5) * CLEAR
+	var off := Vector2(at.x, at.y)
+	if off.length() < clear:
+		var way := off.normalized() if off.length() > 0.001 else Vector2(1.0, 0.4).normalized()
+		off = way * clear
+		at = Vector3(off.x, off.y, at.z)
+	return at
+
+
 ## Holds the screen out on its arm (up and left of the knuckle as the camera sees it), faces it
 ## to the eye, upright the way the view is, and stretches the arm to it.
 func _turn_swivel() -> void:
@@ -208,10 +225,7 @@ func _turn_swivel() -> void:
 	# within DISPLAY_FAR so it still reads.
 	var local := cam.global_transform.affine_inverse() * at
 	if first_person:
-		var tan_v := tan(deg_to_rad(cam.fov) * 0.5)
-		var view_px := get_viewport().get_visible_rect().size
-		var aspect := view_px.x / maxf(1.0, view_px.y)
-		local = Vector3(-SIDE_X * DISPLAY_NEAR * tan_v * aspect, SIDE_Y * DISPLAY_NEAR * tan_v, -DISPLAY_NEAR)
+		local = _beside_tool(cam, cam.global_transform.affine_inverse() * from)
 	elif -local.z < DISPLAY_NEAR:
 		local.z = -DISPLAY_NEAR
 	if local.length() > DISPLAY_FAR:

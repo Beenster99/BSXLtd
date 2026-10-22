@@ -55,11 +55,16 @@ const TV_PIXELS := Vector2(1280, 720)
 const REPLAN_AFTER := 3.0
 ## How far behind you a following trolley keeps, past its own radius, metres.
 const FOLLOW_GAP := 1.6
+## While delivered goods wait on the goods-in floor, how often idle trolleys are sent to
+## put them away, seconds.
+const GOODS_IN_EVERY := 2.0
 
 ## How far the remote control's Page Up and Page Down move the deck per second, metres.
 @export var remote_lift_rate := 0.8
 ## How much a pixel of mouse movement turns a trolley on remote (1 = full turn input).
 @export var remote_mouse_turn := 0.06
+## Idle hover trolleys put deliveries away by themselves (the host sends them).
+@export var auto_put_away := true
 
 var trolleys: Dictionary = {}       # id -> HoverTrolley
 var jobs: Dictionary = {}           # id -> {do, phase, crate, place, goal, yaw}
@@ -96,6 +101,7 @@ var _left: Dictionary = {}
 ## draws the shelf without them till they land).
 var arriving: Dictionary = {}
 var _clean_clock := 0.0
+var _goods_in_clock := 0.0
 
 
 func _ready() -> void:
@@ -187,6 +193,10 @@ func _physics_process(delta: float) -> void:
 		if _clean_clock <= 0.0:
 			_clean_clock = CLEAN_UP_RETRY
 			_bus.clean_up()
+	_goods_in_clock -= delta
+	if _goods_in_clock <= 0.0:
+		_goods_in_clock = GOODS_IN_EVERY
+		_send_to_goods_in()
 	_lead(delta)
 	for id: String in trolleys:
 		var t: Trolley = trolleys[id]
@@ -701,6 +711,63 @@ func _deliver(id: String, t: Trolley, job: Dictionary) -> void:
 			if _arrived(t):
 				jobs[id] = {}
 				t.show_status("HERE")
+
+
+## Where trolley `id` is headed, for the Machines screen: a stores place ("C2-03-1-2"), a
+## line, the crusher, the stores' hand-in, a person, the ship, parking; "" for nowhere.
+func destination_of(id: String) -> String:
+	var job: Dictionary = jobs.get(id, {})
+	match str(job.get("do", "")):
+		"put_away":
+			if job.has("place"):
+				return str(job["place"])
+			if ["to_stores", "handing"].has(str(job.get("phase", ""))):
+				return "Stores hand-in"
+			if job.has("crate") and ["to_crate", "loading"].has(str(job.get("phase", ""))):
+				return "Goods in"
+			return "Stores" if _bus and _bus.trolley_cargo(id) != "" else ""
+		"to_line":
+			var line := str(job.get("line", ""))
+			return "Crusher" if line == "crusher" else ("Line " + line.to_upper() if line != "" else "Lines")
+		"fetch":
+			return str(job.get("place", "Stores")) if ["find", "to_shelf", "raising", "reaching", "picking"].has(str(job.get("phase", ""))) \
+					else ("Hand-over" if str(job.get("phase", "")) in ["to_handoff", "handing"] else "To you")
+		"deliver":
+			return "Picking lift" if ["to_lift", "loading"].has(str(job.get("phase", ""))) else "To you"
+		"come", "follow":
+			return "To you"
+		"beam":
+			return "The ship"
+		"shelve":
+			return "Hand-in"
+		"park":
+			return "Parking" if not _arrived(trolleys[id]) else ""
+	return ""
+
+
+## Delivered goods waiting on the goods-in floor: each idle, empty hover trolley that can
+## carry some of them is sent to put them away (on the host; its command reaches everyone).
+func _send_to_goods_in() -> void:
+	if not auto_put_away or _bus == null or not _bus.line_runs_here():
+		return
+	var waiting: Array = []
+	var crates := _bus.delivered_crates()
+	for cid: String in crates:
+		var c: Dictionary = crates[cid]
+		if str(c.get("carrier", "")) == "" and not c.has("line") and not _reserved_crates.has(cid) \
+				and _bus.place_for(str(c.get("item", ""))) != "":
+			waiting.append(Layout.kind_for(float(c.get("mass", 0.0))))
+	if waiting.is_empty():
+		return
+	for id: String in ["s", "m", "l"]:
+		var t: Trolley = trolleys[id]
+		var job := str((jobs[id] as Dictionary).get("do", ""))
+		if not ["", "park"].has(job) or id == remote_id or id == following or _bus.trolley_cargo(id) != "" \
+				or not _queue.get(id, []).is_empty():
+			continue
+		if waiting.any(func(k: String) -> bool: return t.carries(k)):
+			_bus.command_trolley(id, "put_away")
+			return   # one at a time: the next goes on the next round if goods are left
 
 
 ## The smallest trolley free to carry goods of this kind out (not busy with a job, not

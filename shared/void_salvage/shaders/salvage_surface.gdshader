@@ -64,6 +64,9 @@ uniform vec4 condition = vec4(0.0);
 uniform vec4 scorch_at = vec4(0.0);
 // A streak instead of a spot: the scorch runs along this direction (part space; w = 1 on).
 uniform vec4 scorch_line = vec4(0.0);
+// A fresh wreck (x, 0..1: SalvageStructure.fresh): its darkest soot still glows dull orange;
+// on a torn part (yzw, its thin axis in part space) the faces square to it, its edges, too.
+uniform vec4 fresh = vec4(0.0);
 
 varying vec3 local_pos;
 varying vec3 local_normal;
@@ -413,6 +416,7 @@ void fragment() {
 			coat *= 1.0 - patch;
 		}
 	}
+	float soot = 0.0;
 	if (scorch > 0.001) {
 		float s = scorch;
 		if (scorch_radius > 0.001) {
@@ -429,6 +433,7 @@ void fragment() {
 		met = mix(met, 0.2, smoothstep(0.35, 0.8, s));
 		rough = mix(rough, 0.95, smoothstep(0.3, 0.8, s));
 		coat *= 1.0 - smoothstep(0.15, 0.5, s);
+		soot = s;
 	}
 	if (irid > 0.001) {
 		// An oil-film shimmer that shifts with the view, and a faint glow of its own.
@@ -436,6 +441,16 @@ void fragment() {
 		vec3 film = 0.7 + 0.3 * cos(6.2831 * (f * 1.5 + q.x * 0.07 + vec3(0.0, 0.33, 0.67)));
 		col = mix(col, col * film * 1.3, irid);
 		EMISSION = film * irid * 0.06;
+	}
+	if (fresh.x > 0.001) {
+		// Embers: patchy in the blackest soot, breathing slowly; torn edges a faint line.
+		float breath = 0.75 + 0.25 * sin(TIME * 0.7 + fbm(q * 1.7) * 6.2831853);
+		float ember = smoothstep(0.8, 1.0, soot) * smoothstep(0.45, 0.8, fbm(q * vec3(3.1, 1.4, 3.1)));
+		float edge = 0.0;
+		if (dot(fresh.yzw, fresh.yzw) > 0.5) {
+			edge = smoothstep(0.85, 1.0, 1.0 - abs(dot(normalize(local_normal), fresh.yzw))) * 0.45;
+		}
+		EMISSION += vec3(1.0, 0.33, 0.08) * fresh.x * (ember + edge) * breath * 1.2;
 	}
 	if (!survey_skip && survey_layer >= 0 && survey_through_glass(world_pos, CAMERA_POSITION_WORLD)) {
 		float side = dot(world_pos, survey_sweep.xyz) - survey_sweep.w;

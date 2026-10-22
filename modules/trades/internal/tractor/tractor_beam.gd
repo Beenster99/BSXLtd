@@ -67,9 +67,7 @@ var _bus: ShipBayBus
 var _distance := 3.0
 ## The held part in the beam's frame (the aim point, turned with the worker).
 var _grip := Transform3D.IDENTITY
-var _beam: MeshInstance3D
-var _halo: MeshInstance3D
-var _beam_mat: StandardMaterial3D
+var _beam: TradesBeamLine
 var _glow: OmniLight3D
 
 
@@ -84,14 +82,8 @@ func _ready() -> void:
 			_bus.connect("part_beamed", _on_part_beamed)
 		if _bus.has_signal("clean_up_claimed"):
 			_bus.connect("clean_up_claimed", _on_clean_up_claimed)
-	_beam_mat = StandardMaterial3D.new()
-	_beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_beam_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_beam_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_beam_mat.albedo_color = Color(TradesTractorTool.BEAM_COLOR, 0.55)
-	_beam = _beam_mesh(0.012, 0.03)
-	_halo = _beam_mesh(0.05, 0.16)
+	_beam = TradesBeamLine.new()
+	add_child(_beam)
 	_glow = OmniLight3D.new()
 	_glow.top_level = true
 	_glow.omni_range = 4.0
@@ -341,7 +333,7 @@ func update(delta: float) -> void:
 		tool.align = 1.0 if aligned else line
 		var palm := worker.right_hand.palm()
 		station.bay.place_tool(&"tractor", tool.carried(palm))
-		_draw_beam(tool.beam_from(), held.centre())
+		_draw_beam(tool.beam_from(), held.centre(), delta)
 	station.bay.loop(&"beam", true, 0.9 + (0.2 if aligned else 0.0))
 	_emit(held, true)
 
@@ -381,8 +373,7 @@ func _lift_seated(slot_id: String) -> bool:
 
 
 func _stop_beam() -> void:
-	_beam.visible = false
-	_halo.visible = false
+	_beam.hide_line()
 	_glow.visible = false
 	station.bay.loop(&"beam", false)
 	var tool := station.bay.tool_node(&"tractor") as TradesTractorTool
@@ -391,40 +382,18 @@ func _stop_beam() -> void:
 		tool.align = -1.0
 
 
-func _draw_beam(from: Vector3, to: Vector3) -> void:
-	var length := from.distance_to(to)
-	if length < 0.05:
-		return
-	var y := (to - from) / length
-	var x := y.cross(Vector3.UP if absf(y.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT).normalized()
-	var xform := Transform3D(Basis(x, y, x.cross(y)), (from + to) * 0.5)
+func _draw_beam(from: Vector3, to: Vector3, delta: float) -> void:
 	var color := TradesTractorTool.ALIGNED_COLOR if aligned else TradesTractorTool.BEAM_COLOR
-	_beam_mat.albedo_color = Color(color, 0.55)
-	for m: MeshInstance3D in [_beam, _halo]:
-		m.global_transform = xform.scaled_local(Vector3(1.0, length, 1.0))
-		m.visible = true
-	(_halo.material_override as StandardMaterial3D).albedo_color = Color(color, 0.12)
+	_beam.color = color
+	_beam.draw(from, to, delta)
 	_glow.global_position = to
 	_glow.light_color = color
 	_glow.visible = true
 
 
-func _beam_mesh(bottom: float, top: float) -> MeshInstance3D:
-	var mesh := CylinderMesh.new()
-	mesh.bottom_radius = bottom
-	mesh.top_radius = top
-	mesh.height = 1.0
-	mesh.radial_segments = 12
-	mesh.cap_top = false
-	mesh.cap_bottom = false
-	var m := MeshInstance3D.new()
-	m.mesh = mesh
-	m.material_override = _beam_mat if bottom < 0.03 else _beam_mat.duplicate()
-	m.top_level = true
-	m.visible = false
-	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(m)
-	return m
+## How far the beam bends behind a quick swing (metres; tests).
+func beam_bend() -> float:
+	return _beam.bend() if _beam.visible else 0.0
 
 
 # --- Parts coming off and going on -------------------------------------------------------------
@@ -634,18 +603,14 @@ func _update_trolleys(delta: float) -> void:
 
 
 func _draw_yard_beam(slot_id: String, from: Vector3, to: Vector3) -> void:
-	var length := from.distance_to(to)
-	if length < 0.05:
-		return
-	var m: MeshInstance3D = _yard_beams.get(slot_id)
+	var m: TradesBeamLine = _yard_beams.get(slot_id)
 	if m == null:
-		m = _beam_mesh(0.03, 0.06)
-		(m.material_override as StandardMaterial3D).albedo_color = Color(TradesTractorTool.BEAM_COLOR, 0.3)
+		m = TradesBeamLine.new()
+		m.color = TradesTractorTool.BEAM_COLOR
+		m.strength = 0.6
+		add_child(m)
 		_yard_beams[slot_id] = m
-	var y := (to - from) / length
-	var x := y.cross(Vector3.UP if absf(y.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT).normalized()
-	m.global_transform = Transform3D(Basis(x, y, x.cross(y)), (from + to) * 0.5).scaled_local(Vector3(1.0, length, 1.0))
-	m.visible = true
+	m.draw(from, to, get_physics_process_delta_time())
 
 
 func _drop_yard_beam(slot_id: String) -> void:

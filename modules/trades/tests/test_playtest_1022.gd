@@ -89,6 +89,16 @@ func run_tests() -> void:
 	var wrist_end := sleeve.global_position + sleeve.global_basis.y * 0.5
 	check(sleeve.visible and wrist_end.distance_to(rig.worker.right_hand.palm().origin) < 0.15,
 			"first person, the hand is on the end of a forearm")
+	# The tool's display rides on the tool (beenster, 0.3.14), clear of the aim.
+	var tool := rig.tool_node(&"torque_wrench") as TradesTool
+	var cam := rig.worker.camera
+	var in_hand := Vector3(0.26, -0.23, -0.46)
+	var shown := tool._beside_tool(cam, in_hand)
+	check(shown.distance_to(in_hand) < 0.12, "the display sits just above the tool in your hand (%.2f m off)" % shown.distance_to(in_hand))
+	var on_work := tool._beside_tool(cam, Vector3(0.02, 0.0, -1.3))
+	var clear := -on_work.z * tan(deg_to_rad(cam.fov) * 0.5) * TradesTool.CLEAR
+	check(Vector2(on_work.x, on_work.y).length() >= clear - 0.001 and -on_work.z <= TradesTool.DISPLAY_FAR,
+			"out on the work it comes back to read, still clear of where you point")
 
 	# The wrist's Specs channel: a paper spec sheet on its right.
 	var screen := TradesSpecsScreen.new(true)

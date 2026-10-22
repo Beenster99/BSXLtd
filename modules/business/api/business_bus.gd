@@ -546,6 +546,52 @@ func get_ledger(since_day := 0) -> Array[LedgerEntry]:
 	return _books.ledger.filter(func(e): return e.day >= since_day)
 
 
+## Ledger categories grouped the way the Accounts page shows them, in its order.
+const ACCOUNT_GROUPS := {
+	"contracts": ["deposit", "goodwill", "payment", "penalty"],
+	"sales": ["scrap", "salvage"],
+	"parts": ["parts", "refund"],
+	"wages": ["wages", "bonus"],
+	"rent": ["rent"],
+	"loans": ["loan", "repayment"],
+}
+
+
+## The Accounts page group a ledger category falls in ("other" for the rest).
+static func account_group(category: String) -> String:
+	for g: String in ACCOUNT_GROUPS:
+		if category in ACCOUNT_GROUPS[g]:
+			return g
+	return "other"
+
+
+## Money in and out over the last `days` game days up to today: {income, outgoings, net,
+## groups: {group: {in, out}} (every group, in ACCOUNT_GROUPS order then "other"),
+## days: [{day, in, out}] oldest first}. Outgoings are positive numbers.
+func accounts_summary(days: int) -> Dictionary:
+	var today := get_day()
+	var first := maxi(0, today - maxi(1, days) + 1)
+	var groups := {}
+	for g: String in ACCOUNT_GROUPS.keys() + ["other"]:
+		groups[g] = {"in": 0, "out": 0}
+	var per_day: Array = []
+	for d in range(first, today + 1):
+		per_day.append({"day": d, "in": 0, "out": 0})
+	var income := 0
+	var out := 0
+	for e: LedgerEntry in _books.ledger:
+		if e.day < first or e.day > today:
+			continue
+		var side := "in" if e.amount > 0 else "out"
+		groups[account_group(e.category)][side] += absi(e.amount)
+		per_day[e.day - first][side] += absi(e.amount)
+		if e.amount > 0:
+			income += e.amount
+		else:
+			out -= e.amount
+	return {"income": income, "outgoings": out, "net": income - out, "groups": groups, "days": per_day}
+
+
 ## 0 to 100.
 func get_reputation() -> float:
 	return _books.reputation

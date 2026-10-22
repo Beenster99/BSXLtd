@@ -88,7 +88,7 @@
 			"required": ["shape", "args"],
 			"description": "a PartShapes or FrameParts constructor by name, and its arguments in order",
 			"properties": {
-				"shape": {"enum": ["box", "wedge", "ridge", "slope", "trapezoid", "corner", "corner_cut", "prism", "frustum", "girder", "i_beam", "truss", "arc_panel", "dome", "chamfer_box", "ring", "nozzle", "louvre", "inset_panel", "porthole_round", "porthole_hex", "window_rect", "window_panel", "window_slit", "window_tri", "canopy_panel", "girder_corner", "node", "plate", "square", "rect", "tri_equilateral", "tri_isosceles", "tri_right", "tri_scalene", "plate_trapezoid", "parallelogram", "rhombus", "polygon", "chamfered_rect"]},
+				"shape": {"enum": ["box", "wedge", "ridge", "slope", "trapezoid", "corner", "corner_cut", "prism", "frustum", "girder", "i_beam", "truss", "arc_panel", "dome", "chamfer_box", "ring", "nozzle", "louvre", "inset_panel", "porthole_round", "porthole_hex", "window_rect", "window_panel", "window_slit", "window_tri", "canopy_panel", "girder_corner", "node", "plate", "square", "rect", "tri_equilateral", "tri_isosceles", "tri_right", "tri_scalene", "plate_trapezoid", "parallelogram", "rhombus", "polygon", "chamfered_rect", "channel", "rib"]},
 				"args": {"type": "array"}
 			}
 		},
@@ -157,7 +157,7 @@
 			"required": ["group", "fitting", "args", "box"],
 			"properties": {
 				"group": {"$ref": "#/$defs/group"},
-				"fitting": {"enum": ["seat", "console", "bunks", "locker", "galley", "table", "bench", "suit_stand", "trophy_shelf", "breaker_panel", "reactor_cabinet", "wall_rack", "hold_net", "lamp", "name_board", "armchair", "jump_seat", "railing", "stair_flight", "workbench", "reactor_core"]},
+				"fitting": {"enum": ["seat", "console", "bunks", "locker", "galley", "table", "bench", "suit_stand", "trophy_shelf", "breaker_panel", "reactor_cabinet", "wall_rack", "hold_net", "lamp", "name_board", "armchair", "jump_seat", "railing", "stair_flight", "workbench", "reactor_core", "junction_box", "lamp_driver", "jump_tank", "heat_exchanger"]},
 				"frame": {"$ref": "#/$defs/xform"},
 				"args": {"type": "array"},
 				"box": {"$ref": "#/$defs/aabb"},

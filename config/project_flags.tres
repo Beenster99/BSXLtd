@@ -66,6 +66,7 @@ flags = {
 "trades.test_stand": true,
 "trades.slim_hotbar": true,
 "trades.forearms": true,
+"trades.trace_weld": true,
 "trades.wiring": true,
 "ui": true,
 "ui.debug_tab": true

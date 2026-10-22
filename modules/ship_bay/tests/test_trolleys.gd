@@ -115,6 +115,20 @@ func run_tests() -> void:
 			break
 	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))), "back in Deliveries")
 
+	# A delivery nobody asks about: idle trolleys go and put it away by themselves.
+	bus.receive_delivery("PO-22", [{"item_id": "IonThruster", "qty": 1, "condition": 1.0, "name": "Ion thruster", "grade": "new", "mass": 311.0}])
+	for i in 3600:
+		await get_tree().physics_frame
+		if bus.delivered_crates().is_empty():
+			break
+	check(bus.delivered_crates().is_empty() and bus.stock_at(bus.home_location("IonThruster")).get("qty") == 3,
+			"a new delivery is put away without being asked: %s" % [bus.delivered_crates().keys()])
+	bus.take_stock("IonThruster", 1)   # back to the two the stock checks below count
+	for i in 2400:
+		await get_tree().physics_frame
+		if trolleys.values().all(func(t: Node) -> bool: return ["PARKED", "ALL PUT AWAY"].has(t.get("status")) and (t.get("path") as PackedVector3Array).is_empty()):
+			break
+
 	# Called: the medium trolley comes out to someone in the courtyard and waits by them.
 	var me := Vector3(-6, 0, 14)
 	bus.command_trolley("m", "come", {"to": me})
