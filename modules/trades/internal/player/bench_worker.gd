@@ -20,8 +20,10 @@ const STEP_DB := -18.0
 ## Holding Shift (m/s): across the yard.
 @export var run_speed := 5.5
 @export var mouse_sensitivity := 0.0025
-## Take-off speed of a jump (m/s): about 0.6 m up, enough to hop onto a low deck.
-@export var jump_speed := 3.6
+## Take-off speed of a jump (m/s): about 1.25 m up, enough to jump onto any of the yard's
+## hover trolleys (beenster, 22 Oct), whose chassis stands 1.12 m tall, and ride its deck up
+## to work at height.
+@export var jump_speed := 4.75
 ## The planet's gravity (m/s²), as the yard has it.
 @export var gravity := 9.0
 ## Climbing speed on a ladder (m/s).
@@ -87,8 +89,8 @@ func _ready() -> void:
 	camera.current = true
 	head.add_child(camera)
 
-	left_hand = _hand("Left", Vector3(-0.24, -0.3, -0.42), true)
-	right_hand = _hand("Right", Vector3(0.24, -0.3, -0.42), false)
+	left_hand = _hand("Left", Vector3(-0.26, -0.23, -0.46), true)
+	right_hand = _hand("Right", Vector3(0.26, -0.23, -0.46), false)
 	_body_model = _build_body()
 	set_view(false)
 

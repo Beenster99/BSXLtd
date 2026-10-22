@@ -1,6 +1,7 @@
 extends Control
-## Play Together, from the title screen: host your latest game (or a new one) for the crew,
-## or join someone else's by address. Both go on into the game's start scene (the yard).
+## Play Online, from the title screen: host your latest game (or a new one) for the crew,
+## or join someone else's by address. Hosting stays on this screen until the router has
+## answered, so the host can copy the address to send the crew, then enters the yard.
 ## Laid out like the main menu. Router.args may carry {"note": reason} when a session the
 ## player had joined ended and sent them back here.
 
@@ -10,6 +11,9 @@ var _address: LineEdit
 var _host: Button
 var _join: Button
 var _note: Label
+var _setup: VBoxContainer  # name, Host, address, Join: while not in a session
+var _live: VBoxContainer  # where crew can reach you, Copy, Enter the yard, Stop: while hosting
+var _reach: Label
 var _joining := false
 
 
@@ -30,29 +34,48 @@ func _ready() -> void:
 	box.add_theme_constant_override("separation", 14)
 	center.add_child(box)
 
-	var title := BsxTheme.title("PLAY TOGETHER", 44)
+	var title := BsxTheme.title("PLAY ONLINE", 44)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
-	box.add_child(BsxTheme.muted("Your name"))
-	_name = _field("Your name", str(Settings.get_value("multiplayer", "player_name")), "PlayerName")
-	box.add_child(_name)
 
-	box.add_child(BsxTheme.muted("Host a game for your crew"))
+	_setup = VBoxContainer.new()
+	_setup.add_theme_constant_override("separation", 14)
+	box.add_child(_setup)
+	_setup.add_child(BsxTheme.muted("Your name"))
+	_name = _field("Your name", str(Settings.get_value("multiplayer", "player_name")), "PlayerName")
+	_setup.add_child(_name)
+	_setup.add_child(BsxTheme.muted("Host a game for your crew"))
 	_host = BsxTheme.button(_host_label(), _on_host)
 	_host.name = "Host"
 	_host.custom_minimum_size.y = 52
-	box.add_child(_host)
-	var reach := BsxTheme.muted("Your router's port is opened for you where it allows it; the wrist Crew tab shows the address to give the crew.")
-	reach.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(reach)
-
-	box.add_child(BsxTheme.muted("Join a crew: the host's address"))
-	_address = _field("e.g. 192.168.1.20", str(Settings.get_value("multiplayer", "last_address")), "Address")
+	_setup.add_child(_host)
+	_setup.add_child(BsxTheme.muted("Join a crew: the host's address"))
+	_address = _field("e.g. 81.2.69.160", str(Settings.get_value("multiplayer", "last_address")), "Address")
 	_address.text_submitted.connect(func(_t: String) -> void: _on_join())
-	box.add_child(_address)
+	_setup.add_child(_address)
 	_join = BsxTheme.button("Join", _on_join)
 	_join.name = "Join"
-	box.add_child(_join)
+	_setup.add_child(_join)
+
+	_live = VBoxContainer.new()
+	_live.name = "Hosting"
+	_live.add_theme_constant_override("separation", 14)
+	box.add_child(_live)
+	_reach = BsxTheme.muted("")
+	_reach.name = "Reach"
+	_reach.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_reach.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_live.add_child(_reach)
+	var copy := BsxTheme.button("Copy address", func() -> void: DisplayServer.clipboard_set(_best_address()))
+	copy.name = "CopyAddress"
+	_live.add_child(copy)
+	var enter := BsxTheme.button("Enter the yard", _go_play)
+	enter.name = "EnterYard"
+	enter.custom_minimum_size.y = 52
+	_live.add_child(enter)
+	var stop := BsxTheme.button("Stop hosting", func() -> void: net.leave())
+	stop.name = "StopHosting"
+	_live.add_child(stop)
 
 	_note = BsxTheme.muted(str(Router.args.get("note", "")))
 	_note.name = "Note"
@@ -65,9 +88,11 @@ func _ready() -> void:
 
 	net.session_started.connect(_on_started)
 	net.session_ended.connect(_on_ended)
+	net.router_changed.connect(func(_i: Dictionary) -> void: _show())
 	var playable := not Menu.start().is_empty() and Router.has_scene(Menu.start().scene)
 	_host.disabled = not playable
 	_join.disabled = not playable
+	_show()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -82,6 +107,15 @@ func _field(placeholder: String, value: String, node_name: String) -> LineEdit:
 	f.text = value
 	f.custom_minimum_size.y = 42
 	return f
+
+
+## Setup while not hosting; while hosting, where the crew can reach you.
+func _show() -> void:
+	var hosting := net.is_online() and net.is_host()
+	_setup.visible = not hosting
+	_live.visible = hosting
+	if hosting:
+		_reach.text = _hosting_note(net.router_info())
 
 
 func _host_label() -> String:
@@ -103,11 +137,12 @@ func _on_host() -> void:
 			Saves.continue_game(games[0].slot)
 		else:
 			Saves.new_game("Crew yard")
-		var err := net.host(int(Settings.get_value("multiplayer", "port")))
+		var err := net.host(_port())
 		if err != OK:
-			_note.text = "Could not host on port %d (%s)." % [int(Settings.get_value("multiplayer", "port")), error_string(err)]
+			_note.text = "Could not host on port %d (%s)." % [_port(), error_string(err)]
 			return
-	_go_play()
+	_note.text = ""
+	_show()
 
 
 func _on_join() -> void:
@@ -119,7 +154,7 @@ func _on_join() -> void:
 	Settings.set_value("multiplayer", "last_address", address)
 	# The host's yard is not one of this player's saved games, so nothing saves over them.
 	Saves.close_game()
-	var err := net.join(address, int(Settings.get_value("multiplayer", "port")))
+	var err := net.join(address, _port())
 	if err != OK:
 		_note.text = "Could not join %s (%s)." % [address, error_string(err)]
 		return
@@ -132,6 +167,8 @@ func _on_join() -> void:
 func _on_started(as_host: bool) -> void:
 	if _joining and not as_host:
 		_go_play()
+	else:
+		_show()
 
 
 func _on_ended(reason: String) -> void:
@@ -140,6 +177,41 @@ func _on_ended(reason: String) -> void:
 		_host.disabled = false
 		_join.disabled = false
 		_note.text = "Could not join: %s" % reason
+	_host.text = _host_label()
+	_show()
+
+
+## Where the crew can reach this host: over the internet once the router opened the port,
+## and on the same network always.
+func _hosting_note(router: Dictionary) -> String:
+	var lines: PackedStringArray = ["Hosting on port %d." % _port()]
+	match str(router.get("state", "off")):
+		"open":
+			lines.append("Over the internet: %s" % router.external)
+		"opening":
+			lines.append("Opening the port on your router...")
+		"failed":
+			lines.append("Internet play needs port %d (UDP) forwarded to this PC by hand: %s." % [_port(), router.reason])
+	lines.append("Same network: %s" % _addresses())
+	return "\n".join(lines)
+
+
+func _best_address() -> String:
+	var router := net.router_info()
+	return str(router.external) if router.get("state") == "open" else _addresses().get_slice(",", 0)
+
+
+func _port() -> int:
+	return int(Settings.get_value("multiplayer", "port"))
+
+
+## This machine's local network addresses, for crew on the same network.
+static func _addresses() -> String:
+	var out: PackedStringArray = []
+	for a in IP.get_local_addresses():
+		if a.contains(".") and not a.begins_with("127.") and not a.begins_with("169.254."):
+			out.append(a)
+	return ", ".join(out) if not out.is_empty() else "127.0.0.1"
 
 
 func _go_play() -> void:

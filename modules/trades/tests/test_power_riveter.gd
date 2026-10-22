@@ -20,6 +20,9 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The cutter is tested here, so the full hotbar.
+	saved["trades.slim_hotbar"] = Flags.is_on("trades.slim_hotbar")
+	Flags.set_flag("trades.slim_hotbar", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)

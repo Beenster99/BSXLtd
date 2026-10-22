@@ -1,5 +1,5 @@
 extends ModuleTest
-## Play Together on the title screen: the menu entry and scene are there while online play is
+## Play Online on the title screen: the menu entry and scene are there while online play is
 ## on, and the screen has the name, Host, address and Join, keeps the name and refuses an
 ## empty address.
 ##   tools/run_tests.sh multiplayer
@@ -8,8 +8,10 @@ extends ModuleTest
 func run_tests() -> void:
 	var online := Flags.is_on(MultiplayerBus.ONLINE_FLAG)
 	var listed := Menu.entries().any(func(e: Dictionary) -> bool: return e.id == MultiplayerBus.PLAY_SCENE)
-	check(listed == online, "Play Together on the title screen follows the online flag")
-	check(Router.has_scene(MultiplayerBus.PLAY_SCENE) == online, "Play Together scene registered")
+	var entry: Array = Menu.entries().filter(func(e: Dictionary) -> bool: return e.id == MultiplayerBus.PLAY_SCENE)
+	check(entry.is_empty() or entry[0].label == "Play Online", "the title screen button says Play Online")
+	check(listed == online, "Play Online on the title screen follows the online flag")
+	check(Router.has_scene(MultiplayerBus.PLAY_SCENE) == online, "Play Online scene registered")
 	if not online:
 		return
 

@@ -6,11 +6,14 @@ extends Node
 signal chat_received(line: Dictionary)
 signal activity_changed(peer_id: int, text: String)
 signal ping_received(ping: Dictionary)
+signal ping_removed(ping_id: int)
 
 const SAY := "crew.say"
 const ACTIVITY := "crew.activity"
 const PING := "crew.ping"
-const PING_LIFE := 6.0
+const PING_LIFE := 10.0
+const PINGS_EACH := 5  # live pings per player; a sixth replaces their oldest
+const MAX_LABEL := 48
 const PING_GAP := 0.25  # seconds between one player's pings, enforced on the host
 const MAX_ID := 96
 ## Crew colours by place on the crew list: host first, then in joining order.
@@ -28,6 +31,7 @@ var _avatars: Dictionary = {}  # peer id -> avatar node
 var _check := 0.0
 var _pings: Array[Dictionary] = []
 var _last_ping: Dictionary = {}  # peer id -> host clock time of their last ping
+var _ping_seq := 0  # host side: ping ids
 
 
 func _ready() -> void:
@@ -86,8 +90,8 @@ func _apply_say(p: Dictionary) -> void:
 
 # --- Pings: "look here" ---------------------------------------------------------------
 
-func ping(at: Vector3, object_id: String, normal: Vector3) -> void:
-	net.request(PING, {"at": at, "object_id": object_id, "normal": normal})
+func ping(at: Vector3, object_id: String, normal: Vector3, label: String) -> void:
+	net.request(PING, {"at": at, "object_id": object_id, "normal": normal, "label": label})
 
 
 ## Pings still showing (younger than PING_LIFE), oldest first.
@@ -116,13 +120,19 @@ func _validate_ping(sender: int, p: Dictionary) -> Variant:
 	if now - float(_last_ping.get(sender, -INF)) < PING_GAP:
 		return "pinging too fast"
 	_last_ping[sender] = now
-	return {"peer": sender, "name": player_name(sender), "colour": player_colour(sender), "at": at,
+	_ping_seq += 1
+	return {"id": _ping_seq, "label": str(p.get("label", "")).strip_edges().left(MAX_LABEL), "peer": sender, "name": player_name(sender), "colour": player_colour(sender), "at": at,
 			"normal": (normal as Vector3).normalized(), "object_id": str(p.get("object_id", "")).left(MAX_ID),
 			"time": now}
 
 
 func _apply_ping(p: Dictionary) -> void:
 	_pings = pings()
+	var theirs := _pings.filter(func(q: Dictionary) -> bool: return q.peer == p.peer)
+	while theirs.size() >= PINGS_EACH:
+		var oldest: Dictionary = theirs.pop_front()
+		_pings.erase(oldest)
+		ping_removed.emit(int(oldest.id))
 	_pings.append(p)
 	ping_received.emit(p)
 
