@@ -87,7 +87,7 @@ func run_tests() -> void:
 func _test_bus() -> void:
 	var saved := Flags.all()
 	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "trades": true,
-			"quality": true, "quality.scores": true})
+			"multiplayer": true, "quality": true, "quality.scores": true})
 	Modules.load_all()
 	var bus := Modules.bus("quality") as QualityBus
 	check(bus != null, "quality bus loads with its chain on")
