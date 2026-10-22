@@ -67,7 +67,8 @@ func run_tests() -> void:
 			"the wrong tool in hand: the tips say which key takes up the right one (%s)" % tips.replace("\n", " | "))
 	rig.set_tool(&"torque_wrench")
 	tips = "\n".join(rig.context_tips())
-	check(tips.contains(TradesBay.HOLD_RIGHT + ": break it loose") and tips.contains("part details"),
+	# Tab's part details only while trades.inspect is on (beenster, 0.3.14: the look card has them).
+	check(tips.contains(TradesBay.HOLD_RIGHT + ": break it loose") and tips.contains("part details") == Flags.is_on("trades.inspect"),
 			"the wrench on a tight bolt: hold right click breaks it loose (%s)" % tips.replace("\n", " | "))
 	var card := HudSlots.look_hint_for({"collider": null})
 	check(str(card.get("title", "")).contains("bolt, tight"),

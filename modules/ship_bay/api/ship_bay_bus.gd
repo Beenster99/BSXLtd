@@ -146,7 +146,7 @@ func register_module() -> void:
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
 				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk",
-				"dock", "launch_towers", "city", "downtown"]:
+				"dock", "launch_towers", "city", "downtown", "crusher_house", "crusher"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 		# The lift up at the side door, and the power unit's plug clipped on the hull.
@@ -320,6 +320,45 @@ func ship_transform(yard: Node3D) -> Transform3D:
 ## The same as ship_transform.
 func ship_to_yard(yard: Node3D) -> Transform3D:
 	return ship_transform(yard)
+
+
+## The look of a ship part taken off its slot, so it stays the same part when loose: a new
+## Node3D holding copies of the slot's mesh pieces in the slot's mount space (its origin
+## is the mount). Tools' tractor hangs it on the loose part. Null when the slot has none.
+## The bay hides the originals while the slot is EMPTY, so the part never shows twice.
+func part_visual(yard: Node3D, slot_id: String) -> Node3D:
+	var bay_node := yard.get("bay") as Node3D if yard else null
+	var ship_node := bay_node.get("ship_root") as Node3D if bay_node else null
+	var slot := get_slot(slot_id)
+	if ship_node == null or slot == null:
+		return null
+	var pieces: Array = (bay_node.get("pieces") as Dictionary).get(slot_id, [])
+	if pieces.is_empty():
+		return null
+	var root := Node3D.new()
+	root.name = "PartVisual_" + slot_id
+	var to_mount := slot.mount.affine_inverse()
+	for mi: MeshInstance3D in pieces:
+		var copy := MeshInstance3D.new()
+		copy.mesh = mi.mesh
+		copy.material_override = mi.material_override
+		for i in mi.get_surface_override_material_count():
+			copy.set_surface_override_material(i, mi.get_surface_override_material(i))
+		copy.cast_shadow = mi.cast_shadow
+		copy.transform = to_mount * _in_ship(mi, ship_node)
+		root.add_child(copy)
+	return root
+
+
+## A node's transform in ship space (relative to the ship's root, in the tree or not).
+static func _in_ship(node: Node3D, ship_root: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var n: Node = node
+	while n != null and n != ship_root:
+		if n is Node3D:
+			t = (n as Node3D).transform * t
+		n = n.get_parent()
+	return t
 
 
 ## Ships BSX can take into a bay.
@@ -1305,10 +1344,16 @@ func _line_crate_id() -> String:
 
 func _sample_delivery() -> void:
 	var lines: Array = []
+	# Components, fasteners, and the raw build material a ship is made of: hull plates and
+	# wall panels, frame members, glass panes and cable.
+	var material := {"HullPlate": 20, "DeckPlate": 6, "CabinWall": 4, "Stringer": 12, "DeckJoist": 8,
+			"WindowPane": 4, "CockpitPane": 2, "MainLoom": 3, "CoolantPipe": 6}
 	for item: String in ["IonThruster", "SideThruster", "LiftThruster", "HydrogenThruster", "DriveEngine",
-			"BatteryRack", "Gyroscope", "HelmConsole", "M10", "M12", "RIVET_4", "Reactor", "FuelPump"]:
+			"BatteryRack", "Gyroscope", "HelmConsole", "M10", "M12", "RIVET_4", "Reactor", "FuelPump"] + material.keys():
 		var d: Dictionary = StorageLayout.items().get(item, {})
-		lines.append({"item_id": item, "qty": 1 if float(d.get("mass", 0.0)) > 40.0 else 250,
+		if d.is_empty():
+			continue
+		lines.append({"item_id": item, "qty": int(material[item]) if material.has(item) else (1 if float(d.get("mass", 0.0)) > 40.0 else 250),
 				"condition": 1.0, "name": d.get("name", item), "grade": "new", "mass": d.get("mass", 0.0)})
 	receive_delivery("PO-%d" % (delivered_crates().size() + 1001), lines)
 

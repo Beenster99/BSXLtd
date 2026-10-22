@@ -6,6 +6,7 @@
 script = ExtResource("1")
 flags = {
 "business": true,
+"business.debug": true,
 "business.economy": true,
 "business.market": true,
 "business.wallets": true,
@@ -42,7 +43,7 @@ flags = {
 "shared_components": true,
 "trades": true,
 "trades.bolting": true,
-"trades.inspect": true,
+"trades.inspect": false,
 "trades.jump": true,
 "trades.power_wrench": true,
 "trades.riveting": true,
@@ -67,5 +68,6 @@ flags = {
 "trades.forearms": true,
 "trades.trace_weld": true,
 "trades.wiring": true,
-"ui": true
+"ui": true,
+"ui.debug_tab": true
 }

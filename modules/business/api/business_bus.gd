@@ -96,6 +96,11 @@ const PAYSLIPS_SECTION := "business.payslips"
 const CompanyPanel := preload("res://modules/business/internal/ui/company_panel.gd")
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
+## Settings > Gameplay > Testing (flag business.debug): orders arrive the moment they're
+## placed. The host's setting is the one that counts; it delivers.
+const SETTINGS_SECTION := "business"
+const INSTANT_KEY := "instant_deliveries"
+const TESTING_SECTION := "business.testing"
 
 var _books: Books
 ## The open shipyard Business has furnished, or null; the clock runs while it is open.
@@ -133,6 +138,12 @@ func register_module() -> void:
 		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
 		Shots.register("business_goods_in", ShipBayBus.SHIPYARD_SCENE, _shot_goods, 40)
 	_offer_screen_channels()
+	if Flags.is_on("business.debug"):
+		Settings.register(SETTINGS_SECTION, {INSTANT_KEY: false})
+		if not Settings.changed.is_connected(_on_setting_changed):
+			Settings.changed.connect(_on_setting_changed)
+		_books.instant_deliveries = bool(Settings.get_value(SETTINGS_SECTION, INSTANT_KEY))
+		Menu.register_settings_section(Menu.GAMEPLAY, TESTING_SECTION, "Testing", _testing_section, 90)
 	if Flags.is_on("business.economy"):
 		Menu.register_settings_page(COMPANY_PAGE, "Company", func() -> Control: return CompanyPanel.new(self, "company", false), 20)
 		Menu.register_settings_section(Menu.CHARACTER, PAYSLIPS_SECTION, "Payslips", func() -> Control: return CompanyPanel.new(self, "payslips", false), 30)
@@ -152,6 +163,9 @@ func unregister_module() -> void:
 		net.call("unregister_snapshot_provider", SAVE_SECTION)
 	HudSlots.unregister_holo_section(CREW_CHANNEL, TRANSFER_SECTION)
 	Menu.unregister_settings_page(COMPANY_PAGE)
+	Menu.unregister_settings_section(Menu.GAMEPLAY, TESTING_SECTION)
+	if Settings.changed.is_connected(_on_setting_changed):
+		Settings.changed.disconnect(_on_setting_changed)
 	Menu.unregister_settings_section(Menu.CHARACTER, PAYSLIPS_SECTION)
 	Saves.unregister_section(SAVE_SECTION)
 	for id: String in SCREEN_CHANNELS:
@@ -790,6 +804,33 @@ func on_contract_handed_over(contract_id: String, quality: float, open_snags: in
 	if result.is_ok() and Flags.is_on("contracts.kinds"):
 		_take_recoveries(contract_id, recoveries if not recoveries.is_empty() else job_recoveries(contract_id))
 	return result
+
+
+# --- Testing ---
+
+func instant_deliveries() -> bool:
+	return _books.instant_deliveries
+
+
+## Turns instant deliveries on or off; turning them on lands everything already on its way.
+func set_instant_deliveries(on: bool) -> void:
+	_books.instant_deliveries = on
+	if on and _is_authority():
+		_books.deliver_now()
+
+
+func _on_setting_changed(section: String, key: String, value: Variant) -> void:
+	if section == SETTINGS_SECTION and key == INSTANT_KEY:
+		set_instant_deliveries(bool(value))
+
+
+func _testing_section() -> Control:
+	var t := CheckButton.new()
+	t.name = "InstantDeliveries"
+	t.text = "Instant deliveries: parts orders arrive as soon as they're placed (host)"
+	t.button_pressed = bool(Settings.get_value(SETTINGS_SECTION, INSTANT_KEY))
+	t.toggled.connect(func(on: bool) -> void: Settings.set_value(SETTINGS_SECTION, INSTANT_KEY, on))
+	return t
 
 
 # --- Scrapyard: break, scrap, refurbish and dispose jobs ---

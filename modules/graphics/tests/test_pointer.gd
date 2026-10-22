@@ -32,6 +32,11 @@ func run_tests() -> void:
 	var mesh := crate.get_child(0) as MeshInstance3D
 	check(bus.hover_target() == crate, "the crate is under the pointer")
 	check(mesh.material_overlay != null, "the crate is highlighted")
+	var over := mesh.material_overlay as ShaderMaterial
+	check(float(over.get_shader_parameter("glow")) == 0.0 and over.next_pass != null,
+			"hover is subtle: an outline only, no glow")
+	check(float((over.next_pass as ShaderMaterial).get_shader_parameter("width")) < GfxBus.PointerLook.Highlighter.BOLD.width,
+			"and a thinner outline than a ping's")
 
 	# Looking at something that isn't usable: nothing highlighted.
 	cam.look_at(Vector3(10, 1.5, 0))
@@ -56,6 +61,7 @@ func run_tests() -> void:
 	check(marker.global_position.distance_to(Vector3(0, 1.5, -7.5)) < 0.1, "the marker sits on the crate's face")
 	check(mesh.material_overlay != null, "the pinged crate lights up")
 	check(pointer.highlighter.colour_of(crate) == pointer.PING_COLOUR, "in the ping's colour")
+	check(pointer.highlighter.look_of(crate) == GfxBus.PointerLook.Highlighter.BOLD, "a ping is bold, to catch the eye")
 
 	# A ping by id (a crewmate's), and by place with no id.
 	pointer.show_ping({"peer": 2, "name": "Sam", "colour": Color.GREEN, "at": Vector3(0, 0, 50), "object_id": "crate:1"})
