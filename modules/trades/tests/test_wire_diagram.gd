@@ -41,6 +41,17 @@ func run_tests() -> void:
 	station.press(&"hands")
 	var panel := station.wiring
 	check(panel != null and panel.is_inside_tree(), "hands on the plug open its wiring diagram")
+	check(station.tablet != null and panel.get_viewport() == station.tablet.viewport, "on the wiring tool's screen in front of you")
+	check(rig.worker.look_locked, "the view holds still while it's open")
+	await get_tree().create_timer(0.8).timeout
+	check(station.tablet.is_open(), "it unfolds")
+	var eye := rig.worker.camera.global_position
+	var d := eye.distance_to(station.tablet.global_position)
+	check(d > 0.3 and d < 0.7, "a screen's length in front of you (%.2f m)" % d)
+	var px := station.tablet.ray_px(eye, (station.tablet.to_world(Vector2(300, 200)) - eye).normalized())
+	check(px.distance_to(Vector2(300, 200)) < 2.0, "the mouse finds the picture where it is (%s)" % px)
+	await get_tree().create_timer(0.3).timeout
+	check(rig.worker.left_hand.out and rig.worker.right_hand.out, "both hands are on it")
 	check(HudSlots.pointer_claimed(), "the diagram has the mouse")
 	check(station.is_busy(), "and the station is busy while it's up")
 	check(not ship_bus.is_joint_tight(f.joint_id), "opening it doesn't plug it in")
@@ -63,8 +74,13 @@ func run_tests() -> void:
 	var esc := InputEventAction.new()
 	esc.action = Keys.CANCEL
 	esc.pressed = true
-	panel._input(esc)
+	var tablet := station.tablet
+	tablet._input(esc)
 	check(station.wiring == null and not HudSlots.pointer_claimed(), "Esc closes the diagram and frees the mouse")
+	check(not rig.worker.look_locked, "and the view moves again")
+	await get_tree().create_timer(0.8).timeout
+	check(not is_instance_valid(tablet), "the wiring tool folds away")
+	_aim_at(rig, station, i)  # no floor in this test yard: put the worker back where they stood
 	station.press(&"hands")
 	check(station.wiring != null and station.wiring.loom.is_right(), "opening it again, the wires are where you left them")
 

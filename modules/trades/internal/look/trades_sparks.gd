@@ -8,7 +8,17 @@ extends Node3D
 ## only; nothing here is game state.
 
 ## Most sparks alive at once.
-const MAX := 600
+const MAX := 1600
+## The glow the sparks throw on what's round them (beenster, 2026-10-22: "the surrounding
+## area should glow from their emitted light"): a few warm lights, each at the middle of a
+## share of the hot sparks, brighter the more sparks it has. Light per hot spark, the most one
+## light gives, and its reach (m).
+const LIGHTS := 4
+const LIGHT_PER_SPARK := 0.035
+const LIGHT_MAX := 2.6
+const LIGHT_RANGE_M := 3.5
+## A spark counts as hot for its first share of its life.
+const HOT_SHARE := 0.55
 ## Pull down (m/s²), the share of speed kept off a bounce, and how long one lives (s).
 const GRAVITY := 9.8
 const BOUNCE := 0.35
@@ -25,6 +35,7 @@ var _mm: MultiMesh
 var _view: MultiMeshInstance3D
 var _rng := RandomNumberGenerator.new()
 var _pops: Array[Dictionary] = []
+var _lights: Array[OmniLight3D] = []
 ## Bodies the sparks fly through (the worker).
 var exclude: Array[RID] = []
 
@@ -41,7 +52,7 @@ func _ready() -> void:
 	sh.code = """shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled;
 void fragment() {
-	ALBEDO = COLOR.rgb * 1.6;
+	ALBEDO = COLOR.rgb * 3.0;
 	ALPHA = COLOR.a;
 }
 """
@@ -55,6 +66,17 @@ void fragment() {
 	_view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_view.extra_cull_margin = 50.0
 	add_child(_view)
+	for i in LIGHTS:
+		var l := OmniLight3D.new()
+		l.name = "SparkGlow%d" % i
+		l.light_color = Color(1.0, 0.62, 0.28)
+		l.omni_range = LIGHT_RANGE_M
+		l.omni_attenuation = 1.6
+		l.shadow_enabled = false
+		l.visible = false
+		l.set_meta("gfx_no_shadow", true)
+		add_child(l)
+		_lights.append(l)
 
 
 ## Throws `count` sparks from `at`, in a cone round `dir` (spread 0..1: 0 a jet, 1 a hemisphere)
@@ -116,6 +138,7 @@ func _physics_process(delta: float) -> void:
 		i += 1
 	_step_pops(delta, space)
 	_draw()
+	_glow()
 
 
 func _step_pops(delta: float, space: PhysicsDirectSpaceState3D) -> void:
@@ -161,6 +184,35 @@ func _draw() -> void:
 		c = c.lerp(Color(0.5, 0.06, 0.0), clampf(t * 2.0 - 1.0, 0.0, 1.0))
 		c.a = 1.0 - clampf(t * 1.5 - 0.5, 0.0, 1.0)
 		_mm.set_instance_color(i, c)
+
+
+## Puts the glow lights at the hot sparks: spark i goes to light i mod LIGHTS.
+func _glow() -> void:
+	var sums: Array[Vector3] = []
+	var counts: Array[int] = []
+	for k in LIGHTS:
+		sums.append(Vector3.ZERO)
+		counts.append(0)
+	for i in _pos.size():
+		if _age[i] > _life[i] * HOT_SHARE:
+			continue
+		var k := i % LIGHTS
+		sums[k] += _pos[i]
+		counts[k] += 1
+	for k in LIGHTS:
+		var l := _lights[k]
+		l.visible = counts[k] >= 3
+		if l.visible:
+			l.global_position = sums[k] / counts[k]
+			l.light_energy = minf(LIGHT_MAX, counts[k] * LIGHT_PER_SPARK) * _rng.randf_range(0.8, 1.1)
+
+
+## Glow lights lit now (tests).
+func lit_glows() -> int:
+	var n := 0
+	for l in _lights:
+		n += 1 if l.visible else 0
+	return n
 
 
 func _remove(i: int) -> void:
