@@ -5,6 +5,7 @@ extends ModuleTest
 ##   tools/run_tests.sh ship_bay
 
 const Yard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
+const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 
 
 func run_tests() -> void:
@@ -118,6 +119,48 @@ func run_tests() -> void:
 		counts[k] = int(counts.get(k, 0)) + 1
 	check(counts == {"concrete": 1, "ground": 1, "epoxy": 4, "asphalt": 2},
 			"the ground paints are tagged for Graphics' surfaces: %s" % [counts])
+	_check_apron(yard)
 	yard.queue_free()
 	await frames(1)
 	bay.unload_ship()
+
+
+## The apron (S2): flat docks and pad, cradles on their pedestals, the hulk on the pad's,
+## the cutting bay open to the road and walled elsewhere.
+func _check_apron(yard: Node3D) -> void:
+	var apron: Node3D = yard.get("apron")
+	if not Flags.is_on("ship_bay.apron"):
+		check(apron == null, "with ship_bay.apron off there's no apron")
+		return
+	check(apron != null, "the apron is built")
+	if apron == null:
+		return
+	var space := yard.get_world_3d().direct_space_state
+	var docks: Dictionary = Apron.DOCKS
+	for id: String in docks:
+		var r: Rect2 = docks[id]
+		# Flat: nothing stands round the dock's edge (no walls), and its floor is the apron's.
+		var along := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(r.position.x - 3, 1, r.position.y - 3), Vector3(r.end.x + 3, 1, r.position.y - 3)))
+		check(along.is_empty(), "Dock %s has no wall along its north edge: %s" % [id, along.get("position", "")])
+		var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(r.get_center().x, 5, r.get_center().y), Vector3(r.get_center().x, -5, r.get_center().y)))
+		check(not down.is_empty() and absf((down.position as Vector3).y) < 0.01, "Dock %s's floor is the apron, not sunken: %s" % [id, down.get("position", "")])
+	var pad: Node3D = apron.get("pad_cradle")
+	var hulk: Node3D = apron.get("hulk")
+	check(pad != null and hulk != null and hulk.get_parent() == pad, "the hulk sits in the pad's cradle")
+	var pad_at: Vector3 = Apron.PAD
+	check(pad.global_position.is_equal_approx(pad_at + Vector3(0, 1.6, 0)), "the pad cradle stands on its pedestals at the pad: %s" % pad.global_position)
+	var holding: Array = apron.get("holding_cradles")
+	check(holding.size() == 3, "three cradles in the holding lane")
+	for c: Node3D in holding + [pad]:
+		for side: float in [-4.2, 4.2]:
+			var foot := c.global_position + Vector3(side, 0, 5.8)
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(foot + Vector3(0, -0.8, -1.5), foot + Vector3(0, -0.8, 1.5)))
+			check(not hit.is_empty(), "%s has a pedestal under it" % c.name)
+	# A 6 m wide dolly fits between a cradle's pedestals, under its cross beams.
+	var under := space.intersect_ray(PhysicsRayQueryParameters3D.create(pad.global_position + Vector3(0, -0.4, -10), pad.global_position + Vector3(0, -0.4, 10)))
+	check(under.is_empty() or under.collider == hulk, "the way under the pad cradle is clear: %s" % under.get("position", ""))
+	var cut: Rect2 = Apron.CUTTING
+	var door := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(cut.get_center().x + 8, 1, cut.end.y + 4), Vector3(cut.get_center().x + 8, 1, cut.end.y - 3)))
+	check(door.is_empty(), "the cutting bay's door is open to the road: %s" % door.get("position", ""))
+	var wall := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(cut.position.x - 3, 1, cut.get_center().y), Vector3(cut.position.x + 3, 1, cut.get_center().y)))
+	check(not wall.is_empty(), "the cutting bay has walls")

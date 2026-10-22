@@ -407,7 +407,14 @@ func _build_cockpit() -> void:
 				Vector3(0, top * 0.5, (Z_COCKPIT + 0.06 + front) * 0.5)), floor_mat, "", null, false)
 		kit.add(PartShapes.box(Vector3(step.x, 0.012, 0.02)), Transform3D(Basis(), Vector3(0, top - 0.006, front - 0.01)),
 				edge_glow, "", null, false)
+	var before := get_child_count()
 	fittings.append(ShipParts.console(kit, Transform3D(Basis(), Vector3(0, DECK_UP, -4.78)), 2.7, 0.5))
+	# The console's shell panel stands 0.6 mm proud of its slope's tall face, but ShipKit's
+	# inset thins it back to flush and it flickered: a millimetre further out (+Z).
+	for i in range(before, get_child_count()):
+		var mi := get_child(i) as MeshInstance3D
+		if mi and mi.get_aabb().size.is_equal_approx(Vector3(2.6, 0.468, 0.04)):
+			mi.position.z += 0.001
 	_tilted_screen(Vector3(-0.85, DECK_UP + 0.92, -5.06), 30.0, Vector2(0.7, 0.42),
 			"FLIGHT\nVEL   0.0 m/s\nDAMP  ON\nBAY   CRADLED", ShipParts.SCREEN)
 	_tilted_screen(Vector3(0, DECK_UP + 0.94, -5.06), 30.0, Vector2(0.62, 0.38), "NAV\n\n  BSX LTD YARD\n  BAY 1", Color(0.4, 1.0, 0.55))

@@ -21,6 +21,8 @@ const TrolleyFleet := preload("res://modules/ship_bay/internal/yard/trolley_flee
 const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
+const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
+const Transporters := preload("res://modules/ship_bay/internal/yard/transporters.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
 	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
@@ -97,6 +99,13 @@ const VIEWS := {
 	# Dock 1 and the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
 	"launch_towers": [Vector3(72, 2.0, 40), Vector3(150, 32, -450)],
+	# The apron (with "ship_bay.apron"): the whole of it, the pad's hulk, the holding lane,
+	# the cutting bay and the scrap lane.
+	"apron_overview": [Vector3(30, 70, 200), Vector3(25, 0, 80)],
+	"pad": [Vector3(18, 6, 112), Vector3(0, 3, 90)],
+	"holding": [Vector3(115, 9, 140), Vector3(148, 1.5, 92)],
+	"cutting_bay": [Vector3(-80, 7, 46), Vector3(-95, 4, 10)],
+	"scrap_lane": [Vector3(-76, 6, -2), Vector3(-96, 1, -18)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)
@@ -166,6 +175,12 @@ var _bus: ShipBayBus
 var trolleys: Node3D
 ## The city round the yard (YardCity).
 var city: Node3D
+## The apron's pad, docks and holding lane and the scrap end (apron.gd), with
+## "ship_bay.apron" on; else null.
+var apron: Node3D
+## The dolly and the crawler and who drives them (transporters.gd), with "ship_bay.dolly"
+## and the apron on; else null.
+var transporters: Node3D
 
 
 func _ready() -> void:
@@ -197,6 +212,10 @@ func _ready() -> void:
 	_build_crane()
 	_build_dock()
 	_build_outside()
+	if Flags.is_on("ship_bay.apron"):
+		apron = Apron.new()
+		add_child(apron)
+		apron.call("build", self)
 	city = City.new()
 	add_child(city)
 	_build_night_lights()
@@ -212,6 +231,10 @@ func _ready() -> void:
 	trolleys = TrolleyFleet.new()
 	trolleys.set("yard", self)
 	add_child(trolleys)
+	if apron and Flags.is_on("ship_bay.dolly"):
+		transporters = Transporters.new()
+		transporters.set("yard", self)
+		add_child(transporters)
 	view_camera = Camera3D.new()
 	view_camera.name = "ViewCamera"
 	view_camera.far = 6000.0
@@ -447,8 +470,13 @@ func _build_planet() -> void:
 	ground.material_override = _surface(_paint(Color(0.4, 0.26, 0.18), 0.0, 1.0), "ground")
 	add_child(ground)
 	_collide(Vector3(0, -0.5, 0), Vector3(4000, 1.0, 4000))
-	_block(Vector3(0, -0.01, 56), Vector3(90, 0.04, 64), _concrete, false)
-	_slab_joints(Rect2(-45, 24.5, 90, 63.5), 0.0)
+	if Flags.is_on("ship_bay.apron"):
+		# The front strip; the Apron lays the rest from z = 35.
+		_block(Vector3(0, -0.01, 29.75), Vector3(90, 0.04, 10.5), _concrete, false)
+		_slab_joints(Rect2(-45, 24.5, 90, 10.5), 0.0)
+	else:
+		_block(Vector3(0, -0.01, 56), Vector3(90, 0.04, 64), _concrete, false)
+		_slab_joints(Rect2(-45, 24.5, 90, 63.5), 0.0)
 	_block(Vector3(-62, -0.01, 0), Vector3(24, 0.03, 40), _surface(_paint(Color(0.24, 0.24, 0.25), 0.0, 0.9, "rubber_tread"), "asphalt"), false)
 	_block(Vector3(-110, -0.01, 30), Vector3(130, 0.03, 9), _surface(_paint(Color(0.2, 0.2, 0.21), 0.0, 0.9, "rubber_tread"), "asphalt"), false)
 	var line := _paint(Color(0.9, 0.85, 0.7), 0.0, 0.8)
@@ -1539,8 +1567,10 @@ func _build_outside() -> void:
 	var stud := _box(Vector3(0.3, 0.04, 0.3))
 	var lit := _glow_mat(Color(1.0, 0.85, 0.5), 3.0)
 	var z := 30.0
+	var pad_edge := 56.0 if Flags.is_on("ship_bay.apron") else 86.0
 	while z < 86.0:
-		_put(stud, _at(Vector3(0, 0.02, z)), lit, false)
+		if z < pad_edge:
+			_put(stud, _at(Vector3(0, 0.02, z)), lit, false)
 		for x: float in [-40.0, 40.0]:
 			_put(stud, _at(Vector3(x, 0.02, z)), _glow_mat(Color(0.4, 0.86, 1.0), 3.0), false)
 		z += 4.0
