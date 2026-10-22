@@ -294,6 +294,10 @@ func cycle_tool(step: int) -> void:
 func wheel(step: int) -> void:
 	if _pressed and _pressed.turn_held(step, turn_snap):
 		return
+	# The beam keeps hold after you let go of the button (beenster, 0.3.14): the wheel still
+	# pulls the part in or pushes it out rather than changing tools.
+	if _pressed == null and tool == &"tractor" and _focus and _focus.turn_held(step, turn_snap):
+		return
 	if _pressed == null and _focus and _focus.wheel_setting(tool, step):
 		_refresh_hud()
 		return

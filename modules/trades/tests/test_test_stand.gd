@@ -10,7 +10,7 @@ func set_walker_active(on: bool) -> void:
 	walker_active = on
 """
 const FLAGS := ["trades.test_stand", "trades.power_wrench", "trades.wire_diagram", "trades.power_riveter",
-		"trades.rivet_heat", "trades.slim_hotbar"]
+		"trades.rivet_heat", "trades.slim_hotbar", "trades.trace_weld"]
 
 
 func run_tests() -> void:
@@ -59,6 +59,24 @@ func run_tests() -> void:
 	check(not ship_bus.is_joint_tight(station.points[b].joint_id), "Ship and Bay never hears of it")
 	check(reported.is_empty(), "nor does Quality")
 	check(rig._hint_label.text.contains("in at"), "the hint says how tight: %s" % rig._hint_label.text)
+	station.update(0.0)
+	check(station._marker.material_override == station._ring_tight, "the aim ring goes green when it's torqued")
+
+	# Undo it again: the ring goes orange and the bolt drops out and falls.
+	var pops := rig.sparks.pop_count()
+	(rig.tool_node(&"torque_wrench") as TradesPowerWrench).undo = true
+	station.back_out(&"torque_wrench")
+	_run(station, TradesShipJoints.RUN_S * 1.2)
+	station.release()
+	station.update(0.0)
+	check(not station.is_tight(station.points[b]), "undo takes it out")
+	check(rig.sparks.pop_count() == pops + 1, "the bolt drops out (%d falling)" % rig.sparks.pop_count())
+	check(station._marker.material_override == station._ring_loose, "and the aim ring goes orange")
+	(rig.tool_node(&"torque_wrench") as TradesPowerWrench).undo = false
+	station.press(&"torque_wrench")
+	station._stall_at = -1.0
+	_run(station, TradesShipJoints.RUN_S * 1.2)
+	station.release()
 
 	# The slim hotbar (beenster, 22 Oct): no drill, crimper or cutter.
 	check(not rig.hotbar.has(&"drill") and not rig.hotbar.has(&"wire_tool") and not rig.hotbar.has(&"cutter")
@@ -81,7 +99,15 @@ func run_tests() -> void:
 	(rig.tool_node(&"welder") as TradesWeldTorch).unweld = false
 	station.press(&"welder")
 	_run(station, TradesShipJoints.WELD_S + 0.1)
-	check(station.is_tight(station.points[w]), "a bead welds the open seam")
+	check(not station.is_tight(station.points[w]), "holding the arc on one spot doesn't weld the seam")
+	check(station.trace_progress(station.points[w]) < 0.5, "it only covers that stretch")
+	var at := station.points_world[w]
+	for k in 41:
+		rig.worker.face(at + Vector3.RIGHT * (0.5 * (k / 40.0 - 0.5)))
+		station.update(0.05)
+	check(station.is_tight(station.points[w]), "tracing the arc along the seam welds it")
+	check(station.hot_beads() > 0, "the fresh bead glows orange")
+	station.release()
 
 	# The fuel plug pushes home; the power plug opens the wiring tool.
 	var fuel := _find(station, "fuel")

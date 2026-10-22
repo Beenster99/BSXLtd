@@ -18,6 +18,8 @@ func run_tests() -> void:
 	var was_helmet := Flags.is_on("trades.weld_helmet")
 	Flags.set_flag("trades.unweld", true)
 	Flags.set_flag("trades.weld_helmet", true)
+	var was_trace := Flags.is_on("trades.trace_weld")
+	Flags.set_flag("trades.trace_weld", true)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)
@@ -52,8 +54,11 @@ func run_tests() -> void:
 	check(view.size() == 1 and (view[0] as TradesWeldingView).visible and (view[0] as TradesWeldingView).down > 0.9,
 			"first person: you look out through its letterbox")
 	check(rig.sparks.count() > 20, "a shower of sparks (%d)" % rig.sparks.count())
-	_run(rig, station, TradesShipJoints.CUT_S)
-	check(not ship_bus.is_joint_tight(f.joint_id), "the weld is cut out")
+	_run(rig, station, 0.5)
+	check(ship_bus.is_joint_tight(f.joint_id), "holding still on one spot doesn't cut it out")
+	_sweep(rig, station, i)
+	check(not ship_bus.is_joint_tight(f.joint_id), "tracing the arc along the seam cuts it out")
+	check(station.hot_beads() > 0, "and the cut glows orange (%d)" % station.hot_beads())
 	_run(rig, station, 1.0)
 	check(rig.helmet_down() == 0.0 and not (view[0] as TradesWeldingView).visible, "arc out: the shield lifts")
 
@@ -61,8 +66,10 @@ func run_tests() -> void:
 	rig._on_action(TradesBus.KEY_MODE)
 	check(not torch.unweld, "and back to weld")
 	station.press(&"welder")
-	_run(rig, station, TradesShipJoints.WELD_S + 0.1)
-	check(ship_bus.is_joint_tight(f.joint_id), "weld mode lays it again")
+	_sweep(rig, station, i)
+	check(ship_bus.is_joint_tight(f.joint_id), "weld mode lays it again, traced along the seam")
+	_run(rig, station, TradesShipJoints.BEAD_COOL_S + 0.5)
+	check(station.hot_beads() == 0, "and the bead cools")
 
 	# Sparks fall under gravity, bounce off the floor and fade away.
 	var test_sparks := TradesSparks.new()
@@ -87,6 +94,18 @@ func run_tests() -> void:
 	for k in 90:
 		test_sparks._physics_process(1.0 / 60.0)
 	check(test_sparks.count() == 0, "and fades away")
+	# Bolts and rivet heads that come out (beenster, 0.3.14): they fall, at most 100 at once,
+	# gone in 15 s.
+	var bolt := BoxMesh.new()
+	for k in TradesSparks.POP_MAX + 5:
+		test_sparks.pop(Vector3(100, 0.5, 0), Vector3.ZERO, bolt, null)
+	check(test_sparks.pop_count() == TradesSparks.POP_MAX, "no more than %d bits down at once" % TradesSparks.POP_MAX)
+	for k in 60:
+		test_sparks._physics_process(1.0 / 60.0)
+	check(test_sparks.pop_positions()[0].y < 0.2, "a dropped bolt falls to the floor")
+	for k in int(TradesSparks.POP_LIFE_S * 60) + 10:
+		test_sparks._physics_process(1.0 / 60.0)
+	check(test_sparks.pop_count() == 0, "and is gone after %d s" % TradesSparks.POP_LIFE_S)
 	test_sparks.queue_free()
 	floor_body.queue_free()
 
@@ -101,6 +120,7 @@ func run_tests() -> void:
 	await frames(1)
 	Flags.set_flag("trades.unweld", was_unweld)
 	Flags.set_flag("trades.weld_helmet", was_helmet)
+	Flags.set_flag("trades.trace_weld", was_trace)
 
 
 ## Runs the station and the bay's shield together, as frames would.
@@ -110,6 +130,17 @@ func _run(rig: TradesBay, station: TradesShipJoints, seconds: float) -> void:
 		station.update(minf(0.05, left))
 		rig.update_helmet(minf(0.05, left))
 		left -= 0.05
+
+
+## Runs the aim along a weld's seam from end to end, as a player tracing it would.
+func _sweep(rig: TradesBay, station: TradesShipJoints, i: int) -> void:
+	var f := station.points[i]
+	var at := station.points_world[i]
+	var along := station.ship_xform.basis * f.seam_up
+	for k in 41:
+		rig.worker.face(at + along * (f.seam_size.x * (k / 40.0 - 0.5)))
+		station.update(0.05)
+		rig.update_helmet(0.05)
 
 
 func _first(station: TradesShipJoints, kind: String) -> int:

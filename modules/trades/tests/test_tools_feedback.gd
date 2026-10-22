@@ -18,6 +18,9 @@ func run_tests() -> void:
 	for flag: String in ["trades.tractor", "trades.sphere_hands", "trades.tool_panel", "trades.tool_display", "trades.inspect", "trades.unweld"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# Held still on a weld (tracing is test_welder_helmet's).
+	saved["trades.trace_weld"] = Flags.is_on("trades.trace_weld")
+	Flags.set_flag("trades.trace_weld", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)
