@@ -53,7 +53,9 @@ func run_tests() -> void:
 	var second := bus.place_market_order([{"listing_id": picks[1].id, "qty": 1}])
 	check(first.is_ok() and second.is_ok(), "two orders placed")
 	check(orders.shown_deliveries().size() == 2, "both are on order")
+	books.set("instant_deliveries", true)
 	books.call("deliver_now")
+	books.set("instant_deliveries", false)
 	check(orders.shown_deliveries().is_empty(), "then nothing is on order")
 	orders.deliveries = "delivered"
 	check(orders.shown_deliveries().size() == 2, "and both show as delivered")
