@@ -14,6 +14,12 @@ signal snapped
 
 ## Where the hand sits on its mount, in the mount's space.
 const REST := Vector3(0.0, 0.0, 0.0)
+## First person, the forearm comes up into view from here to the hand (the mount's space,
+## right hand; the left mirrors x), so the hands are never floating on their own (beenster,
+## 22 Oct: "please join the hands to the arms"). Flag "trades.forearms".
+const FOREARM_FROM := Vector3(0.16, -0.24, 0.22)
+## The forearm is this much thicker than the stretchy sleeve.
+const FOREARM_THICK := 1.9
 ## The stand-in ball hand's radius (metres).
 const SPHERE_R := 0.042
 
@@ -192,18 +198,24 @@ func _process(delta: float) -> void:
 		f.rotation.x = -_grip * 1.2
 	if held:
 		held.global_position = _glove.global_transform * Vector3(0, -0.02, -0.06)
-	var elbow := arm_root.is_finite()
-	_draw_sleeve(arm_root if elbow else rest.origin, _glove.global_transform * Vector3(0, 0, 0.08), 1.0 if elbow else eased)
+	var wrist := _glove.global_transform * Vector3(0, 0, 0.08)
+	if arm_root.is_finite():
+		_draw_sleeve(arm_root, wrist, 1.0)
+	elif Flags.is_on("trades.forearms"):
+		var from := FOREARM_FROM * Vector3(-1.0 if left else 1.0, 1.0, 1.0)
+		_draw_sleeve(rest * from, wrist, 1.0, FOREARM_THICK)
+	else:
+		_draw_sleeve(rest.origin, wrist, eased)
 
 
-func _draw_sleeve(a: Vector3, b: Vector3, eased: float) -> void:
+func _draw_sleeve(a: Vector3, b: Vector3, eased: float, thick := 1.0) -> void:
 	var length := a.distance_to(b)
 	_sleeve.visible = eased > 0.0 and length > 0.06 and visible
 	if not _sleeve.visible:
 		return
 	var along := (b - a) / length
 	var side := along.cross(Vector3.UP if absf(along.y) < 0.95 else Vector3.RIGHT).normalized()
-	_sleeve.global_transform = Transform3D(Basis(side, along, side.cross(along)).scaled_local(Vector3(1.0, length, 1.0)), (a + b) * 0.5)
+	_sleeve.global_transform = Transform3D(Basis(side, along, side.cross(along)).scaled_local(Vector3(thick, length, thick)), (a + b) * 0.5)
 	var warn := smoothstep(0.6, 1.0, tension()) if out else 0.0
 	_sleeve_mat.emission = Color(1.0, 0.55, 0.1).lerp(Color(1.0, 0.1, 0.05), smoothstep(0.85, 1.0, tension())) * warn
 	_sleeve_mat.emission_energy_multiplier = 1.5 * warn
