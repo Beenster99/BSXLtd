@@ -78,6 +78,10 @@ func register_module() -> void:
 			if Flags.is_on("trades.inspect"):
 				Shots.register("tools_inspect_part", ShipBayBus.SHIPYARD_SCENE,
 						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_inspect"), 40)
+			if Flags.is_on("trades.test_stand"):
+				for third: bool in [false, true]:
+					Shots.register("tools_test_stand%s" % ("_third_person" if third else ""), ShipBayBus.SHIPYARD_SCENE,
+							func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_test_stand", third), 40)
 			if Flags.is_on("trades.tractor"):
 				Shots.register("tools_tractor_lifting_engine", ShipBayBus.SHIPYARD_SCENE,
 						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_tractor", true), 40)
