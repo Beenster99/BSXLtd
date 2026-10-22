@@ -12,7 +12,7 @@ static func to_save(job: ContractJob) -> Dictionary:
 		installs[id] = {"component": r.component.to_dict() if r.component else {},
 				"serial": r.serial, "source": r.source, "quality": r.quality,
 				"joints": r.joints, "defects": r.defects}
-	return {"order": job.order.raw, "state": job.state, "change_status": job.change_status,
+	return {"order": job.order.raw, "state": job.state, "expires": job.expires, "change_status": job.change_status,
 			"installs": installs, "removals": job.removals, "recoveries": job.recoveries, "variations": job.variations,
 			"signed_by": job.signed_by, "tests": job.tests, "open_snags": job.open_snags,
 			"completed_at": job.completed_at}
@@ -29,6 +29,7 @@ static func from_save(d: Dictionary, errors: PackedStringArray) -> ContractJob:
 	job.job_id = order.contract_id
 	job.order = order
 	job.state = String(d.get("state", ContractJob.OFFERED))
+	job.expires = int(d.get("expires", -1))
 	job.change_status = d.get("change_status", {})
 	for id: String in d.get("installs", {}):
 		var s: Dictionary = d["installs"][id]

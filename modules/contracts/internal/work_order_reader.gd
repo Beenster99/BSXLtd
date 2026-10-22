@@ -45,6 +45,7 @@ func read(src: Dictionary) -> WorkOrder:
 	o.raw = d
 	o.contract_id = _text(d, "contract_id", "")
 	o.issued_at = _text(d, "issued_at", "")
+	o.title = String(d.get("title", ""))
 
 	o.client = _dict(d, "client", "")
 	_text(o.client, "company", "client")

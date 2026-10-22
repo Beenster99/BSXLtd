@@ -12,6 +12,7 @@ flags = {
 "contracts": true,
 "contracts.board": true,
 "contracts.kinds": true,
+"contracts.clients": true,
 "core": true,
 "graphics": true,
 "graphics.gi": true,

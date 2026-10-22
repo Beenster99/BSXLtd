@@ -25,6 +25,8 @@ const SUBJECT_TYPES: PackedStringArray = ["ship", "wreck", "part"]
 const WANT_TYPES: PackedStringArray = ["part", "material", "condition", "gone"]
 
 @export var contract_id := ""
+## A title for the board, when the file gives one; else the board makes one from the job.
+@export var title := ""
 @export var issued_at := ""
 ## One of KINDS; files without one are FIT.
 @export var kind := FIT
