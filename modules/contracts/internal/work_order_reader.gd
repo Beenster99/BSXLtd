@@ -49,9 +49,16 @@ func read(src: Dictionary) -> WorkOrder:
 	o.client = _dict(d, "client", "")
 	_text(o.client, "company", "client")
 
-	var ship := _dict(d, "ship", "")
-	o.ship_id = _text(ship, "ship_id", "ship")
-	o.design = _text(ship, "design", "ship")
+	o.kind = String(d.get("kind", WorkOrder.FIT))
+	if not o.kind in WorkOrder.KINDS:
+		errors.append("kind must be one of %s." % ", ".join(WorkOrder.KINDS))
+		o.kind = WorkOrder.FIT
+
+	# A fit order is about a ship; the other kinds may leave "ship" out when a part arrives.
+	var ship: Dictionary = _dict(d, "ship", "") if o.is_fit() or d.has("ship") else {}
+	if o.is_fit() or d.has("ship"):
+		o.ship_id = _text(ship, "ship_id", "ship")
+		o.design = _text(ship, "design", "ship")
 	var fit: Variant = ship.get("current_fit", [])
 	if not fit is Array:
 		errors.append("ship: current_fit must be a list.")
@@ -68,6 +75,18 @@ func read(src: Dictionary) -> WorkOrder:
 			errors.append("%s: condition must be between 0 and 1." % where)
 			condition = 1.0
 		o.current_fit.append({"slot": _text(f, "slot", where), "component": ref, "condition": float(condition)})
+
+	_read_subject(d, o)
+	_read_wants(d, o)
+	o.keeps = String(d.get("keeps", "client" if o.kind in [WorkOrder.FIT, WorkOrder.REFURBISH] else "bsx"))
+	if not o.keeps in ["bsx", "client"]:
+		errors.append("keeps must be bsx or client.")
+	var hazards: Variant = d.get("hazards", [])
+	if hazards is Array:
+		for h: Variant in hazards:
+			o.hazards.append(String(h))
+	else:
+		errors.append("hazards must be a list.")
 
 	_read_changes(d, o)
 	_read_manifest(d, o)
@@ -92,9 +111,83 @@ func read(src: Dictionary) -> WorkOrder:
 	return o if errors.is_empty() else null
 
 
+## What arrives. A FIT order without one is its ship; every other kind must say.
+func _read_subject(d: Dictionary, o: WorkOrder) -> void:
+	var src: Variant = d.get("subject")
+	if src == null:
+		if o.is_fit():
+			o.subject = {"type": "ship", "design": o.design}
+		else:
+			errors.append("a %s order needs a subject (what arrives at the yard)." % o.kind)
+		return
+	if not src is Dictionary:
+		errors.append("subject must be an object.")
+		return
+	var type := String(src.get("type", ""))
+	if not type in WorkOrder.SUBJECT_TYPES:
+		errors.append("subject.type must be one of %s." % ", ".join(WorkOrder.SUBJECT_TYPES))
+		return
+	var subject := {"type": type}
+	if type == "part":
+		subject["component"] = _component(src.get("component"), "subject.component")
+	else:
+		subject["design"] = String(src.get("design", o.design))
+		if src.has("file"):
+			subject["file"] = String(src.get("file"))
+	subject["condition"] = _fraction(src.get("condition", 1.0), "subject.condition")
+	subject["mass_kg"] = float(src.get("mass_kg", 0.0)) if src.get("mass_kg") is float or src.get("mass_kg") is int else 0.0
+	o.subject = subject
+
+
+## What comes back. Optional for FIT (the changes say); every other kind needs a line.
+func _read_wants(d: Dictionary, o: WorkOrder) -> void:
+	var list: Variant = d.get("wants", [])
+	if not list is Array:
+		errors.append("wants must be a list.")
+		return
+	if list.is_empty() and not o.is_fit():
+		errors.append("a %s order needs at least one wants line (what comes back)." % o.kind)
+		return
+	for i in list.size():
+		var where := "wants[%d]" % i
+		var w: Variant = list[i]
+		if not w is Dictionary:
+			errors.append("%s must be an object." % where)
+			continue
+		var what := String(w.get("what", ""))
+		if not what in WorkOrder.WANT_TYPES:
+			errors.append("%s: what must be one of %s." % [where, ", ".join(WorkOrder.WANT_TYPES)])
+			continue
+		var want := {"what": what}
+		match what:
+			"part":
+				want["component"] = _component(w.get("component"), where + ".component")
+				want["qty"] = _whole(w.get("qty", 1))
+				if want["qty"] < 1:
+					errors.append("%s: qty must be a whole number from 1." % where)
+				want["min_condition"] = _fraction(w.get("min_condition", 0.0), where + ".min_condition")
+			"material":
+				want["material"] = _text(w, "material", where)
+				want["kg"] = float(w.get("kg", 0.0)) if w.get("kg") is float or w.get("kg") is int else 0.0
+				if want["kg"] <= 0.0:
+					errors.append("%s: kg must be above 0." % where)
+			"condition":
+				want["min_condition"] = _fraction(w.get("min_condition", 1.0), where + ".min_condition")
+			"gone":
+				pass
+		o.wants.append(want)
+
+
+func _fraction(v: Variant, where: String) -> float:
+	if not (v is float or v is int) or v < 0.0 or v > 1.0:
+		errors.append("%s must be between 0 and 1." % where)
+		return 1.0
+	return float(v)
+
+
 func _read_changes(d: Dictionary, o: WorkOrder) -> void:
-	var list: Variant = d.get("changes")
-	if not list is Array or list.is_empty():
+	var list: Variant = d.get("changes", [])
+	if not list is Array or (list.is_empty() and o.is_fit()):
 		errors.append("changes must be a list with at least one change.")
 		return
 	for i in list.size():

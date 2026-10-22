@@ -1,0 +1,47 @@
+{
+  "schema": "bsx.work_order",
+  "schema_version": 1,
+  "contract_id": "hesper_line.sr303",
+  "issued_at": "2026-10-21T12:00:00Z",
+  "kind": "refurbish",
+  "client": {
+    "company": "hesper_line",
+    "display_name": "Hesper Line",
+    "game": "bsx_generated"
+  },
+  "subject": {
+    "type": "part",
+    "component": {
+      "id": "MainThruster",
+      "material": "alloy"
+    },
+    "condition": 0.45,
+    "mass_kg": 9500
+  },
+  "wants": [
+    {
+      "what": "condition",
+      "min_condition": 0.9
+    }
+  ],
+  "keeps": "client",
+  "hazards": [
+    "power"
+  ],
+  "manifest": [],
+  "spec_sheet": {
+    "library": true,
+    "overrides": []
+  },
+  "notes": [
+    {
+      "text": "Liner's number two thruster. Scorched nozzle, worn bearings. Bring it back to 90 per cent and we have a liner back on the run."
+    }
+  ],
+  "commercial": {
+    "price": 7800,
+    "currency": "cr",
+    "deposit_pct": 30,
+    "due_day": 12
+  }
+}

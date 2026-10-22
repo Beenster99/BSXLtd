@@ -1,0 +1,46 @@
+{
+  "schema": "bsx.work_order",
+  "schema_version": 1,
+  "contract_id": "kettle_rock.ss304",
+  "issued_at": "2026-10-21T14:00:00Z",
+  "kind": "scrap",
+  "client": {
+    "company": "kettle_rock",
+    "display_name": "Kettle Rock Co-op",
+    "game": "void_salvage"
+  },
+  "subject": {
+    "type": "part",
+    "component": {
+      "id": "HullPlating",
+      "material": "alloy"
+    },
+    "condition": 0.2,
+    "mass_kg": 12000
+  },
+  "wants": [
+    {
+      "what": "material",
+      "material": "alloy",
+      "kg": 8000
+    }
+  ],
+  "keeps": "bsx",
+  "hazards": [],
+  "manifest": [],
+  "spec_sheet": {
+    "library": true,
+    "overrides": []
+  },
+  "notes": [
+    {
+      "text": "Twelve tonnes of bent alloy skin off the slag heap. Press us eight tonnes of clean alloy; the rest is yours for the trouble."
+    }
+  ],
+  "commercial": {
+    "price": 3100,
+    "currency": "cr",
+    "deposit_pct": 30,
+    "due_day": 9
+  }
+}

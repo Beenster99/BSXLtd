@@ -23,6 +23,14 @@ signal contract_accepted(contract_id: String, value: int, due_day: int)
 signal contract_handed_over(contract_id: String, quality: float, open_snags: int)
 signal contract_cancelled(contract_id: String, by_client: bool)
 signal job_closed(job_id: String)
+## The scrapyard loop (plan stage S1). A non-fit job's subject is on its way once the job
+## is accepted: Ship and Bay lands it (a part on a delivery trolley at the bench, later a
+## hulk on the apron) and calls subject_landed(). subject: {type ("part", "ship", "wreck"),
+## component ({id, material}, for a part), condition (0 to 1), mass_kg, design}.
+signal subject_due(job_id: String, subject: Dictionary)
+## Something came out of a job's subject (record_recovery / record_scrap): Business and
+## Progression read job.recoveries. line: the recovery as appended to it.
+signal recovery_recorded(job_id: String, line: Dictionary)
 
 const SAVE_VERSION := 1
 const NO_DUE_DAY := 1_000_000
@@ -34,6 +42,8 @@ const BoardPanel := preload("res://modules/contracts/internal/board_panel.gd")
 ## Work orders on offer when a game starts: Void Salvage crews' and local yards' jobs.
 const BOARD_DIR := "res://modules/contracts/data/board"
 const BOARD_CHANNEL := "contracts.board"
+## Break, scrap, refurbish and dispose jobs (plan stage S1); off, the board offers fit jobs only.
+const KINDS_FLAG := "contracts.kinds"
 ## The contracts board's tabs (board()).
 const VOID_SALVAGE := "void_salvage"
 const LOCAL := "local"
@@ -180,19 +190,43 @@ func seed_board() -> void:
 		var parsed: Variant = JSON.parse_string(text)
 		if parsed is Dictionary and _jobs.has(String(parsed.get("contract_id", ""))):
 			continue
+		if parsed is Dictionary and String(parsed.get("kind", WorkOrder.FIT)) != WorkOrder.FIT \
+				and not Flags.is_on(KINDS_FLAG):
+			continue
 		var result := import_text(text)
 		if not result.ok():
 			push_warning("Contracts: board offer %s: %s" % [file, "; ".join(result.errors)])
 
 
 ## The board's ACCEPT JOB: takes an offered job on, and makes it the active job if there
-## is none.
+## is none. A non-fit job's subject sets off at once: the job goes to arriving and
+## subject_due tells Ship and Bay what to land.
 func accept(job_id: String) -> bool:
 	if not advance(job_id, ContractJob.ACCEPTED):
 		return false
 	if get_active_job() == null:
 		set_active_job(job_id)
+	var job := get_job(job_id)
+	if not job.order.is_fit() and advance(job_id, ContractJob.ARRIVING):
+		subject_due.emit(job_id, subject_of(job))
 	return true
+
+
+## The subject as Ship and Bay lands it (see subject_due).
+static func subject_of(job: ContractJob) -> Dictionary:
+	var s := job.order.subject.duplicate()
+	if s.get("component") is ComponentRef:
+		s["component"] = (s["component"] as ComponentRef).to_dict()
+	return s
+
+
+## Ship and Bay: the job's subject is in the yard (on the bench, in a dock). The job is
+## ready to start.
+func subject_landed(job_id: String) -> bool:
+	var job := get_job(job_id)
+	if job == null or job.state != ContractJob.ARRIVING:
+		return false
+	return advance(job_id, ContractJob.PARTS_READY)
 
 
 # Changing jobs
@@ -207,6 +241,8 @@ func advance(job_id: String, to_state: String, by_client := false) -> bool:
 	var skip_business := from_state == ContractJob.OFFERED and to_state == ContractJob.PARTS_READY \
 			and not Modules.is_loaded("business")
 	if not skip_business and not ContractJob.can_move(from_state, to_state):
+		return false
+	if to_state == ContractJob.HANDED_OVER and not job.missing_wants().is_empty():
 		return false
 	job.state = to_state
 	if to_state == ContractJob.IN_PROGRESS and from_state == ContractJob.INSPECTION:
@@ -230,7 +266,8 @@ func _emit_milestone(job: ContractJob, to_state: String, by_client: bool) -> voi
 			var c := job.order.commercial
 			contract_accepted.emit(job.job_id, int(c.get("price", 0)), int(c.get("due_day", NO_DUE_DAY)))
 		ContractJob.HANDED_OVER:
-			contract_handed_over.emit(job.job_id, job.mean_quality(), job.open_snags)
+			var quality := job.mean_quality() if job.order.is_fit() else job.returned_condition()
+			contract_handed_over.emit(job.job_id, quality, job.open_snags)
 		ContractJob.CANCELLED:
 			contract_cancelled.emit(job.job_id, by_client)
 		ContractJob.CLOSED:
@@ -263,6 +300,32 @@ func record_removal(job_id: String, change_id: String, condition: float, disposi
 	if c == null or not c.needs_removal():
 		return
 	job.removals[change_id] = {"condition": clampf(condition, 0.0, 1.0), "disposition": disposition}
+
+
+## Ship and Bay: a part came out of a non-fit job's subject (break, refurbish: the subject
+## itself going back). disposition: "returned" to the client, "kept" by BSX, "scrapped",
+## "destroyed". False for a fit job or an unknown one.
+func record_recovery(job_id: String, component: ComponentRef, condition: float, disposition := "returned", kg := 0.0) -> bool:
+	var job := get_job(job_id)
+	if job == null or job.order.is_fit() or component == null:
+		return false
+	var line := {"component": component.to_dict(), "kg": kg, "condition": clampf(condition, 0.0, 1.0),
+			"disposition": disposition}
+	job.recoveries.append(line)
+	recovery_recorded.emit(job_id, line)
+	return true
+
+
+## Ship and Bay: kilograms of a material cut out of a non-fit job's subject (scrap), or the
+## subject gone (dispose: disposition "destroyed").
+func record_scrap(job_id: String, material: String, kg: float, disposition := "kept") -> bool:
+	var job := get_job(job_id)
+	if job == null or job.order.is_fit() or kg < 0.0:
+		return false
+	var line := {"material": material, "kg": kg, "condition": 0.0, "disposition": disposition}
+	job.recoveries.append(line)
+	recovery_recorded.emit(job_id, line)
+	return true
 
 
 ## Quality: a commissioning test result.
@@ -298,7 +361,9 @@ func raise_variation(job_id: String, description: String, price_delta := 0.0) ->
 ## install record yet.
 func as_built(job_id: String) -> Dictionary:
 	var job := get_job(job_id)
-	if job == null or job.state != ContractJob.HANDED_OVER or not job.missing_installs().is_empty():
+	if job == null or job.state != ContractJob.HANDED_OVER:
+		return {}
+	if job.order.is_fit() and not job.missing_installs().is_empty():
 		return {}
 	if job.completed_at == "":
 		job.completed_at = Time.get_datetime_string_from_system(true) + "Z"
