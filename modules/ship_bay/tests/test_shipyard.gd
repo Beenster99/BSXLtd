@@ -56,8 +56,8 @@ func run_tests() -> void:
 	var space := yard.get_world_3d().direct_space_state
 	for path: Array in [["apron to bay", Vector3(0, 1, 40), Vector3(0, 1, 12)],
 			["bay to deliveries", Vector3(-20, 1, 0), Vector3(-36, 1, 0)],
-			["deliveries to stock", Vector3(-39, 1, -18), Vector3(-39, 1, -30)],
-			["stock to prep", Vector3(-6, 1, -35), Vector3(6, 1, -35)],
+			["deliveries to stock", Vector3(-39, 1, -18), Vector3(-39, 1, -28.5)],
+			["stock to prep", Vector3(-2.0, 1, -35), Vector3(6, 1, -35)],
 			["prep to pre-assembly", Vector3(39, 1, -28), Vector3(39, 1, -18)],
 			["pre-assembly to bay", Vector3(36, 1, 0), Vector3(20, 1, 0)],
 			["truck door", Vector3(-56, 1, -8), Vector3(-44, 1, -8)]]:
