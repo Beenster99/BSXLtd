@@ -37,6 +37,8 @@ const SCRAP := Rect2(-110, -26, 30, 22)
 ## The test hulk's place in its cradle (cradle space): the Kestrel's belly on the saddles,
 ## its saddle stations where the bay's cradles hold it.
 const HULK_OFFSET := Vector3(0, Cradle.SADDLE_TOP + 0.5, -1.2)
+## What the hulk weighs, tonnes (the Kestrel: Void Salvage's 25 t).
+const HULK_T := 25.0
 ## Scrap metals and their bale colours.
 const SCRAP_METALS := {"STEEL": Color(0.46, 0.47, 0.49), "ALLOY": Color(0.72, 0.74, 0.78),
 		"COPPER": Color(0.72, 0.42, 0.24), "TITANIUM": Color(0.56, 0.58, 0.66)}
@@ -123,6 +125,7 @@ func _build_pad() -> void:
 	hulk = KESTREL.instantiate() as Node3D
 	hulk.name = "Hulk"
 	(pad_cradle as Cradle).carry(hulk, HULK_OFFSET)
+	(pad_cradle as Cradle).load_t = HULK_T
 
 
 ## Docks 2 and 3: flat bays marked on the apron in hazard yellow with the crawler's pedestal

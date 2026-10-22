@@ -22,6 +22,7 @@ const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
+const Transporters := preload("res://modules/ship_bay/internal/yard/transporters.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
 	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
@@ -177,6 +178,9 @@ var city: Node3D
 ## The apron's pad, docks and holding lane and the scrap end (apron.gd), with
 ## "ship_bay.apron" on; else null.
 var apron: Node3D
+## The dolly and the crawler and who drives them (transporters.gd), with "ship_bay.dolly"
+## and the apron on; else null.
+var transporters: Node3D
 
 
 func _ready() -> void:
@@ -227,6 +231,10 @@ func _ready() -> void:
 	trolleys = TrolleyFleet.new()
 	trolleys.set("yard", self)
 	add_child(trolleys)
+	if apron and Flags.is_on("ship_bay.dolly"):
+		transporters = Transporters.new()
+		transporters.set("yard", self)
+		add_child(transporters)
 	view_camera = Camera3D.new()
 	view_camera.name = "ViewCamera"
 	view_camera.far = 6000.0
