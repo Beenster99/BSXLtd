@@ -21,6 +21,21 @@ extends RefCounted
 ##     collision shapes are pulled in to keep the gaps, so a part's look and collision differ.
 ## Parts keep clear gaps (the salvage model needs parts never to overlap).
 ##
+## Every part and joint it makes carries a path (PartData.path, ConnectionData.path;
+## docs/SHIP_FRAME_PLAN.md 4.7) that says what it is, built from the hull's `name`, the
+## stations' labels (never their index: an inserted station takes a new label, so nothing
+## either side of it is renamed), the profile's corners c0.. and edges e0.. (edge i from
+## corner i to corner i + 1) and an index local to its own row or face:
+##   hull/st:hold/ring/e3, hull/st:hold/node/c3, hull/bay:hold/stringer/c3 (node styles; the
+##   mitred style's spaced stringers are hull/bay:hold/stringer/e3/0), hull/bay:hold/skin/e3
+##   (/s1 for a strip an opening cuts, /t0 /t1 a twisted face's triangles),
+##   hull/bay:hold/lining/e3, hull/opening:side_door/post/0 and /rail/1 (the jambs round an
+##   opening), hull/cap/back/0, canopy/splice/hull/c4; joints add their role, what they
+##   fasten to and their place in the row: hull/st:hold/ring/e3/weld:c3,
+##   hull/bay:hold/stringer/c3/weld:aft, hull/bay:hold/skin/e3/rivet:fore:e3/1 (a bay's rings
+##   are its fore and aft, so a station inserted behind it renames nothing in it),
+##   hull/bay:hold/lining/e2/bolt:stringer:c2/0, hull/cap/back/0/rivet:ring:e3/0.
+##
 ## Profiles are in ship space (x, y), convex, points in order round the outline (either way
 ## round); every station needs the same number of points; stations go front (-Z) to back
 ## (+Z). Part names follow the test wreck's, so wreck events work on any design: FrameNode,
@@ -30,12 +45,14 @@ extends RefCounted
 const GAP: float = 0.02
 ## How a rivet row keeps clear of a plate's edge, metres (node styles).
 const ROW_MARGIN: float = 0.025
-## Rivet heads on a node style's skin: the flush bump (ConnectionData.head 1).
-const RIVET_HEAD: int = 1
+## How far a jamb's face stands outside its opening's edge, metres (0: flush with the hole).
+const JAMB_CLEAR: float = 0.0
 ## Linings deeper than this stand on brackets off the rings, metres.
 const BRACKET_FROM: float = 0.15
 
 var target: FrameTarget
+## The section's name, the first word of every path (hull, canopy, body, wing_l...).
+var name: String = "hull"
 var style_id: String
 ## The FrameStyle entry.
 var spec: Dictionary
@@ -50,10 +67,20 @@ var stringer_depth: float        # stringer depth out of the hull (node styles)
 var stringer_spacing: float      # one stringer per this much side length (mitred)
 var bead: int                    # weld head style (node styles; the wrecks set their own)
 var rivet_pitch: float           # rivets along a row (node styles)
+var bolt_pitch: float            # lining bolts along a row (node styles)
+var rivet_head: int              # the skin's rivet heads (node styles; ConnectionData.head)
+var bolt_head: int               # the linings' bolt heads (node styles)
+## Node styles: draw the members out to the skin's inner face (their collision keeps the gap
+## under it): a canopy, whose glass sits on its frame with no cavity to keep.
+var frame_to_skin: bool = false
+## Node styles: the V-groove where neighbouring skin plates and linings meet, metres (the
+## plates' outer edge bevel; 0 = they meet edge to edge in one surface, the frame builds'
+## cladding with no gaps: BaseShip.cladding_groove).
+var groove: float = FrameParts.PLATE_BEVEL
 var skin_mat: Material
 var frame_mat: Material
 var glass_mat: Material
-## Stations, front to back: {z: float, profile: PackedVector2Array}.
+## Stations, front to back: {z: float, profile: PackedVector2Array, label: String}.
 var stations: Array[Dictionary] = []
 ## Optional `style(segment, edge) -> {skip, mat, glass, tag, name}` for the face between
 ## station `segment` and the next, along profile edge `edge` (from point edge to edge + 1).
@@ -104,14 +131,24 @@ var caps_made: Array = [null, null]
 var cap_plates: Array[PartData] = []
 var welds: Array[ConnectionData] = []
 var rivets: Array[ConnectionData] = []
+## Node styles: the jambs framing the openings (posts across the face, rails along it), their
+## welds, the linings' panels (every strip) and their bolts.
+var jambs: Array[PartData] = []
+var jamb_welds: Array[ConnectionData] = []
+var lining_panels: Array[PartData] = []
+var bolts: Array[ConnectionData] = []
 ## Inner panels built with `lining`: "segment:edge" -> PartData, and how deep each one
 ## stands ({"inset", "clipped"}: a y-clipped panel stands inside the room on the deck and
 ## doesn't shape the room's outline).
 var linings: Dictionary = {}
 var lining_insets: Dictionary = {}
 
-## Openings cut through the skin (node styles): [edge, AABB (ship space)].
-var _openings: Array = []
+## Openings cut through the skin (node styles): {edge, box (ship space), name, frame (the box
+## the jambs go round), reveal}.
+var _openings: Array[Dictionary] = []
+## Paths handed out so far by `_unique` (a face lined twice gets "/1" on its second panel).
+var _named: Dictionary = {}
+var _cap_count: Array[int] = [0, 0]
 ## Node centres per station (ship space) and each node's collision half size.
 var _points: Array = []
 var _node_half: Array = []
@@ -137,6 +174,9 @@ func _init(into: FrameTarget, id: String, skin_material: Material, frame_materia
 	stringer_spacing = spec.get("stringer_spacing", 2.6)
 	bead = spec["bead"]
 	rivet_pitch = spec["rivet_pitch"]
+	bolt_pitch = spec.get("bolt_pitch", rivet_pitch)
+	rivet_head = spec.get("rivet_head", FrameStyle.FLUSH)
+	bolt_head = spec.get("bolt_head", 0)
 	lining_inset = spec["lining_inset"]
 	lining_thickness = spec["lining_thickness"]
 	skin_mat = skin_material
@@ -144,15 +184,51 @@ func _init(into: FrameTarget, id: String, skin_material: Material, frame_materia
 	glass_mat = glass_material
 
 
-func add_station(z: float, profile: PackedVector2Array) -> void:
-	stations.append({"z": z, "profile": profile})
+## Adds a station at `z` with its cross-section. `label` names it in the paths ("st<k>", its
+## index, if none: a design that may insert stations later names them).
+func add_station(z: float, profile: PackedVector2Array, label: String = "") -> void:
+	stations.append({"z": z, "profile": profile, "label": label if label != "" else "st%d" % stations.size()})
+
+
+## Station `i`'s label.
+func label(i: int) -> String:
+	return stations[i]["label"]
 
 
 ## Cuts a hole through the skin over profile edge `edge` where it meets `box` (ship space):
-## the plates of that face are split round it into strips (a doorway, a window, a hatch).
-## Node styles.
-func opening(edge: int, box: AABB) -> void:
-	_openings.append([edge, box])
+## the plates of that face (and its linings) are split round it into strips (a doorway, a
+## window, a hatch). Node styles frame it: a post across the face at each end and a rail along
+## each side (its jambs), welded to the corner stringers and to each other, the skin riveted
+## to them; a ring or a stringer standing close enough to an edge does that edge's job.
+## `opening_name` names the jambs' paths (o<k> if none); `frame` is the box the jambs stand
+## round (the hole itself if none: a sliding door's pocket makes it longer); `reveal` draws
+## the jambs that much deeper into the hull than the frame (to line the hole out to the
+## linings), metres.
+func opening(edge: int, box: AABB, opening_name: String = "", frame := AABB(), reveal: float = 0.0) -> void:
+	_openings.append({"edge": edge, "box": box, "name": opening_name if opening_name != "" else "o%d" % _openings.size(),
+			"frame": frame if frame.size != Vector3.ZERO else box, "reveal": reveal})
+
+
+## Paths: a station's ("hull/st:hold") and a bay's ("hull/bay:hold", from that station to the next).
+func _st(i: int) -> String:
+	return "%s/st:%s" % [name, label(i)]
+
+
+func _bay(i: int) -> String:
+	return "%s/bay:%s" % [name, label(i)]
+
+
+## `path`, or "<path>/<n>" if it has been handed out n times before.
+func _unique(path: String) -> String:
+	var n: int = _named.get(path, 0)
+	_named[path] = n + 1
+	return path if n == 0 else "%s/%d" % [path, n]
+
+
+static func _named_part(p: PartData, path: String) -> PartData:
+	if p:
+		p.path = path
+	return p
 
 
 func build() -> void:
@@ -169,7 +245,8 @@ func build() -> void:
 	_build_nodes()
 	_node_rings()
 	_corner_stringers()
-	target.parts_model().head_style = RIVET_HEAD
+	_frame_openings()
+	target.parts_model().head_style = rivet_head
 	_node_skin()
 	target.parts_model().head_style = was
 
@@ -250,8 +327,8 @@ static func _flat(c: PackedVector3Array, tolerance: float = 0.01) -> bool:
 
 ## Joins and keeps the joint in `into` (welds or rivets).
 func _join(into: Array[ConnectionData], a: PartData, b: PartData, kind: ConnectionData.Kind, at: Vector3,
-		normal: Vector3, seam_up := Vector3.ZERO, seam_size := Vector2.ZERO) -> ConnectionData:
-	var made := target.join(a, b, kind, at, normal, seam_up, seam_size)
+		normal: Vector3, seam_up := Vector3.ZERO, seam_size := Vector2.ZERO, path: String = "") -> ConnectionData:
+	var made := target.join(a, b, kind, at, normal, seam_up, seam_size, path)
 	into.append(made)
 	return made
 
@@ -292,7 +369,8 @@ func _mitre_rings() -> void:
 			for k in outline.size():
 				var lp := to_local * v3(outline[k], z)
 				outline[k] = Vector2(lp.x, lp.y)
-			ring.append(target.member("FrameRing", PartData.Kind.FRAME, outline, ring_width, xform, frame_mat, 0.35))
+			ring.append(_named_part(target.member("FrameRing", PartData.Kind.FRAME, outline, ring_width, xform, frame_mat, 0.35),
+					"%s/ring/e%d" % [_st(i), e]))
 		# Welds round each corner, where two members meet.
 		for e in n:
 			var m1: PartData = ring[e]
@@ -307,7 +385,7 @@ func _mitre_rings() -> void:
 			var across := depth / maxf(absf(cut.dot(edge_out(line, e))), 0.2)
 			var seam_n := (d + after).normalized()
 			target.join(m1, m2, ConnectionData.Kind.WELD, v3(q, z), Vector3(seam_n.x, seam_n.y, 0.0),
-					Vector3.BACK, Vector2(ring_width, across))
+					Vector3.BACK, Vector2(ring_width, across), "%s/weld:c%d" % [m1.path, (e + 1) % n])
 		rings.append(ring)
 
 
@@ -368,17 +446,18 @@ func _spaced_stringers() -> void:
 				var y := Vector3(out.x, out.y, 0.0)
 				y = (y - along * y.dot(along)).normalized()
 				var x := y.cross(along)
-				var s := target.box("Stringer", PartData.Kind.FRAME, Vector3(stringer_size, stringer_size, p0.distance_to(p1)),
-						Transform3D(Basis(x, y, along), (p0 + p1) * 0.5), frame_mat, 0.35)
+				var s := _named_part(target.box("Stringer", PartData.Kind.FRAME, Vector3(stringer_size, stringer_size,
+						p0.distance_to(p1)), Transform3D(Basis(x, y, along), (p0 + p1) * 0.5), frame_mat, 0.35),
+						"%s/stringer/e%d/%d" % [_bay(i), e, k])
 				if k == 0:
 					row[e] = s
 				(all_row[e] as Array).append(s)
 				if ra:
 					target.join(s, ra, ConnectionData.Kind.WELD, p0 - along * GAP * 0.5, along, y,
-							Vector2(stringer_size, stringer_size))
+							Vector2(stringer_size, stringer_size), "%s/weld:fore" % s.path)
 				if rb:
 					target.join(s, rb, ConnectionData.Kind.WELD, p1 + along * GAP * 0.5, along, y,
-							Vector2(stringer_size, stringer_size))
+							Vector2(stringer_size, stringer_size), "%s/weld:aft" % s.path)
 		stringers.append(row)
 		all_stringers.append(all_row)
 
@@ -454,11 +533,13 @@ func _mitre_skin() -> void:
 				corners = PackedVector3Array([v3(a0, zz0), v3(a1, zz0), v3(b1, zz1), v3(b0, zz1)])
 				# A twisted face (its edge turns between stations): two triangles, each held
 				# by the ring along its long side.
-				var t1 := _mitre_plate(PackedVector3Array([corners[0], corners[1], corners[2]]), o2, look, glass)
-				var t2 := _mitre_plate(PackedVector3Array([corners[0], corners[2], corners[3]]), o2, look, glass)
+				var t1 := _named_part(_mitre_plate(PackedVector3Array([corners[0], corners[1], corners[2]]), o2, look, glass),
+						"%s/skin/e%d/t0" % [_bay(i), e])
+				var t2 := _named_part(_mitre_plate(PackedVector3Array([corners[0], corners[2], corners[3]]), o2, look, glass),
+						"%s/skin/e%d/t1" % [_bay(i), e])
 				row.append(t1)
-				_fasten_edge(t1, corners[0], corners[1], rings[i][e], 1.0)
-				_fasten_edge(t2, corners[3], corners[2], rings[i + 1][e], -1.0)
+				_fasten_edge(t1, corners[0], corners[1], rings[i][e], 1.0, "fore")
+				_fasten_edge(t2, corners[3], corners[2], rings[i + 1][e], -1.0, "aft")
 				continue
 			# The flush visual: the untrimmed face, corner to corner and ring middle to
 			# ring middle, so it meets its neighbours along the seam lines.
@@ -468,7 +549,7 @@ func _mitre_skin() -> void:
 				var lb := lean * (vz1 - zb)
 				visual = PackedVector3Array([v3(pa[e] + la, vz0), v3(pa[e1] + la, vz0),
 						v3(pb[e1] + lb, vz1), v3(pb[e] + lb, vz1)])
-			var plate := _mitre_plate(corners, o2, look, glass, visual)
+			var plate := _named_part(_mitre_plate(corners, o2, look, glass, visual), "%s/skin/e%d" % [_bay(i), e])
 			row.append(plate)
 			_fasten(plate, corners, i, e, ConnectionData.Kind.RIVET, Vector3(o2.x, o2.y, 0.0))
 		plates.append(row)
@@ -541,14 +622,15 @@ func flat_plate(part_name: String, kind: PartData.Kind, c: PackedVector3Array, o
 
 ## One rivet in the middle of a triangle plate's side that lies along a ring, set in a
 ## little toward the plate (`side` +1 = toward +Z).
-func _fasten_edge(plate: PartData, p0: Vector3, p1: Vector3, ring: PartData, side: float) -> void:
+func _fasten_edge(plate: PartData, p0: Vector3, p1: Vector3, ring: PartData, side: float, end: String) -> void:
 	if ring == null:
 		return
 	var at := (p0 + p1) * 0.5 + Vector3(0, 0, side * ring_width * 0.25)
 	var n := (p1 - p0).cross(Vector3.BACK).normalized()
 	if Vector2(n.x, n.y).dot(Vector2(at.x, at.y)) < 0.0:
 		n = -n
-	target.join(plate, ring, ConnectionData.Kind.RIVET, at, n)
+	target.join(plate, ring, ConnectionData.Kind.RIVET, at, n, Vector3.ZERO, Vector2.ZERO,
+			"%s/rivet:%s/0" % [plate.path, end])
 
 
 ## Rivets a plate to the rings at both ends of its segment (or to the side's stringer where
@@ -574,8 +656,9 @@ func _fasten(plate: PartData, c: PackedVector3Array, seg: int, e: int, kind: Con
 		if row_len >= 0.7:
 			var inset := minf(0.25, row_len * 0.2) / row_len
 			spots = [inset, 1.0 - inset]
-		for t in spots:
-			target.join(plate, holder, kind, left.lerp(right, t), out)
+		for k in spots.size():
+			target.join(plate, holder, kind, left.lerp(right, spots[k]), out, Vector3.ZERO, Vector2.ZERO,
+					"%s/rivet:%s/%d" % [plate.path, "fore" if end == 0 else "aft", k])
 
 
 # --- Mitred caps ----------------------------------------------------------------------
@@ -600,7 +683,8 @@ func _mitre_caps() -> void:
 		var made := FrameParts.plate_between(pts, Vector3(0, 0, facing), skin, minf(0.012, skin * 0.4))
 		var cap_plate := target.part(look.get("name", "WindowPane" if glass else "CapPlate"),
 				PartData.Kind.GLASS if glass else PartData.Kind.HULL, made[0], made[1],
-				look.get("mat", glass_mat if glass else skin_mat))
+				look.get("mat", glass_mat if glass else skin_mat), "", 1.0, null,
+				"%s/cap/%s" % [name, "front" if end == 0 else "back"])
 		caps_made[end] = cap_plate
 		var line := centre_line(stations[s]["profile"], s)
 		for e in line.size():
@@ -608,7 +692,8 @@ func _mitre_caps() -> void:
 			if m == null:
 				continue
 			var mid := (line[e] + line[(e + 1) % line.size()]) * 0.5
-			target.join(cap_plate, m, ConnectionData.Kind.RIVET, v3(mid, face_z), Vector3(0, 0, facing))
+			target.join(cap_plate, m, ConnectionData.Kind.RIVET, v3(mid, face_z), Vector3(0, 0, facing), Vector3.ZERO,
+					Vector2.ZERO, "%s/rivet:e%d" % [cap_plate.path, e])
 
 
 # --- Mitred linings (v4) --------------------------------------------------------------
@@ -617,14 +702,14 @@ func _mitre_caps() -> void:
 ## members by `lining_inset` (or `inset`).
 func lining_line(s: int, inset: float = -1.0) -> PackedVector2Array:
 	var d_in := depth * 0.5 + GAP + (lining_inset if inset < 0.0 else inset)
-	return FrameParts.inset(centre_line(stations[s]["profile"], s), d_in)
+	return FrameParts.inset(centre_line(frame_profile(s), s), d_in)
 
 
 ## The outline the linings' room-side faces lie on at station `s` (one panel thickness
 ## further in): the room's clear section where a bay is lined all round.
 func lining_face(s: int, inset: float = -1.0) -> PackedVector2Array:
 	var d_in := depth * 0.5 + GAP + (lining_inset if inset < 0.0 else inset) + lining_thickness
-	return FrameParts.inset(centre_line(stations[s]["profile"], s), d_in)
+	return FrameParts.inset(centre_line(frame_profile(s), s), d_in)
 
 
 ## An inner panel over the frame between stations `seg` and `seg + 1` across profile edge
@@ -637,6 +722,8 @@ func lining_face(s: int, inset: float = -1.0) -> PackedVector2Array:
 ## stands on the deck (y from the floor up), or stops short of a bulkhead in its bay.
 func lining(seg: int, e: int, mat: Material, inset: float = -1.0, part_name: String = "InnerPanel",
 		y_clip := Vector2(-INF, INF), z_clip := Vector2(-INF, INF)) -> PartData:
+	if spec["corners"] != "mitre":
+		return _node_lining(seg, e, mat, inset, part_name, y_clip, z_clip)
 	var ins := lining_inset if inset < 0.0 else inset
 	var t := lining_thickness
 	var last := stations.size() - 2
@@ -674,7 +761,8 @@ func lining(seg: int, e: int, mat: Material, inset: float = -1.0, part_name: Str
 				v3(_clip_y(lb[e1], dir_b, y_clip), vz1), v3(_clip_y(lb[e], dir_b, y_clip), vz1)])
 		for i in visual.size():
 			visual[i] += inward * t
-	var panel := flat_plate(part_name, PartData.Kind.HULL, room, inward, t, mat, visual)
+	var panel := _named_part(flat_plate(part_name, PartData.Kind.HULL, room, inward, t, mat, visual),
+			_unique("%s/lining/e%d" % [_bay(seg), e]))
 	linings["%d:%d" % [seg, e]] = panel
 	lining_insets["%d:%d" % [seg, e]] = {"inset": ins, "clipped": y_clip.x > -INF or y_clip.y < INF}
 	# Held at both ends: bolted straight to the ring (a long bolt through the standoff),
@@ -694,18 +782,20 @@ func lining(seg: int, e: int, mat: Material, inset: float = -1.0, part_name: Str
 			var length := ins - GAP * 2.0
 			var mid := left.lerp(right, 0.5) - inward * (t + GAP + length * 0.5)
 			var x := (right - left).normalized()
-			var bracket := target.box("LiningBracket", PartData.Kind.FRAME, Vector3(0.1, length, 0.1),
-					Transform3D(Basis(x, inward, x.cross(inward)), mid), frame_mat, 0.6)
+			var bracket := _named_part(target.box("LiningBracket", PartData.Kind.FRAME, Vector3(0.1, length, 0.1),
+					Transform3D(Basis(x, inward, x.cross(inward)), mid), frame_mat, 0.6),
+					"%s/bracket:%s" % [panel.path, "fore" if end == 0 else "aft"])
 			target.join(bracket, ring, ConnectionData.Kind.WELD, mid - inward * (length * 0.5 + GAP * 0.5),
-					-inward, x, Vector2(0.1, 0.1))
+					-inward, x, Vector2(0.1, 0.1), "%s/weld:ring" % bracket.path)
 			holder = bracket
 		var row_len := left.distance_to(right)
 		var spots: Array[float] = [0.5]
 		if row_len >= 0.7 and holder == ring:
 			var ins_t := minf(0.25, row_len * 0.2) / row_len
 			spots = [ins_t, 1.0 - ins_t]
-		for s in spots:
-			target.join(panel, holder, ConnectionData.Kind.BOLT, left.lerp(right, s), inward)
+		for k in spots.size():
+			target.join(panel, holder, ConnectionData.Kind.BOLT, left.lerp(right, spots[k]), inward, Vector3.ZERO,
+					Vector2.ZERO, "%s/bolt:%s/%d" % [panel.path, "fore" if end == 0 else "aft", k])
 	return panel
 
 
@@ -761,11 +851,32 @@ func ring_z(i: int) -> float:
 	return z
 
 
+## The hull's outline where station `s`'s ring stands: on node styles an end ring stands in
+## from its station (`ring_z`), so on a section that tapers or flares (the canopy) it takes
+## the outline there, between its station's and the next one's, and the frame follows the
+## skin; otherwise (and on the mitred style) the station's own.
+func frame_profile(s: int) -> PackedVector2Array:
+	var here: PackedVector2Array = stations[s]["profile"]
+	if spec["corners"] == "mitre" or stations.size() < 2:
+		return here
+	var z: float = stations[s]["z"]
+	var rz := ring_z(s)
+	if absf(rz - z) < 0.0001:
+		return here
+	var o := 1 if s == 0 else s - 1
+	var there: PackedVector2Array = stations[o]["profile"]
+	var t := (rz - z) / (float(stations[o]["z"]) - z)
+	var out := PackedVector2Array()
+	for k in here.size():
+		out.append(here[k].lerp(there[k], t))
+	return out
+
+
 func _place_nodes() -> void:
 	_points.clear()
 	for i in stations.size():
 		var row: Array[Vector3] = []
-		for p in centre_line(stations[i]["profile"], i):
+		for p in centre_line(frame_profile(i), i):
 			row.append(v3(p, ring_z(i)))
 		_points.append(row)
 
@@ -833,7 +944,8 @@ func _build_nodes() -> void:
 	for i in stations.size():
 		var row: Array = []
 		var halves: Array[float] = []
-		for p: Vector3 in _points[i]:
+		for k in (_points[i] as Array).size():
+			var p: Vector3 = _points[i][k]
 			var h := _cube_room(p)
 			var shape := PartShapes.PartShape.new()
 			shape.mesh = look.mesh
@@ -842,7 +954,8 @@ func _build_nodes() -> void:
 			var box := BoxShape3D.new()
 			box.size = Vector3.ONE * h * 2.0
 			shape.collision = box
-			row.append(target.part("FrameNode", PartData.Kind.FRAME, shape, Transform3D(Basis(), p), frame_mat, "", 0.6))
+			row.append(target.part("FrameNode", PartData.Kind.FRAME, shape, Transform3D(Basis(), p), frame_mat, "", 0.6, null,
+					"%s/node/c%d" % [_st(i), k]))
 			halves.append(h)
 		nodes.append(row)
 		_node_half.append(halves)
@@ -862,7 +975,8 @@ func _node_rings() -> void:
 			var e1 := (e + 1) % n
 			row.append(_member("FrameRing", nodes[i][e], nodes[i][e1], pts[e], pts[e1], _node_half[i][e],
 					_node_half[i][e1], ((pts[e] as Vector3) + (pts[e1] as Vector3)) * 0.5 - centre,
-					Vector2(ring_width, depth), 0.0))
+					Vector2(ring_width, depth), 0.0, "%s/ring/e%d" % [_st(i), e], ["c%d" % e, "c%d" % e1],
+					"st:%s:e%d" % [label(i), e], i, e))
 		rings.append(row)
 
 
@@ -875,7 +989,8 @@ func _corner_stringers() -> void:
 			var a: Vector3 = _points[i][k]
 			var b: Vector3 = _points[i + 1][k]
 			row.append(_member("Stringer", nodes[i][k], nodes[i + 1][k], a, b, _node_half[i][k], _node_half[i + 1][k],
-					a - centre, Vector2(stringer_size, stringer_depth), ring_width * 0.5))
+					a - centre, Vector2(stringer_size, stringer_depth), ring_width * 0.5, "%s/stringer/c%d" % [_bay(i), k],
+					["fore", "aft"], "stringer:c%d" % k))
 		stringers.append(row)
 
 
@@ -884,9 +999,12 @@ func _corner_stringers() -> void:
 ## collision pulled back clear of both nodes and fitted inside the skin. A member running
 ## along the ship (a stringer, a splice) also keeps clear of the ring girders' slab either
 ## side of each node (`ring_half`: half their width). Welded to both nodes all round where it
-## meets each node's look. Null if the nodes are too close.
+## meets each node's look. Null if the nodes are too close. `path` names it, `ends` what each
+## of its welds fastens to ("c3", "fore"), `key` how a plate's rivet row over it says so; a
+## ring member gives its `station` and `edge` (a plate names it by its own bay: fore or aft).
 func _member(member_name: String, na: PartData, nb: PartData, a: Vector3, b: Vector3, ha: float, hb: float,
-		up: Vector3, section: Vector2, ring_half: float) -> PartData:
+		up: Vector3, section: Vector2, ring_half: float, path: String, ends: Array, key: String,
+		station: int = -1, edge: int = -1) -> PartData:
 	var length := a.distance_to(b)
 	var d := (b - a) / maxf(length, 0.001)
 	var ta := _setback(ha, d)
@@ -905,21 +1023,25 @@ func _member(member_name: String, na: PartData, nb: PartData, a: Vector3, b: Vec
 	var x1 := length * 0.5 - tb
 	var half := Vector2(section.y * 0.5, section.x * 0.5)   # (height, width) halves
 	var s := _fit(xform, x0, x1, half)
-	var look := PartShapes.girder(length, section.x, section.y)
+	# Drawn out to the skin (`frame_to_skin`): the look is the gap taller on its outer side, its
+	# collision where it was.
+	var lift := GAP if frame_to_skin else 0.0
+	var look := PartShapes.girder(length, section.x, section.y + lift)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = look.mesh
 	shape.recipe = look.recipe
 	shape.volume = look.volume
-	shape.collision = _box_points(Vector3(x0, -half.x * s, -half.y * s), Vector3(x1, half.x * s, half.y * s))
-	var made := target.part(member_name, PartData.Kind.FRAME, shape, xform, frame_mat, "", 0.35)
+	shape.collision = _box_points(Vector3(x0, -half.x * s - lift * 0.5, -half.y * s), Vector3(x1, half.x * s - lift * 0.5, half.y * s))
+	var made := target.part(member_name, PartData.Kind.FRAME, shape, Transform3D(xform.basis, xform.origin + xform.basis.y * lift * 0.5),
+			frame_mat, "", 0.35, null, path)
 	var seam_up := xform.basis.y
 	var fa := minf(_face_at(d), length * 0.5)
 	var fb := minf(_face_at(-d), length * 0.5)
 	var seam := Vector2(section.y, section.x)   # along seam_up (the height), across it (the width)
-	_join(welds, made, na, ConnectionData.Kind.WELD, a + d * fa, d, seam_up, seam)
-	_join(welds, made, nb, ConnectionData.Kind.WELD, b - d * fb, d, seam_up, seam)
+	_join(welds, made, na, ConnectionData.Kind.WELD, a + d * fa, d, seam_up, seam, "%s/weld:%s" % [path, ends[0]])
+	_join(welds, made, nb, ConnectionData.Kind.WELD, b - d * fb, d, seam_up, seam, "%s/weld:%s" % [path, ends[1]])
 	_members.append({"part": made, "p0": xform * Vector3(x0, 0, 0), "p1": xform * Vector3(x1, 0, 0),
-			"half": maxf(section.x, section.y) * 0.5})
+			"half": maxf(section.x, section.y) * 0.5, "key": key, "station": station, "edge": edge})
 	return made
 
 
@@ -956,8 +1078,290 @@ func splice(mine: int, other: FrameHull, theirs: int, pairs: Array) -> void:
 		var b: Vector3 = other._points[theirs][pair.y]
 		_member("FrameSplice", nodes[mine][pair.x], other.nodes[theirs][pair.y], a, b, _node_half[mine][pair.x],
 				other._node_half[theirs][pair.y], a - _ring_centre(mine), Vector2(ring_width, depth),
-				maxf(ring_width, other.ring_width) * 0.5)
+				maxf(ring_width, other.ring_width) * 0.5, "%s/splice/%s/c%d" % [name, other.name, pair.x],
+				["c%d" % pair.x, "%s:c%d" % [other.name, pair.y]], "splice:%s:c%d" % [other.name, pair.x])
 	target.parts_model().head_style = was
+
+
+# --- Node frame: jambs round the openings ---------------------------------------------
+
+func _frame_openings() -> void:
+	jambs.clear()
+	jamb_welds.clear()
+	for op: Dictionary in _openings:
+		_frame_opening(op)
+
+
+## Frames one opening (see `opening`): posts across its face at each end, welded to the corner
+## stringers, and rails along its sides between them, welded to the posts (and split at any
+## ring they cross). A ring standing within a post's reach of an end is that end's post; a
+## corner stringer within a rail's reach of a side is that side's rail. Only on a face that
+## keeps one cross-section along the opening (a prism, as the Kestrel's main hull is).
+func _frame_opening(op: Dictionary) -> void:
+	var e: int = op["edge"]
+	var fb: AABB = op["frame"]
+	var reveal: float = op["reveal"]
+	var base := "%s/opening:%s" % [name, op["name"]]
+	var key := "jamb:%s" % op["name"]
+	var last := stations.size() - 1
+	var z0 := maxf(fb.position.z, ring_z(0))
+	var z1 := minf(fb.end.z, ring_z(last))
+	if z1 - z0 < 0.05:
+		return
+	# The stations either side of it, and the face's centre line (the same at every one).
+	var s_lo := 0
+	var s_hi := last
+	for i in stations.size():
+		if float(stations[i]["z"]) <= z0:
+			s_lo = i
+	for i in range(last, -1, -1):
+		if float(stations[i]["z"]) >= z1:
+			s_hi = i
+	var line := centre_line(stations[s_lo]["profile"], s_lo)
+	var n := line.size()
+	var e1 := (e + 1) % n
+	for i in range(s_lo, s_hi + 1):
+		var other := centre_line(stations[i]["profile"], i)
+		if other[e].distance_to(line[e]) > 0.001 or other[e1].distance_to(line[e1]) > 0.001:
+			return
+	var a2 := line[e]
+	var b2 := line[e1]
+	var length := a2.distance_to(b2)
+	var u2 := (b2 - a2) / maxf(length, 0.001)
+	var o2 := edge_out(line, e)
+	var u := Vector3(u2.x, u2.y, 0.0)
+	var out := Vector3(o2.x, o2.y, 0.0)
+	var w := ring_width
+	# The hole's span across the face.
+	var sa := INF
+	var sb := -INF
+	for k in 8:
+		var p := fb.get_endpoint(k)
+		var s := (Vector2(p.x, p.y) - a2).dot(u2)
+		sa = minf(sa, s)
+		sb = maxf(sb, s)
+	# How far the corner stringers (and nodes) reach in from each end of the face.
+	var reach_a := _corner_reach(s_lo, e, u2)
+	var reach_b := _corner_reach(s_lo, e1, -u2)
+	# The posts: [z, part, half width along z, weld name], front then back.
+	var holders: Array = []
+	for end in 2:
+		var zc := z0 - w * 0.5 - JAMB_CLEAR if end == 0 else z1 + w * 0.5 + JAMB_CLEAR
+		var ring_at := _ring_near(e, zc)
+		if ring_at >= 0:
+			holders.append([ring_z(ring_at), rings[ring_at][e], ring_width * 0.5, "st:%s" % label(ring_at)])
+			continue
+		var seg := _segment_at(zc)
+		if seg < 0 or stringers[seg][e] == null or stringers[seg][e1] == null:
+			return
+		var pa := v3(a2, zc)
+		var pb := v3(b2, zc)
+		var path := "%s/post/%d" % [base, end]
+		var post := _bar("FramePost", path, pa + u * (reach_a - GAP), pb - u * (reach_b - GAP), GAP, GAP, out,
+				Vector2(w, depth), reveal, key + "/post/%d" % end)
+		if post == null:
+			return
+		_join(jamb_welds, post, stringers[seg][e], ConnectionData.Kind.WELD, pa + u * (reach_a - GAP), u, out,
+				Vector2(depth, w), "%s/weld:stringer:c%d" % [path, e])
+		_join(jamb_welds, post, stringers[seg][e1], ConnectionData.Kind.WELD, pb - u * (reach_b - GAP), -u, out,
+				Vector2(depth, w), "%s/weld:stringer:c%d" % [path, e1])
+		holders.append([zc, post, w * 0.5, "post:%d" % end])
+	# Rings standing between the posts hold the rails too.
+	for i in stations.size():
+		var rz := ring_z(i)
+		if rz > float(holders[0][0]) + 0.01 and rz < float(holders[1][0]) - 0.01 and rings[i][e] != null:
+			holders.insert(holders.size() - 1, [rz, rings[i][e], ring_width * 0.5, "st:%s" % label(i)])
+	# The rails, one along each side of the hole (unless a corner stringer is that close).
+	for side in 2:
+		var s := sa - w * 0.5 - JAMB_CLEAR if side == 0 else sb + w * 0.5 + JAMB_CLEAR
+		if s - w * 0.5 - GAP < reach_a or s + w * 0.5 + GAP > length - reach_b:
+			continue
+		var at2 := a2 + u2 * s
+		for j in holders.size() - 1:
+			var h0: Array = holders[j]
+			var h1: Array = holders[j + 1]
+			var p0 := v3(at2, float(h0[0]) + float(h0[2]))
+			var p1 := v3(at2, float(h1[0]) - float(h1[2]))
+			var path := "%s/rail/%d" % [base, side] + ("/%d" % j if holders.size() > 2 else "")
+			var rail := _bar("FrameRail", path, p0, p1, GAP, GAP, out, Vector2(w, depth), reveal,
+					key + "/rail/%d" % side + ("/%d" % j if holders.size() > 2 else ""))
+			if rail == null:
+				continue
+			_join(jamb_welds, rail, h0[1], ConnectionData.Kind.WELD, p0, Vector3.FORWARD, out, Vector2(depth, w),
+					"%s/weld:%s" % [path, h0[3]])
+			_join(jamb_welds, rail, h1[1], ConnectionData.Kind.WELD, p1, Vector3.BACK, out, Vector2(depth, w),
+					"%s/weld:%s" % [path, h1[3]])
+
+
+## A square bar drawn from `p0` to `p1` (on the frame's centre line), its collision pulled in
+## `t0`/`t1` from those ends and fitted inside the skin, its height facing `up`, its section
+## (width, height). Drawn `reveal` deeper into the hull than its collision. Kept in `jambs` and
+## in the members plates are riveted to (as `key`). Null if too short.
+func _bar(part_name: String, path: String, p0: Vector3, p1: Vector3, t0: float, t1: float, up: Vector3,
+		section: Vector2, reveal: float, key: String) -> PartData:
+	var length := p0.distance_to(p1)
+	if length - t0 - t1 < 0.05:
+		return null
+	var line := FrameParts.along(p0, p1, up)
+	var x0 := -length * 0.5 + t0
+	var x1 := length * 0.5 - t1
+	var half := Vector2(section.y * 0.5, section.x * 0.5)   # (height, width) halves
+	var s := _fit(line, x0, x1, half)
+	var look := PartShapes.girder(length, section.x, section.y + reveal)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = look.mesh
+	shape.recipe = look.recipe
+	shape.volume = look.volume
+	# The look is centred `reveal` / 2 further in than the centre line; the collision stays on it.
+	var xform := Transform3D(line.basis, line.origin - line.basis.y * reveal * 0.5)
+	var lift := reveal * 0.5
+	shape.collision = _box_points(Vector3(x0, lift - half.x * s, -half.y * s), Vector3(x1, lift + half.x * s, half.y * s))
+	var made := target.part(part_name, PartData.Kind.FRAME, shape, xform, frame_mat, "", 0.35, null, path)
+	jambs.append(made)
+	_members.append({"part": made, "p0": line * Vector3(x0, 0, 0), "p1": line * Vector3(x1, 0, 0),
+			"half": maxf(section.x, section.y) * 0.5, "key": key})
+	return made
+
+
+## How far along the face (direction `u` from corner `k` of station `s`'s centre line) the
+## corner's stringer and node reach.
+func _corner_reach(s: int, k: int, u: Vector2) -> float:
+	var up := ((_points[s][k] as Vector3) - _ring_centre(s))
+	var up2 := Vector2(up.x, up.y).normalized()
+	var across := up2.orthogonal()
+	var stringer := stringer_depth * 0.5 * absf(up2.dot(u)) + stringer_size * 0.5 * absf(across.dot(u))
+	var node: float = float(_node_half[s][k]) * (absf(u.x) + absf(u.y))
+	return maxf(stringer, node) + GAP
+
+
+## The station whose ring on edge `e` stands close enough to `z` to be an opening's post there
+## (-1 if none).
+func _ring_near(e: int, z: float) -> int:
+	for i in stations.size():
+		if rings[i][e] == null:
+			continue
+		var room := maxf(float(_node_half[i][e]), float(_node_half[i][(e + 1) % (_node_half[i] as Array).size()])) \
+				+ ring_width + GAP
+		if absf(ring_z(i) - z) < room:
+			return i
+	return -1
+
+
+## The bay `z` lies in (-1 if outside the hull).
+func _segment_at(z: float) -> int:
+	for i in stations.size() - 1:
+		if z >= float(stations[i]["z"]) and z <= float(stations[i + 1]["z"]):
+			return i
+	return -1
+
+
+# --- Node linings ---------------------------------------------------------------------
+
+## An inner panel on a node style (`lining` sends node styles here): the room-side cladding
+## of face (seg, e), flush to the seam lines like the skin (the stations along the ship, the
+## lining line's corners across it; `groove` between neighbours), cut round the face's
+## openings, `inset` (default `lining_inset`) inside the members' inner faces, bolted to every
+## member it lies over in rows at `bolt_pitch` (heads on the room side). `y_clip`/`z_clip` cut
+## it to a floor or a ceiling, or short of a wall. Returns the first panel (null if nothing
+## was made); every one is in `lining_panels`.
+func _node_lining(seg: int, e: int, mat: Material, inset: float, part_name: String, y_clip: Vector2,
+		z_clip: Vector2) -> PartData:
+	var ins := lining_inset if inset < 0.0 else inset
+	var t := lining_thickness
+	var last := stations.size() - 2
+	# A face sloping across the stations passes over a ring's (and its nodes') front and back
+	# edges at different depths: stand it in by the slope over the widest of them.
+	var pa: PackedVector2Array = stations[seg]["profile"]
+	var pb: PackedVector2Array = stations[seg + 1]["profile"]
+	var e_out := edge_out(pa, e)
+	var mid_a := (pa[e] + pa[(e + 1) % pa.size()]) * 0.5
+	var mid_b := (pb[e] + pb[(e + 1) % pb.size()]) * 0.5
+	var slope := absf((mid_b - mid_a).dot(e_out)) / maxf(float(stations[seg + 1]["z"]) - float(stations[seg]["z"]), 0.01)
+	ins += maxf(ring_width, node_size) * 0.5 * slope
+	# The room-side faces at both stations.
+	var la := lining_face(seg, ins)
+	var lb := lining_face(seg + 1, ins)
+	var n := la.size()
+	var e1 := (e + 1) % n
+	var dir_a := (la[e1] - la[e]).normalized()
+	var dir_b := (lb[e1] - lb[e]).normalized()
+	var a0 := _clip_y(la[e], dir_a, y_clip)
+	var a1 := _clip_y(la[e1], dir_a, y_clip)
+	var b0 := _clip_y(lb[e], dir_b, y_clip)
+	var b1 := _clip_y(lb[e1], dir_b, y_clip)
+	if a0.distance_to(a1) < 0.1 or b0.distance_to(b1) < 0.1 or (a1 - a0).dot(dir_a) <= 0.0:
+		return null
+	# Along the ship: to the stations (where the next bay's panel meets it), held back from the
+	# section's ends by the skin (a cap or a neighbour's plates stand there).
+	var za: float = stations[seg]["z"]
+	var zb: float = stations[seg + 1]["z"]
+	var vz0 := za + (skin + end_gap[0] if seg == 0 else 0.0)
+	var vz1 := zb - (skin + end_gap[1] if seg == last else 0.0)
+	var cut_front := vz0 < z_clip.x
+	var cut_back := vz1 > z_clip.y
+	vz0 = maxf(vz0, z_clip.x)
+	vz1 = minf(vz1, z_clip.y)
+	if vz1 - vz0 < 0.15:
+		return null
+	var out := edge_out(la, e)
+	var inward := Vector3(-out.x, -out.y, 0.0)
+	# The lines stand inside the rings where the rings are (an end ring stands in from its
+	# station: on a sloped face the panel follows the frame there, not the station's outline).
+	var ra := ring_z(seg)
+	var rb := ring_z(seg + 1)
+	var at_z := func(p: Vector2, q: Vector2, z: float) -> Vector3:
+		return v3(p.lerp(q, (z - ra) / maxf(rb - ra, 0.001)), z)
+	var face := PackedVector3Array([at_z.call(a0, b0, vz0), at_z.call(a1, b1, vz0), at_z.call(a1, b1, vz1),
+			at_z.call(a0, b0, vz1)])
+	if not _flat(face, 0.002):
+		return null
+	# How far each kind of edge's collision stands back.
+	var back_a := GAP * 0.5 if cut_front or seg > 0 else GAP
+	var back_b := GAP * 0.5 if cut_back or seg < last else GAP
+	var side_a := GAP * 0.5 if a0 != la[e] else maxf(maxf(_corner_trim(la, e, t), _corner_trim(lb, e, t)),
+			_node_trim(seg, e, la[e], lb[e], dir_a))
+	var side_b := GAP * 0.5 if a1 != la[e1] else maxf(maxf(_corner_trim(la, e1, t), _corner_trim(lb, e1, t)),
+			_node_trim(seg, e1, la[e1], lb[e1], -dir_a))
+	var path := _unique("%s/lining/e%d" % [_bay(seg), e])
+	var strips := _strips(seg, e, face)
+	var first: PartData = null
+	var was := target.parts_model().head_style
+	target.parts_model().head_style = bolt_head
+	for k in strips.size():
+		var piece: Array = strips[k]
+		var amounts: Array[float] = []
+		for v: Variant in piece[1]:
+			match String(v):
+				"a": amounts.append(back_a)
+				"b": amounts.append(back_b)
+				"side_a": amounts.append(side_a)
+				"side_b": amounts.append(side_b)
+				_: amounts.append(GAP * 0.5)
+		var panel := _node_plate(piece[0], amounts, inward, {"mat": mat, "name": part_name},
+				path + ("/s%d" % k if strips.size() > 1 else ""), seg, t, true, ins)
+		if panel == null:
+			continue
+		lining_panels.append(panel)
+		if first == null:
+			first = panel
+	target.parts_model().head_style = was
+	if first:
+		linings["%d:%d" % [seg, e]] = first
+		lining_insets["%d:%d" % [seg, e]] = {"inset": ins, "clipped": y_clip.x > -INF or y_clip.y < INF}
+	return first
+
+
+## How far a lining panel's side along corner `k` must stand back (along `u`, into the face)
+## to clear that corner's node blocks at both its stations; `pa`, `pb` the panel's corner
+## there.
+func _node_trim(seg: int, k: int, pa: Vector2, pb: Vector2, u: Vector2) -> float:
+	var need := 0.0
+	for s: int in [seg, seg + 1]:
+		var c: Vector3 = _points[s][k]
+		var h: float = _node_half[s][k]
+		var at := pa if s == seg else pb
+		need = maxf(need, h * (absf(u.x) + absf(u.y)) + GAP - (at - Vector2(c.x, c.y)).dot(u))
+	return need
 
 
 # --- Node skin ------------------------------------------------------------------------
@@ -992,23 +1396,27 @@ func _node_skin() -> void:
 			var side_b := maxf(_corner_trim(pa, e1), _corner_trim(pb, e1))
 			var corners := PackedVector3Array([v3(pa[e], za), v3(pa[e1], za), v3(pb[e1], zb), v3(pb[e], zb)])
 			var pieces: Array = []
+			var face := "%s/skin/e%d" % [_bay(seg), e]
+			var tail := "/s%d"
 			if _flat(corners, 0.002):
 				for strip: Array in _strips(seg, e, corners):
 					pieces.append(strip)
 			else:
+				tail = "/t%d"
 				# A twisted face: two triangles, the diagonal between them held back too.
 				pieces.append([PackedVector3Array([corners[0], corners[1], corners[2]]),
 						[back_a, side_b, GAP * 0.5 + skin * 0.7]])
 				pieces.append([PackedVector3Array([corners[0], corners[2], corners[3]]),
 						[GAP * 0.5 + skin * 0.7, back_b, side_a]])
 			var made: Array = []
-			for piece: Array in pieces:
+			for k in pieces.size():
+				var piece: Array = pieces[k]
 				var poly: PackedVector3Array = piece[0]
 				var backs: Array = piece[1]
 				# Strips come with edge kinds; resolve them to distances.
 				var amounts: Array[float] = []
-				for k in backs.size():
-					var v: Variant = backs[k]
+				for j in backs.size():
+					var v: Variant = backs[j]
 					if v is String:
 						match String(v):
 							"a": amounts.append(back_a)
@@ -1018,7 +1426,7 @@ func _node_skin() -> void:
 							_: amounts.append(GAP * 0.5)
 					else:
 						amounts.append(float(v))
-				var plate := _node_plate(poly, amounts, out, look)
+				var plate := _node_plate(poly, amounts, out, look, face + (tail % k if pieces.size() > 1 else ""), seg)
 				if plate:
 					made.append(plate)
 			row.append(made)
@@ -1035,10 +1443,10 @@ func _strips(seg: int, e: int, c: PackedVector3Array) -> Array:
 	var length := along.length()
 	var u := along / maxf(length, 0.001)
 	var holes: Array[Rect2] = []
-	for op: Array in _openings:
-		if int(op[0]) != e:
+	for op: Dictionary in _openings:
+		if int(op["edge"]) != e:
 			continue
-		var box: AABB = op[1]
+		var box: AABB = op["box"]
 		var s0 := INF
 		var s1 := -INF
 		for k in 8:
@@ -1095,15 +1503,19 @@ func _strips(seg: int, e: int, c: PackedVector3Array) -> Array:
 
 ## One plate over `poly` (its outer surface, ship space, convex, in order): drawn over the
 ## whole outline, its collision with each edge k held back by `backs[k]`. Riveted along
-## every member it lies over. Null if nothing is left after the trim.
-func _node_plate(poly: PackedVector3Array, backs: Array[float], out: Vector3, look: Dictionary) -> PartData:
+## every member it lies over. Null if nothing is left after the trim. `path` names it. A
+## lining panel (`lining` true: `t` thick, `out` into the room) is bolted instead, its members
+## further behind it.
+func _node_plate(poly: PackedVector3Array, backs: Array[float], out: Vector3, look: Dictionary, path: String,
+		seg: int, t: float = -1.0, lining: bool = false, behind: float = 0.0) -> PartData:
+	var thick := skin if t < 0.0 else t
 	var glass: bool = look.get("glass", false)
-	var shown := FrameParts.plate_between(poly, out, skin)
+	var shown := FrameParts.plate_between(poly, out, thick, groove)
 	var vis_xform: Transform3D = shown[1]
 	var trimmed := _shrink(poly, backs, vis_xform)
 	if trimmed.size() < 3:
 		return null
-	var held := FrameParts.plate_between(trimmed, out, skin, minf(0.012, skin * 0.4))
+	var held := FrameParts.plate_between(trimmed, out, thick, minf(0.012, thick * 0.4))
 	var vis: PartShapes.PartShape = shown[0]
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = vis.mesh
@@ -1114,8 +1526,11 @@ func _node_plate(poly: PackedVector3Array, backs: Array[float], out: Vector3, lo
 	var part_name: String = look.get("name", "WindowPane" if glass else "HullPlate")
 	var mat: Material = look.get("mat", glass_mat if glass else skin_mat)
 	var made := target.part(part_name, PartData.Kind.GLASS if glass else PartData.Kind.HULL, shape, vis_xform, mat,
-			look.get("tag", ""))
-	_rivet(made, trimmed, out, vis_xform)
+			look.get("tag", ""), 1.0, null, path)
+	if lining:
+		_rivet(made, trimmed, out, vis_xform, ConnectionData.Kind.BOLT, bolt_pitch, thick, thick + behind, bolts, "bolt", seg)
+	else:
+		_rivet(made, trimmed, out, vis_xform, ConnectionData.Kind.RIVET, rivet_pitch, skin, skin, rivets, "rivet", seg)
 	return made
 
 
@@ -1166,8 +1581,12 @@ static func _moved(col: ConvexPolygonShape3D, by: Transform3D) -> ConvexPolygonS
 
 
 ## Rivets a plate (its trimmed outer outline `poly`, plate space `frame`) in a row along every
-## member lying under it, at the style's pitch (one at least on a short row).
-func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Transform3D) -> void:
+## member lying under it, at `pitch` (one at least on a short row): joints of `kind`, kept in
+## `into`, named "<plate>/<role>:<member>/<k>" (a ring by the plate's bay `seg`: fore or aft;
+## "ring" on a cap, `seg` -1). A member counts as under the plate when its centre line lies
+## between `near` and `near` + a member's depth behind the plate's face.
+func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Transform3D, kind: ConnectionData.Kind,
+		pitch: float, thick: float, near: float, into: Array[ConnectionData], role: String, seg: int) -> void:
 	var inv := frame.affine_inverse()
 	var flat := PackedVector2Array()
 	for p in poly:
@@ -1176,12 +1595,12 @@ func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Tran
 	var inner := FrameParts.inset(flat, ROW_MARGIN)
 	if inner.size() < 3:
 		inner = flat
-	var reach := skin + GAP + depth + 0.06   # a member's centre line under the skin
+	var reach := near + GAP + depth + 0.06   # a member's centre line under the plate
 	for m: Dictionary in _members:
 		var p0: Vector3 = inv * (m["p0"] as Vector3)
 		var p1: Vector3 = inv * (m["p1"] as Vector3)
 		# Under this plate: both ends below its face, no further than a member's depth.
-		if p0.y > -skin or p1.y > -skin or p0.y < -reach or p1.y < -reach:
+		if p0.y > -thick or p1.y > -thick or p0.y < -reach or p1.y < -reach:
 			continue
 		# The row may sit anywhere over the member's face: off its centre line, toward the
 		# plate's middle, where the plate stops short over it (at a station, by a corner).
@@ -1198,11 +1617,19 @@ func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Tran
 			continue
 		var a: Vector2 = row[0]
 		var b: Vector2 = row[1]
-		var count := maxi(1, roundi(a.distance_to(b) / rivet_pitch))
+		var key: String = m["key"]
+		if int(m.get("station", -1)) >= 0:
+			var st: int = m["station"]
+			if seg < 0:
+				key = "ring:e%d" % m["edge"]
+			elif st == seg or st == seg + 1:
+				key = "%s:e%d" % ["fore" if st == seg else "aft", m["edge"]]
+		var count := maxi(1, roundi(a.distance_to(b) / pitch))
 		for k in count:
 			var t := (float(k) + 0.5) / float(count)
 			var at := a.lerp(b, t)
-			_join(rivets, plate, m["part"], ConnectionData.Kind.RIVET, frame * Vector3(at.x, 0.0, at.y), out)
+			_join(into, plate, m["part"], kind, frame * Vector3(at.x, 0.0, at.y), out, Vector3.ZERO, Vector2.ZERO,
+					"%s/%s:%s/%d" % [plate.path, role, key, k])
 
 
 ## The part of segment a..b inside convex `poly` ([] if none): [start, end].
@@ -1245,7 +1672,7 @@ static func _clip_segment(a: Vector2, b: Vector2, poly: PackedVector2Array) -> A
 ## its ends itself, `caps`).
 func cap(end: int, pieces: Array, mat: Material, tag: String = "", glass: bool = false) -> Array[PartData]:
 	var was := target.parts_model().head_style
-	target.parts_model().head_style = RIVET_HEAD
+	target.parts_model().head_style = rivet_head
 	var s := 0 if end == 0 else stations.size() - 1
 	var z: float = stations[s]["z"]
 	var facing := Vector3.FORWARD if end == 0 else Vector3.BACK
@@ -1259,7 +1686,9 @@ func cap(end: int, pieces: Array, mat: Material, tag: String = "", glass: bool =
 		for k in outline.size():
 			backs.append(skin + GAP if _on_outline(outline[k], outline[(k + 1) % outline.size()], profile) else GAP * 0.5)
 		var look := {"mat": mat, "tag": tag, "glass": glass, "name": "WindowPane" if glass else "CapPlate"}
-		var plate := _node_plate(poly, backs, facing, look)
+		var plate := _node_plate(poly, backs, facing, look, "%s/cap/%s/%d" % [name, "front" if end == 0 else "back",
+				_cap_count[0 if end == 0 else 1]], -1)
+		_cap_count[0 if end == 0 else 1] += 1
 		if plate:
 			made.append(plate)
 			cap_plates.append(plate)

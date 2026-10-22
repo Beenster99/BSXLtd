@@ -113,13 +113,19 @@ func forget_view(c: ConnectionData) -> JointView:
 	return view
 
 
+## The surface `part` is drawn in (a subtle joint head takes it), or null.
+func _paint_of(part: PartData) -> Material:
+	var node := part_visual(part.id) as GeometryInstance3D
+	return node.material_override if node else null
+
+
 ## Draws `c`'s head afresh on `part` (the joint moved to another part: a torn plate's piece).
 func remake_view(c: ConnectionData, part: PartData) -> void:
 	var old := forget_view(c)
 	if old:
 		old.clear()
 	var view := JointView.new()
-	view.setup(c, part.local_transform, joints())
+	view.setup(c, part.local_transform, joints(), _paint_of(part) if c.head == 4 else null)
 	_joint_views[c.id] = view
 
 
@@ -216,7 +222,7 @@ func connect_parts(a: PartData, b: PartData, kind: ConnectionData.Kind,
 	c.head = head_style
 	connections.append(c)
 	var view := JointView.new()
-	view.setup(c, a.local_transform, joints())
+	view.setup(c, a.local_transform, joints(), _paint_of(a) if c.head == 4 else null)
 	_joint_views[c.id] = view
 	return c
 

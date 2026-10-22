@@ -16,6 +16,11 @@ extends RefCounted
 const YARD: int = 0
 const MACHINE: int = 2
 const GROUND: int = 3
+## Rivet and bolt heads (ConnectionData.head on a RIVET or BOLT): the v4 flush bump, and the
+## frame builds' subtle heads (decisions 2 and 3 of the plan: a rivet seen up close and gone
+## at ten metres, a low flush bolt on the room side of a lining).
+const FLUSH: int = 1
+const SUBTLE: int = 4
 
 ## id -> style. `corners`: "node" (members end on node blocks, welded all round their ends)
 ## or "mitre" (members mitred to each other, welded at the cut). `stringers`: "corners" (one
@@ -23,19 +28,24 @@ const GROUND: int = 3
 ## of side). FrameHull builds "kestrel" (the frame Kestrel) and "mitred" (every wreck, as
 ## SalvageHull); "channel" and "lattice" wait for the Manta and the XL ships.
 ## `lining_inset`/`lining_thickness`: where inner panels stand off the frame and how thick.
+## `rivet_head`/`bolt_head`: the skin's rivets and the linings' bolts on node styles (the
+## mitred style leaves heads to its structure's `head_style`, as the wrecks always have).
 const STYLES: Dictionary = {
 	"kestrel": {"member": Vector2(0.14, 0.18), "skin": 0.08, "node": 0.26, "corners": "node",
 			"stringers": "corners", "stringer": Vector2(0.14, 0.18), "bead": MACHINE,
-			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.12, "lining_thickness": 0.03},
+			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.12, "lining_thickness": 0.03,
+			"rivet_head": SUBTLE, "bolt_head": SUBTLE},
 	"mitred": {"member": Vector2(0.16, 0.22), "skin": 0.04, "node": 0.0, "corners": "mitre",
 			"stringers": "spacing", "stringer": Vector2(0.14, 0.14), "stringer_spacing": 2.6, "bead": YARD,
 			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.08, "lining_thickness": 0.03},
 	"channel": {"member": Vector2(0.16, 0.22), "skin": 0.08, "node": 0.26, "corners": "node",
 			"stringers": "corners", "stringer": Vector2(0.16, 0.22), "bead": MACHINE,
-			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.12, "lining_thickness": 0.03},
+			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.12, "lining_thickness": 0.03,
+			"rivet_head": SUBTLE, "bolt_head": SUBTLE},
 	"lattice": {"member": Vector2(0.2, 0.3), "skin": 0.06, "node": 0.34, "corners": "node",
 			"stringers": "corners", "stringer": Vector2(0.2, 0.3), "bead": YARD,
-			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.12, "lining_thickness": 0.03},
+			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.12, "lining_thickness": 0.03,
+			"rivet_head": SUBTLE, "bolt_head": SUBTLE},
 }
 
 

@@ -188,7 +188,7 @@
 		"event": {
 			"type": "array", "minItems": 3, "maxItems": 4,
 			"description": "[name, strength 1..5, seed, place?] (place: where a fire, impact, scrape or tear centres; WreckEvents.PLACES)",
-			"items": {"anyOf": [{"enum": ["weathered", "fire", "impact", "torn", "scraped", "stripped", "abandoned"]}, {"type": "integer"},
+			"items": {"anyOf": [{"enum": ["weathered", "fire", "impact", "torn", "scraped", "stripped", "abandoned", "rupture"]}, {"type": "integer"},
 					{"enum": ["any", "aft", "fore", "flank", "port", "starboard", "reactor", "tanks", "cockpit", "hold"]}]}
 		},
 		"kind": {"enum": ["hull", "frame", "hazard", "conduit", "component", "glass"]},
@@ -215,7 +215,7 @@
 				"part_ids": {"$ref": "#/$defs/ids"},
 				"islands": {"type": "integer", "minimum": 1, "description": "groups of parts joined to each other in this body; more than 1 means parts (or whole assemblies) that nothing holds on, riding along until a joint breaks"},
 				"bounds": {"$ref": "#/$defs/aabb"},
-				"drift": {"type": "object", "required": ["anchor", "velocity", "spin"], "properties": {"anchor": {"type": "integer"}, "velocity": {"$ref": "#/$defs/vec3"}, "spin": {"$ref": "#/$defs/vec3"}}},
+				"drift": {"type": "object", "required": ["anchor", "velocity", "spin"], "properties": {"anchor": {"type": "integer"}, "velocity": {"$ref": "#/$defs/vec3"}, "spin": {"$ref": "#/$defs/vec3"}, "kind": {"enum": ["debris"], "description": "a rupture's loose piece: drifts with the wreck's own drift, not its spin"}}},
 				"torn_at_z": {"type": "number"}
 			}
 		},
@@ -265,7 +265,10 @@
 					"scorch_at": {"$ref": "#/$defs/vec3"}, "scorch_radius": {"type": "number"},
 					"dents": {"type": "array", "items": {"type": "object", "required": ["at", "push", "depth", "radius", "crumple"], "properties": {
 						"at": {"$ref": "#/$defs/vec3"}, "push": {"$ref": "#/$defs/vec3"}, "depth": {"type": "number"}, "radius": {"type": "number"}, "crumple": {"type": "number"}}}},
-					"bend": {"$ref": "#/$defs/vec3"}}},
+					"bend": {"$ref": "#/$defs/vec3"},
+					"curl": {"type": "object", "required": ["at", "axis", "toward", "angle_rad", "length"], "description": "rolled back from a fold (a rupture's petal, a snapped stub), part space: everything past the line through at along axis, measured along toward, wraps a circle of radius length / angle_rad toward axis x toward; wobble (amount, rate per m along the axis, phase) varies the angle along the fold", "properties": {
+						"at": {"$ref": "#/$defs/vec3"}, "axis": {"$ref": "#/$defs/vec3"}, "toward": {"$ref": "#/$defs/vec3"},
+						"angle_rad": {"type": "number"}, "length": {"type": "number", "minimum": 0}, "wobble": {"$ref": "#/$defs/vec3"}}}}},
 				"removal": {"$ref": "#/$defs/removal"},
 				"power": {"type": "object", "required": ["role", "powered"], "properties": {
 					"role": {"enum": ["source", "conductor", "switch", "consumer"]}, "powered": {"type": "boolean"}, "closed": {"type": "boolean"},
@@ -273,7 +276,13 @@
 					"output": {"type": "number", "minimum": 0, "maximum": 1, "description": "a source's output, 0 dead, 0.15 low, 1 live"}}},
 				"cell": {"type": "object", "required": ["charge"], "description": "a battery cell of its own (a lamp's, an emergency backup's)", "properties": {
 					"charge": {"type": "number", "minimum": 0, "maximum": 1}}},
-				"faults": {"type": "integer", "minimum": 0, "description": "fault bit flags: 1 dead lamp"},
+				"faults": {"type": "integer", "minimum": 0, "description": "fault bit flags: 1 dead lamp, 2 breached (a tank holed by a rupture: empty), 4 blown screen, 8 cracked pane"},
+				"cracks": {"type": "array", "description": "a cracked pane: where each crack starts (part space) and how far it reaches, m", "items": {"type": "object", "required": ["at", "radius"], "properties": {
+					"at": {"$ref": "#/$defs/vec3"}, "radius": {"type": "number", "minimum": 0}}}},
+				"frays": {"type": "array", "description": "frayed wire ends where a plug on it broke (part space)", "items": {"type": "object", "required": ["at", "normal"], "properties": {
+					"at": {"$ref": "#/$defs/vec3"}, "normal": {"$ref": "#/$defs/vec3"}}}},
+				"emissives": {"type": "array", "description": "its lit details by kind and how they show now", "items": {"type": "object", "required": ["kind", "look"], "properties": {
+					"kind": {"enum": ["led", "screen", "strip", "lamp", "hot", "warning"]}, "look": {"enum": ["off", "standby", "powered"]}}}},
 				"fluid": {"type": "object", "required": ["fluid", "tank"], "properties": {
 					"fluid": {"enum": ["fuel", "coolant"]}, "tank": {"type": "boolean"}, "capacity_l": {"type": "number"}, "level": {"type": "number"}, "litres": {"type": "number"}}},
 				"hazard": {"enum": [1, 2], "description": "1 live wiring, 2 charged fuel"},

@@ -18,8 +18,13 @@ enum Kind { HULL, FRAME, HAZARD, CONDUIT, COMPONENT, GLASS }
 enum Power { NONE, SOURCE, CONDUCTOR, SWITCH, CONSUMER }
 
 ## Faults on a part, as bit flags in `faults` (docs/DAMAGE_PLAN.md 9.3.3; more to come):
-##   DEAD_LAMP  a lamp whose bulb or cell has failed: dark whatever the grid says
-enum Fault { DEAD_LAMP = 1 }
+##   DEAD_LAMP     a lamp whose bulb or cell has failed: dark whatever the grid says
+##   BREACHED      a tank or line holed (a rupture's blast): it holds nothing
+##   BLOWN_SCREEN  its screens burnt out for good (fire, a hit): never intact for a parts ask
+##   CRACKED       a pane crazed from the points in `cracks`, still whole
+enum Fault { DEAD_LAMP = 1, BREACHED = 2, BLOWN_SCREEN = 4, CRACKED = 8 }
+## What each fault takes off the condition (0..1), by flag.
+const FAULT_CONDITION := {Fault.BLOWN_SCREEN: 0.1, Fault.CRACKED: 0.2}
 
 ## How a part came off the wreck (docs/ECONOMY_PLAN.md 3.4), worst so far:
 ##   ATTACHED  still on it (or never off anything)
@@ -68,6 +73,11 @@ var cell: bool = false
 ## Fault flags (Fault): what is broken on it beyond wear and dents. Rolled from the seed
 ## with the damage on every machine, never sent.
 var faults: int = 0
+## CRACKED: where the cracks start, [[point (part space), radius m], ...].
+var cracks: Array = []
+## Frayed wire ends left where a plug (a CONNECTOR joint) on this part broke: [[point,
+## normal], ...] in part space. Every machine replays the same breaks, so the same frays.
+var frays: Array = []
 
 ## --- Fluids (FluidSystem). What a tank holds or a line carries: "", "fuel", "coolant".
 var fluid: String = ""
@@ -98,10 +108,23 @@ var dents: Array = []
 var bend := Vector3.ZERO
 ## Torn, snapped or shattered (a piece of what it was): worth less.
 var torn: bool = false
+## Curl (a rupture's petal, a snapped member's stub): the part rolled back on itself from
+## a fold, like the lid of a tin. Empty = flat. In the part's own space:
+## [fold point, fold axis, toward, angle rad, length m, wobble]: everything beyond the fold
+## line (the line through the point along the axis), measured along `toward` (square to
+## the axis, in the sheet), rolls round a circle of radius length / angle toward
+## axis x toward (the sheet's outside), so a strip `length` long turns through `angle`.
+## `wobble` (optional, Vector3: amount 0..1, rate per m along the axis, phase rad) varies
+## the angle along the fold. DeformMesh draws it; collision is the part's own business.
+var curl: Array = []
+## What the part is, as a name that holds still when the build around it changes
+## (docs/SHIP_FRAME_PLAN.md 4.7): "hull/bay:hold/skin/e3", "canopy/st:nose/node/c2". The
+## builders set it; "" where none did. The integer `id` is still what the game runs on.
+var path: String = ""
 
 
 func is_deformed() -> bool:
-	return not dents.is_empty() or bend.length_squared() > 0.0
+	return not dents.is_empty() or bend.length_squared() > 0.0 or not curl.is_empty()
 
 
 ## How badly bent out of shape it is, 0 (true) to 1 (wrecked).
@@ -109,13 +132,19 @@ func deformation() -> float:
 	var d := bend.length() * 3.0
 	for dent: Array in dents:
 		d += float(dent[2]) * 3.0 + float(dent[4]) * 0.5
+	if not curl.is_empty():
+		d += 0.4 + absf(float(curl[3])) / PI * 0.4
 	return clampf(d, 0.0, 1.0)
 
 
 ## How much of its value the part keeps in this condition (0.1 to 1).
 func condition() -> float:
-	return clampf((1.0 - 0.35 * wear) * (1.0 - 0.6 * scorch) * (1.0 - 0.5 * deformation())
-			* (0.75 if torn else 1.0), 0.1, 1.0)
+	var c := (1.0 - 0.35 * wear) * (1.0 - 0.6 * scorch) * (1.0 - 0.5 * deformation()) \
+			* (0.75 if torn else 1.0)
+	for f: int in FAULT_CONDITION:
+		if faults & f != 0:
+			c -= float(FAULT_CONDITION[f])
+	return clampf(c, 0.1, 1.0)
 
 
 ## Credits if sold as it is now.
@@ -128,9 +157,10 @@ func mark_removed(how: Removal) -> void:
 	removal = maxi(removal, how) as Removal
 
 
-## Taken off cleanly (or never off): what an "intact" contract wants.
+## Taken off cleanly (or never off) and not burnt out: what an "intact" contract wants (a
+## blown screen never counts, docs/DAMAGE_PLAN.md 9.8 decision 4).
 func is_intact() -> bool:
-	return removal <= Removal.INTACT
+	return removal <= Removal.INTACT and not has_fault(Fault.BLOWN_SCREEN)
 
 
 ## The level a SOURCE puts into the grid (0..1): its output times its cell's charge.

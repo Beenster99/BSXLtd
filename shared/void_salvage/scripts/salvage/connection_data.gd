@@ -60,9 +60,15 @@ var broken_by: int = 1
 var heat: float = 0.0
 var heat_at: float = 0.0
 ## What the head looks like (JointView): 0 the classic proud head, 1 a flush bump, barely
-## raised off the skin (v4 hulls, whose plates meet in one smooth surface). Set from the
+## raised off the skin (v4 hulls, whose plates meet in one smooth surface), on welds 2 a
+## machine bead and 3 one ground flush (FrameStyle), 4 the frame builds' subtle heads (a
+## rivet seen up close and gone at ten metres, a low flush bolt). Set from the
 ## structure's `head_style` when the joint is made; built the same on every machine.
 var head: int = 0
+## What the joint is, by the path of the part it fastens, its role, what it fastens to and
+## its place in its row (docs/SHIP_FRAME_PLAN.md 4.7): "hull/bay:hold/skin/e3/rivet:st:hold:e3/1".
+## The builders set it; "" where none did.
+var path: String = ""
 
 ## How fast a heated joint cools, per second (1.0 = from red hot to cold).
 const HEAT_COOL: float = 0.12

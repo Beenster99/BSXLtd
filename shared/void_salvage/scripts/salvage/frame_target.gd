@@ -24,18 +24,24 @@ func parts_model() -> PartModel:
 
 
 ## Adds a part of `shape` at `xform` (body space) in `mat`, weighing its volume of steel
-## times `fill`. `tag` and `glass_mat` are for builders that use them (ShipKit).
+## times `fill`. `tag` and `glass_mat` are for builders that use them (ShipKit); `path` names
+## it (PartData.path, docs/SHIP_FRAME_PLAN.md 4.7).
 func part(part_name: String, kind: PartData.Kind, shape: PartShapes.PartShape, xform: Transform3D,
-		mat: Material, tag: String = "", fill: float = 1.0, glass_mat: Material = null) -> PartData:
-	return model.add_part(part_name, kind, maxf(shape.volume * STEEL * fill, 0.1), 0.0, xform, shape.mesh,
+		mat: Material, tag: String = "", fill: float = 1.0, glass_mat: Material = null, path: String = "") -> PartData:
+	var made := model.add_part(part_name, kind, maxf(shape.volume * STEEL * fill, 0.1), 0.0, xform, shape.mesh,
 			shape.collision, mat)
+	made.path = path
+	return made
 
 
 ## Joins two parts with a joint of `kind` at `at`, facing `normal` (body space); its head hangs
-## on `a`. Welds: `seam_up` and `seam_size` as in ConnectionData.
+## on `a`. Welds: `seam_up` and `seam_size` as in ConnectionData. `path` names it.
 func join(a: PartData, b: PartData, kind: ConnectionData.Kind, at: Vector3, normal: Vector3,
-		seam_up := Vector3.ZERO, seam_size := Vector2.ZERO) -> ConnectionData:
-	return model.connect_parts(a, b, kind, at, normal, seam_up, seam_size)
+		seam_up := Vector3.ZERO, seam_size := Vector2.ZERO, path: String = "") -> ConnectionData:
+	var made := model.connect_parts(a, b, kind, at, normal, seam_up, seam_size)
+	if made:
+		made.path = path
+	return made
 
 
 ## A box part of `size` (it dents and tears, like a wreck's plates).
