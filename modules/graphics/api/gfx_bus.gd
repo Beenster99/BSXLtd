@@ -12,7 +12,9 @@ extends Node
 ##     while the pointer is over it within reach ("graphics.hover") and lights up in the
 ##     pinger's colour when pinged ("graphics.ping", middle mouse). Give it meta "gfx_id"
 ##     (the same stable data id on every machine, e.g. "trolley:2") so a crewmate's ping
-##     finds it; without one a ping lights the usable thing it lands on or beside;
+##     finds it; without one a ping lights the usable thing it lands on or beside. A ping
+##     writes what it's on by its marker: meta "gfx_name" if set, else the title of its
+##     look hint (HudSlots), else its node name;
 ##   - a Node3D in group "gfx_room" with meta "gfx_box" (an AABB, the room's inside in the
 ##     node's own space) gets a reflection probe and baked bounce light ("graphics.gi").
 ##     Tag it before adding it to the tree; its meshes bake BAKE_DELAY after it arrives
@@ -185,9 +187,9 @@ func hover_target() -> Node:
 
 
 ## Pings a point (and the usable thing there), as the middle mouse does.
-func ping(at: Vector3, thing: Node = null, normal := Vector3.UP) -> void:
+func ping(at: Vector3, thing: Node = null, normal := Vector3.UP, label := "") -> void:
 	if pointer and Flags.is_on(PING):
-		pointer.ping(at, thing, normal)
+		pointer.ping(at, thing, normal, label)
 
 
 ## Faces under root that Z-fight: [{a, b, area, at, normal}], biggest overlap first (a and b
