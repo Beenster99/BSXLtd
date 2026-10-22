@@ -14,6 +14,8 @@ const WAGES := "wages"
 const BONUS := "bonus"
 const LOAN := "loan"
 const REPAYMENT := "repayment"
+## Bales and ingots sold to the metal broker.
+const SCRAP := "scrap"
 
 var day := 0
 var amount := 0
