@@ -8,6 +8,11 @@ extends AnimatableBody3D
 ##
 ## Cradle space: origin under the frame's middle at the beams' underside (on the pedestals'
 ## tops), -Z the hull's nose.
+##
+## Three sizes (SIZES), by the hulls the yard takes in: "s" for small ships like the Kestrel
+## (the constants below), "m" for medium ships (40 to 400 t, to 30 m) and "l" for large ones
+## (400 to 3,000 t, to 80 m). Every size keeps the dolly's four pins in the same places, so
+## the one dolly lifts any of them.
 
 ## The beams' underside over the ground while it stands on its pedestals, metres.
 const REST := 1.6
@@ -25,6 +30,26 @@ const PEDESTAL_Z: Array[float] = [-5.8, 5.8]
 ## The pins under the outer cross beams, cradle space (they meet the dolly's deck sockets).
 const PINS: Array[Vector3] = [Vector3(-2.2, 0, -4.6), Vector3(2.2, 0, -4.6), Vector3(-2.2, 0, 3.0), Vector3(2.2, 0, 3.0)]
 
+## The sizes: side beams at +-side_x, length long and side_h deep; cross beams at cross_z,
+## cross_h deep, with saddles at saddle_x whose tops are saddle_top up; pedestals at
+## pedestal_z under each side beam. Metres.
+const SIZES := {
+	"s": {"name": "SMALL", "side_x": SIDE_X, "length": LENGTH, "side_h": SIDE_H, "cross_h": CROSS_H, "cross_z": CROSS_Z,
+			"saddle_top": SADDLE_TOP, "saddle_x": [-1.4, 1.4], "pedestal_z": PEDESTAL_Z},
+	"m": {"name": "MEDIUM", "side_x": 6.0, "length": 30.0, "side_h": 0.9, "cross_h": 0.6,
+			"cross_z": [-13.0, -8.8, -4.6, 3.0, 7.8, 12.6], "saddle_top": 1.3, "saddle_x": [-3.4, -1.2, 1.2, 3.4],
+			"pedestal_z": [-12.0, 0.0, 12.0]},
+	"l": {"name": "LARGE", "side_x": 9.0, "length": 78.0, "side_h": 1.3, "cross_h": 0.8,
+			"cross_z": [-36.0, -28.0, -20.0, -12.0, -4.6, 3.0, 12.0, 20.0, 28.0, 36.0], "saddle_top": 1.9,
+			"saddle_x": [-6.0, -2.4, 2.4, 6.0], "pedestal_z": [-36.0, -24.0, -12.0, 0.0, 12.0, 24.0, 36.0]},
+}
+
+## This cradle's size (SIZES) and its measures.
+var size := "s"
+var side_x := SIDE_X
+var length := LENGTH
+var saddle_top := SADDLE_TOP
+var pedestal_z: Array = PEDESTAL_Z
 ## Engaged (true) or drawn (false), one per PINS.
 var pins: Array[bool] = [false, false, false, false]
 ## The hull in it, or null, and what it weighs, tonnes.
@@ -39,29 +64,53 @@ var _in_mat: Material
 var _out_mat: Material
 
 
-func _init() -> void:
+func _init(size_id := "s") -> void:
 	sync_to_physics = false
+	size = size_id if SIZES.has(size_id) else "s"
+	var spec: Dictionary = SIZES[size]
+	side_x = spec.side_x
+	length = spec.length
+	saddle_top = spec.saddle_top
+	pedestal_z = spec.pedestal_z
+	var side_h: float = spec.side_h
+	var cross_h: float = spec.cross_h
 	var yellow := ShipSurface.of(ShipKit.paint(Color(0.95, 0.75, 0.1), 0.15, 0.5, "hazard_paint"))
 	var dark := ShipSurface.of(ShipKit.paint(Color(0.15, 0.16, 0.18), 0.5, 0.5, "gunmetal"))
 	var steel := ShipSurface.of(ShipKit.paint(Color(0.55, 0.57, 0.6), 0.85, 0.3, "chrome"))
 	var rubber := ShipSurface.of(ShipKit.paint(Color(0.07, 0.07, 0.075), 0.0, 0.9, "rubber"))
 	var along_z := Basis(Vector3.UP, PI * 0.5)
+	var flange := 0.4 if size == "s" else (0.6 if size == "m" else 0.8)
 	for side: float in [-1.0, 1.0]:
-		_part(PartShapes.i_beam(LENGTH, 0.4, SIDE_H, 0.04), Transform3D(along_z, Vector3(side * SIDE_X, SIDE_H * 0.5, 0)), yellow)
-		_solid(Vector3(0.4, SIDE_H, LENGTH), Vector3(side * SIDE_X, SIDE_H * 0.5, 0))
+		_part(PartShapes.i_beam(length, flange, side_h, 0.04), Transform3D(along_z, Vector3(side * side_x, side_h * 0.5, 0)), yellow)
+		_solid(Vector3(flange, side_h, length), Vector3(side * side_x, side_h * 0.5, 0))
 		# Lifting eyes on the beam ends, for the cranes.
 		for end: float in [-1.0, 1.0]:
-			_part(PartShapes.ring(0.08, 0.16, 0.05, 12), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(side * (SIDE_X + 0.225), SIDE_H * 0.5, end * (LENGTH * 0.5 - 0.6))), steel)
-	var cross_len := SIDE_X * 2.0 - 0.42
-	for z: float in CROSS_Z:
-		_part(PartShapes.i_beam(cross_len, 0.4, CROSS_H, 0.04), Transform3D(Basis(), Vector3(0, CROSS_H * 0.5, z)), yellow)
-		_solid(Vector3(cross_len, CROSS_H, 0.4), Vector3(0, CROSS_H * 0.5, z))
-		# Two saddles per beam, a steel block with a rubber pad on top.
-		for x: float in [-1.4, 1.4]:
-			var block := SADDLE_TOP - CROSS_H - 0.1
-			_part(PartShapes.chamfer_box(Vector3(1.4, block, 0.5), 0.04), Transform3D(Basis(), Vector3(x, CROSS_H + block * 0.5, z)), dark)
-			_part(PartShapes.chamfer_box(Vector3(1.5, 0.1, 0.6), 0.03), Transform3D(Basis(), Vector3(x, SADDLE_TOP - 0.05, z)), rubber)
-			_solid(Vector3(1.5, SADDLE_TOP - CROSS_H, 0.6), Vector3(x, (CROSS_H + SADDLE_TOP) * 0.5, z))
+			_part(PartShapes.ring(0.08, 0.16, 0.05, 12), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(side * (side_x + flange * 0.5 + 0.025), side_h * 0.5, end * (length * 0.5 - 0.6))), steel)
+	var cross_len := side_x * 2.0 - flange - 0.02
+	for z: float in spec.cross_z:
+		_part(PartShapes.i_beam(cross_len, 0.4, cross_h, 0.04), Transform3D(Basis(), Vector3(0, cross_h * 0.5, z)), yellow)
+		_solid(Vector3(cross_len, cross_h, 0.4), Vector3(0, cross_h * 0.5, z))
+		# Saddles along each beam, a steel block with a rubber pad on top; the outer ones
+		# stand a little higher, so the belly sits in a shallow V.
+		for x: float in spec.saddle_x:
+			var top := saddle_top + (0.0 if absf(x) < side_x * 0.5 else (side_x * 0.04))
+			var block := top - cross_h - 0.1
+			_part(PartShapes.chamfer_box(Vector3(1.4, block, 0.5), 0.04), Transform3D(Basis(), Vector3(x, cross_h + block * 0.5, z)), dark)
+			_part(PartShapes.chamfer_box(Vector3(1.5, 0.1, 0.6), 0.03), Transform3D(Basis(), Vector3(x, top - 0.05, z)), rubber)
+			_solid(Vector3(1.5, top - cross_h, 0.6), Vector3(x, (cross_h + top) * 0.5, z))
+	if size != "s":
+		# Its size stencilled on the side beams' outer faces.
+		for side: float in [-1.0, 1.0]:
+			var tag := Label3D.new()
+			tag.text = "%s CRADLE" % spec.name
+			tag.font_size = 96
+			tag.pixel_size = side_h * 0.5 / 96.0
+			tag.modulate = Color(0.1, 0.1, 0.1)
+			tag.shaded = true
+			tag.double_sided = false
+			tag.position = Vector3(side * (side_x + flange * 0.5 + 0.012), side_h * 0.5, length * 0.25)
+			tag.rotation.y = side * PI * 0.5
+			add_child(tag)
 	# The pins: a housing on the beam's web with the pin hanging under the bottom flange.
 	for p: Vector3 in PINS:
 		_part(PartShapes.chamfer_box(Vector3(0.36, 0.3, 0.5), 0.03), Transform3D(Basis(), p + Vector3(0, 0.17, 0)), dark)
@@ -72,8 +121,8 @@ func _init() -> void:
 	_in_mat = ShipKit.glow(Color(0.3, 1.0, 0.45), 2.0)
 	_out_mat = ShipKit.glow(Color(1.0, 0.25, 0.15), 2.0)
 	for p: Vector3 in PINS:
-		var out := signf(p.x) * (SIDE_X + 0.2)
-		var at := Vector3(out + signf(p.x) * 0.08, SIDE_H * 0.5, p.z)
+		var out := signf(p.x) * (side_x + flange * 0.5)
+		var at := Vector3(out + signf(p.x) * 0.08, side_h * 0.5, p.z)
 		_part(PartShapes.chamfer_box(Vector3(0.16, 0.36, 0.3), 0.02), Transform3D(Basis(), at), dark)
 		_handles.append(_part(PartShapes.box(Vector3(0.06, 0.08, 0.22)), Transform3D(Basis(), at + Vector3(signf(p.x) * 0.11, 0.08, 0)), _out_mat))
 		var lever := CollisionShape3D.new()
@@ -99,8 +148,8 @@ func all_pins_engaged() -> bool:
 ## Where its pedestals should be under it (world space, on their tops).
 func pedestal_points() -> Array[Vector3]:
 	var out: Array[Vector3] = []
-	for x: float in [-SIDE_X, SIDE_X]:
-		for z: float in PEDESTAL_Z:
+	for x: float in [-side_x, side_x]:
+		for z: float in pedestal_z:
 			out.append(global_transform * Vector3(x, 0, z))
 	return out
 

@@ -293,6 +293,12 @@ func _test_holo() -> void:
 	esc.pressed = true
 	holo._input(esc)
 	check(not holo.is_open and holo.root == null, "Esc puts the wrist screen away")
+	holo._input(key)
+	var was := Router.current_id
+	Router.current_id = UiBus.SETTINGS
+	Router.scene_changed.emit(UiBus.SETTINGS)
+	check(not holo.is_open, "going to a menu puts the wrist screen away")
+	Router.current_id = was
 
 
 func _test_terminal_kit() -> void:
@@ -458,6 +464,16 @@ func _test_pause() -> void:
 	check(st.body.find_child("TimeOfDay", true, false) != null and st.body.find_child("Section__mouse", true, false) != null,
 			"Gameplay has the time of day and the sections modules add")
 	Menu.unregister_settings_section(Menu.GAMEPLAY, "_mouse")
+	var debug_was := Flags.is_on("ui.debug_tab")
+	Flags.set_flag("ui.debug_tab", true)
+	Menu.register_settings_section(Menu.DEBUG, "_max", "Max out", func() -> Control: return Button.new(), 10)
+	check(st.tab_list().back() == [Menu.DEBUG, "Debug"], "Debug is the last tab while ui.debug_tab is on")
+	st.open_tab(Menu.DEBUG)
+	check(st.body.find_child("Section__max", true, false) != null, "Debug shows the buttons modules add")
+	Menu.unregister_settings_section(Menu.DEBUG, "_max")
+	Flags.set_flag("ui.debug_tab", false)
+	check(not st.tab_list().any(func(t: Array) -> bool: return t[0] == Menu.DEBUG), "and hides with the flag off")
+	Flags.set_flag("ui.debug_tab", debug_was)
 	pause._input(esc)
 	check(pause.is_open and (pause.root.find_child("Body", true, false) as Control).visible, "Esc goes back out of Settings")
 	pause._input(esc)
