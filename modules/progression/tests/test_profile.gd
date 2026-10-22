@@ -143,6 +143,18 @@ func run_tests() -> void:
 	lite.queue_free()
 	Flags.use(on)
 
+	# Settings > Debug's Max XP: a client asks, the host applies it to that client's player.
+	var payload: Variant = host._validate_max_xp(7, {})
+	host._apply_max_xp(payload)
+	var top := 0
+	for s: ProgressionSkill in host.skills():
+		top += s.xp_per_level.size()
+	check(host.total_level(&"Fitter") == top, "Max XP puts every tool at its top level")
+	check(host.total_level(&"Sam") == 0, "only for the player who asked")
+	check(client.total_level(&"Fitter") == top, "and the client sees it")
+	client.max_xp(&"Sam")
+	check(host.total_level(&"Sam") == 0, "a client can't apply it itself")
+
 	# Loaded for real: the section is on the Character page.
 	var saved := start_flags
 	var flags := saved.duplicate()
