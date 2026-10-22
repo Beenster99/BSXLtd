@@ -1,5 +1,5 @@
 extends Node3D
-## The crusher bay outside Pre-assembly's south door: where goods too far gone to refurbish
+## The crusher house east of Pre-assembly: where goods too far gone to refurbish
 ## end up. Trolleys set them down on the feed pad (the survey's GRIND calls off both lines,
 ## and a clean-up's scrap); a loader rides each lot up the ramp into a huge twin-shaft
 ## crusher (the hall's old grinder, three times the size), which breaks it down to dust. A
@@ -12,34 +12,46 @@ extends Node3D
 ## the pad it takes it, runs it for crush_time and says finish. Its state is the bus's
 ## (line_state().crusher); this node draws it and times the run on every peer.
 ##
-## Built in yard space on the apron south of the east wing; north is -Z.
+## Built in yard space inside its own shed (HOUSE, the shipyard builds the shed) east of
+## Pre-assembly; trolleys come in through the shed's south door and down its west aisle to
+## the feed pad. North is -Z.
 
 const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const LineParts := preload("res://modules/ship_bay/internal/yard/line_parts.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 
-## The bay on the apron (x, z, width, depth), metres.
-const BAY := Rect2(44.0, 28.0, 24.0, 23.0)
+## The crusher house's shed (x, z footprint) and eaves height, metres: against Pre-assembly's
+## east wall (whose own wall is the shed's west side, with its door through), the shed's
+## door onto the front strip at the west end of its south wall (centre x, width, height).
+const HOUSE := Rect2(50.25, -5.0, 38.0, 29.0)
+const HOUSE_H := 10.0
+const HOUSE_DOOR := Vector3(54.0, 7.0, 6.5)
+## The plant's floor marking (x, z, width, depth), metres, with everything below placed
+## from its corner (O): the feed pad on its west edge by the aisle, the crusher, the
+## smelter, then the ingot yard's zones along its south edge, east of the aisle.
+const BAY := Rect2(54.0, -3.0, 32.0, 23.0)
+const O := Vector3(54.0, 0, -3.0)
 ## Where trolleys set down lots for the crusher (floor points, yard space).
-const FEED_SPOTS: Array[Vector3] = [Vector3(47.2, 0, 31.6), Vector3(47.2, 0, 35.0), Vector3(47.2, 0, 38.4)]
+const FEED_SPOTS: Array[Vector3] = [O + Vector3(3.2, 0, 3.6), O + Vector3(3.2, 0, 7.0), O + Vector3(3.2, 0, 10.4)]
 ## The crusher's centre on the floor; lots travel +X into it.
-const CRUSHER := Vector3(60.2, 0, 35.0)
+const CRUSHER := O + Vector3(16.2, 0, 7.0)
 ## The crusher is the hall grinder's design drawn this many times bigger.
 const K := 3.0
 ## The grinder's own measures (its frame, before K): bed height, width, mouth offset.
 const BED := 0.9
 const WIDTH := 1.6
 ## The ramp from the feed pad up to the crusher's mouth (yard space, on the rollers).
-const RAMP_FOOT := Vector3(49.6, 0.9, 35.0)
-const RAMP_TOP := Vector3(56.6, BED * K, 35.0)
+const RAMP_FOOT := O + Vector3(5.6, 0.9, 7.0)
+const RAMP_TOP := O + Vector3(12.6, BED * K, 7.0)
 ## The smelter's centre on the floor, and the ingot yard's cooling conveyor (z) along the
 ## zones' north edge.
-const SMELTER := Vector3(65.4, 0, 35.0)
-const CONVEYOR_Z := 41.6
-## The ingot yard: one zone per material, west to east, each this big (x, z).
+const SMELTER := O + Vector3(21.4, 0, 7.0)
+const CONVEYOR_Z := O.z + 13.6
+## The ingot yard: one zone per material, west to east from ZONE_X, each this big (x, z).
 const ZONE_SIZE := Vector2(3.0, 6.6)
-const ZONE_Z := 43.6
+const ZONE_Z := O.z + 15.6
+const ZONE_X := O.x + 6.6
 const MATERIALS: PackedStringArray = ["steel", "alloy", "titanium", "copper", "tungsten", "glass", "crystal"]
 const METAL_LOOK := {"steel": Color(0.46, 0.47, 0.49), "alloy": Color(0.74, 0.76, 0.8), "titanium": Color(0.55, 0.58, 0.66),
 		"copper": Color(0.78, 0.45, 0.25), "tungsten": Color(0.32, 0.33, 0.35), "glass": Color(0.62, 0.8, 0.76),
@@ -324,7 +336,7 @@ func _draw_ingots() -> void:
 
 
 static func _zone_centre(i: int) -> Vector3:
-	return Vector3(BAY.position.x + 0.6 + ZONE_SIZE.x * 0.5 + i * (ZONE_SIZE.x + 0.3), 0, ZONE_Z + ZONE_SIZE.y * 0.5)
+	return Vector3(ZONE_X + ZONE_SIZE.x * 0.5 + i * (ZONE_SIZE.x + 0.3), 0, ZONE_Z + ZONE_SIZE.y * 0.5)
 
 
 # --- Running ---------------------------------------------------------------------------------
@@ -382,7 +394,7 @@ func _build_pad() -> void:
 			_part(PartShapes.box(Vector3(2.0, 0.01, 0.1)).mesh, p + Vector3(0, 0.006, k * 1.05), _mats["red"], root)
 	var words := _plate("CRUSHER FEED", Color(0.95, 0.75, 0.1))
 	words.font_size = 96
-	words.position = Vector3(FEED_SPOTS[0].x - 1.9, 0.02, 35.0)
+	words.position = Vector3(FEED_SPOTS[0].x - 1.9, 0.02, FEED_SPOTS[1].z)
 	words.rotation = Vector3(-PI * 0.5, PI * 0.5, 0)
 	root.add_child(words)
 	var sign_board := _plate("CRUSHER BAY", Color(0.95, 0.95, 0.92))
@@ -571,7 +583,7 @@ func _build_smelter() -> void:
 	var spout := Vector3(0, 0, 2.9)
 	var down := CONVEYOR_Z - SMELTER.z - spout.z
 	_conveyor(root, spout + Vector3(0, 0, down * 0.5), down, 0.0, belt)
-	var west := SMELTER.x - (BAY.position.x + 1.0)
+	var west := SMELTER.x - (ZONE_X - 0.3)
 	_conveyor(root, Vector3(-west * 0.5, -0.004, CONVEYOR_Z - SMELTER.z), west, PI * 0.5, belt)
 
 

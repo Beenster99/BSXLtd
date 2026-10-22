@@ -666,9 +666,10 @@ func _build_power_unit(socket: Vector3) -> void:
 	plug.add_child(_plug_body)
 	_plug_shape = _collide(Vector3(0.16, 0.16, 0.12), Transform3D(Basis(), Vector3(0, 0, -0.04)), _plug_body)
 	_plug_shape.set_meta("ship_bay_click", use_plug)
-	# The cable, redrawn when anything at its ends moves.
-	var cable := ShipSurface.of(ShipKit.paint(Color(0.08, 0.08, 0.09), 0.0, 0.8, "rubber"))
-	var seg := PartShapes.prism(8, 0.022, 1.0).mesh
+	# The cable, redrawn when anything at its ends moves: high-visibility orange and thick
+	# enough to see across the bay floor (beenster lost the black one against the dark floor).
+	var cable := ShipSurface.of(ShipKit.paint(Color(1.0, 0.5, 0.08), 0.0, 0.55, "rubber"))
+	var seg := PartShapes.prism(10, 0.032, 1.0).mesh
 	for i in CABLE_SEGMENTS:
 		var mi := MeshInstance3D.new()
 		mi.mesh = seg
