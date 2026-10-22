@@ -28,6 +28,7 @@ extends Node3D
 const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
+const LineParts := preload("res://modules/ship_bay/internal/yard/line_parts.gd")
 
 ## The main line's centre line (x) and the conveyor's top over the floor, metres.
 const LINE_X := 46.4
@@ -641,10 +642,20 @@ func _animate(s: String, k: float) -> void:
 			# The scan bar sweeps the lot twice.
 			(m.bar as Node3D).position.z = -0.8 + 1.6 * absf(fmod(k * 2.0, 2.0) - 1.0)
 		"grinder":
+			# The rotors turn into each other (and their gears with them), the housing
+			# shudders, sparks fly from the nip while there is something in it.
+			var spin := k * run_time * 7.0
+			(m.rotors[0] as Node3D).rotation.x = spin
+			(m.rotors[1] as Node3D).rotation.x = -spin
 			(m.housing as Node3D).position.x = sin(k * 300.0) * 0.004
 			(m.stream as Node3D).visible = k < 0.97
+			var biting := lot != null and k > 0.08 and k < 0.92
+			(m.sparks as CPUParticles3D).emitting = biting
+			(m.spark_glow as OmniLight3D).light_energy = randf_range(0.8, 2.4) if biting else 0.0
 			if lot:
-				lot.position = _rest(s) + (STATIONS[s].travel as Vector3) * 0.9 * minf(k * 2.0, 1.0)
+				var drop := 0.3 * clampf(k * 2.0 - 0.7, 0.0, 1.0)
+				lot.position = _rest(s) + (STATIONS[s].travel as Vector3) * 0.9 * minf(k * 2.0, 1.0) + Vector3(0, -drop, 0)
+				lot.position += Vector3(sin(k * 420.0), 0, cos(k * 370.0)) * 0.008
 				lot.scale = Vector3.ONE * maxf(1.0 - k, 0.05)
 		"straightener":
 			# The platen comes down onto the lot three times.
@@ -654,11 +665,19 @@ func _animate(s: String, k: float) -> void:
 			if lot and k > 0.5:
 				(lot.get_node("Body") as Node3D).basis = Basis()
 		"bath":
+			var dip := 0.75 * sin(k * PI)
 			if lot:
-				lot.position = _rest(s) - Vector3(0, 0.75 * sin(k * PI), 0)
-			(m.bubbles as Node3D).visible = k < 0.95
+				lot.position = _rest(s) - Vector3(0, dip, 0)
+			_hoist(m, dip)
+			for p: CPUParticles3D in m.fizz:
+				p.emitting = k < 0.95
+			# The surface heaves with the boil; the glow brightens and flickers.
+			(m.liquid as Node3D).position.y = (0.18 + (BED - 0.28) * 0.5) + sin(k * 70.0) * 0.004
+			(m.bath_glow as OmniLight3D).light_energy = 0.9 + 0.25 * sin(k * 53.0) if k < 0.95 else 0.35
 		"coater":
 			(m.mist as Node3D).visible = k < 0.95
+			for p: CPUParticles3D in m.sprays:
+				p.emitting = k < 0.95
 			(m.mist as Node3D).rotation.z = k * 40.0
 			if lot and k > 0.5:
 				var lot_d: Dictionary = (_station(s).get("lot", {}) as Dictionary).duplicate()
@@ -677,6 +696,14 @@ func _start_sound(s: String, on: bool) -> void:
 			motor.stop()
 	if on:
 		Sfx.play("whoosh" if s == "coater" else "clunk", m.node, -6.0)
+		match s:
+			"grinder":
+				(m.grind as AudioStreamPlayer3D).play()
+			"bath":
+				# The chemicals go live with a hiss and a cloud off the top.
+				LineParts.play("hiss", m.node, -3.0)
+				(m.burst as CPUParticles3D).restart()
+				(m.fizz_sound as AudioStreamPlayer3D).play()
 		return
 	match s:
 		"survey":
@@ -684,12 +711,21 @@ func _start_sound(s: String, on: bool) -> void:
 		"grinder":
 			(m.housing as Node3D).position.x = 0.0
 			(m.stream as Node3D).visible = false
+			(m.sparks as CPUParticles3D).emitting = false
+			(m.spark_glow as OmniLight3D).light_energy = 0.0
+			(m.grind as AudioStreamPlayer3D).stop()
 		"straightener":
 			(m.platen as Node3D).position.y = float(m.platen_top)
 		"bath":
-			(m.bubbles as Node3D).visible = false
+			for p: CPUParticles3D in m.fizz:
+				p.emitting = false
+			(m.fizz_sound as AudioStreamPlayer3D).stop()
+			(m.bath_glow as OmniLight3D).light_energy = 0.35
+			_hoist(m, 0.0)
 		"coater":
 			(m.mist as Node3D).visible = false
+			for p: CPUParticles3D in m.sprays:
+				p.emitting = false
 
 
 # --- Building ------------------------------------------------------------------------------
@@ -718,7 +754,7 @@ func _build_machine(s: String) -> void:
 	var paint: Material = _mats[s]
 	# A plinth and the roller bed through the machine.
 	_part(PartShapes.chamfer_box(Vector3(WIDTH + 0.2, 0.12, LENGTH + 0.1), 0.02).mesh, Vector3(0, 0.06, 0), _mats["dark"], root)
-	if s != "bath":
+	if s != "bath" and s != "grinder":
 		_bed(root, LENGTH, Vector3.ZERO)
 	_collide(body, Vector3(WIDTH, BED, LENGTH), Vector3(0, BED * 0.5, 0))
 	match s:
@@ -744,17 +780,78 @@ func _build_machine(s: String) -> void:
 			_collide(body, Vector3(0.6, 2.0, 1.6), Vector3(-side * 1.15, 1.0, 0))
 			_collide(body, Vector3(WIDTH, 0.2, LENGTH), Vector3(0, BED + 1.45, 0))
 		"grinder":
-			# A heavy housing over the bed with a hopper, a motor behind and a chute out the end.
+			# A twin-shaft shredder: an open-topped cast chamber with a barred window in its
+			# front cheek, two toothed rotors turning into each other, their gears outside the back
+			# cheek and the motor behind. The lot rides in through the mouth and drops into
+			# the nip; the dust runs down the chute out of the far end.
 			var housing := Node3D.new()
 			housing.name = "Housing"
 			root.add_child(housing)
-			_part(PartShapes.chamfer_box(Vector3(WIDTH + 0.2, 1.5, 1.6), 0.06).mesh, Vector3(0, BED + 0.75, 0.25), paint, housing)
-			_part(PartShapes.frustum(0.55, 0.85, 0.7, 4).mesh, Vector3(0, BED + 1.85, 0.25), _mats["steel"], housing, Basis(Vector3.UP, PI * 0.25))
-			_part(PartShapes.box(Vector3(WIDTH + 0.22, 0.2, 0.05)).mesh, Vector3(0, BED + 1.3, -0.56), _mats["yellow"], housing)
-			_part(PartShapes.box(Vector3(1.2, 0.5, 0.04)).mesh, Vector3(0, BED + 0.28, -0.56), _mats["dark"], housing)
-			_part(WreckParts.generator(Vector3(1.0, 0.8, 0.9)).mesh, Vector3(-side * 1.25, 0.55, 0.3), _mats["dark"], root)
-			_collide(body, Vector3(WIDTH + 0.2, 2.6, 1.6), Vector3(0, 1.3, 0.25))
-			_collide(body, Vector3(1.0, 0.9, 0.9), Vector3(-side * 1.25, 0.45, 0.3))
+			var cast: Material = paint
+			var top := BED + 0.75
+			var cz := 0.25
+			# The discharge box under the rotors, the cheeks and the end walls.
+			_part(PartShapes.chamfer_box(Vector3(WIDTH, BED - 0.42, 1.5), 0.03).mesh, Vector3(0, 0.12 + (BED - 0.42) * 0.5, cz), cast, housing)
+			_part(PartShapes.chamfer_box(Vector3(0.12, top - BED + 0.32, 1.5), 0.02).mesh, Vector3(-side * 0.74, (top + BED - 0.32) * 0.5, cz), cast, housing)
+			var win_y0 := BED - 0.22
+			_part(PartShapes.box(Vector3(0.12, 0.1, 1.5)).mesh, Vector3(side * 0.74, win_y0 - 0.05, cz), cast, housing)
+			_part(PartShapes.box(Vector3(0.12, 0.12, 1.5)).mesh, Vector3(side * 0.74, top - 0.06, cz), cast, housing)
+			for z: float in [cz - 0.69, cz + 0.69]:
+				_part(PartShapes.box(Vector3(0.12, top - win_y0 - 0.12, 0.118)).mesh, Vector3(side * 0.74, (top - 0.12 + win_y0) * 0.5, z), cast, housing)
+			# The window is open behind guard bars, so you can watch the teeth bite.
+			for z: float in [cz - 0.32, cz, cz + 0.32]:
+				_part(PartShapes.prism(8, 0.018, top - win_y0 - 0.12).mesh, Vector3(side * 0.77, (top - 0.12 + win_y0) * 0.5, z), _mats["yellow"], housing)
+			_part(PartShapes.box(Vector3(1.36, top - BED - 0.3, 0.1)).mesh, Vector3(0, (top + BED + 0.3) * 0.5, cz - 0.7), cast, housing)
+			_part(PartShapes.box(Vector3(1.36, top - BED + 0.3, 0.1)).mesh, Vector3(0, (top + BED - 0.3) * 0.5, cz + 0.7), cast, housing)
+			_part(PartShapes.box(Vector3(1.6, 0.16, 0.05)).mesh, Vector3(0, top - 0.12, cz - 0.77), _mats["yellow"], housing)
+			_stripes(housing, Vector3(0, top - 0.12, cz - 0.8), 1.4, 0.12)
+			# Ribs cast on the back cheek, bearing blocks where the shafts come through.
+			for z: float in [cz - 0.45, cz, cz + 0.45]:
+				_part(PartShapes.box(Vector3(0.06, top - BED + 0.2, 0.06)).mesh, Vector3(-side * 0.83, (top + BED - 0.2) * 0.5, z), cast, housing)
+			# The rotors, their discs interleaved, and a spur gear on each shaft end.
+			var rotors: Array[Node3D] = []
+			for i in 2:
+				var r := Node3D.new()
+				r.name = "Rotor%d" % i
+				r.position = Vector3(0, BED + 0.02, cz - 0.22 + 0.44 * i)
+				housing.add_child(r)
+				_part(LineParts.rotor(1.3, 0.3, 7, 3, (0.0 if i == 0 else 1.3 / 7.0 * 0.5) - 1.3 / 7.0 * 0.25), Vector3.ZERO, _mats["roller"], r)
+				_part(LineParts.gear(0.215, 0.07, 18), Vector3(-side * 0.93, 0, 0), _mats["steel"], r, Basis(Vector3.RIGHT, PI / 18.0 * i))
+				for x: float in [-0.85, 0.85]:
+					_part(PartShapes.chamfer_box(Vector3(0.08, 0.18, 0.18), 0.02).mesh, r.position + Vector3(x, 0, 0), _mats["dark"], housing)
+				rotors.append(r)
+			m["rotors"] = rotors
+			# The gear guard: a frame round the gears you can see through.
+			for y: float in [BED - 0.25, BED + 0.29]:
+				_part(PartShapes.box(Vector3(0.04, 0.04, 1.0)).mesh, Vector3(-side * 1.02, y, cz), _mats["yellow"], housing)
+			for z: float in [cz - 0.48, cz + 0.48]:
+				_part(PartShapes.box(Vector3(0.04, 0.5, 0.04)).mesh, Vector3(-side * 1.02, BED + 0.02, z), _mats["yellow"], housing)
+			# Guard rails round the open top, and the sparks and their glow in the nip.
+			for x: float in [-0.74, 0.74]:
+				for z: float in [cz - 0.7, cz + 0.7]:
+					_part(PartShapes.box(Vector3(0.05, 0.32, 0.05)).mesh, Vector3(x, top + 0.16, z), _mats["yellow"], housing)
+				_part(PartShapes.box(Vector3(0.04, 0.04, 1.44)).mesh, Vector3(x, top + 0.3, cz), _mats["yellow"], housing)
+			for z: float in [cz - 0.7, cz + 0.7]:
+				_part(PartShapes.box(Vector3(1.44, 0.038, 0.038)).mesh, Vector3(0, top + 0.3, z), _mats["yellow"], housing)
+			var sparks := LineParts.sparks(Vector3(0.55, 0.02, 0.06))
+			sparks.position = Vector3(0, BED + 0.28, cz)
+			housing.add_child(sparks)
+			m["sparks"] = sparks
+			var glow := OmniLight3D.new()
+			glow.name = "SparkGlow"
+			glow.light_color = Color(1.0, 0.6, 0.25)
+			glow.omni_range = 3.5
+			glow.light_energy = 0.0
+			glow.shadow_enabled = false
+			glow.set_meta("gfx_no_shadow", true)
+			glow.position = Vector3(0, BED + 0.5, cz)
+			housing.add_child(glow)
+			m["spark_glow"] = glow
+			# The motor behind, and an infeed bed into the mouth.
+			_part(WreckParts.generator(Vector3(1.0, 0.8, 0.9)).mesh, Vector3(-side * 1.55, 0.55, 0.3), _mats["dark"], root)
+			_bed(root, 0.6, Vector3(0, 0, -0.8))
+			_collide(body, Vector3(WIDTH + 0.2, top + 0.3, 1.6), Vector3(0, (top + 0.3) * 0.5, cz))
+			_collide(body, Vector3(1.0, 0.9, 0.9), Vector3(-side * 1.55, 0.45, 0.3))
 			# The chute down from the end of the housing into the dust vessel.
 			var chute_len := (DUST_SPOT - Vector3(at.x, 0, at.z)).length() - 1.6
 			_part(PartShapes.box(Vector3(0.5, 0.05, chute_len)).mesh, Vector3(0, BED + 0.55, 1.05 + chute_len * 0.5), _mats["steel"], root, Basis(Vector3.RIGHT, 0.3))
@@ -762,6 +859,7 @@ func _build_machine(s: String) -> void:
 			stream.visible = false
 			m["housing"] = housing
 			m["stream"] = stream
+			m["grind"] = LineParts.loop("grind", root, -10.0)
 		"straightener":
 			# A press: two columns, a crosshead and a ram platen over the bed.
 			for x: float in [-0.85, 0.85]:
@@ -782,33 +880,83 @@ func _build_machine(s: String) -> void:
 				_collide(body, Vector3(0.24, 2.6, 0.5), Vector3(x, 1.3, 0))
 			_collide(body, Vector3(2.0, 0.45, 0.8), Vector3(0, 2.7, 0))
 		"bath":
-			# An open tank of glowing green stripper with a hoist frame over it.
-			_part(PartShapes.chamfer_box(Vector3(WIDTH, BED + 0.05, LENGTH), 0.03).mesh, Vector3(0, (BED + 0.05) * 0.5, 0), paint, root)
-			var liquid := ShipKit.glow(Color(0.35, 0.95, 0.4), 1.2)
-			_part(PartShapes.box(Vector3(WIDTH - 0.16, 0.02, LENGTH - 0.16)).mesh, Vector3(0, BED - 0.1, 0), liquid, root)
+			# An open tank of glowing green stripper: walls round a liquid you can see into,
+			# sparge pipes on its floor that bubble it while it runs, a hoist on a frame over
+			# it that lowers the lot in on two cables, vapour coming off the top.
+			var wall := 0.08
+			var rim := BED + 0.05
 			for k: float in [-1.0, 1.0]:
-				_part(PartShapes.box(Vector3(WIDTH + 0.04, 0.056, 0.056)).mesh, Vector3(0, BED + 0.08, k * LENGTH * 0.5), _mats["steel"], root)
-				_part(PartShapes.box(Vector3(0.06, 0.06, LENGTH + 0.04)).mesh, Vector3(k * WIDTH * 0.5, BED + 0.08, 0), _mats["steel"], root)
-			var bubbles := Node3D.new()
-			bubbles.name = "Bubbles"
-			bubbles.visible = false
+				_part(PartShapes.box(Vector3(wall, rim - 0.12, LENGTH)).mesh, Vector3(k * (WIDTH - wall) * 0.5, 0.12 + (rim - 0.12) * 0.5, 0), paint, root)
+				_part(PartShapes.box(Vector3(WIDTH - wall * 2.0 - 0.002, rim - 0.12, wall)).mesh, Vector3(0, 0.12 + (rim - 0.12) * 0.5, k * (LENGTH - wall) * 0.5), paint, root)
+			_part(PartShapes.box(Vector3(WIDTH - wall * 2.0, 0.06, LENGTH - wall * 2.0)).mesh, Vector3(0, 0.15, 0), _mats["dark"], root)
+			for x: float in [-0.45, 0.0, 0.45]:
+				_part(PartShapes.prism(10, 0.03, LENGTH - 0.3).mesh, Vector3(x, 0.21, 0), _mats["steel"], root, Basis(Vector3.RIGHT, PI * 0.5))
+			var surface := BED - 0.1
+			var liquid := StandardMaterial3D.new()
+			liquid.albedo_color = Color(0.25, 0.85, 0.35, 0.45)
+			liquid.emission_enabled = true
+			liquid.emission = Color(0.3, 0.95, 0.4)
+			liquid.emission_energy_multiplier = 0.8
+			liquid.roughness = 0.05
+			liquid.metallic_specular = 0.9
+			liquid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			var fluid := _part(PartShapes.box(Vector3(WIDTH - wall * 2.0 - 0.004, surface - 0.18, LENGTH - wall * 2.0 - 0.004)).mesh,
+					Vector3(0, 0.18 + (surface - 0.18) * 0.5, 0), liquid, root)
+			fluid.name = "Liquid"
+			m["liquid"] = fluid
+			for k: float in [-1.0, 1.0]:
+				_part(PartShapes.box(Vector3(WIDTH + 0.04, 0.056, 0.056)).mesh, Vector3(0, rim + 0.03, k * LENGTH * 0.5), _mats["steel"], root)
+				_part(PartShapes.box(Vector3(0.06, 0.06, LENGTH + 0.04)).mesh, Vector3(k * WIDTH * 0.5, rim + 0.03, 0), _mats["steel"], root)
+			var inner := Vector3((WIDTH - 0.4) * 0.5, 0.01, (LENGTH - 0.4) * 0.5)
+			var bubbles := LineParts.bubbles(inner, surface - 0.25)
+			bubbles.position = Vector3(0, 0.25, 0)
 			root.add_child(bubbles)
-			var rng := RandomNumberGenerator.new()
-			rng.seed = 7
-			for i in 14:
-				_part(PartShapes.dome(0.04 + rng.randf() * 0.04, 0.03, 8, 2).mesh, Vector3(rng.randf_range(-0.6, 0.6), BED - 0.09, rng.randf_range(-0.9, 0.9)),
-						ShipKit.glow(Color(0.6, 1.0, 0.6), 2.0), bubbles)
+			var pops := LineParts.pops(inner)
+			pops.position = Vector3(0, surface + 0.005, 0)
+			root.add_child(pops)
+			var vapour := LineParts.vapour(Vector3(inner.x, 0.02, inner.z), Color(0.7, 1.0, 0.75, 0.1))
+			vapour.position = Vector3(0, surface + 0.08, 0)
+			root.add_child(vapour)
+			var burst := LineParts.vapour(Vector3(inner.x, 0.02, inner.z), Color(0.85, 1.0, 0.85, 0.22), true)
+			burst.position = Vector3(0, surface + 0.08, 0)
+			root.add_child(burst)
 			m["bubbles"] = bubbles
+			m["fizz"] = [bubbles, pops, vapour]
+			m["burst"] = burst
+			var bath_glow := OmniLight3D.new()
+			bath_glow.name = "BathGlow"
+			bath_glow.light_color = Color(0.4, 1.0, 0.5)
+			bath_glow.omni_range = 2.6
+			bath_glow.light_energy = 0.35
+			bath_glow.shadow_enabled = false
+			bath_glow.set_meta("gfx_no_shadow", true)
+			bath_glow.position = Vector3(0, BED + 0.3, 0)
+			root.add_child(bath_glow)
+			m["bath_glow"] = bath_glow
+			# The hoist frame, its beam and the carriage with two cables down to the lot.
 			for z: float in [-1.0, 1.0]:
 				for x: float in [-0.88, 0.88]:
 					_part(PartShapes.box(Vector3(0.1, 2.0, 0.1)).mesh, Vector3(x, 1.0, z), _mats["steel"], root)
 				_part(PartShapes.box(Vector3(1.86, 0.116, 0.116)).mesh, Vector3(0, 2.0, z), _mats["steel"], root)
 			_part(PartShapes.box(Vector3(0.12, 0.12, 2.1)).mesh, Vector3(0, 2.0, 0), _mats["yellow"], root)
 			_part(WreckParts.junction_box(Vector3(0.4, 0.35, 0.35), Color(1.0, 0.6, 0.15)).mesh, Vector3(0, 1.75, 0), _mats["dark"], root)
+			var cables: Array[Node3D] = []
+			for z: float in [-0.35, 0.35]:
+				_part(PartShapes.prism(10, 0.06, 0.1).mesh, Vector3(0, 1.88, z), _mats["dark"], root, Basis(Vector3.FORWARD, PI * 0.5))
+				var cable := _part(PartShapes.box(Vector3(0.012, 1.0, 0.012)).mesh, Vector3(0, 1.0, z), _mats["dark"], root)
+				cables.append(cable)
+			var spreader := Node3D.new()
+			spreader.name = "Spreader"
+			root.add_child(spreader)
+			_part(PartShapes.box(Vector3(0.08, 0.06, 0.9)).mesh, Vector3.ZERO, _mats["yellow"], spreader)
+			m["cables"] = cables
+			m["spreader"] = spreader
+			_hoist(m, 0.0)
 			var warn := _plate("CORROSIVE", Color(0.35, 0.95, 0.4))
 			warn.position = Vector3(side * (WIDTH * 0.5 + 0.012), 0.6, 0.55)
 			warn.rotation.y = side * PI * 0.5
 			root.add_child(warn)
+			m["fizz_sound"] = LineParts.loop("bubbling", root, -12.0)
 		"coater":
 			# A spray booth: walls each side, a roof, a ring of nozzles and the mist.
 			# The back wall solid; the front a framed window so you can watch the coats go on.
@@ -822,10 +970,18 @@ func _build_machine(s: String) -> void:
 			_part(PartShapes.chamfer_box(Vector3(1.8, 0.2, LENGTH), 0.03).mesh, Vector3(0, 2.3, 0), paint, root)
 			_part(PartShapes.box(Vector3(1.0, 0.3, 1.0)).mesh, Vector3(0, 2.55, 0), _mats["dark"], root)
 			_part(PartShapes.louvre(0.9, 0.9, 0.05, 6).mesh, Vector3(0, 2.71, 0), _mats["steel"], root)
+			var sprays: Array[CPUParticles3D] = []
 			for i in 6:
 				var a := TAU * i / 6.0
-				_part(PartShapes.frustum(0.05, 0.02, 0.18).mesh, Vector3(cos(a) * 0.65, BED + 0.7 + sin(a) * 0.6, 0),
-						_mats["dark"], root, Basis(Vector3.FORWARD, a + PI * 0.5))
+				var nozzle := Vector3(cos(a) * 0.65, BED + 0.7 + sin(a) * 0.6, 0)
+				_part(PartShapes.frustum(0.05, 0.02, 0.18).mesh, nozzle, _mats["dark"], root, Basis(Vector3.FORWARD, a + PI * 0.5))
+				# Each nozzle sprays in at the lot.
+				var spray := LineParts.spray(Color(0.55, 0.75, 0.95))
+				var inward := (Vector3(0, BED + 0.45, 0) - nozzle).normalized()
+				spray.transform = Transform3D(Basis.looking_at(-inward, Vector3.FORWARD if absf(inward.y) > 0.9 else Vector3.UP), nozzle + inward * 0.1)
+				root.add_child(spray)
+				sprays.append(spray)
+			m["sprays"] = sprays
 			var mist := Node3D.new()
 			mist.name = "Mist"
 			mist.visible = false
@@ -872,6 +1028,17 @@ func _build_machine(s: String) -> void:
 		motor.pitch_scale = {"survey": 1.6, "grinder": 0.6, "straightener": 0.8, "bath": 1.1, "coater": 1.3}[s]
 	m["motor"] = motor
 	machines[s] = m
+
+
+## The bath's hoist: the spreader bar `dip` m below its rest over the lot, the cables
+## from the carriage down to it.
+func _hoist(m: Dictionary, dip: float) -> void:
+	var low := BED + 0.55 - dip
+	(m.spreader as Node3D).position = Vector3(0, low, 0)
+	for c: Node3D in m.cables:
+		var span := 1.86 - low
+		c.scale = Vector3(1, span, 1)
+		c.position.y = low + span * 0.5
 
 
 ## Roller conveyor between the machines and the turntable where the grind branch leaves.
