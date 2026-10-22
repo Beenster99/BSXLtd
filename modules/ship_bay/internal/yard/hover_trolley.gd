@@ -13,6 +13,7 @@ extends AnimatableBody3D
 
 const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
 const T := preload("res://modules/ui/api/terminal_kit.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 
 ## A button on its touch screen was pressed: "call" (follow me), "park", "fast" or "remote"
 ## (the fleet acts).
@@ -76,7 +77,7 @@ var _fork: Node3D
 var fork_out := 0.0
 var fork_target := 0.0
 var fork_side := 1.0
-var _cargo_mesh: MeshInstance3D
+var _cargo_mesh: Node3D
 var _lamp: MeshInstance3D
 ## The touch screen on its control box (TV style): its letter, status and buttons.
 var screen: Node3D
@@ -148,22 +149,23 @@ func set_cargo(c: Dictionary) -> void:
 		_cargo_mesh = null
 	if cargo.is_empty():
 		return
+	# The goods themselves, as they are, stacked neatly on the deck.
 	var d: Vector2 = spec["deck"]
-	var box := BoxMesh.new()
-	var mass := float(cargo.get("mass", 100.0))
-	match str(cargo.get("kind", "pallet")):
-		"bin":
-			box.size = Vector3(0.6, 0.32, 0.9)
-		"bulk":
-			box.size = Vector3(minf(d.x - 0.2, 2.3), clampf(1.0 + mass / 15000.0, 1.0, 2.4), minf(d.y - 0.3, 3.8))
-		_:
-			box.size = Vector3(minf(d.x - 0.15, 1.0), clampf(0.35 + mass / 2500.0, 0.35, 1.35), minf(d.y - 0.2, 1.2))
-	_cargo_mesh = MeshInstance3D.new()
+	var item := str(cargo.get("item", ""))
+	var count := maxi(1, int(cargo.get("qty", 1)))
+	var look := ItemLook.look_for(float(cargo.get("condition", 1.0)))
+	var size := ItemLook.size_of(item)
+	_cargo_mesh = Node3D.new()
 	_cargo_mesh.name = "Cargo"
-	_cargo_mesh.mesh = box
-	_cargo_mesh.material_override = _mats["crate"]
-	_cargo_mesh.position = Vector3(0, 0.06 + box.size.y * 0.5, 0)
+	_cargo_mesh.position = Vector3(0, 0.06, 0)
 	deck.add_child(_cargo_mesh)
+	var spots := ItemLook.stack(size, count, Vector2(d.x - 0.1, d.y - 0.1), 2.4)
+	if spots.is_empty():
+		spots = [Transform3D()]
+	for xf: Transform3D in spots:
+		var n := ItemLook.make(item, look)
+		n.transform = xf
+		_cargo_mesh.add_child(n)
 
 
 ## Moves it for one physics step: remote input or the path, slowing for `obstacles`

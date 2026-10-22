@@ -29,6 +29,7 @@ const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const LineParts := preload("res://modules/ship_bay/internal/yard/line_parts.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 
 ## The main line's centre line (x) and the conveyor's top over the floor, metres.
 const LINE_X := 46.4
@@ -525,17 +526,15 @@ func _dress_lot(node: Node3D, lot: Dictionary) -> void:
 	node.set_meta("key", key)
 	for c in node.get_children():
 		c.free()
-	var size := _lot_size(float(lot.mass))
-	var mat: Material = _lot_mats[_look(lot)]
 	var dented := ["rust", "worn"].has(_look(lot)) and str(lot.get("stage", "")) != "straightener"
 	var bend := Basis(Vector3(0.0, 0.0, 1.0), 0.09) * Basis(Vector3(1.0, 0.0, 0.0), -0.06) if dented else Basis()
 	var body := Node3D.new()
 	body.name = "Body"
 	body.basis = bend
 	node.add_child(body)
-	_part(PartShapes.chamfer_box(size, minf(size.y, size.x) * 0.12).mesh, Vector3(0, size.y * 0.5, 0), mat, body)
-	_part(PartShapes.prism(12, size.x * 0.22, size.y * 0.35).mesh, Vector3(size.x * 0.15, size.y * 1.15, -size.z * 0.15), mat, body)
-	_part(PartShapes.box(Vector3(size.x * 1.04, size.y * 0.1, size.z * 0.12)).mesh, Vector3(0, size.y * 0.5, size.z * 0.3), mat, body)
+	# The part itself, as it is: rusty or worn, then bare, then in its own paint again.
+	var looks := {"rust": ItemLook.Look.RUST, "worn": ItemLook.Look.WORN, "bare": ItemLook.Look.BARE, "coat": ItemLook.Look.NEW}
+	body.add_child(ItemLook.make(str(lot.item), looks[_look(lot)], float(lot.mass)))
 
 
 static func _look(lot: Dictionary) -> String:
@@ -547,9 +546,9 @@ static func _look(lot: Dictionary) -> String:
 	return "rust" if float(lot.get("condition", 1.0)) < 0.6 else "worn"
 
 
-static func _lot_size(mass: float) -> Vector3:
-	var k := clampf(0.35 + sqrt(maxf(mass, 0.0)) / 60.0, 0.35, 1.05)
-	return Vector3(k, k * 0.7, k * 1.1)
+## A lot's size (its item's box, metres).
+static func _lot_size(item: String, mass: float) -> Vector3:
+	return ItemLook.size_of(item, mass)
 
 
 ## Where a machine's lot rests (yard space, its bottom on the bed or in the bath).
@@ -660,7 +659,7 @@ func _animate(s: String, k: float) -> void:
 		"straightener":
 			# The platen comes down onto the lot three times.
 			var top := float(m.platen_top)
-			var low := BED + (_lot_size(float(_station(s).get("lot", {}).get("mass", 0.0))).y + 0.06 if lot else 0.5)
+			var low := BED + (_lot_size(str(_station(s).get("lot", {}).get("item", "")), float(_station(s).get("lot", {}).get("mass", 0.0))).y + 0.06 if lot else 0.5)
 			(m.platen as Node3D).position.y = lerpf(top, low, absf(sin(k * PI * 3.0)))
 			if lot and k > 0.5:
 				(lot.get_node("Body") as Node3D).basis = Basis()
