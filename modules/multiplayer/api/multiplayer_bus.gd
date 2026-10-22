@@ -48,9 +48,12 @@ const MAX_CREW := 4
 const CREW_CHANNEL := "multiplayer.crew"
 ## How long a ping marker shows.
 const PING_LIFE := 6.0
+## The title screen's Play Together screen (host or join), there while online play is on.
+const PLAY_SCENE := "multiplayer.play_together"
 const CREW_SCREEN := preload("res://modules/multiplayer/internal/crew/crew_screen.gd")
 
 var _crew: Node
+var _was_client := false
 
 var _session: NetSession
 
@@ -75,12 +78,28 @@ func register_module() -> void:
 	add_child(_crew)
 	if Flags.is_on(CREW_CHANNEL):
 		HudSlots.register_holo_channel(CREW_CHANNEL, "Crew", _crew_screen, 45)
+	if Flags.is_on(ONLINE_FLAG):
+		Router.register_scene(PLAY_SCENE, "res://modules/multiplayer/internal/lobby/play_together.tscn")
+		Menu.register_entry(PLAY_SCENE, "Play Together", PLAY_SCENE, 5)
+	session_started.connect(func(as_host: bool) -> void: _was_client = not as_host)
+	session_ended.connect(_on_session_ended)
 
 
 func unregister_module() -> void:
 	HudSlots.unregister_holo_channel(CREW_CHANNEL)
+	Menu.unregister_entry(PLAY_SCENE)
 	if _session:
 		_session.leave()
+
+
+## A player who joined someone's yard has no game of their own there, so when the session
+## ends (the host left, or they did) they go back to Play Together, which says why.
+func _on_session_ended(reason: String) -> void:
+	var was_client := _was_client
+	_was_client = false
+	if was_client and Modules.bus("multiplayer") == self and Router.has_scene(PLAY_SCENE) \
+			and Router.current_id != PLAY_SCENE:
+		Router.goto.call_deferred(PLAY_SCENE, {"note": "Left the crew game: %s" % reason})
 
 
 # --- Sessions --------------------------------------------------------------------------
