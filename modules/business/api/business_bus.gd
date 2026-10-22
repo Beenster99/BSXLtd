@@ -866,8 +866,9 @@ func sell_scrap(material: String, kg: int, form := "bale") -> BusinessResult:
 
 ## Takes what a handed-over job left BSX into stock: parts "kept" go in used or damaged,
 ## kilos "kept" go in as raw material, less what the client's wants still claim of that
-## material (Contracts counts kept kilos towards them). Returned, scrapped and destroyed
-## lines are not BSX's.
+## material (Contracts counts kept kilos towards them). Parts and lots "scrapped" go in as
+## kilos of their material when the order leaves the rest to BSX. Returned, destroyed and
+## unknown lines add nothing.
 func _take_recoveries(contract_id: String, recoveries: Array) -> void:
 	var source := "contract:" + contract_id
 	var job := _job(contract_id)
@@ -878,18 +879,31 @@ func _take_recoveries(contract_id: String, recoveries: Array) -> void:
 	for rec: Variant in recoveries:
 		if rec is Dictionary and rec.get("disposition") == "returned" and rec.has("material"):
 			owed[str(rec.material)] = float(owed.get(str(rec.material), 0.0)) - float(rec.get("kg", 0.0))
-	var kilos := {}
+	var bsx_keeps := str(job.order.get("keeps")) != "client" if job and job.order else true
+	var kept := {}  # material -> kg kept as lots
+	var scrapped := {}  # material -> kg cut up
 	for rec: Variant in recoveries:
-		if not rec is Dictionary or rec.get("disposition") != "kept":
+		if not rec is Dictionary:
 			continue
 		var d := rec as Dictionary
 		var component: Variant = d.get("component")
-		if component is Dictionary and str(component.get("id", "")) != "":
-			add_stock(str(component.id), 1, recovery_condition(float(d.get("condition", 1.0))), source)
-		elif Materials.TABLE.has(str(d.get("material", ""))):
-			kilos[str(d.material)] = float(kilos.get(str(d.material), 0.0)) + float(d.get("kg", 0.0))
-	for material: String in kilos:
-		var kg := roundi(kilos[material] - maxf(0.0, float(owed.get(material, 0.0))))
+		var is_part := component is Dictionary and str(component.get("id", "")) != ""
+		var material := str(component.get("material", "")) if is_part else str(d.get("material", ""))
+		match d.get("disposition"):
+			"kept":
+				if is_part:
+					add_stock(str(component.id), 1, recovery_condition(float(d.get("condition", 1.0))), source)
+				elif Materials.TABLE.has(material):
+					kept[material] = float(kept.get(material, 0.0)) + float(d.get("kg", 0.0))
+			"scrapped":
+				if bsx_keeps and Materials.TABLE.has(material):
+					scrapped[material] = float(scrapped.get(material, 0.0)) + float(d.get("kg", 0.0))
+	for material: String in kept:
+		kept[material] = maxf(0.0, kept[material] - maxf(0.0, float(owed.get(material, 0.0))))
+	for material: String in scrapped:
+		kept[material] = float(kept.get(material, 0.0)) + scrapped[material]
+	for material: String in kept:
+		var kg := roundi(kept[material])
 		if kg > 0:
 			add_stock(RAW_PREFIX + material, kg, PartCondition.NEW, source)
 

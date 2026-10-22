@@ -68,6 +68,8 @@ func run_tests() -> void:
 		{"material": "steel", "kg": 400.2, "condition": 0.0, "disposition": "kept"},
 		{"material": "steel", "kg": 212.0, "condition": 0.0, "disposition": "kept"},
 		{"material": "steel", "kg": 900.0, "condition": 0.0, "disposition": "destroyed"},
+		{"component": {"id": "HullPlate", "material": "alloy"}, "kg": 120.4, "condition": 0.2, "disposition": "scrapped"},
+		{"component": {"id": "Antenna"}, "kg": 30.0, "condition": 1.0, "disposition": "bought"},
 		{"material": "nonsense", "kg": 20.0, "condition": 0.0, "disposition": "kept"},
 		"not a recovery",
 	]
@@ -79,6 +81,8 @@ func run_tests() -> void:
 	check(not detail.has("Bulkhead"), "the client's parts go back to the client")
 	check(bus.get_stock().get("raw_steel") == 612 and not bus.get_stock().has("raw_nonsense"),
 			"the kept kilos are in as steel, the destroyed ones aren't: %s" % str(bus.get_stock().get("raw_steel")))
+	check(bus.get_stock().get("raw_alloy") == 120 and not detail.has("HullPlate"), "a scrapped part goes in as kilos of its material")
+	check(not detail.has("Antenna"), "an unknown disposition adds nothing")
 	check(not bus.on_contract_handed_over("BRK-1", 0.8, 0, recs).is_ok() and bus.get_stock_detail().get(part, {}).get(PartCondition.USED) == 1,
 			"a second handover adds nothing")
 
@@ -91,8 +95,10 @@ func run_tests() -> void:
 		if job:
 			books.call("accept_contract", job.job_id, 3100, 10)
 			job.recoveries.append({"material": "alloy", "kg": 11000.0, "condition": 0.0, "disposition": "kept"})
+			var alloy: int = bus.get_stock().get("raw_alloy", 0)
 			bus.on_contract_handed_over(job.job_id, 1.0, 0)
-			check(bus.get_stock().get("raw_alloy") == 3000, "11 t kept, 8 t of it the client's: %s" % str(bus.get_stock().get("raw_alloy")))
+			var got: int = bus.get_stock().get("raw_alloy", 0) - alloy
+			check(got == 3000, "11 t kept, 8 t of it the client's: %d" % got)
 
 	# Without contracts.kinds, a handover leaves stock alone.
 	Flags.set_flag("contracts.kinds", false)
