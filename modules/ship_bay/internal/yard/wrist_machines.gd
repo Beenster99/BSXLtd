@@ -1,7 +1,8 @@
 extends VBoxContainer
 ## The Machines channel on the wrist screen, drawn on glass with UI's TerminalKit: a row per
 ## yard machine (the hover trolleys, the picking lift, the scissor lift, the power unit and
-## the scaffold rigs) with what it is doing, where it is, and its buttons: REMOTE CONTROL
+## the scaffold rigs) with what it is doing, where it is, the goods on it and where they are
+## going, and its controls in an ACTIONS drop-down: REMOTE CONTROL
 ## takes a trolley on remote and PUSH takes hold of the bay's kit (both put the wrist away),
 ## FOLLOW ME, FAST, BRING <part> TO ME (the picking lift
 ## fetches the next part the ship in the bay takes), PUT AWAY / TO STORES, and the lift's and
@@ -14,11 +15,20 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 
 signal close_requested
 
+## Column widths, pixels (the goods column takes what is left), and the rows' text size.
+const NAME_W := 150
+const STATE_W := 104
+const WHERE_W := 108
+const GOING_W := 112
+const MENU_W := 118
+const FONT := 13
+
 var fleet: Node
 var glass := true
 
 var _list: VBoxContainer
-## Machine id -> {state: Label, tag: PanelContainer, where: Label, buttons: {action: Button}}.
+## Machine id -> {state: Label, tag: PanelContainer, where: Label, goods: Label, going: Label,
+## menu: MenuButton, items: {action: item id}}.
 var _rows: Dictionary = {}
 var _tick := 0.0
 var _loose_label: Label
@@ -44,7 +54,12 @@ func _init(p_fleet: Node, p_glass := true) -> void:
 		_clean_button.pressed.connect(clean_up)
 		bar.add_child(_clean_button)
 		add_child(bar)
-	add_child(T.columns([["MACHINE", 0], ["STATE", 118], ["WHERE", 118], ["", 372]]))
+	var head := T.columns([["MACHINE", NAME_W], ["STATE", STATE_W], ["WHERE", WHERE_W], ["GOODS", 0], ["GOING TO", GOING_W], ["", MENU_W]])
+	var heads := head.get_child(0) as HBoxContainer
+	(heads.get_child(0) as Label).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	(heads.get_child(3) as Label).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	(heads.get_child(3) as Label).text = "   GOODS"
+	add_child(head)
 	_list = T.list()
 	add_child(_list.get_parent())
 	_build()
@@ -82,34 +97,79 @@ func _build() -> void:
 	for i in all.size():
 		var m: Array = all[i]
 		var id: String = m[0]
-		var state := T.label("", "mono_medium", 15, T.GOOD)
+		var name_cell := T.label(str(m[1]), "body_medium", 15, T.TEXT)
+		name_cell.custom_minimum_size.x = NAME_W
+		name_cell.clip_text = true
+		name_cell.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var state := T.label("", "mono_medium", FONT, T.GOOD)
 		var tag_box := PanelContainer.new()
 		var st := T.box(Color(T.GOOD, 0.16), T.GOOD, 1, 0.0)
-		st.content_margin_left = 6
-		st.content_margin_right = 6
+		st.content_margin_left = 5
+		st.content_margin_right = 5
 		tag_box.add_theme_stylebox_override("panel", st)
 		tag_box.add_child(state)
 		tag_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var tag_cell := CenterContainer.new()
-		tag_cell.custom_minimum_size.x = 118
+		tag_cell.custom_minimum_size.x = STATE_W
 		tag_cell.add_child(tag_box)
-		var where := T.cell("", 118, T.TEXT)
-		var acts := HBoxContainer.new()
-		acts.custom_minimum_size.x = 372
-		acts.alignment = BoxContainer.ALIGNMENT_END
-		acts.add_theme_constant_override("separation", 4)
-		var buttons := {}
+		var where := _small_cell(WHERE_W, T.TEXT)
+		var gap := Control.new()
+		gap.custom_minimum_size.x = 14
+		var goods := _small_cell(0, T.TEXT)
+		goods.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		goods.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		goods.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		var going := _small_cell(GOING_W, T.AMBER)
+		var menu := _menu()
+		var popup := menu.get_popup()
+		var items := {}
 		for a: String in m[2]:
-			var b := T.button(_label_for(id, a), a == "come" or a == "bring", 14, false, glass)
-			b.name = a
-			b.pressed.connect(press.bind(id, a))
-			acts.add_child(b)
-			buttons[a] = b
-		var r := T.row([T.cell_text(str(m[1])), tag_cell, where, acts], i % 2 == 1, glass)
+			popup.add_item(_label_for(id, a), items.size())
+			items[a] = items.size()
+		popup.id_pressed.connect(func(k: int) -> void:
+			for a: String in items:
+				if int(items[a]) == k:
+					press(id, a))
+		var menu_cell := CenterContainer.new()
+		menu_cell.custom_minimum_size.x = MENU_W
+		menu_cell.add_child(menu)
+		var r := T.row([name_cell, tag_cell, where, gap, goods, going, menu_cell], i % 2 == 1, glass)
 		r.name = "Row_" + id.validate_node_name()
 		_list.add_child(r)
-		_rows[id] = {"state": state, "tag": tag_box, "where": where, "buttons": buttons}
+		_rows[id] = {"state": state, "tag": tag_box, "where": where, "goods": goods, "going": going, "menu": menu, "items": items}
 	refresh()
+
+
+func _small_cell(width: float, colour: Color) -> Label:
+	var l := T.label("", "mono_medium", FONT, colour)
+	if width > 0.0:
+		l.custom_minimum_size.x = width
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.clip_text = true
+	return l
+
+
+## The ACTIONS drop-down: a MenuButton in the terminal's button style.
+func _menu() -> MenuButton:
+	var look := T.button("ACTIONS", false, FONT, false, glass)
+	var menu := MenuButton.new()
+	menu.text = "ACTIONS  v"
+	menu.name = "Actions"
+	menu.flat = false
+	menu.focus_mode = Control.FOCUS_NONE
+	menu.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for n: String in ["normal", "hover", "pressed", "disabled", "focus"]:
+		menu.add_theme_stylebox_override(n, look.get_theme_stylebox(n))
+	for n: String in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
+		menu.add_theme_color_override(n, look.get_theme_color(n))
+	menu.add_theme_font_override("font", look.get_theme_font("font"))
+	menu.add_theme_font_size_override("font_size", FONT)
+	var popup := menu.get_popup()
+	popup.add_theme_font_override("font", look.get_theme_font("font"))
+	popup.add_theme_font_size_override("font_size", FONT + 1)
+	look.free()
+	return menu
 
 
 func _process(delta: float) -> void:
@@ -133,14 +193,21 @@ func refresh() -> void:
 		st.border_color = s[1]
 		var at := _position_of(id)
 		(row.where as Label).text = room_name(at)
-		for a: String in row.buttons:
-			var b: Button = row.buttons[a]
-			b.text = _label_for(id, a)
+		var goods := goods_of(id)
+		(row.goods as Label).text = goods if goods != "" else "—"
+		(row.goods as Label).add_theme_color_override("font_color", T.TEXT if goods != "" else T.DIM)
+		(row.going as Label).text = going_to(id)
+		var popup := (row.menu as MenuButton).get_popup()
+		var items: Dictionary = row.items
+		for a: String in items:
+			var k := popup.get_item_index(int(items[a]))
+			popup.set_item_text(k, _label_for(id, a))
 			if a == "bring":
-				b.disabled = str(fleet.call("next_part_for_ship")) == ""
-		if access and (row.buttons as Dictionary).has("drive"):
-			var mine := str(access.get("driving")) == id if not id.begins_with("trolley:") else str(fleet.get("remote_id")) == id.trim_prefix("trolley:")
-			(row.buttons["drive"] as Button).text = "LET GO" if mine else _label_for(id, "drive")
+				popup.set_item_disabled(k, str(fleet.call("next_part_for_ship")) == "")
+		if items.has("drive"):
+			var mine := (str(access.get("driving")) == id if access else false) if not id.begins_with("trolley:") \
+					else str(fleet.get("remote_id")) == id.trim_prefix("trolley:")
+			popup.set_item_text(popup.get_item_index(int(items["drive"])), "LET GO" if mine else _label_for(id, "drive"))
 
 
 func _refresh_loose() -> void:
@@ -201,6 +268,30 @@ func state_of(id: String) -> Array:
 		var rig: Node = access.get("scaffolds")[int(id.trim_prefix("rig"))]
 		return ["%d x %d" % [int(rig.get("bays")), int(rig.get("lifts"))], T.GOOD]
 	return ["—", T.DIM]
+
+
+## The goods on a trolley, summed by item: "2 Ion thruster · 10 Hull plate" ("" for none).
+func goods_of(id: String) -> String:
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if bus == null or not id.begins_with("trolley:"):
+		return ""
+	var counts := {}
+	var order: Array = []
+	for cid in bus.trolley_load(id.trim_prefix("trolley:")):
+		var c := bus.crate_info(cid)
+		var n := str(c.get("name", c.get("item", "")))
+		if not counts.has(n):
+			order.append(n)
+		counts[n] = int(counts.get(n, 0)) + int(c.get("qty", 1))
+	var out := PackedStringArray()
+	for n: String in order:
+		out.append("%d %s" % [counts[n], n])
+	return " · ".join(out)
+
+
+## Where a trolley (and its goods) is going, from its job ("" when it isn't going anywhere).
+func going_to(id: String) -> String:
+	return str(fleet.call("destination_of", id.trim_prefix("trolley:"))) if fleet and id.begins_with("trolley:") else ""
 
 
 ## The yard room a point is in ("Courtyard" outside them all).
@@ -307,6 +398,10 @@ func text() -> String:
 func _gather(n: Node, out: PackedStringArray) -> void:
 	if n is Label:
 		out.append((n as Label).text)
+	elif n is MenuButton:
+		var popup := (n as MenuButton).get_popup()
+		for k in popup.item_count:
+			out.append(popup.get_item_text(k))
 	elif n is Button:
 		out.append((n as Button).text)
 	for c in n.get_children():
