@@ -419,6 +419,15 @@ extends RefCounted
 ##                 guards, lid seams, latches, a handle, ribs and hazard tabs, a retaining bar
 ##                 under each (stands on -Y, front -Z)
 ##   (name_board also draws L now: "SENTINAL")
+## Story props (CS3b, the block at the end of this file; Carryables, not parts: StoryProp):
+##   flight_recorder  an orange recorder box: ribs, bolted end caps, a handle, a strobe
+##   distress_beacon  a red cylinder on a weighted foot, a whip antenna, a red lamp dome
+##   lockbox          a heavy steel box: a dial, a handle, a name plate, hinges at the back
+##   manifest_case    a flat document case: handle, latches, a red customs seal on a wire
+##   registry_plate   a pale enamel plate in a steel border, bolted (face +Y; the name is a label)
+##   log_module       a ruggedised data unit with a lit green screen (-Z) and pull tabs
+##   sample_case      a white insulated case: a lit window, latches, hazard tabs on its ends
+##   unregistered_core a faceted iridescent housing banded with violet-lit seams
 
 const DETAIL := PartShapes.DETAIL
 const DARK := Color(0.16, 0.16, 0.17)
@@ -4707,6 +4716,14 @@ static func catalogue() -> Array:
 		["copper vent", copper_vent()],
 		["case stack", case_stack()],
 		["name board SENTINAL", name_board("SENTINAL", 4.4, 1.0)],
+		["flight recorder", flight_recorder()],
+		["distress beacon", distress_beacon()],
+		["lockbox", lockbox()],
+		["manifest case", manifest_case()],
+		["registry plate", registry_plate()],
+		["log module", log_module()],
+		["sample case", sample_case()],
+		["unregistered core", unregistered_core()],
 	]
 
 
@@ -15201,3 +15218,249 @@ static func mesh_panel(width: float, height: float, thickness: float = 0.03, cel
 	col.size = Vector3(width, height, thickness)
 	shape.collision = col
 	return shape
+
+
+# --- Story props (CS3b; docs/SCENARIOS_PLAN.md) ---------------------------------------------
+# Small carryable things on a contract's wreck (Props.TABLE): each stands on -Y, front -Z,
+# centred on the origin, with a box collision. They are Carryables (StoryProp), not parts.
+
+const PROP_ORANGE := Color(0.95, 0.42, 0.08, SurfaceZones.GLOSS_PAINT_A)  # the recorder's international orange
+const PROP_RED := Color(0.8, 0.12, 0.1, SurfaceZones.GLOSS_PAINT_A)       # the beacon's body
+const PROP_CASE := Color(0.2, 0.24, 0.3, SurfaceZones.PLASTIC_TEXTURED_A) # the manifest case's shell
+const PROP_SEAL := Color(0.78, 0.1, 0.08, SurfaceZones.PLASTIC_GLOSS_A)   # a customs seal tag
+const PROP_WHITE := Color(0.86, 0.88, 0.9, SurfaceZones.PLASTIC_A)        # the sample case's shell
+const PROP_VEIL := Color(0.3, 0.2, 0.42, SurfaceZones.VEIL_A)       # the unregistered thing's shell
+
+
+static func _prop_shape(k: MeshKit, g: MeshKit, size: Vector3, glow: Color) -> PartShapes.PartShape:
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = size.x * size.y * size.z * 0.8
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	if g != null and not g.verts.is_empty():
+		shape.glow = g.finish()
+		shape.glow_color = glow
+	return shape
+
+
+## A flight recorder: an orange box on a dark base with ribbed sides, dark end caps with
+## bolts, a carry handle on standoffs, a reflective stripe and a strobe lens on top (glow).
+static func flight_recorder() -> PartShapes.PartShape:
+	var size := Vector3(0.3, 0.22, 0.42)
+	var h := size * 0.5
+	var k := MeshKit.new()
+	var g := MeshKit.new()
+	k.color = DARK
+	k.box(Vector3(size.x, 0.03, size.z), Vector3(0.0, -h.y + 0.015, 0.0))
+	k.color = PROP_ORANGE
+	k.box(Vector3(size.x - 0.02, size.y - 0.08, size.z - 0.07), Vector3(0.0, -0.01, 0.0))
+	# Ribs down the long sides, end caps with corner bolts.
+	for sx: float in [-1.0, 1.0]:
+		for i in 4:
+			k.box(Vector3(0.012, size.y - 0.1, 0.03), Vector3(sx * (h.x - 0.004), -0.01, -h.z + 0.09 + 0.08 * float(i)))
+	k.color = CAST
+	for sz: float in [-1.0, 1.0]:
+		k.box(Vector3(size.x, size.y - 0.06, 0.035), Vector3(0.0, -0.01, sz * (h.z - 0.0175)))
+		k.color = FLANGE_BOLT
+		for bx: float in [-1.0, 1.0]:
+			for by: float in [-1.0, 1.0]:
+				k.box(Vector3(0.022, 0.022, 0.008), Vector3(bx * (h.x - 0.03), -0.01 + by * (h.y - 0.06), sz * (h.z + 0.003)))
+		k.color = CAST
+	# A reflective stripe round it and the handle over the top.
+	k.color = PLATE
+	k.box(Vector3(size.x - 0.015, 0.025, size.z - 0.074), Vector3(0.0, 0.03, 0.0))
+	k.color = CHROME
+	var top := h.y - 0.05
+	for sz: float in [-1.0, 1.0]:
+		k.box(Vector3(0.025, 0.04, 0.025), Vector3(0.0, top + 0.02, sz * 0.1))
+	k.box(Vector3(0.022, 0.022, 0.24), Vector3(0.0, top + 0.045, 0.0))
+	# The strobe on a bezel by the front cap.
+	k.color = DARK
+	k.box(Vector3(0.07, 0.02, 0.07), Vector3(0.08, top + 0.01, -h.z + 0.08))
+	g.box(Vector3(0.05, 0.025, 0.05), Vector3(0.08, top + 0.03, -h.z + 0.08))
+	return _prop_shape(k, g, size, Color(1.0, 0.85, 0.6))
+
+
+## A distress beacon: a red cylinder on a dark weighted foot, a pale band with a dark
+## grip, a whip antenna up from a chrome collar and a red lamp dome on top (glow).
+static func distress_beacon() -> PartShapes.PartShape:
+	var r := 0.11
+	var body := 0.42
+	var size := Vector3(r * 2.4, body + 0.62, r * 2.4)
+	var y0 := -size.y * 0.5
+	var k := MeshKit.new()
+	var g := MeshKit.new()
+	k.color = DARK
+	k.lathe(PackedVector2Array([Vector2(0.0, y0), Vector2(r * 1.2, y0), Vector2(r * 1.2, y0 + 0.05), Vector2(0.0, y0 + 0.05)]), 12)
+	k.color = PROP_RED
+	k.lathe(PackedVector2Array([Vector2(0.0, y0 + 0.05), Vector2(r, y0 + 0.05), Vector2(r, y0 + body), Vector2(0.0, y0 + body)]), 12)
+	k.color = PLATE
+	k.lathe(PackedVector2Array([Vector2(r - 0.01, y0 + 0.2), Vector2(r + 0.006, y0 + 0.2), Vector2(r + 0.006, y0 + 0.26), Vector2(r - 0.01, y0 + 0.26)]), 12)
+	k.color = RUBBER
+	k.lathe(PackedVector2Array([Vector2(r - 0.01, y0 + 0.1), Vector2(r + 0.012, y0 + 0.1), Vector2(r + 0.012, y0 + 0.17), Vector2(r - 0.01, y0 + 0.17)]), 12)
+	var top := y0 + body
+	k.color = CHROME
+	k.lathe(PackedVector2Array([Vector2(0.0, top), Vector2(0.03, top), Vector2(0.03, top + 0.04), Vector2(0.0, top + 0.04)]), 8)
+	_tube(k, Vector3(0.05, top, 0.0), Vector3(0.05, size.y * 0.5, 0.0), 0.004, 5)
+	k.color = DARK
+	k.lathe(PackedVector2Array([Vector2(0.0, top), Vector2(0.06, top), Vector2(0.06, top + 0.02), Vector2(0.0, top + 0.02)]), 10)
+	g.lathe(PackedVector2Array([Vector2(0.0, top + 0.02), Vector2(0.045, top + 0.02), Vector2(0.035, top + 0.07), Vector2(0.0, top + 0.08)]), 10)
+	return _prop_shape(k, g, size, Color(1.0, 0.2, 0.15))
+
+
+## A lockbox: a heavy steel box with a lid seam, a combination dial and a handle on the
+## front (-Z), two hinge knuckles at the back, rubber feet and a pale name plate.
+static func lockbox() -> PartShapes.PartShape:
+	var size := Vector3(0.42, 0.24, 0.32)
+	var h := size * 0.5
+	var k := MeshKit.new()
+	k.color = RUBBER
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			k.box(Vector3(0.04, 0.012, 0.04), Vector3(sx * (h.x - 0.04), -h.y + 0.006, sz * (h.z - 0.04)))
+	k.color = GUNMETAL
+	k.box(Vector3(size.x, size.y - 0.012, size.z - 0.02), Vector3(0.0, 0.006, 0.0))
+	k.color = DARK
+	k.box(Vector3(size.x + 0.004, 0.008, size.z - 0.016), Vector3(0.0, h.y - 0.06, 0.0))
+	var fz := -h.z + 0.01
+	k.color = CHROME
+	_tube(k, Vector3(-0.07, 0.015, fz), Vector3(-0.07, 0.015, fz - 0.02), 0.04, 12)
+	k.color = TRIM
+	k.box(Vector3(0.012, 0.012, 0.01), Vector3(-0.07, 0.015, fz - 0.025))
+	k.color = CHROME
+	k.box(Vector3(0.1, 0.018, 0.018), Vector3(0.09, -0.02, fz - 0.03))
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.018, 0.018, 0.03), Vector3(0.09 + sx * 0.045, -0.02, fz - 0.012))
+	k.color = PLATE
+	k.box(Vector3(0.12, 0.03, 0.004), Vector3(0.0, 0.06, fz - 0.002))
+	k.color = CAST
+	for sx: float in [-1.0, 1.0]:
+		_tube(k, Vector3(sx * 0.12 - 0.04, h.y - 0.06, h.z), Vector3(sx * 0.12 + 0.04, h.y - 0.06, h.z), 0.014, 8)
+	return _prop_shape(k, null, size, Color())
+
+
+## A manifest case: a flat document case with rounded-off edges, a handle on the long top
+## edge, two latches, a ribbed face and a red customs seal tag on a wire.
+static func manifest_case() -> PartShapes.PartShape:
+	var size := Vector3(0.48, 0.36, 0.11)
+	var h := size * 0.5
+	var k := MeshKit.new()
+	k.color = PROP_CASE
+	k.box(Vector3(size.x - 0.03, size.y - 0.07, size.z), Vector3(0.0, -0.035, 0.0))
+	k.box(Vector3(size.x, size.y - 0.1, size.z - 0.03), Vector3(0.0, -0.035, 0.0))
+	k.color = CASE_RIB
+	k.box(Vector3(size.x - 0.01, 0.01, size.z + 0.006), Vector3(0.0, -0.01, 0.0))
+	for sz: float in [-1.0, 1.0]:
+		for i in 3:
+			k.box(Vector3(size.x * 0.7, 0.012, 0.006), Vector3(0.0, -0.11 + 0.035 * float(i), sz * (h.z + 0.002)))
+	var top := h.y - 0.07
+	k.color = CHROME
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.04, 0.02, 0.05), Vector3(sx * 0.15, top + 0.005, 0.0))
+		k.box(Vector3(0.022, 0.05, 0.018), Vector3(sx * 0.06, top + 0.025, 0.0))
+	k.color = RUBBER
+	k.box(Vector3(0.16, 0.024, 0.03), Vector3(0.0, top + 0.055, 0.0))
+	k.color = PROP_SEAL
+	k.box(Vector3(0.03, 0.045, 0.006), Vector3(0.2, top - 0.04, -h.z - 0.006))
+	k.color = CHROME
+	_tube(k, Vector3(0.15, top + 0.005, -h.z), Vector3(0.2, top - 0.02, -h.z - 0.006), 0.002, 4)
+	return _prop_shape(k, null, size, Color())
+
+
+## A registry plate: a pale enamel plate with a raised steel border, a bolt in each corner
+## and a dark backing, lying on its back (face +Y); the name is a label on it (StoryProp).
+static func registry_plate() -> PartShapes.PartShape:
+	var size := Vector3(0.7, 0.03, 0.28)
+	var h := size * 0.5
+	var k := MeshKit.new()
+	k.color = DARK
+	k.box(Vector3(size.x, 0.012, size.z), Vector3(0.0, -h.y + 0.006, 0.0))
+	k.color = PLATE
+	k.box(Vector3(size.x - 0.03, 0.014, size.z - 0.03), Vector3(0.0, -h.y + 0.018, 0.0))
+	k.color = FURN_COLLAR
+	for sz: float in [-1.0, 1.0]:
+		k.box(Vector3(size.x, 0.018, 0.016), Vector3(0.0, -h.y + 0.021, sz * (h.z - 0.008)))
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.016, 0.018, size.z), Vector3(sx * (h.x - 0.008), -h.y + 0.021, 0.0))
+	k.color = FLANGE_BOLT
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			k.box(Vector3(0.022, 0.012, 0.022), Vector3(sx * (h.x - 0.035), h.y - 0.006, sz * (h.z - 0.035)))
+	return _prop_shape(k, null, size, Color())
+
+
+## A log module: a ruggedised data unit pulled from a console, a dark rubber-cornered
+## housing with a lit green screen on its front (-Z, glow), a card slot, two pull tabs.
+static func log_module() -> PartShapes.PartShape:
+	var size := Vector3(0.28, 0.18, 0.22)
+	var h := size * 0.5
+	var k := MeshKit.new()
+	var g := MeshKit.new()
+	k.color = PLASTIC_DARK
+	k.box(Vector3(size.x - 0.02, size.y - 0.02, size.z - 0.02))
+	k.color = RUBBER
+	for sx: float in [-1.0, 1.0]:
+		for sy: float in [-1.0, 1.0]:
+			k.box(Vector3(0.04, 0.04, size.z), Vector3(sx * (h.x - 0.02), sy * (h.y - 0.02), 0.0))
+	var fz := -h.z + 0.01
+	k.color = BEZEL
+	k.box(Vector3(0.17, 0.1, 0.006), Vector3(-0.02, 0.01, fz - 0.003))
+	k.color = DARK
+	k.box(Vector3(0.15, 0.08, 0.004), Vector3(-0.02, 0.01, fz - 0.006))
+	g.box(Vector3(0.14, 0.07, 0.003), Vector3(-0.02, 0.01, fz - 0.009))
+	k.color = DARK
+	k.box(Vector3(0.06, 0.008, 0.01), Vector3(-0.02, -0.06, fz - 0.002))
+	k.color = PLASTIC_PALE
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.02, 0.05, 0.03), Vector3(sx * 0.1 + 0.02, h.y - 0.04, 0.02))
+	return _prop_shape(k, g, size, Color(0.4, 1.0, 0.5))
+
+
+## A sample case: a white insulated case with a pale grey lid seam, chrome latches and a
+## handle, a frosted window over a cyan-lit rack (glow) and hazard tabs on its ends.
+static func sample_case() -> PartShapes.PartShape:
+	var size := Vector3(0.5, 0.3, 0.34)
+	var h := size * 0.5
+	var k := MeshKit.new()
+	var g := MeshKit.new()
+	k.color = PROP_WHITE
+	k.box(Vector3(size.x, size.y - 0.04, size.z - 0.03), Vector3(0.0, -0.02, 0.0))
+	k.box(Vector3(size.x - 0.03, size.y - 0.04, size.z), Vector3(0.0, -0.02, 0.0))
+	k.color = PLASTIC_PALE
+	k.box(Vector3(size.x + 0.004, 0.012, size.z + 0.004), Vector3(0.0, 0.04, 0.0))
+	var fz := -h.z
+	k.color = DARK
+	k.box(Vector3(0.22, 0.09, 0.006), Vector3(-0.05, -0.04, fz - 0.002))
+	g.box(Vector3(0.2, 0.07, 0.004), Vector3(-0.05, -0.04, fz - 0.006))
+	k.color = CHROME
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.04, 0.05, 0.02), Vector3(sx * 0.17, 0.035, fz - 0.008))
+	var top := h.y - 0.04
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.02, 0.04, 0.02), Vector3(sx * 0.07, top + 0.02, 0.0))
+	k.color = RUBBER
+	k.box(Vector3(0.18, 0.022, 0.03), Vector3(0.0, top + 0.04, 0.0))
+	k.color = HAZARD_YELLOW
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.006, 0.06, 0.08), Vector3(sx * (h.x + 0.003), -0.02, 0.0))
+	return _prop_shape(k, g, size, Color(0.4, 0.85, 1.0))
+
+
+## An unregistered component: a faceted dark housing in an iridescent shell, banded with
+## violet-lit seams (glow) that match nothing in the catalogue, on a cast foot.
+static func unregistered_core() -> PartShapes.PartShape:
+	var size := Vector3(0.42, 0.46, 0.42)
+	var h := size * 0.5
+	var k := MeshKit.new()
+	var g := MeshKit.new()
+	k.color = CAST
+	k.box(Vector3(0.3, 0.04, 0.3), Vector3(0.0, -h.y + 0.02, 0.0))
+	k.color = PROP_VEIL
+	var y0 := -h.y + 0.04
+	k.lathe(PackedVector2Array([Vector2(0.0, y0), Vector2(0.14, y0), Vector2(0.2, y0 + 0.14), Vector2(0.2, y0 + 0.26),
+			Vector2(0.13, h.y), Vector2(0.0, h.y)]), 6)
+	for y: float in [y0 + 0.15, y0 + 0.25]:
+		g.lathe(PackedVector2Array([Vector2(0.18, y - 0.008), Vector2(0.206, y - 0.008), Vector2(0.206, y + 0.008), Vector2(0.18, y + 0.008)]), 6)
+	return _prop_shape(k, g, size, Color(0.7, 0.35, 1.0))
