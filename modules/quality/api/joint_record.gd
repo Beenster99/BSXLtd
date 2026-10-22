@@ -3,7 +3,7 @@ extends Resource
 ## One finished joint as Quality sees it: what Trades measured, plus Quality's verdict.
 ## Quality creates these from Trades' joint_completed results; other modules only read them.
 
-const VERSION := 1
+const VERSION := 2
 
 const PASS := &"PASS"
 const MARGINAL := &"MARGINAL"
@@ -28,8 +28,12 @@ const UNGRADED := &"UNGRADED"
 ## What is wrong with it: [{"code": "cross_threaded", "hole": 2, "text": "Hole 3 cross-threaded"}].
 ## hole is -1 for faults on the whole joint.
 @export var faults: Array[Dictionary] = []
-## Checked by a player with an inspection tool (from 0.5).
+## Seen by the independent surveyors (the report that covered it is survey_id).
 @export var inspected := false
+## The job that was active when the joint was finished ("" with none).
+@export var job_id := ""
+## The last survey report that scanned it ("" until one has).
+@export var survey_id := ""
 
 
 func passed() -> bool:
@@ -42,7 +46,7 @@ func to_dict() -> Dictionary:
 		"component_id": String(component_id), "mount_id": String(mount_id),
 		"measurements": measurements, "peer_id": peer_id, "time": time,
 		"score": score, "grade": String(grade), "breakdown": breakdown,
-		"faults": faults, "inspected": inspected,
+		"faults": faults, "inspected": inspected, "job_id": job_id, "survey_id": survey_id,
 	}
 
 
@@ -60,4 +64,6 @@ static func from_dict(d: Dictionary) -> JointRecord:
 	r.breakdown = d.get("breakdown", {})
 	r.faults.assign(d.get("faults", []))
 	r.inspected = bool(d.get("inspected", false))
+	r.job_id = str(d.get("job_id", ""))
+	r.survey_id = str(d.get("survey_id", ""))
 	return r

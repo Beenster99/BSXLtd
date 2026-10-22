@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="SurveyRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/quality/internal/survey_rules.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+random_min_s = 240.0
+random_max_s = 480.0
+random_sample = 6
+called_sample = 12
+crew = 1
+final_crew = 2
+arrive_s = 20.0
+per_joint_s = 10.0
+scan_s = 4.0
+walk_speed = 1.4
+keep_reports = 30

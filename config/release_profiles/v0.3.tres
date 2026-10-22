@@ -33,6 +33,7 @@ flags = {
 "progression.upgrades": false,
 "quality": true,
 "quality.scores": true,
+"quality.surveys": true,
 "ship_bay": true,
 "ship_bay.apron": true,
 "ship_bay.clean_up": true,
