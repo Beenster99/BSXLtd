@@ -29,6 +29,23 @@ const AMBER := Color("e8c25a")
 ## How opaque plates and the kiosk are on glass.
 const GLASS_PLATE := 0.58
 const GLASS_KIOSK := 0.56
+## Settings > Gameplay "Terminal text": how big terminal and screen text and list rows are,
+## so a tab can hold more. Sizes passed to the kit are at Standard; it scales them.
+const TEXT_SECTION := "terminal"
+const TEXT_KEY := "text"
+const TEXT_SIZES := {"Compact": 0.82, "Standard": 1.0, "Large": 1.15}
+const TEXT_DEFAULT := "Compact"
+
+
+## The chosen text scale (Compact by default).
+static func text_scale() -> float:
+	var v: Variant = Settings.get_value(TEXT_SECTION, TEXT_KEY)
+	return float(TEXT_SIZES.get(str(v), TEXT_SIZES[TEXT_DEFAULT]))
+
+
+## A size, font or width, at the chosen text scale.
+static func px(n: float) -> int:
+	return maxi(1, roundi(n * text_scale()))
 
 
 static func font(face: String) -> Font:
@@ -64,7 +81,7 @@ static func label(text: String, face: String, size: int, color: Color) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_override("font", font(face))
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", px(size))
 	l.add_theme_color_override("font_color", color)
 	return l
 
@@ -75,10 +92,10 @@ static func button(text: String, filled := false, size := 20, on := false, glass
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_override("font", font("display_bold" if filled else "display"))
-	b.add_theme_font_size_override("font_size", size)
+	b.add_theme_font_size_override("font_size", px(size))
 	var bg := ORANGE if filled else (PLATE_HI if on else PLATE)
 	var a := 0.85 if filled else GLASS_PLATE + 0.1
-	var normal := box(tone(bg, glass, a), ORANGE if on else tone(EDGE, glass, 0.8), 2, 8.0)
+	var normal := box(tone(bg, glass, a), ORANGE if on else tone(EDGE, glass, 0.8), 2, px(8.0))
 	if on:
 		normal.border_width_left = 0
 		normal.border_width_right = 0
@@ -105,10 +122,10 @@ static func search(placeholder: String, on_changed: Callable, glass := false) ->
 	var e := LineEdit.new()
 	e.placeholder_text = placeholder
 	e.clear_button_enabled = true
-	e.custom_minimum_size = Vector2(220, 34)
+	e.custom_minimum_size = Vector2(px(220), px(34))
 	e.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	e.add_theme_font_override("font", font("body_medium"))
-	e.add_theme_font_size_override("font_size", 17)
+	e.add_theme_font_size_override("font_size", px(17))
 	e.add_theme_color_override("font_color", TEXT)
 	e.add_theme_color_override("font_placeholder_color", DIM)
 	e.add_theme_color_override("caret_color", ORANGE)
@@ -145,7 +162,7 @@ static func columns(specs: Array) -> MarginContainer:
 		if int(spec[1]) == 0:
 			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		else:
-			l.custom_minimum_size.x = spec[1]
+			l.custom_minimum_size.x = px(spec[1])
 			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		head.add_child(l)
 	var pad := MarginContainer.new()
@@ -161,8 +178,8 @@ static func row(cells: Array, alt := false, glass := false) -> PanelContainer:
 	var st := box(tone(PLATE_HI if alt else PLATE, glass), Color.TRANSPARENT, 0, 0)
 	st.content_margin_left = 10
 	st.content_margin_right = 8
-	st.content_margin_top = 5
-	st.content_margin_bottom = 5
+	st.content_margin_top = px(5)
+	st.content_margin_bottom = px(5)
 	panel.add_theme_stylebox_override("panel", st)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 0)
@@ -188,7 +205,7 @@ static func cell_text(title: String, sub: String = "") -> VBoxContainer:
 ## A right-aligned number cell `width` wide.
 static func cell(text: String, width: float, color := DIM, face := "mono_medium") -> Label:
 	var l := label(text, face, 17, color)
-	l.custom_minimum_size.x = width
+	l.custom_minimum_size.x = px(width)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	return l
