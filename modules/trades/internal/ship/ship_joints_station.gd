@@ -16,7 +16,9 @@ extends TradesStation
 ## Ship and Bay hears about every joint made or taken off (note_joint_made/removed) and keeps
 ## the slot's state: take every joint off a part and the part comes off; hands on one of its
 ## joints puts it back in place, ready to fasten again. The station has no bench: `bay` is
-## the yard rig (TradesBay in the yard).
+## the yard rig (TradesBay in the yard). The tool test stand's practice joints
+## (TradesTestStand, trades.test_stand) come after the ship's in `points`; their state stays
+## here (`practice`).
 
 ## How close the aim has to pass a joint to pick it (metres).
 const PICK_M := 0.09
@@ -100,6 +102,10 @@ var wiring: TradesWiringPanel
 var _wiring_at := -1
 var tablet: TradesWiringTablet
 var _looms: Dictionary = {}
+## The tool test stand (trades.test_stand) and its practice joints' state, kept here rather
+## than by Ship and Bay: joint_id -> true while made.
+var test_stand: TradesTestStand
+var practice := {}
 
 
 func build() -> void:
@@ -135,17 +141,76 @@ func build() -> void:
 	refresh_points()
 
 
-## Read the loaded ship's joints again (after a ship loads, or the ship moved).
+## Read the loaded ship's joints again (after a ship loads, or the ship moved), then the test
+## stand's after them.
 func refresh_points() -> void:
 	points.clear()
 	points_world.clear()
-	if _bus == null or _bus.ship == null:
-		return
-	for slot in _bus.get_slots():
-		for f in _bus.get_fasteners(slot.slot_id):
-			points.append(f)
-			points_world.append(ship_xform * f.position)
+	if _bus and _bus.ship:
+		for slot in _bus.get_slots():
+			for f in _bus.get_fasteners(slot.slot_id):
+				points.append(f)
+				points_world.append(ship_xform * f.position)
+	if test_stand and test_stand.is_inside_tree():
+		# In ship space like the rest, so the station treats them all alike.
+		var to_ship := ship_xform.affine_inverse() * test_stand.global_transform
+		for f in test_stand.joints:
+			var g := f.duplicate() as FastenerPoint
+			g.position = to_ship * f.position
+			g.normal = (to_ship.basis * f.normal).normalized()
+			if f.seam_up != Vector3.ZERO:
+				g.seam_up = (to_ship.basis * f.seam_up).normalized()
+			points.append(g)
+			points_world.append(test_stand.global_transform * f.position)
 	aimed = -1
+
+
+## Puts the tool test stand up at `at` (world; +Z toward where you stand).
+func add_test_stand(at: Transform3D) -> TradesTestStand:
+	test_stand = TradesTestStand.new()
+	test_stand.is_made = func(id: String) -> bool: return practice.get(id, false)
+	for f in test_stand.joints:
+		practice[f.joint_id] = test_stand.made_at_start.has(f.joint_id)
+	add_child(test_stand)
+	test_stand.global_transform = at
+	refresh_points()
+	return test_stand
+
+
+static func is_practice(f: FastenerPoint) -> bool:
+	return FastenerPoint.slot_of(f.joint_id) == TradesTestStand.SLOT
+
+
+## Whether a joint is made: the ship's from Ship and Bay, the test stand's from `practice`.
+func is_tight(f: FastenerPoint) -> bool:
+	if is_practice(f):
+		return practice.get(f.joint_id, false)
+	return _bus != null and _bus.is_joint_tight(f.joint_id)
+
+
+func _note_made(f: FastenerPoint, quality: float) -> bool:
+	if not is_practice(f):
+		return _bus.note_joint_made(f.joint_id, quality)
+	if practice.get(f.joint_id, false):
+		return false
+	practice[f.joint_id] = true
+	return true
+
+
+func _note_removed(f: FastenerPoint) -> bool:
+	if not is_practice(f):
+		return _bus.note_joint_removed(f.joint_id)
+	if not practice.get(f.joint_id, false):
+		return false
+	practice[f.joint_id] = false
+	return true
+
+
+## The part a joint holds ("" when none): the ship's from Ship and Bay.
+func _component_of(f: FastenerPoint) -> String:
+	if is_practice(f):
+		return "Test panel"
+	return _bus.get_component(FastenerPoint.slot_of(f.joint_id)) if _bus else ""
 
 
 func tools() -> Array[StringName]:
@@ -162,7 +227,8 @@ func status_line() -> String:
 	if bay.tool == &"tractor":
 		return tractor.status_line()
 	if aimed < 0:
-		return "Ship: %d joints, %d tight" % [points.size(), _tight_count()] if not points.is_empty() else ""
+		var ship := points.filter(func(f: FastenerPoint) -> bool: return not is_practice(f)).size()
+		return "Ship: %d joints, %d tight" % [ship, _tight_count()] if ship > 0 else ""
 	var f := points[aimed]
 	var line := "%s  %s %s  %s" % [f.joint_id.to_upper(), f.spec.to_upper(), f.kind.to_upper(), _state_word(f)]
 	# The powered wrench's setting is the player's to find (Tab, the wrist's Specs channel).
@@ -216,7 +282,7 @@ func press(tool: StringName) -> void:
 		else:
 			bay.hint("The part is off. Hands (1) on one of its joints puts it back.")
 		return
-	var tight := _bus.is_joint_tight(f.joint_id)
+	var tight := is_tight(f)
 	if uses_diagram(f) and kind_tools(f.kind).has(tool):
 		if tight:
 			bay.hint("Plugged in. Right click pulls the plug to rewire it.")
@@ -281,7 +347,7 @@ func back_out(tool: StringName) -> void:
 	if aimed < 0 or _working >= 0:
 		return
 	var f := points[aimed]
-	if not _bus.is_joint_tight(f.joint_id):
+	if not is_tight(f):
 		bay.hint("Nothing to take off here.")
 		return
 	match f.kind:
@@ -528,7 +594,7 @@ func _bolt_made(f: FastenerPoint, nm: float, stripped: bool) -> void:
 ## Tells Quality (through Tools' joint_completed) what was built on the ship.
 func _report(f: FastenerPoint, trade: StringName, measurements: Dictionary) -> void:
 	var bus := bay.bus()
-	if bus == null:
+	if bus == null or is_practice(f):
 		return
 	var site := JointSite.new()
 	site.joint_id = StringName(f.joint_id)
@@ -661,7 +727,7 @@ func _begin(undo: bool, tool: StringName) -> void:
 		_clutch_s = -1.0
 		_stall_at = randf_range(0.15, 0.85) * (BREAK_S if undo else RUN_S) if randf() < STALL_CHANCE else -1.0
 	var bus := bay.bus()
-	if bus and not undo:
+	if bus and not undo and not is_practice(points[_working]):
 		bus.joint_started.emit(StringName(points[_working].joint_id), StringName(points[_working].kind), 1)
 	match points[_working].kind:
 		"bolt":
@@ -686,11 +752,11 @@ func _begin(undo: bool, tool: StringName) -> void:
 
 func _finish(f: FastenerPoint) -> void:
 	if _undoing:
-		if _bus.note_joint_removed(f.joint_id):
+		if _note_removed(f):
 			if _looms.has(f.joint_id):
 				(_looms[f.joint_id] as TradesWireLoom).tested = false
 			var bus := bay.bus()
-			if bus:
+			if bus and not is_practice(f):
 				bus.remove_joint(StringName(f.joint_id))
 			bay.play(&"clunk", 1.1)
 			bay.hint("%s off.%s" % [f.kind.capitalize(), " The part is free." if _slot_empty(f) else ""])
@@ -701,7 +767,13 @@ func _finish(f: FastenerPoint) -> void:
 
 
 func _made(f: FastenerPoint, quality: float) -> void:
-	if _bus.note_joint_made(f.joint_id, quality) and f.kind != "bolt":
+	if not _note_made(f, quality):
+		return
+	if is_practice(f):
+		# No Quality on the test stand, so the hint grades it.
+		var how := "spot on" if quality >= 0.95 else ("near enough" if quality >= 0.6 else "poor: take it off and try again")
+		bay.hint("%s done, %s." % [f.kind.capitalize(), how])
+	elif f.kind != "bolt":
 		bay.hint("%s done." % f.kind.capitalize())
 
 
@@ -837,9 +909,11 @@ const SLOT_STATES := {
 ## the ship the aim passes through.
 func inspect_lines() -> PackedStringArray:
 	var lines := PackedStringArray()
+	var joint: FastenerPoint = points[aimed] if aimed >= 0 else null
+	if joint and is_practice(joint):
+		return _practice_lines(joint)
 	if _bus == null:
 		return lines
-	var joint: FastenerPoint = points[aimed] if aimed >= 0 else null
 	var loose := tractor.held if tractor.held else tractor.aimed_part()
 	var slot_id := ""
 	if loose:
@@ -905,6 +979,29 @@ func inspect_lines() -> PackedStringArray:
 	return lines
 
 
+## The test stand's sheet: what's on it, how many of each are in, and the joint you're on.
+func _practice_lines(joint: FastenerPoint) -> PackedStringArray:
+	var lines := PackedStringArray(["TOOL TEST STAND"])
+	lines.append("%-9s %s" % ["PART", "Test panel (practice only)"])
+	lines.append("%-9s %s" % ["SLOT", TradesTestStand.SLOT])
+	var groups := {}
+	for f in test_stand.joints:
+		var g: Array = groups.get_or_add("%s %s" % [f.kind, f.spec], [0, 0, f])
+		g[0] += 1
+		if practice.get(f.joint_id, false):
+			g[1] += 1
+	var first := true
+	for key: String in groups:
+		var g: Array = groups[key]
+		var f: FastenerPoint = g[2]
+		lines.append("%-9s %d %s%s %s, %d in" % ["JOINTS" if first else "", g[0], f.kind, "" if g[0] == 1 else "s", f.spec, g[1]])
+		first = false
+	lines.append("")
+	lines.append("%-9s %s  %s %s  %s" % ["JOINT", joint.joint_id, joint.spec, joint.kind, _state_word(joint)])
+	lines.append("%-9s %s" % ["TOOL", KIND_HELP.get(joint.kind, "-")])
+	return lines
+
+
 ## Shared Components' build spec for a component (mass, material, name), or null. Reached
 ## untyped: Shared Components is optional here.
 static func _build_spec(component: String) -> Object:
@@ -954,11 +1051,11 @@ func aim_title(tool: StringName) -> String:
 
 ## The spec of the joint under the aim and the part it holds, for the look card.
 func aim_spec(tool: StringName) -> String:
-	if tool == &"tractor" or aimed < 0 or _bus == null:
+	if tool == &"tractor" or aimed < 0:
 		return ""
 	var f := points[aimed]
 	var lines := PackedStringArray([spec_line(f)])
-	var comp := _bus.get_component(FastenerPoint.slot_of(f.joint_id))
+	var comp := _component_of(f)
 	if comp != "":
 		lines.append("Holds %s" % comp)
 	return "\n".join(lines)
@@ -993,7 +1090,7 @@ func actions(tool: StringName) -> Array:
 		return [["Let go", "stop"]]
 	if _slot_empty(f):
 		return [[TradesBay.CLICK, "put the part back"]] if tool == &"hands" else [[bay.tool_action(&"hands"), "hands, to put the part back"]]
-	var tight := _bus.is_joint_tight(f.joint_id)
+	var tight := is_tight(f)
 	var out: Array = []
 	match f.kind:
 		"bolt":
@@ -1059,6 +1156,8 @@ func _place_marker() -> void:
 
 ## No joint of its part is in yet.
 func _first_joint(f: FastenerPoint) -> bool:
+	if is_practice(f):
+		return false
 	for g in _bus.get_fasteners(FastenerPoint.slot_of(f.joint_id)):
 		if _bus.is_joint_tight(g.joint_id):
 			return false
@@ -1066,13 +1165,15 @@ func _first_joint(f: FastenerPoint) -> bool:
 
 
 func _slot_empty(f: FastenerPoint) -> bool:
+	if is_practice(f):
+		return false
 	return _bus.get_slot_state(FastenerPoint.slot_of(f.joint_id)) == ShipBayBus.SlotState.EMPTY
 
 
 func _state_word(f: FastenerPoint) -> String:
 	if _slot_empty(f):
 		return "PART OFF"
-	if not _bus.is_joint_tight(f.joint_id):
+	if not is_tight(f):
 		return "LOOSE" if f.kind != "connector" else "UNPLUGGED"
 	return {"bolt": "TIGHT", "rivet": "SET", "weld": "WELDED", "connector": "PLUGGED"}.get(f.kind, "DONE")
 
@@ -1080,7 +1181,7 @@ func _state_word(f: FastenerPoint) -> String:
 func _tight_count() -> int:
 	var n := 0
 	for f in points:
-		if _bus.is_joint_tight(f.joint_id):
+		if not is_practice(f) and is_tight(f):
 			n += 1
 	return n
 
@@ -1101,7 +1202,7 @@ func stage_joint(kind: String, back_m := 1.6) -> Array[Vector3]:
 	var best := INF
 	var middle := Vector3(ship_xform.origin.x, 0.0, ship_xform.origin.z)
 	for j in points.size():
-		if points[j].kind != kind:
+		if points[j].kind != kind or is_practice(points[j]):
 			continue
 		var n := (ship_xform.basis * points[j].normal).normalized()
 		var out := Vector3(n.x, 0.0, n.z)
@@ -1121,16 +1222,16 @@ func stage_joint(kind: String, back_m := 1.6) -> Array[Vector3]:
 	aimed = i
 	match kind:
 		"bolt":
-			_bus.note_joint_removed(f.joint_id)
+			_note_removed(f)
 			_begin(false, &"torque_wrench")
 			_pull_px = torque_range(f.spec).x * 0.8 / NM_PER_PX
 		"rivet":
 			_begin(true, &"drill")
 		"weld":
-			_bus.note_joint_removed(f.joint_id)
+			_note_removed(f)
 			_begin(false, &"welder")
 		"connector":
-			_bus.note_joint_removed(f.joint_id)
+			_note_removed(f)
 			_begin(false, &"hands")
 	_held_s = _seconds(kind) * 0.6
 	_frozen = true
@@ -1156,7 +1257,7 @@ func open_wiring(i: int) -> TradesWiringPanel:
 		return wiring
 	var f := points[i]
 	var loom := loom_of(f)
-	var comp := _bus.get_component(FastenerPoint.slot_of(f.joint_id))
+	var comp := _component_of(f)
 	wiring = TradesWiringPanel.new(loom, "WIRING  %s" % (comp if comp != "" else FastenerPoint.slot_of(f.joint_id)).to_upper())
 	wiring.plug_requested.connect(_plug_wiring)
 	wiring.close_requested.connect(close_wiring)
@@ -1195,7 +1296,7 @@ func _plug_wiring() -> void:
 		return
 	var f := points[_wiring_at]
 	var loom := wiring.loom
-	if not loom.all_landed() or _bus.is_joint_tight(f.joint_id):
+	if not loom.all_landed() or is_tight(f):
 		return
 	loom.plug_in()
 	_made(f, 1.0 if loom.is_right() else 0.1)

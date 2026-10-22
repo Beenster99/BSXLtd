@@ -62,6 +62,7 @@ flags = {
 "trades.wire_diagram": true,
 "trades.hover_specs": true,
 "trades.spec_sheet": true,
+"trades.test_stand": true,
 "trades.wiring": true,
 "ui": true
 }
