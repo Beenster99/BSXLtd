@@ -1578,10 +1578,17 @@ func _refresh_stores() -> void:
 		return
 	var locations: Dictionary = StorageLayout.get_layout()["locations"]
 	var batches := {}
+	# Goods still being beamed onto a place aren't on it yet.
+	var arriving: Dictionary = trolleys.get("arriving") if trolleys else {}
 	for loc: String in locations:
 		var have := _bus.stock_at(loc)
 		if have.is_empty():
 			continue
+		if arriving.has(loc):
+			have = have.duplicate()
+			have["qty"] = int(have["qty"]) - int(arriving[loc])
+			if int(have["qty"]) <= 0:
+				continue
 		var l: Dictionary = locations[loc]
 		var item: Dictionary = StorageLayout.items().get(have["item"], {})
 		if l["kind"] == "bin":
