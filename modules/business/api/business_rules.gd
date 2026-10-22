@@ -66,5 +66,3 @@ extends Resource
 		"refurbish": 1.25, "dispose": 0.9}
 ## A stripped part at this condition (0-1) or better goes into stock as used, else damaged.
 @export_range(0.0, 1.0) var recovered_used_from := 0.6
-## A part the client sells to BSX at handover is paid at this share of its trade value.
-@export_range(0, 100) var recovery_buy_percent := 55

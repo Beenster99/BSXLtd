@@ -796,13 +796,6 @@ func on_contract_handed_over(contract_id: String, quality: float, open_snags: in
 
 ## Job sizes, smallest first: a part on a bench, a ship in Dock 1, a hull in the big docks.
 const JOB_SIZES: PackedStringArray = ["small", "medium", "large"]
-## What happens to a stripped part at handover (a recovery's "disposition").
-const TO_CLIENT := "client"
-const TO_KEEP := "keep"
-const TO_BUY := "buy"
-const TO_SCRAP := "scrap"
-
-
 ## What a work order is for: "fit" (today's loop), "break", "scrap", "refurbish" or
 ## "dispose". "fit" for an unknown job or an order from before kinds.
 func job_kind(contract_id: String) -> String:
@@ -811,8 +804,9 @@ func job_kind(contract_id: String) -> String:
 	return str(kind) if kind is String and kind != "" else "fit"
 
 
-## The parts a job has given up so far: each {part, qty, condition (0-1), disposition
-## (client, keep, buy or scrap), material, kg}. [] until Contracts records them.
+## What has come out of a job so far (Contracts' job.recoveries): each {component
+## {id, material} or material, kg, condition (0-1), disposition (returned, kept, scrapped,
+## destroyed)}. [] for a fit job or an unknown one.
 func job_recoveries(contract_id: String) -> Array:
 	var job := _job(contract_id)
 	var list: Variant = job.get("recoveries") if job else null
@@ -870,33 +864,34 @@ func sell_scrap(material: String, kg: int, form := "bale") -> BusinessResult:
 	return r
 
 
-## Takes a handed-over job's stripped parts into stock: kept ones free, bought ones paid to
-## the client at recovery_buy_percent of their shelf value, scrap as raw kilos. Parts going
-## back to the client are left alone.
+## Takes what a handed-over job left BSX into stock: parts "kept" go in used or damaged,
+## kilos "kept" go in as raw material, less what the client's wants still claim of that
+## material (Contracts counts kept kilos towards them). Returned, scrapped and destroyed
+## lines are not BSX's.
 func _take_recoveries(contract_id: String, recoveries: Array) -> void:
 	var source := "contract:" + contract_id
-	var paid := 0
+	var job := _job(contract_id)
+	var owed := {}  # material -> kg the client still wants out of the kept kilos
+	for w: Variant in (job.order.get("wants") if job and job.order and job.order.get("wants") is Array else []):
+		if w is Dictionary and w.get("what") == "material":
+			owed[str(w.material)] = float(owed.get(str(w.material), 0.0)) + float(w.get("kg", 0.0))
 	for rec: Variant in recoveries:
-		if not rec is Dictionary:
+		if rec is Dictionary and rec.get("disposition") == "returned" and rec.has("material"):
+			owed[str(rec.material)] = float(owed.get(str(rec.material), 0.0)) - float(rec.get("kg", 0.0))
+	var kilos := {}
+	for rec: Variant in recoveries:
+		if not rec is Dictionary or rec.get("disposition") != "kept":
 			continue
 		var d := rec as Dictionary
-		var how := str(d.get("disposition", TO_KEEP))
-		var part := str(d.get("part", ""))
-		if how == TO_SCRAP:
-			var material := str(d.get("material", ""))
-			var kg := roundi(float(d.get("kg", 0.0)))
-			if Materials.TABLE.has(material) and kg > 0:
-				add_stock(RAW_PREFIX + material, kg, PartCondition.NEW, source)
-			continue
-		if how != TO_KEEP and how != TO_BUY or part == "":
-			continue
-		var qty := maxi(1, int(d.get("qty", 1)))
-		var condition := float(d.get("condition", 1.0))
-		add_stock(part, qty, recovery_condition(condition), source)
-		if how == TO_BUY:
-			paid += recovery_value(part, condition) * qty * get_rules().recovery_buy_percent / 100
-	if paid > 0:
-		_books.post(-paid, LedgerEntry.SALVAGE, contract_id, "parts bought from the client")
+		var component: Variant = d.get("component")
+		if component is Dictionary and str(component.get("id", "")) != "":
+			add_stock(str(component.id), 1, recovery_condition(float(d.get("condition", 1.0))), source)
+		elif Materials.TABLE.has(str(d.get("material", ""))):
+			kilos[str(d.material)] = float(kilos.get(str(d.material), 0.0)) + float(d.get("kg", 0.0))
+	for material: String in kilos:
+		var kg := roundi(kilos[material] - maxf(0.0, float(owed.get(material, 0.0))))
+		if kg > 0:
+			add_stock(RAW_PREFIX + material, kg, PartCondition.NEW, source)
 
 
 func _job(contract_id: String) -> ContractJob:

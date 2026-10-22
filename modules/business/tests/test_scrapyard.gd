@@ -1,7 +1,7 @@
 extends ModuleTest
 ## The scrapyard's money (S1): labour by job size and kind, scrap by the kilo at the
 ## broker's low steady rate, stripped parts worth far more whole than as metal, and a
-## handed-over job's recoveries coming into stock (kept, bought from the client, scrapped).
+## handed-over job's recoveries coming into stock (kept parts and kilos).
 ##   tools/run_tests.sh business
 
 
@@ -57,34 +57,47 @@ func run_tests() -> void:
 	check(bus.job_kind("NO-SUCH-JOB") == "fit" and bus.job_recoveries("NO-SUCH-JOB").is_empty(),
 			"an unknown job is a fit-out with nothing stripped")
 
-	# Handover: labour as today, then the recoveries into stock.
+	# Handover: labour as today, then what BSX kept goes into stock (Contracts' recoveries).
 	books.call("accept_contract", "BRK-1", 8000, 10)
 	var cash := bus.get_cash()
 	var deposit: int = bus.get_contract_balance("BRK-1").deposit
 	var recs := [
-		{"part": part, "qty": 1, "condition": 0.9, "disposition": "keep"},
-		{"part": "BatteryRack", "qty": 2, "condition": 0.4, "disposition": "buy"},
-		{"part": "Bulkhead", "qty": 4, "condition": 1.0, "disposition": "client"},
-		{"part": "HullPlate", "disposition": "scrap", "material": "steel", "kg": 612.4},
-		{"part": "Wire", "disposition": "scrap", "material": "nonsense", "kg": 20.0},
+		{"component": {"id": part, "material": "steel"}, "kg": 8600.0, "condition": 0.9, "disposition": "kept"},
+		{"component": {"id": "BatteryRack", "material": "steel"}, "kg": 650.0, "condition": 0.4, "disposition": "kept"},
+		{"component": {"id": "Bulkhead", "material": "steel"}, "kg": 44.0, "condition": 1.0, "disposition": "returned"},
+		{"material": "steel", "kg": 400.2, "condition": 0.0, "disposition": "kept"},
+		{"material": "steel", "kg": 212.0, "condition": 0.0, "disposition": "kept"},
+		{"material": "steel", "kg": 900.0, "condition": 0.0, "disposition": "destroyed"},
+		{"material": "nonsense", "kg": 20.0, "condition": 0.0, "disposition": "kept"},
 		"not a recovery",
 	]
 	check(bus.on_contract_handed_over("BRK-1", 0.8, 0, recs).is_ok(), "the break job hands over")
-	var bought: int = bus.recovery_value("BatteryRack", 0.4) * 2 * r.recovery_buy_percent / 100
-	check(bus.get_cash() == cash + 8000 - deposit - bought, "labour in, the bought parts paid out: %d" % (bus.get_cash() - cash))
+	check(bus.get_cash() == cash + 8000 - deposit, "the rest of the labour comes in: %d" % (bus.get_cash() - cash))
 	var detail := bus.get_stock_detail()
 	check(detail.get(part, {}).get(PartCondition.USED) == 1, "the kept part is in stock, used")
-	check(detail.get("BatteryRack", {}).get(PartCondition.DAMAGED) == 2, "the bought racks are in stock, damaged")
+	check(detail.get("BatteryRack", {}).get(PartCondition.DAMAGED) == 1, "a worn one goes in damaged")
 	check(not detail.has("Bulkhead"), "the client's parts go back to the client")
-	check(bus.get_stock().get("raw_steel") == 612 and not bus.get_stock().has("raw_nonsense"), "the scrap is in as kilos of steel")
-	check(bus.get_ledger().back().category == LedgerEntry.SALVAGE, "the ledger shows what the client was paid")
+	check(bus.get_stock().get("raw_steel") == 612 and not bus.get_stock().has("raw_nonsense"),
+			"the kept kilos are in as steel, the destroyed ones aren't: %s" % str(bus.get_stock().get("raw_steel")))
 	check(not bus.on_contract_handed_over("BRK-1", 0.8, 0, recs).is_ok() and bus.get_stock_detail().get(part, {}).get(PartCondition.USED) == 1,
 			"a second handover adds nothing")
+
+	# A real scrap job (once Contracts has kinds): the client's wanted kilos aren't BSX's.
+	var contracts := Modules.bus("contracts") as ContractsBus
+	if contracts and "recoveries" in ContractJob.new():
+		contracts.seed_board()
+		var job := contracts.get_job("kettle_rock.ss304")
+		check(job != null and bus.job_kind("kettle_rock.ss304") == "scrap", "Kettle Rock's scrap job is on the board")
+		if job:
+			books.call("accept_contract", job.job_id, 3100, 10)
+			job.recoveries.append({"material": "alloy", "kg": 11000.0, "condition": 0.0, "disposition": "kept"})
+			bus.on_contract_handed_over(job.job_id, 1.0, 0)
+			check(bus.get_stock().get("raw_alloy") == 3000, "11 t kept, 8 t of it the client's: %s" % str(bus.get_stock().get("raw_alloy")))
 
 	# Without contracts.kinds, a handover leaves stock alone.
 	Flags.set_flag("contracts.kinds", false)
 	books.call("accept_contract", "BRK-2", 5000, 10)
-	bus.on_contract_handed_over("BRK-2", 0.8, 0, [{"part": "Antenna", "disposition": "keep"}])
+	bus.on_contract_handed_over("BRK-2", 0.8, 0, [{"component": {"id": "Antenna"}, "condition": 1.0, "disposition": "kept"}])
 	check(not bus.get_stock().has("Antenna"), "the flag off: no recoveries")
 	Flags.set_flag("contracts.kinds", true)
 
