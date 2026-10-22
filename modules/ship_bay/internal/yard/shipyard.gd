@@ -101,13 +101,13 @@ const VIEWS := {
 	# Dock 1 and the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
 	"launch_towers": [Vector3(72, 2.0, 40), Vector3(150, 32, -450)],
-	# The apron (with "ship_bay.apron"): the whole of it, the pad's hulk, the holding lane,
-	# the cutting bay and the scrap lane.
+	# The apron (with "ship_bay.apron"): the whole of it, the pad's hulk, the holding lane;
+	# the crusher house east of Pre-assembly, outside and in.
 	"apron_overview": [Vector3(30, 70, 200), Vector3(25, 0, 80)],
 	"pad": [Vector3(18, 6, 112), Vector3(0, 3, 90)],
 	"holding": [Vector3(115, 9, 140), Vector3(148, 1.5, 92)],
-	"cutting_bay": [Vector3(-80, 7, 46), Vector3(-95, 4, 10)],
-	"scrap_lane": [Vector3(-76, 6, -2), Vector3(-96, 1, -18)],
+	"crusher_house": [Vector3(44, 9, 46), Vector3(66, 3, 14)],
+	"crusher": [Vector3(52, 5.5, 22), Vector3(72, 2.5, 2)],
 }
 
 const SHELL := Color(0.86, 0.85, 0.82)     # warm white cladding (TradesLook.SHELL)
@@ -151,7 +151,6 @@ var _sky: AlienSky
 ## Lights that only burn at night, each with its full energy in meta "night_energy".
 var _night_lights: Array[Light3D] = []
 var _night_lens: StandardMaterial3D
-var _rng := RandomNumberGenerator.new()
 var _paints: Dictionary = {}
 ## Library shapes by key, made once (_lib).
 var _shapes: Dictionary = {}
@@ -190,7 +189,6 @@ var transporters: Node3D
 
 
 func _ready() -> void:
-	_rng.seed = 4021
 	_solid = StaticBody3D.new()
 	_solid.name = "Solid"
 	add_child(_solid)
@@ -1041,15 +1039,6 @@ func _build_deliveries() -> void:
 		var n := _tag("GI-%02d" % (i + 1), at + Vector3(0, 0.03, 0.95), 0.18, Vector3.ZERO)
 		n.rotation = Vector3(-PI * 0.5, 0, 0)
 	_sign("GOODS IN", Vector3(-40.8, 5.6, -23.6), 0.0, 0.45)
-	# The goods-in desk with its screen, stool and a shelf behind.
-	_put(_lib("cbox/desk", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(1.0, 1.05, 3.2), 0.04)), _at(Vector3(-31, 0.525, 14)), _paint(DARK, 0.3, 0.5, "satin_paint"))
-	_put(_box(Vector3(1.1, 0.04, 3.3)), _at(Vector3(-31, 1.07, 14)), _paint(Color(0.7, 0.71, 0.7), 0.3, 0.4, "brushed_alloy"), false)
-	_screen(Vector3(-30.6, 1.5, 14), "GOODS IN\nBAY 2  KESTREL\n4 PALLETS DUE", -PI * 0.5)
-	_put(_lib("stool", func() -> PartShapes.PartShape: return WreckParts.stool()), _at(Vector3(-32.0, 0.375, 13.2)), _parts, false)
-	for k in 2:
-		_put(_lib("shelf_rack", func() -> PartShapes.PartShape: return WreckParts.shelf_rack()),
-				_at(Vector3(-28.25 - 0.32, 1.0, 17.0 + k * 1.7), PI * 0.5), _parts)
 
 
 ## The storage hall, laid out by StorageLayout: four aisles of racking with a rack each side,
@@ -1104,10 +1093,6 @@ func _build_stock() -> void:
 		_tag(_place_text(l), at + Vector3(float(l["face"].x) * (size.x * 0.5 + 0.125), 0.5, 0), 0.07, l["face"])
 		_put(_box(Vector3(0.12, 0.7, 0.12)), _at(at + Vector3(float(l["face"].x) * (size.x * 0.5 + 0.06), 0.35, 0)), _hazard)
 	_sign("BULK STORE  Z-01 - Z-18", Vector3(-39.5, 6.4, -27.6), 0.0, 0.45)
-	# Small-parts shelving along the partition to Material prep.
-	for i in 4:
-		_put(_lib("shelf_rack", func() -> PartShapes.PartShape: return WreckParts.shelf_rack()),
-				_at(Vector3(-0.62, 1.0, -44.6 + i * 1.7), PI * 0.5), _parts)
 
 
 ## One rack of StorageLayout: lattice end frames at each bay, orange beams and grating decks
@@ -1184,94 +1169,7 @@ func _tag(text: String, at: Vector3, height_m: float, face: Vector3, parent: Nod
 
 
 func _build_prep() -> void:
-	var plate := _paint(STEEL, 0.75, 0.45, "bare_steel")
-	# Plate stock in stacks on I-beam dunnage, by the door from Stock.
-	var dunnage := _lib("ibeam/dunnage", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(1.5, 0.12, 0.18))
-	var sheet := _box(Vector3(2.5, 0.025, 1.25))
-	for i in 4:
-		var at := Vector3(5 + i * 3.4, 0, -42)
-		for k: float in [-0.9, 0.0, 0.9]:
-			_put(dunnage, Transform3D(Basis(Vector3.UP, PI * 0.5), at + Vector3(k, 0.09, 0)), _paint(DARK, 0.3, 0.6, "cast_iron"))
-		for k in _rng.randi_range(4, 12):
-			_put(sheet, _at(at + Vector3(_rng.randf_range(-0.05, 0.05), 0.195 + k * 0.03, 0)), plate, false)
-	# A cantilever rack of pipe and bar.
-	var arm := _box(Vector3(0.1, 0.08, 1.1))
-	var post := _lib("ibeam/cantilever", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(2.6, 0.2, 0.25))
-	for x: float in [5.0, 9.0, 13.0]:
-		_put(post, Transform3D(UPRIGHT, Vector3(x, 1.3, -32.6)), _trim)
-		_put(_box(Vector3(0.25, 0.08, 1.4)), _at(Vector3(x, 0.04, -32.2)), _trim)
-		for k in 3:
-			_put(arm, _at(Vector3(x, 0.5 + k * 0.75, -32.0)), _trim, false)
-	for k in 3:
-		var bar := _lib("pipe/bar/%d" % k, func() -> PartShapes.PartShape:
-				return WreckParts.pipe(0.035 + 0.012 * k, 9.0, false))
-		for p in 5:
-			_put(bar, Transform3D(Y_TO_X, Vector3(9, 0.6 + k * 0.75, -32.35 + p * 0.17)), _paint(Color(0.7, 0.72, 0.74), 0.6, 0.4, "brushed_steel"), false)
-
-	# A plasma cutting table: a steel bed of slats over a water tray, a gantry and its head.
-	var table := Vector3(26, 0, -38)
-	_put(_lib("cbox/plasma_tray", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(6.0, 0.75, 3.0), 0.03)), _at(table + Vector3(0, 0.375, 0)), _paint(DARK, 0.4, 0.6, "gunmetal"))
-	var slat := _box(Vector3(0.03, 0.12, 2.9))
-	for k in 24:
-		_put(slat, _at(table + Vector3(-2.875 + k * 0.25, 0.81, 0)), plate, false)
-	var rail := _lib("ibeam/plasma_rail", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(6.4, 0.12, 0.16))
-	for side: float in [-1.0, 1.0]:
-		_put(rail, _at(table + Vector3(0, 0.83, 1.6 * side)), _bare, false)
-		_put(_lib("machine/plasma_carriage", func() -> PartShapes.PartShape:
-				return WreckParts.machine_unit(Vector3(0.5, 1.1, 0.4))), _at(table + Vector3(-1.0, 1.45, 1.65 * side)), _parts, false)
-	var bridge := _lib("ibeam/plasma_bridge", func() -> PartShapes.PartShape:
-			return PartShapes.i_beam(3.6, 0.22, 0.3))
-	_put(bridge, Transform3D(Basis(Vector3.UP, PI * 0.5), table + Vector3(-1.0, 2.1, 0)), _trim, false)
-	_put(_lib("jbox/torch", func() -> PartShapes.PartShape:
-			return WreckParts.junction_box(Vector3(0.3, 0.4, 0.3))), _at(table + Vector3(-1.0, 1.75, 0.4)), _parts, false)
-	_put(_lib("pipe/torch", func() -> PartShapes.PartShape:
-			return WreckParts.pipe(0.03, 0.5, false)), _at(table + Vector3(-1.0, 1.3, 0.4)), _bare, false)
-	_put(_box(Vector3(0.06, 0.06, 0.06)), _at(table + Vector3(-1.0, 1.02, 0.4)), _glow_mat(EDGE, 6.0), false)
-	_put(_lib("cbox/plasma_desk", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(0.7, 1.1, 0.6), 0.03)), _at(table + Vector3(3.6, 0.55, -1.2)), _paint(DARK, 0.3, 0.5, "satin_paint"))
-	_screen(table + Vector3(3.6, 1.5, -0.88), "PLASMA CUT\nPLATE 6MM\nNEST 3/8", 0.0)
-
-	# A press brake and a saw with its roller table.
-	_put(_lib("machine/press_brake", func() -> PartShapes.PartShape:
-			return WreckParts.machine_unit(Vector3(4.0, 2.6, 1.4), Color(1.0, 0.6, 0.15))), _at(Vector3(40, 1.3, -43.5), PI), _paint(BLUE, 0.35, 0.5))
-	_put(_lib("machine/saw", func() -> PartShapes.PartShape:
-			return WreckParts.machine_unit(Vector3(1.6, 1.4, 1.2))), _at(Vector3(44, 0.7, -30), -PI * 0.5), _paint(BLUE, 0.35, 0.5))
-	var roller := _lib("pipe/roller", func() -> PartShapes.PartShape:
-			return WreckParts.pipe(0.05, 0.7, false))
-	for k in 10:
-		_put(roller, Transform3D(Y_TO_Z, Vector3(41.6 - k * 0.4, 0.9, -30)), _bare, false)
-	var leg := _box(Vector3(0.06, 0.88, 0.06))
-	for x: float in [37.8, 41.6]:
-		for s: float in [-0.35, 0.35]:
-			_put(leg, _at(Vector3(x, 0.44, -30 + s)), _frame, false)
-	_put(_box(Vector3(4.0, 0.08, 0.06)), _at(Vector3(39.8, 0.86, -30.36)), _frame, false)
-	_put(_box(Vector3(4.0, 0.08, 0.06)), _at(Vector3(39.8, 0.86, -29.64)), _frame, false)
-
-	# A welding bay: orange screens on a pipe frame round a bench.
-	var screen := StandardMaterial3D.new()
-	screen.albedo_color = Color(0.95, 0.4, 0.08, 0.55)
-	screen.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	screen.roughness = 0.6
-	screen.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var frame_pipe := _lib("pipe/screen", func() -> PartShapes.PartShape:
-			return WreckParts.pipe(0.025, 2.0, false))
-	for s: Array in [[Vector3(30.5, 0, -27.5), 0.0], [Vector3(33.5, 0, -27.5), 0.0], [Vector3(35.0, 0, -29.0), PI * 0.5]]:
-		var basis := Basis(Vector3.UP, s[1])
-		var p: Vector3 = s[0]
-		_put(_box(Vector3(2.9, 1.7, 0.01)), Transform3D(basis, p + Vector3(0, 1.1, 0)), screen, false)
-		for k: float in [-1.45, 1.45]:
-			_put(frame_pipe, Transform3D(basis, p + basis * Vector3(k, 1.0, 0)), _galv, false)
-			_put(_box(Vector3(0.5, 0.04, 0.04)), Transform3D(basis * Basis(Vector3.UP, PI * 0.5), p + basis * Vector3(k, 0.02, 0)), _galv, false)
-	_put(_lib("workbench", func() -> PartShapes.PartShape: return WreckParts.workbench()), _at(Vector3(32.0, 0.975, -30.0), PI), _parts)
-	_put(_lib("machine/welder", func() -> PartShapes.PartShape:
-			return WreckParts.machine_unit(Vector3(0.6, 0.9, 0.8), Color(0.3, 0.7, 1.0))), _at(Vector3(34.0, 0.45, -30.3)), _paint(BLUE, 0.35, 0.5))
-	# Benches along the courtyard wall, either side of the door.
-	for x: float in [6.0, 24.0]:
-		_put(_lib("workbench", func() -> PartShapes.PartShape: return WreckParts.workbench()), _at(Vector3(x, 0.975, -25.1)), _parts)
+	pass   # an open floor: the hall's furniture was taken out (22 Oct)
 
 
 ## Marks the four enclosed halls for Graphics (a reflection probe and baked bounce light
@@ -1289,7 +1187,7 @@ func _tag_rooms() -> void:
 
 func _build_preassembly() -> void:
 	# The two refurbishment lines side by side down the hall, intake bays at the north end,
-	# their trolleys at the south end; the crusher bay outside the south door.
+	# their trolleys at the south end; the crusher in its own house against the east wall.
 	for id: String in RefurbLine.LINES:
 		var l: Node3D = RefurbLine.new(id)
 		add_child(l)
@@ -1297,18 +1195,78 @@ func _build_preassembly() -> void:
 	line = lines["a"]
 	crusher = CrusherPlant.new()
 	add_child(crusher)
-	# The apron's concrete runs under the bay from z = 35; pave the strip north of it that the
-	# courtyard's front strip stops short of, flush with both.
-	var strip := Rect2(45.0, CrusherPlant.BAY.position.y - 1.0, CrusherPlant.BAY.end.x + 1.0 - 45.0, 35.0 - (CrusherPlant.BAY.position.y - 1.0))
-	_block(Vector3(strip.get_center().x, -0.01, strip.get_center().y), Vector3(strip.size.x, 0.04, strip.size.y), _concrete, false)
-	_slab_joints(strip, 0.0)
-	# Benches and shelving along the east wall.
-	for z: float in [16.0, 19.0]:
-		_put(_lib("workbench", func() -> PartShapes.PartShape: return WreckParts.workbench()),
-				_at(Vector3(49.35, 0.975, z), PI * 0.5), _parts)
-	for i in 3:
-		_put(_lib("shelf_rack", func() -> PartShapes.PartShape: return WreckParts.shelf_rack()),
-				_at(Vector3(49.44, 1.0, 10.0 + i * 1.7), PI * 0.5), _parts)
+	_build_crusher_house()
+
+
+## The crusher house: a clad shed on portal frames against Pre-assembly's east wall (that
+## wall is its west side, its small door the way through), open onto the front strip by a
+## roller door at the west end of its south wall, lamps under the rafters. The plant inside
+## is CrusherPlant's.
+func _build_crusher_house() -> void:
+	var r := CrusherPlant.HOUSE
+	var hh := CrusherPlant.HOUSE_H
+	var door := CrusherPlant.HOUSE_DOOR   # centre x, width, height
+	var t := 0.3
+	var clad := _paint(Color(0.36, 0.39, 0.42), 0.4, 0.55, "satin_paint")
+	var top := hh - 0.02
+	# The floor slab and the strip of concrete in front of it out to the apron.
+	# (Its edges run a little under the building's wall and past its own, so no side lies in a
+	# wall's plane.)
+	var slab := Rect2(r.position.x - 0.05, r.position.y - 0.05, r.size.x + 0.1, r.size.y + 0.1)
+	_block(Vector3(slab.get_center().x, -0.01, slab.get_center().y), Vector3(slab.size.x, 0.04, slab.size.y), _concrete, false)
+	_slab_joints(r, 0.0)
+	var front := Rect2(45.0, YARD.y + 0.5, r.end.x + 2.0 - 45.0, 35.0 - (YARD.y + 0.5))
+	_block(Vector3(front.get_center().x, -0.01, front.get_center().y), Vector3(front.size.x, 0.04, front.size.y), _concrete, false)
+	_slab_joints(front, 0.0)
+	# Walls: north and east, and the south either side of the door and over it; the west is
+	# the building's own east wall. They start just clear of its cladding ribs.
+	var x0 := r.position.x + 0.08
+	_block(Vector3((x0 + r.end.x) * 0.5, top * 0.5, r.position.y + t * 0.5), Vector3(r.end.x - x0, top, t), clad)
+	_block(Vector3(r.end.x - t * 0.5, top * 0.5, r.get_center().y), Vector3(t, top, r.size.y - t * 2.0), clad)
+	var zs := r.end.y - t * 0.5 - 0.02   # its face 2 cm in from the building's wall end
+	var dl := door.x - door.y * 0.5
+	var dr := door.x + door.y * 0.5
+	_block(Vector3((x0 + dl) * 0.5, top * 0.5, zs), Vector3(dl - x0, top, t), clad)
+	_block(Vector3((dr + r.end.x - t) * 0.5, top * 0.5, zs), Vector3(r.end.x - t - dr, top, t), clad)
+	_block(Vector3(door.x, (door.z + top) * 0.5, zs), Vector3(door.y, top - door.z, t), clad)
+	# The roof, overhanging east and south, and an orange fascia along its front.
+	_block(Vector3(r.get_center().x + 0.2, hh + 0.15, r.get_center().y + 0.2), Vector3(r.size.x + 0.4, 0.3, r.size.y + 0.4),
+			_paint(Color(0.3, 0.32, 0.34), 0.4, 0.6, "satin_paint"))
+	_put(_box(Vector3(r.size.x + 0.44, 0.5, 0.1)), Transform3D(Basis(), Vector3(r.get_center().x + 0.2, hh + 0.1, r.end.y + 0.45)), _trim, false)
+	# Portal frames: a column at each end and a rafter across the depth every 6 m.
+	var col := _lib("ibeam/house_col", func() -> PartShapes.PartShape:
+			return PartShapes.i_beam(top - 0.5, 0.4, 0.5, 0.03))
+	var rafter := _lib("ibeam/house_rafter", func() -> PartShapes.PartShape:
+			return PartShapes.i_beam(r.size.y - t * 2.0 - 0.02, 0.4, 0.5, 0.03))
+	var upright := Basis(Vector3(0, 1, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1))
+	var x := r.position.x + 6.0
+	while x < r.end.x - 1.0:
+		for z: float in [r.position.y + t + 0.27, r.end.y - t - 0.27]:
+			if z > r.end.y - 1.0 and absf(x - door.x) < door.y * 0.5 + 0.4:
+				continue   # no column in the doorway
+			_put(col, Transform3D(upright, Vector3(x, (top - 0.5) * 0.5, z)), _frame, false)
+		_put(rafter, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(x, top - 0.26, r.get_center().y)), _frame, false)
+		x += 6.0
+	# The rolled-up shutter over the door, hazard stripes up its jambs, the sign over it.
+	_put(_lib("prism/house_shutter", func() -> PartShapes.PartShape:
+			return PartShapes.prism(16, 0.45, door.y + 0.6)), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(door.x, door.z + 0.5, r.end.y - t - 0.5)), _frame, false)
+	for k: float in [-1.0, 1.0]:
+		for i in 5:
+			_put(_box(Vector3(0.2, 0.6, 0.06)), Transform3D(Basis(), Vector3(door.x + k * (door.y * 0.5 + 0.1), 0.4 + i * 1.2, r.end.y + 0.031)), _hazard, false)
+	_sign("CRUSHER HOUSE", Vector3(r.position.x + 22.0, door.z + 1.6, r.end.y + 0.12), 0.0, 1.5)
+	# Lamps under the rafters (shadowless; they burn all day).
+	for lx: float in [r.position.x + 9.0, r.get_center().x + 4.0, r.end.x - 7.0]:
+		for lz: float in [r.position.y + 7.0, r.end.y - 9.0]:
+			var p := Vector3(lx, top - 1.0, lz)
+			var lamp := OmniLight3D.new()
+			lamp.position = p
+			lamp.light_color = Color(1.0, 0.93, 0.82)
+			lamp.light_energy = 2.0
+			lamp.omni_range = 16.0   # m
+			lamp.shadow_enabled = false
+			lamp.set_meta("gfx_no_shadow", true)
+			add_child(lamp)
+			_put(_box(Vector3(1.4, 0.12, 0.4)), Transform3D(Basis(), p + Vector3(0, 0.1, 0)), _glow_mat(Color(1.0, 0.93, 0.82), 2.5), false)
 
 
 func _build_courtyard() -> void:
@@ -1606,27 +1564,6 @@ func _cart(at: Vector3) -> void:
 			Transform3D(Y_TO_X, at + Vector3(0, 1.05, 1.1)), _galv, false)
 	var crate := _crate_key(2)
 	_put(crate, _at(at + Vector3(0, 0.66 + 0.325, -0.4)), _goods[0], false)
-
-
-## A small lit screen facing `yaw`, like TradesLook.readout.
-func _screen(at: Vector3, text: String, yaw: float) -> void:
-	var holder := Node3D.new()
-	holder.position = at
-	holder.rotation.y = yaw
-	add_child(holder)
-	_put(_lib("cbox/screen", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(0.95, 0.6, 0.06), 0.015)), Transform3D(Basis(Vector3.UP, yaw), at), _frame, false)
-	_put(_box(Vector3(0.86, 0.5, 0.01)), Transform3D(Basis(Vector3.UP, yaw), at + Basis(Vector3.UP, yaw).z * 0.031),
-			_paint(Color(0.02, 0.03, 0.04), 0.0, 0.25), false)
-	var label := Label3D.new()
-	label.text = text
-	label.font_size = 32
-	label.pixel_size = 0.0045
-	label.modulate = Color(0.45, 0.95, 1.0)
-	label.outline_size = 0
-	label.shaded = false
-	label.position.z = 0.04
-	holder.add_child(label)
 
 
 # --- The stores -------------------------------------------------------------------------

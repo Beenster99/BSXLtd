@@ -43,7 +43,7 @@ flags = {
 "shared_components": true,
 "trades": true,
 "trades.bolting": true,
-"trades.inspect": true,
+"trades.inspect": false,
 "trades.jump": true,
 "trades.power_wrench": true,
 "trades.riveting": true,
