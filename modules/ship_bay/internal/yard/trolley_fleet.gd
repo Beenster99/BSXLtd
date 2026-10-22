@@ -1041,7 +1041,7 @@ func _refresh_cargo() -> void:
 			continue
 		var c := _bus.crate_info(cid)
 		t.set_cargo({"crate_id": cid, "kind": Layout.kind_for(float(c["mass"])), "mass": float(c["mass"]) * (int(c["qty"]) if Layout.kind_for(float(c["mass"])) == "bin" else 1),
-				"name": c["name"]})
+				"name": c["name"], "item": str(c.get("item", "")), "qty": int(c.get("qty", 1)), "condition": float(c.get("condition", 1.0))})
 
 
 # --- The screen --------------------------------------------------------------------------

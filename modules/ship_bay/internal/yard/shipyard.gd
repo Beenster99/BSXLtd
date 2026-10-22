@@ -22,6 +22,7 @@ const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 const Transporters := preload("res://modules/ship_bay/internal/yard/transporters.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
@@ -1687,7 +1688,12 @@ func _refresh_stores() -> void:
 			continue
 		var l: Dictionary = locations[loc]
 		var item: Dictionary = StorageLayout.items().get(have["item"], {})
-		_goods_box(batches, l["kind"], float(item.get("mass", 0.0)), str(item.get("category", "")), l["at"])
+		if l["kind"] == "bin":
+			_goods_box(batches, l["kind"], float(item.get("mass", 0.0)), str(item.get("category", "")), l["at"])
+		else:
+			var room: Vector3 = l["size"]
+			_goods_items(batches, str(have["item"]), int(have["qty"]), float(have.get("condition", 1.0)),
+					Vector2(room.x, room.z), room.y - 0.25, l["at"], l["kind"] == "pallet")
 		var tag := _tag("%s  x%d" % [item.get("name", have["item"]), int(have["qty"])],
 				l["at"] + Vector3(float(l["face"].x) * (float(l["size"].x) * 0.5 + 0.06), 0.55 if l["kind"] != "bulk" else 1.4, 0), 0.06, l["face"], _stores)
 	var crates := _bus.delivered_crates()
@@ -1698,14 +1704,17 @@ func _refresh_stores() -> void:
 		var at := _bus.crate_position(id)
 		var kind := StorageLayout.kind_for(float(c["mass"]))
 		var cat := str(StorageLayout.items().get(c["item"], {}).get("category", ""))
-		var h := _goods_box(batches, "pallet" if kind == "bin" else kind, float(c["mass"]) * (int(c["qty"]) if kind == "bin" else 1), cat, at)
+		var h := _goods_box(batches, "pallet", float(c["mass"]) * int(c["qty"]), cat, at) if kind == "bin" \
+				else _goods_items(batches, str(c["item"]), int(c["qty"]), float(c.get("condition", 1.0)),
+						Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4), 2.4, at, kind == "pallet")
 		var dest := _bus.place_for(str(c["item"]))
 		var tag := _tag("%s  x%d\n%s  ->  %s" % [c["name"], int(c["qty"]), str(c["grade"]).to_upper(), dest if dest != "" else "NO SPACE"],
 				at + Vector3(0, h + 0.25, 0), 0.09, Vector3(0, 0, 1), _stores)
 		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 		tag.name = "Crate_" + id.replace("/", "_")
 	for batch: Dictionary in batches.values():
-		_multimesh(_stores, (_shapes[batch.key] as PartShapes.PartShape).mesh, batch.xforms, batch.mat)
+		var mesh: Mesh = batch["mesh"] if batch.has("mesh") else (_shapes[batch.key] as PartShapes.PartShape).mesh
+		_multimesh(_stores, mesh, batch.xforms, batch.mat)
 
 
 ## Adds the look of goods of one kind to `batches`: a tote (bin), a crate on a pallet, or a
@@ -1729,6 +1738,28 @@ func _goods_box(batches: Dictionary, kind: String, mass: float, category: String
 			return WreckParts.cargo_crate(size))
 	_goods_add(batches, key, mat, Transform3D(Basis.IDENTITY, at + Vector3(0, lift + size.y * 0.5, 0)))
 	return lift + size.y
+
+
+## Adds goods as they are (ItemLook), `qty` of `item` stacked over `area` (x, z) up to
+## `max_height`, on a pallet when `pallet`. Returns the stack's height (m).
+func _goods_items(batches: Dictionary, item: String, qty: int, condition: float, area: Vector2, max_height: float,
+		at: Vector3, pallet: bool) -> float:
+	var lift := 0.0
+	if pallet:
+		_goods_add(batches, _box(Vector3(1.0, 0.14, 1.2)), _wood, Transform3D(Basis.IDENTITY, at + Vector3(0, 0.07, 0)))
+		lift = 0.144
+	var size := ItemLook.size_of(item)
+	var spots := ItemLook.stack(size, maxi(qty, 1), area, maxf(max_height, size.y))
+	var top := 0.0
+	for spot: Transform3D in spots:
+		top = maxf(top, spot.origin.y + size.y)
+		var place := Transform3D(Basis.IDENTITY, at + Vector3(0, lift, 0)) * spot
+		for piece: Array in ItemLook.pieces(item, ItemLook.look_for(condition)):
+			var b := "item|%d|%d" % [(piece[0] as Mesh).get_rid().get_id(), (piece[1] as Material).get_instance_id()]
+			if not batches.has(b):
+				batches[b] = {"mesh": piece[0], "mat": piece[1], "xforms": []}
+			(batches[b].xforms as Array).append(place * (piece[2] as Transform3D))
+	return lift + top
 
 
 func _goods_add(batches: Dictionary, key: String, mat: Material, xform: Transform3D) -> void:
