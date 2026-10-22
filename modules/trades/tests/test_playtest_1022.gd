@@ -80,6 +80,15 @@ func run_tests() -> void:
 	check(str(hint.get("text", "")).contains("%d-%d N m" % [roundi(nm.x), roundi(nm.y)]),
 			"looking at a bolt, the card gives its torque spec: %s" % str(hint.get("text", "")))
 	check(str(hint.get("text", "")).contains("Holds"), "and the part it holds")
+	check(str(hint.get("text", "")).contains("joints in"), "and how many of its joints are in")
+	# Joined-up hands (beenster, 22 Oct): first person, a forearm runs up into view to each hand.
+	Flags.set_flag("trades.forearms", true)
+	rig.worker.set_view(false)
+	await frames(2)
+	var sleeve := rig.worker.right_hand.get_node("Sleeve") as MeshInstance3D
+	var wrist_end := sleeve.global_position + sleeve.global_basis.y * 0.5
+	check(sleeve.visible and wrist_end.distance_to(rig.worker.right_hand.palm().origin) < 0.15,
+			"first person, the hand is on the end of a forearm")
 
 	# The wrist's Specs channel: a paper spec sheet on its right.
 	var screen := TradesSpecsScreen.new(true)

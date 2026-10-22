@@ -78,10 +78,19 @@ func run_tests() -> void:
 	bus.crate_carried.connect(on_carry)
 	for id: String in ["s", "m", "l", "p"]:
 		bus.command_trolley(id, "put_away")
+	var beams: Node = fleet.get("beams")
+	var flown := {}
+	var beside := {}
 	for i in 5400:
 		await get_tree().physics_frame
 		for id: String in trolleys:
 			lifted[id] = maxf(float(lifted.get(id, 0.0)), float(trolleys[id].get("deck_height")))
+		for f: Dictionary in beams.get("flights"):
+			flown[f["key"]] = true
+			if f["from"] is Vector3 and not beside.has(f["key"]):
+				var gap: Vector3 = (f["emitter"] as Node3D).global_position - (f["from"] as Vector3)
+				gap.y = 0.0
+				beside[f["key"]] = gap.length()
 		if bus.delivered_crates().is_empty():
 			break
 	var states := {}
@@ -93,6 +102,9 @@ func run_tests() -> void:
 	check(shelved.has("PO-21/1") and shelved.has("PO-21/2") and not shelved.has("PO-21/3"),
 			"the picking lift takes the shelf goods off the trolley, the reactor goes on the floor with it: %s" % [shelved])
 	check(bus.stock_at(bus.home_location("IonThruster")).get("qty") == 2, "the thrusters are on their home")
+	check(flown.size() >= 3, "goods are beamed on and off the trolleys, not just moved: %s" % [flown.keys()])
+	check(not beside.is_empty() and beside.values().all(func(d: float) -> bool: return d > 1.5),
+			"a trolley parks beside goods on the floor and beams them up: %s" % [beside])
 	check(bus.stock_count("M10") == 100 and bus.stock_count("Reactor") == 1, "the bolts in their bin, the reactor on the bulk floor")
 	var level: float = (Layout.get_layout()["locations"][place]["at"] as Vector3).y
 	check(float(lifted["m"]) >= level - 0.02, "the medium trolley raised its deck to the shelf: %.2f of %.2f" % [lifted["m"], level])

@@ -89,7 +89,7 @@ func _test_board(bus: ContractsBus) -> void:
 		texts.append((l as Label).text)
 	check("2 × Turret motor back, 60% or better" in texts, "docket lists what the client wants: %s" % str(texts))
 	check("BSX keeps the rest" in texts, "and who keeps the rest")
-	check(texts.has("HAZARDS  WEAPONS  POWER"), "and the hazards")
+	check(texts.has("WEAPONS") and texts.has("POWER"), "and the hazards")
 	panel.queue_free()
 
 

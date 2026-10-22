@@ -1,8 +1,8 @@
 class_name SettingsTabs
 extends VBoxContainer
 ## The settings in a game (Esc > Settings): a row of tabs, Graphics, Key binds, Sound and
-## Gameplay, then one per Menu settings page (Character, modules' own), and the open tab's
-## controls under it. Sound and Gameplay show their own controls, then the sections modules
+## Gameplay, then one per Menu settings page (Character, modules' own), then Debug (flag
+## ui.debug_tab), and the open tab's controls under it. Sound and Gameplay show their own controls, then the sections modules
 ## added (Menu.register_settings_section(Menu.SOUND / Menu.GAMEPLAY, ...)). Changes apply
 ## and save straight away.
 
@@ -45,6 +45,8 @@ func tab_list() -> Array:
 	var out: Array = [[GRAPHICS, "Graphics"], [KEYS, "Key binds"], [Menu.SOUND, "Sound"], [Menu.GAMEPLAY, "Gameplay"]]
 	for p: Dictionary in Menu.settings_pages():
 		out.append([str(p.id), str(p.label)])
+	if Flags.is_on("ui.debug_tab"):
+		out.append([Menu.DEBUG, "Debug"])
 	return out
 
 
@@ -66,6 +68,8 @@ func open_tab(id: String) -> void:
 			page = _with_sections(_sound(), id)
 		Menu.GAMEPLAY:
 			page = _with_sections(_gameplay(), id)
+		Menu.DEBUG:
+			page = _with_sections(T.label("Testing shortcuts. They change this game's save.", "body", 18, T.DIM), id)
 		_:
 			var p := Menu.settings_page(id)
 			var own: Variant = (p.factory as Callable).call() if not p.is_empty() and (p.factory as Callable).is_valid() else null
@@ -124,7 +128,36 @@ func _gameplay() -> Control:
 	col.add_theme_constant_override("separation", 8)
 	col.add_child(_slider("TimeOfDay", "Time of day (moves the sun over the yard)", AlienSky.SECTION, AlienSky.KEY,
 			0.0, 24.0, 0.25, func(h: float) -> String: return AlienSky.clock(h)))
+	col.add_child(_choice("TerminalText", "Terminal text (screens and the wrist terminal)", T.TEXT_SECTION, T.TEXT_KEY,
+			T.TEXT_SIZES.keys()))
 	return col
+
+
+## A labelled row of buttons, one per choice, bound to a setting.
+func _choice(node_name: String, label: String, section: String, key: String, choices: Array) -> Control:
+	var row := HBoxContainer.new()
+	row.name = node_name + "Row"
+	row.add_theme_constant_override("separation", 14)
+	var l := T.label(label, "body_medium", 18, T.TEXT)
+	l.custom_minimum_size.x = 380
+	row.add_child(l)
+	var buttons := HBoxContainer.new()
+	buttons.name = node_name
+	buttons.add_theme_constant_override("separation", 6)
+	row.add_child(buttons)
+	var fill := func(fill_again: Callable) -> void:
+		for c in buttons.get_children():
+			buttons.remove_child(c)
+			c.queue_free()
+		for choice: Variant in choices:
+			var b := T.button(str(choice).to_upper(), false, 17, str(Settings.get_value(section, key)) == str(choice))
+			b.name = str(choice)
+			b.pressed.connect(func() -> void:
+				Settings.set_value(section, key, str(choice))
+				fill_again.call.call_deferred(fill_again))
+			buttons.add_child(b)
+	fill.call(fill)
+	return row
 
 
 ## A labelled slider bound to a setting, with its value shown on the right.

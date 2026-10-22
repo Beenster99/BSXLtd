@@ -204,7 +204,7 @@ func _test_bench_scene(bus: TradesBus) -> void:
 	var hand: StretchHand = bench.worker.right_hand
 	var snaps := [0]
 	hand.snapped.connect(func() -> void: snaps[0] += 1)
-	hand.reach_to(bench.worker.global_position + Vector3(0, 1.2, -1.0))
+	hand.reach_to(bench.worker.global_position + Vector3(0, 1.2, -1.15))
 	await get_tree().create_timer(0.5).timeout
 	check(hand.is_on_target() and snaps[0] == 0 and hand.tension() > 0.0, "a hand stretches out to something within reach")
 	hand.reach_to(bench.worker.global_position + Vector3(0, 1.2, -4.0))

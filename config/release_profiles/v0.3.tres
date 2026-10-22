@@ -43,7 +43,7 @@ flags = {
 "shared_components": true,
 "trades": true,
 "trades.bolting": true,
-"trades.inspect": true,
+"trades.inspect": false,
 "trades.jump": true,
 "trades.power_wrench": true,
 "trades.riveting": true,
@@ -64,6 +64,9 @@ flags = {
 "trades.hover_specs": true,
 "trades.spec_sheet": true,
 "trades.test_stand": true,
+"trades.slim_hotbar": true,
+"trades.forearms": true,
 "trades.wiring": true,
-"ui": true
+"ui": true,
+"ui.debug_tab": true
 }

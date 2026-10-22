@@ -39,3 +39,14 @@ func run_tests() -> void:
 	check(tall.size() < 40 and tall.any(func(xf: Transform3D) -> bool: return xf.origin.y > 0.0), "more than a layer stacks up, to the height limit (%d)" % tall.size())
 	check(ItemLook.look_for(0.3) == ItemLook.Look.RUST and ItemLook.look_for(1.0) == ItemLook.Look.NEW and ItemLook.look_for(0.4, "bath") == ItemLook.Look.BARE,
 			"goods look rusty, new or bare by condition and stage")
+	# The raw build material: plates flat, beams long, panes glazed, cable on a drum.
+	var plate := ItemLook.size_of("HullPlate")
+	check(plate.y < 0.07 and maxf(plate.x, plate.z) > 0.4, "a hull plate is a flat sheet: %s" % plate)
+	var deck := ItemLook.size_of("DeckPlate")
+	check(deck.y < 0.07 and deck.x * deck.z > plate.x * plate.z, "a deck plate is a bigger sheet: %s" % deck)
+	var beam := ItemLook.size_of("Stringer")
+	check(maxf(beam.x, beam.z) >= 3.0 and beam.y < 0.6, "a stringer comes as a length of beam: %s" % beam)
+	var pane := ItemLook.pieces("WindowPane")
+	check(pane.size() >= 2 and ItemLook.size_of("WindowPane").y < 0.2, "a window pane lies flat with its glass in")
+	var drum := ItemLook.size_of("MainLoom")
+	check(drum.y > 0.6 and absf(drum.y - drum.z) < 0.05, "loom cable comes on a drum: %s" % drum)
