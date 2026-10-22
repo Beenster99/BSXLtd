@@ -779,11 +779,129 @@ func job_materials(contract_id: String) -> int:
 	return total if priced else -1
 
 
-## Pays the rest of a contract and moves reputation. quality is 0-1.
-func on_contract_handed_over(contract_id: String, quality: float, open_snags: int) -> BusinessResult:
+## Pays the rest of a contract and moves reputation. quality is 0-1. With contracts.kinds
+## on, the job's recoveries (stripped parts, see take_recoveries) come into stock too;
+## `recoveries` stands in for the job's own list when given (tests, the sandbox).
+func on_contract_handed_over(contract_id: String, quality: float, open_snags: int,
+		recoveries: Array = []) -> BusinessResult:
 	if not _is_authority():
 		return _not_host()
-	return _books.hand_over(contract_id, quality, open_snags)
+	var result := _books.hand_over(contract_id, quality, open_snags)
+	if result.is_ok() and Flags.is_on("contracts.kinds"):
+		_take_recoveries(contract_id, recoveries if not recoveries.is_empty() else job_recoveries(contract_id))
+	return result
+
+
+# --- Scrapyard: break, scrap, refurbish and dispose jobs ---
+
+## Job sizes, smallest first: a part on a bench, a ship in Dock 1, a hull in the big docks.
+const JOB_SIZES: PackedStringArray = ["small", "medium", "large"]
+## What happens to a stripped part at handover (a recovery's "disposition").
+const TO_CLIENT := "client"
+const TO_KEEP := "keep"
+const TO_BUY := "buy"
+const TO_SCRAP := "scrap"
+
+
+## What a work order is for: "fit" (today's loop), "break", "scrap", "refurbish" or
+## "dispose". "fit" for an unknown job or an order from before kinds.
+func job_kind(contract_id: String) -> String:
+	var job := _job(contract_id)
+	var kind: Variant = job.order.get("kind") if job and job.order else null
+	return str(kind) if kind is String and kind != "" else "fit"
+
+
+## The parts a job has given up so far: each {part, qty, condition (0-1), disposition
+## (client, keep, buy or scrap), material, kg}. [] until Contracts records them.
+func job_recoveries(contract_id: String) -> Array:
+	var job := _job(contract_id)
+	var list: Variant = job.get("recoveries") if job else null
+	return list if list is Array else []
+
+
+## Labour for a job of this kind and size, CR, rounded to the hundred. t (0-1) places it
+## within the size's range in the rules; the kind's factor scales it.
+func labour_price(kind: String, size: String, t := 0.5) -> int:
+	var r := get_rules()
+	var span: Vector2i = {"medium": r.labour_medium, "large": r.labour_large}.get(size, r.labour_small)
+	var base := lerpf(span.x, span.y, clampf(t, 0.0, 1.0)) * float(r.labour_kind_factor.get(kind, 1.0))
+	return roundi(base / 100.0) * 100
+
+
+## What the metal broker pays for kg of a material, CR: "bale" or "ingot". 0 for a
+## material Void Salvage doesn't know.
+func scrap_value(material: String, kg: float, form := "bale") -> int:
+	if not Materials.TABLE.has(material) or kg <= 0.0:
+		return 0
+	var per := get_rules().scrap_per_kg * float(Materials.TABLE[material]["price"])
+	if form == "ingot":
+		per *= get_rules().ingot_factor
+	return roundi(per * kg)
+
+
+## The stock condition a stripped part goes in at: used, or damaged below the rules' line.
+func recovery_condition(condition: float) -> String:
+	return PartCondition.USED if condition >= get_rules().recovered_used_from else PartCondition.DAMAGED
+
+
+## What one stripped part is worth on the shelf, CR (its new price at that condition's
+## share); 0 for a part with no price.
+func recovery_value(part: String, condition: float) -> int:
+	var each := _books.catalogue.value_of(part)
+	if each <= 0:
+		each = _books.prices.price_of(part)
+	if each <= 0:
+		return 0
+	return roundi(each * PartCondition.price_factor(recovery_condition(condition)))
+
+
+## Sells kg of a raw material from stock to the metal broker. Host only.
+func sell_scrap(material: String, kg: int, form := "bale") -> BusinessResult:
+	if not _is_authority():
+		return _not_host()
+	var value := scrap_value(material, kg, form)
+	if value <= 0:
+		return BusinessResult.fail(ERR_INVALID_PARAMETER, "nobody buys %s" % material)
+	if _books.take_stock(RAW_PREFIX + material, kg).is_empty():
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "not %d kg of %s in stock" % [kg, material])
+	_books.post(value, LedgerEntry.SCRAP, "", "%d kg %s %s" % [kg, material, form])
+	var r := BusinessResult.success()
+	r.cost = -value
+	return r
+
+
+## Takes a handed-over job's stripped parts into stock: kept ones free, bought ones paid to
+## the client at recovery_buy_percent of their shelf value, scrap as raw kilos. Parts going
+## back to the client are left alone.
+func _take_recoveries(contract_id: String, recoveries: Array) -> void:
+	var source := "contract:" + contract_id
+	var paid := 0
+	for rec: Variant in recoveries:
+		if not rec is Dictionary:
+			continue
+		var d := rec as Dictionary
+		var how := str(d.get("disposition", TO_KEEP))
+		var part := str(d.get("part", ""))
+		if how == TO_SCRAP:
+			var material := str(d.get("material", ""))
+			var kg := roundi(float(d.get("kg", 0.0)))
+			if Materials.TABLE.has(material) and kg > 0:
+				add_stock(RAW_PREFIX + material, kg, PartCondition.NEW, source)
+			continue
+		if how != TO_KEEP and how != TO_BUY or part == "":
+			continue
+		var qty := maxi(1, int(d.get("qty", 1)))
+		var condition := float(d.get("condition", 1.0))
+		add_stock(part, qty, recovery_condition(condition), source)
+		if how == TO_BUY:
+			paid += recovery_value(part, condition) * qty * get_rules().recovery_buy_percent / 100
+	if paid > 0:
+		_books.post(-paid, LedgerEntry.SALVAGE, contract_id, "parts bought from the client")
+
+
+func _job(contract_id: String) -> ContractJob:
+	var contracts := Modules.bus("contracts") as ContractsBus
+	return contracts.get_job(contract_id) if contracts else null
 
 
 func on_contract_cancelled(contract_id: String, by_client: bool) -> BusinessResult:

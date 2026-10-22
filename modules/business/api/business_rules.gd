@@ -49,3 +49,22 @@ extends Resource
 @export var loan_limit_per_rep := 1500
 ## The smallest loan the bank writes.
 @export var loan_min := 1000
+
+@export_group("Scrapyard")
+## What Scatter Metals pays for a baled kilo of mild steel, CR. Other materials pay this
+## times their price factor in Void Salvage's Materials table (alloy 1.6, veil 20). Kept
+## low, about Kettle Rock's price for steel plate, so scrapping never beats fitting.
+@export var scrap_per_kg := 0.5
+## Ingots (melted and graded) pay this many times a bale's price.
+@export var ingot_factor := 1.3
+## Labour for a job, CR, by size: the low and high end of the range.
+@export var labour_small := Vector2i(2000, 12000)
+@export var labour_medium := Vector2i(10000, 60000)
+@export var labour_large := Vector2i(80000, 400000)
+## Labour times this, by the job's kind (what the client wants back).
+@export var labour_kind_factor: Dictionary = {"fit": 1.0, "break": 1.0, "scrap": 0.8,
+		"refurbish": 1.25, "dispose": 0.9}
+## A stripped part at this condition (0-1) or better goes into stock as used, else damaged.
+@export_range(0.0, 1.0) var recovered_used_from := 0.6
+## A part the client sells to BSX at handover is paid at this share of its trade value.
+@export_range(0, 100) var recovery_buy_percent := 55

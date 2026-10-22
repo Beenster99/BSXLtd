@@ -14,6 +14,10 @@ const WAGES := "wages"
 const BONUS := "bonus"
 const LOAN := "loan"
 const REPAYMENT := "repayment"
+## A stripped part the client sold BSX at handover.
+const SALVAGE := "salvage"
+## Bales and ingots sold to the metal broker.
+const SCRAP := "scrap"
 
 var day := 0
 var amount := 0
