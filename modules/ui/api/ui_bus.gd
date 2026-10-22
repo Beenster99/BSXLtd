@@ -23,6 +23,7 @@ func register_module() -> void:
 	Router.register_scene(MAIN_MENU, "res://modules/ui/internal/main_menu.tscn")
 	Router.register_scene(SETTINGS, "res://modules/ui/internal/settings_menu.tscn")
 	Settings.register("audio", {"master": 1.0, "effects": 1.0})
+	Settings.register(TerminalKit.TEXT_SECTION, {TerminalKit.TEXT_KEY: TerminalKit.TEXT_DEFAULT})
 	Settings.register(AlienSky.SECTION, {AlienSky.KEY: AlienSky.DEFAULT_HOUR})
 	Shots.register("main_menu", MAIN_MENU)
 	Shots.register("settings", SETTINGS)

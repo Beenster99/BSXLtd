@@ -303,6 +303,14 @@ func _test_holo() -> void:
 
 func _test_terminal_kit() -> void:
 	var T := TerminalKit
+	var text_was: Variant = Settings.get_value(T.TEXT_SECTION, T.TEXT_KEY)
+	check(text_was == null or str(text_was) in T.TEXT_SIZES, "terminal text is a known size")
+	Settings.set_value(T.TEXT_SECTION, T.TEXT_KEY, "Standard")
+	check(T.label("x", "body", 20, T.TEXT).get_theme_font_size("font_size") == 20, "Standard text is the size asked for")
+	Settings.set_value(T.TEXT_SECTION, T.TEXT_KEY, "Compact")
+	check(T.label("x", "body", 20, T.TEXT).get_theme_font_size("font_size") < 20 and T.cell("1", 100).custom_minimum_size.x < 100,
+			"Compact text and columns are smaller, so a tab holds more")
+	Settings.set_value(T.TEXT_SECTION, T.TEXT_KEY, text_was if text_was != null else T.TEXT_DEFAULT)
 	check("tick" in Sfx.names() and Sfx.stream("tick").data.size() > 0, "the holo tick is a sound")
 	HudSlots.register_holo_section("_crew", "_cash", "Transfer money", func(glass: bool) -> Control:
 		var l := Label.new()
@@ -463,7 +471,18 @@ func _test_pause() -> void:
 	st.open_tab(Menu.GAMEPLAY)
 	check(st.body.find_child("TimeOfDay", true, false) != null and st.body.find_child("Section__mouse", true, false) != null,
 			"Gameplay has the time of day and the sections modules add")
+	check(st.body.find_child("TerminalText", true, false) != null, "Gameplay chooses the terminal text size")
 	Menu.unregister_settings_section(Menu.GAMEPLAY, "_mouse")
+	var debug_was := Flags.is_on("ui.debug_tab")
+	Flags.set_flag("ui.debug_tab", true)
+	Menu.register_settings_section(Menu.DEBUG, "_max", "Max out", func() -> Control: return Button.new(), 10)
+	check(st.tab_list().back() == [Menu.DEBUG, "Debug"], "Debug is the last tab while ui.debug_tab is on")
+	st.open_tab(Menu.DEBUG)
+	check(st.body.find_child("Section__max", true, false) != null, "Debug shows the buttons modules add")
+	Menu.unregister_settings_section(Menu.DEBUG, "_max")
+	Flags.set_flag("ui.debug_tab", false)
+	check(not st.tab_list().any(func(t: Array) -> bool: return t[0] == Menu.DEBUG), "and hides with the flag off")
+	Flags.set_flag("ui.debug_tab", debug_was)
 	pause._input(esc)
 	check(pause.is_open and (pause.root.find_child("Body", true, false) as Control).visible, "Esc goes back out of Settings")
 	pause._input(esc)
