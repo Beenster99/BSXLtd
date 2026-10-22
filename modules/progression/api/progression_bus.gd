@@ -38,6 +38,8 @@ signal profile_changed
 const SAVE_SECTION := "progression"
 const STATE_EVENT := "progression.state"
 const UPGRADE_EVENT := "progression.upgrade"
+const MAX_XP_EVENT := "progression.debug_max_xp"
+const DEBUG_SECTION := "progression.debug"
 const PROFILE_SECTION := "progression.skills"
 ## Bonuses from levels (tool speed, tolerance).
 const PERKS := "progression.perks"
@@ -51,6 +53,7 @@ const UNGRADED_QUALITY := 0.5
 const Catalog := preload("res://modules/progression/internal/catalog.gd")
 const State := preload("res://modules/progression/internal/progression_state.gd")
 const ProfilePanel := preload("res://modules/progression/internal/ui/profile_panel.gd")
+const DebugPanel := preload("res://modules/progression/internal/ui/debug_panel.gd")
 
 var _state: RefCounted = State.new(Catalog.from_data())
 var _trades: Node
@@ -67,14 +70,18 @@ func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, self)
 	Menu.register_settings_section(Menu.CHARACTER, PROFILE_SECTION, "Skills",
 			func() -> Control: return ProfilePanel.new(self), 10)
+	Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Progression",
+			func() -> Control: return DebugPanel.new(self), 10)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
 	Menu.unregister_settings_section(Menu.CHARACTER, PROFILE_SECTION)
+	Menu.unregister_settings_section(Menu.DEBUG, DEBUG_SECTION)
 	if _net:
 		_net.unregister_event(STATE_EVENT)
 		_net.unregister_event(UPGRADE_EVENT)
+		_net.unregister_event(MAX_XP_EVENT)
 		_net.unregister_snapshot_provider(SAVE_SECTION)
 		if _net.peer_joined.is_connected(_on_peer_joined):
 			_net.peer_joined.disconnect(_on_peer_joined)
@@ -101,6 +108,7 @@ func attach_net(net: MultiplayerBus) -> void:
 		return
 	_net.register_event(STATE_EVENT, _apply_state)
 	_net.register_event(UPGRADE_EVENT, _apply_upgrade_request, _validate_upgrade_request)
+	_net.register_event(MAX_XP_EVENT, _apply_max_xp, _validate_max_xp)
 	_net.register_snapshot_provider(SAVE_SECTION, self)
 	if not _net.peer_joined.is_connected(_on_peer_joined):
 		_net.peer_joined.connect(_on_peer_joined)
@@ -219,6 +227,29 @@ func request_upgrade(upgrade_id: StringName) -> void:
 	_pending[order_id] = upgrade_id
 	var u: ProgressionUpgrade = _state.catalog.upgrades[upgrade_id]
 	_business.request_purchase(u.price_ref, order_id)
+
+
+## Testing (Settings > Debug): puts the local player at the top level with every tool. The
+## host applies it, so it works the same for a client.
+func request_max_xp() -> void:
+	if _net:
+		_net.request(MAX_XP_EVENT, {})
+	else:
+		max_xp(&"1")
+
+
+func max_xp(player_id: StringName) -> void:
+	if not _is_host():
+		return
+	var key := _key(player_id)
+	var before := {}
+	for s: ProgressionSkill in skills():
+		before[s.id] = skill_level(key, s.id)
+	_state.max_out(key)
+	for s: ProgressionSkill in skills():
+		for lvl in range(int(before[s.id]) + 1, skill_level(key, s.id) + 1):
+			level_up.emit(key, s.id, lvl)
+	_changed()
 
 
 func award_cert(player_id: StringName, cert_id: StringName) -> void:
@@ -346,6 +377,15 @@ func _validate_upgrade_request(_sender_id: int, payload: Dictionary) -> Variant:
 	var id := StringName(str(payload.get("id", "")))
 	var check := can_unlock(id)
 	return payload if check.ok else "missing:" + ",".join(PackedStringArray(check.missing))
+
+
+func _validate_max_xp(sender_id: int, _payload: Dictionary) -> Variant:
+	return {"player": String(player_for_peer(sender_id))}
+
+
+func _apply_max_xp(payload: Dictionary) -> void:
+	if _is_host():
+		max_xp(StringName(str(payload.get("player", ""))))
 
 
 func _apply_upgrade_request(payload: Dictionary) -> void:

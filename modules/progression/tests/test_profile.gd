@@ -143,6 +143,18 @@ func run_tests() -> void:
 	lite.queue_free()
 	Flags.use(on)
 
+	# Settings > Debug's Max XP: a client asks, the host applies it to that client's player.
+	var payload: Variant = host._validate_max_xp(7, {})
+	host._apply_max_xp(payload)
+	var top := 0
+	for s: ProgressionSkill in host.skills():
+		top += s.xp_per_level.size()
+	check(host.total_level(&"Fitter") == top, "Max XP puts every tool at its top level")
+	check(host.total_level(&"Sam") == 0, "only for the player who asked")
+	check(client.total_level(&"Fitter") == top, "and the client sees it")
+	client.max_xp(&"Sam")
+	check(host.total_level(&"Sam") == 0, "a client can't apply it itself")
+
 	# Loaded for real: the section is on the Character page.
 	var saved := start_flags
 	var flags := saved.duplicate()
@@ -152,6 +164,16 @@ func run_tests() -> void:
 	var ids := Menu.settings_sections(Menu.CHARACTER).map(func(c): return c.id)
 	check(Modules.is_loaded("progression") and ProgressionBus.PROFILE_SECTION in ids,
 			"Skills section registered on the Character page")
+	var dbg := Menu.settings_sections(Menu.DEBUG).filter(func(c): return c.id == ProgressionBus.DEBUG_SECTION)
+	check(dbg.size() == 1, "Progression section on the Debug tab")
+	if dbg.size() == 1:
+		var dp: Control = (dbg[0].factory as Callable).call()
+		add_child(dp)
+		var me := Modules.bus("progression").my_player_id() as StringName
+		(dp.find_child("MaxXp", true, false) as Button).pressed.emit()
+		await frames(2)
+		check(Modules.bus("progression").total_level(me) == top, "Max XP button maxes the local player: %d" % Modules.bus("progression").total_level(me))
+		dp.queue_free()
 	var real := Modules.bus("progression") as ProgressionBus
 	check(real.my_player_id() != &"", "solo player has an id: %s" % real.my_player_id())
 	flags["progression"] = false

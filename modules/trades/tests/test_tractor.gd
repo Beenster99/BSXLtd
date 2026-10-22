@@ -30,7 +30,9 @@ func run_tests() -> void:
 	var rig: TradesBay = yard.get_node(TradesBus.YARD_RIG)
 	var station := rig.ship_station()
 	var beam := station.tractor
-	check(rig.hotbar.size() >= 7 and rig.hotbar[6] == &"tractor", "the tractor beam is tool 7")
+	var at := rig.hotbar.find(&"tractor")
+	check(at >= 0 and at == rig.hotbar.size() - (2 if rig.hotbar.has(&"cutter") else 1),
+			"the tractor beam is on the hotbar after the hand tools (tool %d)" % (at + 1))
 	rig.set_tool(&"tractor")
 	var slot := ship_bus.get_slot(SLOT)
 	var home := station.ship_xform * slot.mount

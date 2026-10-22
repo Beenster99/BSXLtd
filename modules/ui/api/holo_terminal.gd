@@ -132,7 +132,7 @@ func fill_tabs() -> void:
 		n += 1
 		var b := T.button("%02d  %s" % [n, str(c.label).to_upper()], false, 19, c.id == channel, glass)
 		b.name = "Ch_" + str(c.id).validate_node_name()
-		b.custom_minimum_size.x = 150
+		b.custom_minimum_size.x = T.px(150)
 		b.set_meta("channel", c.id)
 		b.pressed.connect(func() -> void:
 			if c.id != channel:
@@ -194,7 +194,7 @@ func _build() -> void:
 	# The header: the BSX badge, the title, the clock and readouts.
 	var header := HBoxContainer.new()
 	header.name = "Header"
-	header.custom_minimum_size.y = 58
+	header.custom_minimum_size.y = T.px(58)
 	header.add_theme_constant_override("separation", 0)
 	col.add_child(header)
 	var badge := PanelContainer.new()

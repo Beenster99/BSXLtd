@@ -7,7 +7,7 @@
 script = ExtResource("1")
 id = "multiplayer"
 display_name = "Multiplayer"
-version = "0.3.2"
+version = "0.3.3"
 depends_on = PackedStringArray()
 flag = "multiplayer"
 bus = ExtResource("2")
