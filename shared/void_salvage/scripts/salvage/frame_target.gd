@@ -12,15 +12,59 @@ extends RefCounted
 
 ## Steel, kg per cubic metre (a part's mass from its volume).
 const STEEL: float = 7800.0
+## Insulated copper wire, kg per cubic metre (a loom span's mass).
+const COPPER_PVC: float = 5200.0
+## How far a loom span's clip sits from the ring it's clipped to (beside the 10 cm plug
+## sleeve, still over a 16 cm wide ring member), metres.
+const LOOM_CLIP: float = 0.065
 
 ## The parts and joints being built (a builder that reaches its model another way leaves it
 ## null and overrides `parts_model`).
 var model: PartModel
+## The build step the joints made from now on belong to (ConnectionData.phase): a design sets
+## it per step ("deck", "wall", "fitting"), a FrameHull sets its own ("frame", "skin",
+## "lining") and puts back what it found. It lives on the model.
+var phase: String:
+	get:
+		var m := parts_model()
+		return m.phase if m else ""
+	set(value):
+		var m := parts_model()
+		if m:
+			m.phase = value
+## How many device leads `power_lead` has drawn (routed or hand-typed).
+var lead_count: int = 0
+## The builders at work, outermost first (`begin_builder`): a part made while one is at work is
+## that builder's (the ship file writes it under the builder's recipe, not as a piece).
+var builders: Array[String] = []
+## How many builder runs have begun: each run's place in the build order (the ship file's `seq`).
+var build_seq: int = 0
+## Loom span part id -> [span transform, WiringLoom], so leads can plug onto the real curve.
+var _loom_curves: Dictionary = {}
 
 
 ## The parts and joints being built.
 func parts_model() -> PartModel:
 	return model
+
+
+## A builder (FrameHull, DeckFrame, StudWall, PipeRouter, a loom) starts a run named `who`
+## ("frame:body", "deck:body/upper", "wall:bulkhead", "pipes"). Returns the run's place in the
+## build order. Pair with `end_builder`.
+func begin_builder(who: String) -> int:
+	builders.append(who)
+	build_seq += 1
+	return build_seq
+
+
+func end_builder() -> void:
+	if not builders.is_empty():
+		builders.pop_back()
+
+
+## The outermost builder at work, or "" (a design's own part).
+func builder() -> String:
+	return builders[0] if not builders.is_empty() else ""
 
 
 ## Adds a part of `shape` at `xform` (body space) in `mat`, weighing its volume of steel
@@ -31,6 +75,8 @@ func part(part_name: String, kind: PartData.Kind, shape: PartShapes.PartShape, x
 	var made := model.add_part(part_name, kind, maxf(shape.volume * STEEL * fill, 0.1), 0.0, xform, shape.mesh,
 			shape.collision, mat)
 	made.path = path
+	if not shape.extra_collision.is_empty():
+		model.add_extra_collision(made, shape.extra_collision)
 	return made
 
 
@@ -109,3 +155,111 @@ static func _box_shape(size: Vector3) -> BoxShape3D:
 	var shape := BoxShape3D.new()
 	shape.size = size
 	return shape
+
+
+# --- Pipes (PipeRouter) ----------------------------------------------------------------
+
+## A pipe part (a span, an elbow, a union: PipeRouter lays them) of `shape` at `xform` in
+## `mat`, weighing its steel; a CONDUIT, like a loom span. `path` names it.
+func pipe_part(part_name: String, shape: PartShapes.PartShape, xform: Transform3D, mat: Material,
+		path: String = "") -> PartData:
+	var made := parts_model().add_part(part_name, PartData.Kind.CONDUIT, maxf(shape.volume * STEEL, 0.05), 0.0, xform,
+			shape.mesh, shape.collision, mat)
+	made.path = path
+	if not shape.extra_collision.is_empty():
+		parts_model().add_extra_collision(made, shape.extra_collision)
+	return made
+
+
+# --- Wiring (looms and leads) ----------------------------------------------------------
+
+## A loom span's part: wiring, its mass `kg` (a builder prices it its own way).
+func _wire_part(part_name: String, kg: float, xform: Transform3D, mesh: Mesh, shape: Shape3D) -> PartData:
+	return parts_model().add_part(part_name, PartData.Kind.CONDUIT, kg, 0.0, xform, mesh, shape, WiringLoom.material())
+
+
+## One loom span as a part: `length` along the local Y of `xform`, with its clip strap at
+## the start tie (`clip_at_start`) or the end tie, bowing out by `sag` (span space, zero
+## for a taut span). `solid` (span space, along local Y) is where its collision runs, if not
+## the whole length (a channel loom through a node block). Returns [the part, its WiringLoom].
+## loom_run builds its spans with
+## this; designs use it for drops and odd runs that don't follow a frame.
+func loom_span(part_name: String, spec: WiringLoom.Spec, length: float, xform: Transform3D,
+		seed: int, clip_at_start: bool = true, sag := Vector3.ZERO, hug := Vector3.ZERO,
+		clip_offset: float = LOOM_CLIP, dip := Vector3.ZERO, dip_flat: float = 0.0,
+		pin := Vector3.ZERO, solid := Vector2(-INF, INF)) -> Array:
+	var loom := WiringLoom.new(spec, length, seed)
+	loom.sag = sag
+	loom.origin_shift = loom.sag * 0.5
+	loom.dip = dip
+	loom.dip_flat = dip_flat
+	loom.pin_axis(pin)
+	loom.hug_frame(hug)
+	# The clip strap sits over the ring at that end, just clear of the plug sleeve there.
+	var off := minf(clip_offset, length * 0.5)
+	loom.clip_s = -length * 0.5 + off if clip_at_start else length * 0.5 - off
+	# Collision hugs the real curve (slack and sag included): a convex hull around it,
+	# so tools hit the wires, not the empty space a fat cylinder would add.
+	var shape := ConvexPolygonShape3D.new()
+	var hull := PackedVector3Array()
+	var reach := spec.collision_radius() - spec.slack
+	var samples := 10 if dip == Vector3.ZERO else 24
+	var s0 := maxf(-length * 0.5, solid.x)
+	var s1 := minf(length * 0.5, solid.y)
+	for j in samples + 1:
+		var sj := s0 + (s1 - s0) * float(j) / float(samples)
+		var c := loom.centre_at(sj)
+		for a in 8:
+			var angle := TAU * float(a) / 8.0
+			hull.append(c + Vector3(cos(angle), 0.0, sin(angle)) * reach)
+	shape.points = hull
+	var kg := 0.0
+	for w in spec.wire_colors.size():
+		kg += PI * spec.wire_radius * spec.wire_radius * length * COPPER_PVC
+	kg += PI * spec.core_radius * spec.core_radius * length * COPPER_PVC
+	kg = maxf(kg, 1.0)
+	var span := _wire_part(part_name, kg, xform, loom.build_mesh(), shape)
+	span.power = PartData.Power.CONDUCTOR
+	_loom_curves[span.id] = [xform, loom]
+	return [span, loom]
+
+
+## The centre of loom span `span` where it crosses `z` (body space), slack included.
+func loom_point(span: PartData, z: float) -> Vector3:
+	var curve: Array = _loom_curves[span.id]
+	var xform: Transform3D = curve[0]
+	return xform * (curve[1] as WiringLoom).centre_at(z - xform.origin.z)
+
+
+## The z range (body space) a `loom_run` span covers, for picking where to tap it.
+## Zero-length for a part that isn't a span running along z (a drop, a bend, a box).
+func loom_extent(span: PartData) -> Vector2:
+	if not _loom_curves.has(span.id):
+		return Vector2(span.local_transform.origin.z, span.local_transform.origin.z)
+	var curve: Array = _loom_curves[span.id]
+	var xform: Transform3D = curve[0]
+	if absf(xform.basis.y.z) < 0.99:
+		return Vector2(xform.origin.z, xform.origin.z)
+	var half: float = (curve[1] as WiringLoom).length * 0.5
+	return Vector2(xform.origin.z - half, xform.origin.z + half)
+
+
+## Plugs a device into a loom span with a lead: a CONNECTOR joint (the plug, at the last
+## point, on the loom; named `path`) and a twisted lead running through `points` (body space,
+## from the device to the loom) that hangs on the device and leaves with it.
+func power_lead(device: PartData, span: PartData, points: PackedVector3Array, path: String = "") -> ConnectionData:
+	lead_count += 1
+	var last := points[points.size() - 1]
+	var before := points[points.size() - 2]
+	var plug := join(span, device, ConnectionData.Kind.CONNECTOR, last, (last - before).normalized(), Vector3.ZERO,
+			Vector2.ZERO, path)
+	var lead := MeshInstance3D.new()
+	lead.name = "Lead"
+	var local := PackedVector3Array()
+	var to_device := device.local_transform.affine_inverse()
+	for p in points:
+		local.append(to_device * p)
+	lead.mesh = WiringLoom.lead_mesh(local)
+	lead.material_override = WiringLoom.material()
+	parts_model().attach_to_part(device, lead)
+	return plug

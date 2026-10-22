@@ -12,13 +12,19 @@ extends RefCounted
 ##     plates, so they dent and tear; tapered faces are cut to fit), flush to the seam lines
 ##     on a `flush` skin; glass panes where the style says so; end caps (`caps`); inner
 ##     panels on the frame (`lining`).
-##   - "node" (the Kestrel's): a node block at every profile corner of every station, a ring
-##     girder between neighbouring nodes round each station, a stringer along every corner
-##     between stations, every member's ends welded to its nodes all round (the style's
-##     bead); skin plates cut round the openings and riveted in rows along every member they
-##     lie over (at the style's pitch); caps on the outlines a design gives (`cap`). Looks are
-##     as HullBuilder draws them (girders node to node, plates corner to corner); the
-##     collision shapes are pulled in to keep the gaps, so a part's look and collision differ.
+##   - "node" (the Kestrel's, and the Manta's "channel"): a node block at every profile corner
+##     of every station, a ring girder between neighbouring nodes round each station, a
+##     stringer along every corner between stations, every member's ends welded to its nodes
+##     all round (the style's bead); skin plates cut round the openings and riveted in rows
+##     along every member they lie over (at the style's pitch); caps on the outlines a design
+##     gives (`cap`). Looks are as HullBuilder draws them (girders node to node, plates corner
+##     to corner); the collision shapes are pulled in to keep the gaps, so a part's look and
+##     collision differ. A "channel" section draws its rings and stringers as C-sections whose
+##     mouths face the cavity.
+##   - "rib" (the Manta's wings and horns: too thin for node blocks): a flanged rib across
+##     each station (FrameParts.rib, a web just inside the skin with a flange along each edge),
+##     spars along the corners between them where they fit (`spars` picks which), welded to the
+##     ribs; the skin riveted along the ribs' flanges and the spars, as on node styles.
 ## Parts keep clear gaps (the salvage model needs parts never to overlap).
 ##
 ## Every part and joint it makes carries a path (PartData.path, ConnectionData.path;
@@ -27,7 +33,8 @@ extends RefCounted
 ## either side of it is renamed), the profile's corners c0.. and edges e0.. (edge i from
 ## corner i to corner i + 1) and an index local to its own row or face:
 ##   hull/st:hold/ring/e3, hull/st:hold/node/c3, hull/bay:hold/stringer/c3 (node styles; the
-##   mitred style's spaced stringers are hull/bay:hold/stringer/e3/0), hull/bay:hold/skin/e3
+##   mitred style's spaced stringers are hull/bay:hold/stringer/e3/0; rib styles'
+##   wing_l/st:holds/rib, wing_l/bay:holds/spar/c1), hull/bay:hold/skin/e3
 ##   (/s1 for a strip an opening cuts, /t0 /t1 a twisted face's triangles),
 ##   hull/bay:hold/lining/e3, hull/opening:side_door/post/0 and /rail/1 (the jambs round an
 ##   opening), hull/cap/back/0, canopy/splice/hull/c4; joints add their role, what they
@@ -131,6 +138,10 @@ var caps_made: Array = [null, null]
 var cap_plates: Array[PartData] = []
 var welds: Array[ConnectionData] = []
 var rivets: Array[ConnectionData] = []
+## Rib styles: the corners spars run along (every corner where one fits, if empty), and the
+## ribs made, one per station.
+var spars: Array[int] = []
+var ribs: Array[PartData] = []
 ## Node styles: the jambs framing the openings (posts across the face, rails along it), their
 ## welds, the linings' panels (every strip) and their bolts.
 var jambs: Array[PartData] = []
@@ -152,9 +163,14 @@ var _cap_count: Array[int] = [0, 0]
 ## Node centres per station (ship space) and each node's collision half size.
 var _points: Array = []
 var _node_half: Array = []
+## Looms run along the hull (`loom`, node styles): {name, spans, xy, edge, cuts (the z where
+## each span starts, then the last one's end), radius (the bundle's collision)}.
+var looms: Array[Dictionary] = []
 ## Every member that can hold a plate: {part, p0, p1} (the ends of its collision, on its
 ## centre line).
 var _members: Array[Dictionary] = []
+## The sections spliced on (`splice`): [my station, the other FrameHull, its station, pairs].
+var _splices: Array = []
 ## The planes no member may cross (each plate's inner face, the ends): [normal, limit]:
 ## inside where normal . p <= limit.
 var _planes: Array = []
@@ -231,24 +247,116 @@ static func _named_part(p: PartData, path: String) -> PartData:
 	return p
 
 
-func build() -> void:
+func _build_now() -> void:
+	var phase_was := target.phase
 	if spec["corners"] == "mitre":
+		target.phase = "frame"
 		_mitre_rings()
 		_spaced_stringers()
+		target.phase = "skin"
 		_mitre_skin()
 		_mitre_caps()
+		target.phase = phase_was
 		return
 	var was := target.parts_model().head_style
 	_place_nodes()
 	_collect_planes()
 	target.parts_model().head_style = bead
-	_build_nodes()
-	_node_rings()
-	_corner_stringers()
-	_frame_openings()
+	target.phase = "frame"
+	if spec["corners"] == "rib":
+		_rib_frame()
+	else:
+		_build_nodes()
+		_node_rings()
+		_corner_stringers()
+		_frame_openings()
 	target.parts_model().head_style = rivet_head
+	target.phase = "skin"
 	_node_skin()
 	target.parts_model().head_style = was
+	target.phase = phase_was
+
+
+## Builds the section (the recipe given: stations, style, skips, openings).
+func build() -> void:
+	_built_seq = target.begin_builder("frame:%s" % name)
+	_build_now()
+	target.end_builder()
+	# The faces' looks and the members left out, for the recipe (a style may read the livery,
+	# which only holds while the design builds).
+	_faces_built.clear()
+	_skipped_built.clear()
+	if stations.is_empty():
+		return
+	var n: int = (stations[0]["profile"] as PackedVector2Array).size()
+	for seg in stations.size() - 1:
+		for e in n:
+			_faces_built.append([seg, e, _look(seg, e)])
+	for i in stations.size():
+		for e in n:
+			if frame_skip.is_valid() and frame_skip.call(i, e):
+				_skipped_built.append([i, e])
+
+
+# --- The recipe (the ship file, vsship 2.0) -------------------------------------------
+
+## The calls made on this section after it was built, in order (`cap`, `lining`, `splice`,
+## `loom`/`channel_loom`): [{"step", "seq" (its place among every builder run), args...}].
+## A call made inside another (line_bays' linings) is the outer one's.
+var steps: Array[Dictionary] = []
+var _built_seq: int = 0
+var _stepping: int = 0
+var _faces_built: Array = []
+var _skipped_built: Array = []
+
+
+## A public call on the section begins: noted in `steps` (unless nested in another) and run as
+## this section's builder (`who`, else "frame:<name>").
+func _step(step_name: String, args: Dictionary, who: String = "") -> void:
+	_stepping += 1
+	var seq := target.begin_builder(who if who != "" else "frame:%s" % name)
+	if _stepping == 1:
+		var entry := {"step": step_name, "seq": seq}
+		entry.merge(args)
+		steps.append(entry)
+
+
+func _step_done() -> void:
+	_stepping -= 1
+	target.end_builder()
+
+
+## A loom's spec as data (the file's services block).
+static func spec_dict(sp: WiringLoom.Spec) -> Dictionary:
+	return {"core_radius": sp.core_radius, "core_color": sp.core_color, "wire_radius": sp.wire_radius,
+			"wire_colors": sp.wire_colors, "slack": sp.slack, "splay": sp.splay, "twist": sp.twist, "tie_spacing": sp.tie_spacing}
+
+
+## What this section is built from (docs/SHIP_FORMAT_PLAN.md, the 2.0 `frame` block): its name,
+## style and the sizes it builds at, its stations (labels, z, profiles), every face's look (the
+## `style` callable evaluated: {skip} or {mat, glass, tag, name}), the members left out
+## (`frame_skip` evaluated: [station, edge]), the openings, the spars, and the calls made on it
+## after it was built (`steps`, looms aside: they are services). Engine values and materials as
+## they are: the ship file encodes them.
+func recipe() -> Dictionary:
+	var faces: Array = _faces_built
+	var skipped: Array = _skipped_built
+	var st: Array = []
+	for s: Dictionary in stations:
+		st.append({"label": s["label"], "z": s["z"], "profile": s["profile"]})
+	var ops: Array = []
+	for o: Dictionary in _openings:
+		ops.append({"name": o["name"], "edge": o["edge"], "box": o["box"], "frame": o["frame"], "reveal": o["reveal"]})
+	var out := {"name": name, "style": style_id, "seq": _built_seq, "skin": skin, "depth": depth, "ring_width": ring_width,
+			"node_size": node_size, "stringer_size": stringer_size, "stringer_depth": stringer_depth, "bead": bead,
+			"rivet_pitch": rivet_pitch, "bolt_pitch": bolt_pitch, "rivet_head": rivet_head, "bolt_head": bolt_head,
+			"frame_to_skin": frame_to_skin, "groove": groove, "lining_inset": lining_inset,
+			"lining_thickness": lining_thickness, "end_gap": end_gap, "skin_mat": skin_mat, "frame_mat": frame_mat,
+			"glass_mat": glass_mat, "stations": st, "faces": faces, "frame_skip": skipped, "openings": ops,
+			"steps": steps.filter(func(e: Dictionary) -> bool: return e["step"] != "loom")}
+	if spec["corners"] == "rib":
+		out["spars"] = spars
+	return out
 
 
 # --- Geometry helpers -----------------------------------------------------------------
@@ -722,6 +830,18 @@ func lining_face(s: int, inset: float = -1.0) -> PackedVector2Array:
 ## stands on the deck (y from the floor up), or stops short of a bulkhead in its bay.
 func lining(seg: int, e: int, mat: Material, inset: float = -1.0, part_name: String = "InnerPanel",
 		y_clip := Vector2(-INF, INF), z_clip := Vector2(-INF, INF)) -> PartData:
+	_step("lining", {"seg": seg, "edge": e, "mat": mat, "inset": inset, "part_name": part_name, "y_clip": y_clip,
+			"z_clip": z_clip})
+	var phase_was := target.phase
+	target.phase = "lining"
+	var made := _lining(seg, e, mat, inset, part_name, y_clip, z_clip)
+	target.phase = phase_was
+	_step_done()
+	return made
+
+
+func _lining(seg: int, e: int, mat: Material, inset: float, part_name: String, y_clip: Vector2,
+		z_clip: Vector2) -> PartData:
 	if spec["corners"] != "mitre":
 		return _node_lining(seg, e, mat, inset, part_name, y_clip, z_clip)
 	var ins := lining_inset if inset < 0.0 else inset
@@ -1004,7 +1124,7 @@ func _corner_stringers() -> void:
 ## ring member gives its `station` and `edge` (a plate names it by its own bay: fore or aft).
 func _member(member_name: String, na: PartData, nb: PartData, a: Vector3, b: Vector3, ha: float, hb: float,
 		up: Vector3, section: Vector2, ring_half: float, path: String, ends: Array, key: String,
-		station: int = -1, edge: int = -1) -> PartData:
+		station: int = -1, edge: int = -1, face: float = -1.0) -> PartData:
 	var length := a.distance_to(b)
 	var d := (b - a) / maxf(length, 0.001)
 	var ta := _setback(ha, d)
@@ -1026,23 +1146,54 @@ func _member(member_name: String, na: PartData, nb: PartData, a: Vector3, b: Vec
 	# Drawn out to the skin (`frame_to_skin`): the look is the gap taller on its outer side, its
 	# collision where it was.
 	var lift := GAP if frame_to_skin else 0.0
-	var look := PartShapes.girder(length, section.x, section.y + lift)
+	# A channel style's rings and stringers are C-sections, their mouths toward the cavity (-Y):
+	# the collision is the web and each flange, so the mouth stays open.
+	var channel: bool = spec.get("section", "box") == "channel" and member_name in ["FrameRing", "Stringer"]
+	var look := PartShapes.channel(length, section.x, section.y + lift, spec.get("wall", 0.02)) if channel \
+			else PartShapes.girder(length, section.x, section.y + lift)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = look.mesh
 	shape.recipe = look.recipe
 	shape.volume = look.volume
-	shape.collision = _box_points(Vector3(x0, -half.x * s - lift * 0.5, -half.y * s), Vector3(x1, half.x * s - lift * 0.5, half.y * s))
+	var lo := Vector3(x0, -half.x * s - lift * 0.5, -half.y * s)
+	var hi := Vector3(x1, half.x * s - lift * 0.5, half.y * s)
+	if channel:
+		var wall := minf(float(spec.get("wall", 0.02)), half.y * s * 0.5)
+		shape.collision = _box_points(Vector3(lo.x, hi.y - wall, lo.z), hi)
+		shape.extra_collision.append(_box_points(lo, Vector3(hi.x, hi.y - wall, lo.z + wall)))
+		shape.extra_collision.append(_box_points(Vector3(lo.x, lo.y, hi.z - wall), Vector3(hi.x, hi.y - wall, hi.z)))
+	else:
+		shape.collision = _box_points(lo, hi)
 	var made := target.part(member_name, PartData.Kind.FRAME, shape, Transform3D(xform.basis, xform.origin + xform.basis.y * lift * 0.5),
 			frame_mat, "", 0.35, null, path)
 	var seam_up := xform.basis.y
-	var fa := minf(_face_at(d), length * 0.5)
-	var fb := minf(_face_at(-d), length * 0.5)
+	var fa := minf(_face_at(d) if face < 0.0 else face, length * 0.5)
+	var fb := minf(_face_at(-d) if face < 0.0 else face, length * 0.5)
 	var seam := Vector2(section.y, section.x)   # along seam_up (the height), across it (the width)
 	_join(welds, made, na, ConnectionData.Kind.WELD, a + d * fa, d, seam_up, seam, "%s/weld:%s" % [path, ends[0]])
 	_join(welds, made, nb, ConnectionData.Kind.WELD, b - d * fb, d, seam_up, seam, "%s/weld:%s" % [path, ends[1]])
 	_members.append({"part": made, "p0": xform * Vector3(x0, 0, 0), "p1": xform * Vector3(x1, 0, 0),
 			"half": maxf(section.x, section.y) * 0.5, "key": key, "station": station, "edge": edge})
 	return made
+
+
+## The ring member at station `i` nearest `p` (ship space), or null: what a deck beam or a
+## wall butting against the ring is welded to. Node styles.
+func ring_near(i: int, p: Vector3) -> PartData:
+	var best: PartData = null
+	var best_d := INF
+	for m: Dictionary in _members:
+		if int(m.get("station", -1)) != i:
+			continue
+		var a: Vector3 = m["p0"]
+		var b: Vector3 = m["p1"]
+		var ab := b - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-6), 0.0, 1.0)
+		var d := p.distance_to(a + ab * t)
+		if d < best_d:
+			best_d = d
+			best = m["part"]
+	return best
 
 
 ## The share (0.2 .. 1) of a member's section its collision may keep and stay inside every
@@ -1071,8 +1222,12 @@ static func _box_points(lo: Vector3, hi: Vector3) -> ConvexPolygonShape3D:
 ## to end, as the canopy meets the main hull): a short splice girder between each pair of
 ## nodes [my corner, their corner], welded to both. Node styles.
 func splice(mine: int, other: FrameHull, theirs: int, pairs: Array) -> void:
+	_step("splice", {"station": mine, "to": other.name, "their_station": theirs, "pairs": pairs})
+	_splices.append([mine, other, theirs, pairs])
 	var was := target.parts_model().head_style
+	var phase_was := target.phase
 	target.parts_model().head_style = bead
+	target.phase = "frame"
 	for pair: Vector2i in pairs:
 		var a: Vector3 = _points[mine][pair.x]
 		var b: Vector3 = other._points[theirs][pair.y]
@@ -1081,6 +1236,130 @@ func splice(mine: int, other: FrameHull, theirs: int, pairs: Array) -> void:
 				maxf(ring_width, other.ring_width) * 0.5, "%s/splice/%s/c%d" % [name, other.name, pair.x],
 				["c%d" % pair.x, "%s:c%d" % [other.name, pair.y]], "splice:%s:c%d" % [other.name, pair.x])
 	target.parts_model().head_style = was
+	target.phase = phase_was
+	_step_done()
+
+
+# --- Rib frame ------------------------------------------------------------------------
+
+## The rib styles' frame: a flanged rib at every station (its web standing on the station, the
+## end ones stood in from the ends like end rings: `ring_z`), just inside the skin; spars along
+## the corners between neighbouring ribs (`spars`, or every corner) wherever one fits inside
+## both ribs clear of the others, welded to the ribs' webs. Each rib's flange along every edge
+## is a row for the skin's rivets ("rib:e3" on a cap, "fore:e3"/"aft:e3" on a bay's plates).
+func _rib_frame() -> void:
+	ribs.clear()
+	stringers.clear()
+	nodes.clear()
+	rings.clear()
+	_node_half.clear()
+	var web: float = spec.get("web", 0.03)
+	var lip: float = spec.get("lip", 0.015)
+	var outlines: Array = []
+	for i in stations.size():
+		var z := ring_z(i)
+		var outline := _rib_outline(i)
+		outlines.append(outline)
+		var halves: Array[float] = []
+		for k in (_points[i] as Array).size():
+			halves.append(0.0)
+		_node_half.append(halves)
+		if outline.size() < 3:
+			ribs.append(null)
+			continue
+		var rib := target.part("Rib", PartData.Kind.FRAME, FrameParts.rib(outline, web, node_size, lip),
+				Transform3D(Basis(), Vector3(0.0, 0.0, z)), frame_mat, "", 0.6, null, "%s/rib" % _st(i))
+		ribs.append(rib)
+		# The flange along each profile edge, under the skin: where the plates' rows go.
+		var profile := frame_profile(i)
+		var grown := Geometry2D.offset_polygon(outline, 0.005)
+		for e in profile.size():
+			var o := edge_out(profile, e)
+			var d := _rib_inset(i, e)
+			var a := profile[e] - o * d
+			var b := profile[(e + 1) % profile.size()] - o * d
+			var row := _clip_segment(a, b, grown[0] if not grown.is_empty() else outline)
+			if row.is_empty():
+				continue
+			_members.append({"part": rib, "p0": v3(row[0], z), "p1": v3(row[1], z), "half": node_size * 0.5,
+					"key": "rib:e%d" % e, "station": i, "edge": e})
+	var reach := Vector2(stringer_size, stringer_depth).length() * 0.5
+	for i in stations.size() - 1:
+		var row: Array = []
+		var centre := _ring_centre(i)
+		var placed: Array = []   # [a, b] (2D) of the spars made in this bay
+		for k in (_points[i] as Array).size():
+			if (not spars.is_empty() and not spars.has(k)) or ribs[i] == null or ribs[i + 1] == null:
+				row.append(null)
+				continue
+			var a: Vector3 = _points[i][k]
+			var b: Vector3 = _points[i + 1][k]
+			var a2 := Vector2(a.x, a.y)
+			var b2 := Vector2(b.x, b.y)
+			var fits := (outlines[i] as PackedVector2Array).size() >= 3 and (outlines[i + 1] as PackedVector2Array).size() >= 3 \
+					and Geometry2D.is_point_in_polygon(a2, outlines[i]) and Geometry2D.is_point_in_polygon(b2, outlines[i + 1])
+			for q: Array in placed:
+				fits = fits and a2.distance_to(q[0]) > reach * 2.0 + GAP and b2.distance_to(q[1]) > reach * 2.0 + GAP
+			if not fits:
+				row.append(null)
+				continue
+			var spar := _member("Spar", ribs[i], ribs[i + 1], a, b, 0.0, 0.0, a - centre, Vector2(stringer_size, stringer_depth),
+					node_size * 0.5, "%s/spar/c%d" % [_bay(i), k], ["fore", "aft"], "spar:c%d" % k, -1, -1, web * 0.5)
+			row.append(spar)
+			if spar:
+				placed.append([a2, b2])
+		stringers.append(row)
+
+
+## How far inside the skin's outer surface a rib's flange stands at station `i`: the skin
+## (thicker across where it slopes), the gap, and on a sloped skin half the flange's width
+## (its corner nearest the skin).
+func _rib_reach(i: int) -> float:
+	var t := _station_tilt(i)
+	return skin / cos(t) + GAP + node_size * 0.5 * tan(t)
+
+
+## Station `i`'s rib outline (x, y): its profile with each skinned edge moved in by
+## `_rib_reach`, an open one (a wing's root against the body) by the gap; a sharp corner the
+## shrink can't keep is cut off.
+func _rib_outline(i: int) -> PackedVector2Array:
+	var profile := frame_profile(i)
+	var poly := profile
+	for e in profile.size():
+		var o := edge_out(profile, e)
+		poly = _clip_half(poly, profile[e] - o * _rib_inset(i, e), -o)
+		if poly.size() < 3:
+			return PackedVector2Array()
+	return poly
+
+
+## How far in from edge `e` of station `i`'s profile its rib stands: `_rib_reach` under a
+## skinned face, the gap where the face is open (a wing's root against the body).
+func _rib_inset(i: int, e: int) -> float:
+	for seg: int in [i - 1, i]:
+		if seg >= 0 and seg < stations.size() - 1 and not _look(seg, e).get("skip", false):
+			return _rib_reach(i)
+	return GAP
+
+
+## The part of convex `poly` on the `inward` side of the line through `p` (Sutherland-Hodgman).
+static func _clip_half(poly: PackedVector2Array, p: Vector2, inward: Vector2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var n := poly.size()
+	for k in n:
+		var a := poly[k]
+		var b := poly[(k + 1) % n]
+		var da := (a - p).dot(inward)
+		var db := (b - p).dot(inward)
+		if da >= 0.0:
+			out.append(a)
+		if (da >= 0.0) != (db >= 0.0):
+			var q := a.lerp(b, da / (da - db))
+			if out.is_empty() or out[out.size() - 1].distance_to(q) > 0.0005:
+				out.append(q)
+	if out.size() >= 2 and out[0].distance_to(out[out.size() - 1]) < 0.0005:
+		out.remove_at(out.size() - 1)
+	return out
 
 
 # --- Node frame: jambs round the openings ---------------------------------------------
@@ -1621,7 +1900,7 @@ func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Tran
 		if int(m.get("station", -1)) >= 0:
 			var st: int = m["station"]
 			if seg < 0:
-				key = "ring:e%d" % m["edge"]
+				key = "%s:e%d" % ["rib" if spec["corners"] == "rib" else "ring", m["edge"]]
 			elif st == seg or st == seg + 1:
 				key = "%s:e%d" % ["fore" if st == seg else "aft", m["edge"]]
 		var count := maxi(1, roundi(a.distance_to(b) / pitch))
@@ -1671,8 +1950,11 @@ static func _clip_segment(a: Vector2, b: Vector2, poly: PackedVector2Array) -> A
 ## and clear of its neighbours, riveted to the end ring. Node styles (the mitred style caps
 ## its ends itself, `caps`).
 func cap(end: int, pieces: Array, mat: Material, tag: String = "", glass: bool = false) -> Array[PartData]:
+	_step("cap", {"end": end, "pieces": pieces, "mat": mat, "tag": tag, "glass": glass})
 	var was := target.parts_model().head_style
+	var phase_was := target.phase
 	target.parts_model().head_style = rivet_head
+	target.phase = "skin"
 	var s := 0 if end == 0 else stations.size() - 1
 	var z: float = stations[s]["z"]
 	var facing := Vector3.FORWARD if end == 0 else Vector3.BACK
@@ -1693,6 +1975,8 @@ func cap(end: int, pieces: Array, mat: Material, tag: String = "", glass: bool =
 			made.append(plate)
 			cap_plates.append(plate)
 	target.parts_model().head_style = was
+	target.phase = phase_was
+	_step_done()
 	return made
 
 
@@ -1706,3 +1990,380 @@ static func _on_outline(p: Vector2, q: Vector2, profile: PackedVector2Array) -> 
 		if near_p and near_q:
 			return true
 	return false
+
+
+# --- Services: the lanes in the cavities and the looms (docs/SHIP_FRAME_PLAN.md 4.5) -------
+
+## Where a lead crosses round node `k` of station `i` (node styles): over the node block's
+## inner corner, on the bisector of its two edges, clear of the block's look by a lead's
+## stand-off (ship space).
+func bypass(i: int, k: int) -> Vector3:
+	var line := centre_line(frame_profile(i), i)
+	var n := line.size()
+	var inward := -(edge_out(line, (k - 1 + n) % n) + edge_out(line, k)).normalized()
+	var reach := node_size * 0.5 * (absf(inward.x) + absf(inward.y)) + FrameGraph.OFF_FACE
+	return v3(line[k] + inward * reach, ring_z(i))
+
+
+## How far along `d` from a node's centre a lane must stop to keep clear of its look, metres.
+func _node_reach(d: Vector3) -> float:
+	return node_size * 0.5 * (absf(d.x) + absf(d.y) + absf(d.z)) + 0.02
+
+
+## Where a lead passes node `k` of station `i` (node styles): round the node block's inner
+## corner (`bypass`), or on a channel style through the node, at the channel lanes' depth (the
+## cable lane inside the members runs on through a hole in the block).
+func lane_corner(i: int, k: int) -> Vector3:
+	if not _channel():
+		return bypass(i, k)
+	var line := centre_line(frame_profile(i), i)
+	var n := line.size()
+	var out := (edge_out(line, (k - 1 + n) % n) + edge_out(line, k)).normalized()
+	return v3(line[k] + out * _channel_depth(depth), ring_z(i))
+
+
+## The parts a step through node `k` of station `i` may pass: the node itself on a channel style.
+func _corner_exempt(i: int, k: int) -> Array[int]:
+	var out: Array[int] = []
+	if _channel() and i < nodes.size() and k < (nodes[i] as Array).size() and nodes[i][k] != null:
+		out.append((nodes[i][k] as PartData).id)
+	return out
+
+
+## Whether this style's rings and stringers are channels (their cable lanes inside, on the web).
+func _channel() -> bool:
+	return spec.get("section", "box") == "channel"
+
+
+## How far out from a channel member's centre line its cable lane runs (inside it, on the web),
+## for a member `member_depth` deep, metres.
+func _channel_depth(member_depth: float) -> float:
+	return member_depth * 0.5 - float(spec.get("wall", 0.02)) - FrameGraph.OFF_FACE
+
+
+## Adds this hull's lanes to `graph` (node styles; the wrecks' WireRouter lays the mitred
+## style's itself): one on the inner face of every ring girder ("ring") and of every corner
+## stringer ("stringer"), each stopping short of the node blocks; round each node a step over
+## its inner corner (`bypass`), and from a stringer's ends out past the node onto it; across
+## every splice to the section it joins; along both flanks of every loom ("loom"), stepping
+## onto the ring lanes where the loom passes a ring. The ring and stringer lanes may pass the
+## deck plates (the slot at a deck's edge). On a channel style the ring and stringer lanes run
+## inside the members, on the web (the members are in the way only where their web and flanges
+## are: `FrameGraph.open_parts`), and meet through the node blocks (`lane_corner`); a stringer
+## holding a channel loom has the loom's lane on its mouth side instead. Call after `build`,
+## `splice` and `loom`/`channel_loom`.
+func add_lanes(graph: FrameGraph) -> void:
+	if spec["corners"] != "node":
+		return
+	var off := FrameGraph.OFF_FACE
+	var hl := node_size * 0.5
+	var channel := _channel()
+	if channel:
+		for row: Array in rings + stringers:
+			for m: Variant in row:
+				if m != null:
+					graph.open_parts[(m as PartData).id] = true
+	# The stringers a channel loom lies in: "bay:corner".
+	var filled := {}
+	for lm: Dictionary in looms:
+		if lm.get("follow", "") == "channel":
+			for i in stations.size() - 1:
+				filled["%d:%d" % [i, lm["corner"]]] = true
+	for i in stations.size():
+		var pts: Array = _points[i]
+		var n := pts.size()
+		var centre := _ring_centre(i)
+		var ends: Array = []
+		for e in n:
+			var member: PartData = rings[i][e]
+			var a: Vector3 = pts[e]
+			var b: Vector3 = pts[(e + 1) % n]
+			var d := (b - a).normalized()
+			var ta := _node_reach(d)
+			if member == null or a.distance_to(b) - ta * 2.0 < 0.05:
+				ends.append(null)
+				continue
+			# On the girder's inner face (its look is drawn with `up` from the ring's middle); a
+			# channel's inside, on its web, to one side so the bundle's slots fill across it.
+			var up := ((a + b) * 0.5 - centre)
+			up = (up - d * up.dot(d)).normalized()
+			var inset := -up * (depth * 0.5 + off)
+			if channel:
+				inset = up * _channel_depth(depth) - Vector3.BACK * CHANNEL_SLOT_SHIFT
+			var p0 := a + d * ta + inset
+			var p1 := b - d * ta + inset
+			var l := graph.add_lane("ring", p0, p1, -up, Vector3.BACK, member)
+			l.through_deck = true
+			ends.append([p0, p1])
+		for k in n:
+			var at := lane_corner(i, k)
+			var exempt := _corner_exempt(i, k)
+			var before: Variant = ends[(k - 1 + n) % n]
+			var after: Variant = ends[k]
+			if before != null:
+				graph.add_step((before as Array)[1], at, true, exempt)
+			if after != null:
+				graph.add_step(at, (after as Array)[0], true, exempt)
+	for i in stations.size() - 1:
+		var centre := _ring_centre(i)
+		for k in (_points[i] as Array).size():
+			var member: PartData = stringers[i][k] if k < (stringers[i] as Array).size() else null
+			if member == null or filled.has("%d:%d" % [i, k]):
+				continue
+			var a: Vector3 = _points[i][k]
+			var b: Vector3 = _points[i + 1][k]
+			var d := (b - a).normalized()
+			var up := a - centre
+			up = (up - d * up.dot(d)).normalized()
+			var side := up.cross(d).normalized()
+			var inset := -up * (stringer_depth * 0.5 + off)
+			if channel:
+				inset = up * _channel_depth(stringer_depth) - side * CHANNEL_SLOT_SHIFT
+			var t := maxf(_node_reach(d), ring_width * 0.5 + 0.03)
+			var p0 := a + d * t + inset
+			var p1 := b - d * t + inset
+			if p0.distance_to(p1) < 0.1:
+				continue
+			var l := graph.add_lane("stringer", p0, p1, -up, side, member)
+			l.through_deck = true
+			for end: Array in [[p0, i, -1.0], [p1, i + 1, 1.0]]:
+				if channel:
+					# Along the channel into the node block, to the lanes meeting there.
+					graph.add_step(end[0], lane_corner(int(end[1]), k), true, _corner_exempt(int(end[1]), k))
+					continue
+				# Out past the node's look along the ship, then in onto its bypass.
+				var at := bypass(int(end[1]), k)
+				var past := at - Vector3(0.0, 0.0, float(end[2])) * (hl + off)
+				graph.add_step(end[0], past, true)
+				graph.add_step(past, at, true)
+	for sp: Array in _splices:
+		var other: FrameHull = sp[1]
+		for pair: Vector2i in sp[3]:
+			var exempt := _corner_exempt(sp[0], pair.x)
+			exempt.append_array(other._corner_exempt(sp[2], pair.y))
+			graph.add_step(lane_corner(sp[0], pair.x), other.lane_corner(sp[2], pair.y), true, exempt)
+	for lm: Dictionary in looms:
+		if lm.get("follow", "") == "channel":
+			_channel_loom_lanes(graph, lm)
+			continue
+		var xy: Vector2 = lm["xy"]
+		var edge: int = lm["edge"]
+		var cuts: Array = lm["cuts"]
+		var spans: Array = lm["spans"]
+		var line := centre_line(stations[0]["profile"], 0)
+		var out := edge_out(line, edge)
+		var across := Vector3(out.y, -out.x, 0.0).normalized()
+		var reach := float(lm["radius"]) + off
+		for side: float in [-1.0, 1.0]:
+			var flank := across * side * reach
+			for j in spans.size():
+				var p0 := v3(xy, cuts[j]) + flank
+				var p1 := v3(xy, cuts[j + 1]) + flank
+				graph.add_lane("loom", p0, p1, across * side, -Vector3(out.x, out.y, 0.0), spans[j])
+			# Where it passes a ring, onto that ring's lane on its edge.
+			for i in stations.size():
+				var z := ring_z(i)
+				if z <= float(cuts[0]) or z >= float(cuts[cuts.size() - 1]):
+					continue
+				var at := graph.register_on_lanes(v3(xy, z) + flank, ["loom"])
+				graph.link_nearest(at, ["ring"], [], true, 1, 0.12)
+
+
+## How far to one side of a channel's middle its cable lane runs, metres: a bundle's slots then
+## fill across the channel's width.
+const CHANNEL_SLOT_SHIFT: float = 0.03
+
+
+## A channel loom's lane: on the loom's mouth side inside the stringer, one per bay between the
+## node blocks, stepping through each node it passes to the lanes meeting there (`lane_corner`).
+func _channel_loom_lanes(graph: FrameGraph, lm: Dictionary) -> void:
+	var xy: Vector2 = lm["xy"]
+	var inward: Vector2 = lm["in"]
+	var across: Vector2 = lm["across"]
+	var cuts: Array = lm["cuts"]
+	var at_ring: Array = lm["rings"]
+	var spans: Array = lm["spans"]
+	var k: int = lm["corner"]
+	var lane_xy := xy + inward * (float(lm["reach"]) + FrameGraph.OFF_FACE) - across * CHANNEL_SLOT_SHIFT
+	var clear := node_size * 0.5 + 0.03
+	var ends: Array = []
+	for j in spans.size():
+		var z0: float = cuts[j] + (clear if int(at_ring[j]) >= 0 else 0.0)
+		var z1: float = cuts[j + 1] - (clear if int(at_ring[j + 1]) >= 0 else 0.0)
+		if z1 - z0 < 0.1:
+			continue
+		var p0 := v3(lane_xy, z0)
+		var p1 := v3(lane_xy, z1)
+		var l := graph.add_lane("loom", p0, p1, Vector3(inward.x, inward.y, 0.0), Vector3(across.x, across.y, 0.0), spans[j])
+		l.through_deck = true
+		for e: Array in [[p0, int(at_ring[j])], [p1, int(at_ring[j + 1])]]:
+			if int(e[1]) >= 0:
+				graph.add_step(e[0], lane_corner(int(e[1]), k), true, _corner_exempt(int(e[1]), k))
+			ends.append(e[0])
+	lm["lane_ends"] = ends
+
+
+## Steps from a channel loom's lane ends to the nearest lanes of `kinds` within `reach` (the deck
+## beams beside it), for lanes added after this hull's (`add_lanes`).
+func link_looms(graph: FrameGraph, kinds: Array, reach: float = 0.4) -> void:
+	for lm: Dictionary in looms:
+		for p: Vector3 in lm.get("lane_ends", []):
+			graph.link_nearest(p, kinds, [], true, 2, reach)
+
+
+## A wiring loom along the hull at (x, y) from `z0` to `z1` (node styles): one span per bay
+## between the rings it crosses, each clipped up to the ring girder on `edge` (bolted, at the
+## ring it starts at; the first span at the ring it ends at), joined to the next by a plug at
+## every ring. `xy` sits a bundle's radius (less its slack) and the gap inside that girder's
+## inner face. Returns the spans, front to back. Paths: "loom:<name>/span:<the bay's station
+## label>" (a span starting before the first ring takes the ring's), its clip
+## ".../clip:<the ring's path>", the plug "loom:<name>/plug:st:<label>". Joints are stamped
+## "service".
+func loom(loom_name: String, spec_in: WiringLoom.Spec, xy: Vector2, edge: int, z0: float, z1: float) -> Array[PartData]:
+	_step("loom", {"name": loom_name, "follow": "under_ring", "spec": spec_dict(spec_in), "xy": xy, "edge": edge, "z0": z0,
+			"z1": z1}, "loom:%s" % loom_name)
+	var phase_was := target.phase
+	target.phase = "service"
+	var cuts: Array[float] = [z0]
+	var at_ring: Array[int] = [-1]
+	for i in stations.size():
+		var z := ring_z(i)
+		if z > z0 + 0.05 and z < z1 - 0.05:
+			cuts.append(z)
+			at_ring.append(i)
+	cuts.append(z1)
+	at_ring.append(-1)
+	var along := Basis(Vector3.RIGHT, PI * 0.5)   # local Y runs along +Z
+	var line := centre_line(stations[0]["profile"], 0)
+	var out := edge_out(line, edge)
+	var spans: Array[PartData] = []
+	for i in cuts.size() - 1:
+		var front := cuts[i] + (GAP * 0.5 if i > 0 else 0.0)
+		var back := cuts[i + 1] - (GAP * 0.5 if i < cuts.size() - 2 else 0.0)
+		# The ring it clips to, and how far out its girder's inner face is.
+		var ring := at_ring[i] if i > 0 else at_ring[i + 1]
+		var face := 0.0
+		if ring >= 0:
+			var rl := centre_line(frame_profile(ring), ring)
+			face = (rl[edge] - xy).dot(out) - depth * 0.5
+		var hug := along.inverse() * Vector3(out.x, out.y, 0.0) * face
+		var xform := Transform3D(along, v3(xy, (front + back) * 0.5))
+		var seed := hash("%s|%s|%.3f" % [name, loom_name, front])
+		var made: Array = target.loom_span("LoomSpan", spec_in, back - front, xform, seed, i > 0, Vector3.ZERO, hug)
+		var span: PartData = made[0]
+		span.path = "loom:%s/span:%s" % [loom_name, _bay_label_at((front + back) * 0.5)]
+		var member: PartData = rings[ring][edge] if ring >= 0 else null
+		if member:
+			var loom_shape: WiringLoom = made[1]
+			var tie := xform * loom_shape.centre_at(loom_shape.clip_s)
+			var to := Vector3(out.x, out.y, 0.0)
+			target.join(span, member, ConnectionData.Kind.BOLT, tie + to * (face - 0.006), -to, Vector3.ZERO, Vector2.ZERO,
+					"%s/clip:%s" % [span.path, member.path])
+		if i > 0:
+			target.join(span, spans[i - 1], ConnectionData.Kind.CONNECTOR, v3(xy, cuts[i]), Vector3.BACK, Vector3.ZERO,
+					Vector2.ZERO, "loom:%s/plug:st:%s" % [loom_name, label(at_ring[i])])
+		spans.append(span)
+	looms.append({"name": loom_name, "spans": spans, "xy": xy, "edge": edge, "cuts": cuts,
+			"radius": spec_in.collision_radius()})
+	target.phase = phase_was
+	_step_done()
+	return spans
+
+
+## A wiring loom lying inside the channel stringers down corner `k` from `z0` to `z1` (a channel
+## style; docs/SHIP_FRAME_PLAN.md 4.5, `follow = "channel"`): against the web between the flanges,
+## one span per bay between the rings it crosses, its look running on through the node blocks
+## there (a hole through each), its collision stopping clear of them; each span strapped across
+## the channel's mouth every `strap_pitch` metres (decor on the stringer) and bolted to its
+## stringer at its clip, plugged to the next span at every ring. Returns the spans, front to back.
+## Paths as `loom`'s: "loom:<name>/span:<the bay's label>", ".../clip:<the stringer's path>",
+## "loom:<name>/plug:st:<label>". Joints are stamped "service".
+func channel_loom(loom_name: String, spec_in: WiringLoom.Spec, k: int, z0: float, z1: float,
+		strap_pitch: float = 0.8) -> Array[PartData]:
+	_step("loom", {"name": loom_name, "follow": "channel", "spec": spec_dict(spec_in), "corner": k, "z0": z0, "z1": z1,
+			"strap_pitch": strap_pitch}, "loom:%s" % loom_name)
+	var phase_was := target.phase
+	target.phase = "service"
+	var cuts: Array[float] = [z0]
+	var at_ring: Array[int] = [-1]
+	for i in stations.size():
+		var z := ring_z(i)
+		if z > z0 + 0.05 and z < z1 - 0.05:
+			cuts.append(z)
+			at_ring.append(i)
+	cuts.append(z1)
+	at_ring.append(-1)
+	var along := Basis(Vector3.RIGHT, PI * 0.5)   # local Y runs along +Z
+	var corner := Vector2((_points[0][k] as Vector3).x, (_points[0][k] as Vector3).y)
+	var centre := _ring_centre(0)
+	var up := (Vector2(corner.x, corner.y) - Vector2(centre.x, centre.y)).normalized()
+	var across := Vector2(up.y, -up.x)
+	var up3 := Vector3(up.x, up.y, 0.0)
+	var across3 := Vector3(across.x, across.y, 0.0)
+	var reach := spec_in.collision_radius() - spec_in.slack
+	var web := stringer_depth * 0.5 - float(spec.get("wall", 0.02))
+	var xy := corner + up * (web - GAP - reach)
+	var trim := node_size * 0.5
+	var spans: Array[PartData] = []
+	for i in cuts.size() - 1:
+		var front := cuts[i] + (GAP * 0.5 if i > 0 else 0.0)
+		var back := cuts[i + 1] - (GAP * 0.5 if i < cuts.size() - 2 else 0.0)
+		var length := back - front
+		var lo := -length * 0.5 + (trim if at_ring[i] >= 0 else 0.0)
+		var hi := length * 0.5 - (trim if at_ring[i + 1] >= 0 else 0.0)
+		var xform := Transform3D(along, v3(xy, (front + back) * 0.5))
+		var seed := hash("%s|%s|%.3f" % [name, loom_name, front])
+		var hug := along.inverse() * up3 * (GAP + reach)
+		var made: Array = target.loom_span("LoomSpan", spec_in, length, xform, seed, true, Vector3.ZERO, hug,
+				lo + length * 0.5 + 0.12, Vector3.ZERO, 0.0, along.inverse() * across3, Vector2(lo, hi))
+		var span: PartData = made[0]
+		span.path = "loom:%s/span:%s" % [loom_name, _bay_label_at((front + back) * 0.5)]
+		var seg := _segment_at((front + back) * 0.5)
+		var member: PartData = stringers[seg][k] if seg >= 0 and k < (stringers[seg] as Array).size() else null
+		if member:
+			var loom_shape: WiringLoom = made[1]
+			var tie := xform * loom_shape.centre_at(loom_shape.clip_s)
+			target.join(span, member, ConnectionData.Kind.BOLT, tie + up3 * (GAP + reach - 0.006), -up3, Vector3.ZERO,
+					Vector2.ZERO, "%s/clip:%s" % [span.path, member.path])
+			# Straps across the mouth, the first over the clip.
+			var mouth := corner - up * (stringer_depth * 0.5 + 0.003)
+			var basis := Basis(across3, up3, Vector3.BACK)
+			var n := maxi(1, int(floor((hi - lo - 0.24) / strap_pitch)) + 1)
+			for j in n:
+				var s_at := loom_shape.clip_s + float(j) * strap_pitch
+				if s_at > hi - 0.05:
+					break
+				target.parts_model().add_decor(member.id, _strap_mesh(stringer_size + 0.01), frame_mat,
+						Transform3D(basis, v3(mouth, xform.origin.z + s_at)))
+		if i > 0:
+			target.join(span, spans[i - 1], ConnectionData.Kind.CONNECTOR, v3(xy, cuts[i]), Vector3.BACK, Vector3.ZERO,
+					Vector2.ZERO, "loom:%s/plug:st:%s" % [loom_name, label(at_ring[i])])
+		spans.append(span)
+	looms.append({"name": loom_name, "spans": spans, "xy": xy, "edge": -1, "cuts": cuts,
+			"radius": spec_in.collision_radius(), "follow": "channel", "corner": k, "in": -up, "across": across,
+			"reach": reach, "rings": at_ring})
+	target.phase = phase_was
+	_step_done()
+	return spans
+
+
+static var _straps: Dictionary = {}
+
+
+## A strap across a channel's mouth `width` wide (across, 6 mm thick, 2.5 cm along it).
+static func _strap_mesh(width: float) -> Mesh:
+	var key := roundi(width * 1000.0)
+	if not _straps.has(key):
+		var box := BoxMesh.new()
+		box.size = Vector3(width, 0.006, 0.025)
+		_straps[key] = box
+	return _straps[key]
+
+
+## The label of the station whose bay holds `z` (the first station's before it).
+func _bay_label_at(z: float) -> String:
+	var found := 0
+	for i in stations.size() - 1:
+		if ring_z(i) <= z:
+			found = i
+	return label(found)

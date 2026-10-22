@@ -69,6 +69,10 @@ var head: int = 0
 ## its place in its row (docs/SHIP_FRAME_PLAN.md 4.7): "hull/bay:hold/skin/e3/rivet:st:hold:e3/1".
 ## The builders set it; "" where none did.
 var path: String = ""
+## The step of the build that made it (docs/SHIP_FRAME_PLAN.md 4.7, BSX's closing-up order):
+## "frame", "deck", "skin", "lining", "wall", "fitting", "service"; "" where no builder said.
+## Stamped from the model's `phase` when the joint is made.
+var phase: String = ""
 
 ## How fast a heated joint cools, per second (1.0 = from red hot to cold).
 const HEAT_COOL: float = 0.12
