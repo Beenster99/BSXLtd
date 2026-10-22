@@ -13,7 +13,7 @@ static func to_save(job: ContractJob) -> Dictionary:
 				"serial": r.serial, "source": r.source, "quality": r.quality,
 				"joints": r.joints, "defects": r.defects}
 	return {"order": job.order.raw, "state": job.state, "change_status": job.change_status,
-			"installs": installs, "removals": job.removals, "variations": job.variations,
+			"installs": installs, "removals": job.removals, "recoveries": job.recoveries, "variations": job.variations,
 			"signed_by": job.signed_by, "tests": job.tests, "open_snags": job.open_snags,
 			"completed_at": job.completed_at}
 
@@ -42,6 +42,7 @@ static func from_save(d: Dictionary, errors: PackedStringArray) -> ContractJob:
 		r.defects.assign(s.get("defects", []))
 		job.installs[id] = r
 	job.removals = d.get("removals", {})
+	job.recoveries.assign(d.get("recoveries", []))
 	job.variations.assign(d.get("variations", []))
 	job.signed_by.assign(d.get("signed_by", []))
 	job.tests.assign(d.get("tests", []))

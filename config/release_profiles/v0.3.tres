@@ -11,6 +11,7 @@ flags = {
 "business.wallets": true,
 "contracts": true,
 "contracts.board": true,
+"contracts.kinds": true,
 "core": true,
 "graphics": true,
 "graphics.gi": true,

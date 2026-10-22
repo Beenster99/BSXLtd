@@ -1,0 +1,60 @@
+{
+  "schema": "bsx.work_order",
+  "schema_version": 1,
+  "contract_id": "tpa.sb301",
+  "issued_at": "2026-10-21T07:30:00Z",
+  "kind": "break",
+  "client": {
+    "company": "tpa",
+    "display_name": "Tressler Port Authority",
+    "game": "void_salvage"
+  },
+  "subject": {
+    "type": "part",
+    "component": {
+      "id": "NavalTurret",
+      "material": "steel"
+    },
+    "condition": 0.55,
+    "mass_kg": 6200
+  },
+  "wants": [
+    {
+      "what": "part",
+      "component": {
+        "id": "TurretMotor"
+      },
+      "qty": 2,
+      "min_condition": 0.6
+    },
+    {
+      "what": "part",
+      "component": {
+        "id": "Gunsight"
+      },
+      "qty": 1,
+      "min_condition": 0.5
+    }
+  ],
+  "keeps": "bsx",
+  "hazards": [
+    "weapons",
+    "power"
+  ],
+  "manifest": [],
+  "spec_sheet": {
+    "library": true,
+    "overrides": []
+  },
+  "notes": [
+    {
+      "text": "Turret off the Sentinel's spine. Port security wants the motors and the sight back working; the barrel and ring are yours."
+    }
+  ],
+  "commercial": {
+    "price": 4200,
+    "currency": "cr",
+    "deposit_pct": 30,
+    "due_day": 8
+  }
+}

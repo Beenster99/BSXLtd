@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "bsx.work_order.v1",
-  "title": "BSX work order (Void Salvage to BSX)",
+  "title": "BSX work order (Void Salvage or a BSX client to BSX)",
   "type": "object",
   "required": [
     "schema",
@@ -9,8 +9,6 @@
     "contract_id",
     "issued_at",
     "client",
-    "ship",
-    "changes",
     "manifest"
   ],
   "$defs": {
@@ -109,7 +107,6 @@
     },
     "changes": {
       "type": "array",
-      "minItems": 1,
       "items": {
         "type": "object",
         "required": [
@@ -308,6 +305,150 @@
           "description": "BSX game day the job is due, used by Business until Core has a calendar"
         }
       }
+    },
+    "kind": {
+      "enum": [
+        "fit",
+        "break",
+        "scrap",
+        "refurbish",
+        "dispose"
+      ],
+      "default": "fit"
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "ship",
+            "wreck",
+            "part"
+          ]
+        },
+        "component": {
+          "$ref": "#/$defs/component"
+        },
+        "design": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "condition": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "mass_kg": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "wants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "what"
+        ],
+        "properties": {
+          "what": {
+            "enum": [
+              "part",
+              "material",
+              "condition",
+              "gone"
+            ]
+          },
+          "component": {
+            "$ref": "#/$defs/component"
+          },
+          "qty": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "min_condition": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "material": {
+            "type": "string"
+          },
+          "kg": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      }
+    },
+    "keeps": {
+      "enum": [
+        "bsx",
+        "client"
+      ]
+    },
+    "hazards": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "fuel",
+          "coolant",
+          "power",
+          "weapons",
+          "pressure"
+        ]
+      }
     }
-  }
+  },
+  "description": "A fit order (no kind, or kind \"fit\") needs ship and changes. Break, scrap, refurbish and dispose orders (plan stage S1) need a subject and wants instead.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "fit"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "ship",
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "kind": {
+              "const": "fit"
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "subject",
+          "wants"
+        ],
+        "properties": {
+          "wants": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
 }
