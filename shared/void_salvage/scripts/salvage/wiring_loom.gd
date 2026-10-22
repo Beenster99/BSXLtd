@@ -73,6 +73,22 @@ static func heavy_power() -> Spec:
 	return s
 
 
+## A frame build's main loom (docs/SHIP_FRAME_PLAN.md 4.5): the main power loom's colours,
+## slimmer and laid taut in a cavity behind the linings (about 6.5 cm across, little slack).
+static func ship_main() -> Spec:
+	var s := Spec.new()
+	s.core_radius = 0.012
+	s.core_color = Color(0.08, 0.08, 0.08)
+	s.wire_radius = 0.01
+	s.wire_colors = [Color(0.9, 0.42, 0.06), Color(0.9, 0.42, 0.06), Color(0.08, 0.08, 0.08),
+			Color(0.9, 0.42, 0.06), Color(0.75, 0.1, 0.08), Color(0.9, 0.42, 0.06)]
+	s.slack = 0.006
+	s.splay = 0.1
+	s.twist = 2.6
+	s.tie_spacing = 0.25
+	return s
+
+
 ## Data and control loom: lots of thin wires in many colours.
 static func data() -> Spec:
 	var s := Spec.new()

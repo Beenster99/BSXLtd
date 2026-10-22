@@ -30,6 +30,9 @@ var connections: Array[ConnectionData] = []
 ## What rivet heads made from now on look like (ConnectionData.head): 0 classic, 1 flush
 ## bumps. Build time, identical on every machine.
 var head_style: int = 0
+## The build step joints made from now on belong to (ConnectionData.phase: "frame", "deck",
+## "skin", "lining", "wall", "fitting", "service"); "" for none. Build time, like head_style.
+var phase: String = ""
 
 ## part id -> MeshInstance3D (the part's visual; extra visuals such as lights hang under it)
 var _visuals: Dictionary = {}
@@ -220,6 +223,7 @@ func connect_parts(a: PartData, b: PartData, kind: ConnectionData.Kind,
 	c.seam_up = seam_up.normalized()
 	c.seam_size = seam_size
 	c.head = head_style
+	c.phase = phase
 	connections.append(c)
 	var view := JointView.new()
 	view.setup(c, a.local_transform, joints(), _paint_of(a) if c.head == 4 else null)

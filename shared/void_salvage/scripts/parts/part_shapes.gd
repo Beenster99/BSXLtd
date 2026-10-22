@@ -49,6 +49,12 @@ class PartShape:
 	## by every public constructor here and in FrameParts (the ship file writes pieces by
 	## it, docs/SHIP_FORMAT_PLAN.md 4.6). Empty for a shape built by hand from a MeshKit.
 	var recipe: Dictionary = {}
+	## A door that comes off (docs/DAMAGE_PLAN.md 9.3.3, `WreckParts.leaves`): {"shape": the
+	## leaf's PartShape, "at": where the leaf sits (Transform3D, this shape's space), "hinge":
+	## [one end, the other] of its hinge line (this shape's space), "out": the way it opens
+	## (unit)}. The leaf is then left out of this shape's mesh; a wreck design fits it as a
+	## part of its own on two hinge welds. Empty: no detachable door (or it's in the mesh).
+	var leaf: Dictionary = {}
 
 	func aabb() -> AABB:
 		return mesh.get_aabb()
@@ -220,6 +226,37 @@ static func girder(length: float, width: float, height: float, cut_start: float 
 			k.box(Vector3(height * 0.55, height * 0.45, 0.004), Vector3(x, 0.0, side * (hw + 0.002)))
 	shape.mesh = k.finish()
 	return stamp(shape, "girder", [length, width, height, cut_start, cut_end])
+
+
+## A channel (C-section) along X, `width` (Z) by `height` (Y): a web across its +Y face and a
+## flange down each side, `wall` thick, open toward -Y (a frame member whose mouth faces the
+## cavity, so a loom can lie in it). Collision: the web, and each flange as a piece of its own
+## (`extra_collision`), so the channel's mouth stays open.
+static func channel(length: float, width: float, height: float, wall: float = 0.02) -> PartShape:
+	var hw := width * 0.5
+	var hh := height * 0.5
+	var k := MeshKit.new()
+	k.box(Vector3(length, wall, width), Vector3(0, hh - wall * 0.5, 0))
+	for side: float in [-1.0, 1.0]:
+		k.box(Vector3(length, height - wall, wall), Vector3(0, -wall * 0.5, side * (hw - wall * 0.5)))
+	var shape := PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = k.volume()
+	shape.collision = _box_hull(Vector3(-length * 0.5, hh - wall, -hw), Vector3(length * 0.5, hh, hw))
+	for side: float in [-1.0, 1.0]:
+		var z0 := hw - wall if side > 0.0 else -hw
+		shape.extra_collision.append(_box_hull(Vector3(-length * 0.5, -hh, z0), Vector3(length * 0.5, hh - wall, z0 + wall)))
+	return stamp(shape, "channel", [length, width, height, wall])
+
+
+## A convex box from corner `lo` to corner `hi` (a collision piece off the origin).
+static func _box_hull(lo: Vector3, hi: Vector3) -> ConvexPolygonShape3D:
+	var pts := PackedVector3Array()
+	for k in 8:
+		pts.append(Vector3(hi.x if k & 1 else lo.x, hi.y if k & 2 else lo.y, hi.z if k & 4 else lo.z))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	return col
 
 
 ## An I-beam along X: two flanges and a web. Collision is its outer box.

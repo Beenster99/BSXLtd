@@ -188,7 +188,7 @@
 		"event": {
 			"type": "array", "minItems": 3, "maxItems": 4,
 			"description": "[name, strength 1..5, seed, place?] (place: where a fire, impact, scrape or tear centres; WreckEvents.PLACES)",
-			"items": {"anyOf": [{"enum": ["weathered", "fire", "impact", "torn", "scraped", "stripped", "abandoned", "rupture"]}, {"type": "integer"},
+			"items": {"anyOf": [{"enum": ["weathered", "fire", "impact", "torn", "scraped", "stripped", "abandoned", "rupture", "blast"]}, {"type": "integer"},
 					{"enum": ["any", "aft", "fore", "flank", "port", "starboard", "reactor", "tanks", "cockpit", "hold"]}]}
 		},
 		"kind": {"enum": ["hull", "frame", "hazard", "conduit", "component", "glass"]},
@@ -276,7 +276,11 @@
 					"output": {"type": "number", "minimum": 0, "maximum": 1, "description": "a source's output, 0 dead, 0.15 low, 1 live"}}},
 				"cell": {"type": "object", "required": ["charge"], "description": "a battery cell of its own (a lamp's, an emergency backup's)", "properties": {
 					"charge": {"type": "number", "minimum": 0, "maximum": 1}}},
-				"faults": {"type": "integer", "minimum": 0, "description": "fault bit flags: 1 dead lamp, 2 breached (a tank holed by a rupture: empty), 4 blown screen, 8 cracked pane"},
+				"faults": {"type": "integer", "minimum": 0, "description": "fault bit flags: 1 dead lamp, 2 breached (a tank or line holed: empty after a rupture, venting at `breach` after an event), 4 blown screen, 8 cracked pane, 16 kinked pipe, 32 door hanging by one hinge weld, 64 door torn off"},
+				"breach": {"type": "object", "description": "a breached tank or line: the hole (part space) and which way it faces; it vents while there is fluid behind it", "required": ["at", "out"], "properties": {
+					"at": {"$ref": "#/$defs/vec3"}, "out": {"$ref": "#/$defs/vec3"}}},
+				"kink": {"type": "object", "description": "a kinked pipe: the point on its axis (part space) and the push (direction and length, m)", "required": ["at", "push"], "properties": {
+					"at": {"$ref": "#/$defs/vec3"}, "push": {"$ref": "#/$defs/vec3"}}},
 				"cracks": {"type": "array", "description": "a cracked pane: where each crack starts (part space) and how far it reaches, m", "items": {"type": "object", "required": ["at", "radius"], "properties": {
 					"at": {"$ref": "#/$defs/vec3"}, "radius": {"type": "number", "minimum": 0}}}},
 				"frays": {"type": "array", "description": "frayed wire ends where a plug on it broke (part space)", "items": {"type": "object", "required": ["at", "normal"], "properties": {

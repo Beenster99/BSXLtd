@@ -64,6 +64,47 @@ static func girder_corner(arm: float, bend: float, width: float = 0.16, height: 
 	return PartShapes.stamp(shape, "girder_corner", [arm, bend, width, height])
 
 
+## A rib: a flat web over `outline` (XY plane, convex, points in order) `web` thick along Z,
+## with a flange along every edge (`lip` deep in from the edge, `flange` wide along Z) for a
+## skin to be fastened to: the frame of something too thin for node blocks (a wing, a horn).
+## Collision: the web, and each edge's flange as a piece of its own (`extra_collision`).
+static func rib(outline: PackedVector2Array, web: float = 0.03, flange: float = 0.1, lip: float = 0.015) -> PartShapes.PartShape:
+	var centre := Vector2.ZERO
+	for p in outline:
+		centre += p
+	centre /= float(outline.size())
+	var k := MeshKit.new()
+	k.extrude(outline, web)
+	var shape := PartShapes.PartShape.new()
+	shape.collision = _prism(outline, web)
+	var n := outline.size()
+	for e in n:
+		var a := outline[e]
+		var b := outline[(e + 1) % n]
+		if a.distance_to(b) < 0.01:
+			continue
+		var inward := (b - a).normalized().orthogonal()
+		if inward.dot(centre - (a + b) * 0.5) < 0.0:
+			inward = -inward
+		var strip := PackedVector2Array([a, b, b + inward * lip, a + inward * lip])
+		k.extrude(strip, flange)
+		shape.extra_collision.append(_prism(strip, flange))
+	shape.mesh = k.finish()
+	shape.volume = k.volume()
+	return PartShapes.stamp(shape, "rib", [outline, web, flange, lip])
+
+
+## A convex prism over `outline` (XY plane) from z = -depth/2 to +depth/2.
+static func _prism(outline: PackedVector2Array, depth: float) -> ConvexPolygonShape3D:
+	var pts := PackedVector3Array()
+	for p in outline:
+		pts.append(Vector3(p.x, p.y, -depth * 0.5))
+		pts.append(Vector3(p.x, p.y, depth * 0.5))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	return col
+
+
 ## A joint block where girders meet: a cube with bevelled edges.
 static func node(size: float = 0.26) -> PartShapes.PartShape:
 	return PartShapes.stamp(PartShapes.chamfer_box(Vector3.ONE * size, size * 0.22), "node", [size])
