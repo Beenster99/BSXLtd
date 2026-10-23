@@ -32,6 +32,19 @@ func _check_ship(id: String, parts: int, joints: int, fittings: int) -> void:
 	check(im.kit.model.parts.size() == parts and im.kit.model.connections.size() == joints,
 			"%s: the body's PartModel holds them" % id)
 	check(im.fittings_built.size() == fittings, "%s: every fitting record rebuilt (%d of %d)" % [id, im.fittings_built.size(), fittings])
+	# Loose pieces get the kit's tiny inset (no z-fighting), and a unit's look pieces cover the
+	# plain visuals of the parts they sit on (engines, door leaves).
+	var inset_ok := true
+	var loose := 0
+	for child in body.get_children():
+		if child is MeshInstance3D and child.get_meta("vs_piece", false):
+			loose += 1
+			if is_equal_approx((child as MeshInstance3D).transform.basis.get_scale().x, 1.0):
+				inset_ok = false
+	check(loose > 0 and inset_ok, "%s: loose pieces are drawn with an inset (%d)" % [id, loose])
+	check(im.hidden_visuals.size() > 0, "%s: unit looks cover their parts' plain visuals (%d)" % [id, im.hidden_visuals.size()])
+	check(im.hidden_visuals.has("slot:eng_port") or im.hidden_visuals.has("system:hatch/leaf_l"),
+			"%s: an engine's or a hatch leaf's plain visual is hidden" % id)
 	# A part by its path, with the file's kind, mass and material.
 	var first: Dictionary = f["parts"][0]
 	var p := im.part_at(first["path"])
