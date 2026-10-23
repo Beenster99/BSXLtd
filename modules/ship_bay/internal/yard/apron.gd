@@ -6,11 +6,10 @@ extends Node3D
 ##
 ## Built by the shipyard before it draws (it hands itself to build()), from the yard's own
 ## parts and paints, so it batches with the rest. The transport cradles are their own bodies
-## (TransportCradle): one on the pad holds a test hulk (the Kestrel for now), one waits in
-## each holding bay. Yard space, north -Z.
+## (TransportCradle): one stands empty on the pad, one waits in each holding bay. (The test
+## Kestrel that sat on the pad is gone: beenster, 0.3.15.) Yard space, north -Z.
 
 const Cradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
-const KESTREL := preload("res://modules/ship_bay/internal/ships/kestrel/kestrel.tscn")
 
 ## The apron's concrete (x, z), metres: from the courtyard's front strip south and east.
 const AREA := Rect2(-125, 35, 300, 115)
@@ -29,20 +28,12 @@ const HOLDING: Array[Rect2] = [Rect2(130, 42, 36, 32), Rect2(130, 78, 36, 32), R
 const HOLDING_SIZES: PackedStringArray = ["s", "m", "m"]
 ## The docks that start with a large cradle on their pedestals.
 const DOCK_CRADLES: PackedStringArray = ["3"]
-## The test hulk's place in its cradle (cradle space): the Kestrel's belly on the saddles,
-## its saddle stations where the bay's cradles hold it.
-const HULK_OFFSET := Vector3(0, Cradle.SADDLE_TOP + 0.5, -1.2)
-## What the hulk weighs, tonnes (the Kestrel: Void Salvage's 25 t).
-const HULK_T := 25.0
-
-## The pad's cradle, with the hulk in it.
+## The pad's cradle (empty).
 var pad_cradle: Node3D
 ## The holding lane's cradles, H1 to H3 (one small, two medium: HOLDING_SIZES).
 var holding_cradles: Array[Node3D] = []
 ## Large cradles standing ready on the docks' pedestal rows (DOCK_CRADLES).
 var dock_cradles: Array[Node3D] = []
-## The test hulk on the pad.
-var hulk: Node3D
 
 var y: Node3D   # the shipyard
 
@@ -110,10 +101,6 @@ func _build_pad() -> void:
 		y.call("_put", stud, Transform3D(Basis(Vector3.UP, a), PAD + Vector3(sin(a), 0, cos(a)) * (PAD_RADIUS + 0.8) + Vector3(0, 0.02, 0)), lit, false)
 	_pedestals(PAD, 0.0)
 	pad_cradle = _cradle("PadCradle", PAD)
-	hulk = KESTREL.instantiate() as Node3D
-	hulk.name = "Hulk"
-	(pad_cradle as Cradle).carry(hulk, HULK_OFFSET)
-	(pad_cradle as Cradle).load_t = HULK_T
 
 
 ## Docks 2 and 3: flat bays marked on the apron in hazard yellow with the crawler's pedestal

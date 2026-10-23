@@ -1,7 +1,7 @@
 extends ModuleTest
 ## Ship and Bay: the transporter dolly drives on remote and from its cab in its three steering
 ## modes, stops dead for a person under it or anything within 0.5 m ahead, and moves the pad's
-## hulk: in under its cradle, deck up to the beams, pins in, lift, drive, set it down on the
+## cradle: in under it, deck up to the beams, pins in, lift, drive, set it down on the
 ## pedestals again, pins out.
 ##   tools/run_tests.sh ship_bay
 
@@ -98,10 +98,9 @@ func run_tests() -> void:
 	wall.queue_free()
 	await _stop(d)
 
-	# The pad's hulk: in under its cradle, lined up.
+	# The pad's cradle: in under it, lined up.
 	var apron: Node3D = yard.get("apron")
 	var pad: Cradle = apron.get("pad_cradle")
-	var hulk: Node3D = apron.get("hulk")
 	var home := pad.global_transform
 	d.global_transform = Transform3D(Basis(), Vector3(home.origin.x, 0, home.origin.z - 0.8))
 	await frames(2)
@@ -120,9 +119,9 @@ func run_tests() -> void:
 	check(pad.global_position.y > home.origin.y + 0.5, "off its pedestals: %.2f" % pad.global_position.y)
 	tr.call("throw_pin", str(pad.name), 0)
 	check(pad.pins[0], "pins are locked under load")
-	var lifted_hull := hulk.global_position
+	var lifted := pad.global_position
 	await _hold("ship_bay.dolly_ahead", 60)
-	check(hulk.global_position.z < lifted_hull.z - 0.5, "the hulk rides along: %s" % (hulk.global_position - lifted_hull))
+	check(pad.global_position.z < lifted.z - 0.5, "the cradle rides along: %s" % (pad.global_position - lifted))
 	check(d.speed() <= d.speed_loaded + 0.001, "loaded, it goes at walking pace")
 	await _hold("ship_bay.dolly_back", 120)
 	await _stop(d)
