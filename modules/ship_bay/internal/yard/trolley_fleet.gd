@@ -66,8 +66,11 @@ const HANDOFF_TROLLEY := [Vector3(-31.2, 0, -20.0), 0.0]
 const TV_PIXELS := Vector2(1280, 720)
 ## How long a trolley waits held up before it plans a new way round, seconds.
 const REPLAN_AFTER := 3.0
-## How far behind you a following trolley keeps, past its own radius, metres.
-const FOLLOW_GAP := 1.6
+## How far behind you a following trolley keeps, past its own radius, metres (near you, but
+## not right next to you: beenster, 0.3.15).
+const FOLLOW_GAP := 2.5
+## How far from you a trolley you called stops, past its own radius, metres.
+const COME_GAP := 2.5
 ## While delivered goods wait on the goods-in floor, how often idle trolleys are sent to
 ## put them away, seconds.
 const GOODS_IN_EVERY := 2.0
@@ -962,7 +965,7 @@ func deck_position(id: String) -> Variant:
 func _go_to_person(t: Trolley, to: Vector3) -> void:
 	var from_them := t.global_position - to
 	from_them.y = 0.0
-	var stand := to + (from_them.normalized() if from_them.length() > 0.1 else Vector3.BACK) * (t.radius() + 1.0)
+	var stand := to + (from_them.normalized() if from_them.length() > 0.1 else Vector3.BACK) * (t.radius() + COME_GAP)
 	_go(t, stand, atan2(stand.x - to.x, stand.z - to.z))
 
 

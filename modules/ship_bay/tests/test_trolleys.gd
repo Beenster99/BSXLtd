@@ -32,6 +32,18 @@ func run_tests() -> void:
 			"the small, medium and large trolleys parked in the courtyard")
 	check(pickers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0)) and bool(t.call("is_picker"))),
 			"five picking lifts parked in Deliveries")
+	# Every trolley hums quietly and turns an orange beacon.
+	var yaws: Array = trolleys.values().map(func(t: Node3D) -> float: return (t.get("beacon") as Node3D).rotation.y)
+	await frames(10)
+	var turned := range(trolleys.size()).all(func(i: int) -> bool:
+		return absf(angle_difference(float(yaws[i]), (trolleys.values()[i].get("beacon") as Node3D).rotation.y)) > 0.01)
+	check(turned and trolleys.values().all(func(t: Node3D) -> bool:
+			return (t.get("beacon") as Node3D).get_node_or_null("BeaconLight") is SpotLight3D),
+			"every trolley turns an orange beacon")
+	check(trolleys.values().all(func(t: Node3D) -> bool:
+			var h := t.get("hum") as AudioStreamPlayer3D
+			return h != null and h.volume_db <= -20.0 and h.max_distance <= 25.0),
+			"and hums, low and quiet")
 	var auto: Dictionary = fleet.get("auto_load")
 	check(not auto["s"] and not auto["m"] and not auto["l"] and auto["p2"] and auto["p6"] and auto["h"],
 			"the big trolleys don't load by themselves; the goods-in lifts and the heavy lift do: %s" % [auto])
@@ -95,6 +107,7 @@ func run_tests() -> void:
 		bus.command_trolley(id, "put_away")
 	var beams: Node = fleet.get("beams")
 	var flown := {}
+	var beam_like_player := true
 	var beside := {}
 	for i in 5400:
 		await get_tree().physics_frame
@@ -102,6 +115,7 @@ func run_tests() -> void:
 			lifted[id] = maxf(float(lifted.get(id, 0.0)), float(trolleys[id].get("deck_height")))
 		for f: Dictionary in beams.get("flights"):
 			flown[f["key"]] = true
+			beam_like_player = beam_like_player and (f["beam"] as Node).has_method("draw") and (f["beam"] as MeshInstance3D).mesh is ImmediateMesh
 			if f["from"] is Vector3 and not beside.has(f["key"]):
 				var gap: Vector3 = (f["emitter"] as Node3D).global_position - (f["from"] as Vector3)
 				gap.y = 0.0
@@ -118,6 +132,7 @@ func run_tests() -> void:
 			"the picking lift takes the shelf goods off the trolley, the heavy lift the reactor: %s" % [shelved])
 	check(bus.stock_at(bus.home_location("IonThruster")).get("qty") == 2, "the thrusters are on their home")
 	check(flown.size() >= 3, "goods are beamed on and off the trolleys, not just moved: %s" % [flown.keys()])
+	check(beam_like_player, "in a beam drawn like the player's tractor beam")
 	check(not beside.is_empty() and beside.values().all(func(d: float) -> bool: return d > 1.5),
 			"a trolley parks beside goods on the floor and beams them up: %s" % [beside])
 	var reactor_at := bus.find_stock("Reactor")
@@ -163,7 +178,9 @@ func run_tests() -> void:
 		if m.get("status") == "HERE":
 			break
 	var gap := Vector2(m.global_position.x - me.x, m.global_position.z - me.z).length()
-	check(m.get("status") == "HERE" and gap < 2.6, "the medium trolley came: %.1f m away (%s)" % [gap, m.get("status")])
+	var come_gap: float = float(m.call("radius")) + float(fleet.get("COME_GAP"))
+	check(m.get("status") == "HERE" and gap > come_gap - 0.6 and gap < come_gap + 0.6,
+			"the medium trolley came, near but not right next to you: %.1f m away (%s)" % [gap, m.get("status")])
 
 	# Its deck rises for work at height and comes down again.
 	bus.command_trolley("m", "deck", {"height": 5.0})
@@ -196,7 +213,8 @@ func run_tests() -> void:
 		if i > 600 and (m.get("path") as PackedVector3Array).is_empty():
 			break
 	var held := Vector2(m.global_position.x - lead.x, m.global_position.z - lead.z).length()
-	check(held < float(m.call("radius")) + 2.6 and close > float(m.call("radius")) + 0.8,
+	var keep: float = float(m.call("radius")) + float(fleet.get("FOLLOW_GAP"))
+	check(held < keep + 1.0 and close > keep - 0.8,
 			"it caught up and keeps a safe distance: %.1f m now, never under %.1f m" % [held, close])
 	fleet.set("following", "m")
 	own.call("press", "call")
