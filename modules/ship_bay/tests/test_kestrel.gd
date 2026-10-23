@@ -89,6 +89,21 @@ func run_tests() -> void:
 	for s: MountSlot in plates:
 		rivets += s.fasteners.filter(func(f: FastenerPoint) -> bool: return f.kind == "rivet").size()
 	check(plates.size() == 69 and rivets == 369, "every riveted outer plate is a fitting: %d plates, %d rivets" % [plates.size(), rivets])
+	# The frame's welds are worked like any weld: each frame member is a fitting holding its own.
+	var frames_s := def.slots.filter(func(s: MountSlot) -> bool: return s.slot_id.begins_with("frame_"))
+	var frame_welds := 0
+	var seams := true
+	var seen := {}
+	for s: MountSlot in frames_s:
+		for f: FastenerPoint in s.fasteners:
+			frame_welds += 1
+			seams = seams and f.kind == "weld" and f.seam_up != Vector3.ZERO and f.seam_size.x > 0.05
+			seen[f.path] = true
+	check(frame_welds == 280 and seen.size() == 280, "all 280 frame welds are fasteners, each once: %d in %d members" % [frame_welds, frames_s.size()])
+	check(seams, "each with its seam to trace")
+	var ring := def.slot("frame_cockpit_wall_ring_e0")
+	check(ring != null and ring.fitted == "FrameRing" and ring.parts == PackedStringArray(["hull/st:cockpit_wall/ring/e0"]),
+			"named by body and member: frame_cockpit_wall_ring_e0")
 	check(def.slot("plate_cabin_e0") != null and def.slot("plate_cabin_e0").access == "outboard", "plates are named by body and edge, worked from outside")
 	model.free()
 
