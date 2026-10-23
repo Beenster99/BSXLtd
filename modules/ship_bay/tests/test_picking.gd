@@ -93,7 +93,8 @@ func run_tests() -> void:
 	check(bus.stock_at(top).get("qty") == 1, "one thruster left on the shelf")
 	var cid := bus.trolley_cargo(by)
 	var gap := Vector2(m.global_position.x - me.x, m.global_position.z - me.z).length()
-	check(cid != "" and m.get("status") == "HERE" and gap < 2.6,
+	var come_gap: float = float(m.call("radius")) + float(fleet.get("COME_GAP"))
+	check(cid != "" and m.get("status") == "HERE" and gap < come_gap + 0.6,
 			"a trolley (%s) brought it: %.1f m away (%s; lift %s)" % [by, gap, m.get("status"), p.get("status")])
 	check(bus.crate_info(cid).get("item") == "IonThruster" and is_equal_approx(float(bus.crate_info(cid).get("condition", 0)), 0.9),
 			"the crate is the thruster, in the condition it was stored")
