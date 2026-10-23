@@ -99,6 +99,10 @@ var helmet_lowered := false
 var _arc_off_s := 10.0
 ## Other players' arcs, by peer: {at, cutting, light, glow, helmet}.
 var remote_torches := {}
+## The crew seeing and hearing each other's tools (trades.crew_tools), in the yard.
+var crew: TradesCrew
+## The tool loop sounding now ("" for none), whether or not it can be heard here.
+var _looping := &""
 ## What we last told the others about our arc, and when.
 var _torch_sent := {}
 var _torch_sent_s := 0.0
@@ -197,6 +201,12 @@ func _enter_yard() -> void:
 	var net := _net()
 	if net:
 		net.call("register_event", TORCH_EVENT, _apply_torch, _validate_torch)
+		if TradesCrew.enabled():
+			crew = TradesCrew.new()
+			crew.name = "Crew"
+			crew.bay = self
+			add_child(crew)
+			crew.start(net)
 	hint(s.start_hint())
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -251,6 +261,8 @@ func _exit_tree() -> void:
 	var net := _net()
 	if net and in_yard:
 		net.call("unregister_event", TORCH_EVENT)
+	if crew:
+		crew.stop()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	HudSlots.unregister_look_hint(LOOK_HINT_ID)
 	_clear_info()
@@ -732,6 +744,10 @@ func play(sound: StringName, pitch := 1.0) -> void:
 
 ## A looping sound (the drill's whine, the welding arc) on or off.
 func loop(sound: StringName, on: bool, pitch := 1.0) -> void:
+	if on:
+		_looping = sound
+	elif _looping == sound:
+		_looping = &""
 	var p: AudioStreamPlayer = _loops.get(sound)
 	if p == null or DisplayServer.get_name() == "headless":
 		return
@@ -1256,6 +1272,24 @@ func helmet_down() -> float:
 	return _helmet
 
 
+## The tool loop sounding now (&"" for none).
+func looping() -> StringName:
+	return _looping
+
+
+## A tool loop's sound, for a crewmate's tool to play (null for none).
+func loop_stream(sound: StringName) -> AudioStream:
+	var p: AudioStreamPlayer = _loops.get(sound)
+	return p.stream if p else null
+
+
+## A crewmate's shield down or up (TradesCrew, from what they share): on their avatar's head.
+func crew_helmet(peer: int, down: bool, head: Node3D = null) -> void:
+	var r := _remote(peer)
+	r.crew_shield = down
+	_fit_remote_helmet(peer, r, head)
+
+
 func _send_torch(on: bool, at: Vector3, cutting: bool, delta: float, shield := true) -> void:
 	var net := _net()
 	if net == null or not in_yard or not bool(net.call("is_online")):
@@ -1283,6 +1317,16 @@ func _apply_torch(p: Dictionary) -> void:
 	var peer := int(p.get("peer", 0))
 	if net and peer == int(net.call("local_peer_id")):
 		return
+	var r := _remote(peer)
+	r.on = bool(p.on)
+	r.at = p.at as Vector3
+	r.cutting = bool(p.cutting)
+	r.shield = bool(p.get("shield", true))
+	_fit_remote_helmet(peer, r)
+
+
+## A crewmate's arc light, glow and shield, made on first need.
+func _remote(peer: int) -> Dictionary:
 	var r: Dictionary = remote_torches.get(peer, {})
 	if r.is_empty():
 		var light := OmniLight3D.new()
@@ -1298,16 +1342,18 @@ func _apply_torch(p: Dictionary) -> void:
 		glow.material_override = TradesLook.glow(Color(0.75, 0.9, 1.0), 8.0)
 		glow.top_level = true
 		add_child(glow)
-		r = {"light": light, "glow": glow, "helmet": null}
+		r = {"light": light, "glow": glow, "helmet": null, "on": false, "crew_shield": false}
 		remote_torches[peer] = r
-	r.on = bool(p.on)
-	r.at = p.at as Vector3
-	r.cutting = bool(p.cutting)
-	r.shield = bool(p.get("shield", true))
-	# Their shield, on Multiplayer's avatar of them when it offers the head.
-	# Avatars are rebuilt now and then (a scene change): fetch the head again when ours is gone.
-	if not is_instance_valid(r.helmet) and net and net.has_method("avatar_head"):
-		var head := net.call("avatar_head", peer) as Node3D
+	return r
+
+
+## Their shield, on Multiplayer's avatar of them when it offers the head.
+## Avatars are rebuilt now and then (a scene change): fetch the head again when ours is gone.
+func _fit_remote_helmet(peer: int, r: Dictionary, head: Node3D = null) -> void:
+	var net := _net()
+	if not is_instance_valid(r.helmet) and head == null and net and net.has_method("avatar_head"):
+		head = net.call("avatar_head", peer) as Node3D
+	if not is_instance_valid(r.helmet):
 		if head:
 			var h := TradesWeldingHelmet.new()
 			head.add_child(h)
@@ -1324,7 +1370,7 @@ func _update_remote_torches() -> void:
 		glow.visible = on
 		if is_instance_valid(r.helmet):
 			var h := r.helmet as TradesWeldingHelmet
-			var want := 1.0 if on and bool(r.get("shield", true)) else 0.0
+			var want := 1.0 if (on and bool(r.get("shield", true))) or bool(r.get("crew_shield", false)) else 0.0
 			h.down = move_toward(h.down, want, get_process_delta_time() * HELMET_DOWN_RATE)
 		if not on:
 			continue
