@@ -1,5 +1,5 @@
 extends ModuleTest
-## Ship and Bay: the Kestrel is the one Void Salvage exported (kestrel.vsship.json). Its slots
+## Ship and Bay: the Kestrel is the one Void Salvage exported (Shared Components' kestrel.vsship.json). Its slots
 ## are the file's, their joints the file's joints on the slots' parts (BSX's own for slots the
 ## file carries no part for), the model builds every part with its path, and the bay finds
 ## each slot's pieces and hides a stripped one.
@@ -44,9 +44,9 @@ func run_tests() -> void:
 			func(f: FastenerPoint) -> String: return f.spec)
 	check(plugs == ["fuel", "power"], "and takes a fuel and a power plug: %s" % [plugs])
 	var plate := def.slot("plate_hold_port")
-	check(plate.fitted == "HullPlate" and plate.fasteners.size() == 8 and plate.fasteners.all(
+	check(plate.fitted == "HullPlate" and plate.fasteners.size() == 4 and plate.fasteners.all(
 			func(f: FastenerPoint) -> bool: return f.kind == "rivet" and f.path != ""),
-			"the hold's port side plate is a fitting riveted on with the file's 8 rivets")
+			"the hold's port side plate is a fitting riveted on with the file's 4 rivets")
 	var bowser := def.slot("bowser_tank").fasteners
 	var kinds := {}
 	for f in bowser:
@@ -60,7 +60,7 @@ func run_tests() -> void:
 	var importer: VsShipImport = model.get("importer")
 	check(importer != null and importer.errors.is_empty() and importer.warnings.is_empty(),
 			"the file builds cleanly: %s" % ("; ".join(importer.errors + importer.warnings) if importer else "no importer"))
-	check(importer.parts_by_path.size() == 529 and importer.joints_by_path.size() == 1748,
+	check(importer.parts_by_path.size() == 529 and importer.joints_by_path.size() == 1375,
 			"every part and joint built: %d, %d" % [importer.parts_by_path.size(), importer.joints_by_path.size()])
 	for f in bolts + plate.fasteners:
 		check(importer.joint_at(f.path) != null, "%s is a joint on the model" % f.joint_id)
@@ -89,8 +89,10 @@ func run_tests() -> void:
 	var inner_look := importer.kit.model.part_visual(inner.id) as MeshInstance3D
 	check(absf(inner_look.mesh.get_aabb().size.x - 1.12) < 0.01 and absf(inner.local_transform.origin.x) < 0.01,
 			"the inside door is as wide as its doorway: %s" % inner_look.mesh.get_aabb().size)
-	# The systems the file carries only as boxes are dressed: bowsers, hose, port, panels,
-	# screens, floodlights, wires.
+	# The importer builds the systems (bowsers, hose, port, panels, screens) from the file; BSX
+	# adds the floodlights, wires and the screens' standby text.
+	check(importer.systems_skipped.is_empty() and importer.systems_built.size() == 13,
+			"every system is built from its record: %d built, skipped %s" % [importer.systems_built.size(), importer.systems_skipped])
 	var texts := {}
 	for l: Label3D in model.find_children("*", "Label3D", true, false):
 		texts[l.text.get_slice("\n", 0)] = true
@@ -100,6 +102,7 @@ func run_tests() -> void:
 			"the bowsers' drums are solid")
 	var dressing: RefCounted = model.get("dressing")
 	check((dressing.get("spots") as Array).size() == 4, "four floodlights")
+	check((dressing.get("screens") as Array).size() == 5, "every screen shows a parked ship's standby text")
 	var wires := model.get_node_or_null("Wires") as MeshInstance3D
 	check(wires != null and wires.mesh.get_aabb().size.z > 5.0, "the leads' wires run along the ship")
 	model.call("set_door", "door_bulkhead", true, true)
@@ -110,7 +113,7 @@ func run_tests() -> void:
 	var rivets := 0
 	for s: MountSlot in plates:
 		rivets += s.fasteners.filter(func(f: FastenerPoint) -> bool: return f.kind == "rivet").size()
-	check(plates.size() == 69 and rivets == 369, "every riveted outer plate is a fitting: %d plates, %d rivets" % [plates.size(), rivets])
+	check(plates.size() == 69 and rivets == 203, "every riveted outer plate is a fitting: %d plates, %d rivets" % [plates.size(), rivets])
 	# The frame's welds are worked like any weld: each frame member is a fitting holding its own.
 	var frames_s := def.slots.filter(func(s: MountSlot) -> bool: return s.slot_id.begins_with("frame_"))
 	var frame_welds := 0

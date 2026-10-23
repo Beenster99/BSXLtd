@@ -27,7 +27,7 @@ const ACCESS := {"hold": "inboard", "cabin": "inboard", "outboard": "outboard", 
 
 static func load_ship(dir: String) -> ShipDefinition:
 	var name := dir.get_file()
-	var f := read_file(dir.path_join(name + ".vsship.json"))
+	var f := ship_file(dir)
 	if f.is_empty():
 		return null
 	var version: Variant = f.get("version", [])
@@ -103,6 +103,16 @@ static func load_ship(dir: String) -> ShipDefinition:
 ## can't be read.
 static func read_file(path: String) -> Dictionary:
 	return _read_json(path)
+
+
+## The ship file for a ship folder: Shared Components' pinned Void Salvage export of that
+## design (VsShipImport.design_source), or a <name>.vsship.json of BSX's own in the folder.
+static func ship_file(dir: String) -> Dictionary:
+	var name := dir.get_file()
+	var own := dir.path_join(name + ".vsship.json")
+	if FileAccess.file_exists(own):
+		return read_file(own)
+	return VsShipImport.design_source(name)
 
 
 ## Slot id -> the file's joints on that slot's parts, in file order.
