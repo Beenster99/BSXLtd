@@ -86,6 +86,15 @@ func _test_generator() -> void:
 			check(o.subject.get("seed", 0) > 0 and float(o.subject.get("mass_kg", 0.0)) > 1000.0, "the subject carries a seed and the mass left")
 			check((o.kind == WorkOrder.REFURBISH) == (o.subject.get("type") == "ship"), "a refurbish takes a ship, the rest a wreck")
 			check(o.subject.get("events", "") != "", "events say what happened to it")
+			var gen := ShipGenerator.parse_id(String(o.subject.get("design", "")))
+			check(not gen.is_empty(), "the hull is one of BSX's own generated ships: %s" % str(o.subject.get("design", "")))
+			if not gen.is_empty():
+				var trade := String(ContractClients.TABLE[client_id].get("trade", ""))
+				check(String(gen["family"]) == ShipGenerator.family_for(trade), "%s's trade (%s) picks the family: %s" % [client_id, trade, str(gen["family"])])
+				check(String(gen["size"]) in ["M", "L"], "tier three sends medium or large hulls: %s" % str(gen["size"]))
+				check(int(gen["seed"]) == int(o.subject.get("seed", 0)), "the design's seed is the subject's")
+			check(String(o.subject.get("name", "")) != "" and o.subject_name().begins_with(String(o.subject.get("name", ""))), "the subject is named after the ship: %s" % o.subject_name())
+			check(o.title.to_lower().contains(String(o.subject.get("name", "")).to_lower()), "and so is the title: %s" % o.title)
 			if o.kind == WorkOrder.BREAK:
 				var ref: ComponentRef = o.wants[0]["component"]
 				check((o.subject.get("holds", []) as Array).has(ref.id), "a break wants a fitting still aboard: %s" % ref.id)
@@ -93,7 +102,17 @@ func _test_generator() -> void:
 			check(again == d, "the same seed makes the same ship and the same wants")
 	check(n >= 8, "whole-ship offers come up often enough at tier three: %d" % n)
 	check(kinds.size() >= 3, "several kinds: %s" % str(kinds.keys()))
-	check(sizes.has("medium"), "the Kestrel is a medium job: %s" % str(sizes.keys()))
+	check(sizes.has("medium"), "a medium hull is a medium job: %s" % str(sizes.keys()))
+	var small_or_medium := true
+	var saw_tier2 := false
+	for cycle in range(1, 13):
+		var d2 := g.make("scatter_metals", cycle, 0, 2)
+		var gen2 := ShipGenerator.parse_id(String(d2.get("subject", {}).get("design", "")))
+		if gen2.is_empty():
+			continue
+		saw_tier2 = true
+		small_or_medium = small_or_medium and String(gen2["size"]) in ["S", "M"]
+	check(saw_tier2 and small_or_medium, "tier two sends small or medium hulls")
 	var tier1 := g.make("hesper_line", 3, 0, 1)
 	check(String(tier1.get("subject", {}).get("type", "")) == "part", "tier one still sends parts to the bench")
 	g.wrecks = false
@@ -113,7 +132,7 @@ func _test_board(bus: ContractsBus) -> void:
 		return
 	var job := whole[0]
 	var sheet := ContractDocumentView.text_of(bus.document(job.job_id, "spec:subject"))
-	check("Seed %d" % int(job.order.subject.get("seed", 0)) in sheet and "Parts:" in sheet and "Fittings aboard:" in sheet,
+	check("Seed %d" % int(job.order.subject.get("seed", 0)) in sheet and "Parts:" in sheet and "Fittings aboard:" in sheet and "Hull: a class" in sheet,
 			"the spec sheet describes the generated ship: %s" % sheet)
 	var due: Array = []
 	bus.subject_due.connect(func(id: String, s: Dictionary) -> void: due.append([id, s]))
@@ -133,7 +152,8 @@ func _test_board(bus: ContractsBus) -> void:
 	check(row != null, "the job is on the accepted tab")
 	if row:
 		var cells := row.find_children("*", "Label", true, false)
-		check(cells.any(func(l: Label) -> bool: return l.text.begins_with("Kestrel") or l.text.begins_with("Manta")), "the SHIP column names the design: %s" % str(cells.map(func(l: Label) -> String: return l.text)))
+		var ship := String(job.order.subject.get("name", ""))
+		check(ship != "" and cells.any(func(l: Label) -> bool: return l.text.begins_with(ship)), "the SHIP column names the ship: %s" % str(cells.map(func(l: Label) -> String: return l.text)))
 	panel.queue_free()
 	var data: Dictionary = JSON.parse_string(JSON.stringify(bus.save_data()))
 	var bus2 := ContractsBus.new()

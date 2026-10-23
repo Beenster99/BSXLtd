@@ -71,6 +71,25 @@ func subject_part() -> ComponentRef:
 	return subject.get("component") if subject.get("component") is ComponentRef else null
 
 
+## What a ship or wreck subject is called: the generated ship's own name ("Steady Packet, a
+## medium freighter"), or the design's name ("Kestrel") for a Void Salvage hull; " wreck" after
+## a wreck's. A part subject names its part.
+func subject_name() -> String:
+	var part := subject_part()
+	if part:
+		return part.id
+	var design := String(subject.get("design", self.design))
+	var name := String(subject.get("name", ""))
+	if name != "":
+		var p := ShipGenerator.parse_id(design)
+		if not p.is_empty():
+			var sizes := {"S": "small", "M": "medium", "L": "large"}
+			name += ", a %s %s" % [String(sizes.get(p["size"], "")), String(p["family"])]
+	else:
+		name = design.trim_suffix("_frame").capitalize()
+	return name + " wreck" if String(subject.get("type", "")) == "wreck" else name
+
+
 func change(change_id: String) -> ChangeItem:
 	for c in changes:
 		if c.change_id == change_id:

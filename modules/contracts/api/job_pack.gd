@@ -158,7 +158,7 @@ static func spec_doc(job: ContractJob, c: ChangeItem, specs: Callable) -> Dictio
 static func subject_spec_doc(job: ContractJob) -> Dictionary:
 	var o := job.order
 	var part := o.subject_part()
-	var what := words(part.id) if part else words(String(o.subject.get("design", o.design)).trim_suffix("_frame")) + (" wreck" if String(o.subject.get("type", "")) == "wreck" else "")
+	var what := words(part.id) if part else o.subject_name()
 	var d := _doc("%s:subject" % SPEC, SPEC, "Spec sheet: " + what, o.kind.to_upper())
 	_tag(d, o.kind, String(KIND_TONES.get(o.kind, "plain")))
 	var lines := PackedStringArray([subject_line(o)])
@@ -168,6 +168,9 @@ static func subject_spec_doc(job: ContractJob) -> Dictionary:
 	if part == null:
 		# A whole ship or wreck BSX generates itself (S3): what the events left of it.
 		var s := o.subject
+		var gen := ShipGenerator.parse_id(String(s.get("design", o.design)))
+		if not gen.is_empty():
+			lines.append("Hull: a class %s %s of BSX's own make, design %s" % [String(gen["size"]), String(gen["family"]), String(s.get("design", ""))])
 		if String(s.get("events", "")) != "":
 			lines.append("Damage: " + String(s.get("events", "")).replace(":", " ").replace(",", ", "))
 		if int(s.get("parts_left", 0)) > 0:
@@ -293,8 +296,7 @@ static func progress_doc(job: ContractJob) -> Dictionary:
 static func subject_line(o: WorkOrder) -> String:
 	var s := o.subject
 	var part := o.subject_part()
-	var design := words(String(s.get("design", o.design)).trim_suffix("_frame"))
-	var bits := PackedStringArray([words(part.id) if part else (design + " wreck" if String(s.get("type", "")) == "wreck" else design)])
+	var bits := PackedStringArray([words(part.id) if part else o.subject_name()])
 	bits.append("%d%%" % int(roundf(float(s.get("condition", 1.0)) * 100.0)))
 	var kg := float(s.get("mass_kg", 0.0))
 	if kg > 0.0:

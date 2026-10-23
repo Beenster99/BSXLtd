@@ -103,14 +103,18 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 ## Shared Components' WreckMaker, seeded so every machine builds the same one. The wants
 ## come from what is really left on it.
 func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, tier: int, kind: String, rng: RandomNumberGenerator) -> Dictionary:
-	var designs := VsShipImport.designs()
-	if designs.is_empty():
-		return {}
-	var design := designs[rng.randi_range(0, designs.size() - 1)]
+	var seed_value := int(hash("%s/%d/%d/ship" % [client_id, cycle, slot])) & 0x7FFFFFFF
+	# The hull is one of BSX's own generated ships (S3b): the client's trade picks the family,
+	# the tier the class (small or medium at tier two, medium or large above), the seed the rest.
+	var family := ShipGenerator.family_for(String(client.get("trade", "")))
+	var sizes: Array = ["S", "M"] if tier <= 2 else ["M", "L"]
+	var design := ShipGenerator.design_id(seed_value, String(sizes[rng.randi_range(0, 1)]), family)
 	var options: Array = WRECK_EVENTS.get(kind, WRECK_EVENTS["scrap"])
 	var events := String(options[rng.randi_range(0, options.size() - 1)])
-	var seed_value := int(hash("%s/%d/%d/ship" % [client_id, cycle, slot])) & 0x7FFFFFFF
-	var wreck := WreckMaker.for_design(design, seed_value, events)
+	var file := design_source(design)
+	if file.is_empty():
+		return {}
+	var wreck := WreckMaker.make(file, seed_value, events)
 	if wreck.is_empty():
 		return {}
 	var facts := ship_facts(wreck)
@@ -119,7 +123,7 @@ func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, t
 	var mass := float(facts.get("mass_kg", 0.0))
 	var holds: Array = facts.get("holds", [])
 	var subject := {"type": "wreck" if is_wreck else "ship", "design": design, "seed": seed_value, "events": events,
-			"condition": condition, "mass_kg": mass, "holds": holds,
+			"name": String(wreck.get("ship", {}).get("name", "")), "condition": condition, "mass_kg": mass, "holds": holds,
 			"parts_left": int(facts.get("parts_left", 0)), "parts_gone": int(facts.get("parts_gone", 0))}
 	var wants: Array = []
 	match kind:
@@ -165,6 +169,17 @@ func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, t
 		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier, "size": size},
 		"commercial": {"price": price_for(kind, size, t), "currency": "cr", "deposit_pct": 30, "due_day": cycle + DUE_IN[clampi(tier, 1, 3)] + (6 if size == "medium" else 14)},
 	}
+
+
+## Generating a ship takes up to a second or so, and a cycle's offers reuse the same design,
+## so the clean files are kept by design id (the same id always gives the same ship).
+static var _files: Dictionary = {}
+
+
+static func design_source(design: String) -> Dictionary:
+	if not _files.has(design):
+		_files[design] = VsShipImport.design_source(design)
+	return _files[design]
 
 
 ## What a generated ship or wreck file says about itself: the mass left on it, how many parts
