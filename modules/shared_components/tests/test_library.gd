@@ -54,14 +54,17 @@ func _check_fittings() -> void:
 	check(ShipKit.mono_font() != null, "ShipKit.mono_font is shared")
 	body.free()
 
-	# HullBuilder frames and skins a box section on a BSX body.
+	# FrameHull frames and skins a box section on a BSX body (parts and joints in a model).
 	var hull_body := RigidBody3D.new()
-	var hull := HullBuilder.new(ShipKit.new(hull_body), ShipKit.paint(Color.GRAY), ShipKit.paint(Color.DIM_GRAY))
+	var hull_kit := ShipKit.new(hull_body)
+	hull_kit.model = PartModel.new(hull_body, true)
+	var hull := FrameHull.new(hull_kit, "kestrel", ShipKit.paint(Color.GRAY), ShipKit.paint(Color.DIM_GRAY), ShipKit.glass())
 	var box := PackedVector2Array([Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)])
 	hull.add_station(-2.0, box)
 	hull.add_station(2.0, box)
 	hull.build()
-	check(hull_body.get_child_count() > 0, "HullBuilder puts up frames and skin plates")
+	check(hull_body.get_child_count() > 0 and hull_kit.model.parts.size() > 8, "FrameHull puts up frames and skin plates as parts (%d children, %d parts, %d joints)"
+			% [hull_body.get_child_count(), hull_kit.model.parts.size(), hull_kit.model.connections.size()])
 	hull_body.free()
 
 

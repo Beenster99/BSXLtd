@@ -31,7 +31,9 @@ const SUBTLE: int = 4
 ## "channel" (a C-section, `wall` thick, its mouth facing the cavity: the cable lane is the
 ## web, so the linings stand right on the flanges). FrameHull builds "kestrel" (the frame
 ## Kestrel), "channel" and "wing" (the frame Manta's body, and its wings and horns) and
-## "mitred" (every wreck, as SalvageHull); "lattice" waits for the XL ships.
+## "mitred" (every wreck, as SalvageHull); "lattice" waits for the XL ships. "bowhead" is the
+## Kestrel's node style at a heavier section (docs/BOWHEAD_PLAN.md 8: box girders 0.3 m deep on 0.36 m
+## nodes), the Class L hauler's.
 ## `lining_inset`/`lining_thickness`: where inner panels stand off the frame and how thick.
 ## `rivet_head`/`bolt_head`: the skin's rivets and the linings' bolts on node and rib styles
 ## (the mitred style leaves heads to its structure's `head_style`, as the wrecks always have).
@@ -54,6 +56,10 @@ const STYLES: Dictionary = {
 	"wing": {"member": Vector2(0.08, 0.08), "skin": 0.06, "node": 0.1, "web": 0.03, "lip": 0.015,
 			"corners": "rib", "stringers": "corners", "stringer": Vector2(0.08, 0.08), "bead": MACHINE,
 			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.0, "lining_thickness": 0.03,
+			"rivet_head": SUBTLE, "bolt_head": SUBTLE},
+	"bowhead": {"member": Vector2(0.2, 0.3), "skin": 0.08, "node": 0.36, "corners": "node",
+			"stringers": "corners", "stringer": Vector2(0.2, 0.3), "bead": MACHINE,
+			"rivet_pitch": 1.0, "bolt_pitch": 1.0, "lining_inset": 0.12, "lining_thickness": 0.03,
 			"rivet_head": SUBTLE, "bolt_head": SUBTLE},
 }
 
