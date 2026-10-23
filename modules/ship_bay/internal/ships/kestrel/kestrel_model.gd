@@ -30,7 +30,7 @@ var _power_tween: Tween
 var _hum: AudioStreamPlayer3D
 ## Door key ("door_lock_out", "door_bulkhead") -> {by, time, parts, meshes, t, open}.
 var doors: Dictionary = {}
-## What the file leaves for BSX to draw: wires, floodlights, standby text (KestrelDressing).
+## What the file leaves for BSX to draw: floodlights, standby text (KestrelDressing).
 var dressing: Dressing
 
 
@@ -119,7 +119,7 @@ func _fit_leaves() -> void:
 		model.transform_part(part.id, Transform3D(Basis(), centre - part.local_transform.origin))
 
 
-## The wires, floodlights, nav lamps and screens' standby text over the systems the importer
+## The floodlights, nav lamps and screens' standby text over the systems the importer
 ## built (KestrelDressing).
 func _dress() -> void:
 	dressing = Dressing.new(self, importer.file)

@@ -90,7 +90,7 @@ func run_tests() -> void:
 	check(absf(inner_look.mesh.get_aabb().size.x - 1.12) < 0.01 and absf(inner.local_transform.origin.x) < 0.01,
 			"the inside door is as wide as its doorway: %s" % inner_look.mesh.get_aabb().size)
 	# The importer builds the systems (bowsers, hose, port, panels, screens) from the file; BSX
-	# adds the floodlights, wires and the screens' standby text.
+	# adds the floodlights and the screens' standby text (the importer draws the wires).
 	check(importer.systems_skipped.is_empty() and importer.systems_built.size() == 13,
 			"every system is built from its record: %d built, skipped %s" % [importer.systems_built.size(), importer.systems_skipped])
 	var texts := {}
@@ -103,8 +103,8 @@ func run_tests() -> void:
 	var dressing: RefCounted = model.get("dressing")
 	check((dressing.get("spots") as Array).size() == 4, "four floodlights")
 	check((dressing.get("screens") as Array).size() == 5, "every screen shows a parked ship's standby text")
-	var wires := model.get_node_or_null("Wires") as MeshInstance3D
-	check(wires != null and wires.mesh.get_aabb().size.z > 5.0, "the leads' wires run along the ship")
+	check(model.get_node_or_null("Wires") == null and importer.leads_built.size() == 14,
+			"the leads' wires come from the importer, not BSX: %d" % importer.leads_built.size())
 	model.call("set_door", "door_bulkhead", true, true)
 	var panel_lamps: Array = (dressing.get("door_lamps") as Dictionary).get("door_bulkhead", [])
 	check(panel_lamps.size() == 2 and (panel_lamps[0] as StandardMaterial3D).emission.g > 0.8, "an open door's panel lamps show green")

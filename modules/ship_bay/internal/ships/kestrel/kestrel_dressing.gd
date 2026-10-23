@@ -1,13 +1,13 @@
 extends RefCounted
 ## What the Kestrel's ship file leaves for BSX to draw. Shared Components' VsShipImport builds
 ## the ship systems (bowsers, hose rack, fuel port, cargo control and door panels, the hold
-## monitor, the cockpit's screens) through Void Salvage's own `ShipParts.system`, but the
-## leads' wires are only routes in the file and the floodlights only points, and the screens
-## come blank (Void Salvage fills them from the flying ship). This draws the wires along
-## `derived.routes`, the floodlights from `layout.floodlights`, the nav lamps, the hose coiled
-## on its rack, solid bowser drums, and a parked ship's standby text on each screen (no ship
-## systems in the yard), and keeps the door panels' lamps to light green while a door is open. Lit pieces glow, so the model's power
-## switch darkens them with the rest.
+## monitor, the cockpit's screens) through Void Salvage's own `ShipParts.system`, and the
+## leads' wires from `derived.routes`, but the floodlights are only points in the file and
+## the screens come blank (Void Salvage fills them from the flying ship). This draws the
+## floodlights from `layout.floodlights`, the nav lamps, the hose coiled on its rack, solid
+## bowser drums and a parked ship's standby text on each screen (no ship systems in the
+## yard), and keeps the door panels' lamps to light green while a door is open. Lit pieces
+## glow, so the model's power switch darkens them with the rest.
 
 const SCREEN_TEXT := Color(0.45, 0.95, 1.0)
 ## A parked ship's standby text per screen system.
@@ -22,9 +22,6 @@ const STANDBY := {
 const STANDBY_SIZE := {"monitor": 26, "nav_display": 18, "map_screen": 18}
 const DOOR_OPEN := Color(0.3, 1.0, 0.45)
 const DOOR_SHUT := Color(0.6, 0.08, 0.05)
-## Wire sheath (m) and how many sides its tube has.
-const WIRE_RADIUS := 0.009
-const WIRE_SIDES := 6
 
 var body: Node3D
 var file: Dictionary
@@ -67,7 +64,6 @@ func build(built: Dictionary) -> void:
 			_standby(made["glass"], STANDBY[kind], int(STANDBY_SIZE.get(kind, 22)))
 	_floodlights()
 	_nav_lamps()
-	_wires()
 
 
 ## Lights a door's panel lamps green while it's open, red while shut.
@@ -157,46 +153,6 @@ func _nav_lamps() -> void:
 		var aim := _toward(out)
 		_add(PartShapes.prism(10, 0.07, 0.04), Transform3D(aim, at - out * 0.05), hull_dark)
 		_add(PartShapes.dome(0.05, 0.05, 12, 3), Transform3D(aim, at - out * 0.03), ShipKit.glow(c, 3.0))
-
-
-## The leads' wires along `derived.routes` (every "lead:" route): one tube mesh for all.
-func _wires() -> void:
-	var routes: Dictionary = file.get("derived", {}).get("routes", {})
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var any := false
-	for key: String in routes:
-		if not key.begins_with("lead:"):
-			continue
-		var pts: Array = routes[key]
-		for i in pts.size() - 1:
-			var a := VsShipImport.vec3(pts[i])
-			var b := VsShipImport.vec3(pts[i + 1])
-			if a.distance_to(b) < 0.001:
-				continue
-			_tube(st, a, b)
-			any = true
-	if not any:
-		return
-	st.generate_normals()
-	var mi := MeshInstance3D.new()
-	mi.name = "Wires"
-	mi.mesh = st.commit()
-	mi.material_override = ShipSurface.of(ShipKit.paint(Color(0.07, 0.07, 0.08), 0.1, 0.7))
-	body.add_child(mi)
-
-
-func _tube(st: SurfaceTool, a: Vector3, b: Vector3) -> void:
-	var d := (b - a).normalized()
-	var side := d.cross(Vector3.UP if absf(d.y) < 0.9 else Vector3.RIGHT).normalized()
-	var up := side.cross(d)
-	for k in WIRE_SIDES:
-		var t0 := TAU * float(k) / float(WIRE_SIDES)
-		var t1 := TAU * float(k + 1) / float(WIRE_SIDES)
-		var o0 := (side * cos(t0) + up * sin(t0)) * WIRE_RADIUS
-		var o1 := (side * cos(t1) + up * sin(t1)) * WIRE_RADIUS
-		for v: Vector3 in [a + o0, b + o0, b + o1, a + o0, b + o1, a + o1]:
-			st.add_vertex(v)
 
 
 # --- helpers ---------------------------------------------------------------------------------
