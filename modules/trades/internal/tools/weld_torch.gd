@@ -34,7 +34,13 @@ var _hot: Material
 func _ready() -> void:
 	name = "WeldTorch"
 	grip = GRIP
-	hold = Transform3D(Basis(Vector3.RIGHT, -PI * 0.25), Vector3(0, -0.02, 0))
+	# Carried like a pistol, the nozzle forward and a little down and the handle in your fist,
+	# low in the view rather than stood up in the middle of it (beenster, 0.3.15: "when in
+	# hand the welder tool obscures the screen"). Flag trades.welder_clear.
+	if Flags.is_on("trades.welder_clear"):
+		hold = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(70.0)), Vector3(0, -0.035, 0.02))
+	else:
+		hold = Transform3D(Basis(Vector3.RIGHT, -PI * 0.25), Vector3(0, -0.02, 0))
 	var copper := TradesLook.metal(Color(0.78, 0.45, 0.28), 0.9, 0.3)
 	var brass := TradesLook.metal(Color(0.8, 0.66, 0.35), 0.9, 0.3)
 	var dark := anodised()
@@ -73,6 +79,12 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_tip.material_override = _hot if lit else _wire
 	super(delta)
+
+
+## Under the shield its display would stand in the middle of the glass, over the seam: it
+## folds away while the arc burns (trades.welder_clear).
+func display_hidden() -> bool:
+	return lit and not on_rivet and Flags.is_on("trades.welder_clear")
 
 
 func readout_text() -> String:

@@ -63,9 +63,19 @@ func display_text() -> String:
 	return _display.text() if _display else ""
 
 
+## True while its display should be out of the way (override): the welder's under the shield.
+func display_hidden() -> bool:
+	return false
+
+
 func _process(_delta: float) -> void:
 	if _display:
-		_turn_swivel()
+		var hidden := display_hidden()
+		_swivel.visible = not hidden
+		if hidden:
+			_arm.visible = false
+		else:
+			_turn_swivel()
 		_display.show_state(title, panel_rows(), panel_state(), readout_fill(), readout_alert())
 		return
 	if _readout == null:

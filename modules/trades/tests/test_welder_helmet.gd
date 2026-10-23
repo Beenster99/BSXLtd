@@ -46,6 +46,7 @@ func run_tests() -> void:
 	check(tips.contains("switch to unweld"), "the tips offer unweld: %s" % tips.replace("\n", " | "))
 	rig._on_action(TradesBus.KEY_MODE)
 	check(torch.unweld and torch.readout_text().contains("UNWELD"), "%s switches the welder to unweld" % Keys.key_name(TradesBus.KEY_MODE))
+	_to_end(rig, station, i)
 	station.press(&"welder")
 	_run(rig, station, 0.3)
 	check(torch.lit and torch.cutting, "unwelding: the arc is lit")
@@ -65,6 +66,7 @@ func run_tests() -> void:
 	# Back to weld mode and lay it again.
 	rig._on_action(TradesBus.KEY_MODE)
 	check(not torch.unweld, "and back to weld")
+	_to_end(rig, station, i)
 	station.press(&"welder")
 	_sweep(rig, station, i)
 	check(ship_bus.is_joint_tight(f.joint_id), "weld mode lays it again, traced along the seam")
@@ -130,6 +132,13 @@ func _run(rig: TradesBay, station: TradesShipJoints, seconds: float) -> void:
 		station.update(minf(0.05, left))
 		rig.update_helmet(minf(0.05, left))
 		left -= 0.05
+
+
+## Looks at the start of a weld's seam, where an arc can be struck.
+func _to_end(rig: TradesBay, station: TradesShipJoints, i: int) -> void:
+	var f := station.points[i]
+	rig.worker.face(station.points_world[i] - station.ship_xform.basis * f.seam_up * f.seam_size.x * 0.5)
+	station.update(0.0)
 
 
 ## Runs the aim along a weld's seam from end to end, as a player tracing it would.

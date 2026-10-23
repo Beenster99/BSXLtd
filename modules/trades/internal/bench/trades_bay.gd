@@ -459,6 +459,7 @@ func _process(delta: float) -> void:
 		t.visible = id == tool
 		if t.visible and not _placed.has(id):
 			t.global_transform = t.carried(worker.right_hand.palm())
+	_scale_reach(delta)
 	if _focus:
 		_status_label.text = _focus.status_line()
 	worker.held_still = _remote_driving()
@@ -468,6 +469,34 @@ func _process(delta: float) -> void:
 	_update_tool_panel()
 	_update_inspect()
 	_post_info()
+
+
+## Out on the work, first person, the tool in use and the hand on it are drawn up toward the
+## size they'd look in your hand, so they don't shrink to nothing at arm's length (beenster,
+## 0.3.15: "they seem to be very small in your hands when the elastic hands reach out").
+## Scaled about the tool's working end, so it stays on the joint. trades.reach_scale.
+## Within REACH_NEAR_M of the eye they're true size (they're near enough to read); further
+## out they grow with the distance, up to REACH_MAX.
+const REACH_NEAR_M := 1.0
+const REACH_MAX := 1.6
+var reach_scale := 1.0
+
+
+func _scale_reach(delta: float) -> void:
+	var t: TradesTool = tool_nodes.get(tool)
+	var want := 1.0
+	if Flags.is_on("trades.reach_scale") and t and _placed.has(tool) and not worker.third_person:
+		var d := worker.camera.global_position.distance_to(t.global_position)
+		want = clampf(d / REACH_NEAR_M, 1.0, REACH_MAX)
+	reach_scale = move_toward(reach_scale, want, delta * 4.0) if delta > 0.0 else want
+	worker.right_hand.size = reach_scale
+	if t and _placed.has(tool) and reach_scale != 1.0:
+		var o := t.global_position
+		t.global_transform = t.global_transform.scaled_local(Vector3.ONE * reach_scale)
+		# The hand closes on the grip where the bigger tool has it.
+		var hand := worker.right_hand
+		if hand.out:
+			hand.target = o + (hand.target - o) * reach_scale
 
 
 ## Width of the tool panel's fill bar (pixels).
@@ -581,7 +610,7 @@ func _post_info() -> void:
 	var status := _status_label.text
 	HudSlots.set_info(INFO_TOOL, "Tool", _tool_label.text.trim_prefix("TOOL").strip_edges()
 			+ ("\n" + status if status != "" else ""), 10)
-	if _hint_label.text != "" and (not in_yard or Time.get_ticks_msec() - _hint_at < HINT_S * 1000.0):
+	if hint_showing():
 		HudSlots.set_info(INFO_HINT, "Next", _hint_label.text, 11)
 	else:
 		HudSlots.clear_info(INFO_HINT)
@@ -626,12 +655,26 @@ func station_under_aim() -> TradesStation:
 func hint(text: String) -> void:
 	_hint_label.text = text
 	_hint_at = Time.get_ticks_msec()
+	_hint_on = _focus.aim_key() if _focus else ""
 
 
 ## How long a hint stays up in the yard's right-hand panel (seconds): long enough to read,
 ## then the panel keeps only what's under the aim.
 const HINT_S := 6.0
 var _hint_at := 0
+## What the aim was on when the hint came up (TradesStation.aim_key): with trades.hint_stays
+## the hint stays for as long as you keep looking at it (beenster, 0.3.15: "this should be
+## there for as long as i look at the object").
+var _hint_on := ""
+
+
+## Whether the yard's right-hand panel still shows the last hint.
+func hint_showing() -> bool:
+	if _hint_label.text == "":
+		return false
+	if not in_yard or Time.get_ticks_msec() - _hint_at < HINT_S * 1000.0:
+		return true
+	return Flags.is_on("trades.hint_stays") and _hint_on != "" and _focus != null and _focus.aim_key() == _hint_on
 
 
 ## A station put this tool on the work this frame (so the bay leaves it there).
@@ -1180,6 +1223,8 @@ func update_helmet(delta: float) -> void:
 		worker.welding_helmet.down = _helmet
 	if _weld_view:
 		_weld_view.down = 0.0 if worker.third_person or not worker.camera.current else _helmet
+	if sparks and Flags.is_on("trades.weld_from_end"):
+		sparks.dim = 0.0 if worker.third_person else _helmet
 	_send_torch(lit, torch.global_position if lit else Vector3.ZERO, lit and torch.cutting, delta, lit and not torch.on_rivet)
 
 
@@ -1265,7 +1310,10 @@ func _update_remote_torches() -> void:
 		light.light_energy = 1.0 + randf() * 0.8
 		glow.global_position = at
 		if sparks:
-			sparks.emit(at, Vector3.UP, TradesShipJoints.SPARKS_CUT if r.cutting else TradesShipJoints.SPARKS_WELD, 3.2, 0.9)
+			if Flags.is_on("trades.molten"):
+				sparks.emit_weld(at, Vector3.UP, TradesShipJoints.weld_sparks(r.cutting), 3.2, 0.9)
+			else:
+				sparks.emit(at, Vector3.UP, TradesShipJoints.SPARKS_CUT if r.cutting else TradesShipJoints.SPARKS_WELD, 3.2, 0.9)
 
 
 ## Remote arcs drawn now (tests).

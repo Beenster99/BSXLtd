@@ -56,6 +56,14 @@ const SPARKS_WELD := 12
 const SPARKS_CUT := 26
 const SPARKS_HEAT := 5
 const SPARKS_GRIND := 22
+## With trades.molten the welder's sparks live about three seconds, so fewer a frame.
+const SPARKS_WELD_LONG := 7
+const SPARKS_CUT_LONG := 13
+
+
+## Sparks a frame off a welder's arc (trades.molten).
+static func weld_sparks(cutting: bool) -> int:
+	return SPARKS_CUT_LONG if cutting else SPARKS_WELD_LONG
 ## The powered rivet gun (trades.power_riveter): seconds for its air to build to the punch.
 ## A rivet heated out with the welder (trades.rivet_heat), or its head ground off with the
 ## cutter (trades.cutter): seconds each takes.
@@ -376,6 +384,12 @@ func back_out(tool: StringName) -> void:
 		"bolt":
 			if tool != &"torque_wrench":
 				bay.hint("Breaking a bolt loose takes the %s." % _named(&"torque_wrench"))
+				return
+			# The powered wrench works on left click only, X picking fasten or undo (beenster,
+			# 0.3.15).
+			if powered() and Flags.is_on("trades.wrench_left_only"):
+				var w := _power()
+				bay.hint("The wrench is on left click. %s switches it to %s." % [Keys.prompt(TradesBus.KEY_MODE), "fasten" if w and w.undo else "undo"])
 				return
 		"rivet":
 			if not tool in [&"drill", &"welder", &"cutter"] or not kind_tools("rivet").has(tool):
@@ -762,6 +776,9 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 # --- Doing the work -------------------------------------------------------------------------
 
 func _begin(undo: bool, tool: StringName) -> void:
+	if aimed >= 0 and from_end(points[aimed]) and not _at_start(aimed):
+		bay.hint("Start at one end of the seam, at the ring, and run the arc along it.")
+		return
 	_working = aimed
 	_trace_last = NAN
 	_undoing = undo
@@ -918,10 +935,20 @@ func _place(kind: String, at: Vector3, n: Vector3, progress: float) -> StringNam
 			bay.place_tool(&"welder", xform)
 			bay.loop(&"arc", true, 0.9 + randf() * 0.2)
 			_arc.global_position = at + n * 0.05
-			_arc.light_energy = 1.8 + randf() * 1.0
+			# Dimmer on a seam, so the plate round it doesn't flare out the bead under the
+			# shield (trades.weld_from_end).
+			if kind == "weld" and Flags.is_on("trades.weld_from_end"):
+				var shield := 0.0 if bay.worker.third_person else bay.helmet_down()
+				_arc.light_energy = (0.45 + randf() * 0.25) * (1.0 - shield * 0.85)
+			else:
+				_arc.light_energy = 1.8 + randf() * 1.0
 			_arc.visible = true
 			# A shower off the arc (beenster, 0.3.7): falling, bouncing, fading. Cutting throws more.
-			if bay.sparks:
+			if bay.sparks and Flags.is_on("trades.molten"):
+				# Thrown out and down off the puddle rather than straight back at you, so the
+				# bead shows (beenster, 0.3.15).
+				bay.sparks.emit_weld(at + n * 0.01, n + Vector3.DOWN * 0.7, weld_sparks(_undoing), 3.2, 0.7)
+			elif bay.sparks:
 				bay.sparks.emit(at + n * 0.01, n, SPARKS_CUT if _undoing else SPARKS_WELD, 3.2, 0.8)
 			return &"welder"
 		&"wire_tool":
@@ -1075,12 +1102,61 @@ static func _kg(kg: float) -> String:
 const TRACE_BINS := 12
 const TRACE_M := 0.05
 const BEAD_COOL_S := 7.0
+## With trades.weld_from_end a fresh bead cools to grey metal and stays this long (s), so
+## you can see the line you've laid and carry on from its end.
+const BEAD_KEEP_S := 25.0
 
 
 ## Whether this weld is laid (and cut out) by running the arc along its seam rather than
 ## holding still on it.
 func traces(f: FastenerPoint) -> bool:
 	return f.kind == "weld" and f.seam_size.x > 0.0 and Flags.is_on("trades.trace_weld")
+
+
+## Whether a traced weld has to be started from an end of its seam, or from the end of the
+## bead already laid (beenster, 0.3.15: "you will always start a weld or unweld from the end").
+func from_end(f: FastenerPoint) -> bool:
+	return traces(f) and Flags.is_on("trades.weld_from_end")
+
+
+## How near a seam's end (or the bead's) the aim has to be to strike the arc (metres).
+const START_M := 0.035
+
+
+## Where along a traced weld's seam an arc may be struck (metres from its middle): its two
+## ends, and the ends of any stretch already covered this time round.
+func start_points(f: FastenerPoint) -> PackedFloat32Array:
+	var half := f.seam_size.x * 0.5
+	var out := PackedFloat32Array([-half, half])
+	var bins: PackedByteArray = _traced.get(f.joint_id, PackedByteArray())
+	var step := f.seam_size.x / maxf(1.0, bins.size())
+	for k in bins.size():
+		if bins[k] == 1 and (k == 0 or bins[k - 1] == 0):
+			out.append(k * step - half)
+		if bins[k] == 1 and (k == bins.size() - 1 or bins[k + 1] == 0):
+			out.append((k + 1) * step - half)
+	return out
+
+
+## The start point nearest the aim on joint i (metres from the seam's middle).
+func nearest_start(i: int) -> float:
+	var f := points[i]
+	var n := (ship_xform.basis * f.normal).normalized()
+	var s := _seam_offset(f, points_world[i], n)
+	var best := 0.0
+	var best_d := INF
+	for p in start_points(f):
+		if absf(p - s) < best_d:
+			best_d = absf(p - s)
+			best = p
+	return best
+
+
+func _at_start(i: int) -> bool:
+	var f := points[i]
+	var n := (ship_xform.basis * f.normal).normalized()
+	var s := _seam_offset(f, points_world[i], n)
+	return absf(nearest_start(i) - s) <= maxf(START_M, f.seam_size.x * 0.08)
 
 
 ## How much of a traced weld's seam has been covered this time round (0..1).
@@ -1186,18 +1262,29 @@ func _cool_beads(delta: float) -> void:
 		var b: Array = _beads[i]
 		b[2] += delta
 		var heat: float = 1.0 - float(b[2]) / BEAD_COOL_S
-		if heat <= 0.0:
+		var keep := Flags.is_on("trades.weld_from_end")
+		if (heat <= 0.0 and not keep) or float(b[2]) >= BEAD_KEEP_S:
 			(b[0] as Node).queue_free()
 			_beads.remove_at(i)
 			continue
+		heat = maxf(heat, 0.0)
 		var mat := b[1] as StandardMaterial3D
 		mat.emission = Color(1.0, 0.45, 0.08).lerp(Color(0.6, 0.08, 0.02), 1.0 - heat)
 		mat.emission_energy_multiplier = 4.0 * heat * heat
-		(b[0] as GeometryInstance3D).transparency = 1.0 - minf(1.0, heat * 3.0)
+		if keep:
+			mat.albedo_color = Color(0.42, 0.42, 0.44)
+			(b[0] as GeometryInstance3D).transparency = clampf((float(b[2]) - (BEAD_KEEP_S - 3.0)) / 3.0, 0.0, 1.0)
+		else:
+			(b[0] as GeometryInstance3D).transparency = 1.0 - minf(1.0, heat * 3.0)
 
 
-## Fresh bead glowing now (tests).
+## Fresh bead still glowing (tests).
 func hot_beads() -> int:
+	return _beads.filter(func(b: Array) -> bool: return float(b[2]) < BEAD_COOL_S).size()
+
+
+## Bead drawn at all, glowing or cooled (tests).
+func beads() -> int:
 	return _beads.size()
 
 
@@ -1254,6 +1341,16 @@ func aim_title(tool: StringName) -> String:
 		return ""
 	var f := points[aimed]
 	return "%s %s, %s" % [f.spec.to_upper(), f.kind, _state_word(f).to_lower()]
+
+
+func aim_key() -> String:
+	if tractor.is_holding():
+		return "beam"
+	var i := _working if _working >= 0 else aimed
+	if i >= 0:
+		return points[i].joint_id
+	var slot := tractor.aimed_slot()
+	return "slot:" + slot if slot != "" else ""
 
 
 ## The spec of the joint under the aim and the part it holds, for the look card.
@@ -1381,7 +1478,17 @@ func _place_marker() -> void:
 	_marker.material_override = _ring_tight if is_tight(points[i]) else _ring_loose
 	var n := (ship_xform.basis * points[i].normal).normalized()
 	var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
-	_marker.global_transform = Transform3D(Basis(x.normalized(), n, x.normalized().cross(n)), points_world[i] + n * 0.012)
+	var at := points_world[i]
+	var size := 1.0
+	# A traced weld has no ring in its middle: a small one marks the end to start from, and
+	# none while the arc runs (the bead is what you follow).
+	if from_end(points[i]):
+		if _working >= 0:
+			_marker.visible = false
+			return
+		at += _seam_dir(points[i], n) * nearest_start(i)
+		size = 0.6
+	_marker.global_transform = Transform3D(Basis(x.normalized(), n, x.normalized().cross(n)).scaled(Vector3.ONE * size), at + n * 0.012)
 
 
 ## No joint of its part is in yet.
@@ -1534,6 +1641,18 @@ func _plug_wiring() -> void:
 	bay.play(&"click")
 	bay.hint("Plugged in. All pins good." if loom.is_right() else "Plugged in, but some pins test open.")
 	wiring._refresh()
+	# Done: it packs itself away once you've seen the pins test (beenster, 0.3.15).
+	if Flags.is_on("trades.wiring_tidy"):
+		var panel := wiring
+		get_tree().create_timer(PACK_AWAY_S if loom.is_right() else PACK_AWAY_BAD_S).timeout.connect(func() -> void:
+				if wiring == panel:
+					close_wiring())
+
+
+## How long the wiring tool stays open after PLUG IN AND TEST before it packs away (s): a
+## moment to see every pin green, longer when some test open.
+const PACK_AWAY_S := 1.2
+const PACK_AWAY_BAD_S := 3.0
 
 
 ## While the wiring tool's open your hands are on it (TradesWiringTablet); walk away and it

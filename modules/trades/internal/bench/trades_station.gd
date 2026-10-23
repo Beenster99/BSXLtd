@@ -83,6 +83,12 @@ func aim_title(_tool: StringName) -> String:
 	return ""
 
 
+## What the aim is on, as an id that stays the same while it stays on the same thing ("" for
+## nothing): a hint given there stays up while you keep looking at it.
+func aim_key() -> String:
+	return ""
+
+
 ## The spec of what the aim is on, shown under the tips' heading (trades.hover_specs); "" for
 ## none.
 func aim_spec(_tool: StringName) -> String:
