@@ -7,7 +7,10 @@ extends Node
 ##   - Ping (flag "graphics.ping"): the middle mouse button pings the point under the
 ##     pointer, and the usable thing there if any. Sent through Multiplayer's net.ping() when
 ##     it offers one, so the crew sees it; everyone draws pings only from ping_received.
-##     Without Multiplayer the ping shows here alone.
+##     Without Multiplayer the ping shows here alone. Each marker says what was pinged
+##     (name_of), who pinged it and how far; a ping lasts PING_LIFE (10 s) and each player
+##     has up to PINGS_EACH (5) up, the oldest going first, taken down at once on
+##     Multiplayer's ping_removed.
 
 signal hovered(target: Node)
 signal ping_shown(ping: Dictionary)
@@ -21,7 +24,10 @@ const BEAM := preload("res://modules/graphics/internal/ping_beam.gdshader")
 ## How far a ping can reach, m.
 @export var ping_range: float = 300.0
 ## How long a ping lasts when Multiplayer doesn't say, s.
-@export var ping_life: float = 6.0
+@export var ping_life: float = 10.0
+## How many pings one player can have up at once when Multiplayer doesn't say; a new one
+## past that takes down their oldest.
+@export var pings_each: int = 5
 ## Ping fade-out at the end of its life, s.
 @export var ping_fade: float = 1.0
 ## The light column over a ping, m.
@@ -31,26 +37,34 @@ const BEAM := preload("res://modules/graphics/internal/ping_beam.gdshader")
 
 const HOVER_COLOUR := Color(0.62, 0.9, 1.0)   # BsxTheme.ACCENT
 const PING_COLOUR := Color(1.0, 0.75, 0.25)
+## Meta on a usable thing: what a ping on it calls it (else its look hint's title).
+const NAME_META := "gfx_name"
 
 var highlighter := Highlighter.new()
 var hover_on := true
 var ping_on := true
 ## The usable thing under the pointer now, or null.
 var target: Node
-## Live pings: {ping: Dictionary, node: Node3D, lit: Node, born: float}
+## Live pings: {ping: Dictionary, key: String, what: String (what was pinged), node: Node3D,
+## lit: Node, born: float, life: float}
 var live: Array[Dictionary] = []
 var _net: Node
+var _local_id := 0
 
 
 func attach_net(net: Node) -> void:
 	_net = net
 	if _net and _net.has_signal("ping_received") and not _net.is_connected("ping_received", show_ping):
 		_net.connect("ping_received", show_ping)
+	if _net and _net.has_signal("ping_removed") and not _net.is_connected("ping_removed", remove_ping):
+		_net.connect("ping_removed", remove_ping)
 
 
 func detach() -> void:
 	if _net and _net.has_signal("ping_received") and _net.is_connected("ping_received", show_ping):
 		_net.disconnect("ping_received", show_ping)
+	if _net and _net.has_signal("ping_removed") and _net.is_connected("ping_removed", remove_ping):
+		_net.disconnect("ping_removed", remove_ping)
 	_net = null
 	set_target(null)
 	for p in live:
@@ -93,17 +107,25 @@ func ping_at_pointer() -> bool:
 	var hit := pointer_hit(ping_range)
 	if hit.is_empty():
 		return false
-	ping(hit.position, hit.get("target"), hit.normal)
+	ping(hit.position, hit.get("target"), hit.normal, name_at(hit))
 	return true
 
 
-func ping(at: Vector3, thing: Node = null, normal := Vector3.UP) -> void:
+## Pings a spot, and the usable thing there if any; `label` is what it's called ("" works
+## it out from the thing).
+func ping(at: Vector3, thing: Node = null, normal := Vector3.UP, label := "") -> void:
 	var id := id_of(thing)
+	if label == "" and thing:
+		label = name_of(thing)
 	if _net and _net.has_method("ping"):
-		_net.call("ping", at, id, normal)
+		if _net.get_method_argument_count("ping") >= 4:
+			_net.call("ping", at, id, normal, label)
+		else:
+			_net.call("ping", at, id, normal)
 		return
+	_local_id += 1
 	show_ping({"peer": 1, "name": "", "colour": PING_COLOUR, "at": at, "normal": normal,
-			"object_id": id, "time": Time.get_ticks_msec() / 1000.0, "target": thing})
+			"object_id": id, "label": label, "id": -_local_id, "time": _now(), "target": thing})
 
 
 ## Draws a ping (from ping_received, or a local one): marker, light column, label and the
@@ -113,22 +135,87 @@ func show_ping(ping: Dictionary) -> void:
 	var parent: Node = scene if scene else self
 	var colour: Color = ping.get("colour", PING_COLOUR)
 	var at: Vector3 = ping.get("at", Vector3.ZERO)
-	# One ping per player: a new one replaces their last.
+	var key := _key_of(ping)
+	# The same ping again (it came back through Multiplayer): draw it once.
 	for p in live.duplicate():
-		if p.ping.get("peer", 0) == ping.get("peer", 0):
+		if p.key == key:
 			_drop(p)
-	var node := _marker(colour, String(ping.get("name", "")))
+	# Up to pings_each per player: a new one past that takes down their oldest.
+	var most := pings_each
+	if _net and "PINGS_EACH" in _net:
+		most = int(_net.get("PINGS_EACH"))
+	var theirs := live.filter(func(p: Dictionary) -> bool: return p.ping.get("peer", 0) == ping.get("peer", 0))
+	while theirs.size() >= maxi(most, 1):
+		_drop(theirs.pop_front())
+	var thing: Node = ping.get("target") if is_instance_valid(ping.get("target")) else find_thing(String(ping.get("object_id", "")), at)
+	var what := String(ping.get("label", ""))
+	if what == "" and thing:
+		what = name_of(thing)
+	var node := _marker(colour, what)
 	parent.add_child(node)
 	node.global_position = at
-	var thing: Node = ping.get("target") if is_instance_valid(ping.get("target")) else find_thing(String(ping.get("object_id", "")), at)
 	if thing:
-		highlighter.light(thing, "ping:%d" % int(ping.get("peer", 0)), colour)
+		highlighter.light(thing, "ping:%s" % key, colour)
 	var life := ping_life
 	if _net and "PING_LIFE" in _net:
 		life = float(_net.get("PING_LIFE"))
-	live.append({"ping": ping, "node": node, "lit": thing, "born": _now(), "life": life})
+	live.append({"ping": ping, "key": key, "what": what, "node": node, "lit": thing, "born": _now(), "life": life})
+	(node.get_node("Label") as Label3D).text = _label(what, String(ping.get("name", "")), node)
 	Sfx.play("tick", null, -8.0, 1.4)
 	ping_shown.emit(ping)
+
+
+## Takes a ping down at once (Multiplayer's ping_removed: its pinger went over the limit,
+## or left).
+func remove_ping(ping_id: int) -> void:
+	for p in live.duplicate():
+		if p.key == str(ping_id):
+			_drop(p)
+
+
+## What a thing is called, for a ping's label: its meta "gfx_name", else the title of its
+## look hint (HudSlots), else its node name in words; "" when it has none worth showing.
+static func name_of(thing: Node) -> String:
+	if thing == null:
+		return ""
+	if thing.has_meta(NAME_META):
+		return String(thing.get_meta(NAME_META))
+	var hint := _hint_of(thing)
+	if String(hint.get("title", "")) != "":
+		return String(hint.title)
+	var n := String(thing.name)
+	return "" if n.contains("@") else n.capitalize()
+
+
+## What's called at a pointer hit: the usable thing's name, else whatever the look hint says
+## is there; "" for bare floor.
+func name_at(hit: Dictionary) -> String:
+	var thing: Node = hit.get("target")
+	if thing and thing.has_meta(NAME_META):
+		return String(thing.get_meta(NAME_META))
+	var hint := HudSlots.look_hint_for(hit) if get_node_or_null("/root/HudSlots") else {}
+	if String(hint.get("title", "")) != "":
+		return String(hint.title)
+	return name_of(thing)
+
+
+static func _hint_of(n: Node) -> Dictionary:
+	while n != null:
+		if n.has_method("look_hint"):
+			var h: Variant = n.call("look_hint")
+			if h is Dictionary and not (h as Dictionary).is_empty():
+				return h
+		if n.has_meta("look_hint"):
+			return n.get_meta("look_hint")
+		n = n.get_parent()
+	return {}
+
+
+## A ping's key: Multiplayer's id when it has one, else the pinger and the time.
+static func _key_of(ping: Dictionary) -> String:
+	if ping.has("id"):
+		return str(int(ping.id))
+	return "%d@%.3f" % [int(ping.get("peer", 0)), float(ping.get("time", _now()))]
 
 
 ## The usable thing a ping names: by its id (meta GfxBus.ID_META), else the nearest within
@@ -212,7 +299,7 @@ func _age_pings() -> void:
 					m.set_shader_parameter("size", 0.035 * pop)
 			elif c is Label3D:
 				(c as Label3D).modulate.a = a
-				(c as Label3D).text = _label(String(p.ping.get("name", "")), p.node)
+				(c as Label3D).text = _label(String(p.what), String(p.ping.get("name", "")), p.node)
 		if p.lit and is_instance_valid(p.lit):
 			highlighter.set_strength(p.lit, a)
 
@@ -220,12 +307,12 @@ func _age_pings() -> void:
 func _drop(p: Dictionary) -> void:
 	live.erase(p)
 	if p.lit and is_instance_valid(p.lit):
-		highlighter.unlight(p.lit, "ping:%d" % int(p.ping.get("peer", 0)))
+		highlighter.unlight(p.lit, "ping:%s" % p.key)
 	if is_instance_valid(p.node):
 		p.node.queue_free()
 
 
-func _marker(colour: Color, who: String) -> Node3D:
+func _marker(colour: Color, what: String) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Ping"
 	root.add_to_group("gfx_ping")
@@ -262,21 +349,24 @@ func _marker(colour: Color, who: String) -> Node3D:
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.fixed_size = true
-	label.pixel_size = 0.0006
+	label.pixel_size = 0.0011
 	label.font_size = 28
-	label.outline_size = 8
+	label.outline_size = 10
 	label.modulate = colour
 	label.position = Vector3(0, 0.35, 0)
-	label.offset = Vector2(0, 46)
-	label.text = who
+	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	label.offset = Vector2(0, 30)
+	label.text = what
 	root.add_child(label)
 	return root
 
 
-func _label(who: String, node: Node3D) -> String:
+## The words by a marker: what was pinged over who pinged it and how far it is.
+func _label(what: String, who: String, node: Node3D) -> String:
 	var cam := get_viewport().get_camera_3d() if get_viewport() else null
 	var dist := cam.global_position.distance_to(node.global_position) if cam else 0.0
-	return ("%s  ·  %d m" % [who, roundi(dist)]) if who != "" else "%d m" % roundi(dist)
+	var line := ("%s  ·  %d m" % [who, roundi(dist)]) if who != "" else "%d m" % roundi(dist)
+	return ("%s\n%s" % [what, line]) if what != "" else line
 
 
 static func _distance_to(n: Node3D, at: Vector3) -> float:
