@@ -2,7 +2,9 @@ extends ModuleTest
 ## ShipGenerator: a ship rolled from a seed in every class and family is a vsship 2.0 file
 ## that checks out, the same seed gives the same ship, another seed another, its hull has a
 ## frame, a deck, linings, three stud walls and the crew's fittings spot-welded to the deck,
-## engines, thrusters, name boards and components outside and in,
+## engines, thrusters, name boards and components outside and in, the hull's form rolled
+## (cross-section, waist, cockpit height) with wings, nacelles, exoskeleton frames and
+## gear (turrets, a dish, a crane, a ramp, vents) on the seeds that roll them,
 ## the importer builds it clean, the wreck maker damages it, and a design id round-trips
 ## through the contracts' entry points.
 ##   tools/run_tests.sh shared_components
@@ -14,6 +16,7 @@ func run_tests() -> void:
 	_check_one("M", "freighter", 84)
 	_check_one("L", "miner", 11)
 	_check_every_family()
+	_check_forms()
 	_check_determinism()
 	_check_wreck()
 
@@ -52,7 +55,11 @@ func _check_one(size: String, family: String, seed_value: int) -> void:
 	var phases: Dictionary = f["derived"]["joints_by_phase"]
 	for phase in ["frame", "skin", "deck", "lining", "wall", "fitting"]:
 		check(int(phases.get(phase, 0)) > 0, "%s: joints in phase %s" % [tag, phase])
-	check(f["frame"].size() == 1 and f["decks"].size() == 1 and f["walls"].size() == 3, "%s: the recipe blocks" % tag)
+	check(f["frame"].size() >= 1 and f["frame"][0]["name"] == "hull" and f["decks"].size() == 1 and f["walls"].size() == 3,
+			"%s: the recipe blocks" % tag)
+	var form: Dictionary = f["ship"]["base"].get("form", {})
+	check(ShipGenerator.SECTIONS.has(form.get("section", "")) and ["straight", "bulged", "tapered", "flared"].has(form.get("waist", ""))
+			and ShipGenerator.NOSE_ANCHORS.has(form.get("nose", "")), "%s: a rolled form (%s)" % [tag, str(form)])
 	check(f["layout"]["rooms"].size() == 4 and f["layout"]["seats"].size() >= 1, "%s: four rooms and a seat" % tag)
 	var bounds: Dictionary = f["derived"]["bounds"]
 	var size_m: Array = bounds["size"]
@@ -121,6 +128,48 @@ func _check_every_family() -> void:
 			var f := ShipGenerator.make(17, size, family)
 			var problems := VsShipImport.check(f)
 			check(problems.is_empty(), "%s %s: checks out: %s" % [family, size, "; ".join(problems.slice(0, 3))])
+
+
+## Seeds known to roll limbs and gear: each form shows in the file as parts bolted to the hull.
+func _check_forms() -> void:
+	var seen := {}
+	for spec: Array in [["M", "courier", 4], ["S", "tug", 9], ["M", "freighter", 84], ["L", "miner", 11], ["M", "courier", 5]]:
+		var f := ShipGenerator.make(spec[2], spec[0], spec[1])
+		var tag := "%s %s %d" % [spec[1], spec[0], spec[2]]
+		check(VsShipImport.check(f).is_empty(), "%s: checks out" % tag)
+		var form: Dictionary = f["ship"]["base"]["form"]
+		var hulls := {}
+		for h: Dictionary in f["frame"]:
+			hulls[h["name"]] = true
+		var prefixes := {}
+		for p: Dictionary in f["parts"]:
+			prefixes[p["path"].split("/")[0]] = true
+		for key in ["wings", "nacelles", "exo", "turrets", "dish", "crane", "ramp", "vents"]:
+			if form[key]:
+				seen[key] = true
+		check(bool(form["wings"]) == (hulls.has("wing_r") and hulls.has("wing_l")), "%s: wings as their own frame hulls (%s)" % [tag, str(form["wings"])])
+		check(bool(form["nacelles"]) == (hulls.has("nacelle_r") and hulls.has("nacelle_l")), "%s: nacelles as their own frame hulls" % tag)
+		check(bool(form["exo"]) == prefixes.has("exo"), "%s: an exoskeleton frame" % tag)
+		check(not form["turrets"] or prefixes.has("component:turret"), "%s: turrets" % tag)
+		check(not form["dish"] or prefixes.has("component:dish"), "%s: a radar dish" % tag)
+		check(not form["crane"] or prefixes.has("component:crane"), "%s: a crane" % tag)
+		check(not form["ramp"] or prefixes.has("component:ramp"), "%s: a cargo ramp" % tag)
+		check(not form["vents"] or prefixes.has("component:vent"), "%s: vents" % tag)
+		var limb_bolts := 0
+		for j: Dictionary in f["joints"]:
+			var ab: String = j["a"] + " " + j["b"]
+			if j["kind"] == "bolt" and ab.contains("hull/st:") and (ab.contains("wing_") or ab.contains("nacelle_")):
+				limb_bolts += 1
+		check((not form["wings"] and not form["nacelles"]) or limb_bolts >= 2, "%s: limbs bolted to the hull's rings (%d)" % [tag, limb_bolts])
+		if form["wings"] and form["nacelles"]:
+			var tip_bolts := 0
+			for j: Dictionary in f["joints"]:
+				var ab: String = j["a"] + " " + j["b"]
+				if ab.contains("wing_") and ab.contains("nacelle_"):
+					tip_bolts += 1
+			check(tip_bolts >= 2, "%s: wing-tip nacelles bolted to the ribs (%d)" % [tag, tip_bolts])
+	for key in ["wings", "nacelles", "exo", "turrets", "dish", "crane", "ramp", "vents"]:
+		check(seen.has(key), "some seed rolls %s" % key)
 
 
 func _check_determinism() -> void:
