@@ -33,6 +33,28 @@ func run_tests() -> void:
 	for l in bus.get_listings():
 		cats[bus.listing_category(l)] = true
 	check(headings.size() == cats.size(), "a heading per category: %d of %d" % [headings.size(), cats.size()])
+	# Every Void Salvage part is on sale, so ALL shows a few of each and SEE ALL opens the rest.
+	var see_all := list.get_children().filter(func(c: Node) -> bool: return c.name.begins_with("SeeAll_"))
+	check(not see_all.is_empty() and list.get_child_count() < 200, "ALL is a short list with SEE ALL buttons: %d rows" % list.get_child_count())
+	if not see_all.is_empty():
+		(see_all[0].get_child(0) as Button).pressed.emit()
+		await frames(1)
+		check(orders.category != "" and orders.shown_listings().size() > Wrist.PREVIEW_ROWS, "SEE ALL opens its category: %s" % orders.category)
+		orders.category = "hull"
+		orders.limit = Wrist.MAX_ROWS
+		orders.refresh()
+		var more := list.find_child("ShowMore", true, false)
+		check(more != null, "a long category pages with SHOW MORE")
+		if more:
+			(more as Button).pressed.emit()
+			await frames(1)
+			check(orders.limit == Wrist.MAX_ROWS * 2, "SHOW MORE shows another page")
+		orders.query = "ion thruster"
+		orders.category = ""
+		orders.refresh()
+		check(orders.shown_listings().any(func(l: MarketListing) -> bool: return l.part == "IonThruster"), "search finds a part by name")
+		orders.query = ""
+		orders.limit = Wrist.MAX_ROWS
 	var cat: String = bus.listing_category(orders.shown_listings()[0])
 	orders.category = cat
 	orders.refresh()

@@ -9,8 +9,8 @@ buy, keyed by Void Salvage's part_name so contracts, Shared Components and the m
 
   python3 modules/business/internal/tools/build_market_catalogue.py <void-salvage checkout>
 
-Every named PartCatalog entry is listed, plus any other part found in at least MIN_DESIGNS
-designs (plates, joists, looms, fittings). Value is the median per-unit value across the
+Every named PartCatalog entry is listed, plus every other part found in at least MIN_DESIGNS
+designs (1: every part Void Salvage builds, so a yard can order any of them). Value is the median per-unit value across the
 designs that carry the part; the market applies trade discounts and condition on top.
 """
 import json
@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-MIN_DESIGNS = 4
+MIN_DESIGNS = 1
 OUT = Path(__file__).resolve().parents[1] / "data" / "market_catalogue.tres"
 KINDS = ["HULL", "FRAME", "HAZARD", "CONDUIT", "COMPONENT", "GLASS"]
 
@@ -72,9 +72,11 @@ def main() -> int:
         return out
 
     seen = {}
-    for parts in json.loads((vs / "data/design_manifests.json").read_text()).values():
+    for design, parts in json.loads((vs / "data/design_manifests.json").read_text()).items():
+        if design.startswith("_") or not isinstance(parts, dict):
+            continue
         for name, v in parts.items():
-            if v["count"] > 0:
+            if not name.startswith("_") and isinstance(v, dict) and v.get("count", 0) > 0:
                 seen.setdefault(name, []).append((v["value"] / v["count"], v["kg"] / v["count"], v["kind"]))
     rows = []
     for name in sorted(seen):

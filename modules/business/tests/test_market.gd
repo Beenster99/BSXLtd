@@ -24,6 +24,7 @@ func run_tests() -> void:
 
 	_test_catalogue()
 	_test_listings()
+	_test_every_part()
 	_test_market_order()
 	_test_clock()
 	_test_old_save()
@@ -41,6 +42,24 @@ func _test_catalogue() -> void:
 	check(cat.has_part("IonThruster") and cat.category_of("IonThruster") == "engines", "parts keep Void Salvage's names and categories")
 	check(cat.value_of("MainEngine") > cat.value_of("HullPlate"), "an engine is worth more than a plate")
 	check(cat.source_commit.length() == 40, "the catalogue records the Void Salvage commit it came from")
+
+
+## beenster (0.3.16): every part Void Salvage builds is buyable on the Orders page, every day.
+func _test_every_part() -> void:
+	var cat := bus.get_catalogue()
+	check(cat.parts.size() >= 900, "the catalogue holds every part Void Salvage builds: %d" % cat.parts.size())
+	for d in 3:
+		var on_sale := {}
+		for l in bus.get_listings():
+			if l.available > 0:
+				on_sale[l.part] = true
+		var missing: Array[String] = []
+		for part in cat.part_names():
+			if not on_sale.has(part):
+				missing.append(part)
+		check(missing.is_empty(), "day %d: every part is on sale (%d missing: %s)" % [bus.get_day(), missing.size(), str(missing.slice(0, 5))])
+		bus.advance_minutes(1440)
+	bus.reset()
 
 
 func _test_listings() -> void:

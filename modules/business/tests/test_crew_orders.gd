@@ -64,6 +64,12 @@ func run_tests() -> void:
 			"a joining player sees the host's cash and orders")
 	check(bus.get_listing(picks[0].id) != null and bus.get_listing(picks[0].id).available == host_left,
 			"and the host's market")
+
+	# Every part is on sale, so the books travel packed.
+	var packet: Dictionary = bus.call("_books_packet")
+	var back: Variant = BusinessBus._unpack_books(packet)
+	check((packet.z as PackedByteArray).size() < 64000, "the books go packed: %d bytes for %d" % [(packet.z as PackedByteArray).size(), int(packet.n)])
+	check(back is Dictionary and back.listings.size() == bus.get_listings().size(), "and unpack whole")
 	_done(saved)
 
 

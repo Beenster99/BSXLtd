@@ -10,6 +10,8 @@ extends HBoxContainer
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const MAX_ROWS := 120
+## Lines per category in the ALL list before its SEE ALL button.
+const PREVIEW_ROWS := 8
 ## Text in list rows is drawn at this share of TerminalKit's size.
 const COMPACT := 0.82
 ## How many past deliveries the Orders page lists.
@@ -24,6 +26,8 @@ var page := "orders"
 var glass := true
 var category := ""
 var query := ""
+## How many order lines the list shows; SHOW MORE adds another MAX_ROWS.
+var limit := MAX_ROWS
 ## Orders page: "on order" or "delivered".
 var deliveries := "on order"
 ## Goods in: the store's category and search.
@@ -88,6 +92,7 @@ func _build() -> void:
 		top.add_theme_constant_override("separation", 8)
 		_search = T.search("Search parts", func(t: String) -> void:
 			query = t.strip_edges().to_lower()
+			limit = MAX_ROWS
 			_refresh_list(), glass)
 		top.add_child(_search)
 		_chips = HBoxContainer.new()
@@ -138,6 +143,7 @@ func _refresh_chips() -> void:
 	_clear(holder)
 	var flow := T.chips(_categories(), category, func(n: String) -> void:
 		category = n
+		limit = MAX_ROWS
 		refresh(), glass)
 	holder.add_child(flow)
 
@@ -182,13 +188,40 @@ func _refresh_list() -> void:
 			var na := bus.part_name(a.part)
 			var nb := bus.part_name(b.part)
 			return na < nb if na != nb else a.unit_price < b.unit_price)
+	var preview := category == "" and query == ""
+	var counts := {}
+	for l in shown:
+		var c := bus.listing_category(l)
+		counts[c] = int(counts.get(c, 0)) + 1
 	var last := ""
-	for i in mini(shown.size(), MAX_ROWS):
-		var cat := bus.listing_category(shown[i])
+	var in_cat := 0
+	var rows := 0
+	for l in shown:
+		if rows >= limit:
+			break
+		var cat := bus.listing_category(l)
 		if category == "" and cat != last:
-			_list.add_child(_heading(cat, shown.filter(func(l: MarketListing) -> bool: return bus.listing_category(l) == cat).size()))
+			if preview and in_cat > PREVIEW_ROWS:
+				_list.add_child(_see_all(last, int(counts[last])))
+			_list.add_child(_heading(cat, int(counts[cat])))
 			last = cat
-		_list.add_child(_listing_row(shown[i], i % 2 == 1))
+			in_cat = 0
+		in_cat += 1
+		# Every Void Salvage part is on sale, so ALL shows a few of each type to pick from.
+		if preview and in_cat > PREVIEW_ROWS:
+			continue
+		_list.add_child(_listing_row(l, rows % 2 == 1))
+		rows += 1
+	if preview and in_cat > PREVIEW_ROWS:
+		_list.add_child(_see_all(last, int(counts[last])))
+	var left := 0 if preview else shown.size() - rows
+	if left > 0:
+		var more := T.button("SHOW MORE  (%d more)" % left, false, 16, false, glass)
+		more.name = "ShowMore"
+		more.pressed.connect(func() -> void:
+			limit += MAX_ROWS
+			_refresh_list())
+		_list.add_child(_centred(more))
 	if shown.is_empty():
 		_list.add_child(T.label("Nothing matches." if query != "" else "Nothing on the market here today.", "body", 18, T.DIM))
 	scroll.set_deferred("scroll_vertical", keep)
@@ -210,6 +243,18 @@ func _listing_row(l: MarketListing, alt: bool) -> Control:
 		T.cell(T.money(l.unit_price), 96, T.TEXT, "mono_bold"),
 		_width(_centred(add), 46),
 	], alt, glass))
+
+
+## Under a category's first few lines in ALL: a button that opens the whole category.
+func _see_all(cat: String, count: int) -> Control:
+	var b := T.button("SEE ALL %d %s  ›" % [count, cat.to_upper()], false, 14, false, glass)
+	b.pressed.connect(func() -> void:
+		category = cat
+		limit = MAX_ROWS
+		refresh())
+	var box := _centred(b)
+	box.name = "SeeAll_" + (cat if cat != "" else "other").validate_node_name()
+	return box
 
 
 ## A category heading in a list, with how many lines are under it.

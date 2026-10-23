@@ -18,6 +18,8 @@ var bus: BusinessBus
 var interactive := false
 var channel := "orders"
 var category := ""
+## How many market lines the list shows; SHOW MORE adds another MAX_ROWS.
+var limit := MAX_ROWS
 ## listing id -> quantity in the purchase order.
 var basket: Dictionary = {}
 
@@ -215,6 +217,7 @@ func _orders() -> Control:
 		var b := Look.button(c.to_upper() if c != "" else "ALL", false, 15, c == category)
 		b.pressed.connect(func() -> void:
 			category = c
+			limit = MAX_ROWS
 			refresh())
 		b.disabled = not interactive and c != category
 		cats.add_child(b)
@@ -245,13 +248,26 @@ func _orders() -> Control:
 	scroll.add_child(list)
 	market.add_child(scroll)
 	var shown := 0
+	var hidden := 0
 	for l in bus.get_listings(category):
 		if l.available <= 0:
 			continue
+		if shown >= limit:
+			hidden += 1
+			continue
 		list.add_child(_listing_row(l, shown % 2 == 1))
 		shown += 1
-		if shown >= MAX_ROWS:
-			break
+	if hidden > 0:
+		# Every Void Salvage part is on sale, so a long list shows a page at a time.
+		var more := Look.button("SHOW MORE  (%d more)" % hidden, false, 16)
+		more.name = "ShowMore"
+		more.disabled = not interactive
+		more.pressed.connect(func() -> void:
+			limit += MAX_ROWS
+			refresh())
+		var box := CenterContainer.new()
+		box.add_child(more)
+		list.add_child(box)
 	if shown == 0:
 		list.add_child(Look.label("Nothing on the market here today.", "body", 18, Look.DIM))
 
