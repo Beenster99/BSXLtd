@@ -46,6 +46,10 @@ var spacing: float = 0.6
 ## A doorway's jamb studs stand this far clear of its edges (the leaf's own edge), metres.
 var jamb_clear: float = 0.03
 var bolt_pitch: float = 1.0
+## Of the bolts at the pitch, the share each panel keeps (`FrameTarget.share_rows`; 1 keeps all).
+var bolt_share: float = 1.0
+## Never fewer bolts than this on a panel (or all it had).
+var min_bolts: int = 1
 ## Inside the wall: between a panel and the frame behind it, metres.
 var gap: float = 0.01
 var panel_mat: Material
@@ -111,7 +115,7 @@ func recipe() -> Dictionary:
 	return {"name": name, "seq": _built_seq, "z": z, "thickness": thickness, "outline": outline, "floor_y": floor_y,
 			"openings": openings, "pockets": pockets, "pocket_clear": pocket_clear, "faces": faces, "panel": panel,
 			"stud_width": stud_width, "rail_height": rail_height, "spacing": spacing, "jamb_clear": jamb_clear,
-			"bolt_pitch": bolt_pitch, "gap": gap, "bolt_head": bolt_head, "bead": bead, "groove": groove,
+			"bolt_pitch": bolt_pitch, "bolt_share": bolt_share, "min_bolts": min_bolts, "gap": gap, "bolt_head": bolt_head, "bead": bead, "groove": groove,
 			"panel_mat": panel_mat, "frame_mat": frame_mat}
 
 
@@ -612,6 +616,8 @@ func _panel(poly: PackedVector2Array, face_z: float, normal: Vector3, path: Stri
 		hi = hi.max(q)
 	var m := 0.01
 	var mid := (lo + hi) * 0.5
+	var rows: Array = []   # [segment, member]
+	var counts: Array[int] = []
 	for mem: Dictionary in _members:
 		var a: Vector2 = mem["a"]
 		var b: Vector2 = mem["b"]
@@ -623,8 +629,13 @@ func _panel(poly: PackedVector2Array, face_z: float, normal: Vector3, path: Stri
 			seg = DeckFrame.clip_segment(a + shift, b + shift, poly, m)
 		if seg.is_empty():
 			continue
-		var length := (seg[0] as Vector2).distance_to(seg[1])
-		var n := maxi(1, int(ceil(length / bolt_pitch)))
+		rows.append([seg, mem])
+		counts.append(maxi(1, int(ceil((seg[0] as Vector2).distance_to(seg[1]) / bolt_pitch))))
+	var kept := FrameTarget.share_rows(counts, bolt_share, min_bolts)
+	for r in rows.size():
+		var seg: Array = rows[r][0]
+		var mem: Dictionary = rows[r][1]
+		var n: int = kept[r]
 		for k in n:
 			var t := (float(k) + 0.5) / float(n)
 			var at2 := (seg[0] as Vector2).lerp(seg[1], t)

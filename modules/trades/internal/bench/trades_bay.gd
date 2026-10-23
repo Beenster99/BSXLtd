@@ -93,10 +93,16 @@ var _hud: CanvasLayer
 ## Looking through the welding shield in first person, and how far down it is (0..1).
 var _weld_view: TradesWeldingView
 var _helmet := 0.0
+## The shield's toggle (trades.helmet_toggle): down until you lift it.
+var helmet_lowered := false
 ## Seconds since the arc went out (the shield stays down a moment).
 var _arc_off_s := 10.0
 ## Other players' arcs, by peer: {at, cutting, light, glow, helmet}.
 var remote_torches := {}
+## The crew seeing and hearing each other's tools (trades.crew_tools), in the yard.
+var crew: TradesCrew
+## The tool loop sounding now ("" for none), whether or not it can be heard here.
+var _looping := &""
 ## What we last told the others about our arc, and when.
 var _torch_sent := {}
 var _torch_sent_s := 0.0
@@ -195,6 +201,12 @@ func _enter_yard() -> void:
 	var net := _net()
 	if net:
 		net.call("register_event", TORCH_EVENT, _apply_torch, _validate_torch)
+		if TradesCrew.enabled():
+			crew = TradesCrew.new()
+			crew.name = "Crew"
+			crew.bay = self
+			add_child(crew)
+			crew.start(net)
 	hint(s.start_hint())
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -249,6 +261,8 @@ func _exit_tree() -> void:
 	var net := _net()
 	if net and in_yard:
 		net.call("unregister_event", TORCH_EVENT)
+	if crew:
+		crew.stop()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	HudSlots.unregister_look_hint(LOOK_HINT_ID)
 	_clear_info()
@@ -383,7 +397,7 @@ func _handle_input(event: InputEvent) -> void:
 ## The key actions the bay reads (Settings > Key binds can move any of them).
 func _actions() -> Array[String]:
 	var out: Array[String] = [TradesBus.KEY_VIEW, TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT,
-			TradesBus.KEY_RESET, TradesBus.KEY_NEXT, TradesBus.KEY_MODE, Keys.INTERACT, Keys.CANCEL]
+			TradesBus.KEY_RESET, TradesBus.KEY_NEXT, TradesBus.KEY_MODE, TradesBus.KEY_HELMET, Keys.INTERACT, Keys.CANCEL]
 	for i in hotbar.size():
 		out.append(TradesBus.KEY_TOOL + str(i + 1))
 	return out
@@ -404,6 +418,10 @@ func _on_action(action: String) -> void:
 				_refresh_hud()
 		TradesBus.KEY_MODE:
 			toggle_mode()
+		TradesBus.KEY_HELMET:
+			if Flags.is_on("trades.helmet_toggle") and Flags.is_on("trades.weld_helmet"):
+				helmet_lowered = not helmet_lowered
+				play(&"tick")
 		TradesBus.KEY_RESET:
 			if _focus and not in_yard:
 				_focus.reset()
@@ -726,6 +744,10 @@ func play(sound: StringName, pitch := 1.0) -> void:
 
 ## A looping sound (the drill's whine, the welding arc) on or off.
 func loop(sound: StringName, on: bool, pitch := 1.0) -> void:
+	if on:
+		_looping = sound
+	elif _looping == sound:
+		_looping = &""
 	var p: AudioStreamPlayer = _loops.get(sound)
 	if p == null or DisplayServer.get_name() == "headless":
 		return
@@ -1205,6 +1227,8 @@ const TORCH_EVENT := "trades.torch"
 const HELMET_DOWN_RATE := 9.0
 const HELMET_UP_RATE := 3.5
 const HELMET_HOLD_S := 0.4
+## How fast it comes down on its key (per second; beenster 0.3.16: slower), trades.helmet_toggle.
+const HELMET_LOWER_RATE := 2.2
 ## How often a moving arc is sent (s) and how far it must have moved (m).
 const TORCH_SEND_S := 0.2
 const TORCH_SEND_M := 0.02
@@ -1218,7 +1242,17 @@ func update_helmet(delta: float) -> void:
 	# Heating a rivet out is a small, short glow: the shield stays up (beenster, 2026-10-22).
 	_arc_off_s = 0.0 if lit and not torch.on_rivet else _arc_off_s + delta
 	var want := 1.0 if _arc_off_s < HELMET_HOLD_S and Flags.is_on("trades.weld_helmet") else 0.0
-	_helmet = move_toward(_helmet, want, delta * (HELMET_DOWN_RATE if want > _helmet else HELMET_UP_RATE))
+	var down_rate := HELMET_DOWN_RATE
+	if Flags.is_on("trades.helmet_toggle") and Flags.is_on("trades.weld_helmet"):
+		# The shield is yours to drop (its key) before you strike, and stays till you lift it.
+		# Strike with it up and it still comes down, so you never weld bare-eyed.
+		if lit and not torch.on_rivet:
+			if not helmet_lowered:
+				hint("%s drops the shield before you strike." % Keys.key_name(TradesBus.KEY_HELMET))
+			helmet_lowered = true
+		want = 1.0 if helmet_lowered else 0.0
+		down_rate = HELMET_LOWER_RATE
+	_helmet = move_toward(_helmet, want, delta * (down_rate if want > _helmet else HELMET_UP_RATE))
 	if worker.welding_helmet:
 		worker.welding_helmet.down = _helmet
 	if _weld_view:
@@ -1228,9 +1262,32 @@ func update_helmet(delta: float) -> void:
 	_send_torch(lit, torch.global_position if lit else Vector3.ZERO, lit and torch.cutting, delta, lit and not torch.on_rivet)
 
 
+## Whether Tools' HUD is up (the player's own view, not a still or a menu camera).
+func hud_showing() -> bool:
+	return _hud != null and _hud.visible
+
+
 ## How far down your shield is (0..1).
 func helmet_down() -> float:
 	return _helmet
+
+
+## The tool loop sounding now (&"" for none).
+func looping() -> StringName:
+	return _looping
+
+
+## A tool loop's sound, for a crewmate's tool to play (null for none).
+func loop_stream(sound: StringName) -> AudioStream:
+	var p: AudioStreamPlayer = _loops.get(sound)
+	return p.stream if p else null
+
+
+## A crewmate's shield down or up (TradesCrew, from what they share): on their avatar's head.
+func crew_helmet(peer: int, down: bool, head: Node3D = null) -> void:
+	var r := _remote(peer)
+	r.crew_shield = down
+	_fit_remote_helmet(peer, r, head)
 
 
 func _send_torch(on: bool, at: Vector3, cutting: bool, delta: float, shield := true) -> void:
@@ -1260,6 +1317,16 @@ func _apply_torch(p: Dictionary) -> void:
 	var peer := int(p.get("peer", 0))
 	if net and peer == int(net.call("local_peer_id")):
 		return
+	var r := _remote(peer)
+	r.on = bool(p.on)
+	r.at = p.at as Vector3
+	r.cutting = bool(p.cutting)
+	r.shield = bool(p.get("shield", true))
+	_fit_remote_helmet(peer, r)
+
+
+## A crewmate's arc light, glow and shield, made on first need.
+func _remote(peer: int) -> Dictionary:
 	var r: Dictionary = remote_torches.get(peer, {})
 	if r.is_empty():
 		var light := OmniLight3D.new()
@@ -1275,16 +1342,18 @@ func _apply_torch(p: Dictionary) -> void:
 		glow.material_override = TradesLook.glow(Color(0.75, 0.9, 1.0), 8.0)
 		glow.top_level = true
 		add_child(glow)
-		r = {"light": light, "glow": glow, "helmet": null}
+		r = {"light": light, "glow": glow, "helmet": null, "on": false, "crew_shield": false}
 		remote_torches[peer] = r
-	r.on = bool(p.on)
-	r.at = p.at as Vector3
-	r.cutting = bool(p.cutting)
-	r.shield = bool(p.get("shield", true))
-	# Their shield, on Multiplayer's avatar of them when it offers the head.
-	# Avatars are rebuilt now and then (a scene change): fetch the head again when ours is gone.
-	if not is_instance_valid(r.helmet) and net and net.has_method("avatar_head"):
-		var head := net.call("avatar_head", peer) as Node3D
+	return r
+
+
+## Their shield, on Multiplayer's avatar of them when it offers the head.
+## Avatars are rebuilt now and then (a scene change): fetch the head again when ours is gone.
+func _fit_remote_helmet(peer: int, r: Dictionary, head: Node3D = null) -> void:
+	var net := _net()
+	if not is_instance_valid(r.helmet) and head == null and net and net.has_method("avatar_head"):
+		head = net.call("avatar_head", peer) as Node3D
+	if not is_instance_valid(r.helmet):
 		if head:
 			var h := TradesWeldingHelmet.new()
 			head.add_child(h)
@@ -1301,7 +1370,7 @@ func _update_remote_torches() -> void:
 		glow.visible = on
 		if is_instance_valid(r.helmet):
 			var h := r.helmet as TradesWeldingHelmet
-			var want := 1.0 if on and bool(r.get("shield", true)) else 0.0
+			var want := 1.0 if (on and bool(r.get("shield", true))) or bool(r.get("crew_shield", false)) else 0.0
 			h.down = move_toward(h.down, want, get_process_delta_time() * HELMET_DOWN_RATE)
 		if not on:
 			continue

@@ -43,6 +43,7 @@ func _ready() -> void:
 	_bus.slot_state_changed.connect(_on_slot_changed)
 	_bus.ship_power_changed.connect(_on_power)
 	_bus.component_installed.connect(func(_s: String, _c: String) -> void: _refresh_markers())
+	_bus.marker_focus_changed.connect(_on_marker_focus)
 	_show_ship(_bus.ship)
 
 
@@ -51,6 +52,8 @@ func _exit_tree() -> void:
 		_bus.slot_state_changed.disconnect(_on_slot_changed)
 	if _bus and _bus.ship_power_changed.is_connected(_on_power):
 		_bus.ship_power_changed.disconnect(_on_power)
+	if _bus and _bus.marker_focus_changed.is_connected(_on_marker_focus):
+		_bus.marker_focus_changed.disconnect(_on_marker_focus)
 
 
 ## Three ship cradles, each an I-beam base on the floor with two posts, a head beam under
@@ -319,6 +322,21 @@ func _refresh_markers() -> void:
 		var slot_state := _bus.get_slot_state(FastenerPoint.slot_of(id))
 		m.visible = slot_state != ShipBayBus.SlotState.EMPTY
 		m.material_override = _tight_mat if _bus.is_joint_tight(id) else _loose_mat
+	_on_marker_focus(_bus.marker_focus_at, _bus.marker_focus_radius)
+
+
+## Only the rings near the focus point show (ShipBayBus.set_marker_focus); the heads always
+## do. A ring out of focus drops its mesh (the head is its child, so hiding it would hide both).
+func _on_marker_focus(at: Vector3, radius_m: float) -> void:
+	if ship_root == null:
+		return
+	var local := ship_root.global_transform.affine_inverse() * at
+	for id: String in markers:
+		var m: MeshInstance3D = markers[id]
+		if not m.has_meta("ring_mesh"):
+			m.set_meta("ring_mesh", m.mesh)
+		var near := is_inf(radius_m) or m.position.distance_to(local) <= radius_m
+		m.mesh = m.get_meta("ring_mesh") if near else null
 
 
 static func _paint(c: Color, lit := false) -> StandardMaterial3D:

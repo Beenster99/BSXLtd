@@ -18,6 +18,43 @@ const COPPER_PVC: float = 5200.0
 ## sleeve, still over a 16 cm wide ring member), metres.
 const LOOM_CLIP: float = 0.065
 
+## How many heads each row of one plate or panel keeps when only `share` of them are: `counts`
+## the heads its rows would have at the pitch, in order. Every other head along the plate at 0.5,
+## counted on from row to row (so a short row may keep none), rounded down, but never fewer than
+## `least` on the plate: the rows that lost every head get one back first, in order, then any with
+## heads to spare, then (a plate that had fewer than `least` even at the pitch) the rows in turn
+## get more than the pitch gives. A share of 1 and `least` 1 keep them all, as laid.
+static func share_rows(counts: Array[int], share: float, least: int = 1) -> Array[int]:
+	var kept: Array[int] = []
+	var before := 0
+	var total := 0
+	for c in counts:
+		var n := _shared(before + c, share) - _shared(before, share)
+		kept.append(n)
+		before += c
+		total += n
+	if kept.is_empty():
+		return kept
+	var want := maxi(least, 1)
+	for bare: bool in [true, false]:
+		for i in kept.size():
+			if total >= want:
+				return kept
+			if kept[i] < counts[i] and (kept[i] == 0) == bare:
+				kept[i] += 1
+				total += 1
+	while total < want:   # Every row is full at the pitch: closer than it on a short plate.
+		for i in kept.size():
+			if total < want:
+				kept[i] += 1
+				total += 1
+	return kept
+
+
+static func _shared(heads: int, share: float) -> int:
+	return floori(float(heads) * share + 0.0001)
+
+
 ## The parts and joints being built (a builder that reaches its model another way leaves it
 ## null and overrides `parts_model`).
 var model: PartModel

@@ -8,7 +8,7 @@ extends Node3D
 ## only; nothing here is game state.
 
 ## Most sparks alive at once.
-const MAX := 3200
+const MAX := 6000
 ## The glow the sparks throw on what's round them (beenster, 2026-10-22: "the surrounding
 ## area should glow from their emitted light"): a few warm lights, each at the middle of a
 ## share of the hot sparks, brighter the more sparks it has. Light per hot spark, the most one
@@ -25,10 +25,10 @@ const HOT_MAX_S := 0.45
 const GRAVITY := 9.8
 const BOUNCE := 0.35
 const LIFE_S := Vector2(0.5, 1.4)
-## The welder's sparks and its drops of molten metal last about three seconds, bouncing about
-## the floor as they cool (beenster, 0.3.15). Their lives (s), how lively their bounce is, and
-## a drop's thickness (m).
-const WELD_LIFE_S := Vector2(2.4, 3.4)
+## The welder's sparks and its drops of molten metal last about eight seconds, bouncing about
+## the floor as they cool (beenster, 0.3.15; 0.3.16: 8 s, not 5). Their lives (s), how lively
+## their bounce is, and a drop's thickness (m).
+const WELD_LIFE_S := Vector2(7.0, 8.5)
 const WELD_BOUNCE := 0.5
 const DROP_THICK_M := 0.011
 ## Below this speed (m/s) off something flat a spark lies still where it landed.

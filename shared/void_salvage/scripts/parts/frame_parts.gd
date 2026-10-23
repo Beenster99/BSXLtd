@@ -7,7 +7,7 @@ extends RefCounted
 ##
 ## Plates lie in the XZ plane with their outer face at y = 0 and their back at
 ## y = -thickness; the outer edges are bevelled. Girders run along X. All sizes in metres.
-## HullBuilder uses these to frame and skin whole hulls from cross-sections.
+## FrameHull uses these to frame and skin whole hulls from cross-sections.
 
 const PLATE_THICKNESS: float = 0.06
 const PLATE_BEVEL: float = 0.02

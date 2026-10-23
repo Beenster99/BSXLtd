@@ -38,7 +38,9 @@ var parts: Dictionary = {}
 var units: Array[Dictionary] = []
 var _unit_marks: Array[int] = []
 
-## Open records, outermost first: [record, block]. A nested or quiet one has block "".
+## Open records, outermost first: [record, block]. A nested one has block "", a quiet one
+## "quiet" (its pieces are counted but stay out of the record round it, too: a stud a wall's
+## builder adds while a door panel is hung on it).
 var _open: Array = []
 var _has_bounds := false
 
@@ -47,7 +49,10 @@ var _has_bounds := false
 ## the pieces it adds are counted but left out, e.g. what the layout rebuilds). Returns the
 ## record (an empty one when it is nested inside another).
 func open(block: String, record: Dictionary, group: String) -> Dictionary:
-	if not _open.is_empty() or block == "":
+	if block == "":
+		_open.append([{}, "quiet"])
+		return {}
+	if not _open.is_empty():
 		_open.append([{}, ""])
 		return {}
 	record["group"] = group
@@ -63,7 +68,7 @@ func close(extra: Dictionary = {}) -> void:
 		return
 	var top: Array = _open.pop_back()
 	var record: Dictionary = top[0]
-	if top[1] == "":
+	if top[1] == "" or top[1] == "quiet":
 		return
 	record.merge(extra, true)
 	# A fitting says its own box; a system or wall gets the bounds of what it added.
@@ -91,7 +96,7 @@ func on_piece(shape: PartShapes.PartShape, xform: Transform3D, mat: Material, ta
 	_has_bounds = true
 	if not _open.is_empty():
 		var outer: Dictionary = _open[0][0]
-		if _open[0][1] != "":
+		if _open[0][1] != "" and _open[0][1] != "quiet" and not _quiet():
 			outer["_box"] = box if not outer.has("_box") else (outer["_box"] as AABB).merge(box)
 			if tag != "":
 				var tags: Array = outer.get_or_add("tags", [])
@@ -114,6 +119,14 @@ func on_piece(shape: PartShapes.PartShape, xform: Transform3D, mat: Material, ta
 	if not part_info.is_empty():
 		record["part"] = part_info
 	pieces.append(record)
+
+
+## True while a quiet record is open (inside or outside another).
+func _quiet() -> bool:
+	for o: Array in _open:
+		if o[1] == "quiet":
+			return true
+	return false
 
 
 ## The kit made part `id` from `shape` (vsship 2.0): its recipe, materials and builder.

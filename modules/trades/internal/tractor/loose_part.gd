@@ -29,8 +29,18 @@ var condition := 1.0
 const KNOCK_MS := 4.0
 const KNOCK_PER_MS := 0.04
 
+## A part that lands on someone is pushed off them (N per kg, sideways), and if it still lies
+## on them after PIN_S it drops through them to the floor (beenster, 0.3.16: "roof unit fell on
+## me and I can't move"); it collides with them again once FREE_M clear (trades.no_pinning).
+const SHOVE_N_PER_KG := 12.0
+const PIN_S := 0.5
+const FREE_M := 0.6
+
 var _shape: CollisionShape3D
 var _last_velocity := Vector3.ZERO
+## Players it's touching: body -> seconds on them; and those it now passes through.
+var _on := {}
+var _through: Array[PhysicsBody3D] = []
 
 ## It hit something hard and lost condition.
 signal knocked(part: TradesLoosePart)
@@ -47,6 +57,8 @@ func setup(slot: MountSlot, comp: String, visual: Node3D) -> void:
 	set_meta("gfx_id", "trades.loose:" + slot.slot_id)
 	outline = slot.mount.affine_inverse() * slot.box
 	mass = maxf(5.0, outline.size.x * outline.size.y * outline.size.z * DENSITY)
+	contact_monitor = true
+	max_contacts_reported = 6
 	_shape = CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = outline.size
@@ -103,12 +115,54 @@ func drop(velocity := Vector3.ZERO) -> void:
 	_last_velocity = velocity
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	_free_players()
 	if freeze:
 		_last_velocity = Vector3.ZERO
 		return
 	knock((_last_velocity - linear_velocity).length())
 	_last_velocity = linear_velocity
+	if Flags.is_on("trades.no_pinning"):
+		_off_players(delta)
+
+
+## Pushes itself off anyone it lies on, and lets them through if that doesn't do it.
+func _off_players(delta: float) -> void:
+	var touching := {}
+	for b: Node in get_colliding_bodies():
+		if b is CharacterBody3D and not _through.has(b):
+			touching[b] = float(_on.get(b, 0.0)) + delta
+	_on = touching
+	for b: CharacterBody3D in touching:
+		var away := centre() - b.global_position
+		away.y = 0.0
+		if away.length() < 0.05:
+			away = Vector3.RIGHT
+		apply_central_force(away.normalized() * mass * SHOVE_N_PER_KG)
+		if float(touching[b]) >= PIN_S:
+			add_collision_exception_with(b)
+			_through.append(b)
+			_on.erase(b)
+			sleeping = false
+
+
+## Collides again with those it let through once they're clear of it.
+func _free_players() -> void:
+	for i in range(_through.size() - 1, -1, -1):
+		var b := _through[i]
+		if not is_instance_valid(b):
+			_through.remove_at(i)
+			continue
+		var box := global_transform * outline
+		if box.grow(FREE_M).has_point(b.global_position) or box.grow(FREE_M).has_point(b.global_position + Vector3.UP):
+			continue
+		remove_collision_exception_with(b)
+		_through.remove_at(i)
+
+
+## Whether it's passing through someone it fell on (tests).
+func lets_through(body: PhysicsBody3D) -> bool:
+	return _through.has(body)
 
 
 ## A hit that took `speed_lost` m/s off it: hard enough, the condition drops.

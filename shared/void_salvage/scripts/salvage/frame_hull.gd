@@ -17,7 +17,7 @@ extends RefCounted
 ##     stringer along every corner between stations, every member's ends welded to its nodes
 ##     all round (the style's bead); skin plates cut round the openings and riveted in rows
 ##     along every member they lie over (at the style's pitch); caps on the outlines a design
-##     gives (`cap`). Looks are as HullBuilder draws them (girders node to node, plates corner
+##     gives (`cap`). Looks are the old HullBuilder's (girders node to node, plates corner
 ##     to corner); the collision shapes are pulled in to keep the gaps, so a part's look and
 ##     collision differ. A "channel" section draws its rings and stringers as C-sections whose
 ##     mouths face the cavity.
@@ -75,6 +75,10 @@ var stringer_spacing: float      # one stringer per this much side length (mitre
 var bead: int                    # weld head style (node styles; the wrecks set their own)
 var rivet_pitch: float           # rivets along a row (node styles)
 var bolt_pitch: float            # lining bolts along a row (node styles)
+var rivet_share: float = 1.0     # of the rivets at the pitch, the share each plate keeps (FrameTarget.share_rows)
+var bolt_share: float = 1.0      # of the lining bolts at the pitch, the share each panel keeps
+var min_rivets: int = 1          # never fewer rivets than this on a plate (or all it had)
+var min_bolts: int = 1           # never fewer bolts than this on a lining panel
 var rivet_head: int              # the skin's rivet heads (node styles; ConnectionData.head)
 var bolt_head: int               # the linings' bolt heads (node styles)
 ## Node styles: draw the members out to the skin's inner face (their collision keeps the gap
@@ -112,6 +116,15 @@ var flush_bevel: float = 0.005
 ## `BRACKET_FROM`) stand on brackets off the rings.
 var lining_inset: float
 var lining_thickness: float
+## Node styles: insets by profile edge (edge -> metres) where the faces of a bay are lined at
+## different depths (the Bowhead's sides stand well in from the frame, its chamfers close to it):
+## a `lining` call with no inset of its own takes its edge's, and every panel's corners lie where
+## its own line meets its neighbours' lines, so the faces still meet edge to edge. Edges not
+## named take `lining_inset`.
+var edge_insets: Dictionary = {}
+## Node styles: stand each edge's members in by its own faces' slope across a station (a steep
+## chin deepens only the chin's members) rather than every member by the steepest face's.
+var tilt_by_edge: bool = false
 ## How much further to hold the plates back from the front and back stations, metres (a
 ## neighbouring section's plates meet them there). Node styles.
 var end_gap: Array[float] = [0.0, 0.0]
@@ -349,13 +362,22 @@ func recipe() -> Dictionary:
 		ops.append({"name": o["name"], "edge": o["edge"], "box": o["box"], "frame": o["frame"], "reveal": o["reveal"]})
 	var out := {"name": name, "style": style_id, "seq": _built_seq, "skin": skin, "depth": depth, "ring_width": ring_width,
 			"node_size": node_size, "stringer_size": stringer_size, "stringer_depth": stringer_depth, "bead": bead,
-			"rivet_pitch": rivet_pitch, "bolt_pitch": bolt_pitch, "rivet_head": rivet_head, "bolt_head": bolt_head,
+			"rivet_pitch": rivet_pitch, "bolt_pitch": bolt_pitch, "rivet_share": rivet_share, "bolt_share": bolt_share,
+			"min_rivets": min_rivets, "min_bolts": min_bolts,
+			"rivet_head": rivet_head, "bolt_head": bolt_head,
 			"frame_to_skin": frame_to_skin, "groove": groove, "lining_inset": lining_inset,
 			"lining_thickness": lining_thickness, "end_gap": end_gap, "skin_mat": skin_mat, "frame_mat": frame_mat,
 			"glass_mat": glass_mat, "stations": st, "faces": faces, "frame_skip": skipped, "openings": ops,
 			"steps": steps.filter(func(e: Dictionary) -> bool: return e["step"] != "loom")}
 	if spec["corners"] == "rib":
 		out["spars"] = spars
+	if tilt_by_edge:
+		out["tilt_by_edge"] = true
+	if not edge_insets.is_empty():
+		var by_edge := {}
+		for e: int in edge_insets:
+			by_edge[str(e)] = edge_insets[e]
+		out["edge_insets"] = by_edge
 	return out
 
 
@@ -389,8 +411,29 @@ static func v3(p: Vector2, z: float) -> Vector3:
 ## the station (a tapering nose), a sloped plate's back reaches further in and passes over the
 ## ring's front and back edges at different heights, so the ring sits deeper.
 func centre_line(profile: PackedVector2Array, station: int = -1) -> PackedVector2Array:
+	if tilt_by_edge and station >= 0:
+		var d: Array[float] = []
+		for e in profile.size():
+			var te := _edge_tilt(station, e)
+			d.append(skin / cos(te) + GAP + ring_width * 0.5 * tan(te) + depth * 0.5)
+		return FrameParts.inset_edges(profile, d)
 	var t := _station_tilt(station) if station >= 0 else 0.0
 	return FrameParts.inset(profile, skin / cos(t) + GAP + ring_width * 0.5 * tan(t) + depth * 0.5)
+
+
+## The slope (radians from the ship's axis) of edge `e`'s faces either side of station `i`.
+func _edge_tilt(i: int, e: int) -> float:
+	var worst := 0.0
+	for j: int in [i - 1, i]:
+		if j < 0 or j >= stations.size() - 1:
+			continue
+		var pa: PackedVector2Array = stations[j]["profile"]
+		var pb: PackedVector2Array = stations[j + 1]["profile"]
+		var dz: float = absf(float(stations[j + 1]["z"]) - float(stations[j]["z"]))
+		var ma := (pa[e] + pa[(e + 1) % pa.size()]) * 0.5
+		var mb := (pb[e] + pb[(e + 1) % pb.size()]) * 0.5
+		worst = maxf(worst, atan(absf((mb - ma).dot(edge_out(pa, e))) / maxf(dz, 0.01)))
+	return minf(worst, deg_to_rad(70.0))
 
 
 ## The steepest slope (radians from the ship's axis) of the skin either side of a station.
@@ -1545,21 +1588,12 @@ func _segment_at(z: float) -> int:
 ## was made); every one is in `lining_panels`.
 func _node_lining(seg: int, e: int, mat: Material, inset: float, part_name: String, y_clip: Vector2,
 		z_clip: Vector2) -> PartData:
-	var ins := lining_inset if inset < 0.0 else inset
+	var ins := (float(edge_insets.get(e, lining_inset)) if inset < 0.0 else inset) + _lining_slope(seg, e)
 	var t := lining_thickness
 	var last := stations.size() - 2
-	# A face sloping across the stations passes over a ring's (and its nodes') front and back
-	# edges at different depths: stand it in by the slope over the widest of them.
-	var pa: PackedVector2Array = stations[seg]["profile"]
-	var pb: PackedVector2Array = stations[seg + 1]["profile"]
-	var e_out := edge_out(pa, e)
-	var mid_a := (pa[e] + pa[(e + 1) % pa.size()]) * 0.5
-	var mid_b := (pb[e] + pb[(e + 1) % pb.size()]) * 0.5
-	var slope := absf((mid_b - mid_a).dot(e_out)) / maxf(float(stations[seg + 1]["z"]) - float(stations[seg]["z"]), 0.01)
-	ins += maxf(ring_width, node_size) * 0.5 * slope
 	# The room-side faces at both stations.
-	var la := lining_face(seg, ins)
-	var lb := lining_face(seg + 1, ins)
+	var la := _lining_face_edges(seg, seg, e, ins)
+	var lb := _lining_face_edges(seg + 1, seg, e, ins)
 	var n := la.size()
 	var e1 := (e + 1) % n
 	var dir_a := (la[e1] - la[e]).normalized()
@@ -1628,6 +1662,46 @@ func _node_lining(seg: int, e: int, mat: Material, inset: float, part_name: Stri
 		linings["%d:%d" % [seg, e]] = first
 		lining_insets["%d:%d" % [seg, e]] = {"inset": ins, "clipped": y_clip.x > -INF or y_clip.y < INF}
 	return first
+
+
+## How much deeper a lining on face (seg, e) stands than its inset: a face sloping across the
+## stations passes over a ring's (and its nodes') front and back edges at different depths, so it
+## stands in by the slope over the widest of them.
+func _lining_slope(seg: int, e: int) -> float:
+	var pa: PackedVector2Array = stations[seg]["profile"]
+	var pb: PackedVector2Array = stations[seg + 1]["profile"]
+	var e_out := edge_out(pa, e)
+	var mid_a := (pa[e] + pa[(e + 1) % pa.size()]) * 0.5
+	var mid_b := (pb[e] + pb[(e + 1) % pb.size()]) * 0.5
+	var slope := absf((mid_b - mid_a).dot(e_out)) / maxf(float(stations[seg + 1]["z"]) - float(stations[seg]["z"]), 0.01)
+	return maxf(ring_width, node_size) * 0.5 * slope
+
+
+## The room-side line of the linings at station `s` for face (seg, e) standing `ins` deep: as
+## `lining_face`, or, with `edge_insets`, each edge at its own depth (this face's at `ins`, the
+## others at theirs and their own slope in bay `seg`).
+func _lining_face_edges(s: int, seg: int, e: int, ins: float) -> PackedVector2Array:
+	if edge_insets.is_empty() and e >= 0:
+		return lining_face(s, ins)
+	var line := centre_line(frame_profile(s), s)
+	var d: Array[float] = []
+	for k in line.size():
+		var at := ins if k == e else float(edge_insets.get(k, lining_inset)) + _lining_slope(seg, k)
+		d.append(depth * 0.5 + GAP + at + lining_thickness)
+	return FrameParts.inset_edges(line, d)
+
+
+## The linings' room-side outline in bay `seg` at `z` (between its rings' lines, as its panels'
+## corners are), every edge at its own inset (`edge_insets`, or `lining_inset`) and slope: the
+## room's clear section where the bay is lined all round, for walls across it to stop at.
+func lining_outline(seg: int, z: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var la := _lining_face_edges(seg, seg, -1, 0.0)
+	var lb := _lining_face_edges(seg + 1, seg, -1, 0.0)
+	var t := clampf((z - ring_z(seg)) / maxf(ring_z(seg + 1) - ring_z(seg), 0.001), 0.0, 1.0)
+	for k in la.size():
+		out.append(la[k].lerp(lb[k], t))
+	return out
 
 
 ## How far a lining panel's side along corner `k` must stand back (along `u`, into the face)
@@ -1807,9 +1881,11 @@ func _node_plate(poly: PackedVector3Array, backs: Array[float], out: Vector3, lo
 	var made := target.part(part_name, PartData.Kind.GLASS if glass else PartData.Kind.HULL, shape, vis_xform, mat,
 			look.get("tag", ""), 1.0, null, path)
 	if lining:
-		_rivet(made, trimmed, out, vis_xform, ConnectionData.Kind.BOLT, bolt_pitch, thick, thick + behind, bolts, "bolt", seg)
+		_rivet(made, trimmed, out, vis_xform, ConnectionData.Kind.BOLT, bolt_pitch, bolt_share, min_bolts, thick, thick + behind, bolts,
+				"bolt", seg)
 	else:
-		_rivet(made, trimmed, out, vis_xform, ConnectionData.Kind.RIVET, rivet_pitch, skin, skin, rivets, "rivet", seg)
+		_rivet(made, trimmed, out, vis_xform, ConnectionData.Kind.RIVET, rivet_pitch, rivet_share, min_rivets, skin, skin, rivets,
+				"rivet", seg)
 	return made
 
 
@@ -1860,12 +1936,13 @@ static func _moved(col: ConvexPolygonShape3D, by: Transform3D) -> ConvexPolygonS
 
 
 ## Rivets a plate (its trimmed outer outline `poly`, plate space `frame`) in a row along every
-## member lying under it, at `pitch` (one at least on a short row): joints of `kind`, kept in
+## member lying under it, at `pitch` (one at least on a short row), only `share` of those heads kept
+## on the plate, never fewer than `least` (`FrameTarget.share_rows`; 1 keeps them all): joints of `kind`, kept in
 ## `into`, named "<plate>/<role>:<member>/<k>" (a ring by the plate's bay `seg`: fore or aft;
 ## "ring" on a cap, `seg` -1). A member counts as under the plate when its centre line lies
 ## between `near` and `near` + a member's depth behind the plate's face.
 func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Transform3D, kind: ConnectionData.Kind,
-		pitch: float, thick: float, near: float, into: Array[ConnectionData], role: String, seg: int) -> void:
+		pitch: float, share: float, least: int, thick: float, near: float, into: Array[ConnectionData], role: String, seg: int) -> void:
 	var inv := frame.affine_inverse()
 	var flat := PackedVector2Array()
 	for p in poly:
@@ -1875,6 +1952,8 @@ func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Tran
 	if inner.size() < 3:
 		inner = flat
 	var reach := near + GAP + depth + 0.06   # a member's centre line under the plate
+	var rows: Array = []   # [a, b, member, key]
+	var counts: Array[int] = []
 	for m: Dictionary in _members:
 		var p0: Vector3 = inv * (m["p0"] as Vector3)
 		var p1: Vector3 = inv * (m["p1"] as Vector3)
@@ -1903,12 +1982,19 @@ func _rivet(plate: PartData, poly: PackedVector3Array, out: Vector3, frame: Tran
 				key = "%s:e%d" % ["rib" if spec["corners"] == "rib" else "ring", m["edge"]]
 			elif st == seg or st == seg + 1:
 				key = "%s:e%d" % ["fore" if st == seg else "aft", m["edge"]]
-		var count := maxi(1, roundi(a.distance_to(b) / pitch))
+		rows.append([a, b, m, key])
+		counts.append(maxi(1, roundi(a.distance_to(b) / pitch)))
+	# Only `share` of them kept, spread evenly along each row that keeps any.
+	var kept := FrameTarget.share_rows(counts, share, least)
+	for r in rows.size():
+		var a: Vector2 = rows[r][0]
+		var b: Vector2 = rows[r][1]
+		var count: int = kept[r]
 		for k in count:
 			var t := (float(k) + 0.5) / float(count)
 			var at := a.lerp(b, t)
-			_join(into, plate, m["part"], kind, frame * Vector3(at.x, 0.0, at.y), out, Vector3.ZERO, Vector2.ZERO,
-					"%s/%s:%s/%d" % [plate.path, role, key, k])
+			_join(into, plate, rows[r][2]["part"], kind, frame * Vector3(at.x, 0.0, at.y), out, Vector3.ZERO, Vector2.ZERO,
+					"%s/%s:%s/%d" % [plate.path, role, rows[r][3], k])
 
 
 ## The part of segment a..b inside convex `poly` ([] if none): [start, end].

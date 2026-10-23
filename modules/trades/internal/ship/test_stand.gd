@@ -30,6 +30,9 @@ var made_at_start := {}
 var is_made: Callable
 
 var _markers := {}
+## Where the player points (world) and how near it a ring must be to show (m); INF shows all.
+var focus := Vector3.ZERO
+var focus_radius := INF
 var _ring_on: StandardMaterial3D
 var _ring_off: StandardMaterial3D
 var _head: StandardMaterial3D
@@ -67,6 +70,8 @@ func _show() -> void:
 			continue
 		m.material_override = _ring_on if on else _ring_off
 		(m.get_child(0) as Node3D).visible = on
+		# Only the rings near where you point are lit (trades.near_rings); the heads stay.
+		m.transparency = 0.0 if focus_radius == INF or (global_transform * f.position).distance_to(focus) <= focus_radius else 1.0
 
 
 func _lay_out() -> void:

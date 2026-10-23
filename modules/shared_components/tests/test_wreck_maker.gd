@@ -5,7 +5,7 @@ extends ModuleTest
 ## wreck is lighter, and the file goes out and comes back as JSON.
 ##   tools/run_tests.sh shared_components
 
-const FIXTURE := "res://modules/shared_components/data/ships/kestrel_frame.vsship.json"
+const FIXTURE := "res://modules/shared_components/data/ships/kestrel.vsship.json"
 
 
 func run_tests() -> void:
@@ -162,13 +162,13 @@ func _check_parsing() -> void:
 
 ## What Contracts and Ship and Bay call: a wreck by design name and seed, and its manifest.
 func _check_api() -> void:
-	check(VsShipImport.design_file("kestrel") == VsShipImport.SHIPS["kestrel_frame"] and VsShipImport.design_file("manta_frame") != "",
+	check(VsShipImport.design_file("kestrel_frame") == VsShipImport.SHIPS["kestrel"] and VsShipImport.design_file("manta_frame") != "",
 			"a design file by short name or id")
 	check(VsShipImport.design_file("no_such") == "" and WreckMaker.for_design("no_such", 1).is_empty(), "an unknown design gives nothing")
 	var w := WreckMaker.for_design("kestrel", 84, "fire:3,stripped:2")
 	check(not w.is_empty() and WreckMaker.damage_of(w).has("parts"), "a wreck by design name and seed")
 	var m := WreckMaker.manifest(w)
-	check(m["design"] == "kestrel_frame" and m["class"] == "S" and m["wreck"] == true, "the manifest names the design and class")
+	check(m["design"] == "kestrel" and m["class"] == "S" and m["wreck"] == true, "the manifest names the design and class")
 	check(m["parts"].size() == w["parts"].size() and m["gone"] > 0 and m["mass_kg"] < m["ship_mass_kg"],
 			"the manifest lists every part with its state and weighs what is left (%.0f of %.0f kg)" % [m["mass_kg"], m["ship_mass_kg"]])
 	var first: Dictionary = m["parts"][0]

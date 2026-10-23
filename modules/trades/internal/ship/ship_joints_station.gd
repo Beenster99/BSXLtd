@@ -207,7 +207,15 @@ func _note_made(f: FastenerPoint, quality: float) -> bool:
 	if practice.get(f.joint_id, false):
 		return false
 	practice[f.joint_id] = true
+	if bay and bay.crew:
+		bay.crew.share_practice(f.joint_id, true)
 	return true
+
+
+## A joint on the stand made or undone by a crewmate (TradesCrew).
+func set_practice(joint_id: String, made: bool) -> void:
+	if practice.has(joint_id):
+		practice[joint_id] = made
 
 
 func _note_removed(f: FastenerPoint) -> bool:
@@ -217,6 +225,8 @@ func _note_removed(f: FastenerPoint) -> bool:
 	elif practice.get(f.joint_id, false):
 		practice[f.joint_id] = false
 		gone = true
+		if bay and bay.crew:
+			bay.crew.share_practice(f.joint_id, false)
 	if gone and f.kind == "bolt":
 		_drop_bolt(f)
 	return gone
@@ -231,9 +241,27 @@ func _drop_bolt(f: FastenerPoint) -> void:
 	var i := points.find(f)
 	var at := points_world[i] if i >= 0 else ship_xform * f.position
 	var n := (ship_xform.basis * f.normal).normalized()
-	if _bolt_mesh == null:
-		_bolt_mesh = _make_bolt_mesh()
-	sparks.pop(at + n * 0.03, n * 0.6 + Vector3.UP * 0.4, _bolt_mesh, TradesTool.steel())
+	pop_part("bolt", at + n * 0.03, n * 0.6 + Vector3.UP * 0.4)
+	if bay.crew:
+		bay.crew.share_pop("bolt", at + n * 0.03, n * 0.6 + Vector3.UP * 0.4)
+
+
+## Something knocked off falls: "bolt", "rivet" or "rivet_hot" (a heated-out rivet).
+func pop_part(kind: String, at: Vector3, vel: Vector3) -> void:
+	var sparks := bay.sparks if bay else null
+	if sparks == null or not sparks.is_inside_tree():
+		return
+	if kind == "bolt":
+		if _bolt_mesh == null:
+			_bolt_mesh = _make_bolt_mesh()
+		sparks.pop(at, vel, _bolt_mesh, TradesTool.steel())
+		return
+	var heat := kind == "rivet_hot"
+	var rivet := CylinderMesh.new()
+	rivet.top_radius = 0.0045
+	rivet.bottom_radius = 0.0045
+	rivet.height = 0.01 if heat else 0.003
+	sparks.pop(at, vel, rivet, TradesLook.glow(Color(1.0, 0.4, 0.1), 2.0) if heat else TradesTool.steel())
 
 
 ## The part a joint holds ("" when none): the ship's from Ship and Bay.
@@ -416,7 +444,16 @@ func wheel_setting(tool: StringName, step: int) -> bool:
 		return true
 	if tool != &"torque_wrench" or not powered() or aimed < 0 or points[aimed].kind != "bolt" or _working >= 0:
 		return false
-	_power().step_setting(-step)
+	var w := _power()
+	if Flags.is_on("trades.torque_kept"):
+		# Coarse steps on the wheel, fine ones with Ctrl held.
+		var fine := Input.is_key_pressed(KEY_CTRL)
+		w.set_nm = clampf(w.set_nm - step * (1.0 if fine else TradesPowerWrench.COARSE_STEP_NM),
+				TradesPowerWrench.SET_RANGE_NM.x, TradesPowerWrench.SET_RANGE_NM.y)
+		w.kept_nm = w.set_nm
+		bay.hint("Wrench set to %d N m." % roundi(w.set_nm))
+	else:
+		w.step_setting(-step)
 	return true
 
 
@@ -448,6 +485,7 @@ func update(delta: float) -> void:
 	if _working < 0 and not tractor.is_holding():
 		_update_aim()
 	_place_marker()
+	_update_ring_focus()
 	_arc.visible = false
 	if _working < 0:
 		return
@@ -763,12 +801,11 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 	if progress < 1.0:
 		return
 	if sparks:
-		var rivet := CylinderMesh.new()
-		rivet.top_radius = 0.0045
-		rivet.bottom_radius = 0.0045
-		rivet.height = 0.01 if heat else 0.003
-		var hot := TradesLook.glow(Color(1.0, 0.4, 0.1), 2.0) if heat else TradesTool.steel()
-		sparks.pop(at + n * 0.01, n * (2.0 if heat else 1.0) + Vector3.UP * 1.5, rivet, hot)
+		var kind := "rivet_hot" if heat else "rivet"
+		var vel := n * (2.0 if heat else 1.0) + Vector3.UP * 1.5
+		pop_part(kind, at + n * 0.01, vel)
+		if bay.crew:
+			bay.crew.share_pop(kind, at + n * 0.01, vel)
 	bay.play(&"pop" if heat else &"clunk", 1.3)
 	_finish(f)
 
@@ -1310,6 +1347,44 @@ static func _make_bolt_mesh() -> Mesh:
 
 # --- Aim and marker ---------------------------------------------------------------------------
 
+## Only the rings within this of where you point are lit (m; trades.near_rings, beenster
+## 0.3.16: "the scene is very busy with green and orange highlights").
+const NEAR_RINGS_M := 2.0
+## How far the pointer looks for something to land on (m).
+const POINTER_RAY_M := 20.0
+var _focus_sent := Vector3.INF
+var _focus_radius_sent := -1.0
+
+
+## Where the crosshair lands: the first thing the aim ray hits, else a step ahead.
+func pointer_point() -> Vector3:
+	var o := bay.worker.aim_origin()
+	var d := bay.worker.aim_dir()
+	var world := bay.worker.get_world_3d()
+	if world:
+		var q := PhysicsRayQueryParameters3D.create(o, o + d * POINTER_RAY_M)
+		q.exclude = [bay.worker.get_rid()]
+		var hit := world.direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			return hit.position
+	return o + d * 3.0
+
+
+## Tells the stand, and the ship's markers (Ship and Bay's set_marker_focus, when it has
+## it), which rings to light.
+func _update_ring_focus() -> void:
+	var radius := NEAR_RINGS_M if Flags.is_on("trades.near_rings") and bay.hud_showing() else INF
+	var at := pointer_point() if radius != INF else Vector3.ZERO
+	if test_stand:
+		test_stand.focus = at
+		test_stand.focus_radius = radius
+	if radius == _focus_radius_sent and (radius == INF or at.distance_to(_focus_sent) < 0.05):
+		return
+	_focus_sent = at
+	_focus_radius_sent = radius
+	if _bus and _bus.has_method("set_marker_focus"):
+		_bus.call("set_marker_focus", at, radius)
+
 func _update_aim() -> void:
 	var best := -1
 	var best_d := PICK_M
@@ -1327,7 +1402,9 @@ func _update_aim() -> void:
 		if aimed >= 0:
 			# The wrench's screen and panel show the torque the bolt under the aim wants.
 			var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
-			if wrench and points[aimed].kind == "bolt":
+			# The torque is the player's to set and stays where they left it (trades.torque_kept,
+			# beenster 0.3.16).
+			if wrench and points[aimed].kind == "bolt" and not (powered() and Flags.is_on("trades.torque_kept")):
 				var nm := torque_range(points[aimed].spec)
 				wrench.set_nm = (nm.x + nm.y) * 0.5
 		bay.refresh_hud()
@@ -1423,7 +1500,9 @@ func actions(tool: StringName) -> Array:
 				var w := _power()
 				if w.undo == tight:
 					out.append([TradesBay.HOLD_CLICK, "undo it" if tight else "run it in, let go at the clutch"])
-				if not tight and not w.undo:
+				if Flags.is_on("trades.torque_kept"):
+					out.append([TradesBay.WHEEL, "set the torque, %d N m now (Ctrl: fine)" % roundi(w.set_nm)])
+				elif not tight and not w.undo:
 					out.append([TradesBay.WHEEL, "set the torque (%d N m now)" % roundi(w.set_nm)])
 				out.append([TradesBus.KEY_MODE, "switch to fasten" if w.undo else "switch to undo"])
 			elif tool == &"torque_wrench":
@@ -1449,6 +1528,8 @@ func actions(tool: StringName) -> Array:
 					out.append([TradesBay.HOLD_CLICK, "cut the weld out"])
 				if Flags.is_on("trades.unweld"):
 					out.append([TradesBus.KEY_MODE, "switch to weld" if unweld else "switch to unweld"])
+				if Flags.is_on("trades.helmet_toggle") and Flags.is_on("trades.weld_helmet"):
+					out.append([TradesBus.KEY_HELMET, "lift the shield" if bay.helmet_lowered else "drop the shield"])
 		"connector":
 			if tool == &"hands" or tool == &"wire_tool":
 				var plug := "open its wiring diagram" if uses_diagram(f) else "plug it in"
