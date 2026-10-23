@@ -51,6 +51,9 @@ var systems_built: Dictionary = {}
 var systems_skipped: PackedStringArray = []
 ## Paths of parts whose plain visual a unit's look pieces cover (hidden under them).
 var hidden_visuals: PackedStringArray = []
+## Device paths whose lead (the thin twisted wire from the device to its loom plug) was drawn
+## from the file's `derived.routes`; it hangs on the device's visual, as in Void Salvage.
+var leads_built: PackedStringArray = []
 ## A wreck's `damage` block (WreckMaker's, or a Void Salvage wreck file's), {} on a clean ship.
 var damage: Dictionary = {}
 ## Parts the damage says are gone (not built), and sections cut off the wreck (not built
@@ -197,6 +200,7 @@ func build(f: Dictionary, target: RigidBody3D) -> bool:
 		_build_system(rec)
 	for piece: Dictionary in f.get("pieces", []):
 		_build_piece(piece)
+	_build_leads(f.get("derived", {}).get("routes", {}))
 	for l: Dictionary in f.get("lights", []):
 		kit.group = l.get("group", "")
 		kit.light(vec3(l.get("at", [0, 0, 0])), color(l.get("color", [1, 1, 1])), float(l.get("energy", 1.0)),
@@ -312,6 +316,38 @@ func _apply_damage(part: PartData, entry: Dictionary) -> void:
 	var at := part.local_transform.affine_inverse() * part.scorch_at
 	mat.set_shader_parameter("condition", Vector4(part.wear, part.scorch, part.scorch_radius, float(part.id % 97)))
 	mat.set_shader_parameter("scorch_at", Vector4(at.x, at.y, at.z, 0.0))
+
+
+# --- leads -----------------------------------------------------------------------------------
+
+## The device leads. Void Salvage routes each one along the frames and writes the route it laid
+## in `derived.routes` as "lead:<device path>": the points, body space, from the device to its
+## plug on the loom (the plug itself is a CONNECTOR joint in `joints`, built with the rest).
+## Each is drawn with the shared `WiringLoom.lead_mesh` on the device's visual, so it leaves
+## with the device, as `FrameTarget.power_lead` does in Void Salvage. Pipe routes are parts
+## already (`pipe:` paths) and need nothing here.
+func _build_leads(routes: Dictionary) -> void:
+	for key: String in routes:
+		if not key.begins_with("lead:"):
+			continue
+		var device: PartData = parts_by_path.get(key.substr(5))
+		if device == null:
+			if not gone_parts.has(key.substr(5)) and not detached_parts.has(key.substr(5)):
+				warnings.append("%s: no such device part" % key)
+			continue
+		var points := PackedVector3Array()
+		var to_device := device.local_transform.affine_inverse()
+		for p: Variant in routes[key]:
+			points.append(to_device * vec3(p))
+		if points.size() < 2:
+			warnings.append("%s: a route of %d points" % [key, points.size()])
+			continue
+		var lead := MeshInstance3D.new()
+		lead.name = "Lead"
+		lead.mesh = WiringLoom.lead_mesh(points)
+		lead.material_override = WiringLoom.material()
+		kit.model.attach_to_part(device, lead)
+		leads_built.append(key.substr(5))
 
 
 # --- fittings, pieces ------------------------------------------------------------------------

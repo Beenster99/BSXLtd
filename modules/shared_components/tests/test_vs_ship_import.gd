@@ -58,6 +58,19 @@ func _check_ship(id: String, parts: int, joints: int, fittings: int, systems: in
 	check(im.hidden_visuals.size() > 0, "%s: unit looks cover their parts' plain visuals (%d)" % [id, im.hidden_visuals.size()])
 	check(im.hidden_visuals.has("slot:eng_port") or im.hidden_visuals.has("system:hatch/leaf_l"),
 			"%s: an engine's or a hatch leaf's plain visual is hidden" % id)
+	# Every device lead in the file's routes is drawn on its device.
+	var routed := 0
+	for key: String in f.get("derived", {}).get("routes", {}):
+		if key.begins_with("lead:"):
+			routed += 1
+	check(routed > 0 and im.leads_built.size() == routed, "%s: every device lead drawn (%d of %d)" % [id, im.leads_built.size(), routed])
+	var breaker := im.part_at("fitting:breaker_panel")
+	var lead_on_device := false
+	if breaker != null:
+		for child in (im.kit.model.part_visual(breaker.id) as Node3D).get_children():
+			if child.name == "Lead" and child is MeshInstance3D and (child as MeshInstance3D).mesh.get_surface_count() > 0:
+				lead_on_device = true
+	check(lead_on_device, "%s: the breaker panel's lead hangs on its visual" % id)
 	# A part by its path, with the file's kind, mass and material.
 	var first: Dictionary = f["parts"][0]
 	var p := im.part_at(first["path"])
