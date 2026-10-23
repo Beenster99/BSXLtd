@@ -38,12 +38,11 @@ func run_tests() -> void:
 	check(readied == [yard], "shipyard_ready hands other modules the yard")
 	check(bay.ship != null and bay.ship.ship_id == "vs_kestrel", "the Kestrel is in the bay")
 	for spot: String in ["bench_preassembly", "bench_prep"]:
-		var at := bay.shipyard_spot(spot).origin
 		var box := PhysicsShapeQueryParameters3D.new()
 		var shape := BoxShape3D.new()
 		shape.size = Vector3(5.0, 1.6, 2.6)
 		box.shape = shape
-		box.transform = Transform3D(Basis.IDENTITY, at + Vector3(0, 1.0, 0.8))
+		box.transform = bay.shipyard_spot(spot) * Transform3D(Basis.IDENTITY, Vector3(0, 1.0, 0.8))
 		# Only the yard's own building counts: other modules (Tools' bench) stand on the spots.
 		var hits := yard.get_world_3d().direct_space_state.intersect_shape(box).filter(
 				func(hit: Dictionary) -> bool: return yard.call("is_own_body", hit.collider))
@@ -57,7 +56,7 @@ func run_tests() -> void:
 	for path: Array in [["apron to bay", Vector3(0, 1, 40), Vector3(0, 1, 12)],
 			["bay to deliveries", Vector3(-20, 1, 0), Vector3(-36, 1, 0)],
 			["deliveries to stock", Vector3(-39, 1, -18), Vector3(-39, 1, -28.5)],
-			["stock to prep", Vector3(-2.0, 1, -35), Vector3(6, 1, -35)],
+			["stock to prep", Vector3(-2.0, 1, -35), Vector3(2.6, 1, -35)],
 			["prep to pre-assembly", Vector3(39, 1, -28), Vector3(39, 1, -18)],
 			["pre-assembly to bay", Vector3(36, 1, 0), Vector3(20, 1, 0)],
 			["truck door", Vector3(-56, 1, -8), Vector3(-44, 1, -8)]]:
@@ -68,7 +67,7 @@ func run_tests() -> void:
 	for path: Array in [["bay to deliveries", Vector3(-20, mast, 0), Vector3(-36, mast, 0)],
 			["deliveries to stock", Vector3(-39, mast, -18), Vector3(-39, mast, -28.5)],
 			["bay to stock", Vector3(-14, mast, -18), Vector3(-14, mast, -28.5)],
-			["stock to prep", Vector3(-2.0, mast, -35), Vector3(6, mast, -35)],
+			["stock to prep", Vector3(-2.0, mast, -35), Vector3(2.6, mast, -35)],
 			["prep to pre-assembly", Vector3(39, mast, -28), Vector3(39, mast, -18)],
 			["pre-assembly to bay", Vector3(36, mast, 0), Vector3(20, mast, 0)]]:
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(path[1], path[2]))

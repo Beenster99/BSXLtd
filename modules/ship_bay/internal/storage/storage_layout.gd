@@ -19,6 +19,12 @@ extends RefCounted
 ##   Large and heavy goods ("bulk") have no fixed home: each goes on the smallest free place
 ##   it fits. The heavy lift ("h") works aisles H, W and X.
 ## Locations without a home are spare: anything not in the catalogue goes to the first free one.
+##
+## Store 2 (the old Material prep hall, x 0..50, beenster 0.3.15) is all shelves too, laid out
+## the same way off the same transfer aisle and cross aisle: small racks in aisles D and E
+## (worked by its own picking lift, "p7"), large racks in Y and Z and heavy racks in J
+## (the heavy lift's), a clear lane down its west wall by the doorway from Stock and a work
+## strip at its east end. Its small racks are spare places after Stock's.
 
 const CATALOGUE := "res://modules/ship_bay/internal/storage/storage_catalogue.json"
 const SIZES := "res://modules/ship_bay/internal/storage/item_sizes.json"
@@ -47,6 +53,9 @@ const POSITIONS := 2
 const BINS := 3
 const BIN_BAYS := 4             # bays at the start of C2 that hold bins
 const RACK_HEIGHT := 9.2        # the end frames
+## The small racks' aisles: letter -> [west face of its first rack (x), the hall].
+const SMALL_AISLES := {"A": [-19.1, "stock"], "B": [-13.7, "stock"], "C": [-8.3, "stock"],
+		"D": [3.2, "prep"], "E": [8.6, "prep"]}
 ## The large and heavy racks: [rack, west face x, front (+1 east, -1 west), spec]. Specs
 ## give depth, bay length, bays, the levels' beam tops, the end frames' height, and how
 ## many places each bay has a level.
@@ -56,6 +65,10 @@ const BIG_RACKS := [
 	["H1", -49.6, 1.0, "heavy", [1, 1]], ["H2", -41.8, -1.0, "heavy", [1, 1]],
 	["W1", -38.1, 1.0, "large", [2, 2]], ["W2", -31.5, -1.0, "large", [2, 1]],
 	["X1", -28.6, 1.0, "large", [2, 2]], ["X2", -22.0, -1.0, "large", [2, 1]],
+	# Store 2.
+	["Y1", 14.1, 1.0, "large", [2, 2]], ["Y2", 20.7, -1.0, "large", [2, 1]],
+	["Z1", 23.6, 1.0, "large", [2, 2]], ["Z2", 30.2, -1.0, "large", [2, 1]],
+	["J1", 33.1, 1.0, "heavy", [1, 1]], ["J2", 40.9, -1.0, "heavy", [1, 1]],
 ]
 ## The transfer aisle's centre line (z) and the cross aisle behind the racks.
 const TRANSFER_Z := -26.4
@@ -125,7 +138,8 @@ static func kind_of(item: String) -> String:
 
 ## The rack ids west to east.
 static func rack_ids() -> PackedStringArray:
-	return PackedStringArray(["H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2"])
+	return PackedStringArray(["H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
+			"D1", "D2", "E1", "E2", "Y1", "Y2", "Z1", "Z2", "J1", "J2"])
 
 
 ## A rack's record (see get_layout), {} for none.
@@ -165,16 +179,23 @@ static func level_y(level: int, id := "") -> float:
 	return BEAM_Y + (level - 1) * LEVEL_PITCH + 0.06
 
 
-## The lift that works a rack: "h" for the large and heavy racks, else "p".
+## The lift that works a rack: "h" for the large and heavy racks, else the hall's picking
+## lift ("p" in Stock, "p7" in Store 2).
 static func lift_for_rack(id: String) -> String:
-	return "p" if str(rack(id).get("store", "small")) == "small" else "h"
+	if str(rack(id).get("store", "small")) != "small":
+		return "h"
+	return "p7" if hall_of(id) == "prep" else "p"
+
+
+## The hall a rack stands in: "stock" or "prep" (Store 2).
+static func hall_of(id: String) -> String:
+	return "prep" if float(rack(id).get("x", 0.0)) > 0.0 else "stock"
 
 
 static func _racks() -> Dictionary:
 	var racks := {}
-	for i in 3:
-		var aisle: String = ["A", "B", "C"][i]
-		var west := RACK_X0 + i * (2.0 * RACK_DEPTH + AISLE_WIDTH + 0.2)
+	for aisle: String in SMALL_AISLES:
+		var west := float(SMALL_AISLES[aisle][0])
 		var beams: Array = []
 		for level in LEVELS:
 			beams.append(BEAM_Y + level * LEVEL_PITCH)
@@ -200,9 +221,10 @@ static func _build() -> Dictionary:
 	var racks := _racks()
 	var locations := {}
 	var bays: Array = []
-	# Every small rack bay in shelving order: C2's bins first, then C2 on, then east to west.
+	# Every small rack bay in shelving order: C2's bins first, then C2 on, then east to west;
+	# Store 2's after Stock's (so Stock's homes stay where they were).
 	var order: Array = []
-	for r: String in ["C2", "C1", "B2", "B1", "A2", "A1"]:
+	for r: String in ["C2", "C1", "B2", "B1", "A2", "A1", "D1", "D2", "E1", "E2"]:
 		for b in range(1, BAYS + 1):
 			order.append([r, b])
 	var bin_bays: Array = order.slice(0, BIN_BAYS)
