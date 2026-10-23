@@ -256,45 +256,105 @@ func refresh_market() -> void:
 			l.lead_hours = s.lead_hours
 			listings[id] = l
 	_cover_catalogue()
+	_pick_deals()
 	_bus.market_changed.emit()
 
 
-## Every part Void Salvage builds is on sale every day: a catalogue part no listing covers
-## gets a new one from the first supplier you can see (by id) that deals in its category.
+## Every part Void Salvage builds is on sale every day, new, from every supplier you can
+## see that deals in its category (so their prices can be compared), unless that supplier
+## already lists it today.
 func _cover_catalogue() -> void:
 	var covered := {}
 	for l: MarketListing in listings.values():
-		covered[l.part] = true
-	var suppliers := visible_suppliers()
-	for part: String in catalogue.part_names():
-		if covered.has(part):
+		covered["%s|%s" % [l.supplier_id, l.part]] = true
+	for s in visible_suppliers():
+		for category in s.categories:
+			for part: String in catalogue.part_names(category):
+				if covered.has("%s|%s" % [s.id, part]):
+					continue
+				var r := RandomNumberGenerator.new()
+				r.seed = hash([market_seed, day, s.id, part, "cover"])
+				var l := MarketListing.new()
+				l.id = "C%d-%s-%s|%s" % [day, s.id, part, PartCondition.NEW]
+				l.supplier_id = s.id
+				l.part = part
+				l.condition = PartCondition.NEW
+				l.unit_price = trade_price(s, part, PartCondition.NEW)
+				l.available = _stock_size(catalogue.value_of(part), r)
+				l.lead_hours = s.lead_hours
+				listings[l.id] = l
+
+
+## Each supplier marks a few of today's listings down: its deals.
+func _pick_deals() -> void:
+	for s in visible_suppliers():
+		if s.deals_per_day <= 0:
 			continue
-		var category := catalogue.category_of(part)
-		var s: SupplierDef = null
-		for each: SupplierDef in suppliers:
-			if each.categories.has(category):
-				s = each
-				break
-		if s == null:
-			continue
+		var own: Array[MarketListing] = []
+		for l: MarketListing in listings.values():
+			if l.supplier_id == s.id and not l.id.begins_with("S-"):
+				own.append(l)
+		own.sort_custom(func(a: MarketListing, b: MarketListing) -> bool: return a.id < b.id)
 		var r := RandomNumberGenerator.new()
-		r.seed = hash([market_seed, day, part, "cover"])
-		var l := MarketListing.new()
-		l.id = "C%d-%s-%s|%s" % [day, s.id, part, PartCondition.NEW]
-		l.supplier_id = s.id
-		l.part = part
-		l.condition = PartCondition.NEW
-		l.unit_price = trade_price(s, part, PartCondition.NEW)
-		l.available = _stock_size(catalogue.value_of(part), r)
-		l.lead_hours = s.lead_hours
-		listings[l.id] = l
+		r.seed = hash([market_seed, day, s.id, "deals"])
+		for i in mini(s.deals_per_day, own.size()):
+			var l: MarketListing = own.pop_at(r.randi() % own.size())
+			l.list_price = l.unit_price
+			l.unit_price = maxi(1, roundi(l.unit_price * (100 - r.randi_range(s.deal_percent.x, s.deal_percent.y)) / 100.0))
 
 
 ## A catalogue part's price from a supplier today: Void Salvage's value, the supplier's
 ## trade share, the condition's discount, the day's swing for that part and `jitter`.
 func trade_price(s: SupplierDef, part: String, condition: String, jitter := 0.0) -> int:
 	var price := catalogue.value_of(part) * s.trade_factor * PartCondition.price_factor(condition)
-	return maxi(1, roundi(price * day_swing(part) * (1.0 + jitter)))
+	return maxi(1, roundi(price * house_factor(s, part) * day_swing(part) * (1.0 + jitter)))
+
+
+## Where a supplier's own price for a part sits (1 +/- its price_spread): the same every
+## day, so some suppliers are cheaper for some parts.
+func house_factor(s: SupplierDef, part: String) -> float:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([market_seed, s.id, part, "house"])
+	return 1.0 + s.price_spread * r.randf_range(-1.0, 1.0)
+
+
+## What a supplier pays today for one of a part in a condition the company sells it, or -1
+## if it doesn't deal in that part.
+func offer_price(s: SupplierDef, part: String, condition: String) -> int:
+	if not catalogue.has_part(part) or not s.deals_in(catalogue.category_of(part)):
+		return -1
+	var price := catalogue.value_of(part) * s.buy_factor * PartCondition.price_factor(condition)
+	return maxi(1, roundi(price * house_factor(s, part) * day_swing(part)))
+
+
+## Every offer for a part in a condition today, best first: [{supplier_id, unit_price}].
+func offers(part: String, condition: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for s in visible_suppliers():
+		var p := offer_price(s, part, condition)
+		if p > 0:
+			out.append({"supplier_id": s.id, "unit_price": p})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a.unit_price > b.unit_price or (a.unit_price == b.unit_price and a.supplier_id < b.supplier_id))
+	return out
+
+
+## Sells parts from stock to a supplier at today's offer.
+func sell_stock(supplier_id: String, part: String, condition: String, qty: int) -> BusinessResult:
+	var s: SupplierDef = suppliers.get(supplier_id)
+	if s == null or not visible_suppliers().has(s):
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no such buyer")
+	var price := offer_price(s, part, condition)
+	if price <= 0:
+		return BusinessResult.fail(ERR_INVALID_PARAMETER, "%s doesn't buy %s" % [s.display_name, _name(part)])
+	if qty < 1:
+		return BusinessResult.fail(ERR_INVALID_PARAMETER, "sell at least one")
+	if take_stock(part, qty, condition).is_empty():
+		return BusinessResult.fail(ERR_UNAVAILABLE, "only %d %s %s in stock" % [int(stock.get(part, {}).get(condition, 0)), PartCondition.label(condition).to_lower(), _name(part)])
+	post(price * qty, LedgerEntry.RESALE, supplier_id, "%d x %s (%s)" % [qty, _name(part), PartCondition.label(condition).to_lower()])
+	var r := BusinessResult.success()
+	r.cost = -price * qty
+	return r
 
 
 ## 1 +/- the day's swing for a part: the same for every supplier, new each day.
@@ -348,11 +408,21 @@ func quote_market(basket: Array) -> PartsQuote:
 		if wanted[l.id] > l.available:
 			q.reason = "only %d %s left" % [l.available, _name(l.part)]
 			return q
-		q.cost += l.unit_price * qty
 		q.eta_minute = maxi(q.eta_minute, minute + l.lead_hours * 60)
+	for id: String in wanted:
+		var cost := line_cost(listings[id], int(wanted[id]))
+		q.cost += cost
+		q.saving += listings[id].unit_price * int(wanted[id]) - cost
 	q.eta_day = q.eta_minute / MINUTES_PER_DAY
 	q.ok = true
 	return q
+
+
+## What `qty` of one listing costs, less its supplier's bulk discount.
+func line_cost(l: MarketListing, qty: int) -> int:
+	var s: SupplierDef = suppliers.get(l.supplier_id)
+	var off := s.bulk_off(qty) if s and not l.id.begins_with("S-") else 0
+	return roundi(l.unit_price * qty * (100 - off) / 100.0)
 
 
 ## Buys a basket: one order per supplier, paid now, taken off today's listings.
@@ -364,14 +434,18 @@ func place_market_order(basket: Array, contract_id: String) -> BusinessResult:
 		return BusinessResult.fail(ERR_INVALID_PARAMETER, q.reason)
 	if q.cost > cash:
 		return BusinessResult.fail(ERR_UNAVAILABLE, "not enough cash (%d needed, %d held)" % [q.cost, cash])
-	var by_supplier := {}
+	var wanted := {}
 	for line: Dictionary in basket:
-		var l: MarketListing = listings[str(line.listing_id)]
-		var qty := int(line.qty)
+		wanted[str(line.listing_id)] = int(wanted.get(str(line.listing_id), 0)) + int(line.qty)
+	var by_supplier := {}
+	for id: String in wanted:
+		var l: MarketListing = listings[id]
+		var qty: int = wanted[id]
+		var cost := line_cost(l, qty)
 		l.available -= qty
 		if not by_supplier.has(l.supplier_id):
 			by_supplier[l.supplier_id] = []
-		by_supplier[l.supplier_id].append([OrderLine.new(l.part, qty, l.condition, l.unit_price), l.lead_hours])
+		by_supplier[l.supplier_id].append([OrderLine.new(l.part, qty, l.condition, roundi(float(cost) / qty)), l.lead_hours, cost])
 	var result := BusinessResult.success()
 	result.cost = q.cost
 	var ids := by_supplier.keys()
@@ -380,10 +454,10 @@ func place_market_order(basket: Array, contract_id: String) -> BusinessResult:
 		var lines: Array[OrderLine] = []
 		var cost := 0
 		var lead := 0
-		for pair: Array in by_supplier[sid]:
-			lines.append(pair[0])
-			cost += pair[0].unit_price * pair[0].qty
-			lead = maxi(lead, pair[1])
+		for entry: Array in by_supplier[sid]:
+			lines.append(entry[0])
+			cost += int(entry[2])
+			lead = maxi(lead, entry[1])
 		var o := _open_order(sid, lines, cost, minute + lead * 60, contract_id)
 		result.order_ids.append(o.id)
 	result.order_id = result.order_ids[0]
