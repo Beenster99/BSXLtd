@@ -41,10 +41,11 @@ const WRECK_EVENTS: Dictionary = {
 const WANTED_FITTINGS: PackedStringArray = ["galley", "bunks", "console", "map_screen", "monitor", "control_panel",
 		"breaker_panel", "reactor_cabinet", "bowsers", "hose_rack", "locker", "seat", "suit_stand",
 		"IonThruster", "TurbineEngine", "HydrogenEngine", "OvalEngine", "EngineBell", "Generator", "MachineUnit",
-		"SwitchCabinet", "BatteryRack", "DrillHead", "LandingClamp", "Searchlight", "Antenna", "SolarPanel", "Container"]
+		"SwitchCabinet", "BatteryRack", "DrillHead", "LandingClamp", "Searchlight", "Antenna", "SolarPanel", "Container",
+		"Turret", "RadarDish", "CraneBoom"]
 ## Fittings whose presence on the subject is a hazard for the crew.
 const HAZARD_FITTINGS: Dictionary = {"reactor_cabinet": "power", "breaker_panel": "power", "bowsers": "fuel",
-		"Generator": "power", "jump_tank": "fuel", "RoofTank": "fuel"}
+		"Generator": "power", "jump_tank": "fuel", "RoofTank": "fuel", "Turret": "weapons"}
 
 
 ## One offer for a client at a tier (1 to 3), or {} if the client posts nothing. slot
