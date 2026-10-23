@@ -53,6 +53,9 @@ const BOARD_CHANNEL := "contracts.board"
 const KINDS_FLAG := "contracts.kinds"
 ## Clients post offers each cycle and standing with them unlocks tiers (plan stage S4).
 const CLIENTS_FLAG := "contracts.clients"
+## BSX's own clients send whole ships and wrecks BSX generates itself (plan stage S3): the
+## offer generator makes them with Shared Components' WreckMaker, seeded per offer.
+const WRECKS_FLAG := "contracts.wrecks"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -347,6 +350,7 @@ func _open_offers(client_id: String) -> int:
 
 func _post_generated(client_id: String, at_cycle: int, slot: int) -> String:
 	var tier := maxi(1, level_of(client_id))
+	_generator.wrecks = Flags.is_on(WRECKS_FLAG)
 	var data := _generator.make(client_id, at_cycle, slot, tier)
 	if data.is_empty() or _jobs.has(String(data.get("contract_id", ""))):
 		return ""

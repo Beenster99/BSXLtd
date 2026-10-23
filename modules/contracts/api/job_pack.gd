@@ -158,13 +158,30 @@ static func spec_doc(job: ContractJob, c: ChangeItem, specs: Callable) -> Dictio
 static func subject_spec_doc(job: ContractJob) -> Dictionary:
 	var o := job.order
 	var part := o.subject_part()
-	var what := words(part.id) if part else words(String(o.subject.get("design", o.design)))
+	var what := words(part.id) if part else words(String(o.subject.get("design", o.design)).trim_suffix("_frame")) + (" wreck" if String(o.subject.get("type", "")) == "wreck" else "")
 	var d := _doc("%s:subject" % SPEC, SPEC, "Spec sheet: " + what, o.kind.to_upper())
 	_tag(d, o.kind, String(KIND_TONES.get(o.kind, "plain")))
 	var lines := PackedStringArray([subject_line(o)])
 	if part and part.material != "":
 		var m: Dictionary = Materials.TABLE.get(part.material, {})
 		lines.append("Material: %s, tier %d" % [material_name(part.material), int(m.get("tier", 1))])
+	if part == null:
+		# A whole ship or wreck BSX generates itself (S3): what the events left of it.
+		var s := o.subject
+		if String(s.get("events", "")) != "":
+			lines.append("Damage: " + String(s.get("events", "")).replace(":", " ").replace(",", ", "))
+		if int(s.get("parts_left", 0)) > 0:
+			lines.append("Parts: %d left, %d gone or cut off" % [int(s.get("parts_left", 0)), int(s.get("parts_gone", 0))])
+		var holds: Array = s.get("holds", [])
+		if not holds.is_empty():
+			var counts := {}
+			for h: String in holds:
+				counts[h] = int(counts.get(h, 0)) + 1
+			var names := PackedStringArray()
+			for h: String in counts:
+				names.append(words(h) if counts[h] == 1 else "%d × %s" % [counts[h], words(h)])
+			lines.append("Fittings aboard: " + ", ".join(names))
+		lines.append("Seed %d: the same ship on every machine" % int(s.get("seed", 0)))
 	var info: Dictionary = ContractClients.PARTS.get(part.id, {}) if part else {}
 	var yields: Array = info.get("yields", [])
 	if not yields.is_empty():
@@ -276,7 +293,8 @@ static func progress_doc(job: ContractJob) -> Dictionary:
 static func subject_line(o: WorkOrder) -> String:
 	var s := o.subject
 	var part := o.subject_part()
-	var bits := PackedStringArray([words(part.id) if part else words(String(s.get("design", o.design)))])
+	var design := words(String(s.get("design", o.design)).trim_suffix("_frame"))
+	var bits := PackedStringArray([words(part.id) if part else (design + " wreck" if String(s.get("type", "")) == "wreck" else design)])
 	bits.append("%d%%" % int(roundf(float(s.get("condition", 1.0)) * 100.0)))
 	var kg := float(s.get("mass_kg", 0.0))
 	if kg > 0.0:
