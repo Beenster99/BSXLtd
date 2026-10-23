@@ -70,6 +70,30 @@ func run_tests() -> void:
 	wall.set_meta(GfxBus.PointerLook.NAME_META, "Yard wall")
 	check(GfxBus.PointerLook.name_of(wall) == "Yard wall", "meta gfx_name names a thing outright")
 
+	# In view: no edge arrow; behind the camera or off to the side: an arrow at the edge.
+	check(pointer.edge_arrow(marker.global_position).is_empty(), "a ping in view needs no edge arrow")
+	var size := get_viewport().get_visible_rect().size
+	var back: Dictionary = pointer.edge_arrow(cam.global_position + cam.global_basis.z * 10.0)
+	check(not back.is_empty(), "a ping behind you gets an arrow at the screen's edge")
+	if not back.is_empty():
+		var a: Vector2 = back.at
+		check(Rect2(Vector2.ZERO, size).grow(-1.0).has_point(a),
+				"and it sits on screen")
+	var right: Dictionary = pointer.edge_arrow(cam.global_position + cam.global_basis.x * 20.0 - cam.global_basis.z * 2.0)
+	check(not right.is_empty() and (right.dir as Vector2).x > 0.9, "one off to the right points right")
+
+	# The ping key pings too (for mice without a middle button).
+	check(InputMap.has_action(pointer.ACTION), "the ping key is registered")
+	var before: int = pointer.live.size()
+	var z := InputEventAction.new()
+	z.action = pointer.ACTION
+	z.pressed = true
+	Input.parse_input_event(z)
+	await frames(2)
+	check(pointer.live.size() == before + 1, "the ping key pings where you look")
+	if pointer.live.size() > before:
+		pointer._drop(pointer.live[-1])
+
 	# A ping by id (a crewmate's), and by place with no id.
 	pointer.show_ping({"peer": 2, "name": "Sam", "colour": Color.GREEN, "at": Vector3(0, 0, 50), "object_id": "crate:1"})
 	check(pointer.live.size() == 2 and pointer.highlighter.colour_of(crate) == Color.GREEN, "a crewmate's ping finds the crate by id")

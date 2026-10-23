@@ -255,7 +255,39 @@ func refresh_market() -> void:
 			l.available = _stock_size(catalogue.value_of(part), r)
 			l.lead_hours = s.lead_hours
 			listings[id] = l
+	_cover_catalogue()
 	_bus.market_changed.emit()
+
+
+## Every part Void Salvage builds is on sale every day: a catalogue part no listing covers
+## gets a new one from the first supplier you can see (by id) that deals in its category.
+func _cover_catalogue() -> void:
+	var covered := {}
+	for l: MarketListing in listings.values():
+		covered[l.part] = true
+	var suppliers := visible_suppliers()
+	for part: String in catalogue.part_names():
+		if covered.has(part):
+			continue
+		var category := catalogue.category_of(part)
+		var s: SupplierDef = null
+		for each: SupplierDef in suppliers:
+			if each.categories.has(category):
+				s = each
+				break
+		if s == null:
+			continue
+		var r := RandomNumberGenerator.new()
+		r.seed = hash([market_seed, day, part, "cover"])
+		var l := MarketListing.new()
+		l.id = "C%d-%s-%s|%s" % [day, s.id, part, PartCondition.NEW]
+		l.supplier_id = s.id
+		l.part = part
+		l.condition = PartCondition.NEW
+		l.unit_price = trade_price(s, part, PartCondition.NEW)
+		l.available = _stock_size(catalogue.value_of(part), r)
+		l.lead_hours = s.lead_hours
+		listings[l.id] = l
 
 
 ## A catalogue part's price from a supplier today: Void Salvage's value, the supplier's

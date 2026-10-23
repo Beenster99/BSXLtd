@@ -24,7 +24,9 @@ extends Node3D
 ## `place_plug` instead. Bay space: the ship's deck (y = 0 in
 ## ship space) is `deck` metres up; ship x and z are the bay's. Built by Bay._build_access.
 ## Multiplayer: the lift, its platform, the unit and the plug are movers ("bay_lift",
-## "bay_lift_deck", "bay_unit", "bay_plug"); whoever drives one claims it.
+## "bay_lift_deck", "bay_unit", "bay_plug"); whoever drives one claims it. Where the plug is
+## and the unit's switch go to everyone (ShipBayBus.send_plug): a player holding the plug
+## claims it, and lets it go once it is on the hull or the hook, so anyone can take it next.
 
 ## Power to the ship changed (the bay passes it to the bus).
 signal power_switched(on: bool)
@@ -79,7 +81,8 @@ var chassis: AnimatableBody3D
 var platform: AnimatableBody3D
 var lift_target := 0.35
 var stops: Array[float] = []
-## The power unit and its plug. plug_state: "hook", "hand" or "hull".
+## The power unit and its plug. plug_state: "hook", "hand" (this player's), "held" (another
+## player's hand: it follows them) or "hull".
 var unit: Node3D
 var unit_body: AnimatableBody3D
 var plug: Node3D
@@ -156,9 +159,14 @@ func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus:
 		bus.kit_changed.connect(_on_kit)
+		bus.plug_changed.connect(_on_plug)
 	_net = Modules.bus("multiplayer")
 	if _net and not _net.has_method("register_mover"):
 		_net = null
+	if _net and _net.has_signal("request_rejected"):
+		_net.connect("request_rejected", _on_rejected)
+	if bus and not bus.plug_info.is_empty():
+		_on_plug(bus.plug_info)   # a late join: the plug where the others have it
 	if _net:
 		for pair: Array in [["bay_lift", lift], ["bay_lift_deck", platform], ["bay_unit", unit], ["bay_plug", plug]]:
 			_net.call("register_mover", pair[0], pair[1])
@@ -171,6 +179,10 @@ func _exit_tree() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus and bus.kit_changed.is_connected(_on_kit):
 		bus.kit_changed.disconnect(_on_kit)
+	if bus and bus.plug_changed.is_connected(_on_plug):
+		bus.plug_changed.disconnect(_on_plug)
+	if _net and _net.is_connected("request_rejected", _on_rejected):
+		_net.disconnect("request_rejected", _on_rejected)
 	if _net:
 		var ids: Array = ["bay_lift", "bay_lift_deck", "bay_unit", "bay_plug"]
 		for i in scaffolds.size():
@@ -683,6 +695,9 @@ func _build_power_unit(socket: Vector3) -> void:
 
 ## A click on the plug or its hook: take the plug off the hook or the hull, or hang it up again.
 func use_plug() -> void:
+	if plug_state == "held":
+		Sfx.play("error", plug)   # another player has it in their hand
+		return
 	if plug_state == "hand":
 		plug_state = "hook"
 		_place_plug_on_hook()
@@ -694,6 +709,7 @@ func use_plug() -> void:
 	# In hand it is no obstacle (nor something your own F lands on).
 	_plug_shape.disabled = plug_state == "hand"
 	_update_power()
+	_send_plug()
 
 
 ## True while the plug is in this player's hand (the bay sends the click to place_plug then).
@@ -731,10 +747,10 @@ func clip_plug(point: Vector3, normal: Vector3) -> void:
 	plug.global_transform = Transform3D(Basis(x, n.cross(x), n), point + n * 0.006 + n * 0.086)
 	plug_state = "hull"
 	_plug_shape.disabled = false
-	_claim("bay_plug")
 	Sfx.play("clunk", plug)
 	_cable_dirty()
 	_update_power()
+	_send_plug()
 
 
 func _place_plug_on_hook() -> void:
@@ -762,6 +778,7 @@ func _update_plug() -> void:
 					_place_plug_on_hook()
 					Sfx.play("thud", plug)
 					_update_power()
+					_send_plug()
 	_draw_cable()
 
 
@@ -798,6 +815,64 @@ func toggle_power() -> void:
 	switch_on = not switch_on
 	Sfx.play("click", unit)
 	_update_power()
+	_send_plug()
+
+
+## Tells every player where the plug is (bay space) and whether the unit is switched on. Off
+## the hand the plug's claim is let go, so whoever drives it next (the host, or the next
+## player to pick it up) keeps it where everyone has it.
+func _send_plug() -> void:
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if bus == null:
+		return
+	var x := plug.transform
+	bus.send_plug({"state": "hand" if plug_state == "hand" else plug_state, "switch": switch_on,
+			"xform": [x.basis.x.x, x.basis.x.y, x.basis.x.z, x.basis.y.x, x.basis.y.y, x.basis.y.z,
+				x.basis.z.x, x.basis.z.y, x.basis.z.z, x.origin.x, x.origin.y, x.origin.z]})
+	if plug_state != "hand" and _net and bool(_net.call("is_mine", "bay_plug")):
+		_net.call("release", "bay_plug")
+
+
+## Another player moved the plug or switched the unit (or this is a late join).
+func _on_plug(payload: Dictionary) -> void:
+	if _net and int(payload.get("by", -1)) == int(_net.call("local_peer_id")):
+		return   # this player's own change, already made here
+	if _net == null and payload.has("by"):
+		return   # solo: always our own
+	switch_on = bool(payload.get("switch", switch_on))
+	match str(payload.get("state", "hook")):
+		"hand":
+			plug_state = "held"
+			if _net and bool(_net.call("is_mine", "bay_plug")):
+				_net.call("release", "bay_plug")
+		"hull":
+			var a: Array = payload.get("xform", [])
+			if a.size() == 12:
+				plug.transform = Transform3D(Basis(Vector3(a[0], a[1], a[2]), Vector3(a[3], a[4], a[5]), Vector3(a[6], a[7], a[8])),
+						Vector3(a[9], a[10], a[11]))
+			plug_state = "hull"
+		_:
+			plug_state = "hook"
+			_place_plug_on_hook()
+	_plug_shape.disabled = plug_state == "held"
+	_cable_dirty()
+	_update_power()
+
+
+## The host refused this player's pick-up (someone else took the plug first): it stays theirs.
+func _on_rejected(event_name: String, _reason: String) -> void:
+	if event_name != "ship_bay.plug":
+		return
+	var bus := Modules.bus("ship_bay") as ShipBayBus
+	if plug_state == "hand":
+		plug_state = "held" if bus and str(bus.plug_info.get("state", "")) == "hand" else "hook"
+		if _net and bool(_net.call("is_mine", "bay_plug")):
+			_net.call("release", "bay_plug")
+		if plug_state == "hook":
+			_place_plug_on_hook()
+		_plug_shape.disabled = plug_state == "held"
+		Sfx.play("error", plug)
+		_update_power()
 
 
 ## Power from outside (the bus, a save): on means switched on and plugged into the ship's
