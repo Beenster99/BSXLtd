@@ -20,7 +20,7 @@ func run_tests() -> void:
 	var joints: Array[String] = []
 	for f in bay.get_fasteners(slot):
 		joints.append(f.joint_id)
-	check(joints.size() == 4, "port engine has 4 spot welds: %d" % joints.size())
+	check(joints.size() == 6, "port engine has 4 bolts, a fuel plug and a power plug: %d" % joints.size())
 	check(bay.get_slot_state(slot) == S.FITTED, "arrives fitted")
 	check(bay.get_component(slot) == "kestrel_engine", "with its engine")
 	check(bay.is_joint_tight(joints[0]), "bolts arrive tight")
@@ -42,7 +42,7 @@ func run_tests() -> void:
 	check(not bay.try_position(slot, "hold_net"), "slot refuses a part it doesn't take")
 	check(bay.try_position(slot, "kestrel_engine"), "new engine positioned")
 	check(bay.get_slot_state(slot) == S.POSITIONED, "positioned")
-	check(not bay.note_joint_made("eng_stbd/w1", 1.0), "an already made weld can't be made again")
+	check(not bay.note_joint_made("eng_stbd/b1", 1.0), "an already made bolt can't be made again")
 	check(not bay.note_joint_made("eng_port/nope", 1.0), "unknown joint refused")
 	bay.note_joint_made(joints[0], 0.8)
 	check(not bay.try_remove(slot), "can't lift it off once a bolt holds it")

@@ -20,6 +20,9 @@ extends Resource
 ## Which side a crew works from: "outboard", "inboard", "below" or "above".
 @export var access := "inboard"
 @export var fasteners: Array[FastenerPoint] = []
+## The paths of the slot's parts in the ship's Void Salvage file ("slot:eng_port/engine", or a
+## hull plate BSX treats as a replaceable fitting).
+@export var parts: PackedStringArray = []
 
 
 func takes(component: String) -> bool:

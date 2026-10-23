@@ -14,7 +14,7 @@ func run_tests() -> void:
 		return
 	check(def.model != null, "Kestrel model loads")
 	check(def.slot_ids() == PackedStringArray(["eng_port", "eng_stbd", "attractor_coil", "hold_nets", "radar",
-			"survey_array", "tow_winch", "bowser_tank"]), "the file's slots: %s" % ", ".join(def.slot_ids()))
+			"survey_array", "tow_winch", "bowser_tank", "plate_hold_port"]), "the file's slots: %s" % ", ".join(def.slot_ids()))
 	check(def.slot("eng_port").takes("kestrel_engine") and def.slot("eng_port").fitted == "kestrel_engine",
 			"engines take and carry the Kestrel engine")
 	check(def.slot("attractor_coil").fitted == "" and def.slot("attractor_coil").takes("attractor_coil_1"),
@@ -36,9 +36,17 @@ func run_tests() -> void:
 				check(f.seam_up.is_normalized() and absf(f.seam_up.dot(f.normal)) < 0.01 and f.seam_size.x > 0.0,
 						"%s has a seam across its face" % f.joint_id)
 	var port := def.slot("eng_port").fasteners
-	check(port.size() == 4 and port.all(func(f: FastenerPoint) -> bool:
-			return f.kind == "weld" and f.path.begins_with("slot:eng_port/engine/spot:")),
-			"each engine is spot welded to the stern cap, keyed by the file's paths")
+	var bolts := port.filter(func(f: FastenerPoint) -> bool: return f.path != "")
+	check(port.size() == 6 and bolts.size() == 4 and bolts.all(func(f: FastenerPoint) -> bool:
+			return f.kind == "bolt" and f.spec == "M12" and f.path.begins_with("slot:eng_port/engine/spot:")),
+			"each engine is bolted (M12) to the stern cap where the file spots it, keyed by the file's paths")
+	var plugs := port.filter(func(f: FastenerPoint) -> bool: return f.kind == "connector").map(
+			func(f: FastenerPoint) -> String: return f.spec)
+	check(plugs == ["fuel", "power"], "and takes a fuel and a power plug: %s" % [plugs])
+	var plate := def.slot("plate_hold_port")
+	check(plate.fitted == "HullPlate" and plate.fasteners.size() == 8 and plate.fasteners.all(
+			func(f: FastenerPoint) -> bool: return f.kind == "rivet" and f.path != ""),
+			"the hold's port side plate is a fitting riveted on with the file's 8 rivets")
 	var bowser := def.slot("bowser_tank").fasteners
 	var kinds := {}
 	for f in bowser:
@@ -54,13 +62,13 @@ func run_tests() -> void:
 			"the file builds cleanly: %s" % ("; ".join(importer.errors + importer.warnings) if importer else "no importer"))
 	check(importer.parts_by_path.size() == 529 and importer.joints_by_path.size() == 1748,
 			"every part and joint built: %d, %d" % [importer.parts_by_path.size(), importer.joints_by_path.size()])
-	for f in port:
+	for f in bolts + plate.fasteners:
 		check(importer.joint_at(f.path) != null, "%s is a joint on the model" % f.joint_id)
 	check(model.find_children("*", "CollisionShape3D", true, false).size() > 100, "the hull is solid to walk in")
 	var lamps := model.find_children("*", "Light3D", true, false).size()
 	check(lamps >= 10, "the file's lamps are in: %d" % lamps)
 	var found: Dictionary = model.call("slot_pieces", def)
-	for id: String in ["eng_port", "eng_stbd", "hold_nets", "bowser_tank"]:
+	for id: String in ["eng_port", "eng_stbd", "hold_nets", "bowser_tank", "plate_hold_port"]:
 		check((found[id] as Array).size() > 0, "%s finds model pieces: %d" % [id, (found[id] as Array).size()])
 	var hull := importer.kit.model.part_visual(importer.part_at("hull/cap/back/0").id)
 	check(not (found["eng_port"] as Array).has(hull), "the stern cap the engine sits on is not the engine")

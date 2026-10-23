@@ -1,7 +1,21 @@
 {
 	"version": 2,
 	"ship_id": "vs_kestrel",
-	"note": "BSX's own joints for the slots whose part kestrel.vsship.json does not carry (a module fitted later, or a fitting with no part yet). Slots that have a part take their joints from the file. Ship space, metres. Specs are Shared Components fastener ids.",
+	"note": "BSX's own data on top of kestrel.vsship.json. slots: joints for the slots whose part the file does not carry (a module fitted later, or a fitting with no part yet). spots: what a slot's spot welds are made as in the yard. extra: joints BSX adds to a slot's file joints. fittings: file parts BSX treats as replaceable fittings (their joints are the file's). Ship space, metres. Specs are Shared Components fastener ids.",
+	"spots": {"eng_port": {"kind": "bolt", "spec": "M12"}, "eng_stbd": {"kind": "bolt", "spec": "M12"}},
+	"extra": {
+		"eng_port": [
+			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [-2.1, 0.8, 6.5], "normal": [0, 0, 1]},
+			{"id": "p2", "kind": "connector", "spec": "power", "at": [-2.1, 1.7, 6.5], "normal": [0, 0, 1]}
+		],
+		"eng_stbd": [
+			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [2.1, 0.8, 6.5], "normal": [0, 0, 1]},
+			{"id": "p2", "kind": "connector", "spec": "power", "at": [2.1, 1.7, 6.5], "normal": [0, 0, 1]}
+		]
+	},
+	"fittings": [
+		{"slot_id": "plate_hold_port", "display_name": "Hold side plate (port)", "part": "hull/bay:hold/skin/e6", "accepts": ["HullPlate"], "fitted": "HullPlate", "access": "outboard"}
+	],
 	"slots": {
 		"hold_nets": [
 			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-1.85, 2.74, 2.0], "normal": [0, -1, 0]},

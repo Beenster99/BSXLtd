@@ -112,8 +112,11 @@ func access_points() -> Dictionary:
 func slot_pieces(def: ShipDefinition) -> Dictionary:
 	var out := {}
 	var taken := {}
+	var owner := {}
 	for s in def.slots:
 		out[s.slot_id] = []
+		for p: String in s.parts:
+			owner[p] = s.slot_id
 	for path: String in importer.parts_by_path:
 		var look := importer.kit.model.part_visual((importer.parts_by_path[path] as PartData).id)
 		if look == null:
@@ -122,10 +125,9 @@ func slot_pieces(def: ShipDefinition) -> Dictionary:
 		meshes.append_array(look.find_children("*", "MeshInstance3D", true, false))
 		for mi: Node in meshes:
 			taken[mi] = true
-		if path.begins_with("slot:"):
-			var id := path.trim_prefix("slot:").get_slice("/", 0)
-			if out.has(id):
-				(out[id] as Array).append_array(meshes)
+		var id: String = owner.get(path, path.trim_prefix("slot:").get_slice("/", 0) if path.begins_with("slot:") else "")
+		if out.has(id):
+			(out[id] as Array).append_array(meshes)
 	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
 		if taken.has(mi) or mi.mesh == null:
 			continue
