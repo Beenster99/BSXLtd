@@ -3,12 +3,7 @@ extends ModuleTest
 ## should not turn into an anonymous box it must remain as the same part"): the loose part in
 ## the real yard carries Ship and Bay's copy of the part (ShipBayBus.part_visual), not a box.
 
-## The slot under test: Void Salvage's own slot name, or the hand-built Kestrel's until Ship
-## and Bay's imported Kestrel lands.
-var SLOT: String:
-	get:
-		var bay := Modules.bus("ship_bay") as ShipBayBus
-		return "eng_port" if bay and bay.get_slot("eng_port") else "eng_aft_port_1"
+const SLOT := "eng_port"
 
 
 func run_tests() -> void:
