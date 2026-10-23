@@ -4,11 +4,11 @@ extends Node3D
 ## north end and the line's own trolley at the south end.
 ##
 ##   INTAKE BAY   -> a painted bay big enough for the large trolley: trolleys set worn parts
-##                   down on its three pallets (a clean-up's, or anyone's); the red pallet
+##                   down on its three drop-off zones (a clean-up's, or anyone's); the red zone
 ##                   beside them is for scrap the survey sends back.
 ##   SURVEY       -> scans a lot and says SCRAP (condition GRIND_BELOW or worse) or REFURBISH;
 ##                   ROUTE overrides it. Its screen picks the lot: the bay's first, then the
-##                   stores' (worst first). Scrap goes onto the red pallet and a trolley takes
+##                   stores' (worst first). Scrap goes onto the red scrap zone and a trolley takes
 ##                   it outside to the crusher (CrusherPlant).
 ##   STRAIGHTENER -> a press that takes the dents and bends out (60%)
 ##   BATH         -> a chemical bath that strips the surface back to bare metal (85%)
@@ -52,7 +52,7 @@ const LINE_END_Z := 9.4
 ## The intake bay: its north and south edges (z) and half its width (x).
 const BAY_Z := Vector2(-23.6, -18.0)
 const BAY_HALF := 4.9
-## The bay's pallets (x from the line, at IN_Z): three for parts in, one for scrap out.
+## The bay's drop-off zones (x from the line, at IN_Z): three for parts in, one for scrap out.
 const IN_X: Array[float] = [-3.4, -1.1, 1.2]
 const SCRAP_X := 3.5
 const IN_Z := -20.8
@@ -110,7 +110,7 @@ static func station_at(line: String, s: String) -> Vector3:
 	return Vector3(float(LINES[line]), BED_Y, float(STATION_Z[s]))
 
 
-## The intake bay's pallets for parts coming in (floor points, yard space).
+## The intake bay's drop-off zones for parts coming in (floor points, yard space).
 static func in_spots(line: String) -> Array[Vector3]:
 	var out: Array[Vector3] = []
 	for x: float in IN_X:
@@ -118,7 +118,7 @@ static func in_spots(line: String) -> Array[Vector3]:
 	return out
 
 
-## The bay's scrap pallet, where the survey sets down what goes to the crusher.
+## The bay's scrap zone, where the survey sets down what goes to the crusher.
 static func scrap_spot(line: String) -> Vector3:
 	return Vector3(float(LINES[line]) + SCRAP_X, 0, IN_Z)
 
@@ -146,6 +146,8 @@ func _ready() -> void:
 		"bath": _paint(Color(0.2, 0.46, 0.4), 0.3, 0.45, "satin_paint"),
 		"coater": _paint(Color(0.86, 0.85, 0.82), 0.2, 0.45, "satin_paint"),
 		"wood": _paint(Color(0.55, 0.42, 0.28), 0.0, 0.8, "wood"),
+		"zone": _paint(Color(0.36, 0.32, 0.16), 0.0, 0.85, "satin_paint"),
+		"zone_red": _paint(Color(0.36, 0.13, 0.11), 0.0, 0.85, "satin_paint"),
 	}
 	_lamp_on = ShipKit.glow(Color(1.0, 0.55, 0.15), 4.0)
 	_lamp_idle = ShipKit.glow(Color(0.5, 0.55, 0.6), 0.8)
@@ -275,7 +277,7 @@ func _on_line_changed() -> void:
 				_travel([from, from + Vector3(0, BED_Y, 0), _rest("survey") + Vector3(0, 0, -LENGTH * SCALE.z * 0.5), _rest("survey")], st["survey"].lot)
 	var survey_was: Dictionary = old.get("survey", {})
 	if str(survey_was.get("state", "")) == "done" and (st.get("survey", {}) as Dictionary).is_empty() and str(survey_was.lot.get("route", "")) == "grind":
-		# Scrap rides back off the front of the survey onto the red pallet.
+		# Scrap rides back off the front of the survey onto the red scrap zone.
 		var p := scrap_spot(line_id)
 		_travel([_rest("survey"), _rest("survey") + Vector3(0, 0, -LENGTH * SCALE.z * 0.5), Vector3(p.x, BED_Y, p.z), p + Vector3(0, 0.15, 0)], survey_was.lot)
 	var coater_was: Dictionary = old.get("coater", {})
@@ -325,7 +327,7 @@ func _process(delta: float) -> void:
 				_auto_step()
 
 
-## Scrap on the bay's red pallet always gets a trolley to take it out to the crusher (host).
+## Scrap on the bay's red scrap zone always gets a trolley to take it out to the crusher (host).
 func _call_for_scrap() -> void:
 	for id: String in _bus.line_crates():
 		var c: Dictionary = _bus.line_crates()[id]
@@ -542,7 +544,7 @@ func _travel(points: Array, lot: Dictionary) -> void:
 	_show_all()
 
 
-## The bay's waiting crates: parts in on its pallets, scrap on the red one.
+## The bay's waiting crates: parts in on its drop-off zones, scrap on the red one.
 func _draw_crates() -> void:
 	if _bus == null or _crates_root == null:
 		return
@@ -934,7 +936,8 @@ func _bed(parent: Node3D, length: float, at: Vector3, legs := false) -> void:
 
 
 ## The intake bay at the head of the line: its outline in hazard yellow (big enough for the
-## large trolley to stand in), three pallets for parts in and the red scrap pallet, its name
+## large trolley to stand in), three drop-off zones painted for parts in and a red one for
+## scrap, its name
 ## on the floor and on a board on the north wall.
 func _build_intake() -> void:
 	var root := Node3D.new()
@@ -948,11 +951,10 @@ func _build_intake() -> void:
 		_part(PartShapes.box(Vector3(0.12, 0.01, depth)).mesh, Vector3(x + k * BAY_HALF, 0.006, (BAY_Z.x + BAY_Z.y) * 0.5), _mats["yellow"], root)
 		# A bollard at each front corner.
 		_part(PartShapes.prism(10, 0.12, 1.0).mesh, Vector3(x + k * (BAY_HALF + 0.25), 0.5, BAY_Z.y + 0.2), _mats["yellow"], root)
-	for p: Vector3 in in_spots(line_id):
-		_part(PartShapes.box(Vector3(1.6, 0.14, 1.8)).mesh, p + Vector3(0, 0.07, 0), _mats["wood"], root)
-	var scrap := scrap_spot(line_id)
-	_part(PartShapes.box(Vector3(1.6, 0.14, 1.8)).mesh, scrap + Vector3(0, 0.07, 0), _mats["wood"], root)
-	_part(PartShapes.box(Vector3(1.9, 0.01, 2.1)).mesh, scrap + Vector3(0, 0.005, 0), _mats["red"], root)
+	var spots := in_spots(line_id)
+	for i in spots.size():
+		_drop_zone(spots[i], Vector2(2.0, 2.1), _mats["zone"], _mats["yellow"], "DROP %d" % (i + 1), Color(0.95, 0.75, 0.1), root)
+	_drop_zone(scrap_spot(line_id), Vector2(2.0, 2.1), _mats["zone_red"], _mats["red"], "SCRAP", Color(0.95, 0.4, 0.3), root)
 	var words := _plate("LINE %s INTAKE" % line_id.to_upper(), Color(0.95, 0.75, 0.1))
 	words.font_size = 120
 	words.position = Vector3(x, 0.02, BAY_Z.y - 0.6)
@@ -1015,6 +1017,25 @@ func _plate(text: String, colour: Color) -> Label3D:
 
 static func _paint(colour: Color, metallic: float, roughness: float, finish: String) -> Material:
 	return ShipSurface.of(ShipKit.paint(colour, metallic, roughness, finish))
+
+
+## A drop-off zone painted on the floor where a trolley sets goods down (beenster, 0.3.15:
+## paint the floor, no pallets): a filled patch `size` (x, z) metres with a bolder edge, corner
+## marks and its name across the front.
+func _drop_zone(at: Vector3, size: Vector2, fill: Material, edge: Material, text: String, colour: Color, parent: Node3D) -> void:
+	_part(PartShapes.box(Vector3(size.x, 0.003, size.y)).mesh, at + Vector3(0, 0.032, 0), fill, parent)
+	for k: float in [-1.0, 1.0]:
+		_part(PartShapes.box(Vector3(size.x, 0.003, 0.08)).mesh, at + Vector3(0, 0.036, k * (size.y * 0.5 - 0.04)), edge, parent)
+		_part(PartShapes.box(Vector3(0.08, 0.003, size.y - 0.16)).mesh, at + Vector3(k * (size.x * 0.5 - 0.04), 0.0365, 0), edge, parent)
+		for j: float in [-1.0, 1.0]:
+			# Corner marks: short bars just inside each corner.
+			var c := at + Vector3(k * (size.x * 0.5 - 0.3), 0.041, j * (size.y * 0.5 - 0.17))
+			_part(PartShapes.box(Vector3(0.4, 0.003, 0.06)).mesh, c, edge, parent)
+	var words := _plate(text, colour)
+	words.font_size = 64
+	words.position = at + Vector3(0, 0.046, size.y * 0.5 - 0.32)
+	words.rotation = Vector3(-PI * 0.5, 0, 0)
+	parent.add_child(words)
 
 
 func _part(mesh: Mesh, at: Vector3, mat: Material, parent: Node3D = null, basis := Basis()) -> MeshInstance3D:
