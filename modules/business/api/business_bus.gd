@@ -123,6 +123,9 @@ var _yard: Node3D
 var _clock_carry := 0.0
 ## The purchase order being built on the wrist, kept here so it survives closing the screen.
 var wrist_basket: Dictionary = {}
+## The cost estimate being built on the wrist (listing id -> qty): a price list to work out
+## what a job's parts would cost, not an order. Kept here so it survives closing the screen.
+var wrist_estimate: Dictionary = {}
 
 
 func _init() -> void:
@@ -1261,6 +1264,7 @@ func on_contract_cancelled(contract_id: String, by_client: bool) -> BusinessResu
 func reset() -> void:
 	_books.reset()
 	wrist_basket.clear()
+	wrist_estimate.clear()
 	_refresh_yard()
 
 
