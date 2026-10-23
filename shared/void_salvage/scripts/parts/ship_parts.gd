@@ -91,6 +91,27 @@ static func mat(which: String) -> Material:
 	return m
 
 
+## The ship systems' own paints (the bowsers, panels, doors, lift and screens: S3), the same in
+## every livery: [colour, metallic, roughness]. BaseShip's materials of these names are these
+## (`base`), so a ship file names them as before.
+const BASE: Dictionary = {
+	"hull_dark": [Color(0.26, 0.28, 0.3), 0.6, 0.45],
+	"hazard": [Color(0.95, 0.55, 0.1), 0.2, 0.55],
+	"floor_mat": [Color(0.22, 0.23, 0.24), 0.6, 0.6],
+	"white": [Color(0.9, 0.9, 0.88), 0.1, 0.35],
+	"steel_lever": [Color(0.7, 0.72, 0.74), 0.8, 0.3],
+}
+
+
+## One of the systems' shared paints (`BASE`).
+static func base(which: String) -> Material:
+	var key := "base:" + which
+	if not _mats.has(key):
+		var d: Array = BASE.get(which, [Color.MAGENTA, 0.4, 0.55])
+		_mats[key] = ShipKit.paint(d[0], d[1], d[2])
+	return _mats[key]
+
+
 # --- Seating and consoles -------------------------------------------------------------------
 
 ## A cockpit seat facing -Z, its base at `at` (ship space). The cushion and back carry `tag`
@@ -821,3 +842,467 @@ static func _box(kit: ShipKit, frame: Transform3D, at: Vector3, size: Vector3, m
 ## A fitting's record: its name and its bounds in ship space (the frame-space box lo..hi).
 static func _fitting(fitting_name: String, frame: Transform3D, lo: Vector3, hi: Vector3) -> Dictionary:
 	return {"name": fitting_name, "box": frame * AABB(lo, hi - lo)}
+
+
+# --- Systems (S3, docs/SHIP_FORMAT_PLAN.md) --------------------------------------------------
+# The ship's own working parts: the control and door panels, the lift, the bowsers and fuel
+# port, the hose rack, the monitors and screens. Each opens its system record with exactly the
+# arguments its look uses, so a ship file's record ({system, frame, args, key}) rebuilds the same
+# picture through `system`. The behaviour (what a button does, the gauges' levels, the screens'
+# contents) is the game's: each returns the handles it needs (lamp materials, labels, the
+# screens' glass quads, the lift's legs). Labels, quads and legs are nodes on the kit's body.
+
+## The pump buttons' light while the pump is off (the game turns it red while it runs).
+const PUMP_IDLE := Color(0.35, 1.0, 0.6)
+## The hold monitor's soft keys under the screen, left to right: [tag, action, legend].
+const MONITOR_KEYS: Array = [["monitor_prev", "monitor:prev", "◀"], ["monitor_next", "monitor:next", "▶"],
+		["monitor_up", "monitor:up", "▲"], ["monitor_down", "monitor:down", "▼"],
+		["monitor_mark", "monitor:mark", "MARK"], ["monitor_open", "monitor:open", "OPEN"],
+		["monitor_focus", "monitor:focus", "F"]]
+## The systems `system` builds, by record name.
+const SYSTEMS: Array[String] = ["control_panel", "lift", "bowsers", "fuel_port", "hose_rack", "monitor", "cockpit_monitor",
+		"double_door", "door_panel", "cockpit_screen", "nav_display", "map_screen"]
+
+
+## Builds a system from its ship-file record ({system, frame, args, key}), as read from the file
+## (a frame {o, b}, vectors, rects and colours as arrays, numbers as floats) or with engine
+## values. Returns what that function returns; {} for an unknown one.
+static func system(kit: ShipKit, record: Dictionary) -> Dictionary:
+	var frame := _xform(record.get("frame", Transform3D()))
+	var a: Array = record.get("args", [])
+	var key: String = record.get("key", "")
+	match String(record.get("system", "")):
+		"control_panel":
+			var buttons: Array = []
+			for b: Array in a[1]:
+				buttons.append([String(b[0]), String(b[1]), _colour(b[2])])
+			return control_panel(kit, frame, a[0], buttons)
+		"lift":
+			return lift(kit, _rect(a[0]), float(a[1]))
+		"bowsers":
+			return bowsers(kit, frame, bool(a[0]))
+		"fuel_port":
+			return fuel_port(kit, frame)
+		"hose_rack":
+			return hose_rack(kit, frame)
+		"monitor":
+			return monitor(kit, frame, _vec2(a[0]))
+		"cockpit_monitor":
+			return cockpit_monitor(kit, frame.origin, float(a[0]))
+		"double_door":
+			return double_door(kit, float(a[0]), float(a[1]), float(a[2]), int(a[3]))
+		"door_panel":
+			return door_panel(kit, frame, key, int(a[0]))
+		"cockpit_screen":
+			return cockpit_screen(kit, frame.origin, float(a[0]), _colour(a[1]))
+		"nav_display":
+			return nav_display(kit, frame.origin, float(a[0]), float(a[1]), float(a[2]))
+		"map_screen":
+			return map_screen(kit, frame, float(a[0]), float(a[1]))
+	return {}
+
+
+## A record's values as the engine's: from the file's form (vsship 4.1) or as they are.
+static func _xform(v: Variant) -> Transform3D:
+	if v is Transform3D:
+		return v
+	var d: Dictionary = v if v is Dictionary else {}
+	var o: Array = d.get("o", [0, 0, 0])
+	var t := Transform3D(Basis(), Vector3(o[0], o[1], o[2]))
+	if d.has("b"):
+		var b: Array = d["b"]   # rows
+		t.basis = Basis(Vector3(b[0], b[3], b[6]), Vector3(b[1], b[4], b[7]), Vector3(b[2], b[5], b[8]))
+	return t
+
+
+static func _vec2(v: Variant) -> Vector2:
+	return v if v is Vector2 else Vector2(v[0], v[1])
+
+
+static func _rect(v: Variant) -> Rect2:
+	return v if v is Rect2 else Rect2(v[0], v[1], v[2], v[3])
+
+
+static func _colour(v: Variant) -> Color:
+	if v is Color:
+		return v
+	return Color(v[0], v[1], v[2], v[3] if (v as Array).size() > 3 else 1.0)
+
+
+## Text printed on a surface: `at` in the frame's space, facing along its X.
+static func panel_label(kit: ShipKit, text: String, frame: Transform3D, at: Vector3, size: int, color: Color) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.font = ShipKit.mono_font()
+	label.font_size = size
+	label.pixel_size = 0.0016
+	label.transform = frame * Transform3D(Basis(Vector3.UP, PI * 0.5), at)
+	label.modulate = color
+	label.outline_size = 0
+	kit.body.add_child(label)
+	return label
+
+
+## A screen with a bezel on a surface: `at` is its middle in the frame's space (X out of the
+## surface). Returns its text, top left aligned.
+static func screen(kit: ShipKit, frame: Transform3D, at: Vector3, size: Vector2, font_size: int) -> Label3D:
+	var bezel := ShipKit.paint(Color(0.32, 0.34, 0.36), 0.7, 0.35)
+	_box(kit, frame, at + Vector3(0.015, 0.0, 0.0), Vector3(0.03, size.y + 0.05, size.x + 0.05), bezel, false)
+	_box(kit, frame, at + Vector3(0.032, 0.0, 0.0), Vector3(0.004, size.y, size.x), ShipKit.glow(Color(0.02, 0.07, 0.1), 1.0), false)
+	var label := panel_label(kit, "", frame, at + Vector3(0.036, size.y * 0.5 - 0.015, size.x * 0.5 - 0.02), font_size,
+			Color(0.45, 0.95, 1.0))
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	return label
+
+
+## A screen's glass: a quad `size` metres facing its +Z at `at`, dark until the game draws on it
+## (it sets the material to its view's texture).
+static func glass_quad(kit: ShipKit, at: Transform3D, size: Vector2) -> MeshInstance3D:
+	var quad := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = size
+	quad.mesh = qm
+	var dark := StandardMaterial3D.new()
+	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dark.albedo_color = Color(0.01, 0.03, 0.04)
+	quad.material_override = dark
+	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	quad.transform = at
+	kit.body.add_child(quad)
+	return quad
+
+
+## The control panel: square buttons in a row, each with its name printed under it and a lamp
+## over it (lit by the game while that thing is on). `buttons` are [label, action, colour];
+## a button is tagged "button_<action>". `frame` sits on the wall surface behind the panel's
+## centre: X out into the room, Y up. Returns {lamps: {action: [lamp material, colour]}}.
+static func control_panel(kit: ShipKit, frame: Transform3D, title: String, buttons: Array) -> Dictionary:
+	kit.begin_system("control_panel", frame, [title, buttons], "")
+	var count := buttons.size()
+	var length := 0.36 * float(count) + 0.15
+	_box(kit, frame, Vector3(0.03, 0, 0), Vector3(0.06, 0.78, length), base("hull_dark"), true)
+	_box(kit, frame, Vector3(0.04, 0.44, 0), Vector3(0.02, 0.1, length), base("hazard"), false)
+	panel_label(kit, title, frame, Vector3(0.063, 0.295, 0), 30, Color(0.95, 0.75, 0.3))
+	var lamps := {}
+	for i in count:
+		var b: Array = buttons[i]
+		var bz := (float(count - 1) * 0.5 - float(i)) * 0.36   # left to right as you face it
+		_box(kit, frame, Vector3(0.0675, 0.03, bz), Vector3(0.015, 0.22, 0.22), ShipKit.paint(Color(0.1, 0.1, 0.11), 0.6, 0.4), false)
+		_box(kit, frame, Vector3(0.08, 0.03, bz), Vector3(0.04, 0.16, 0.16), ShipKit.glow(b[2], 1.2), true, "button_%s" % b[1])
+		var lamp := ShipKit.glow(Color(0.05, 0.05, 0.05), 0.0)
+		_box(kit, frame, Vector3(0.066, 0.19, bz), Vector3(0.012, 0.035, 0.12), lamp, false)
+		lamps[b[1]] = [lamp, b[2]]
+		panel_label(kit, b[0], frame, Vector3(0.063, -0.14, bz), 24, Color(0.85, 0.92, 1.0))
+	kit.end_system()
+	return {"lamps": lamps}
+
+
+## A cargo lift in the deck opening `rect` (x, z): hazard lining round the shaft, the platform
+## (tag "lift", a leaf of its own on a frame build) and telescopic legs (hidden until the game
+## stretches them down to the lowered platform). `deck_bottom` is the underside of the deck
+## slab. Returns {legs: [[sleeve, leg, top centre]]}.
+static func lift(kit: ShipKit, rect: Rect2, deck_bottom: float) -> Dictionary:
+	kit.begin_system("lift", null, [rect, deck_bottom], "lift")
+	var hazard := base("hazard")
+	var hull_dark := base("hull_dark")
+	var lz := rect.get_center().y
+	var lx := rect.get_center().x
+	var hx := rect.size.x * 0.5
+	var hz := rect.size.y * 0.5
+	for e: Array in [[rect.position.x, true], [rect.end.x, true], [rect.position.y, false], [rect.end.y, false]]:
+		if e[1]:
+			kit.block(Vector3(e[0] - 0.03, deck_bottom, rect.position.y), Vector3(e[0] + 0.03, -0.01, rect.end.y), hazard)
+		else:
+			kit.block(Vector3(rect.position.x + 0.03, deck_bottom, e[0] - 0.03), Vector3(rect.end.x - 0.03, -0.01, e[0] + 0.03), hazard)
+	# The platform: on a frame build a part of its own that rides its legs (the shaft round it is
+	# the lift's part).
+	kit.begin_unit("leaf", "platform", "lift")
+	kit.add(PartShapes.box(Vector3(rect.size.x - 0.1, 0.15, rect.size.y - 0.1)), Transform3D(Basis(), Vector3(lx, -0.08, lz)),
+			base("floor_mat"), "lift")
+	for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		kit.add(PartShapes.box(Vector3(0.18, 0.02, 0.18)), Transform3D(Basis(),
+				Vector3(lx + c.x * (hx - 0.2), 0.005, lz + c.y * (hz - 0.2))), hazard, "lift", null, false)
+	var steel := ShipKit.paint(Color(0.55, 0.57, 0.58), 0.8, 0.3)
+	# Legs just outside the platform's sides, hanging from under the deck; ears on the
+	# platform's sides catch their feet.
+	var legs: Array = []
+	for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		var at := Vector3(lx + c.x * (hx + 0.06), 0.0, lz + c.y * (hz - 0.35))
+		kit.add(PartShapes.box(Vector3(0.22, 0.08, 0.16)), Transform3D(Basis(), Vector3(lx + c.x * (hx + 0.02), -0.08, at.z)),
+				hull_dark, "lift", null, false)
+		var sleeve := MeshInstance3D.new()
+		var sm := BoxMesh.new()
+		sm.size = Vector3(0.11, 1.0, 0.11)
+		sleeve.mesh = sm
+		sleeve.material_override = hull_dark
+		sleeve.visible = false
+		kit.body.add_child(sleeve)
+		var leg := MeshInstance3D.new()
+		var lm := BoxMesh.new()
+		lm.size = Vector3(0.07, 1.0, 0.07)
+		leg.mesh = lm
+		leg.material_override = steel
+		leg.visible = false
+		kit.body.add_child(leg)
+		legs.append([sleeve, leg, at])
+	kit.end_unit()
+	kit.end_system()
+	return {"legs": legs}
+
+
+## The bowsers: a manifold where the fuel port's feed comes in and splits two ways, and two
+## upright tanks, fuel then coolant, each with a level gauge on its front. `frame` sits on the
+## floor at the wall where the feed arrives (at the manifold), X out into the room, Z along the
+## wall toward the tanks. The manifold has PUMP ("bowser_pump") and TANK ("tank_fill") buttons
+## and a status screen. `plumbed`: the real feed is laid (no stand-in pipe behind the manifold).
+## Returns {text (the screen's), gauges: [{fluid, bar, label, frame, at (the bar's bottom),
+## height}]} (the bars are unit-tall boxes the game scales to the level).
+static func bowsers(kit: ShipKit, frame: Transform3D, plumbed: bool) -> Dictionary:
+	kit.begin_system("bowsers", frame, [plumbed], "pump")
+	var steel := ShipKit.paint(Color(0.55, 0.57, 0.6), 0.7, 0.4)
+	var dark := ShipKit.paint(Color(0.18, 0.19, 0.21), 0.5, 0.6)
+	var along_z := Basis(Vector3.RIGHT, PI * 0.5)   # a cylinder's Y -> the frame's Z
+	var out_x := Basis(Vector3.BACK, -PI * 0.5)     # a cylinder's Y -> the frame's X
+	# The manifold: a block on the wall, the feed in from behind, two outlets toward the tanks.
+	kit.add(PartShapes.chamfer_box(Vector3(0.24, 0.42, 0.42), 0.03), frame * Transform3D(Basis(), Vector3(0.14, 0.42, 0.0)), steel)
+	# A stand-in for the feed coming in from behind, unless the real feed is laid (F5b).
+	if not plumbed:
+		kit.add(PartShapes.prism(10, 0.06, 0.12), frame * Transform3D(along_z, Vector3(0.1, 0.32, -0.26)), dark, "", null, false)
+	# Two buttons of one size side by side, centred on the block's face: PUMP, and TANK (moves
+	# bowser fuel into the quantum drive's jump tank).
+	_box(kit, frame, Vector3(0.27, 0.48, 0.075), Vector3(0.04, 0.11, 0.11), ShipKit.glow(PUMP_IDLE, 0.6), true, "bowser_pump")
+	panel_label(kit, "PUMP", frame, Vector3(0.262, 0.58, 0.075), 18, Color(0.85, 0.92, 1.0))
+	_box(kit, frame, Vector3(0.27, 0.48, -0.075), Vector3(0.04, 0.11, 0.11), ShipKit.glow(Color(1.0, 0.65, 0.15), 0.6), true, "tank_fill")
+	panel_label(kit, "TANK", frame, Vector3(0.262, 0.58, -0.075), 18, Color(1.0, 0.8, 0.45))
+	panel_label(kit, "MANIFOLD", frame, Vector3(0.262, 0.27, 0.0), 16, Color(0.85, 0.92, 1.0))
+	var text := screen(kit, frame, Vector3(0.0, 1.05, 0.0), Vector2(0.5, 0.24), 16)
+	var tanks: Array = [["fuel", 1.05, base("hazard"), Color(1.0, 0.65, 0.15), 0.25],
+			["coolant", 2.25, ShipKit.paint(Color(0.22, 0.52, 0.66), 0.35, 0.5), Color(0.35, 0.85, 1.0), 0.55]]
+	var gauges: Array = []
+	for t: Array in tanks:
+		var z: float = t[1]
+		var pipe_y: float = t[4]
+		var at := Vector3(0.72, 0.0, z)
+		# The tank: an upright drum on a footing, a dome on top, a band round it.
+		kit.add(PartShapes.prism(20, 0.56, 0.14), frame * Transform3D(Basis(), at + Vector3(0, 0.07, 0)), dark)
+		kit.add(PartShapes.prism(20, 0.5, 2.2), frame * Transform3D(Basis(), at + Vector3(0, 1.24, 0)), t[2])
+		kit.add(PartShapes.dome(0.5, 0.22, 20, 4), frame * Transform3D(Basis(), at + Vector3(0, 2.34, 0)), t[2], "", null, false)
+		kit.add(PartShapes.ring(0.5, 0.52, 0.08), frame * Transform3D(Basis(), at + Vector3(0, 2.05, 0)), dark, "", null, false)
+		# Its pipe from the manifold, along the wall and into the tank's back near the bottom,
+		# with a band of its colour.
+		var run := z - 0.2
+		kit.add(PartShapes.prism(10, 0.045, run), frame * Transform3D(along_z, Vector3(0.07, pipe_y, 0.2 + run * 0.5)), steel, "", null, false)
+		kit.add(PartShapes.prism(10, 0.045, 0.18), frame * Transform3D(out_x, Vector3(0.14, pipe_y, z)), steel, "", null, false)
+		kit.add(PartShapes.prism(10, 0.05, 0.06), frame * Transform3D(along_z, Vector3(0.07, pipe_y, 0.32)),
+				ShipKit.glow(t[3], 0.8), "", null, false)
+		# The level gauge on the front: a slot with ticks, a bar that rises with the level.
+		var face := 0.72 + 0.5
+		var low := 0.45
+		var high := 2.0
+		_box(kit, frame, Vector3(face, (low + high) * 0.5, z), Vector3(0.04, high - low + 0.12, 0.17), dark, false)
+		_box(kit, frame, Vector3(face + 0.021, (low + high) * 0.5, z), Vector3(0.004, high - low, 0.08),
+				ShipKit.glow(Color(0.02, 0.03, 0.04), 1.0), false)
+		for k in 5:
+			var y := lerpf(low, high, float(k) / 4.0)
+			_box(kit, frame, Vector3(face + 0.023, y, z + 0.065), Vector3(0.003, 0.008, 0.035 if k % 2 == 0 else 0.022),
+					base("white"), false)
+		var bar := MeshInstance3D.new()
+		var bar_mesh := BoxMesh.new()
+		bar_mesh.size = Vector3(0.006, 1.0, 0.06)
+		bar.mesh = bar_mesh
+		bar.material_override = ShipKit.glow(t[3], 0.8)
+		bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		kit.body.add_child(bar)
+		var name_label := panel_label(kit, (t[0] as String).to_upper(), frame, Vector3(face + 0.022, high + 0.17, z), 40, t[3])
+		name_label.outline_size = 0
+		var litres := panel_label(kit, "", frame, Vector3(face + 0.022, low - 0.16, z), 26, Color(0.85, 0.92, 1.0))
+		gauges.append({"fluid": t[0], "bar": bar, "label": litres, "frame": frame,
+				"at": Vector3(face + 0.025, low, z), "height": high - low})
+	kit.end_system()
+	return {"text": text, "gauges": gauges}
+
+
+## The fuel port on the hull, where the hose plugs in: a recessed panel (tag "fuel_port": the
+## whole panel takes the plug) with a brass coupling, a work light over it, and to its left a
+## status screen over the PUMP button ("bowser_pump") and the IN/OUT switch ("pump_dir"; its
+## lever "pump_dir_lever" swings down about `pivot` round `axis` for OUT). `frame` sits on the
+## hull's outer surface at the coupling, X out of the hull, Y up (+Z is on your left as you face
+## it). Returns {text, pivot, axis (ship space), plug (where the hose's plug sits: its tip into
+## the hull)}.
+static func fuel_port(kit: ShipKit, frame: Transform3D) -> Dictionary:
+	kit.begin_system("fuel_port", frame, [], "pump_out")
+	var hazard := base("hazard")
+	var dark := ShipKit.paint(Color(0.12, 0.13, 0.14), 0.6, 0.5)
+	var brass := ShipKit.paint(Color(0.75, 0.55, 0.28), 0.9, 0.3)
+	var face := Basis(Vector3.BACK, -PI * 0.5)   # a cylinder's Y -> the frame's X
+	_box(kit, frame, Vector3(0.03, 0.0, 0.3), Vector3(0.06, 0.95, 1.25), dark, true, "fuel_port")
+	_box(kit, frame, Vector3(0.065, 0.45, 0.3), Vector3(0.01, 0.04, 1.25), hazard, false)
+	# The coupling, with a slim amber ring round it.
+	kit.add(PartShapes.ring(0.065, 0.1, 0.12), frame * Transform3D(face, Vector3(0.1, 0.0, 0.0)), brass, "fuel_port")
+	kit.add(PartShapes.prism(16, 0.065, 0.02), frame * Transform3D(face, Vector3(0.06, 0.0, 0.0)), dark, "", null, false)
+	kit.add(PartShapes.ring(0.105, 0.118, 0.02), frame * Transform3D(face, Vector3(0.065, 0.0, 0.0)),
+			ShipKit.glow(Color(1.0, 0.7, 0.25), 2.0), "", null, false)
+	panel_label(kit, "FUEL", frame, Vector3(0.063, 0.16, 0.0), 24, Color(1.0, 0.75, 0.3))
+	# A work light over the panel: easy to find on a dark hull.
+	kit.light(frame * Vector3(0.9, 0.75, 0.3), Color(1.0, 0.88, 0.7), 1.2, 4.5)
+	# Left of the coupling: the status screen, and under it the pump button and the switch.
+	var text := screen(kit, frame, Vector3(0.06, 0.17, 0.6), Vector2(0.5, 0.24), 16)
+	_box(kit, frame, Vector3(0.08, -0.2, 0.74), Vector3(0.04, 0.12, 0.12), ShipKit.glow(PUMP_IDLE, 0.6), true, "bowser_pump")
+	panel_label(kit, "PUMP", frame, Vector3(0.063, -0.31, 0.74), 18, Color(0.85, 0.92, 1.0))
+	var pivot := Vector3(0.075, -0.2, 0.47)
+	_box(kit, frame, Vector3(0.068, -0.2, 0.47), Vector3(0.016, 0.16, 0.09), base("hull_dark"), true, "pump_dir")
+	# The switch's lever, up for IN; it swings down for OUT.
+	var up := Basis(Vector3.BACK, 0.6)
+	kit.add(PartShapes.box(Vector3(0.11, 0.022, 0.022)), frame * Transform3D(up, pivot) * Transform3D(Basis(), Vector3(0.055, 0, 0)),
+			base("steel_lever"), "pump_dir_lever")
+	kit.add(PartShapes.box(Vector3(0.035, 0.035, 0.035)), frame * Transform3D(up, pivot) * Transform3D(Basis(), Vector3(0.115, 0, 0)),
+			hazard, "pump_dir_lever", null, false)
+	panel_label(kit, "IN", frame, Vector3(0.063, -0.065, 0.47), 18, Color(0.85, 0.92, 1.0))
+	panel_label(kit, "OUT", frame, Vector3(0.063, -0.335, 0.47), 18, Color(0.85, 0.92, 1.0))
+	kit.end_system()
+	return {"text": text, "pivot": frame * pivot, "axis": frame.basis * Vector3.BACK,
+			"plug": frame * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0.24, 0.0, 0.0))}
+
+
+## A wall rack the hose coil hangs on (two hooks and a strap; tag "hose_rack"). `frame` sits on
+## the wall surface at the coil's middle, X out into the room, Y up.
+static func hose_rack(kit: ShipKit, frame: Transform3D) -> Dictionary:
+	kit.begin_system("hose_rack", frame, [], "")
+	var dark := ShipKit.paint(Color(0.2, 0.21, 0.23), 0.6, 0.5)
+	_box(kit, frame, Vector3(0.015, 0.0, 0.0), Vector3(0.03, 0.9, 0.9), base("hull_dark"), true, "hose_rack")
+	for z: float in [-0.22, 0.22]:
+		_box(kit, frame, Vector3(0.17, 0.34, z), Vector3(0.3, 0.05, 0.05), dark, true, "hose_rack")
+		_box(kit, frame, Vector3(0.3, 0.38, z), Vector3(0.04, 0.1, 0.05), dark, false, "hose_rack")
+	_box(kit, frame, Vector3(0.035, -0.3, 0.0), Vector3(0.012, 0.08, 0.9), base("hazard"), false)
+	panel_label(kit, "FUEL HOSE", frame, Vector3(0.033, -0.38, 0.0), 20, Color(1.0, 0.75, 0.3))
+	kit.end_system()
+	return {}
+
+
+## The hold monitor on a wall: a bezel, the screen (`screen`, width x height in metres, 16:9;
+## its face tagged "monitor_screen") and the soft keys under it (`MONITOR_KEYS`, tagged by their
+## first entry). `frame` sits on the wall surface at the screen's middle: X out into the room, Y
+## up, Z along the wall (+Z on your left as you face it). Returns {glass (the quad the game draws
+## the monitor on), at (the screen's middle, ship space), keys (the legends' labels)}.
+static func monitor(kit: ShipKit, frame: Transform3D, screen_size: Vector2) -> Dictionary:
+	kit.begin_system("monitor", frame, [screen_size], "")
+	var keys_y := -screen_size.y * 0.5 - 0.1
+	var bezel_h := screen_size.y + 0.3
+	_box(kit, frame, Vector3(0.04, -0.075, 0.0), Vector3(0.08, bezel_h, screen_size.x + 0.08), base("hull_dark"), true)
+	# The screen's face: a thin box in front of the bezel.
+	_box(kit, frame, Vector3(0.085, 0.0, 0.0), Vector3(0.01, screen_size.y, screen_size.x), ShipKit.glow(Color(0.01, 0.04, 0.06), 0.4),
+			true, "monitor_screen")
+	_box(kit, frame, Vector3(0.082, screen_size.y * 0.5 + 0.012, 0.0), Vector3(0.006, 0.006, screen_size.x),
+			ShipKit.glow(EDGE, 1.2), false)
+	var glass := glass_quad(kit, frame * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0.0915, 0.0, 0.0)), screen_size)
+	# The soft keys: the four page/scroll keys left, MARK, OPEN, then FOCUS apart on the right.
+	var spacing := minf(0.2, screen_size.x / 8.0)
+	var keys: Array = []
+	for i in MONITOR_KEYS.size():
+		var k: Array = MONITOR_KEYS[i]
+		var z := screen_size.x * 0.5 - 0.12 - float(i) * spacing - (spacing * 0.6 if i == MONITOR_KEYS.size() - 1 else 0.0)
+		if i == MONITOR_KEYS.size() - 1:
+			z = -screen_size.x * 0.5 + 0.12
+		_box(kit, frame, Vector3(0.095, keys_y, z), Vector3(0.03, 0.07, 0.13), ShipKit.glow(Color(0.08, 0.32, 0.4), 0.6), true, k[0])
+		keys.append(panel_label(kit, k[2], frame, Vector3(0.112, keys_y, z), 22 if (k[2] as String).length() < 3 else 16, SCREEN))
+	kit.end_system()
+	return {"glass": glass, "at": frame * Vector3(0.1, 0.0, 0.0), "keys": keys}
+
+
+## The cockpit's compact monitor: a dark board at `at` tilted back `tilt_deg`, its glass on
+## the front. Returns {glass}.
+static func cockpit_monitor(kit: ShipKit, at: Vector3, tilt_deg: float) -> Dictionary:
+	kit.begin_system("cockpit_monitor", Transform3D(Basis(), at), [tilt_deg], "")
+	var screen_basis := Basis(Vector3.RIGHT, deg_to_rad(-tilt_deg))
+	kit.add(PartShapes.box(Vector3(0.7, 0.46, 0.03)), Transform3D(screen_basis, at), base("hull_dark"), "", null, false)
+	var glass := glass_quad(kit, Transform3D(screen_basis, at + screen_basis * Vector3(0, 0, 0.017)), Vector2(0.66, 0.4125))
+	kit.end_system()
+	return {"glass": glass}
+
+
+## Double sliding doors in a cross wall at `wall_z` (leaves tagged door_aft_l / door_aft_r, key
+## "door_aft"), the leaves on `side` (+1 = +z) of it, with a door panel each side of the wall;
+## `leaf_side_x` places the panel on the leaves' side clear of where they slide open. `first`
+## numbers the panels' button tags (`door_panel`'s `n`). Returns {panels: [the two panels]}.
+static func double_door(kit: ShipKit, wall_z: float, side: float, leaf_side_x: float, first: int) -> Dictionary:
+	kit.begin_system("double_door", null, [wall_z, side, leaf_side_x, first], "door_aft")
+	for lr: float in [-1.0, 1.0]:
+		var tag := "door_aft_%s" % ("l" if lr < 0.0 else "r")
+		kit.add(PartShapes.box(Vector3(1.18, 2.38, 0.08)), Transform3D(Basis(), Vector3(lr * 0.6, 1.2, wall_z + side * 0.14)),
+				base("hull_dark"), tag)
+		kit.add(PartShapes.box(Vector3(0.9, 0.12, 0.01)), Transform3D(Basis(), Vector3(lr * 0.6, 1.3, wall_z + side * 0.185)),
+				base("hazard"), tag, null, false)
+	# A door panel each side of the wall. The leaves slide over the wall on `side`, so that
+	# side's panel sits beyond where they open to.
+	var half := 0.06   # both designs use 0.12 m partition walls
+	var panels: Array = []
+	panels.append(door_panel(kit, Transform3D(Basis(Vector3.UP, -PI * 0.5 * side), Vector3(leaf_side_x, 1.3, wall_z + side * half)),
+			"door_aft", first))
+	panels.append(door_panel(kit, Transform3D(Basis(Vector3.UP, PI * 0.5 * side), Vector3(1.6, 1.3, wall_z - side * half)),
+			"door_aft", first + 1))
+	kit.end_system()
+	return {"panels": panels}
+
+
+## A small door panel on a wall: OPEN (green) over CLOSE (red) for the door `key`, with a lamp
+## the game lights with the door's state. `frame` sits on the wall surface, X out into the room.
+## `n` numbers its buttons' tags ("doorbtn_<key>_open_<n>", "..._close_<n>"). Returns {lamp,
+## buttons: {tag: action}}.
+static func door_panel(kit: ShipKit, frame: Transform3D, key: String, n: int) -> Dictionary:
+	kit.begin_system("door_panel", frame, [n], key)
+	_box(kit, frame, Vector3(0.02, 0, 0), Vector3(0.04, 0.5, 0.26), base("hull_dark"), true)
+	_box(kit, frame, Vector3(0.027, 0.27, 0), Vector3(0.02, 0.04, 0.26), base("hazard"), false)
+	var lamp := ShipKit.glow(Color(0.05, 0.05, 0.05), 0.0)
+	_box(kit, frame, Vector3(0.042, 0.2, 0), Vector3(0.008, 0.03, 0.12), lamp, false)
+	var buttons := {}
+	for b: Array in [["OPEN", "open", Color(0.3, 1.0, 0.45), 0.08], ["CLOSE", "close", Color(1.0, 0.3, 0.2), -0.12]]:
+		var tag := "doorbtn_%s_%s_%d" % [key, b[1], n]
+		_box(kit, frame, Vector3(0.05, b[3], 0), Vector3(0.025, 0.1, 0.1), ShipKit.glow(b[2], 1.2), true, tag)
+		buttons[tag] = "%s:%s" % [key, b[1]]
+		panel_label(kit, b[0], frame, Vector3(0.042, b[3] - 0.075, 0), 18, Color(0.85, 0.92, 1.0))
+	kit.end_system()
+	return {"lamp": lamp, "buttons": buttons}
+
+
+## A cockpit screen: dark glass at `at` tilted back `tilt_deg`, its text in `accent`. Returns
+## {text} (the game fills it in).
+static func cockpit_screen(kit: ShipKit, at: Vector3, tilt_deg: float, accent: Color) -> Dictionary:
+	kit.begin_system("cockpit_screen", Transform3D(Basis(), at), [tilt_deg, accent], "")
+	var screen_basis := Basis(Vector3.RIGHT, deg_to_rad(-tilt_deg))
+	kit.add(PartShapes.box(Vector3(0.7, 0.42, 0.03)), Transform3D(screen_basis, at),
+			ShipKit.glow(Color(0.02, 0.07, 0.1), 1.0), "", null, false)
+	var text := Label3D.new()
+	text.font = ShipKit.mono_font()
+	text.font_size = 22
+	text.pixel_size = 0.0015
+	text.line_spacing = -3.0
+	text.modulate = accent
+	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	text.transform = Transform3D(screen_basis, at + screen_basis * Vector3(-0.32, 0.19, 0.02))
+	kit.body.add_child(text)
+	kit.end_system()
+	return {"text": text}
+
+
+## The graphic nav display on a console: a screen `width` x `height` metres at `at`, tilted back
+## `tilt_deg`, in a dark frame. Returns {glass, pixels (the view's size the game draws at)}.
+static func nav_display(kit: ShipKit, at: Vector3, tilt_deg: float, width: float, height: float) -> Dictionary:
+	kit.begin_system("nav_display", Transform3D(Basis(), at), [tilt_deg, width, height], "")
+	var screen_basis := Basis(Vector3.RIGHT, deg_to_rad(-tilt_deg))
+	kit.add(PartShapes.box(Vector3(width + 0.06, height + 0.06, 0.03)), Transform3D(screen_basis, at),
+			base("hull_dark"), "", null, false)
+	var glass := glass_quad(kit, Transform3D(screen_basis, at + screen_basis * Vector3(0, 0, 0.017)), Vector2(width, height))
+	kit.end_system()
+	return {"glass": glass, "pixels": Vector2i(int(width * 700.0), int(height * 700.0))}
+
+
+## The system map on a console screen: `frame` puts the screen's centre at its origin facing
+## its +Z, `width` x `height` m, in a dark frame. Returns {glass, pixels}.
+static func map_screen(kit: ShipKit, frame: Transform3D, width: float, height: float) -> Dictionary:
+	kit.begin_system("map_screen", frame, [width, height], "")
+	kit.add(PartShapes.box(Vector3(width + 0.06, height + 0.06, 0.03)), frame, base("hull_dark"), "", null, false)
+	var glass := glass_quad(kit, frame * Transform3D(Basis(), Vector3(0, 0, 0.017)), Vector2(width, height))
+	kit.end_system()
+	return {"glass": glass, "pixels": Vector2i(int(width * 700.0), int(height * 700.0))}

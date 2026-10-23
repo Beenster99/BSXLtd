@@ -61,6 +61,8 @@ signal loan_repaid(loan_id: String, amount: int, balance: int)
 signal owner_changed(player: String)
 ## The host refused a company request (owner, bonus, loan) from this player.
 signal company_refused(reason: String)
+## The host turned down an order or cancellation a crew member sent from their terminal.
+signal order_refused(reason: String)
 
 const SAVE_SECTION := "business"
 const DATA_DIR := "res://modules/business/internal/data"
@@ -103,6 +105,10 @@ const SETTINGS_SECTION := "business"
 const INSTANT_KEY := "instant_deliveries"
 const TESTING_SECTION := "business.testing"
 const DEBUG_EVENT := "business.debug"
+## A crew member's market order or cancellation, sent to the host.
+const ORDER_EVENT := "business.order"
+## The host's books (cash, market, orders, stock, ledger) for everyone else, after a change.
+const BOOKS_EVENT := "business.books"
 ## What the debug buttons fill up to.
 const DEBUG_WALLET := 1000000
 const DEBUG_CASH := 10000000
@@ -167,7 +173,7 @@ func unregister_module() -> void:
 		yard_bus.disconnect("scrap_recycled", _on_scrap_recycled)
 	var net := _net()
 	if net:
-		for e in [TRANSFER_EVENT, OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT, DEBUG_EVENT]:
+		for e in [TRANSFER_EVENT, OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT, DEBUG_EVENT, ORDER_EVENT, BOOKS_EVENT]:
 			net.call("unregister_event", e)
 		net.call("unregister_snapshot_provider", SAVE_SECTION)
 	HudSlots.unregister_holo_section(CREW_CHANNEL, TRANSFER_SECTION)
@@ -202,6 +208,7 @@ func _offer_wallets() -> void:
 	var net := _net()
 	if net and Flags.is_on("business.debug"):
 		net.call("register_event", DEBUG_EVENT, _apply_debug, _validate_debug)
+	_offer_crew_books(net)
 	if not Flags.is_on("business.wallets") or net == null:
 		return
 	net.call("register_event", TRANSFER_EVENT, _apply_transfer, _validate_transfer)
@@ -210,9 +217,6 @@ func _offer_wallets() -> void:
 		net.call("register_event", BONUS_EVENT, _apply_bonus, _validate_bonus)
 		net.call("register_event", LOAN_EVENT, _apply_loan, _validate_loan)
 		net.call("register_event", SETTLE_EVENT, _apply_settle, _validate_settle)
-	net.call("register_snapshot_provider", SAVE_SECTION, self)
-	if not net.is_connected("request_rejected", _on_request_rejected):
-		net.connect("request_rejected", _on_request_rejected)
 	HudSlots.register_holo_section(CREW_CHANNEL, TRANSFER_SECTION, "Transfer money", func(glass: bool) -> Control: return TransferPanel.new(self, glass))
 
 
@@ -295,7 +299,9 @@ func _apply_transfer(p: Dictionary) -> void:
 
 
 func _on_request_rejected(event_name: String, reason: String) -> void:
-	if event_name == TRANSFER_EVENT:
+	if event_name == ORDER_EVENT:
+		order_refused.emit(reason)
+	elif event_name == TRANSFER_EVENT:
 		transfer_refused.emit(reason)
 	elif event_name in [OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT]:
 		company_refused.emit(reason)
@@ -483,12 +489,14 @@ func _apply_settle(p: Dictionary) -> void:
 	_books.company.settle(str(p.loan))
 
 
-## Joining players get everyone's wallets from the host.
+## Joining players get the host's books (wallets and the company included).
 func get_net_snapshot() -> Dictionary:
-	return {"wallets": _books.wallets.duplicate(), "company": _books.company.save_data()}
+	return {"books": _books.save_data(), "wallets": _books.wallets.duplicate(), "company": _books.company.save_data()}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
+	if data.has("books"):
+		load_data(data.books, Books.SAVE_VERSION)
 	if data.has("company"):
 		_books.company.load_data(data.company)
 		owner_changed.emit(company_owner())
@@ -723,6 +731,107 @@ func get_contract_balance(contract_id: String) -> Dictionary:
 	return _books.contract_balance(contract_id)
 
 
+# --- The crew's books -------------------------------------------------------------------
+
+## Only the host keeps the books; crew send their orders to it and get its books back after
+## every change, so every terminal shows the same cash, market, orders and stock.
+func _offer_crew_books(net: Node) -> void:
+	if net == null:
+		return
+	net.call("register_event", ORDER_EVENT, _apply_order, _validate_order)
+	net.call("register_event", BOOKS_EVENT, _apply_books)
+	net.call("register_snapshot_provider", SAVE_SECTION, self)
+	if not net.is_connected("request_rejected", _on_request_rejected):
+		net.connect("request_rejected", _on_request_rejected)
+	for sig: Signal in [cash_changed, order_placed, order_cancelled, order_delayed, delivery_arrived,
+			stock_added, market_changed, day_closed, reputation_changed, wallet_changed]:
+		if not sig.get_connections().any(func(c: Dictionary) -> bool: return (c.callable as Callable).get_method() == &"_books_changed"):
+			var n := _arg_count(sig)
+			sig.connect(_books_changed.unbind(n) if n > 0 else _books_changed)
+
+
+static func _arg_count(sig: Signal) -> int:
+	for s in sig.get_object().get_signal_list():
+		if s.name == sig.get_name():
+			return (s.args as Array).size()
+	return 0
+
+
+var _books_queued := false
+## True while a client loads the host's books, so the change signals don't echo back.
+var _loading_books := false
+
+
+## On the host with crew aboard: sends the books once this frame's changes are done.
+func _books_changed() -> void:
+	if _books_queued or _loading_books or not _is_authority() or not multiplayer.has_multiplayer_peer() \
+			or multiplayer.get_peers().is_empty():
+		return
+	_books_queued = true
+	_send_books.call_deferred()
+
+
+func _send_books() -> void:
+	_books_queued = false
+	var net := _net()
+	if net and _is_authority():
+		net.call("host_emit", BOOKS_EVENT, {"books": _books.save_data()})
+
+
+func _apply_books(p: Dictionary) -> void:
+	if _is_authority():
+		return
+	_loading_books = true
+	load_data(p.get("books", {}), Books.SAVE_VERSION)
+	_loading_books = false
+
+
+func _send_order(payload: Dictionary) -> BusinessResult:
+	var net := _net()
+	if net == null:
+		return _not_host()
+	if payload.kind == "market":
+		var q := quote_market(payload.basket)
+		if not q.ok:
+			return BusinessResult.fail(ERR_INVALID_PARAMETER, q.reason)
+	net.call("request", ORDER_EVENT, payload)
+	var r := BusinessResult.success()
+	r.message = "sent to the host"
+	return r
+
+
+func _validate_order(sender: int, p: Dictionary) -> Variant:
+	if player_name(sender) == "" and sender != 1:
+		return "that player isn't here"
+	match str(p.get("kind", "")):
+		"market":
+			var basket: Array = p.get("basket", [])
+			var q := quote_market(basket)
+			if not q.ok:
+				return q.reason
+			if _books.insolvent:
+				return "the company is insolvent"
+			if q.cost > _books.cash:
+				return "not enough cash"
+			return {"kind": "market", "basket": basket, "contract": str(p.get("contract", ""))}
+		"cancel":
+			var o: PartsOrder = _books.orders.get(str(p.get("order", "")))
+			if o == null or o.state != PartsOrder.State.PLACED:
+				return "that order can't be cancelled"
+			return {"kind": "cancel", "order": o.id}
+	return "unknown order"
+
+
+## Runs on every peer; only the host changes its books (the rest get them with BOOKS_EVENT).
+func _apply_order(p: Dictionary) -> void:
+	if not _is_authority():
+		return
+	var r: BusinessResult = _books.place_market_order(p.basket, str(p.contract)) if p.kind == "market" \
+			else _books.cancel_order(str(p.order))
+	if not r.is_ok():
+		push_warning("Business: crew order failed on the host: %s" % r.message)
+
+
 # --- Changes (host only) ---
 
 func place_order(supplier_id: String, lines: Array[OrderLine], contract_id := "") -> BusinessResult:
@@ -733,15 +842,17 @@ func place_order(supplier_id: String, lines: Array[OrderLine], contract_id := ""
 
 ## Buys a basket of {listing_id, qty} lines from today's market: one order per supplier,
 ## paid now. result.order_ids lists them, result.cost is the bill.
+## A crew member's order goes to the host: the result is sent (order_ids empty), and the
+## order shows up with the host's books, or order_refused says why not.
 func place_market_order(basket: Array, contract_id := "") -> BusinessResult:
 	if not _is_authority():
-		return _not_host()
+		return _send_order({"kind": "market", "basket": basket, "contract": contract_id})
 	return _books.place_market_order(basket, contract_id)
 
 
 func cancel_order(order_id: String) -> BusinessResult:
 	if not _is_authority():
-		return _not_host()
+		return _send_order({"kind": "cancel", "order": order_id})
 	return _books.cancel_order(order_id)
 
 
