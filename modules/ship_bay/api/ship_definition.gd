@@ -8,9 +8,9 @@ extends Resource
 ## The ship's id in both games ("vs_kestrel").
 @export var ship_id := ""
 @export var display_name := ""
-## The ship's look. Void Salvage builds its ships in code; this is an export of one.
+## The ship's look: a scene that builds it from its Void Salvage file.
 @export var model: PackedScene
-## Where the layout came from (a Void Salvage commit, or "hand-written").
+## Where the ship came from (the Void Salvage file's generator and design).
 @export var source := ""
 ## The whole ship, ship space, metres.
 @export var bounds := AABB()

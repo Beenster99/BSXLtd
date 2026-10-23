@@ -16,16 +16,16 @@ func run_tests() -> void:
 	bay.component_installed.connect(func(s: String, c: String) -> void: installed.append([s, c]))
 
 	check(bay.load_ship("vs_kestrel"), "Kestrel loads")
-	var slot := "eng_aft_port_1"
+	var slot := "eng_port"
 	var joints: Array[String] = []
 	for f in bay.get_fasteners(slot):
 		joints.append(f.joint_id)
 	check(joints.size() == 6, "port engine has 4 bolts, a fuel plug and a power plug: %d" % joints.size())
 	check(bay.get_slot_state(slot) == S.FITTED, "arrives fitted")
-	check(bay.get_component(slot) == "KestrelEngine", "with its engine")
+	check(bay.get_component(slot) == "kestrel_engine", "with its engine")
 	check(bay.is_joint_tight(joints[0]), "bolts arrive tight")
 
-	check(not bay.try_position(slot, "KestrelEngine"), "can't position into a fitted slot")
+	check(not bay.try_position(slot, "kestrel_engine"), "can't position into a fitted slot")
 	check(bay.note_joint_removed(joints[0]), "undo one bolt")
 	check(bay.get_slot_state(slot) == S.LOOSENED, "one bolt out: loosened")
 	check(not bay.note_joint_removed(joints[0]), "the same bolt can't come out twice")
@@ -36,23 +36,23 @@ func run_tests() -> void:
 		bay.note_joint_removed(j)
 	check(bay.get_slot_state(slot) == S.EMPTY, "all out: empty")
 	check(bay.get_component(slot) == "", "the engine is off")
-	check(removed == [[slot, "KestrelEngine"]], "component_removed sent once: %s" % [removed])
+	check(removed == [[slot, "kestrel_engine"]], "component_removed sent once: %s" % [removed])
 	check(not bay.note_joint_made(joints[0], 1.0), "nothing to bolt in an empty slot")
 
-	check(not bay.try_position(slot, "hold_nets"), "slot refuses a part it doesn't take")
-	check(bay.try_position(slot, "KestrelEngine"), "new engine positioned")
+	check(not bay.try_position(slot, "hold_net"), "slot refuses a part it doesn't take")
+	check(bay.try_position(slot, "kestrel_engine"), "new engine positioned")
 	check(bay.get_slot_state(slot) == S.POSITIONED, "positioned")
-	check(not bay.note_joint_made("eng_aft_stbd_1/b1", 1.0), "an already tight bolt can't be made again")
-	check(not bay.note_joint_made("eng_aft_port_1/nope", 1.0), "unknown joint refused")
+	check(not bay.note_joint_made("eng_stbd/b1", 1.0), "an already made bolt can't be made again")
+	check(not bay.note_joint_made("eng_port/nope", 1.0), "unknown joint refused")
 	bay.note_joint_made(joints[0], 0.8)
 	check(not bay.try_remove(slot), "can't lift it off once a bolt holds it")
 	for j in joints:
 		bay.note_joint_made(j, 0.95)
 	check(bay.get_slot_state(slot) == S.INSTALLED, "all joints made: installed")
 	check(is_equal_approx(bay.joint_quality(joints[0]), 0.8), "first bolt keeps its quality")
-	check(installed == [[slot, "KestrelEngine"]], "component_installed sent once: %s" % [installed])
+	check(installed == [[slot, "kestrel_engine"]], "component_installed sent once: %s" % [installed])
 
-	var net := "net_hold_dor_1"
+	var net := "hold_nets"
 	var snap := bay.snapshot()
 	for f in bay.get_fasteners(net):
 		bay.note_joint_removed(f.joint_id)

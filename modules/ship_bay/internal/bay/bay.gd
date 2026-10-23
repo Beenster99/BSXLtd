@@ -135,7 +135,7 @@ func _show_ship(def: ShipDefinition) -> void:
 	if def.model:
 		model = def.model.instantiate() as Node3D
 		ship_root.add_child(model)
-	pieces = pieces_by_slot(ship_root, def)
+	pieces = model.call("slot_pieces", def) if model and model.has_method("slot_pieces") else pieces_by_slot(ship_root, def)
 	_build_access()
 	for s in def.slots:
 		for f in s.fasteners:
@@ -275,8 +275,8 @@ func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
 	return ring
 
 
-## The model's mesh pieces whose centre lies in each slot's box (ship space). The Kestrel's
-## export has no names, so position is the only link between a piece and its slot.
+## The model's mesh pieces whose centre lies in each slot's box (ship space), for a model
+## that can't say which pieces are a slot's part (`slot_pieces`).
 static func pieces_by_slot(root: Node3D, def: ShipDefinition) -> Dictionary:
 	var out := {}
 	for s in def.slots:

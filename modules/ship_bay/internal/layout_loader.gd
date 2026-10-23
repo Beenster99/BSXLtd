@@ -1,44 +1,108 @@
 extends RefCounted
 ## Builds a ShipDefinition from a ship's folder:
-##   <name>_layout.json     Void Salvage's view of the ship (rooms, module slots), ship space
-##   <name>_fasteners.json  BSX's joints per slot
-##   <name>.tscn            the model, built in code from the shared parts (preferred), or
-##   <name>.glb             an exported model
-## The layout is shaped like the file Void Salvage will export, so swapping the hand-written
-## one for an exported one needs no code change.
+##   <name>.vsship.json     the ship as Void Salvage exported it (vsship 2.0): its slots, parts
+##                          and joints with their paths. A slot's joints are the file's joints
+##                          on the slot's parts ("slot:<id>/...").
+##   <name>_fasteners.json  BSX's own data on top: joints for the slots whose part the file
+##                          doesn't carry (a module fitted later), what a slot's spot welds
+##                          are made as in the yard ("spots"), joints BSX adds ("extra"), and
+##                          file parts BSX treats as replaceable fittings ("fittings")
+##   <name>.tscn            the model, which builds the ship from the same file
 
-const LAYOUT_VERSION := 1
+## Void Salvage joint kinds as BSX's trades work them: a spot weld is a short weld.
+const KINDS := {"spot": "weld", "weld": "weld", "bolt": "bolt", "rivet": "rivet", "connector": "connector"}
+## Id letters per BSX kind ("eng_port/w1").
+const LETTERS := {"weld": "w", "bolt": "b", "rivet": "r", "connector": "p"}
+## What a file joint is made with, by kind: the bolts that hold units to pipes and decks are
+## M10s; connectors carry power (a lead from the loom).
+const SPECS := {"bolt": "M10", "rivet": "RIVET_4", "weld": "", "connector": "power"}
+## A spot weld's bead, metres: along and across.
+const SPOT_SIZE := Vector2(0.04, 0.012)
+## The file's work sides as BSX names them.
+const ACCESS := {"hold": "inboard", "cabin": "inboard", "outboard": "outboard", "inboard": "inboard",
+		"below": "below", "above": "above"}
 
 
 static func load_ship(dir: String) -> ShipDefinition:
 	var name := dir.get_file()
-	var layout := _read_json(dir.path_join(name + "_layout.json"))
-	if layout.is_empty():
+	var f := read_file(dir.path_join(name + ".vsship.json"))
+	if f.is_empty():
 		return null
-	if int(layout.get("version", 0)) > LAYOUT_VERSION:
-		push_error("ShipBay: %s layout version %s is newer than %d" % [name, layout.get("version"), LAYOUT_VERSION])
+	var version: Variant = f.get("version", [])
+	if not (version is Array and int(version[0]) == 2):
+		push_error("ShipBay: %s is vsship %s, not 2.x" % [name, str(version)])
 		return null
-	var joints: Dictionary = _read_json(dir.path_join(name + "_fasteners.json")).get("slots", {})
+	var bsx := _read_json(dir.path_join(name + "_fasteners.json"))
+	var own: Dictionary = bsx.get("slots", {})
+	var spots: Dictionary = bsx.get("spots", {})
+	var extra: Dictionary = bsx.get("extra", {})
 	var def := ShipDefinition.new()
-	def.version = int(layout.get("version", 1))
-	def.ship_id = layout.get("ship_id", "")
-	def.display_name = layout.get("display_name", def.ship_id)
-	def.source = layout.get("source", "")
-	def.bounds = _aabb(layout.get("bounds", {}))
-	for room: Dictionary in layout.get("rooms", []):
-		var z: Array = room.get("z", [0.0, 0.0])
-		def.rooms[room.get("name", "")] = Vector2(z[0], z[1])
-	for entry: Dictionary in layout.get("module_slots", []):
+	def.version = int(version[0])
+	def.ship_id = "vs_" + name
+	var ship: Dictionary = f.get("ship", {})
+	def.display_name = ship.get("name", name)
+	var gen: Dictionary = f.get("generator", {})
+	def.source = "%s %s, design %s" % [gen.get("app", "void-salvage"), gen.get("version", "?"), ship.get("id", name)]
+	def.bounds = _box(f.get("derived", {}).get("bounds", {}))
+	var layout: Dictionary = f.get("layout", {})
+	var rooms: Array = layout.get("rooms", [])
+	for i in rooms.size():
+		var b := _box(rooms[i])
+		def.rooms["room_%d" % i] = Vector2(b.position.z, b.end.z)
+	var by_slot := joints_by_slot(f)
+	var part_boxes := {}
+	for p: Dictionary in f.get("parts", []):
+		var path: String = p.get("path", "")
+		if path.begins_with("slot:"):
+			var id := path.trim_prefix("slot:").get_slice("/", 0)
+			var b := _box(p.get("box", {}))
+			part_boxes[id] = (part_boxes[id] as AABB).merge(b) if part_boxes.has(id) else b
+	for entry: Dictionary in f.get("slots", []):
 		var s := _slot(entry)
-		for j: Dictionary in joints.get(s.slot_id, []):
-			s.fasteners.append(_fastener(s.slot_id, j))
+		if part_boxes.has(s.slot_id):
+			s.box = s.box.merge(part_boxes[s.slot_id])   # the slot's box can be smaller than its part
+		for p: Dictionary in f.get("parts", []):
+			if str(p.get("path", "")).begins_with("slot:%s/" % s.slot_id):
+				s.parts.append(p["path"])
+		var joints: Array = by_slot.get(s.slot_id, [])
+		if joints.is_empty():
+			for j: Dictionary in own.get(s.slot_id, []):
+				s.fasteners.append(_own_fastener(s.slot_id, j))
+		else:
+			var counts := {}
+			for j: Dictionary in joints:
+				s.fasteners.append(_file_fastener(s.slot_id, j, counts, spots.get(s.slot_id, {})))
+			for j: Dictionary in extra.get(s.slot_id, []):
+				s.fasteners.append(_own_fastener(s.slot_id, j))
+		if not entry.get("mount", {}).has("b") and not s.fasteners.is_empty():
+			s.mount = _facing(s.fasteners[0].normal, s.mount.origin)
 		def.slots.append(s)
-	for ext: String in [".tscn", ".glb"]:
-		var model_path := dir.path_join(name + ext)
-		if ResourceLoader.exists(model_path):
-			def.model = load(model_path)
-			break
+	for entry: Dictionary in bsx.get("fittings", []):
+		var s := _fitting_slot(entry, f)
+		if s:
+			def.slots.append(s)
+	var model_path := dir.path_join(name + ".tscn")
+	if ResourceLoader.exists(model_path):
+		def.model = load(model_path)
 	return def
+
+
+## The file as data (an imported JSON resource, so it is in exported builds too), {} when it
+## can't be read.
+static func read_file(path: String) -> Dictionary:
+	return _read_json(path)
+
+
+## Slot id -> the file's joints on that slot's parts, in file order.
+static func joints_by_slot(f: Dictionary) -> Dictionary:
+	var out := {}
+	for j: Dictionary in f.get("joints", []):
+		for end: String in ["a", "b"]:
+			var p: String = j.get(end, "")
+			if p.begins_with("slot:"):
+				(out.get_or_add(p.trim_prefix("slot:").get_slice("/", 0), []) as Array).append(j)
+				break
+	return out
 
 
 static func _slot(e: Dictionary) -> MountSlot:
@@ -46,17 +110,74 @@ static func _slot(e: Dictionary) -> MountSlot:
 	s.slot_id = e.get("slot_id", "")
 	s.display_name = e.get("display_name", s.slot_id)
 	s.accepts = PackedStringArray(e.get("accepts", []))
-	s.fitted = e.get("fitted", "")
-	s.access = e.get("access", "inboard")
-	s.box = _aabb(e.get("box", {}))
-	var facing := _vec(e.get("facing", [0, 0, 1])).normalized()
-	var up := Vector3.UP if absf(facing.dot(Vector3.UP)) < 0.99 else Vector3.BACK
-	var x := up.cross(facing).normalized()
-	s.mount = Transform3D(Basis(x, facing.cross(x), facing), _vec(e.get("origin", [0, 0, 0])))
+	s.fitted = str(e["fitted"]) if e.get("fitted") != null else ""
+	s.access = ACCESS.get(e.get("access", "inboard"), "inboard")
+	s.box = _box(e.get("box", {}))
+	var mount: Dictionary = e.get("mount", {})
+	var origin := _vec(mount.get("o", [0, 0, 0]))
+	s.mount = VsShipImport.xform(mount) if mount.has("b") else _facing(Vector3.BACK, origin)
 	return s
 
 
-static func _fastener(slot_id: String, j: Dictionary) -> FastenerPoint:
+## A mount whose basis Z points out of the mounting face along `facing`.
+static func _facing(facing: Vector3, origin: Vector3) -> Transform3D:
+	var z := facing.normalized()
+	var up := Vector3.UP if absf(z.dot(Vector3.UP)) < 0.99 else Vector3.BACK
+	var x := up.cross(z).normalized()
+	return Transform3D(Basis(x, z.cross(x), z), origin)
+
+
+## A file part BSX treats as a replaceable fitting (a hull plate): its slot, box and joints
+## (every file joint on the part) from the file. Null when the file has no such part.
+static func _fitting_slot(e: Dictionary, f: Dictionary) -> MountSlot:
+	var path: String = e.get("part", "")
+	var rec := {}
+	for p: Dictionary in f.get("parts", []):
+		if p.get("path", "") == path:
+			rec = p
+	if rec.is_empty():
+		push_error("ShipBay: fitting %s names no part %s" % [e.get("slot_id", ""), path])
+		return null
+	var s := MountSlot.new()
+	s.slot_id = e.get("slot_id", "")
+	s.display_name = e.get("display_name", s.slot_id)
+	s.accepts = PackedStringArray(e.get("accepts", []))
+	s.fitted = e.get("fitted", "")
+	s.access = e.get("access", "outboard")
+	s.box = _box(rec.get("box", {}))
+	s.parts = PackedStringArray([path])
+	var counts := {}
+	for j: Dictionary in f.get("joints", []):
+		if j.get("a", "") == path or j.get("b", "") == path:
+			s.fasteners.append(_file_fastener(s.slot_id, j, counts))
+	s.mount = _facing(s.fasteners[0].normal if not s.fasteners.is_empty() else Vector3.BACK, s.box.get_center())
+	return s
+
+
+## `spot` says what the slot's spot welds are made as in the yard: {kind, spec} ({} keeps
+## them welds).
+static func _file_fastener(slot_id: String, j: Dictionary, counts: Dictionary, spot: Dictionary = {}) -> FastenerPoint:
+	var f := FastenerPoint.new()
+	f.kind = KINDS.get(str(j.get("kind", "weld")), "weld")
+	if str(j.get("kind", "")) == "spot" and spot.has("kind"):
+		f.kind = str(spot["kind"])
+	counts[f.kind] = int(counts.get(f.kind, 0)) + 1
+	f.joint_id = "%s/%s%d" % [slot_id, LETTERS[f.kind], counts[f.kind]]
+	f.path = j.get("path", "")
+	f.spec = str(spot.get("spec", SPECS[f.kind])) if spot.has("kind") and str(j.get("kind", "")) == "spot" else SPECS[f.kind]
+	f.position = _vec(j.get("at", [0, 0, 0]))
+	f.normal = _vec(j.get("normal", [0, 1, 0])).normalized()
+	if f.kind == "weld":
+		var up := _vec(j["seam_up"]) if j.has("seam_up") else Vector3.ZERO
+		if up.length() < 0.5:
+			up = f.normal.cross(Vector3.UP if absf(f.normal.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT)
+		f.seam_up = up.normalized()
+		var size: Variant = j.get("seam_size")
+		f.seam_size = Vector2(float(size[0]), float(size[1])) if size is Array and float(size[0]) > 0.0 else SPOT_SIZE
+	return f
+
+
+static func _own_fastener(slot_id: String, j: Dictionary) -> FastenerPoint:
 	var f := FastenerPoint.new()
 	f.joint_id = "%s/%s" % [slot_id, j.get("id", "")]
 	f.kind = j.get("kind", "bolt")
@@ -82,6 +203,6 @@ static func _vec(a: Array) -> Vector3:
 	return Vector3(a[0], a[1], a[2])
 
 
-static func _aabb(d: Dictionary) -> AABB:
-	var lo := _vec(d.get("min", [0, 0, 0]))
-	return AABB(lo, _vec(d.get("max", [0, 0, 0])) - lo)
+## A file box {pos, size}.
+static func _box(d: Dictionary) -> AABB:
+	return AABB(_vec(d.get("pos", [0, 0, 0])), _vec(d.get("size", [0, 0, 0])))

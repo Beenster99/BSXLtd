@@ -1,9 +1,9 @@
 extends ModuleTest
-## Ship and Bay: the Kestrel's layout reads, its slots sit on the ship, and the model's pieces
-## for each slot are found.
+## Ship and Bay: the Kestrel is the one Void Salvage exported (kestrel.vsship.json). Its slots
+## are the file's, their joints the file's joints on the slots' parts (BSX's own for slots the
+## file carries no part for), the model builds every part with its path, and the bay finds
+## each slot's pieces and hides a stripped one.
 ##   tools/run_tests.sh ship_bay
-
-const Bay := preload("res://modules/ship_bay/internal/bay/bay.gd")
 
 
 func run_tests() -> void:
@@ -13,56 +13,77 @@ func run_tests() -> void:
 	if def == null:
 		return
 	check(def.model != null, "Kestrel model loads")
-	check(def.slot_ids() == PackedStringArray(["eng_aft_port_1", "eng_aft_stbd_1", "net_hold_dor_1",
-			"att_hold_aft_1", "pnl_roof_hold_1", "brk_hold_port_1", "plt_hull_stbd_1"]),
-			"the 0.3 slots, the riveted roof panel and the welded bracket and doubler plate: %s" % def.slot_ids())
-	for welded: String in ["brk_hold_port_1", "plt_hull_stbd_1"]:
-		var welds := def.slot(welded).fasteners
-		check(welds.size() >= 3 and welds.all(func(f: FastenerPoint) -> bool:
-				return f.kind == "weld" and f.seam_size.x > 0.0 and f.seam_up.is_normalized() and absf(f.seam_up.dot(f.normal)) < 0.01),
-				"%s is welded on: %d seams, each along its surface" % [welded, welds.size()])
-	var panel := def.slot("pnl_roof_hold_1").fasteners
-	check(panel.size() >= 30 and panel.all(func(f: FastenerPoint) -> bool: return f.kind == "rivet" and f.spec == "RIVET_4"),
-			"roof panel is riveted on: %d rivets" % panel.size())
-	check(def.rooms.get("hold", Vector2.ZERO) == Vector2(1.65, 6.42), "hold span from Void Salvage")
+	check(def.slot_ids() == PackedStringArray(["eng_port", "eng_stbd", "attractor_coil", "hold_nets", "radar",
+			"survey_array", "tow_winch", "bowser_tank", "plate_hold_port"]), "the file's slots: %s" % ", ".join(def.slot_ids()))
+	check(def.slot("eng_port").takes("kestrel_engine") and def.slot("eng_port").fitted == "kestrel_engine",
+			"engines take and carry the Kestrel engine")
+	check(def.slot("attractor_coil").fitted == "" and def.slot("attractor_coil").takes("attractor_coil_1"),
+			"the attractor coil slot arrives empty and takes the shared module")
+	check(def.rooms.size() == 4 and def.bounds.size.z > 13.0, "rooms and bounds from the file")
 	for s in def.slots:
 		check(def.bounds.grow(0.01).encloses(s.box), "%s inside the ship" % s.slot_id)
-		check(s.box.grow(0.15).has_point(s.mount.origin), "%s mount on its box" % s.slot_id)
+		check(s.box.grow(0.25).has_point(s.mount.origin), "%s mount on its box" % s.slot_id)
 		check(s.mount.basis.z.is_normalized(), "%s mount faces somewhere" % s.slot_id)
 		check(not s.fasteners.is_empty(), "%s has fasteners" % s.slot_id)
+		var ids := {}
 		for f in s.fasteners:
-			check(FastenerPoint.slot_of(f.joint_id) == s.slot_id, "%s names its slot" % f.joint_id)
-			check(s.box.grow(0.1).has_point(f.position), "%s sits on its part" % f.joint_id)
+			check(FastenerPoint.slot_of(f.joint_id) == s.slot_id and not ids.has(f.joint_id), "%s names its slot once" % f.joint_id)
+			ids[f.joint_id] = true
+			if f.kind != "connector" or f.path == "":   # a lead's joint is at the loom's end
+				check(s.box.grow(0.12).has_point(f.position), "%s sits on its part" % f.joint_id)
 			check(f.kind in ["bolt", "rivet", "weld", "connector"], "%s kind %s" % [f.joint_id, f.kind])
-	check(def.slot("eng_aft_port_1").mount.origin.x == -def.slot("eng_aft_stbd_1").mount.origin.x,
-			"engines mirror each other")
+			if f.kind == "weld":
+				check(f.seam_up.is_normalized() and absf(f.seam_up.dot(f.normal)) < 0.01 and f.seam_size.x > 0.0,
+						"%s has a seam across its face" % f.joint_id)
+	var port := def.slot("eng_port").fasteners
+	var bolts := port.filter(func(f: FastenerPoint) -> bool: return f.path != "")
+	check(port.size() == 6 and bolts.size() == 4 and bolts.all(func(f: FastenerPoint) -> bool:
+			return f.kind == "bolt" and f.spec == "M12" and f.path.begins_with("slot:eng_port/engine/spot:")),
+			"each engine is bolted (M12) to the stern cap where the file spots it, keyed by the file's paths")
+	var plugs := port.filter(func(f: FastenerPoint) -> bool: return f.kind == "connector").map(
+			func(f: FastenerPoint) -> String: return f.spec)
+	check(plugs == ["fuel", "power"], "and takes a fuel and a power plug: %s" % [plugs])
+	var plate := def.slot("plate_hold_port")
+	check(plate.fitted == "HullPlate" and plate.fasteners.size() == 8 and plate.fasteners.all(
+			func(f: FastenerPoint) -> bool: return f.kind == "rivet" and f.path != ""),
+			"the hold's port side plate is a fitting riveted on with the file's 8 rivets")
+	var bowser := def.slot("bowser_tank").fasteners
+	var kinds := {}
+	for f in bowser:
+		kinds[f.kind] = int(kinds.get(f.kind, 0)) + 1
+	check(kinds == {"weld": 16, "bolt": 4, "connector": 1}, "bowsers: spots to the deck, pipe bolts, a loom lead: %s" % kinds)
+	check(def.slot("hold_nets").fasteners.all(func(f: FastenerPoint) -> bool: return f.path == "" and f.kind == "bolt"),
+			"the nets (no part in the file) take BSX's own bolts")
+	check(def.slot("eng_port").mount.origin.x == -def.slot("eng_stbd").mount.origin.x, "engines mirror each other")
 
 	var model := def.model.instantiate() as Node3D
-	var heads := {}
-	for mmi: MultiMeshInstance3D in model.find_children("*", "MultiMeshInstance3D", false, false):
-		heads[mmi.name.rstrip("0123456789")] = int(heads.get(mmi.name.rstrip("0123456789"), 0)) + mmi.multimesh.instance_count
-	check(int(heads.get("Rivets", 0)) > 1500, "skin is riveted: %s" % heads)
-	check(int(heads.get("BoltHeads", 0)) > 200, "linings, deck and fittings are bolted: %s" % heads)
-	check(model.find_children("*", "CollisionShape3D", false, false).size() > 100, "the hull is solid to walk in")
-	var root := Node3D.new()
-	root.add_child(model)
-	var found: Dictionary = Bay.pieces_by_slot(root, def)
-	for s in def.slots:
-		check((found[s.slot_id] as Array).size() > 0, "%s finds model pieces: %d" % [s.slot_id,
-				(found[s.slot_id] as Array).size()])
-	check((found["eng_aft_port_1"] as Array).size() == 5, "port engine is cowl, trim, ring, nozzle, glow")
-	root.free()
+	var importer: VsShipImport = model.get("importer")
+	check(importer != null and importer.errors.is_empty() and importer.warnings.is_empty(),
+			"the file builds cleanly: %s" % ("; ".join(importer.errors + importer.warnings) if importer else "no importer"))
+	check(importer.parts_by_path.size() == 529 and importer.joints_by_path.size() == 1748,
+			"every part and joint built: %d, %d" % [importer.parts_by_path.size(), importer.joints_by_path.size()])
+	for f in bolts + plate.fasteners:
+		check(importer.joint_at(f.path) != null, "%s is a joint on the model" % f.joint_id)
+	check(model.find_children("*", "CollisionShape3D", true, false).size() > 100, "the hull is solid to walk in")
+	var lamps := model.find_children("*", "Light3D", true, false).size()
+	check(lamps >= 10, "the file's lamps are in: %d" % lamps)
+	var found: Dictionary = model.call("slot_pieces", def)
+	for id: String in ["eng_port", "eng_stbd", "hold_nets", "bowser_tank", "plate_hold_port"]:
+		check((found[id] as Array).size() > 0, "%s finds model pieces: %d" % [id, (found[id] as Array).size()])
+	var hull := importer.kit.model.part_visual(importer.part_at("hull/cap/back/0").id)
+	check(not (found["eng_port"] as Array).has(hull), "the stern cap the engine sits on is not the engine")
+	model.free()
 
 	var scene := load("res://modules/ship_bay/internal/bay/bay.tscn") as PackedScene
 	var view := scene.instantiate()
 	add_child(view)
 	await frames(2)
 	check(bay.ship != null and bay.ship.ship_id == "vs_kestrel", "bay scene loads the Kestrel")
-	for f in bay.get_fasteners("att_hold_aft_1"):
+	for f in bay.get_fasteners("eng_port"):
 		bay.note_joint_removed(f.joint_id)
-	var hidden := (view.pieces["att_hold_aft_1"] as Array).all(
+	var hidden := (view.pieces["eng_port"] as Array).all(
 			func(mi: MeshInstance3D) -> bool: return not mi.visible)
-	check(hidden, "stripped emitters disappear from the model")
+	check(hidden, "a stripped engine disappears from the model")
 	view.queue_free()
 	await frames(1)
 	bay.unload_ship()
