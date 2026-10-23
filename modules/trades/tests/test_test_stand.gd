@@ -66,6 +66,7 @@ func run_tests() -> void:
 	var pops := rig.sparks.pop_count()
 	(rig.tool_node(&"torque_wrench") as TradesPowerWrench).undo = true
 	station.press(&"torque_wrench")
+	station._stall_at = -1.0
 	_run(station, TradesShipJoints.RUN_S * 1.2)
 	station.release()
 	station.update(0.0)

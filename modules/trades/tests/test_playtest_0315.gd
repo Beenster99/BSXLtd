@@ -59,6 +59,7 @@ func run_tests() -> void:
 	rig._on_action(TradesBus.KEY_MODE)
 	check(wrench.undo, "X switches the wrench to undo")
 	station.press(&"torque_wrench")
+	station._stall_at = -1.0
 	_run(rig, station, TradesShipJoints.RUN_S * 1.2)
 	station.release()
 	check(not station.is_tight(station.points[b]), "and left click takes it out")
