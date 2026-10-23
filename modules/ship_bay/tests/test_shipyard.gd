@@ -64,7 +64,7 @@ func run_tests() -> void:
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(path[1], path[2]))
 		check(hit.is_empty(), "%s is open: %s" % [path[0], hit.get("position", "")])
 	# The halls' doorways are tall enough for a picking lift's mast (beenster, 0.3.15).
-	var mast := float(preload("res://modules/ship_bay/internal/yard/hover_trolley.gd").PICKER_MAST) + 0.3
+	var mast := float(preload("res://modules/ship_bay/internal/yard/hover_trolley.gd").SPECS["h"]["mast"]) + 0.3
 	for path: Array in [["bay to deliveries", Vector3(-20, mast, 0), Vector3(-36, mast, 0)],
 			["deliveries to stock", Vector3(-39, mast, -18), Vector3(-39, mast, -28.5)],
 			["bay to stock", Vector3(-14, mast, -18), Vector3(-14, mast, -28.5)],

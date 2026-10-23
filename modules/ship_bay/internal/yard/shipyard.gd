@@ -886,8 +886,8 @@ func _build_doors() -> void:
 						_wall_point(axis, wall[1], o[0], height + 0.55, float(-side if side != 0 else 1) * (T * 0.5 + 0.03))),
 						_glow_mat(Color(0.3, 1.0, 0.45), 3.0), false)
 				continue
-			# Rolled up clear of a picking lift's mast in the tall doorways.
-			var bottom := maxf(3.2, maxf(height * 0.66, height - 0.75))
+			# Rolled up clear of the lifts' masts (the heavy lift's is 9.3 m) in the tall doorways.
+			var bottom := maxf(3.2, maxf(height * 0.66, height - 0.3))
 			var drop := height - bottom
 			var basis := _wall_basis(axis)
 			_put(_box(Vector3(width - 0.01, drop, 0.03)), Transform3D(basis, _wall_point(axis, wall[1], o[0], bottom + drop * 0.5, face)), curtain, false)
