@@ -41,6 +41,18 @@ var held: Node3D
 ## Where the stretchy forearm starts (world): the body's elbow in third person, or INF for
 ## the mount in front of the camera (first person).
 var arm_root := Vector3.INF
+## How big the glove draws (1 true size): out on the work it's drawn up with the tool it
+## holds, so both read at arm's length (TradesBay, trades.reach_scale).
+var size := 1.0
+## 0 solid, up to 1 gone: the hand and its arm fade while they're over a screen you're
+## working on (the wiring tool), so they don't hide it.
+var see_through := 0.0:
+	set(value):
+		if is_equal_approx(value, see_through):
+			return
+		see_through = value
+		for m in find_children("*", "GeometryInstance3D", true, false):
+			(m as GeometryInstance3D).transparency = value
 
 var _glove: Node3D
 var _fingers: Array[Node3D] = []
@@ -161,7 +173,7 @@ func tension() -> float:
 
 ## The glove's transform in the world (fingers along -Z, back of the hand +Y).
 func palm() -> Transform3D:
-	return _glove.global_transform
+	return _glove.global_transform.orthonormalized()
 
 
 func can_reach(point: Vector3) -> bool:
@@ -194,6 +206,8 @@ func _process(delta: float) -> void:
 		at = rest.interpolate_with(on, eased)
 	_glove.global_transform = at
 	_glove.rotate_object_local(Vector3.FORWARD, _spin)
+	if size != 1.0:
+		_glove.scale = Vector3.ONE * size
 	for f in _fingers:
 		f.rotation.x = -_grip * 1.2
 	if held:

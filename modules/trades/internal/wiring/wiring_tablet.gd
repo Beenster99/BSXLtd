@@ -104,6 +104,7 @@ func _process(delta: float) -> void:
 ## Folds it away; `closed` follows when it's in your hand.
 func fold() -> void:
 	_closing = true
+	worker.left_hand.see_through = 0.0
 
 
 func is_open() -> bool:
@@ -141,15 +142,38 @@ func _pose() -> void:
 
 ## The right hand holds the grip under the screen; the left hand follows the pointer over it
 ## and carries the wire you drag.
+##
+## trades.wiring_tidy (beenster, 0.3.15: "when you move your hand to link the wires it gets in
+## the way and stays there with your arm across the screen"): the left hand waits off the
+## screen's lower left corner and only comes onto it while it carries a wire, holding the
+## wire's end from just below so the pin you're aiming at stays in sight; over the screen
+## the hand and its arm are see-through. It goes back as soon as you let go.
+const HAND_WAIT := Vector2(-0.58, -0.62)
+const HAND_BELOW_M := 0.045
+const HAND_SEE_THROUGH := 0.55
+
+
 func _hands() -> void:
 	if not is_open():
+		worker.left_hand.see_through = 0.0
 		return
 	worker.right_hand.reach_to(global_transform * Vector3(SIZE_M.x * 0.42, -SIZE_M.y * 0.62, -0.03), global_basis.z)
 	var board := panel.board
 	var px := board.get_global_rect().position + board.pointer
-	var on := to_world(px) + global_basis.z * 0.04
-	worker.left_hand.reach_to(on, global_basis.z)
-	worker.left_hand.set_grip(0.9 if board.dragging >= 0 else 0.3)
+	if not Flags.is_on("trades.wiring_tidy"):
+		var on := to_world(px) + global_basis.z * 0.04
+		worker.left_hand.reach_to(on, global_basis.z)
+		worker.left_hand.set_grip(0.9 if board.dragging >= 0 else 0.3)
+		return
+	var hand := worker.left_hand
+	if board.dragging >= 0:
+		hand.reach_to(to_world(px) - global_basis.y * HAND_BELOW_M + global_basis.z * 0.03, global_basis.z)
+		hand.set_grip(0.9)
+		hand.see_through = HAND_SEE_THROUGH
+	else:
+		hand.reach_to(global_transform * Vector3(SIZE_M.x * HAND_WAIT.x, SIZE_M.y * HAND_WAIT.y, -0.02), global_basis.z)
+		hand.set_grip(0.3)
+		hand.see_through = 0.0
 
 
 ## A pixel of the picture as a point on the screen (world).

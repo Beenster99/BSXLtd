@@ -8,7 +8,7 @@ extends Node3D
 ## only; nothing here is game state.
 
 ## Most sparks alive at once.
-const MAX := 1600
+const MAX := 3200
 ## The glow the sparks throw on what's round them (beenster, 2026-10-22: "the surrounding
 ## area should glow from their emitted light"): a few warm lights, each at the middle of a
 ## share of the hot sparks, brighter the more sparks it has. Light per hot spark, the most one
@@ -19,10 +19,20 @@ const LIGHT_MAX := 2.6
 const LIGHT_RANGE_M := 3.5
 ## A spark counts as hot for its first share of its life.
 const HOT_SHARE := 0.55
+## and never past this (s): the welder's long-lived sparks have cooled by then.
+const HOT_MAX_S := 0.45
 ## Pull down (m/s²), the share of speed kept off a bounce, and how long one lives (s).
 const GRAVITY := 9.8
 const BOUNCE := 0.35
 const LIFE_S := Vector2(0.5, 1.4)
+## The welder's sparks and its drops of molten metal last about three seconds, bouncing about
+## the floor as they cool (beenster, 0.3.15). Their lives (s), how lively their bounce is, and
+## a drop's thickness (m).
+const WELD_LIFE_S := Vector2(2.4, 3.4)
+const WELD_BOUNCE := 0.5
+const DROP_THICK_M := 0.011
+## Below this speed (m/s) off something flat a spark lies still where it landed.
+const REST_SPEED := 0.3
 ## Fallen bolts and rivet heads: how many at once, how long they last and fade (seconds).
 const POP_MAX := 100
 const POP_LIFE_S := 15.0
@@ -35,6 +45,10 @@ var _pos: PackedVector3Array = []
 var _vel: PackedVector3Array = []
 var _age: PackedFloat32Array = []
 var _life: PackedFloat32Array = []
+var _bounce: PackedFloat32Array = []
+var _thick: PackedFloat32Array = []
+## 1 while a spark lies still on the floor (no more rays for it).
+var _rest: PackedByteArray = []
 var _mm: MultiMesh
 var _view: MultiMeshInstance3D
 var _rng := RandomNumberGenerator.new()
@@ -42,6 +56,9 @@ var _pops: Array[Dictionary] = []
 var _lights: Array[OmniLight3D] = []
 ## Bodies the sparks fly through (the worker).
 var exclude: Array[RID] = []
+## 0..1: how far the glow lights are turned down (the bay turns them down while your shield is
+## over your eyes, so the plate round the arc doesn't flare out the bead; trades.weld_from_end).
+var dim := 0.0
 
 
 func _ready() -> void:
@@ -84,8 +101,10 @@ void fragment() {
 
 
 ## Throws `count` sparks from `at`, in a cone round `dir` (spread 0..1: 0 a jet, 1 a hemisphere)
-## at about `speed` m/s.
-func emit(at: Vector3, dir: Vector3, count: int, speed: float, spread := 0.6) -> void:
+## at about `speed` m/s, each living `life` (s, a range) and keeping `bounce` of its speed off
+## whatever it hits; `thick` (m) draws them as drops.
+func emit(at: Vector3, dir: Vector3, count: int, speed: float, spread := 0.6, life := LIFE_S,
+		bounce := BOUNCE, thick := THICK_M) -> void:
 	var d := dir.normalized() if dir.length() > 0.001 else Vector3.UP
 	for i in count:
 		if _pos.size() >= MAX:
@@ -95,7 +114,10 @@ func emit(at: Vector3, dir: Vector3, count: int, speed: float, spread := 0.6) ->
 		_pos.append(at)
 		_vel.append(v)
 		_age.append(0.0)
-		_life.append(_rng.randf_range(LIFE_S.x, LIFE_S.y))
+		_life.append(_rng.randf_range(life.x, life.y))
+		_bounce.append(bounce)
+		_thick.append(thick)
+		_rest.append(0)
 
 
 ## A small part jumping off from `at` with velocity `vel`, tumbling, bouncing and fading.
@@ -130,6 +152,19 @@ func pop_positions() -> PackedVector3Array:
 	return out
 
 
+## The welder's shower (trades.molten): long-lived bouncing sparks and a few drops of molten
+## metal that land, skip about the floor and cool from orange to red.
+func emit_weld(at: Vector3, dir: Vector3, count: int, speed: float, spread := 0.8) -> void:
+	emit(at, dir, count, speed, spread, WELD_LIFE_S, WELD_BOUNCE)
+	if _rng.randf() < 0.35:
+		emit(at, dir, 1, speed * 0.45, spread, WELD_LIFE_S, WELD_BOUNCE * 0.8, DROP_THICK_M)
+
+
+## Sparks lying still on something (tests).
+func resting() -> int:
+	return _rest.count(1)
+
+
 ## Sparks alive now (tests).
 func count() -> int:
 	return _pos.size()
@@ -148,6 +183,9 @@ func _physics_process(delta: float) -> void:
 		if _age[i] >= _life[i]:
 			_remove(i)
 			continue
+		if _rest[i] == 1:
+			i += 1
+			continue
 		var v := _vel[i] + Vector3.DOWN * GRAVITY * delta
 		var to := _pos[i] + v * delta
 		if space:
@@ -156,8 +194,12 @@ func _physics_process(delta: float) -> void:
 			var hit := space.intersect_ray(q)
 			if not hit.is_empty():
 				var n: Vector3 = hit.normal
-				v = v.bounce(n) * BOUNCE
+				v = v.bounce(n) * _bounce[i]
 				to = (hit.position as Vector3) + n * 0.002
+				# Spent on something it can lie on: it stays there, cooling.
+				if n.y > 0.6 and v.length() < REST_SPEED:
+					v = Vector3.ZERO
+					_rest[i] = 1
 		_vel[i] = v
 		_pos[i] = to
 		i += 1
@@ -207,8 +249,9 @@ func _draw() -> void:
 			side = along.cross(Vector3.RIGHT)
 		side = side.normalized()
 		var up := side.cross(along).normalized()
-		var length := maxf(THICK_M, speed * STREAK_S)
-		var basis := Basis(side * THICK_M, up * THICK_M, along * length)
+		var thick := _thick[i]
+		var length := maxf(thick, speed * STREAK_S)
+		var basis := Basis(side * thick, up * thick, along * length)
 		_mm.set_instance_transform(i, Transform3D(basis, _pos[i] - along * length * 0.5))
 		var t := _age[i] / _life[i]
 		var c := Color(1.0, 0.85, 0.45).lerp(Color(1.0, 0.4, 0.05), clampf(t * 2.0, 0.0, 1.0))
@@ -225,7 +268,7 @@ func _glow() -> void:
 		sums.append(Vector3.ZERO)
 		counts.append(0)
 	for i in _pos.size():
-		if _age[i] > _life[i] * HOT_SHARE:
+		if _age[i] > minf(_life[i] * HOT_SHARE, HOT_MAX_S):
 			continue
 		var k := i % LIGHTS
 		sums[k] += _pos[i]
@@ -235,7 +278,7 @@ func _glow() -> void:
 		l.visible = counts[k] >= 3
 		if l.visible:
 			l.global_position = sums[k] / counts[k]
-			l.light_energy = minf(LIGHT_MAX, counts[k] * LIGHT_PER_SPARK) * _rng.randf_range(0.8, 1.1)
+			l.light_energy = minf(LIGHT_MAX, counts[k] * LIGHT_PER_SPARK) * _rng.randf_range(0.8, 1.1) * (1.0 - dim * 0.9)
 
 
 ## Glow lights lit now (tests).
@@ -252,7 +295,13 @@ func _remove(i: int) -> void:
 	_vel[i] = _vel[last]
 	_age[i] = _age[last]
 	_life[i] = _life[last]
+	_bounce[i] = _bounce[last]
+	_thick[i] = _thick[last]
+	_rest[i] = _rest[last]
 	_pos.resize(last)
 	_vel.resize(last)
 	_age.resize(last)
 	_life.resize(last)
+	_bounce.resize(last)
+	_thick.resize(last)
+	_rest.resize(last)

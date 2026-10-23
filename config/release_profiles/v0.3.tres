@@ -69,6 +69,13 @@ flags = {
 "trades.forearms": true,
 "trades.trace_weld": true,
 "trades.wiring": true,
+"trades.hint_stays": true,
+"trades.wrench_left_only": true,
+"trades.molten": true,
+"trades.weld_from_end": true,
+"trades.welder_clear": true,
+"trades.reach_scale": true,
+"trades.wiring_tidy": true,
 "ui": true,
 "ui.debug_tab": true
 }

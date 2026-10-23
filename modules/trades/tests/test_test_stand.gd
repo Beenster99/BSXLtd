@@ -65,7 +65,7 @@ func run_tests() -> void:
 	# Undo it again: the ring goes orange and the bolt drops out and falls.
 	var pops := rig.sparks.pop_count()
 	(rig.tool_node(&"torque_wrench") as TradesPowerWrench).undo = true
-	station.back_out(&"torque_wrench")
+	station.press(&"torque_wrench")
 	_run(station, TradesShipJoints.RUN_S * 1.2)
 	station.release()
 	station.update(0.0)
@@ -97,11 +97,17 @@ func run_tests() -> void:
 	_aim_at(rig, station, w)
 	rig.set_tool(&"welder")
 	(rig.tool_node(&"welder") as TradesWeldTorch).unweld = false
+	var at := station.points_world[w]
+	# A weld starts at an end of its seam (beenster, 0.3.15): not in the middle.
 	station.press(&"welder")
+	check(station._working < 0 and rig._hint_label.text.contains("one end"), "the arc won't strike mid-seam: %s" % rig._hint_label.text)
+	rig.worker.face(at - Vector3.RIGHT * 0.25)
+	station.update(0.0)
+	station.press(&"welder")
+	check(station._working == w, "it strikes at the seam's end")
 	_run(station, TradesShipJoints.WELD_S + 0.1)
 	check(not station.is_tight(station.points[w]), "holding the arc on one spot doesn't weld the seam")
 	check(station.trace_progress(station.points[w]) < 0.5, "it only covers that stretch")
-	var at := station.points_world[w]
 	for k in 41:
 		rig.worker.face(at + Vector3.RIGHT * (0.5 * (k / 40.0 - 0.5)))
 		station.update(0.05)
