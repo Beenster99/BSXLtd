@@ -71,6 +71,7 @@ func run_tests() -> void:
 	# No contract on: the ship's fasteners, and nothing on the right.
 	var was_active := contracts.get_active_job().job_id if contracts.get_active_job() else ""
 	contracts.set_active_job("")
+	_look_away(rig)
 	station.aimed = -1
 	var screen := await _screen(station)
 	check(screen.job_id == "" and _text(screen).contains("No contract on"), "no contract: it says so")
@@ -90,6 +91,7 @@ func run_tests() -> void:
 	var job_id := "rook_salvage.specs_test"
 	contracts.set_active_job(job_id)
 
+	_look_away(rig)
 	station.aimed = -1
 	screen = await _screen(station)
 	var pack := contracts.job_pack(job_id)
@@ -131,6 +133,13 @@ func run_tests() -> void:
 	await frames(1)
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
+
+
+## Stands the worker far off in the yard looking at open sky, so neither a joint nor the
+## beam's aim is on anything.
+func _look_away(rig: TradesBay) -> void:
+	rig.worker.global_position = rig.ship_station().ship_xform.origin + Vector3(0, 0, 400)
+	rig.worker.face(rig.worker.global_position + Vector3(0, 20, 60))
 
 
 func _screen(station: TradesShipJoints) -> TradesSpecsScreen:
