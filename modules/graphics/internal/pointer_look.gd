@@ -10,7 +10,9 @@ extends Node
 ##     Without Multiplayer the ping shows here alone. Each marker says what was pinged
 ##     (name_of), who pinged it and how far; a ping lasts PING_LIFE (10 s) and each player
 ##     has up to PINGS_EACH (5) up, the oldest going first, taken down at once on
-##     Multiplayer's ping_removed.
+##     Multiplayer's ping_removed. Z (ACTION, rebindable) pings too, for mice without a
+##     middle button. A ping out of view gets an arrow at the screen's edge pointing to it,
+##     and a crewmate's ping plays its own sound, so it isn't missed.
 
 signal hovered(target: Node)
 signal ping_shown(ping: Dictionary)
@@ -31,7 +33,7 @@ const BEAM := preload("res://modules/graphics/internal/ping_beam.gdshader")
 ## Ping fade-out at the end of its life, s.
 @export var ping_fade: float = 1.0
 ## The light column over a ping, m.
-@export var beam_height: float = 3.0
+@export var beam_height: float = 6.0
 ## How near a ping must land to something usable to light it when it carries no id, m.
 @export var match_radius: float = 0.5
 
@@ -39,6 +41,10 @@ const HOVER_COLOUR := Color(0.62, 0.9, 1.0)   # BsxTheme.ACCENT
 const PING_COLOUR := Color(1.0, 0.75, 0.25)
 ## Meta on a usable thing: what a ping on it calls it (else its look hint's title).
 const NAME_META := "gfx_name"
+## The ping key (as well as the middle mouse button).
+const ACTION := "graphics.ping"
+## How far in from the screen's edge the arrows to pings out of view sit, px.
+const EDGE := 56.0
 
 var highlighter := Highlighter.new()
 var hover_on := true
@@ -50,6 +56,7 @@ var target: Node
 var live: Array[Dictionary] = []
 var _net: Node
 var _local_id := 0
+var _arrows: Control
 
 
 func attach_net(net: Node) -> void:
@@ -74,6 +81,18 @@ func detach() -> void:
 	highlighter.clear()
 
 
+func _ready() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "PingArrows"
+	layer.layer = 5
+	add_child(layer)
+	_arrows = Control.new()
+	_arrows.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_arrows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_arrows.draw.connect(_draw_arrows)
+	layer.add_child(_arrows)
+
+
 func _process(_delta: float) -> void:
 	if hover_on:
 		var hit := pointer_hit(reach)
@@ -81,13 +100,75 @@ func _process(_delta: float) -> void:
 	elif target:
 		set_target(null)
 	_age_pings()
+	if _arrows:
+		_arrows.queue_redraw()
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not ping_on:
+		return
 	var mb := event as InputEventMouseButton
-	if ping_on and mb and mb.pressed and mb.button_index == MOUSE_BUTTON_MIDDLE:
+	var key := InputMap.has_action(ACTION) and not event is InputEventMouse and event.is_action_pressed(ACTION) and not event.is_echo()
+	if key or (mb and mb.pressed and mb.button_index == MOUSE_BUTTON_MIDDLE):
 		if ping_at_pointer():
 			get_viewport().set_input_as_handled()
+
+
+## Where an arrow to a ping out of view sits on screen and which way it points:
+## {at: Vector2, dir: Vector2}; {} while the ping is in view.
+func edge_arrow(at: Vector3) -> Dictionary:
+	var vp := get_viewport()
+	var cam := vp.get_camera_3d() if vp else null
+	if cam == null:
+		return {}
+	var size := vp.get_visible_rect().size
+	var edge := minf(EDGE, minf(size.x, size.y) * 0.15)
+	var inner := Rect2(Vector2.ONE * edge, size - Vector2.ONE * edge * 2.0)
+	var behind := cam.is_position_behind(at)
+	var px := cam.unproject_position(at)
+	if not behind and inner.has_point(px):
+		return {}
+	var centre := size * 0.5
+	var dir := px - centre
+	if behind:
+		# Behind you: which way to turn, from where it sits round you (screen y runs down).
+		# Straight behind points down; behind and to one side, down that side.
+		var local := cam.global_transform.affine_inverse() * at
+		dir = Vector2(local.x / maxf(absf(local.z), 0.01), 0.6)
+	if dir.length() < 0.001:
+		dir = Vector2.DOWN
+	dir = dir.normalized()
+	# Out along dir from the centre to the inner rectangle's edge.
+	var half := inner.size * 0.5
+	var t := minf(half.x / maxf(absf(dir.x), 0.0001), half.y / maxf(absf(dir.y), 0.0001))
+	return {"at": centre + dir * t, "dir": dir}
+
+
+func _draw_arrows() -> void:
+	var font := ThemeDB.fallback_font
+	for p in live:
+		if not is_instance_valid(p.node):
+			continue
+		var e := edge_arrow((p.node as Node3D).global_position)
+		if e.is_empty():
+			continue
+		var c: Color = p.ping.get("colour", PING_COLOUR)
+		c.a = clampf((float(p.life) - (_now() - float(p.born))) / ping_fade, 0.0, 1.0)
+		var at: Vector2 = e.at
+		var dir: Vector2 = e.dir
+		var side := dir.orthogonal()
+		var tip := at + dir * 18.0
+		_arrows.draw_colored_polygon(PackedVector2Array([tip, at - dir * 6.0 + side * 13.0, at - dir * 6.0 - side * 13.0]), c)
+		_arrows.draw_polyline(PackedVector2Array([tip, at - dir * 6.0 + side * 13.0, at - dir * 6.0 - side * 13.0, tip]),
+				Color(0, 0, 0, c.a * 0.7), 2.0, true)
+		var lines := _label(String(p.what), String(p.ping.get("name", "")), p.node).split("\n")
+		var y := at.y - dir.y * 30.0 - 8.0 * lines.size()
+		for line in lines:
+			var w := font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
+			var x := clampf(at.x - dir.x * 30.0 - w * 0.5, 8.0, _arrows.size.x - w - 8.0)
+			_arrows.draw_string_outline(font, Vector2(x, y + 16.0), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 5, Color(0, 0, 0, c.a * 0.8))
+			_arrows.draw_string(font, Vector2(x, y + 16.0), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, c)
+			y += 18.0
 
 
 ## Lights the usable thing under the pointer (null for none).
@@ -161,8 +242,20 @@ func show_ping(ping: Dictionary) -> void:
 		life = float(_net.get("PING_LIFE"))
 	live.append({"ping": ping, "key": key, "what": what, "node": node, "lit": thing, "born": _now(), "life": life})
 	(node.get_node("Label") as Label3D).text = _label(what, String(ping.get("name", "")), node)
-	Sfx.play("tick", null, -8.0, 1.4)
+	if _is_mine(ping):
+		Sfx.play("tick", null, -8.0, 1.4)
+	else:
+		# A crewmate's ping: a brighter call, from where it is, so you turn to it.
+		Sfx.play("chime", at, -2.0, 1.5)
 	ping_shown.emit(ping)
+
+
+## Whether a ping is this player's own.
+func _is_mine(ping: Dictionary) -> bool:
+	var me := 1
+	if _net and _net.has_method("local_peer_id"):
+		me = int(_net.call("local_peer_id"))
+	return int(ping.get("peer", 1)) == me
 
 
 ## Takes a ping down at once (Multiplayer's ping_removed: its pinger went over the limit,
@@ -296,7 +389,7 @@ func _age_pings() -> void:
 				var m := (c as MeshInstance3D).material_override as ShaderMaterial
 				m.set_shader_parameter("alpha", a)
 				if c.name == "Marker":
-					m.set_shader_parameter("size", 0.035 * pop)
+					m.set_shader_parameter("size", 0.05 * pop)
 			elif c is Label3D:
 				(c as Label3D).modulate.a = a
 				(c as Label3D).text = _label(String(p.what), String(p.ping.get("name", "")), p.node)
@@ -329,8 +422,8 @@ func _marker(colour: Color, what: String) -> Node3D:
 	var beam := MeshInstance3D.new()
 	beam.name = "Beam"
 	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.025
-	cyl.bottom_radius = 0.025
+	cyl.top_radius = 0.05
+	cyl.bottom_radius = 0.05
 	cyl.height = beam_height
 	cyl.radial_segments = 8
 	cyl.rings = 1
