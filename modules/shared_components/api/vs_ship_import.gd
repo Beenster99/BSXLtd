@@ -28,6 +28,10 @@ const SHIPS := {
 }
 ## Void Salvage's old ids for the frame builds (before they became the Kestrel and the Manta).
 const DESIGN_ALIASES := {"kestrel_frame": "kestrel", "manta_frame": "manta"}
+## The arguments each system's record carries since Void Salvage's S3 (`ShipParts.system`
+## reads them by index); a record with fewer is from an earlier export and is left as its box.
+const SYSTEM_ARGS := {"control_panel": 2, "lift": 2, "bowsers": 1, "fuel_port": 0, "hose_rack": 0, "monitor": 1,
+		"cockpit_monitor": 1, "double_door": 4, "door_panel": 1, "cockpit_screen": 2, "nav_display": 3, "map_screen": 2}
 ## A unit piece within this (m) of its part's box, in position and size, covers that part's visual.
 const SAME_BOX_M := 0.003
 
@@ -43,6 +47,8 @@ var materials: Dictionary = {}
 var fittings_built: Dictionary = {}
 ## System path -> what `ShipParts.system` returned (lamps, labels, screens) where its record was rebuilt.
 var systems_built: Dictionary = {}
+## System records from an export before S3 (no arguments to rebuild from): left as their boxes.
+var systems_skipped: PackedStringArray = []
 ## Paths of parts whose plain visual a unit's look pieces cover (hidden under them).
 var hidden_visuals: PackedStringArray = []
 ## A wreck's `damage` block (WreckMaker's, or a Void Salvage wreck file's), {} on a clean ship.
@@ -352,6 +358,9 @@ func _build_system(rec: Dictionary) -> void:
 	var system_name: String = str(rec.get("system", ""))
 	if not ShipParts.SYSTEMS.has(system_name):
 		warnings.append("system %s: ShipParts.system does not build it" % system_name)
+		return
+	if (rec.get("args", []) as Array).size() < int(SYSTEM_ARGS.get(system_name, 0)):
+		systems_skipped.append(str(rec.get("path", system_name)))   # an export before S3: its box stays
 		return
 	kit.group = rec.get("group", "")
 	var made: Dictionary = ShipParts.system(kit, rec)   # {} for one with nothing to wire (the hose rack)
