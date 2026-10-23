@@ -22,12 +22,12 @@ func run_tests() -> void:
 	var court: AABB = rooms["bay"].box
 	check(court.has_point(Vector3(0, 1, 0)), "the bay is the courtyard round the origin")
 	check(Yard.room_at(Vector3(-40, 1, 0)) == "deliveries", "west wing is deliveries")
-	# Direction signs: every hall's board shows the way to every other room on one face or the
-	# other, each arrow toward the first doorway on the way.
+	# Direction signs: every hall's wall board shows the way to every other room, each arrow
+	# toward the first doorway on the way.
 	check(Yard.way_to("stock", "deliveries") == Vector2(-39, -24) and Yard.way_to("deliveries", "preassembly") == Vector2(-28, 0),
 			"the way from room to room goes through their doorways")
 	for d: Array in Yard.DIRECTION_SIGNS:
-		var said := " ".join(Yard.direction_lines(d[0], d[1], d[2]) + Yard.direction_lines(d[0], d[1], d[2] + PI))
+		var said := " ".join(Yard.wall_sign_lines(d))
 		for id: String in rooms:
 			if id != d[0]:
 				check(said.contains((rooms[id].name as String).to_upper()), "%s's sign shows the way to %s: %s" % [d[0], id, said])
@@ -59,7 +59,7 @@ func run_tests() -> void:
 				func(hit: Dictionary) -> bool: return yard.call("is_own_body", hit.collider))
 		check(hits.is_empty(), "%s is clear for a bench and a worker: %d" % [spot, hits.size()])
 	var arrows := yard.get_tree().get_nodes_in_group("direction_sign").size()
-	check(arrows == 18, "the halls' boards and the courtyard's fingerpost are up: %d lines" % arrows)
+	check(arrows == 16, "the halls' boards and the courtyard's fingerpost are up: %d lines" % arrows)
 	var ship_bay: Node3D = yard.get("bay")
 	check(ship_bay != null and ship_bay.get_node_or_null("Ship") != null, "the bay scene sits in the courtyard")
 	check(ship_bay.find_child("Floor", false, false) == null, "inside the yard the bay brings no floor of its own")

@@ -73,14 +73,19 @@ const DOORWAYS := [
 	["bay", "preassembly", Vector2(28, 0)], ["stock", "deliveries", Vector2(-39, -24)], ["stock", "prep", Vector2(0, -35)],
 	["prep", "preassembly", Vector2(39, -24)],
 ]
-## The direction signs: a board hung over each hall's main walk, read both ways ([room, where
-## (yard space, under the board's top), yaw of one face]), and a fingerpost in the courtyard.
-## The boards hang just under the trusses (their bottom chords 10.7 m up), clear of the
-## high-bay lamps.
+## The direction signs: a board on each hall's wall beside the doorway onto the courtyard,
+## under its THE BAY sign where there's room (beenster, 23 Oct: on the walls, out of the lifts' way): [room,
+## the wall ("x": along x at z = at, "z": along z at x = at), the doorway's middle along it and
+## its width, the board's face off the wall's middle line, the side of the doorway it's on,
+## the way it faces] (as _door_sign takes them). And a fingerpost in the courtyard.
 const DIRECTION_SIGNS := [
-	["deliveries", Vector3(-39, 10.55, 0), 0.0], ["preassembly", Vector3(39, 10.55, 0), 0.0],
-	["stock", Vector3(-25, 10.55, -26.6), PI * 0.5], ["prep", Vector3(25, 10.55, -26.6), PI * 0.5],
+	["deliveries", "z", -28.0, 0.0, 10.0, -0.3, -1.0, -PI * 0.5],
+	["stock", "x", -24.0, -14.0, 8.0, -0.3, -1.0, PI],   # west of it: Business's TV is east
+	["prep", "x", -24.0, 14.0, 8.0, -0.3, -1.0, PI],
+	["preassembly", "z", 28.0, 0.0, 20.0, 0.3, -1.0, PI * 0.5],
 ]
+## The wall boards' middle, metres up (under the door signs at DOOR_SIGN_Y).
+const DIRECTION_Y := 3.0
 const FINGERPOST := Vector3(-9.0, 0.0, 16.0)
 ## The direction signs' letters, metres tall.
 const DIRECTION_H := 0.15   # beenster, 23 Oct: 30% of the first 0.5 m
@@ -994,7 +999,7 @@ func _build_signs() -> void:
 	_door_sign("STORE 2", "x", back, 39.0, 10.0, 0.3, -1.0, 0.0)
 	_sign("GOODS IN", Vector3(-court - WING - 0.4, 7.6, 0), -PI * 0.5, 1.8)
 	for d: Array in DIRECTION_SIGNS:
-		_direction_board(d[0], d[1], d[2])
+		_direction_board(d)
 	_fingerpost(FINGERPOST)
 
 
@@ -1021,8 +1026,9 @@ static func way_to(from: String, to: String) -> Vector2:
 
 ## What a direction sign in `room` at `at`, read facing `yaw` (from its +Z side), says: one
 ## line for the rooms to the left, one for those ahead, one for those to the right, each with
-## its arrow; rooms behind the reader are on the board's other face.
-static func direction_lines(room: String, at: Vector3, yaw: float) -> PackedStringArray:
+## its arrow; rooms behind the reader are on the board's other face, or with `all_round` (a
+## board on a wall, read facing the wall) on the side they're on.
+static func direction_lines(room: String, at: Vector3, yaw: float, all_round := false) -> PackedStringArray:
 	var right := Basis(Vector3.UP, yaw).x
 	var ahead := -Basis(Vector3.UP, yaw).z
 	var groups: Array[PackedStringArray] = [PackedStringArray(), PackedStringArray(), PackedStringArray()]
@@ -1038,7 +1044,7 @@ static func direction_lines(room: String, at: Vector3, yaw: float) -> PackedStri
 		var name := (ROOMS[id].name as String).to_upper()
 		if a > absf(r):
 			groups[1].append(name)
-		elif absf(r) >= absf(a):
+		elif absf(r) >= absf(a) or all_round:
 			groups[2 if r > 0.0 else 0].append(name)
 	var out: PackedStringArray = []
 	if not groups[0].is_empty():
@@ -1050,30 +1056,31 @@ static func direction_lines(room: String, at: Vector3, yaw: float) -> PackedStri
 	return out
 
 
-## A board hung from the roof over a hall's walk, its two faces each listing the way to the
-## rooms that face's reader can go.
-func _direction_board(room: String, top: Vector3, yaw: float) -> void:
-	var faces := [direction_lines(room, top, yaw), direction_lines(room, top, yaw + PI)]
-	var rows := maxi((faces[0] as PackedStringArray).size(), (faces[1] as PackedStringArray).size())
+## What a DIRECTION_SIGNS board says, read facing the wall from about where it hangs.
+static func wall_sign_lines(d: Array) -> PackedStringArray:
+	var near: float = d[3] + float(d[6]) * (float(d[4]) * 0.5 + 1.5)
+	return direction_lines(d[0], _wall_point(d[1], d[2], near, DIRECTION_Y, d[5]), d[7], true)
+
+
+## A board on a hall's wall (a DIRECTION_SIGNS entry) listing the way to every other room,
+## between the wall's columns as near the doorway as it fits.
+func _direction_board(d: Array) -> void:
+	var lines := wall_sign_lines(d)
 	var longest := 0.0
-	for f: PackedStringArray in faces:
-		for line in f:
-			longest = maxf(longest, direction_width(line))
-	var size := Vector3(longest + DIRECTION_H * 1.6, DIRECTION_H * (1.3 * rows + 0.6), 0.04)
-	var at := top - Vector3(0, size.y * 0.5, 0)
-	var basis := Basis(Vector3.UP, yaw)
-	_put(_box(size), Transform3D(basis, at), _direction_paint(), false)
-	_put(_box(Vector3(size.x + 0.01, 0.03, size.z + 0.01)), Transform3D(basis, at + Vector3(0, size.y * 0.5 + 0.012, 0)), _trim, false)
-	for k: float in [-1.0, 1.0]:
-		var rod := H - 0.4 - (at.y + size.y * 0.5)
-		_put(_box(Vector3(0.015, rod, 0.015)), Transform3D(basis, at + basis.x * (k * size.x * 0.38) + Vector3(0, size.y * 0.5 + rod * 0.5, 0)), _galv, false)
-	for i in 2:
-		var face_yaw := yaw + PI * i
-		var b := Basis(Vector3.UP, face_yaw)
-		var lines: PackedStringArray = faces[i]
-		for n in lines.size():
-			var y := (float(lines.size() - 1) * 0.5 - n) * DIRECTION_H * 1.3
-			_direction_text(lines[n], at + b.z * (size.z * 0.5 + 0.005) + Vector3(0, y, 0), face_yaw, size.x - DIRECTION_H)
+	for line in lines:
+		longest = maxf(longest, direction_width(line))
+	var size := Vector3(longest + DIRECTION_H * 1.6, DIRECTION_H * (1.3 * lines.size() + 0.6), 0.04)
+	# Centred between two of the wall's columns (they stand at BAY * k + BAY / 2), the nearest
+	# bay to the doorway that clears its jamb.
+	var along: float = d[3] + float(d[6]) * (float(d[4]) * 0.5 + 0.55 + size.x * 0.5)
+	along = BAY * (ceilf(along / BAY) if float(d[6]) > 0.0 else floorf(along / BAY))
+	var basis := Basis(Vector3.UP, d[7])
+	var face := _wall_point(d[1], d[2], along, DIRECTION_Y, d[5])
+	_put(_box(size), Transform3D(basis, face - basis.z * size.z * 0.5), _direction_paint(), false)
+	_put(_box(Vector3(size.x + 0.01, 0.03, size.z + 0.01)), Transform3D(basis, face - basis.z * size.z * 0.5 + Vector3(0, size.y * 0.5 + 0.012, 0)), _trim, false)
+	for n in lines.size():
+		var y := (float(lines.size() - 1) * 0.5 - n) * DIRECTION_H * 1.3
+		_direction_text(lines[n], face + basis.z * 0.005 + Vector3(0, y, 0), d[7], size.x - DIRECTION_H)
 
 
 ## A post in the courtyard with a blade pointing to each room's doorway, its name on both
