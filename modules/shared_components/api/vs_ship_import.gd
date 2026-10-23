@@ -18,6 +18,13 @@ extends RefCounted
 const SCHEMA_PATH := "res://shared/void_salvage/data/ship_format/vsship-2.schema.json"
 ## Recipe names that are not a library constructor's own name.
 const RECIPE_ALIASES := {"pipe": "pipe_shape", "pipe_elbow": "pipe_elbow_shape", "pipe_union": "pipe_union_shape"}
+## The ship files BSX ships with (Void Salvage's exports, pinned): design id -> file. Short
+## names map to them (`design_file`), so a contract may say "kestrel" or "manta".
+const SHIPS := {
+	"kestrel_frame": "res://modules/shared_components/data/ships/kestrel_frame.vsship.json",
+	"manta_frame": "res://modules/shared_components/data/ships/manta_frame.vsship.json",
+}
+const DESIGN_ALIASES := {"kestrel": "kestrel_frame", "manta": "manta_frame"}
 ## A unit piece within this (m) of its part's box, in position and size, covers that part's visual.
 const SAME_BOX_M := 0.003
 
@@ -33,6 +40,14 @@ var materials: Dictionary = {}
 var fittings_built: Dictionary = {}
 ## Paths of parts whose plain visual a unit's look pieces cover (hidden under them).
 var hidden_visuals: PackedStringArray = []
+## A wreck's `damage` block (WreckMaker's, or a Void Salvage wreck file's), {} on a clean ship.
+var damage: Dictionary = {}
+## Parts the damage says are gone (not built), and sections cut off the wreck (not built
+## unless `build_detached`), by path; joints the damage broke (not built).
+var gone_parts: PackedStringArray = []
+var detached_parts: PackedStringArray = []
+var broken_joints: PackedStringArray = []
+var build_detached := false
 var errors: PackedStringArray = []
 var warnings: PackedStringArray = []
 
@@ -50,6 +65,17 @@ static func read(path: String) -> Dictionary:
 		return parsed
 	push_error("VsShipImport: %s is not a JSON object" % path)
 	return {}
+
+
+## The file for a design id or short name ("kestrel", "manta_frame"), "" if BSX has none.
+static func design_file(design: String) -> String:
+	var id: String = DESIGN_ALIASES.get(design, design)
+	return SHIPS.get(id, "")
+
+
+## The design ids BSX has files for.
+static func designs() -> PackedStringArray:
+	return PackedStringArray(SHIPS.keys())
 
 
 ## Every problem with a file as data, before anything is built: the format and version, the
@@ -117,10 +143,34 @@ func build(f: Dictionary, target: RigidBody3D) -> bool:
 	kit = ShipKit.new(target)
 	kit.model = PartModel.new(target, true)   # ids numbered from 1 per ship, as a crew's ship
 	_decode_materials()
+	damage = WreckMaker.damage_of(f)
+	var damaged_parts: Dictionary = damage.get("parts", {})
+	var damaged_joints: Dictionary = damage.get("joints", {})
 	for p: Dictionary in f.get("parts", []):
+		var state := str((damaged_parts.get(p.get("path", ""), {}) as Dictionary).get("state", WreckMaker.STATE_ATTACHED))
+		if state == WreckMaker.STATE_GONE:
+			gone_parts.append(p.get("path", ""))
+			continue
+		if state == WreckMaker.STATE_DETACHED and not build_detached:
+			detached_parts.append(p.get("path", ""))
+			continue
 		_build_part(p)
+		if damaged_parts.has(p.get("path", "")):
+			_apply_damage(parts_by_path[p.get("path", "")], damaged_parts[p.get("path", "")])
 	for j: Dictionary in f.get("joints", []):
+		var jd: Dictionary = damaged_joints.get(j.get("path", ""), {})
+		if bool(jd.get("broken", false)):
+			broken_joints.append(j.get("path", ""))
+			continue
+		if not parts_by_path.has(j.get("a", "")) or not parts_by_path.has(j.get("b", "")):
+			if gone_parts.has(j.get("a", "")) or gone_parts.has(j.get("b", "")) \
+					or detached_parts.has(j.get("a", "")) or detached_parts.has(j.get("b", "")):
+				continue   # its part is gone with the wreck's damage: nothing to warn about
 		_build_joint(j)
+		if not jd.is_empty() and joints_by_path.has(j.get("path", "")):
+			var made: ConnectionData = joints_by_path[j.get("path", "")]
+			made.max_health = float(jd.get("max_health", made.max_health))
+			made.health = clampf(float(jd.get("health", made.health)), 0.0, made.max_health)
 	for rec: Dictionary in f.get("fittings", []):
 		_build_fitting(rec)
 	for piece: Dictionary in f.get("pieces", []):
@@ -204,6 +254,40 @@ func _build_joint(j: Dictionary) -> void:
 			vec2(j.get("seam_size", [0, 0])), path)
 	if made:
 		joints_by_path[path] = made
+
+
+## What a wreck's damage did to one part: wear and scorch (shown on its own copy of the
+## surface, as Void Salvage's refresh_condition shows them), dents and a bend as data on the
+## PartData (the mesh is not deformed here: Void Salvage's DeformMesh is not in the shared set),
+## and how it was removed.
+func _apply_damage(part: PartData, entry: Dictionary) -> void:
+	var c: Dictionary = entry.get("condition", {})
+	part.wear = clampf(float(c.get("wear", 0.0)), 0.0, 1.0)
+	part.scorch = clampf(float(c.get("scorch", 0.0)), 0.0, 1.0)
+	if c.has("scorch_at"):
+		part.scorch_at = vec3(c["scorch_at"])
+		part.scorch_radius = float(c.get("scorch_radius", 1.0))
+	for d in c.get("dents", []):
+		if d is Dictionary:
+			part.dents.append([vec3(d.get("at", [0, 0, 0])), vec3(d.get("push", [0, -1, 0])), float(d.get("depth", 0.0)),
+					float(d.get("radius", 0.5)), float(d.get("crumple", 0.0))])
+	if c.has("bend"):
+		part.bend = vec3(c["bend"])
+	var how := str(entry.get("removal", "ON THE WRECK"))
+	var idx := PartData.REMOVAL_NAMES.find(how)
+	if idx > 0:
+		part.removal = idx as PartData.Removal
+	if part.wear <= 0.0 and part.scorch <= 0.0:
+		return
+	var visual := kit.model.part_visual(part.id)
+	if visual == null or not (visual.material_override is ShaderMaterial):
+		return
+	var mat := SurfaceFinish.copy_surface(visual.material_override as ShaderMaterial)
+	visual.material_override = mat
+	visual.set_meta("own_surface", true)
+	var at := part.local_transform.affine_inverse() * part.scorch_at
+	mat.set_shader_parameter("condition", Vector4(part.wear, part.scorch, part.scorch_radius, float(part.id % 97)))
+	mat.set_shader_parameter("scorch_at", Vector4(at.x, at.y, at.z, 0.0))
 
 
 # --- fittings, pieces ------------------------------------------------------------------------
