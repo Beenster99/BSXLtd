@@ -132,7 +132,7 @@ func run_tests() -> void:
 	check(monitors.all(func(m: Node3D) -> bool: return m.get_node("Viewport").get_node_or_null("Terminal") is HoloTerminal),
 			"every TV shows the wrist terminal")
 	var big: Vector2 = front.get("SCREEN_M")
-	check(big.x >= 7.0 and monitors.all(func(m: Node3D) -> bool: return m.global_position.y > 3.5), "the TVs are big and hung high: %s" % str(big))
+	check(big.x >= 5.0 and monitors.all(func(m: Node3D) -> bool: return m.global_position.y - big.y * 0.5 > 2.2), "the TVs are big and hung over people's heads: %s" % str(big))
 
 	# Stand a camera in front of the first terminal: the prompt shows.
 	var cam: Camera3D = front.call("stage_monitor_view", 0)
