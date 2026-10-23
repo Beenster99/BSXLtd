@@ -9,10 +9,15 @@ extends RefCounted
 const SEND_RATE := 20.0
 const DELAY := 0.1
 const BUFFER := 12
+## A mover that stands still is sent again this often, so a late sample can't be the last.
+const KEEPALIVE := 1.0
+## A sample this far behind the newest one means the sender's clock was put right: start over.
+const CLOCK_JUMP := 1.0
 
 var _nodes: Dictionary = {}  # id -> Node3D
 var _samples: Dictionary = {}  # id -> Array of [time, Transform3D], oldest first
 var _pending: Dictionary = {}  # id -> Transform3D from a join snapshot, before the node exists
+var _sent: Dictionary = {}  # id -> [time, Transform3D] last sent
 
 
 func register(id: String, node: Node3D) -> void:
@@ -26,6 +31,7 @@ func register(id: String, node: Node3D) -> void:
 func unregister(id: String) -> void:
 	_nodes.erase(id)
 	_samples.erase(id)
+	_sent.erase(id)
 
 
 func has(id: String) -> bool:
@@ -37,13 +43,20 @@ func clear(id: String) -> void:
 	_samples.erase(id)
 
 
-## Transforms of the movers this peer has authority over: id -> Transform3D.
-func outgoing(is_mine: Callable) -> Dictionary:
+## Transforms of the movers this peer has authority over that moved since they were last
+## sent, or stood still for KEEPALIVE: id -> Transform3D. `now` is the host clock.
+func outgoing(is_mine: Callable, now: float) -> Dictionary:
 	var out := {}
 	for id in _nodes:
 		var node: Node3D = _nodes[id]
-		if is_instance_valid(node) and node.is_inside_tree() and is_mine.call(id):
-			out[id] = node.global_transform
+		if not is_instance_valid(node) or not node.is_inside_tree() or not is_mine.call(id):
+			continue
+		var at := node.global_transform
+		var last: Array = _sent.get(id, [])
+		if not last.is_empty() and now - float(last[0]) < KEEPALIVE and (last[1] as Transform3D).is_equal_approx(at):
+			continue
+		_sent[id] = [now, at]
+		out[id] = at
 	return out
 
 
@@ -55,7 +68,9 @@ func receive(t: float, batch: Dictionary, accept: Callable) -> Dictionary:
 			continue
 		var list: Array = _samples.get(id, [])
 		if not list.is_empty() and t <= list.back()[0]:
-			continue
+			if float(list.back()[0]) - t < CLOCK_JUMP:
+				continue
+			list = []
 		list.append([t, batch[id]])
 		if list.size() > BUFFER:
 			list.pop_front()
