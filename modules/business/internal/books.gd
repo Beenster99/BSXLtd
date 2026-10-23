@@ -9,6 +9,8 @@ const MINUTES_PER_DAY := 1440
 const DELAY_MINUTES := 12 * 60
 ## What a player has in their wallet the first time they join, CR.
 const WALLET_START := 1000
+## The cheapest listing (credits) a supplier puts on a deal.
+const DEAL_MIN_PRICE := 100
 const Company := preload("res://modules/business/internal/company.gd")
 
 var rules: BusinessRules
@@ -292,7 +294,8 @@ func _pick_deals() -> void:
 			continue
 		var own: Array[MarketListing] = []
 		for l: MarketListing in listings.values():
-			if l.supplier_id == s.id and not l.id.begins_with("S-"):
+			# A deal on a part worth a few credits would only round to nonsense.
+			if l.supplier_id == s.id and not l.id.begins_with("S-") and l.unit_price >= DEAL_MIN_PRICE:
 				own.append(l)
 		own.sort_custom(func(a: MarketListing, b: MarketListing) -> bool: return a.id < b.id)
 		var r := RandomNumberGenerator.new()
