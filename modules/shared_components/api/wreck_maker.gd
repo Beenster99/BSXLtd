@@ -84,10 +84,7 @@ static func make(file: Dictionary, seed_value: int, events: Variant) -> Dictiona
 ## "kestrel", "manta"), rolled from `seed` with `events`; {} if BSX has no file for `design`.
 ## No events: the ship as it is, still marked a wreck.
 static func for_design(design: String, seed_value: int, events: Variant = []) -> Dictionary:
-	var path := VsShipImport.design_file(design)
-	if path == "":
-		return {}
-	var file := VsShipImport.read(path)
+	var file := VsShipImport.design_source(design)
 	if file.is_empty():
 		return {}
 	return make(file, seed_value, events)
