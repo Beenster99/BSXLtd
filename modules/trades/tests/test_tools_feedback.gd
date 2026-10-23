@@ -9,12 +9,7 @@ var walker_active := true
 func set_walker_active(on: bool) -> void:
 	walker_active = on
 """
-## The slot under test: Void Salvage's own slot name, or the hand-built Kestrel's until Ship
-## and Bay's imported Kestrel lands.
-var SLOT: String:
-	get:
-		var bay := Modules.bus("ship_bay") as ShipBayBus
-		return "eng_port" if bay and bay.get_slot("eng_port") else "eng_aft_port_1"
+const SLOT := "eng_port"
 
 
 func run_tests() -> void:

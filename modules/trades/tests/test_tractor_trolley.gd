@@ -25,12 +25,7 @@ func cancel_beam(slot_id: String) -> void:
 func trolley_deck_position(id: String) -> Variant:
 	return deck if id == "m" else null
 """
-## The slot under test: Void Salvage's own slot name, or the hand-built Kestrel's until Ship
-## and Bay's imported Kestrel lands.
-var SLOT: String:
-	get:
-		var bay := Modules.bus("ship_bay") as ShipBayBus
-		return "hold_nets" if bay and bay.get_slot("hold_nets") else "net_hold_dor_1"
+const SLOT := "hold_nets"
 
 
 func run_tests() -> void:
