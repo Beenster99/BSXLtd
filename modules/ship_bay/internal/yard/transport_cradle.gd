@@ -36,8 +36,8 @@ const PINS: Array[Vector3] = [Vector3(-2.2, 0, -4.6), Vector3(2.2, 0, -4.6), Vec
 const SIZES := {
 	"s": {"name": "SMALL", "side_x": SIDE_X, "length": LENGTH, "side_h": SIDE_H, "cross_h": CROSS_H, "cross_z": CROSS_Z,
 			"saddle_top": SADDLE_TOP, "saddle_x": [-1.4, 1.4], "pedestal_z": PEDESTAL_Z},
-	"m": {"name": "MEDIUM", "side_x": 6.0, "length": 30.0, "side_h": 0.9, "cross_h": 0.6,
-			"cross_z": [-13.0, -8.8, -4.6, 3.0, 7.8, 12.6], "saddle_top": 1.3, "saddle_x": [-3.4, -1.2, 1.2, 3.4],
+	"m": {"name": "MEDIUM", "side_x": 8.0, "length": 30.0, "side_h": 0.9, "cross_h": 0.6,
+			"cross_z": [-13.0, -8.8, -4.6, 3.0, 7.8, 12.6], "saddle_top": 1.3, "saddle_x": [-4.6, -1.6, 1.6, 4.6],
 			"pedestal_z": [-12.0, 0.0, 12.0]},
 	"l": {"name": "LARGE", "side_x": 9.0, "length": 78.0, "side_h": 1.3, "cross_h": 0.8,
 			"cross_z": [-36.0, -28.0, -20.0, -12.0, -4.6, 3.0, 12.0, 20.0, 28.0, 36.0], "saddle_top": 1.9,

@@ -126,7 +126,7 @@ func run_tests() -> void:
 	bay.unload_ship()
 
 
-## The apron (S2): flat docks and pad, cradles on their pedestals, the hulk on the pad's,
+## The apron (S2): flat docks and pad, cradles on their pedestals, the pad's cradle empty,
 ## the cutting bay open to the road and walled elsewhere.
 func _check_apron(yard: Node3D) -> void:
 	var apron: Node3D = yard.get("apron")
@@ -146,8 +146,8 @@ func _check_apron(yard: Node3D) -> void:
 		var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(r.get_center().x, 5, r.get_center().y), Vector3(r.get_center().x, -5, r.get_center().y)))
 		check(not down.is_empty() and absf((down.position as Vector3).y) < 0.01, "Dock %s's floor is the apron, not sunken: %s" % [id, down.get("position", "")])
 	var pad: Node3D = apron.get("pad_cradle")
-	var hulk: Node3D = apron.get("hulk")
-	check(pad != null and hulk != null and hulk.get_parent() == pad, "the hulk sits in the pad's cradle")
+	check(pad != null and pad.find_children("*", "RigidBody3D", true, false).is_empty() and float(pad.get("load_t")) == 0.0,
+			"the pad's cradle stands empty (no test Kestrel)")
 	var pad_at: Vector3 = Apron.PAD
 	check(pad.global_position.is_equal_approx(pad_at + Vector3(0, 1.6, 0)), "the pad cradle stands on its pedestals at the pad: %s" % pad.global_position)
 	var holding: Array = apron.get("holding_cradles")
@@ -162,7 +162,7 @@ func _check_apron(yard: Node3D) -> void:
 			check(not hit.is_empty(), "%s has a pedestal under it at %s" % [c.name, foot])
 	# A 6 m wide dolly fits between a cradle's pedestals, under its cross beams.
 	var under := space.intersect_ray(PhysicsRayQueryParameters3D.create(pad.global_position + Vector3(0, -0.4, -10), pad.global_position + Vector3(0, -0.4, 10)))
-	check(under.is_empty() or under.collider == hulk, "the way under the pad cradle is clear: %s" % under.get("position", ""))
+	check(under.is_empty(), "the way under the pad cradle is clear: %s" % under.get("position", ""))
 	var house: Rect2 = CrusherPlant.HOUSE
 	var hd: Vector3 = CrusherPlant.HOUSE_DOOR
 	var door := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(hd.x, 1, house.end.y + 4), Vector3(hd.x, 1, house.end.y - 3)))
