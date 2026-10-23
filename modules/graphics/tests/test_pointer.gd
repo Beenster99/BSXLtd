@@ -23,6 +23,7 @@ func run_tests() -> void:
 	cam.global_position = Vector3(0, 1.5, 0)
 	var crate := _box(world, Vector3(0, 1.5, -2.5), true)
 	crate.set_meta(GfxBus.ID_META, "crate:1")
+	crate.set_meta("look_hint", {"title": "Parts crate", "text": "Full"})
 	var wall := _box(world, Vector3(10, 1.5, 0), false)
 	await frames(3)
 
@@ -62,14 +63,33 @@ func run_tests() -> void:
 	check(mesh.material_overlay != null, "the pinged crate lights up")
 	check(pointer.highlighter.colour_of(crate) == pointer.PING_COLOUR, "in the ping's colour")
 	check(pointer.highlighter.look_of(crate) == GfxBus.PointerLook.Highlighter.BOLD, "a ping is bold, to catch the eye")
+	check(pointer.live[0].what == "Parts crate", "the ping knows what it's on (its look hint's title)")
+	check((marker.get_node("Label") as Label3D).text.begins_with("Parts crate\n"), "and writes it by the marker")
+	check(GfxBus.PointerLook.name_of(wall) == "" or GfxBus.PointerLook.name_of(wall) == String(wall.name).capitalize(),
+			"a plain thing goes by its node name at most")
+	wall.set_meta(GfxBus.PointerLook.NAME_META, "Yard wall")
+	check(GfxBus.PointerLook.name_of(wall) == "Yard wall", "meta gfx_name names a thing outright")
 
 	# A ping by id (a crewmate's), and by place with no id.
 	pointer.show_ping({"peer": 2, "name": "Sam", "colour": Color.GREEN, "at": Vector3(0, 0, 50), "object_id": "crate:1"})
 	check(pointer.live.size() == 2 and pointer.highlighter.colour_of(crate) == Color.GREEN, "a crewmate's ping finds the crate by id")
-	check((pointer.live[1].node.get_node("Label") as Label3D).text.begins_with("Sam"), "labelled with the pinger's name")
-	pointer.show_ping({"peer": 2, "name": "Sam", "colour": Color.GREEN, "at": Vector3(0, 1.5, -7.6), "object_id": ""})
-	check(pointer.live.size() == 2, "a player's new ping replaces their last")
-	check(pointer.highlighter.is_lit(crate, "ping:2"), "a ping with no id lights what it lands beside")
+	check((pointer.live[1].node.get_node("Label") as Label3D).text.contains("Sam"), "labelled with the pinger's name")
+	check((pointer.live[1].node.get_node("Label") as Label3D).text.begins_with("Parts crate"), "and what it's on, found here when the ping has no label")
+	pointer.show_ping({"peer": 2, "name": "Sam", "colour": Color.GREEN, "at": Vector3(0, 1.5, -7.6), "object_id": "",
+			"id": 7, "label": "Over here"})
+	check(pointer.live.size() == 3, "a player can have more than one ping up")
+	check(pointer.live[2].what == "Over here", "a ping's own label wins")
+	check(pointer.highlighter.is_lit(crate, "ping:7"), "a ping with no id lights what it lands beside")
+	pointer.show_ping({"peer": 2, "name": "Sam", "colour": Color.GREEN, "at": Vector3(0, 1.5, -7.6), "id": 7, "label": "Over here"})
+	check(pointer.live.size() == 3, "the same ping again (by id) is drawn once")
+	pointer.remove_ping(7)
+	check(pointer.live.size() == 2 and not pointer.highlighter.is_lit(crate, "ping:7"), "ping_removed takes it down at once")
+	for i in 6:
+		pointer.show_ping({"peer": 3, "name": "Jo", "colour": Color.RED, "at": Vector3(20 + i, 0, 0), "id": 100 + i})
+	var jo: Array = pointer.live.filter(func(p: Dictionary) -> bool: return p.ping.peer == 3)
+	check(jo.size() == pointer.pings_each and jo[0].key == "101", "up to five each: the sixth takes down the oldest")
+	for p in jo:
+		pointer.remove_ping(int(p.key))
 
 	# Pings expire and take their highlight with them.
 	await get_tree().create_timer(1.0).timeout
