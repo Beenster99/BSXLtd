@@ -84,6 +84,28 @@ func run_tests() -> void:
 	check(importer.kit.model.part_collider(leaf.id).position.distance_to(shut) > 0.8, "and so is its collision")
 	model.call("set_door", "door_lock_out", false, true)
 	check(leaf.local_transform.origin.distance_to(shut) < 0.001, "shut again")
+	# The bulkhead's pocket door fills its doorway (the file draws it a third of its width).
+	var inner := importer.part_at("system:door_bulkhead/leaf")
+	var inner_look := importer.kit.model.part_visual(inner.id) as MeshInstance3D
+	check(absf(inner_look.mesh.get_aabb().size.x - 1.12) < 0.01 and absf(inner.local_transform.origin.x) < 0.01,
+			"the inside door is as wide as its doorway: %s" % inner_look.mesh.get_aabb().size)
+	# The systems the file carries only as boxes are dressed: bowsers, hose, port, panels,
+	# screens, floodlights, wires.
+	var texts := {}
+	for l: Label3D in model.find_children("*", "Label3D", true, false):
+		texts[l.text.get_slice("\n", 0)] = true
+	for want: String in ["FUEL", "COOLANT", "FUEL HOSE", "CARGO CONTROL", "STERN DOOR", "OPEN", "CLOSE", "HOLD MONITOR                 KESTREL", "SYSTEM MAP", "PUMP"]:
+		check(texts.has(want), "the Kestrel has a %s label" % want.get_slice(" ", 0))
+	check(model.get_node_or_null("Bowser_fuel") is CollisionShape3D and model.get_node_or_null("Bowser_coolant") is CollisionShape3D,
+			"the bowsers' drums are solid")
+	var dressing: RefCounted = model.get("dressing")
+	check((dressing.get("spots") as Array).size() == 4, "four floodlights")
+	var wires := model.get_node_or_null("Wires") as MeshInstance3D
+	check(wires != null and wires.mesh.get_aabb().size.z > 5.0, "the leads' wires run along the ship")
+	model.call("set_door", "door_bulkhead", true, true)
+	var lamps: Array = (dressing.get("door_lamps") as Dictionary).get("door_bulkhead", [])
+	check(lamps.size() == 2 and (lamps[0] as StandardMaterial3D).emission.g > 0.8, "an open door's panel lamps show green")
+	model.call("set_door", "door_bulkhead", false, true)
 	var plates := def.slots.filter(func(s: MountSlot) -> bool: return s.slot_id.begins_with("plate_"))
 	var rivets := 0
 	for s: MountSlot in plates:

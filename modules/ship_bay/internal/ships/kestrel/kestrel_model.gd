@@ -11,6 +11,7 @@ extends RigidBody3D
 
 const FILE := "res://modules/ship_bay/internal/ships/kestrel/kestrel.vsship.json"
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
+const Dressing := preload("res://modules/ship_bay/internal/ships/kestrel/kestrel_dressing.gd")
 ## Where the bay's stairs meet the port side door (its sill, on the hull's side), and the
 ## shore power socket low on the starboard flank, aft of the fuel port. Ship space, metres.
 const SIDE_DOOR_SILL := Vector3(-2.7, 0.0, 2.25)
@@ -29,6 +30,8 @@ var _power_tween: Tween
 var _hum: AudioStreamPlayer3D
 ## Door key ("door_lock_out", "door_bulkhead") -> {by, time, parts, meshes, t, open}.
 var doors: Dictionary = {}
+## The ship systems' looks the file only carries as boxes (KestrelDressing).
+var dressing: Dressing
 
 
 func _init() -> void:
@@ -39,7 +42,9 @@ func _init() -> void:
 	if not importer.build(LayoutLoader.read_file(FILE), self):
 		push_error("Kestrel: the ship file didn't build: %s" % "; ".join(importer.errors))
 	_drop_doubled_looks()
+	_fit_leaves()
 	_build_doors()
+	_dress()
 	set_process(false)
 	_build_power_socket()
 	for n: Node in find_children("*", "", true, false):
@@ -83,6 +88,46 @@ func _drop_doubled_looks() -> void:
 			if b.get_center().distance_to(box.get_center()) < 0.01 and (b.size - box.size).length() < 0.02:
 				mi.visible = false
 				break
+
+
+## A door leaf whose shape is narrower than its box in the file (the bulkhead's pocket door
+## is exported a third of its width, leaving most of the doorway open) is drawn and made solid
+## to its box, so shut it fills the doorway.
+func _fit_leaves() -> void:
+	var model := importer.kit.model
+	for rec: Dictionary in importer.file.get("parts", []):
+		var path := str(rec.get("path", ""))
+		if not (path.begins_with("system:") and path.get_slice("/", 1).begins_with("leaf")):
+			continue
+		var part: PartData = importer.parts_by_path.get(path)
+		var box: Dictionary = rec.get("box", {})
+		if part == null or box.is_empty():
+			continue
+		var size := VsShipImport.vec3(box.get("size", [0, 0, 0]))
+		var centre := VsShipImport.vec3(box.get("pos", [0, 0, 0])) + size * 0.5
+		var col := model.part_collider(part.id)
+		var look := model.part_visual(part.id) as MeshInstance3D
+		var had := look.mesh.get_aabb().size if look and look.mesh else Vector3.ZERO
+		if col == null or had == Vector3.ZERO or not part.local_transform.basis.is_equal_approx(Basis()) \
+				or (size - had).length() < 0.05:
+			continue
+		var fill := BoxShape3D.new()
+		fill.size = size
+		col.shape = fill
+		if look:
+			look.mesh = PartShapes.box(size).mesh
+		model.transform_part(part.id, Transform3D(Basis(), centre - part.local_transform.origin))
+
+
+## The bowsers, hose rack, fuel port, panels' buttons, screens, floodlights and wires.
+func _dress() -> void:
+	var by_path := {}
+	for rec: Dictionary in importer.file.get("parts", []):
+		by_path[str(rec.get("path", ""))] = rec
+	dressing = Dressing.new(self, importer.file)
+	dressing.build(by_path)
+	for key: String in doors:
+		dressing.show_door(key, false)
 
 
 ## The sliding doors (the file's `layout.doors` moves: the side door, the bulkhead's pocket
@@ -142,6 +187,8 @@ func set_door(key: String, open: bool, instant := false) -> void:
 	if not doors.has(key):
 		return
 	doors[key]["open"] = open
+	if dressing:
+		dressing.show_door(key, open)
 	if instant or not is_inside_tree():
 		_place_door(key, 1.0 if open else 0.0)
 	set_process(true)
