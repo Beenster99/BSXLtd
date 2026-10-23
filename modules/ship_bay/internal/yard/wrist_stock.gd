@@ -114,14 +114,19 @@ func _line(key: String, item: String, part_name: String, where: String, qty: int
 			"value": -1 if unit < 0 else roundi(unit * qty * price_factor(condition))}
 
 
-## "Rack B1 · bay 2 · level 3", "Bins D2 · bay 1 · level 2", "Bulk floor · Z-04".
+## "Rack B1 · bay 2 · level 3", "Bins C2 · bay 1 · level 2", "Large rack W1 · bay 1 · level 2",
+## "Heavy rack H2 · bay 2 · level 1".
 static func where_text(loc: Dictionary) -> String:
 	if loc.is_empty():
 		return "Stores"
-	if str(loc.get("kind", "")) == "bulk":
-		return "Bulk floor · %s" % loc.get("id", "")
-	return "%s %s · bay %d · level %d" % ["Bins" if loc.get("kind") == "bin" else "Rack", loc.get("rack", ""),
-			int(loc.get("bay", 0)), int(loc.get("level", 0))]
+	var what := "Rack"
+	if loc.get("kind") == "bin":
+		what = "Bins"
+	elif str(loc.get("store", "")) == "large":
+		what = "Large rack"
+	elif str(loc.get("store", "")) == "heavy":
+		what = "Heavy rack"
+	return "%s %s · bay %d · level %d" % [what, loc.get("rack", ""), int(loc.get("bay", 0)), int(loc.get("level", 0))]
 
 
 ## A condition (1 as new .. 0 scrap) as the grades Business sells: new, refurb, used, damaged.

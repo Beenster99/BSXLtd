@@ -88,15 +88,16 @@ const VIEWS := {
 	"downtown": [Vector3(-40, 48, 70), Vector3(-560, 90, -620)],
 	"kestrel_power": [Vector3(9.5, 2.8, 3.0), Vector3(3.6, 1.4, 6.6)],
 	"scaffolds": [Vector3(13.5, 7.5, 10.0), Vector3(3.6, 3.0, -1.0)],
-	# The storage hall (StorageLayout): down aisle B, the bins in D2, the bulk floor, goods in.
-	"storage_aisle": [Vector3(-21.55, 1.7, -25.6), Vector3(-21.55, 3.2, -42.0)],
-	"storage_aisle_d": [Vector3(-10.95, 1.7, -25.2), Vector3(-10.95, 2.6, -42.0)],
-	"storage_bins": [Vector3(-11.6, 1.7, -27.4), Vector3(-8.9, 1.4, -32.5)],
-	"storage_bulk": [Vector3(-29.8, 6.0, -25.4), Vector3(-42.0, 0.0, -37.0)],
+	# The storage hall (StorageLayout): down aisle B, the bins in C2, the large and heavy racks.
+	"storage_aisle": [Vector3(-11.1, 1.7, -25.6), Vector3(-11.1, 3.2, -42.0)],
+	"storage_aisle_d": [Vector3(-5.7, 1.7, -25.2), Vector3(-5.7, 2.6, -42.0)],
+	"storage_bins": [Vector3(-6.4, 1.7, -27.4), Vector3(-3.65, 1.4, -32.5)],
+	"storage_bulk": [Vector3(-27.0, 6.5, -25.0), Vector3(-42.0, 1.5, -37.0)],
+	"storage_heavy": [Vector3(-44.0, 2.0, -25.4), Vector3(-44.0, 3.5, -40.0)],
 	"goods_in": [Vector3(-31.0, 4.6, -21.0), Vector3(-41.0, 0.0, -6.0)],
 	"trolleys": [Vector3(-38.5, 3.4, -25.0), Vector3(-31.0, 0.6, -14.0)],
-	"trolley_lift": [Vector3(-12.2, 1.8, -24.6), Vector3(-10.4, 4.6, -34.0)],
-	"picking_lift": [Vector3(-20.0, 1.7, -25.6), Vector3(-20.55, 5.8, -34.3)],
+	"trolley_lift": [Vector3(-6.9, 1.8, -24.6), Vector3(-5.2, 4.6, -34.0)],
+	"picking_lift": [Vector3(-9.6, 1.7, -25.6), Vector3(-10.6, 5.8, -34.3)],
 	"hover_truck": [Vector3(-74.0, 4.5, 22.0), Vector3(-60.0, 1.8, 8.0)],
 	# Dock 1 and the launch towers out on the plain.
 	"dock": [Vector3(14, 3.2, 22), Vector3(-1, 5.5, -4)],
@@ -1041,26 +1042,27 @@ func _build_deliveries() -> void:
 	_sign("GOODS IN", Vector3(-40.8, 5.6, -23.6), 0.0, 0.45)
 
 
-## The storage hall, laid out by StorageLayout: four aisles of racking with a rack each side,
-## the small-parts bins in D2, a bulk floor west of the racks, and the transfer aisle along
-## the south wall. Every place is labelled with its location id and the part kept there.
-## It starts empty; the goods on it are drawn from the bus (_refresh_stores).
+## The storage hall, laid out by StorageLayout: three aisles of small racking (the bins in
+## C2) on the east side, two aisles of large racks and the heavy racks by the west wall, a
+## rack each side of every aisle, and the transfer aisle along the south wall. Every place is
+## labelled with its location id (and the part kept there). It starts empty; the goods on it
+## are drawn from the bus (_refresh_stores).
 func _build_stock() -> void:
 	var layout := StorageLayout.get_layout()
-	var locations: Dictionary = layout["locations"]
 	var line := _paint(HAZARD, 0.0, 0.7, "hazard_paint")
-	var white := _paint(Color(0.9, 0.9, 0.88), 0.0, 0.8)
 	for rack: String in StorageLayout.rack_ids():
 		_storage_rack(rack)
 	# Lane lines down each aisle and along the transfer aisle and the back cross aisle.
-	var rack_len := StorageLayout.BAYS * StorageLayout.BAY_LENGTH
 	for aisle: String in layout["aisles"]:
 		var x: float = layout["aisles"][aisle]
+		var r := StorageLayout.rack(aisle + "1")
+		var rack_len := float(r["bays"]) * float(r["bay"])
+		var width := StorageLayout.aisle_width(aisle)
 		for side: float in [-1.0, 1.0]:
-			_block(Vector3(x + side * (StorageLayout.AISLE_WIDTH * 0.5 - 0.08), 0.024, StorageLayout.RACK_Z0 - rack_len * 0.5),
+			_block(Vector3(x + side * (width * 0.5 - 0.08), 0.024, StorageLayout.RACK_Z0 - rack_len * 0.5),
 					Vector3(0.08, 0.004, rack_len), line, false)
-		# Signs hang over the racks' tops, clear of the picking lift's mast; the letter is
-		# painted on the floor at the aisle's mouth too.
+		# Signs hang over the racks' tops, clear of the lifts' masts; the letter is painted
+		# on the floor at the aisle's mouth too.
 		var sign := _sign("AISLE %s" % aisle, Vector3(x, 9.9, StorageLayout.RACK_Z0 + 0.2), 0.0, 0.45)
 		sign.name = "AisleSign_" + aisle
 		var letter := _tag(aisle, Vector3(x, 0.03, StorageLayout.RACK_Z0 + 1.0), 1.1, Vector3.ZERO)
@@ -1072,27 +1074,22 @@ func _build_stock() -> void:
 				var n: String = StorageLayout.CATEGORIES.get(b["category"], str(b["category"]).capitalize())
 				if not cats.has(n.to_upper()):
 					cats.append(n.to_upper())
+		if str(r["store"]) == "large":
+			cats = PackedStringArray(["LARGE PARTS"])
+		elif str(r["store"]) == "heavy":
+			cats = PackedStringArray(["HEAVY MACHINES"])
 		if not cats.is_empty():
 			_sign(" · ".join(cats), Vector3(x, 10.55, StorageLayout.RACK_Z0 + 0.2), 0.0, 0.2, false)
 	for z: float in [StorageLayout.TRANSFER_Z - 1.4, StorageLayout.TRANSFER_Z + 1.4]:
 		_block(Vector3(-25.0, 0.024, z), Vector3(49.0, 0.004, 0.08), line, false)
-	_block(Vector3(-18.9, 0.024, StorageLayout.BACK_Z + 1.3), Vector3(21.0, 0.004, 0.08), line, false)
-	# The bulk floor: painted bays with their ids on the floor and a sign over them.
-	for id: String in locations:
-		var l: Dictionary = locations[id]
-		if l["kind"] != "bulk":
-			continue
-		var at: Vector3 = l["at"]
-		var size: Vector3 = l["size"]
-		for dz: float in [-0.5, 0.5]:
-			_block(at + Vector3(0, 0.024, size.z * dz), Vector3(size.x, 0.004, 0.07), white, false)
-		for dx: float in [-0.5, 0.5]:
-			_block(at + Vector3(size.x * dx, 0.024, 0), Vector3(0.07, 0.004, size.z), white, false)
-		var floor_id := _tag(id, at + Vector3(-float(l["face"].x) * 1.6, 0.03, 0), 0.32, Vector3.ZERO)
-		floor_id.rotation = Vector3(-PI * 0.5, PI * 0.5 * float(l["face"].x), 0)
-		_tag(_place_text(l), at + Vector3(float(l["face"].x) * (size.x * 0.5 + 0.125), 0.5, 0), 0.07, l["face"])
-		_put(_box(Vector3(0.12, 0.7, 0.12)), _at(at + Vector3(float(l["face"].x) * (size.x * 0.5 + 0.06), 0.35, 0)), _hazard)
-	_sign("BULK STORE  Z-01 - Z-18", Vector3(-39.5, 6.4, -27.6), 0.0, 0.45)
+	_block(Vector3(-25.25, 0.024, StorageLayout.BACK_Z + 1.3), Vector3(48.5, 0.004, 0.08), line, false)
+	# The heavy lift's hand-in: a painted box where a trolley lies along the transfer aisle.
+	var hand := Vector3(-44.0, 0.0, -25.9)
+	for dz: float in [-1.6, 1.6]:
+		_block(hand + Vector3(0, 0.026, dz), Vector3(9.0, 0.004, 0.08), line, false)
+	for dx: float in [-4.5, 4.5]:
+		_block(hand + Vector3(dx, 0.026, 0), Vector3(0.08, 0.004, 3.2), line, false)
+	_sign("HEAVY LIFT HAND-IN", Vector3(-44.0, 6.4, -24.4), 0.0, 0.4)
 
 
 ## One rack of StorageLayout: lattice end frames at each bay, orange beams and grating decks
@@ -1100,26 +1097,31 @@ func _build_stock() -> void:
 func _storage_rack(rack: String) -> void:
 	var L := StorageLayout
 	var layout := L.get_layout()
-	var x := L.rack_x(rack)
-	var face := L.rack_face(rack)
-	var depth := L.RACK_DEPTH
-	var tall := L.RACK_HEIGHT
+	var r := L.rack(rack)
+	var x := float(r["x"])
+	var face := float(r["face"])
+	var depth := float(r["depth"])
+	var tall := float(r["height"])
+	var length := float(r["bay"])
+	var bays := int(r["bays"])
+	var beams: Array = r["beams"]
+	var heavy := str(r["store"]) != "small"
 	var frame := _lib("truss/rack/%.1f/%.1f" % [tall, depth], func() -> PartShapes.PartShape:
-			return PartShapes.truss(tall, 0.09, depth, 10, 0.05))
-	var beam := _box(Vector3(0.05, 0.12, L.BAY_LENGTH - 0.1))
-	var deck := _lib("grating/rack/%.2f/%.2f" % [depth, L.BAY_LENGTH], func() -> PartShapes.PartShape:
-			return WreckParts.grating(depth - 0.06, L.BAY_LENGTH - 0.12, 0.03))
+			return PartShapes.truss(tall, 0.12 if heavy else 0.09, depth, int(tall + 1.0), 0.07 if heavy else 0.05))
+	var beam := _box(Vector3(0.08 if heavy else 0.05, 0.2 if heavy else 0.12, length - 0.1))
+	var deck := _lib("grating/rack/%.2f/%.2f" % [depth, length], func() -> PartShapes.PartShape:
+			return WreckParts.grating(depth - 0.06, length - 0.12, 0.04 if heavy else 0.03))
 	# Lattice frame stood up: its length up (Y), its height across the rack (X).
 	var stand := Basis(Vector3(0, 1, 0), Vector3(1, 0, 0), Vector3(0, 0, -1))
-	for i in L.BAYS + 1:
-		var z := L.RACK_Z0 - i * L.BAY_LENGTH
+	for i in bays + 1:
+		var z := L.RACK_Z0 - i * length
 		_put(frame, Transform3D(stand, Vector3(x, tall * 0.5, z)), _blue, false)
 		for side: float in [-0.5, 0.5]:
-			_put(_box(Vector3(0.16, 0.012, 0.16)), _at(Vector3(x + depth * side, 0.006, z)), _bare, false)
-	for bay in range(1, L.BAYS + 1):
-		var z := L.bay_z(bay)
-		for level in range(1, L.LEVELS + 1):
-			var y := L.BEAM_Y + (level - 1) * L.LEVEL_PITCH
+			_put(_box(Vector3(0.2 if heavy else 0.16, 0.012, 0.2 if heavy else 0.16)), _at(Vector3(x + depth * side, 0.006, z)), _bare, false)
+	for bay in range(1, bays + 1):
+		var z := L.bay_z(bay, rack)
+		for level in range(1, beams.size() + 1):
+			var y := float(beams[level - 1])
 			for side: float in [-0.5, 0.5]:
 				_put(beam, _at(Vector3(x + depth * side, y, z)), _trim, false)
 			if level > 1:
@@ -1129,16 +1131,17 @@ func _storage_rack(rack: String) -> void:
 			if b["rack"] == rack and b["bay"] == bay:
 				info = b
 		var cat := str(info.get("category", ""))
-		var title := "%s-%02d  %s" % [rack, bay, str(L.CATEGORIES.get(cat, cat)).to_upper() if cat != "" else "SPARE"]
-		_tag(title, Vector3(x + face * (depth * 0.5 + 0.05), L.BEAM_Y + L.LEVELS * L.LEVEL_PITCH - 0.25, z), 0.11, Vector3(face, 0, 0))
+		var title := "%s-%02d  %s" % [rack, bay, str(L.CATEGORIES.get(cat, cat)).to_upper() if cat != "" else
+				("LARGE PARTS" if str(r["store"]) == "large" else ("HEAVY" if heavy else "SPARE"))]
+		_tag(title, Vector3(x + face * (depth * 0.5 + 0.05), tall - 0.35, z), 0.11 if not heavy else 0.16, Vector3(face, 0, 0))
 	for id: String in layout["locations"]:
 		var l: Dictionary = layout["locations"][id]
 		if l["rack"] != rack:
 			continue
 		var at: Vector3 = l["at"]
-		_tag(_place_text(l), Vector3(x + face * (depth * 0.5 + 0.04), at.y - 0.06, at.z), 0.045, Vector3(face, 0, 0))
-	_collide_xf(_box_shape(Vector3(depth + 0.1, tall, L.BAYS * L.BAY_LENGTH)),
-			_at(Vector3(x, tall * 0.5, L.RACK_Z0 - L.BAYS * L.BAY_LENGTH * 0.5)))
+		_tag(_place_text(l), Vector3(x + face * (depth * 0.5 + 0.04), at.y - 0.06 - (0.05 if heavy else 0.0), at.z), 0.045 if not heavy else 0.07, Vector3(face, 0, 0))
+	_collide_xf(_box_shape(Vector3(depth + 0.1, tall, bays * length)),
+			_at(Vector3(x, tall * 0.5, L.RACK_Z0 - bays * length * 0.5)))
 
 
 ## "B2-03-4-1\nIon thruster" for a location; spare places show their id alone.
@@ -1605,7 +1608,7 @@ func _refresh_stores() -> void:
 		if str(c.get("carrier", "")) != "" or c.has("line"):
 			continue   # on a trolley's deck (the trolley draws it) or the line's (it does)
 		var at := _bus.crate_position(id)
-		var kind := StorageLayout.kind_for(float(c["mass"]))
+		var kind := StorageLayout.kind_for(float(c["mass"]), str(c["item"]))
 		var cat := str(StorageLayout.items().get(c["item"], {}).get("category", ""))
 		var h := _goods_box(batches, "pallet", float(c["mass"]) * int(c["qty"]), cat, at) if kind == "bin" \
 				else _goods_items(batches, str(c["item"]), int(c["qty"]), float(c.get("condition", 1.0)),

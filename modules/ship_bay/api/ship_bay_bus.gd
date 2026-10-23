@@ -70,10 +70,10 @@ const SAVE_VERSION := 2
 ## Deliveries made for a contract's subject (scrapyard S1) carry this order id prefix, then
 ## the job id.
 const SUBJECT_ORDER := "subject:"
-## The yard's hover trolleys, small, medium and large, and "p" the picking lift in the
+## The yard's hover trolleys, small, medium and large, "p" the picking lift and "h" the heavy lift in the
 ## stores. Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
-const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "a", "b"]
+const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b"]
 const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
@@ -145,7 +145,7 @@ func register_module() -> void:
 		Menu.set_start(SHIPYARD_SCENE, 10)   # the game starts in the yard
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
-				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk",
+				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk", "storage_heavy",
 				"dock", "launch_towers", "city", "downtown", "crusher_house", "crusher"]:
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
@@ -187,12 +187,12 @@ func register_module() -> void:
 		Shots.register("shipyard_trolleys", SHIPYARD_SCENE, func(scene: Node) -> void:
 			_sample_delivery()
 			scene.call("show_view", "trolleys"))
-		# The medium trolley in aisle D with a crate raised to the fourth shelf.
+		# The medium trolley in aisle C with a crate raised to the third shelf.
 		Shots.register("shipyard_trolley_lift", SHIPYARD_SCENE, func(scene: Node) -> void:
 			var fleet: Node = scene.get("trolleys")
 			var m: Node = (fleet.get("trolleys") as Dictionary)["m"]
 			m.call("set_cargo", {"crate_id": "shot", "kind": "pallet", "mass": 311.0, "name": "Ion thruster"})
-			m.call("pose", Vector3(-10.95, 0, -33.95), 0.0, 5.61)
+			m.call("pose", Vector3(StorageLayout.aisle_x("C"), 0, -33.95), 0.0, StorageLayout.level_y(3))
 			scene.call("show_view", "trolley_lift"))
 		# The picking lift in aisle B reaching into the top shelf.
 		Shots.register("shipyard_picking_lift", SHIPYARD_SCENE, func(scene: Node) -> void:
@@ -659,7 +659,7 @@ func beam_to_trolley(slot_id: String, component: String, condition: float, from:
 
 func _send_for_part(slot_id: String, component: String, condition: float, from: Vector3, route: String) -> String:
 	var mass := float(StorageLayout.items().get(component, {}).get("mass", 0.0))
-	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(mass), from, _beam_claims.values()))
+	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(mass, component), from, _beam_claims.values()))
 	if id == "":
 		return ""
 	_beam_claims[slot_id] = id
@@ -1052,7 +1052,7 @@ func call_trolley_for(crate_id: String) -> String:
 	if c.is_empty() or fleet == null or not is_instance_valid(fleet):
 		return ""
 	var at := crate_position(crate_id)
-	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(float(c.get("mass", 0.0))), at, _beam_claims.values()))
+	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(float(c.get("mass", 0.0)), str(c.get("item", ""))), at, _beam_claims.values()))
 	if id != "":
 		command_trolley(id, "put_away")
 	return id

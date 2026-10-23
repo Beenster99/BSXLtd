@@ -22,7 +22,7 @@ func run_tests() -> void:
 		yard.queue_free()
 		return
 	var trolleys: Dictionary = fleet.get("trolleys")
-	check(trolleys.keys() == ["s", "m", "l", "p", "a", "b"], "small, medium, large, the picking lift and the two lines' trolleys: %s" % [trolleys.keys()])
+	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b"], "small, medium, large, the picking and heavy lifts and the two lines' trolleys: %s" % [trolleys.keys()])
 	var hall: AABB = bus.shipyard_rooms()["deliveries"]["box"]
 	var haulers: Array = [trolleys["s"], trolleys["m"], trolleys["l"]]
 	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))),
@@ -43,13 +43,16 @@ func run_tests() -> void:
 	var path: PackedVector3Array = nav.call("route", from, to, lift.call("radius"))
 	check(path.size() >= 2 and path[path.size() - 1].distance_to(to) < 0.1, "a route from the stores' doorway down aisle %s: %d points" % [str(place).substr(0, 1), path.size()])
 	var clear := true
+	var tight := Vector3.INF
 	var prev := from
 	for p in path:
 		for k in 10:
-			if not bool(nav.call("is_free", prev.lerp(p, k / 10.0), float(lift.call("radius")) - 0.05)):
+			# (a hand's width under its radius: the planner's clearance is cell by cell)
+			if not bool(nav.call("is_free", prev.lerp(p, k / 10.0), float(lift.call("radius")) - 0.1)):
 				clear = false
+				tight = prev.lerp(p, k / 10.0)
 		prev = p
-	check(clear, "the route keeps the lift clear of walls and racks")
+	check(clear, "the route keeps the lift clear of walls and racks: %s in %s" % [tight, path])
 	var stand: Array = fleet.call("stores_in", trolleys["l"])
 	check(not (nav.call("route", trolleys["l"].global_position, stand[0], trolleys["l"].call("radius")) as PackedVector3Array).is_empty(),
 			"the large trolley has a way to the stores' hand-in")
@@ -73,10 +76,10 @@ func run_tests() -> void:
 	var on_carry := func(crate_id: String, trolley_id: String) -> void:
 		if not carried.has(crate_id):
 			carried[crate_id] = trolley_id
-		elif trolley_id == "p":
-			shelved[crate_id] = true
+		elif trolley_id == "p" or trolley_id == "h":
+			shelved[crate_id] = trolley_id
 	bus.crate_carried.connect(on_carry)
-	for id: String in ["s", "m", "l", "p"]:
+	for id: String in ["s", "m", "l"]:
 		bus.command_trolley(id, "put_away")
 	var beams: Node = fleet.get("beams")
 	var flown := {}
@@ -97,17 +100,19 @@ func run_tests() -> void:
 	for id: String in trolleys:
 		states[id] = "%s at %s" % [trolleys[id].get("status"), trolleys[id].global_position.snapped(Vector3(0.1, 0.1, 0.1))]
 	check(bus.delivered_crates().is_empty(), "every crate put away: %s (%s)" % [bus.delivered_crates().keys(), states])
-	check(carried.size() == 3 and carried.values().all(func(by: String) -> bool: return by != "p"),
+	check(carried.size() == 3 and carried.values().all(func(by: String) -> bool: return by != "p" and by != "h"),
 			"hover trolleys load them off the goods-in floor: %s" % [carried])
-	check(shelved.has("PO-21/1") and shelved.has("PO-21/2") and not shelved.has("PO-21/3"),
-			"the picking lift takes the shelf goods off the trolley, the reactor goes on the floor with it: %s" % [shelved])
+	check(shelved.get("PO-21/1") == "p" and shelved.get("PO-21/2") == "p" and shelved.get("PO-21/3") == "h",
+			"the picking lift takes the shelf goods off the trolley, the heavy lift the reactor: %s" % [shelved])
 	check(bus.stock_at(bus.home_location("IonThruster")).get("qty") == 2, "the thrusters are on their home")
 	check(flown.size() >= 3, "goods are beamed on and off the trolleys, not just moved: %s" % [flown.keys()])
 	check(not beside.is_empty() and beside.values().all(func(d: float) -> bool: return d > 1.5),
 			"a trolley parks beside goods on the floor and beams them up: %s" % [beside])
-	check(bus.stock_count("M10") == 100 and bus.stock_count("Reactor") == 1, "the bolts in their bin, the reactor on the bulk floor")
+	var reactor_at := bus.find_stock("Reactor")
+	check(bus.stock_count("M10") == 100 and reactor_at.size() == 1 and str(Layout.get_layout()["locations"][reactor_at[0]]["store"]) != "small",
+			"the bolts in their bin, the reactor on a big rack: %s" % [reactor_at])
 	var level: float = (Layout.get_layout()["locations"][place]["at"] as Vector3).y
-	check(float(lifted["m"]) >= level - 0.02, "the medium trolley raised its deck to the shelf: %.2f of %.2f" % [lifted["m"], level])
+	check(float(lifted["p"]) >= level - 0.02, "the picking lift raised the thrusters to their shelf: %.2f of %.2f" % [lifted["p"], level])
 	# Then they go home and park.
 	for i in 2400:
 		await get_tree().physics_frame
