@@ -41,6 +41,7 @@ const KEY_INSPECT := "trades.inspect"
 const KEY_RESET := "trades.reset"
 const KEY_NEXT := "trades.next"
 const KEY_MODE := "trades.mode"           # the powered tools' mode: fasten / undo
+const KEY_HELMET := "trades.helmet"       # the welding shield up / down
 const KEY_GROUP := "Tools"
 ## The wrist screen's Specs channel: torque windows and rivet heights (its flag too).
 const SPECS_CHANNEL := "trades.specs"
@@ -62,6 +63,7 @@ func register_module() -> void:
 	Keys.register(KEY_RESET, "Start the bench job again", KEY_BACKSPACE, KEY_GROUP)
 	Keys.register(KEY_NEXT, "Next part in the tray", KEY_G, KEY_GROUP)
 	Keys.register(KEY_MODE, "Tool mode: fasten / undo", KEY_X, KEY_GROUP)
+	Keys.register(KEY_HELMET, "Welding shield up / down", KEY_H, KEY_GROUP)
 	if Flags.is_on(SPECS_CHANNEL):
 		HudSlots.register_holo_channel(SPECS_CHANNEL, "Specs",
 				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
