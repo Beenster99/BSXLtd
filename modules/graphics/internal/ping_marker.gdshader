@@ -4,7 +4,7 @@ shader_type spatial;
 render_mode unshaded, depth_test_disabled, cull_disabled, shadows_disabled, blend_mix;
 
 uniform vec4 colour : source_color = vec4(0.62, 0.9, 1.0, 1.0);
-uniform float size = 0.035;  // of the distance
+uniform float size = 0.05;   // of the distance
 uniform float alpha = 1.0;
 
 void vertex() {

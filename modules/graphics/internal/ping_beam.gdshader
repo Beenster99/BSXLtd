@@ -6,5 +6,5 @@ uniform vec4 colour : source_color = vec4(0.62, 0.9, 1.0, 1.0);
 uniform float alpha = 1.0;
 
 void fragment() {
-	ALBEDO = colour.rgb * UV.y * 0.8 * alpha;
+	ALBEDO = colour.rgb * UV.y * 1.2 * alpha;
 }
