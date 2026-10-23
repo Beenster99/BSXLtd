@@ -36,7 +36,9 @@ func setup(p_bus: BusinessBus, first := "orders") -> void:
 			"order_delayed": 1, "reputation_changed": 3, "day_closed": 1}
 	for sig: String in watch:
 		bus.connect(sig, _mark_dirty.unbind(watch[sig]) if watch[sig] > 0 else _mark_dirty)
-	bus.clock_changed.connect(func(_m: int) -> void: _refresh_header())
+	bus.clock_changed.connect(func(_m: int) -> void:
+		_refresh_header()
+		_tick_countdowns())
 	refresh()
 
 
@@ -233,9 +235,9 @@ func _goods() -> Control:
 		what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		what.clip_text = true
 		row.add_child(what)
-		var m := o.eta_minute % 1440
-		row.add_child(_cell(("LATE  " if o.delayed else "") + "DAY %d  %02d:%02d" % [o.eta_day + 1, m / 60, m % 60], 300,
-				Look.BAD if o.delayed else Look.ORANGE, "mono_bold", 30))
+		var prefix := "LATE  " if o.delayed else ""
+		row.add_child(_count_down(_cell(prefix + bus.arrival_text(o.eta_minute), 300,
+				Look.BAD if o.delayed else Look.ORANGE, "mono_bold", 30), o.eta_minute, prefix))
 		list.add_child(row.get_parent())
 	if open.size() > ARRIVALS:
 		list.add_child(Look.label("+ %d more on order" % (open.size() - ARRIVALS), "display_medium", 24, Look.DIM))
@@ -321,3 +323,21 @@ func _big_note(head: String, sub: String) -> Control:
 	s.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(s)
 	return col
+
+
+## Labels counting down to an order's arrival: each carries meta "eta" (its order's
+## eta_minute) and "prefix"; the clock ticks them without rebuilding the page.
+var _countdowns: Array[Label] = []
+
+
+func _count_down(l: Label, eta_minute: int, prefix := "") -> Label:
+	l.set_meta("eta", eta_minute)
+	l.set_meta("prefix", prefix)
+	_countdowns.append(l)
+	return l
+
+
+func _tick_countdowns() -> void:
+	_countdowns = _countdowns.filter(func(l: Label) -> bool: return is_instance_valid(l))
+	for l in _countdowns:
+		l.text = str(l.get_meta("prefix")) + bus.arrival_text(int(l.get_meta("eta")))

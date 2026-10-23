@@ -536,6 +536,18 @@ func get_minute() -> int:
 	return _books.minute
 
 
+## Real seconds until a business-clock minute (an order's eta_minute) comes round, 0 once
+## it has.
+func seconds_until(at_minute: int) -> int:
+	return _books.seconds_until(at_minute)
+
+
+## How soon an order on its way arrives, for the screens: "IN 23 S", or "ARRIVING".
+func arrival_text(at_minute: int) -> String:
+	var left := seconds_until(at_minute)
+	return "IN %d S" % left if left > 0 else "ARRIVING"
+
+
 ## "DAY 3  14:20".
 func get_clock_text() -> String:
 	var m := _books.minute % Books.MINUTES_PER_DAY

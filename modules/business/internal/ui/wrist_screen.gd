@@ -65,6 +65,7 @@ func _init(p_bus: BusinessBus, p_page := "orders", p_glass := true) -> void:
 	for sig: String in watch:
 		bus.connect(sig, _mark_dirty.unbind(watch[sig]) if watch[sig] > 0 else _mark_dirty)
 	bus.order_refused.connect(_on_order_refused)
+	bus.clock_changed.connect(func(_m: int) -> void: _tick_countdowns())
 
 
 ## The purchase order being built, kept on the bus so it survives closing the wrist.
@@ -171,7 +172,7 @@ func _refresh_chips() -> void:
 	if mode == "sell":
 		_columns.add_child(T.columns([["IN STOCK  /  OTHER OFFERS", 0], ["COND.", 92], ["HELD", 52], ["BEST CR", 96], ["", 126]]))
 	else:
-		_columns.add_child(T.columns([["PART  /  SUPPLIER", 0], ["COND.", 92], ["DUE", 58], ["LEFT", 52], ["UNIT CR", 96], ["", 46]]))
+		_columns.add_child(T.columns([["PART  /  SUPPLIER", 0], ["COND.", 92], ["LEFT", 52], ["UNIT CR", 96], ["", 46]]))
 	var holder := _chips
 	_clear(holder)
 	var flow := T.chips(_categories(), category, func(n: String) -> void:
@@ -287,7 +288,6 @@ func _listing_row(l: MarketListing, alt: bool) -> Control:
 	return compact(T.row([
 		T.cell_text(bus.part_name(l.part), sub),
 		_width(T.tag(cond, _condition_colour(l.condition)), 92),
-		T.cell("%dH" % l.lead_hours, 58),
 		T.cell(str(l.available) if l.available < 999 else "∞", 52),
 		T.cell(T.money(l.unit_price), 96, T.GOOD if deal > 0 else T.TEXT, "mono_bold"),
 		_width(_centred(add), 46),
@@ -392,7 +392,7 @@ func _refresh_side() -> void:
 	var cost := q.cost if q and q.ok else 0
 	if q and q.ok and q.saving > 0:
 		body.add_child(_sum("BULK SAVING", "%s CR" % T.money(q.saving)))
-	body.add_child(_sum("DUE AT DELIVERIES", _due_text(q)))
+	body.add_child(_sum("ARRIVES", _due_text(q)))
 	body.add_child(_sum("CASH AFTER", "%s CR" % T.money(bus.get_cash() - cost)))
 	var total := HBoxContainer.new()
 	var tl := T.label("TOTAL", "display_bold", 24, _ink())
@@ -501,8 +501,11 @@ func _order_row(o: PartsOrder, on_paper := false) -> Control:
 		top.add_child(T.tag("came late" if o.delayed else "delivered", T.AMBER if o.delayed else T.GOOD, 13))
 	else:
 		top.add_child(T.tag("delayed" if o.delayed else "on its way", T.BAD if o.delayed else T.AMBER, 13))
-	var m := o.eta_minute % 1440
-	top.add_child(T.cell("DAY %d %02d:%02d" % [o.eta_day + 1, m / 60, m % 60], 112, T.ORANGE))
+	if o.state == PartsOrder.State.PLACED:
+		top.add_child(_count_down(T.cell(bus.arrival_text(o.eta_minute), 112, T.ORANGE), o.eta_minute))
+	else:
+		var m := o.eta_minute % 1440
+		top.add_child(T.cell("DAY %d %02d:%02d" % [o.eta_day + 1, m / 60, m % 60], 112, T.ORANGE))
 	col.add_child(top)
 	var names := PackedStringArray()
 	for line in o.lines:
@@ -660,8 +663,7 @@ func _sum(what: String, value: String) -> Control:
 func _due_text(q: PartsQuote) -> String:
 	if q == null or not q.ok:
 		return "—"
-	var m := q.eta_minute % 1440
-	return "DAY %d  %02d:%02d" % [q.eta_day + 1, m / 60, m % 60]
+	return "IN %d S" % bus.seconds_until(q.eta_minute)
 
 
 ## The purchase order as {listing_id, qty} lines, in the order they were added.
@@ -893,3 +895,21 @@ class DayBars extends Control:
 			if days.size() <= 10 or i % 5 == 0 or i == days.size() - 1:
 				draw_string(font, Vector2(x, size.y - 4.0), "D%d" % (int(d["day"]) + 1), HORIZONTAL_ALIGNMENT_CENTER, w, 11, T.DIM)
 		draw_string(font, Vector2(size.x - 120.0, 14.0), "TOP %s" % T.money(top), HORIZONTAL_ALIGNMENT_RIGHT, 112.0, 11, T.DIM)
+
+
+## Labels counting down to an order's arrival: each carries meta "eta" (its order's
+## eta_minute) and "prefix"; the clock ticks them without rebuilding the page.
+var _countdowns: Array[Label] = []
+
+
+func _count_down(l: Label, eta_minute: int, prefix := "") -> Label:
+	l.set_meta("eta", eta_minute)
+	l.set_meta("prefix", prefix)
+	_countdowns.append(l)
+	return l
+
+
+func _tick_countdowns() -> void:
+	_countdowns = _countdowns.filter(func(l: Label) -> bool: return is_instance_valid(l))
+	for l in _countdowns:
+		l.text = str(l.get_meta("prefix")) + bus.arrival_text(int(l.get_meta("eta")))
