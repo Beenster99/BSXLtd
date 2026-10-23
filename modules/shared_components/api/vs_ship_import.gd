@@ -18,6 +18,8 @@ extends RefCounted
 const SCHEMA_PATH := "res://shared/void_salvage/data/ship_format/vsship-2.schema.json"
 ## Recipe names that are not a library constructor's own name.
 const RECIPE_ALIASES := {"pipe": "pipe_shape", "pipe_elbow": "pipe_elbow_shape", "pipe_union": "pipe_union_shape"}
+## A unit piece within this (m) of its part's box, in position and size, covers that part's visual.
+const SAME_BOX_M := 0.003
 
 var file: Dictionary = {}
 var kit: ShipKit
@@ -29,6 +31,8 @@ var joints_by_path: Dictionary = {}
 var materials: Dictionary = {}
 ## Fitting path -> the `ShipParts` result {name, box} where its record was rebuilt.
 var fittings_built: Dictionary = {}
+## Paths of parts whose plain visual a unit's look pieces cover (hidden under them).
+var hidden_visuals: PackedStringArray = []
 var errors: PackedStringArray = []
 var warnings: PackedStringArray = []
 
@@ -247,23 +251,40 @@ func _build_piece(piece: Dictionary) -> void:
 		warnings.append("piece: no shape for recipe %s" % str(piece.get("shape", {})))
 		return
 	var at := xform(piece.get("xform", {}))
-	var mi := MeshInstance3D.new()
-	mi.mesh = shape.mesh
-	mi.transform = at
-	mi.material_override = ShipSurface.of(material(str(piece.get("mat", "")) if piece.get("mat") != null else ""))
-	body.add_child(mi)
+	var mat := material(str(piece.get("mat", "")) if piece.get("mat") != null else "")
+	var glass_mat: Material = null
 	if shape.glass:
-		var g := MeshInstance3D.new()
-		g.mesh = shape.glass
-		g.transform = at
-		g.material_override = material(piece["glass_mat"]) if piece.has("glass_mat") else ShipKit.glass()
-		body.add_child(g)
+		glass_mat = material(piece["glass_mat"]) if piece.has("glass_mat") else ShipKit.glass()
+	kit.group = piece.get("group", "")
+	# Through the kit's own `add`, so the look gets the same tiny inset Void Salvage's ShipKit
+	# gives touching pieces (no z-fighting with its neighbours); `solid` false: no collision.
+	var made := kit.add(shape, at, mat, "", glass_mat, false)
+	(made["mesh"] as Node).set_meta("vs_piece", true)
 	if shape.glow:
 		var e := MeshInstance3D.new()
 		e.mesh = shape.glow
-		e.transform = at
+		e.transform = at * made.get("vis", Transform3D.IDENTITY)
 		e.material_override = ShipKit.glow(shape.glow_color, 2.0)
 		body.add_child(e)
+	if piece.has("unit"):
+		_hide_under(str(piece["unit"]), at * shape.mesh.get_aabb())
+
+
+## A unit's look piece (an engine's cowl, a door leaf's panel) sits exactly on the unit's part,
+## whose plain visual from its recipe would z-fight with it: that visual goes off, as a fitting's
+## does. The part keeps its collision and joints. `hidden_visuals` lists the parts by path.
+func _hide_under(unit: String, box: AABB) -> void:
+	for path: String in parts_by_path:
+		if path != unit and not path.begins_with(unit + "/"):
+			continue
+		var part: PartData = parts_by_path[path]
+		var look := kit.model.part_visual(part.id) as MeshInstance3D
+		if look == null or not look.visible or look.mesh == null:
+			continue
+		var part_box := look.transform * look.mesh.get_aabb()
+		if part_box.position.distance_to(box.position) < SAME_BOX_M and part_box.size.distance_to(box.size) < SAME_BOX_M:
+			look.visible = false
+			hidden_visuals.append(path)
 
 
 # --- recipes --------------------------------------------------------------------------------
