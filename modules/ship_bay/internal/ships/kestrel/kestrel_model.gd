@@ -51,23 +51,22 @@ func _init() -> void:
 	set_powered(false)
 
 
-## A unit's part (an engine, a door leaf) also arrives as loose look pieces drawing the same
-## faces in the same place, which flicker against each other: the part's plain visual hides
-## wherever a loose piece covers the same box (its collision and joints stay). Then the loose
-## pieces are inset as Void Salvage draws them.
+## A part's plain visual hides wherever a loose look piece draws the same box (the importer
+## catches the pieces under the part's own unit path; this catches the rest, such as door
+## leaves and trim). The part keeps its collision and joints. Then the loose pieces get one
+## more of ShipKit's insets on top of the importer's: with only the one, about six touching
+## pairs on each Kestrel in the yard still flicker.
 func _drop_doubled_looks() -> void:
 	var model := importer.kit.model
-	var looks: Array[AABB] = []
 	var parts := {}
 	for path: String in importer.parts_by_path:
 		var look := model.part_visual((importer.parts_by_path[path] as PartData).id)
 		if look:
 			parts[look] = true
+	var looks: Array[AABB] = []
 	for c: Node in get_children():
 		if c is MeshInstance3D and not parts.has(c) and (c as MeshInstance3D).mesh:
 			looks.append((c as MeshInstance3D).transform * (c as MeshInstance3D).mesh.get_aabb())
-	# Loose pieces get the small visual inset Void Salvage's ShipKit.add gives every piece, so
-	# touching pieces never share a face.
 	for c: Node in get_children():
 		var piece := c as MeshInstance3D
 		if piece and not parts.has(piece) and piece.mesh:
@@ -125,11 +124,13 @@ func slot_pieces(def: ShipDefinition) -> Dictionary:
 		meshes.append_array(look.find_children("*", "MeshInstance3D", true, false))
 		for mi: Node in meshes:
 			taken[mi] = true
+		# A visual hidden at build (a look piece draws it) stays hidden when the slot shows.
+		meshes = meshes.filter(func(mi: Node) -> bool: return (mi as Node3D).visible)
 		var id: String = owner.get(path, path.trim_prefix("slot:").get_slice("/", 0) if path.begins_with("slot:") else "")
 		if out.has(id):
 			(out[id] as Array).append_array(meshes)
 	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
-		if taken.has(mi) or mi.mesh == null:
+		if taken.has(mi) or mi.mesh == null or not mi.visible:
 			continue
 		var centre := _local_xform(mi) * mi.mesh.get_aabb().get_center()
 		for s in def.slots:
