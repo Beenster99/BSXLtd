@@ -775,14 +775,30 @@ func _send_books() -> void:
 	_books_queued = false
 	var net := _net()
 	if net and _is_authority():
-		net.call("host_emit", BOOKS_EVENT, {"books": _books.save_data()})
+		net.call("host_emit", BOOKS_EVENT, _books_packet())
+
+
+## The books as one packed message: the market lists every Void Salvage part each day
+## (over a thousand lines), so they go compressed.
+func _books_packet() -> Dictionary:
+	var raw := var_to_bytes(_books.save_data())
+	return {"z": raw.compress(FileAccess.COMPRESSION_ZSTD), "n": raw.size()}
+
+
+static func _unpack_books(p: Dictionary) -> Variant:
+	if p.get("z") is PackedByteArray:
+		return bytes_to_var((p.z as PackedByteArray).decompress(int(p.get("n", 0)), FileAccess.COMPRESSION_ZSTD))
+	return p.get("books", {})
 
 
 func _apply_books(p: Dictionary) -> void:
 	if _is_authority():
 		return
+	var books: Variant = _unpack_books(p)
+	if not books is Dictionary:
+		return
 	_loading_books = true
-	load_data(p.get("books", {}), Books.SAVE_VERSION)
+	load_data(books, Books.SAVE_VERSION)
 	_loading_books = false
 
 
