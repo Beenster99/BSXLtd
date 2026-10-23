@@ -1,6 +1,7 @@
 extends AnimatableBody3D
 ## A hover trolley: a chassis floating on four lift pads, a telescopic mast under a railed
-## grating deck, a control box with its size letter and a status lamp. Three sizes (SPECS):
+## grating deck, a control box with its size letter, a status lamp and a rotating orange
+## beacon, and a low hover hum that rises a little as it moves. Three sizes (SPECS):
 ## every deck rises to the top rack level for work at height (you can ride them); the large
 ## one also carries bulk parts. The picking lift ("p", and the heavy lift "h") is the same chassis
 ## with a tall twin-column mast: its carriage rides up the columns to any shelf and a shuttle
@@ -28,6 +29,18 @@ const SPECS := {
 			"speed": 1.4, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
 	"p": {"name": "Picking lift", "letter": "P", "deck": Vector2(1.1, 1.3), "radius": 0.8,
 			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true},
+	# Five more picking lifts that put deliveries away straight off the goods-in floor
+	# (beenster, 0.3.15: the big trolleys stand parked in the yard unless you send them).
+	"p2": {"name": "Picking lift 2", "letter": "P2", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p3": {"name": "Picking lift 3", "letter": "P3", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p4": {"name": "Picking lift 4", "letter": "P4", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p5": {"name": "Picking lift 5", "letter": "P5", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p6": {"name": "Picking lift 6", "letter": "P6", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
 	# The heavy lift works the large and heavy racks (aisles W, X and H): a broad deck, a
 	# stout mast and a long fork for the big machines.
 	"h": {"name": "Heavy lift", "letter": "H", "deck": Vector2(3.0, 3.4), "radius": 1.9, "clear": 1.75,
@@ -57,6 +70,12 @@ const MAST_SECTIONS := 4
 @export var lift_speed := 0.8
 ## How much faster it goes in fast mode (FAST on its screen, or Shift while on remote).
 @export var fast_scale := 2.2
+## The beacon's turns per second, and its light's reach (metres).
+@export var beacon_spin := 1.1
+@export var beacon_range := 6.0
+## The hum's loudness standing still, decibels, and how far it carries (metres).
+@export var hum_db := -30.0
+@export var hum_reach := 18.0
 
 ## Fast mode: top speed times fast_scale (every peer is told, like the deck).
 var fast := false
@@ -90,6 +109,10 @@ var fork_target := 0.0
 var fork_side := 1.0
 var _cargo_mesh: Node3D
 var _lamp: MeshInstance3D
+## The beacon's turning reflector (with its light), and the hum.
+var beacon: Node3D
+var hum: AudioStreamPlayer3D
+var _was_at := Vector3.INF
 ## The touch screen on its control box (TV style): its letter, status and buttons.
 var screen: Node3D
 var _shown := ""
@@ -113,6 +136,8 @@ func setup(p_kind: String, at: Vector3, yaw: float) -> void:
 		"pad": ShipKit.glow(Color(0.35, 0.85, 1.0), 3.0),
 		"go": ShipKit.glow(Color(0.35, 1.0, 0.5), 2.5),
 		"wait": ShipKit.glow(Color(1.0, 0.7, 0.15), 2.5),
+		"beacon": ShipKit.glow(Color(1.0, 0.55, 0.12), 6.0),
+		"amber_glass": _amber_glass(),
 		"crate": ShipSurface.of(ShipKit.paint(Color(0.6, 0.5, 0.36), 0.15, 0.6)),
 	}
 	_build()
@@ -307,6 +332,18 @@ func show_status(text: String) -> void:
 		_lamp.material_override = _mats["go"] if not path.is_empty() or drive_input != Vector2.ZERO else _mats["wait"]
 
 
+## Every peer: the beacon turns, and the hum lifts in pitch and loudness with speed.
+func _process(delta: float) -> void:
+	if beacon:
+		beacon.rotate_y(TAU * beacon_spin * delta)
+	if hum and delta > 0.0:
+		var moved := 0.0 if _was_at == Vector3.INF else (global_position - _was_at).length() / delta
+		_was_at = global_position
+		var k := clampf(moved / 2.0, 0.0, 1.0)
+		hum.pitch_scale = lerpf(hum.pitch_scale, 1.0 + 0.3 * k, minf(1.0, delta * 4.0))
+		hum.volume_db = hum_db + 5.0 * k
+
+
 func _build() -> void:
 	var d: Vector2 = spec["deck"]
 	var body_h := CHASSIS_TOP - HOVER
@@ -338,12 +375,17 @@ func _build() -> void:
 	var front := -d.y * 0.5
 	_box(Vector3(minf(d.x * 0.6, 0.8), 0.5, 0.18), Vector3(0, CHASSIS_TOP + 0.25, front + 0.1), _mats["dark"])
 	_lamp = _box(Vector3(0.08, 0.06, 0.08), Vector3(minf(d.x * 0.3, 0.4) - 0.08, CHASSIS_TOP + 0.53, front + 0.1), _mats["wait"])
+	_build_beacon(Vector3(-(minf(d.x * 0.3, 0.4) - 0.1), CHASSIS_TOP + 0.5, front + 0.1))
+	hum = Sfx.loop("hover_drive", self, hum_db)
+	hum.name = "Hum"
+	hum.unit_size = 2.5
+	hum.max_distance = hum_reach
 	var box_w := minf(d.x * 0.6, 0.8)
 	screen = Touch.new()
 	screen.name = "Screen"
 	screen.transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -0.25), Vector3(0, CHASSIS_TOP + 0.26, front - 0.055))
 	add_child(screen)
-	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else ("PICKER" if kind == "p" else "HEAVY LIFT"), 2)
+	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else ("PICKER" if kind == "p" else ("PICKER %s" % kind.substr(1) if spec.has("putaway") else "HEAVY LIFT")), 2)
 	for b: Array in [["call", "FOLLOW ME"], ["park", "PARK"], ["fast", "FAST"], ["remote", "REMOTE CONTROL"]]:
 		screen.call("add_button", b[0], b[1], func() -> void: screen_action.emit(b[0]), b[0] == "remote")
 	var col := CollisionShape3D.new()
@@ -392,6 +434,49 @@ func _build() -> void:
 
 ## Two lattice columns up the back with a head beam and a beacon, a stripe down each, the
 ## carriage on the deck (a frame round the columns) and the shuttle fork on it.
+## The beacon: a squat base, an amber dome, and inside it a reflector and a spot light that
+## turn round (beacon) so the orange sweeps the floor and walls round the trolley.
+func _build_beacon(at: Vector3) -> void:
+	var base := MeshInstance3D.new()
+	var bm := CylinderMesh.new()
+	bm.top_radius = 0.07
+	bm.bottom_radius = 0.08
+	bm.height = 0.04
+	bm.radial_segments = 12
+	base.mesh = bm
+	base.material_override = _mats["dark"]
+	base.position = at + Vector3(0, 0.02, 0)
+	add_child(base)
+	var dome := MeshInstance3D.new()
+	var dm := CylinderMesh.new()
+	dm.top_radius = 0.05
+	dm.bottom_radius = 0.065
+	dm.height = 0.11
+	dm.radial_segments = 12
+	dome.mesh = dm
+	dome.material_override = _mats["amber_glass"]
+	dome.position = at + Vector3(0, 0.095, 0)
+	dome.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(dome)
+	beacon = Node3D.new()
+	beacon.name = "Beacon"
+	beacon.position = at + Vector3(0, 0.09, 0)
+	add_child(beacon)
+	_box(Vector3(0.02, 0.07, 0.07), Vector3(-0.02, 0, 0), _mats["steel"], beacon)
+	_box(Vector3(0.03, 0.04, 0.04), Vector3(0.005, 0, 0), _mats["beacon"], beacon)
+	var light := SpotLight3D.new()
+	light.name = "BeaconLight"
+	light.light_color = Color(1.0, 0.55, 0.12)
+	light.light_energy = 2.5
+	light.spot_range = beacon_range
+	light.spot_angle = 22.0
+	light.shadow_enabled = false
+	light.set_meta("gfx_no_shadow", true)
+	# Points out along +X, tipped a little down to the floor.
+	light.transform = Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, -0.25), Vector3(0.03, 0, 0))
+	beacon.add_child(light)
+
+
 func _build_picker(d: Vector2) -> void:
 	var mast := float(spec.get("mast", PICKER_MAST))
 	var back := d.y * 0.5 - 0.12
@@ -442,3 +527,19 @@ func _box(size: Vector3, at: Vector3, mat: Material, parent: Node3D = null) -> M
 	mi.position = at
 	(parent if parent else self).add_child(mi)
 	return mi
+
+
+static var _amber: StandardMaterial3D
+
+
+## The beacon's dome: see-through amber with a faint glow of its own.
+static func _amber_glass() -> StandardMaterial3D:
+	if _amber == null:
+		_amber = StandardMaterial3D.new()
+		_amber.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_amber.albedo_color = Color(1.0, 0.5, 0.08, 0.55)
+		_amber.roughness = 0.15
+		_amber.emission_enabled = true
+		_amber.emission = Color(1.0, 0.45, 0.05)
+		_amber.emission_energy_multiplier = 0.8
+	return _amber

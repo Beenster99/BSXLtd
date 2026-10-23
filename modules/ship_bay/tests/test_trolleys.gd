@@ -22,11 +22,31 @@ func run_tests() -> void:
 		yard.queue_free()
 		return
 	var trolleys: Dictionary = fleet.get("trolleys")
-	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b"], "small, medium, large, the picking and heavy lifts and the two lines' trolleys: %s" % [trolleys.keys()])
+	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6"],
+			"small, medium, large, the picking and heavy lifts, the two lines' trolleys and five goods-in lifts: %s" % [trolleys.keys()])
 	var hall: AABB = bus.shipyard_rooms()["deliveries"]["box"]
+	var court: AABB = bus.shipyard_rooms()["bay"]["box"]
 	var haulers: Array = [trolleys["s"], trolleys["m"], trolleys["l"]]
-	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))),
-			"parked in Deliveries")
+	var pickers: Array = ["p2", "p3", "p4", "p5", "p6"].map(func(id: String) -> Node3D: return trolleys[id])
+	check(haulers.all(func(t: Node3D) -> bool: return court.has_point(t.global_position + Vector3(0, 1, 0))),
+			"the small, medium and large trolleys parked in the courtyard")
+	check(pickers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0)) and bool(t.call("is_picker"))),
+			"five picking lifts parked in Deliveries")
+	# Every trolley hums quietly and turns an orange beacon.
+	var yaws: Array = trolleys.values().map(func(t: Node3D) -> float: return (t.get("beacon") as Node3D).rotation.y)
+	await frames(10)
+	var turned := range(trolleys.size()).all(func(i: int) -> bool:
+		return absf(angle_difference(float(yaws[i]), (trolleys.values()[i].get("beacon") as Node3D).rotation.y)) > 0.01)
+	check(turned and trolleys.values().all(func(t: Node3D) -> bool:
+			return (t.get("beacon") as Node3D).get_node_or_null("BeaconLight") is SpotLight3D),
+			"every trolley turns an orange beacon")
+	check(trolleys.values().all(func(t: Node3D) -> bool:
+			var h := t.get("hum") as AudioStreamPlayer3D
+			return h != null and h.volume_db <= -20.0 and h.max_distance <= 25.0),
+			"and hums, low and quiet")
+	var auto: Dictionary = fleet.get("auto_load")
+	check(not auto["s"] and not auto["m"] and not auto["l"] and auto["p2"] and auto["p6"] and auto["h"],
+			"the big trolleys don't load by themselves; the goods-in lifts and the heavy lift do: %s" % [auto])
 	check((bus.shipyard_rooms()["stock"]["box"] as AABB).has_point(trolleys["p"].global_position + Vector3(0, 1, 0)), "the lift in the stores")
 	# The walker stays out of the way at the far end of the courtyard.
 	yard.call("set_walker_active", false)
@@ -56,8 +76,8 @@ func run_tests() -> void:
 	var stand: Array = fleet.call("stores_in", trolleys["l"])
 	check(not (nav.call("route", trolleys["l"].global_position, stand[0], trolleys["l"].call("radius")) as PackedVector3Array).is_empty(),
 			"the large trolley has a way to the stores' hand-in")
-	var court: PackedVector3Array = nav.call("route", m.global_position, Vector3(-6, 0, 16), float(trolleys["l"].call("radius")))
-	check(not court.is_empty(), "even the large trolley finds a way into the courtyard")
+	var to_court: PackedVector3Array = nav.call("route", Vector3(-40, 0, 0), Vector3(-6, 0, 16), float(trolleys["l"].call("radius")))
+	check(not to_court.is_empty(), "even the large trolley finds a way from Deliveries into the courtyard")
 	check(not bool(nav.call("is_free", Vector3(Layout.rack_x("B1"), 0, Layout.bay_z(2)), 0.3)), "racks are in the way")
 
 	# Put deliveries away: a pallet, a bin and a bulk crate, each by the trolley that fits.
@@ -79,10 +99,15 @@ func run_tests() -> void:
 		elif trolley_id == "p" or trolley_id == "h":
 			shelved[crate_id] = trolley_id
 	bus.crate_carried.connect(on_carry)
+	# Sent by hand, with every trolley's AUTO LOAD off for now.
+	var auto_was := auto.duplicate()
+	for id: String in auto:
+		auto[id] = false
 	for id: String in ["s", "m", "l"]:
 		bus.command_trolley(id, "put_away")
 	var beams: Node = fleet.get("beams")
 	var flown := {}
+	var beam_like_player := true
 	var beside := {}
 	for i in 5400:
 		await get_tree().physics_frame
@@ -90,6 +115,7 @@ func run_tests() -> void:
 			lifted[id] = maxf(float(lifted.get(id, 0.0)), float(trolleys[id].get("deck_height")))
 		for f: Dictionary in beams.get("flights"):
 			flown[f["key"]] = true
+			beam_like_player = beam_like_player and (f["beam"] as Node).has_method("draw") and (f["beam"] as MeshInstance3D).mesh is ImmediateMesh
 			if f["from"] is Vector3 and not beside.has(f["key"]):
 				var gap: Vector3 = (f["emitter"] as Node3D).global_position - (f["from"] as Vector3)
 				gap.y = 0.0
@@ -106,6 +132,7 @@ func run_tests() -> void:
 			"the picking lift takes the shelf goods off the trolley, the heavy lift the reactor: %s" % [shelved])
 	check(bus.stock_at(bus.home_location("IonThruster")).get("qty") == 2, "the thrusters are on their home")
 	check(flown.size() >= 3, "goods are beamed on and off the trolleys, not just moved: %s" % [flown.keys()])
+	check(beam_like_player, "in a beam drawn like the player's tractor beam")
 	check(not beside.is_empty() and beside.values().all(func(d: float) -> bool: return d > 1.5),
 			"a trolley parks beside goods on the floor and beams them up: %s" % [beside])
 	var reactor_at := bus.find_stock("Reactor")
@@ -118,9 +145,14 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 		if trolleys.values().all(func(t: Node) -> bool: return t.get("status") == "PARKED" or t.get("status") == "ALL PUT AWAY" and (t.get("path") as PackedVector3Array).is_empty()):
 			break
-	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))), "back in Deliveries")
+	check(haulers.all(func(t: Node3D) -> bool: return court.has_point(t.global_position + Vector3(0, 1, 0))), "back in the courtyard")
 
-	# A delivery nobody asks about: idle trolleys go and put it away by themselves.
+	# A delivery nobody asks about: a goods-in picking lift goes and puts it away by itself,
+	# straight off the floor; the big trolleys stay parked.
+	for id: String in auto_was:
+		auto[id] = auto_was[id]
+	carried.clear()
+	var parked_at: Array = haulers.map(func(t: Node3D) -> Vector3: return t.global_position)
 	bus.receive_delivery("PO-22", [{"item_id": "IonThruster", "qty": 1, "condition": 1.0, "name": "Ion thruster", "grade": "new", "mass": 311.0}])
 	for i in 3600:
 		await get_tree().physics_frame
@@ -128,6 +160,10 @@ func run_tests() -> void:
 			break
 	check(bus.delivered_crates().is_empty() and bus.stock_at(bus.home_location("IonThruster")).get("qty") == 3,
 			"a new delivery is put away without being asked: %s" % [bus.delivered_crates().keys()])
+	check(carried.size() == 1 and str(carried.values()[0]).begins_with("p") and str(carried.values()[0]) != "p",
+			"by a goods-in picking lift: %s" % [carried])
+	check(range(3).all(func(i: int) -> bool: return (haulers[i] as Node3D).global_position.distance_to(parked_at[i]) < 0.2),
+			"the big trolleys stayed parked")
 	bus.take_stock("IonThruster", 1)   # back to the two the stock checks below count
 	for i in 2400:
 		await get_tree().physics_frame
@@ -142,7 +178,9 @@ func run_tests() -> void:
 		if m.get("status") == "HERE":
 			break
 	var gap := Vector2(m.global_position.x - me.x, m.global_position.z - me.z).length()
-	check(m.get("status") == "HERE" and gap < 2.6, "the medium trolley came: %.1f m away (%s)" % [gap, m.get("status")])
+	var come_gap: float = float(m.call("radius")) + float(fleet.get("COME_GAP"))
+	check(m.get("status") == "HERE" and gap > come_gap - 0.6 and gap < come_gap + 0.6,
+			"the medium trolley came, near but not right next to you: %.1f m away (%s)" % [gap, m.get("status")])
 
 	# Its deck rises for work at height and comes down again.
 	bus.command_trolley("m", "deck", {"height": 5.0})
@@ -175,7 +213,8 @@ func run_tests() -> void:
 		if i > 600 and (m.get("path") as PackedVector3Array).is_empty():
 			break
 	var held := Vector2(m.global_position.x - lead.x, m.global_position.z - lead.z).length()
-	check(held < float(m.call("radius")) + 2.6 and close > float(m.call("radius")) + 0.8,
+	var keep: float = float(m.call("radius")) + float(fleet.get("FOLLOW_GAP"))
+	check(held < keep + 1.0 and close > keep - 0.8,
 			"it caught up and keeps a safe distance: %.1f m now, never under %.1f m" % [held, close])
 	fleet.set("following", "m")
 	own.call("press", "call")
