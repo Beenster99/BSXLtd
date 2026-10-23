@@ -63,6 +63,10 @@ signal cradle_state(payload: Dictionary)
 signal ship_door_state(payload: Dictionary)
 ## Where the transporters and cradles stand came back from a save or the host.
 signal transport_restored(state: Dictionary)
+## The bay's shore power plug moved or the unit was switched, on another player's machine
+## (or a late join): {state ("hook", "hand", "hull"), switch, xform (bay space), by (peer)}.
+signal plug_changed(payload: Dictionary)
+
 ## The fastener rings show only within `radius_m` of `at` (world space); INF shows them all.
 signal marker_focus_changed(at: Vector3, radius_m: float)
 
@@ -120,6 +124,9 @@ var _contracts: Node
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
 ## runs without it: tests that switch only part of the game on, and solo builds).
 var _net: Node
+## The power plug as last shared (plug_changed): late joiners get it in the net snapshot.
+var plug_info: Dictionary = {}
+
 ## Where fastener rings show (set_marker_focus): round this point, world space, within the
 ## radius (metres; INF: everywhere).
 var marker_focus_at := Vector3.ZERO
@@ -235,6 +242,9 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.transporter", _apply_transporter, _pass)
 	_net.call("register_event", "ship_bay.cradle", _apply_cradle, _pass)
 	_net.call("register_event", "ship_bay.ship_door", _apply_ship_door, _pass)
+	_net.call("register_event", "ship_bay.joint", _apply_joint, _stamp)
+	_net.call("register_event", "ship_bay.slot", _apply_slot_move, _stamp)
+	_net.call("register_event", "ship_bay.plug", _apply_plug, _check_plug)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
@@ -284,7 +294,8 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door"]:
+				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
+				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -452,22 +463,93 @@ func joint_quality(joint_id: String) -> float:
 
 ## Holds `component` in an empty slot that takes it, ready to fasten.
 func try_position(slot_id: String, component: String) -> bool:
-	return _tracker != null and _tracker.try_position(slot_id, component)
+	var ok := _tracker != null and _tracker.try_position(slot_id, component)
+	if ok:
+		_share("ship_bay.slot", {"slot": slot_id, "component": component, "op": "position"})
+	return ok
 
 
 ## Lifts a positioned part back out before any joint holds it.
 func try_remove(slot_id: String) -> bool:
-	return _tracker != null and _tracker.try_remove(slot_id)
+	var ok := _tracker != null and _tracker.try_remove(slot_id)
+	if ok:
+		_share("ship_bay.slot", {"slot": slot_id, "op": "remove"})
+	return ok
 
 
 ## Trades: a joint was made (bolt torqued, rivet set, seam welded, plug seated).
 func note_joint_made(joint_id: String, quality: float) -> bool:
-	return _tracker != null and _tracker.joint_made(joint_id, quality)
+	var ok := _tracker != null and _tracker.joint_made(joint_id, quality)
+	if ok:
+		_share("ship_bay.joint", {"joint": joint_id, "made": true, "quality": quality})
+	return ok
 
 
 ## Trades: a joint was undone.
 func note_joint_removed(joint_id: String) -> bool:
-	return _tracker != null and _tracker.joint_removed(joint_id)
+	var ok := _tracker != null and _tracker.joint_removed(joint_id)
+	if ok:
+		_share("ship_bay.joint", {"joint": joint_id, "made": false})
+	return ok
+
+
+## Online, tells the other players about a change already made here (a joint, a slot): the
+## host stamps who sent it and every other peer makes the same change to its tracker.
+func _share(event_name: String, payload: Dictionary) -> void:
+	if _net and bool(_net.call("is_online")):
+		_net.call("request", event_name, payload)
+
+
+## The validator for changes the sender has already made: notes who sent it.
+func _stamp(sender: int, payload: Dictionary) -> Variant:
+	payload["by"] = sender
+	return payload
+
+
+func _from_here(payload: Dictionary) -> bool:
+	return _net != null and int(payload.get("by", -1)) == int(_net.call("local_peer_id"))
+
+
+func _apply_joint(payload: Dictionary) -> void:
+	if _tracker == null or _from_here(payload):
+		return
+	if bool(payload.get("made", false)):
+		_tracker.joint_made(str(payload.get("joint", "")), float(payload.get("quality", 1.0)))
+	else:
+		_tracker.joint_removed(str(payload.get("joint", "")))
+
+
+func _apply_slot_move(payload: Dictionary) -> void:
+	if _tracker == null or _from_here(payload):
+		return
+	if str(payload.get("op", "")) == "position":
+		_tracker.try_position(str(payload.get("slot", "")), str(payload.get("component", "")))
+	else:
+		_tracker.try_remove(str(payload.get("slot", "")))
+
+
+## The bay's power plug (BayAccess): where it is and whether the unit is on, for every player.
+## Online it goes through the host, which refuses to let a second player take it from the
+## first one's hand; solo it applies at once.
+func send_plug(payload: Dictionary) -> void:
+	if _net and bool(_net.call("is_online")):
+		_net.call("request", "ship_bay.plug", payload)
+	else:
+		payload["by"] = int(_net.call("local_peer_id")) if _net else 0
+		_apply_plug(payload)
+
+
+func _check_plug(sender: int, payload: Dictionary) -> Variant:
+	if str(payload.get("state", "")) == "hand" and str(plug_info.get("state", "")) == "hand" \
+			and int(plug_info.get("by", 0)) != sender:
+		return "someone else has the plug"
+	payload["by"] = sender
+	return payload
+
+
+func _apply_plug(payload: Dictionary) -> void:
+	plug_info = payload.duplicate(true)
+	plug_changed.emit(plug_info)
 
 
 ## Shore power to the ship in the bay on or off (the bay's ground power unit, or anyone).
@@ -487,6 +569,7 @@ func snapshot() -> Dictionary:
 
 
 func restore(state: Dictionary) -> void:
+	plug_info = {}
 	_stock.from_dict(state.get("storage", {}))
 	_line = _new_line()
 	var saved: Dictionary = state.get("line", {})
@@ -529,11 +612,16 @@ func reset_data() -> void:
 
 
 func get_net_snapshot() -> Dictionary:
-	return snapshot()
+	var out := snapshot()
+	if not plug_info.is_empty():
+		out["plug"] = plug_info.duplicate(true)
+	return out
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
 	restore(data)
+	if data.has("plug"):
+		_apply_plug(data["plug"])
 
 
 func save_version() -> int:

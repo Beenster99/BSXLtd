@@ -207,7 +207,15 @@ func _note_made(f: FastenerPoint, quality: float) -> bool:
 	if practice.get(f.joint_id, false):
 		return false
 	practice[f.joint_id] = true
+	if bay and bay.crew:
+		bay.crew.share_practice(f.joint_id, true)
 	return true
+
+
+## A joint on the stand made or undone by a crewmate (TradesCrew).
+func set_practice(joint_id: String, made: bool) -> void:
+	if practice.has(joint_id):
+		practice[joint_id] = made
 
 
 func _note_removed(f: FastenerPoint) -> bool:
@@ -217,6 +225,8 @@ func _note_removed(f: FastenerPoint) -> bool:
 	elif practice.get(f.joint_id, false):
 		practice[f.joint_id] = false
 		gone = true
+		if bay and bay.crew:
+			bay.crew.share_practice(f.joint_id, false)
 	if gone and f.kind == "bolt":
 		_drop_bolt(f)
 	return gone
@@ -231,9 +241,27 @@ func _drop_bolt(f: FastenerPoint) -> void:
 	var i := points.find(f)
 	var at := points_world[i] if i >= 0 else ship_xform * f.position
 	var n := (ship_xform.basis * f.normal).normalized()
-	if _bolt_mesh == null:
-		_bolt_mesh = _make_bolt_mesh()
-	sparks.pop(at + n * 0.03, n * 0.6 + Vector3.UP * 0.4, _bolt_mesh, TradesTool.steel())
+	pop_part("bolt", at + n * 0.03, n * 0.6 + Vector3.UP * 0.4)
+	if bay.crew:
+		bay.crew.share_pop("bolt", at + n * 0.03, n * 0.6 + Vector3.UP * 0.4)
+
+
+## Something knocked off falls: "bolt", "rivet" or "rivet_hot" (a heated-out rivet).
+func pop_part(kind: String, at: Vector3, vel: Vector3) -> void:
+	var sparks := bay.sparks if bay else null
+	if sparks == null or not sparks.is_inside_tree():
+		return
+	if kind == "bolt":
+		if _bolt_mesh == null:
+			_bolt_mesh = _make_bolt_mesh()
+		sparks.pop(at, vel, _bolt_mesh, TradesTool.steel())
+		return
+	var heat := kind == "rivet_hot"
+	var rivet := CylinderMesh.new()
+	rivet.top_radius = 0.0045
+	rivet.bottom_radius = 0.0045
+	rivet.height = 0.01 if heat else 0.003
+	sparks.pop(at, vel, rivet, TradesLook.glow(Color(1.0, 0.4, 0.1), 2.0) if heat else TradesTool.steel())
 
 
 ## The part a joint holds ("" when none): the ship's from Ship and Bay.
@@ -773,12 +801,11 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 	if progress < 1.0:
 		return
 	if sparks:
-		var rivet := CylinderMesh.new()
-		rivet.top_radius = 0.0045
-		rivet.bottom_radius = 0.0045
-		rivet.height = 0.01 if heat else 0.003
-		var hot := TradesLook.glow(Color(1.0, 0.4, 0.1), 2.0) if heat else TradesTool.steel()
-		sparks.pop(at + n * 0.01, n * (2.0 if heat else 1.0) + Vector3.UP * 1.5, rivet, hot)
+		var kind := "rivet_hot" if heat else "rivet"
+		var vel := n * (2.0 if heat else 1.0) + Vector3.UP * 1.5
+		pop_part(kind, at + n * 0.01, vel)
+		if bay.crew:
+			bay.crew.share_pop(kind, at + n * 0.01, vel)
 	bay.play(&"pop" if heat else &"clunk", 1.3)
 	_finish(f)
 
