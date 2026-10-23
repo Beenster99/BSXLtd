@@ -32,6 +32,8 @@ var query := ""
 var limit := MAX_ROWS
 ## Buy/Sell page: "buy" (the market) or "sell" (the stock, to other companies).
 var mode := "buy"
+## Buy side: the cost estimator is out in place of the purchase order (+ adds to it).
+var estimating := false
 ## Orders page: "on order" or "delivered".
 var deliveries := "on order"
 ## Goods in: the store's category and search.
@@ -72,6 +74,12 @@ func _init(p_bus: BusinessBus, p_page := "orders", p_glass := true) -> void:
 var basket: Dictionary:
 	get:
 		return bus.wrist_basket
+
+
+## The cost estimate being built, kept on the bus too.
+var estimate: Dictionary:
+	get:
+		return bus.wrist_estimate
 
 
 func _mark_dirty() -> void:
@@ -143,7 +151,10 @@ func refresh() -> void:
 			_refresh_sales()
 		else:
 			_refresh_list()
-			_refresh_side()
+			if estimating:
+				_refresh_estimate()
+			else:
+				_refresh_side()
 	elif page == "goods":
 		_refresh_goods()
 	else:
@@ -166,6 +177,12 @@ func _refresh_chips() -> void:
 			limit = MAX_ROWS
 			refresh())
 		modes.add_child(b)
+	if mode == "buy":
+		var est := T.button("ESTIMATE", false, 16, estimating, glass)
+		est.name = "Estimate"
+		est.tooltip_text = "Price a list of parts without ordering them"
+		est.pressed.connect(toggle_estimator)
+		modes.add_child(est)
 	_mode_chips.add_child(modes)
 	_search.placeholder_text = "Search the stock" if mode == "sell" else "Search parts"
 	_clear(_columns)
@@ -276,8 +293,13 @@ func _listing_row(l: MarketListing, alt: bool) -> Control:
 	var add := T.button("+", true, 16, false, glass)
 	add.name = "Add_" + l.id
 	add.custom_minimum_size = Vector2(30, 24)
-	add.disabled = int(basket.get(l.id, 0)) >= l.available
-	add.pressed.connect(add_to_basket.bind(l.id, 1))
+	if estimating:
+		add.name = "Estimate_" + l.id
+		add.tooltip_text = "Add to the estimate"
+		add.pressed.connect(add_to_estimate.bind(l.id, 1))
+	else:
+		add.disabled = int(basket.get(l.id, 0)) >= l.available
+		add.pressed.connect(add_to_basket.bind(l.id, 1))
 	var cond := PartCondition.label(l.condition)
 	var sub := "%s  ·  %s" % [s.display_name if s else l.supplier_id, bus.listing_category(l)]
 	var deal := l.deal_off()
@@ -728,6 +750,170 @@ func _prune_basket() -> void:
 			basket.erase(id)
 		elif basket[id] > l.available:
 			basket[id] = l.available
+	# An estimate keeps any quantity, but only parts still listed (prices change daily).
+	for id in estimate.keys():
+		if bus.get_listing(id) == null:
+			estimate.erase(id)
+
+
+# --- COST ESTIMATOR -------------------------------------------------------------------------
+# A price list to work out what a job's parts would cost: + on any part adds it, at any
+# quantity (stock doesn't limit an estimate), costed at today's prices less bulk discounts.
+
+func toggle_estimator() -> void:
+	estimating = not estimating
+	_message = ""
+	refresh()
+
+
+func add_to_estimate(listing_id: String, delta: int) -> void:
+	if bus.get_listing(listing_id) == null:
+		return
+	var qty := maxi(0, int(estimate.get(listing_id, 0)) + delta)
+	if qty == 0:
+		estimate.erase(listing_id)
+	else:
+		estimate[listing_id] = qty
+	refresh()
+
+
+func clear_estimate() -> void:
+	estimate.clear()
+	refresh()
+
+
+## What the estimate comes to: {cost, list (before bulk), cheaper (CR saved buying each
+## line from the cheapest supplier of that part and condition)}.
+func estimate_total() -> Dictionary:
+	var best := _cheapest_units()
+	var cost := 0
+	var list := 0
+	var cheaper := 0
+	for id: String in estimate:
+		var l := bus.get_listing(id)
+		var qty := int(estimate[id])
+		var c := bus.listing_cost(l, qty)
+		cost += c
+		list += l.unit_price * qty
+		var low := int(best.get("%s|%s" % [l.part, l.condition], l.unit_price))
+		cheaper += maxi(0, c - low * qty)
+	return {"cost": cost, "list": list, "cheaper": cheaper}
+
+
+## Part|condition -> the lowest unit price any supplier lists it at today.
+func _cheapest_units() -> Dictionary:
+	var best := {}
+	for l in bus.get_listings():
+		var key := "%s|%s" % [l.part, l.condition]
+		if not best.has(key) or l.unit_price < int(best[key]):
+			best[key] = l.unit_price
+	return best
+
+
+## Puts the estimate's lines on the purchase order, as many of each as are in stock.
+func order_estimate() -> void:
+	var short := 0
+	for id: String in estimate:
+		var l := bus.get_listing(id)
+		var qty := mini(int(estimate[id]), l.available - int(basket.get(id, 0)))
+		short += int(estimate[id]) - maxi(qty, 0)
+		if qty > 0:
+			basket[id] = int(basket.get(id, 0)) + qty
+	estimating = false
+	_message = "Estimate copied to the purchase order." + (" %d not in stock today." % short if short > 0 else "")
+	_message_good = short == 0
+	refresh()
+
+
+func _refresh_estimate() -> void:
+	_clear(_side)
+	var est := T.docket("Cost estimate", "BSX/EST", glass)
+	est.panel.name = "Estimator"
+	est.panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var body := est.body as VBoxContainer
+	var hint := T.label("Press + on any part to price it. Nothing is ordered.", "body", 15, _ink_dim())
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(hint)
+	var list := T.list()
+	list.name = "EstimateLines"
+	body.add_child(list.get_parent())
+	(list.get_parent() as Control).size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var best := _cheapest_units()
+	for id: String in estimate:
+		list.add_child(_estimate_line(bus.get_listing(id), int(estimate[id]), best))
+	if estimate.is_empty():
+		list.add_child(T.label("No parts yet.", "body", 16, _ink_dim()))
+	var t := estimate_total()
+	var count := 0
+	for id: String in estimate:
+		count += int(estimate[id])
+	body.add_child(_sum("PARTS", str(count)))
+	if t.list > t.cost:
+		body.add_child(_sum("BULK SAVING", "%s CR" % T.money(t.list - t.cost)))
+	if t.cheaper > 0:
+		body.add_child(_sum("CHEAPER ELSEWHERE BY", "%s CR" % T.money(t.cheaper)))
+	body.add_child(_sum("CASH NOW", "%s CR" % T.money(bus.get_cash())))
+	var total := HBoxContainer.new()
+	var tl := T.label("ESTIMATE", "display_bold", 24, _ink())
+	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	total.add_child(tl)
+	var tv := T.label("%s CR" % T.money(t.cost), "mono_bold", 24, T.ORANGE)
+	tv.name = "EstimateTotal"
+	total.add_child(tv)
+	body.add_child(total)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 6)
+	var clear := T.button("CLEAR", false, 18, false, glass)
+	clear.disabled = estimate.is_empty()
+	clear.pressed.connect(clear_estimate)
+	buttons.add_child(clear)
+	var close := T.button("CLOSE", false, 18, false, glass)
+	close.name = "CloseEstimate"
+	close.pressed.connect(toggle_estimator)
+	buttons.add_child(close)
+	var order := T.button("ORDER THESE", true, 20, false, glass)
+	order.name = "OrderEstimate"
+	order.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	order.disabled = estimate.is_empty()
+	order.pressed.connect(order_estimate)
+	buttons.add_child(order)
+	body.add_child(buttons)
+	_side.add_child(est.panel)
+
+
+func _estimate_line(l: MarketListing, qty: int, best: Dictionary) -> Control:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 4)
+	var s := bus.supplier(l.supplier_id)
+	var cost := bus.listing_cost(l, qty)
+	var sub := "%s  ·  %s  ·  %s EACH" % [s.display_name if s else l.supplier_id, PartCondition.label(l.condition), T.money(l.unit_price)]
+	if cost < l.unit_price * qty:
+		sub += "  ·  BULK %d%% OFF" % roundi(100.0 - 100.0 * cost / (l.unit_price * qty))
+	var low := int(best.get("%s|%s" % [l.part, l.condition], l.unit_price))
+	if low < l.unit_price:
+		sub += "  ·  %s EACH ELSEWHERE" % T.money(low)
+	var names := T.cell_text(bus.part_name(l.part), sub)
+	for i in names.get_child_count():
+		var nl := names.get_child(i) as Label
+		nl.add_theme_color_override("font_color", _ink() if i == 0 else _ink_dim())
+		nl.clip_text = true
+	h.add_child(names)
+	for step: int in [-1, 1]:
+		var b := T.button("−" if step < 0 else "+", false, 15, false, glass)
+		b.custom_minimum_size = Vector2(26, 24)
+		b.pressed.connect(add_to_estimate.bind(l.id, step))
+		h.add_child(b)
+		if step < 0:
+			var ql := T.label(str(qty), "mono_bold", 17, _ink())
+			ql.custom_minimum_size.x = 34
+			ql.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			h.add_child(ql)
+	var ten := T.button("+10", false, 13, false, glass)
+	ten.custom_minimum_size = Vector2(34, 24)
+	ten.pressed.connect(add_to_estimate.bind(l.id, 10))
+	h.add_child(ten)
+	h.add_child(T.cell(T.money(cost), 84, _ink()))
+	return h
 
 
 # --- ACCOUNTS -------------------------------------------------------------------------------
