@@ -74,6 +74,15 @@ static func design_file(design: String) -> String:
 
 
 ## The design ids BSX has files for.
+## The ship a design names, read: one of the pinned files, or one of BSX's own generated
+## ships by its id ("gen:freighter:M:84", ShipGenerator). {} for a design nobody knows.
+static func design_source(design: String) -> Dictionary:
+	if ShipGenerator.is_generated(design):
+		return ShipGenerator.file_of(design)
+	var path := design_file(design)
+	return read(path) if path != "" else {}
+
+
 static func designs() -> PackedStringArray:
 	return PackedStringArray(SHIPS.keys())
 
