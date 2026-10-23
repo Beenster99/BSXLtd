@@ -22,13 +22,14 @@ const MONITORS := {
 ## Every hall that should have a TV, in order.
 const HALLS := ["deliveries", "stock", "prep", "preassembly", "bay", "crusher", "store"]
 ## Height (metres) of the screen's centre over the floor: high enough to read across a hall
-## over racks and trolleys.
-const CENTRE_Y := 4.8
+## over racks and trolleys, the bottom edge over people's heads.
+const CENTRE_Y := 3.9
 ## Claimed while a TV is aimed at or full screen, so tools don't fire on the same click.
 const POINTER_ID := "business.tv"
 ## The screen's texture size; the terminal is laid out for it. 16:9 like a TV.
 const SCREEN_PX := Vector2i(1280, 720)
-const SCREEN_M := Vector2(8.8, 4.95)
+## Its size in metres (beenster, 23 Oct: 60% of the first 8.8 m).
+const SCREEN_M := Vector2(5.28, 2.97)
 ## How far the screen's face stands off the wall (metres): clear of the conduit drops.
 const DEPTH := 0.45
 ## How close (metres) and how square-on a player must be to take a TV full screen (F).
