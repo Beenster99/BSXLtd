@@ -70,11 +70,11 @@ const Books := preload("res://modules/business/internal/books.gd")
 const YardFront := preload("res://modules/business/internal/yard/yard_front.gd")
 const TerminalScreen := preload("res://modules/business/internal/ui/terminal_screen.gd")
 const WristScreen := preload("res://modules/business/internal/ui/wrist_screen.gd")
-## Business's channels on the wrist holo screen: id -> [tab name, page, order]. Orders holds
+## Business's channels on the wrist holo screen: id -> [tab name, page, order]. Buy/Sell holds
 ## the market, the purchase order and what's on order; Ship and Bay and Contracts sit
 ## between them at 20 to 40.
 const SCREEN_CHANNELS := {
-	"business.orders": ["Orders", "orders", 10],
+	"business.orders": ["Buy/Sell", "orders", 10],
 	"business.goods": ["Goods in", "goods", 30],
 	"business.accounts": ["Accounts", "accounts", 50],
 }
@@ -557,7 +557,7 @@ func get_ledger(since_day := 0) -> Array[LedgerEntry]:
 ## Ledger categories grouped the way the Accounts page shows them, in its order.
 const ACCOUNT_GROUPS := {
 	"contracts": ["deposit", "goodwill", "payment", "penalty"],
-	"sales": ["scrap", "salvage"],
+	"sales": ["scrap", "salvage", "resale"],
 	"parts": ["parts", "refund"],
 	"wages": ["wages", "bonus"],
 	"rent": ["rent"],
@@ -726,6 +726,17 @@ func quote_market(basket: Array) -> PartsQuote:
 	return _books.quote_market(basket)
 
 
+## What `qty` of one listing costs after its supplier's bulk discount.
+func listing_cost(l: MarketListing, qty: int) -> int:
+	return _books.line_cost(l, qty)
+
+
+## Today's offers for a part in a condition from the companies you trade with, best first:
+## [{supplier_id, unit_price}].
+func get_offers(part: String, condition: String) -> Array[Dictionary]:
+	return _books.offers(part, condition)
+
+
 ## {value, due_day, deposit, penalties, parts, margin, state}, or {} for an unknown contract.
 func get_contract_balance(contract_id: String) -> Dictionary:
 	return _books.contract_balance(contract_id)
@@ -835,6 +846,16 @@ func _validate_order(sender: int, p: Dictionary) -> Variant:
 			if o == null or o.state != PartsOrder.State.PLACED:
 				return "that order can't be cancelled"
 			return {"kind": "cancel", "order": o.id}
+		"sell":
+			var part := str(p.get("part", ""))
+			var condition := str(p.get("condition", ""))
+			var qty := int(p.get("qty", 0))
+			var s := supplier(str(p.get("supplier", "")))
+			if s == null or _books.offer_price(s, part, condition) <= 0:
+				return "they don't buy that"
+			if qty < 1 or int(_books.stock.get(part, {}).get(condition, 0)) < qty:
+				return "not that many in stock"
+			return {"kind": "sell", "supplier": s.id, "part": part, "condition": condition, "qty": qty}
 	return "unknown order"
 
 
@@ -842,8 +863,14 @@ func _validate_order(sender: int, p: Dictionary) -> Variant:
 func _apply_order(p: Dictionary) -> void:
 	if not _is_authority():
 		return
-	var r: BusinessResult = _books.place_market_order(p.basket, str(p.contract)) if p.kind == "market" \
-			else _books.cancel_order(str(p.order))
+	var r: BusinessResult
+	match str(p.kind):
+		"market":
+			r = _books.place_market_order(p.basket, str(p.contract))
+		"sell":
+			r = _sell_stock(str(p.supplier), str(p.part), str(p.condition), int(p.qty))
+		_:
+			r = _books.cancel_order(str(p.order))
 	if not r.is_ok():
 		push_warning("Business: crew order failed on the host: %s" % r.message)
 
@@ -864,6 +891,21 @@ func place_market_order(basket: Array, contract_id := "") -> BusinessResult:
 	if not _is_authority():
 		return _send_order({"kind": "market", "basket": basket, "contract": contract_id})
 	return _books.place_market_order(basket, contract_id)
+
+
+## Sells parts from stock to a supplier at today's offer (get_offers). A crew member's sale
+## goes to the host like an order.
+func sell_stock(supplier_id: String, part: String, condition: String, qty := 1) -> BusinessResult:
+	if not _is_authority():
+		return _send_order({"kind": "sell", "supplier": supplier_id, "part": part, "condition": condition, "qty": qty})
+	return _sell_stock(supplier_id, part, condition, qty)
+
+
+func _sell_stock(supplier_id: String, part: String, condition: String, qty: int) -> BusinessResult:
+	var r := _books.sell_stock(supplier_id, part, condition, qty)
+	if r.is_ok():
+		_refresh_yard()
+	return r
 
 
 func cancel_order(order_id: String) -> BusinessResult:

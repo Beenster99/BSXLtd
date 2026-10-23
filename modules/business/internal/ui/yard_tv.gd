@@ -7,7 +7,7 @@ extends Control
 const Look := preload("res://modules/business/internal/ui/terminal_look.gd")
 const CHANNELS: PackedStringArray = ["orders", "goods", "accounts"]
 const TITLES := {"orders": "BEST BUYS TODAY", "goods": "GOODS IN", "accounts": "ACCOUNTS"}
-const TABS := {"orders": "ORDERS", "goods": "GOODS IN", "accounts": "ACCOUNTS"}
+const TABS := {"orders": "BUY/SELL", "goods": "GOODS IN", "accounts": "ACCOUNTS"}
 ## How long each channel stays up (seconds).
 const CYCLE_SECONDS := 9.0
 const BUYS := 6
