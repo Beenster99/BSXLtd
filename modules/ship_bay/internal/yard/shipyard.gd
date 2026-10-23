@@ -66,6 +66,33 @@ const ROOMS := {
 	"preassembly": {"name": "Pre-assembly", "box": AABB(Vector3(28, 0, -24), Vector3(22, 12, 48))},
 	"bay": {"name": "The bay", "box": AABB(Vector3(-28, 0, -24), Vector3(56, 30, 48))},
 }
+## The doorways between the rooms: [room, room, the doorway's middle on the floor (yard x, z)].
+## The direction signs find their way round the yard through these.
+const DOORWAYS := [
+	["bay", "deliveries", Vector2(-28, 0)], ["bay", "stock", Vector2(-14, -24)], ["bay", "prep", Vector2(14, -24)],
+	["bay", "preassembly", Vector2(28, 0)], ["stock", "deliveries", Vector2(-39, -24)], ["stock", "prep", Vector2(0, -35)],
+	["prep", "preassembly", Vector2(39, -24)],
+]
+## The direction signs: a board on each hall's wall beside the doorway onto the courtyard,
+## under its THE BAY sign where there's room (beenster, 23 Oct: on the walls, out of the lifts' way): [room,
+## the wall ("x": along x at z = at, "z": along z at x = at), the doorway's middle along it and
+## its width, the board's face off the wall's middle line, the side of the doorway it's on,
+## the way it faces] (as _door_sign takes them). And a fingerpost in the courtyard.
+const DIRECTION_SIGNS := [
+	["deliveries", "z", -28.0, 0.0, 10.0, -0.3, -1.0, -PI * 0.5],
+	["stock", "x", -24.0, -14.0, 8.0, -0.3, -1.0, PI],   # west of it: Business's TV is east
+	["prep", "x", -24.0, 14.0, 8.0, -0.3, -1.0, PI],
+	["preassembly", "z", 28.0, 0.0, 20.0, 0.3, -1.0, PI * 0.5],
+]
+## The wall boards' middle, metres up (under the door signs at DOOR_SIGN_Y).
+const DIRECTION_Y := 3.0
+const FINGERPOST := Vector3(-9.0, 0.0, 16.0)
+## The direction signs' letters, metres tall.
+const DIRECTION_H := 0.15   # beenster, 23 Oct: 30% of the first 0.5 m
+## The direction signs' boards and letters: safety yellow with black letters, to stand out
+## against the dark roof.
+const DIRECTION_BOARD := Color(0.95, 0.72, 0.1)
+const DIRECTION_INK := Color(0.04, 0.04, 0.05)
 ## Clear floor kept for other modules' work places: id -> a transform in yard space whose
 ## origin is on the floor and whose +Z faces where the worker stands (a bench's back edge).
 ## Other modules get these through ShipBayBus.shipyard_spot() and add their nodes to the
@@ -173,6 +200,7 @@ var _own_bodies: Dictionary = {}
 var _frame: Material
 var _galv: Material
 var _trim: Material
+var _direction_mat: Material
 var _hazard: Material
 var _blue: Material
 var _rubber: Material
@@ -970,6 +998,147 @@ func _build_signs() -> void:
 	_door_sign("PRE-\nASSEMBLY", "x", back, 39.0, 10.0, -0.3, -1.0, PI)
 	_door_sign("STORE 2", "x", back, 39.0, 10.0, 0.3, -1.0, 0.0)
 	_sign("GOODS IN", Vector3(-court - WING - 0.4, 7.6, 0), -PI * 0.5, 1.8)
+	for d: Array in DIRECTION_SIGNS:
+		_direction_board(d)
+	_fingerpost(FINGERPOST)
+
+
+## The first doorway on the shortest way from room `from` to room `to` (yard x, z), by the
+## DOORWAYS. Vector2.INF when there's no way.
+static func way_to(from: String, to: String) -> Vector2:
+	var first := {from: Vector2.INF}
+	var queue: Array[String] = [from]
+	while not queue.is_empty():
+		var room: String = queue.pop_front()
+		if room == to:
+			return first[room]
+		for d: Array in DOORWAYS:
+			var next := ""
+			if d[0] == room:
+				next = d[1]
+			elif d[1] == room:
+				next = d[0]
+			if next != "" and not first.has(next):
+				first[next] = d[2] if room == from else first[room]
+				queue.append(next)
+	return Vector2.INF
+
+
+## What a direction sign in `room` at `at`, read facing `yaw` (from its +Z side), says: one
+## line for the rooms to the left, one for those ahead, one for those to the right, each with
+## its arrow; rooms behind the reader are on the board's other face, or with `all_round` (a
+## board on a wall, read facing the wall) on the side they're on.
+static func direction_lines(room: String, at: Vector3, yaw: float, all_round := false) -> PackedStringArray:
+	var right := Basis(Vector3.UP, yaw).x
+	var ahead := -Basis(Vector3.UP, yaw).z
+	var groups: Array[PackedStringArray] = [PackedStringArray(), PackedStringArray(), PackedStringArray()]
+	for id: String in ROOMS:
+		if id == room:
+			continue
+		var door := way_to(room, id)
+		if door == Vector2.INF:
+			continue
+		var d := Vector3(door.x - at.x, 0.0, door.y - at.z).normalized()
+		var r := d.dot(right)
+		var a := d.dot(ahead)
+		var name := (ROOMS[id].name as String).to_upper()
+		if a > absf(r):
+			groups[1].append(name)
+		elif absf(r) >= absf(a) or all_round:
+			groups[2 if r > 0.0 else 0].append(name)
+	var out: PackedStringArray = []
+	if not groups[0].is_empty():
+		out.append("←  " + "  ·  ".join(groups[0]))
+	if not groups[1].is_empty():
+		out.append("↑  " + "  ·  ".join(groups[1]))
+	if not groups[2].is_empty():
+		out.append("  ·  ".join(groups[2]) + "  →")
+	return out
+
+
+## What a DIRECTION_SIGNS board says, read facing the wall from about where it hangs.
+static func wall_sign_lines(d: Array) -> PackedStringArray:
+	var near: float = d[3] + float(d[6]) * (float(d[4]) * 0.5 + 1.5)
+	return direction_lines(d[0], _wall_point(d[1], d[2], near, DIRECTION_Y, d[5]), d[7], true)
+
+
+## A board on a hall's wall (a DIRECTION_SIGNS entry) listing the way to every other room,
+## between the wall's columns as near the doorway as it fits.
+func _direction_board(d: Array) -> void:
+	var lines := wall_sign_lines(d)
+	var longest := 0.0
+	for line in lines:
+		longest = maxf(longest, direction_width(line))
+	var size := Vector3(longest + DIRECTION_H * 1.6, DIRECTION_H * (1.3 * lines.size() + 0.6), 0.04)
+	# Centred between two of the wall's columns (they stand at BAY * k + BAY / 2), the nearest
+	# bay to the doorway that clears its jamb.
+	var along: float = d[3] + float(d[6]) * (float(d[4]) * 0.5 + 0.55 + size.x * 0.5)
+	along = BAY * (ceilf(along / BAY) if float(d[6]) > 0.0 else floorf(along / BAY))
+	var basis := Basis(Vector3.UP, d[7])
+	var face := _wall_point(d[1], d[2], along, DIRECTION_Y, d[5])
+	_put(_box(size), Transform3D(basis, face - basis.z * size.z * 0.5), _direction_paint(), false)
+	_put(_box(Vector3(size.x + 0.01, 0.03, size.z + 0.01)), Transform3D(basis, face - basis.z * size.z * 0.5 + Vector3(0, size.y * 0.5 + 0.012, 0)), _trim, false)
+	for n in lines.size():
+		var y := (float(lines.size() - 1) * 0.5 - n) * DIRECTION_H * 1.3
+		_direction_text(lines[n], face + basis.z * 0.005 + Vector3(0, y, 0), d[7], size.x - DIRECTION_H)
+
+
+## A post in the courtyard with a blade pointing to each room's doorway, its name on both
+## sides with an arrow at the pointed end.
+func _fingerpost(foot: Vector3) -> void:
+	var post_h := 2.2
+	_put(_box(Vector3(0.07, post_h, 0.07)), _at(foot + Vector3(0, post_h * 0.5, 0)), _galv)
+	_put(_box(Vector3(0.11, 0.04, 0.11)), _at(foot + Vector3(0, post_h + 0.02, 0)), _trim, false)
+	var y := post_h - 0.15
+	for id: String in ROOMS:
+		if id == "bay":
+			continue
+		var door := way_to("bay", id)
+		var to := Vector3(door.x - foot.x, 0.0, door.y - foot.z)
+		var yaw := atan2(-to.z, to.x)   # the blade's +X toward the doorway
+		var name := (ROOMS[id].name as String).to_upper()
+		var length := direction_width(name + "  →") + DIRECTION_H * 1.6
+		var b := Basis(Vector3.UP, yaw)
+		var mid := foot + Vector3(0, y, 0) + b.x * (length * 0.5 + 0.035)
+		_put(_box(Vector3(length, DIRECTION_H * 1.5, 0.02)), Transform3D(b, mid), _direction_paint(), false)
+		_put(_box(Vector3(0.025, DIRECTION_H * 1.5 + 0.01, 0.03)), Transform3D(b, mid + b.x * (length * 0.5 - 0.0125)), _trim, false)
+		_direction_text(name + "  →", mid + b.z * 0.016, yaw, length - DIRECTION_H)
+		_direction_text("←  " + name, mid - b.z * 0.016, yaw + PI, length - DIRECTION_H)
+		y -= DIRECTION_H * 1.5 + 0.04
+
+
+## How wide a line of direction sign letters is, metres (the font Label3D draws with).
+static func direction_width(text: String) -> float:
+	return ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 96).x * DIRECTION_H / 96.0
+
+
+## The direction signs' yellow board paint (one material for all of them).
+func _direction_paint() -> Material:
+	if _direction_mat == null:
+		_direction_mat = _paint(DIRECTION_BOARD, 0.1, 0.5, "satin_paint")
+	return _direction_mat
+
+
+## A line of direction sign letters facing `yaw` in a strip `width` metres across, set to the
+## side its arrow points ("↑" lines in the middle).
+func _direction_text(text: String, at: Vector3, yaw: float, width: float) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.font_size = 96
+	label.outline_size = 0
+	label.pixel_size = DIRECTION_H / 96.0
+	label.font = ThemeDB.fallback_font   # the font direction_width measures with
+	label.modulate = DIRECTION_INK
+	# Centred on its own width, slid to its side of the strip.
+	var slack := (width - direction_width(text)) * 0.5
+	var side := 1.0 if text.ends_with("→") else 0.0 if text.begins_with("↑") else -1.0
+	label.position = at + Basis(Vector3.UP, yaw).x * (slack * side)
+	label.rotation.y = yaw
+	label.shaded = false
+	label.double_sided = false
+	label.add_to_group("direction_sign")
+	add_child(label)
+	return label
 
 
 ## A room sign beside a doorway: on wall `axis` at `at`, the doorway centred at `u` and
