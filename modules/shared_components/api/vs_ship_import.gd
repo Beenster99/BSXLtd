@@ -258,14 +258,10 @@ func _build_piece(piece: Dictionary) -> void:
 	kit.group = piece.get("group", "")
 	# Through the kit's own `add`, so the look gets the same tiny inset Void Salvage's ShipKit
 	# gives touching pieces (no z-fighting with its neighbours); `solid` false: no collision.
+	# A shape's own `glow` mesh is not drawn: Void Salvage's ShipKit never draws it on a ship
+	# (its lit edges are pieces of their own), and it lies flat on the piece's face.
 	var made := kit.add(shape, at, mat, "", glass_mat, false)
 	(made["mesh"] as Node).set_meta("vs_piece", true)
-	if shape.glow:
-		var e := MeshInstance3D.new()
-		e.mesh = shape.glow
-		e.transform = at * made.get("vis", Transform3D.IDENTITY)
-		e.material_override = ShipKit.glow(shape.glow_color, 2.0)
-		body.add_child(e)
 	if piece.has("unit"):
 		_hide_under(str(piece["unit"]), at * shape.mesh.get_aabb())
 
