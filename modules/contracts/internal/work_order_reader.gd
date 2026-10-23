@@ -136,6 +136,7 @@ func _read_subject(d: Dictionary, o: WorkOrder) -> void:
 		# A generated ship or wreck (S3): the seed and events rebuild it on every machine.
 		subject["seed"] = _whole(src.get("seed", 0))
 		subject["events"] = String(src.get("events", ""))
+		subject["name"] = String(src.get("name", ""))
 		var holds: Variant = src.get("holds", [])
 		if holds is Array:
 			subject["holds"] = holds

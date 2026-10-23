@@ -271,8 +271,7 @@ static func subject_name(o: WorkOrder) -> String:
 		return ship_name(o.design)
 	if String(o.subject.get("type", "")) == "part":
 		return "Bench"
-	var design := ship_name(String(o.subject.get("design", o.design)).trim_suffix("_frame"))
-	return design + " wreck" if String(o.subject.get("type", "")) == "wreck" else design
+	return o.subject_name()
 
 
 ## "Naval turret, 55%, 6.2 t" for a part subject; the design for a ship or wreck.
