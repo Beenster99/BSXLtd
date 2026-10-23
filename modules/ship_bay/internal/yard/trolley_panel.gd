@@ -16,7 +16,7 @@ const KEYS := [["put_away", "PUT AWAY DELIVERIES"], ["park_all", "PARK ALL"],
 		["fetch_ship", "FETCH FOR THE SHIP"]]
 ## Actions on the selected vehicle: [action, label].
 const ACTIONS := [["call", "CALL TO ME"], ["park", "PARK"], ["remote", "REMOTE CONTROL"]]
-const ORDER := ["s", "m", "l", "p"]
+const ORDER := ["s", "m", "l", "p", "h"]
 
 var fleet: Node3D
 ## True for the copy a player is using (mouse and keys); false on the TV.

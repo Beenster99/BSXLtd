@@ -2,7 +2,7 @@ extends AnimatableBody3D
 ## A hover trolley: a chassis floating on four lift pads, a telescopic mast under a railed
 ## grating deck, a control box with its size letter and a status lamp. Three sizes (SPECS):
 ## every deck rises to the top rack level for work at height (you can ride them); the large
-## one also carries bulk parts. The picking lift ("p") is the same chassis
+## one also carries bulk parts. The picking lift ("p", and the heavy lift "h") is the same chassis
 ## with a tall twin-column mast: its carriage rides up the columns to any shelf and a shuttle
 ## fork reaches sideways into the rack to pull goods off it.
 ##
@@ -28,6 +28,11 @@ const SPECS := {
 			"speed": 1.4, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
 	"p": {"name": "Picking lift", "letter": "P", "deck": Vector2(1.1, 1.3), "radius": 0.8,
 			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true},
+	# The heavy lift works the large and heavy racks (aisles W, X and H): a broad deck, a
+	# stout mast and a long fork for the big machines.
+	"h": {"name": "Heavy lift", "letter": "H", "deck": Vector2(3.0, 3.4), "radius": 1.9, "clear": 1.75,
+			"speed": 1.2, "lift": 7.4, "carries": ["bulk"], "colour": Color(0.95, 0.42, 0.12), "picker": true,
+			"mast": 9.3, "reach": 2.0},
 	# The refurbishment lines' own trolleys: finished lots are stacked on them at the end
 	# of their line, and they take them to the stores.
 	"a": {"name": "Line A trolley", "letter": "A", "deck": Vector2(3.4, 10.0), "radius": 1.7, "clear": 1.3,
@@ -242,7 +247,7 @@ func lift_step(delta: float) -> void:
 		_set_deck(move_toward(deck_height, deck_target, lift_speed * delta))
 	if _fork and not is_equal_approx(fork_out, fork_target):
 		fork_out = move_toward(fork_out, fork_target, delta * 1.5)
-		_fork.position.x = fork_side * fork_out * 1.0
+		_fork.position.x = fork_side * fork_out * float(spec.get("reach", 1.0))
 
 
 ## The picking lift's fork: out into the rack on `side` (+1 the trolley's right, -1 its left)
@@ -338,7 +343,7 @@ func _build() -> void:
 	screen.name = "Screen"
 	screen.transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -0.25), Vector3(0, CHASSIS_TOP + 0.26, front - 0.055))
 	add_child(screen)
-	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else "PICKER", 2)
+	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else ("PICKER" if kind == "p" else "HEAVY LIFT"), 2)
 	for b: Array in [["call", "FOLLOW ME"], ["park", "PARK"], ["fast", "FAST"], ["remote", "REMOTE CONTROL"]]:
 		screen.call("add_button", b[0], b[1], func() -> void: screen_action.emit(b[0]), b[0] == "remote")
 	var col := CollisionShape3D.new()
@@ -388,20 +393,21 @@ func _build() -> void:
 ## Two lattice columns up the back with a head beam and a beacon, a stripe down each, the
 ## carriage on the deck (a frame round the columns) and the shuttle fork on it.
 func _build_picker(d: Vector2) -> void:
+	var mast := float(spec.get("mast", PICKER_MAST))
 	var back := d.y * 0.5 - 0.12
 	var stripe := ShipSurface.of(ShipKit.paint(Color(1.0, 0.5, 0.12), 0.2, 0.45, "gloss_paint"))
 	for sx: float in [-1.0, 1.0]:
 		var x := sx * (d.x * 0.5 - 0.1)
-		_box(Vector3(0.16, PICKER_MAST - CHASSIS_TOP, 0.16), Vector3(x, (CHASSIS_TOP + PICKER_MAST) * 0.5, back), _mats["body"])
-		_box(Vector3(0.05, PICKER_MAST - CHASSIS_TOP - 0.4, 0.02), Vector3(x, (CHASSIS_TOP + PICKER_MAST) * 0.5, back + 0.09), stripe)
+		_box(Vector3(0.16, mast - CHASSIS_TOP, 0.16), Vector3(x, (CHASSIS_TOP + mast) * 0.5, back), _mats["body"])
+		_box(Vector3(0.05, mast - CHASSIS_TOP - 0.4, 0.02), Vector3(x, (CHASSIS_TOP + mast) * 0.5, back + 0.09), stripe)
 		# Lattice: a brace every 0.9 m between the column and a slim back rail.
-		_box(Vector3(0.05, PICKER_MAST - CHASSIS_TOP, 0.05), Vector3(x, (CHASSIS_TOP + PICKER_MAST) * 0.5, back + 0.32), _mats["steel"])
+		_box(Vector3(0.05, mast - CHASSIS_TOP, 0.05), Vector3(x, (CHASSIS_TOP + mast) * 0.5, back + 0.32), _mats["steel"])
 		var y := CHASSIS_TOP + 0.45
-		while y < PICKER_MAST - 0.3:
+		while y < mast - 0.3:
 			_box(Vector3(0.03, 0.03, 0.3), Vector3(x, y, back + 0.17), _mats["steel"])
 			y += 0.9
-	_box(Vector3(d.x, 0.18, 0.5), Vector3(0, PICKER_MAST, back + 0.12), _mats["dark"])
-	_box(Vector3(0.12, 0.12, 0.12), Vector3(0, PICKER_MAST + 0.15, back + 0.12), _mats["wait"])
+	_box(Vector3(d.x, 0.18, 0.5), Vector3(0, mast, back + 0.12), _mats["dark"])
+	_box(Vector3(0.12, 0.12, 0.12), Vector3(0, mast + 0.15, back + 0.12), _mats["wait"])
 	# The carriage rides the columns with the deck; the fork slides out of it sideways.
 	_box(Vector3(d.x, 0.6, 0.1), Vector3(0, 0.3, d.y * 0.5 - 0.2), _mats["dark"], deck)
 	_fork = Node3D.new()

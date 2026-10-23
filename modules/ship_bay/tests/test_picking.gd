@@ -1,7 +1,7 @@
 extends ModuleTest
 ## Ship and Bay: the picking lift fetches goods off any shelf (up to the top level), hands
 ## them to a trolley that brings them to whoever asked, and they are taken off it; bulk
-## goods the large trolley fetches itself.
+## goods the heavy lift fetches off the large and heavy racks and hands over the same way.
 ##   tools/run_tests.sh ship_bay
 
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
@@ -30,13 +30,18 @@ func run_tests() -> void:
 	var nav: RefCounted = fleet.get("nav")
 	for at: Vector3 in [fleet.get("PARKING")["p"][0], fleet.get("HANDOFF")[0], fleet.get("HANDOFF_TROLLEY")[0]]:
 		check(bool(nav.call("is_free", at, 0.85)), "room to stand at %s" % at)
+	check(trolleys.has("h") and bool(trolleys["h"].call("is_picker")) and trolleys["h"].call("carries", "bulk"), "and a heavy lift for the big parts")
+	var h: Node3D = trolleys["h"]
+	for at: Vector3 in [fleet.get("PARKING")["h"][0], fleet.get("HANDOFFS")["h"][0]]:
+		check(bool(nav.call("is_free", at, float(h.call("clearance")))), "room for the heavy lift at %s" % at)
+	check(float(h.get("spec")["lift"]) >= Layout.level_y(3, "H1"), "its carriage reaches the heavy racks' top level")
 	for t: Node in trolleys.values():
 		t.set("speed_scale", 5.0)
 		t.set("accel", 12.0)
 		t.set("turn_rate", 8.0)
 		t.set("lift_speed", 6.0)
 
-	# Stock the stores: one item on a top shelf, bolts in a bin, a reactor on the bulk floor.
+	# Stock the stores: one item on a top shelf, bolts in a bin, a reactor on a heavy rack.
 	bus.receive_delivery("PO-31", [
 			{"item_id": "IonThruster", "qty": 2, "condition": 0.9, "name": "Ion thruster", "grade": "new", "mass": 311.0},
 			{"item_id": "M10", "qty": 100, "condition": 1.0, "name": "M10 bolt", "grade": "new", "mass": 0.05},
@@ -102,18 +107,22 @@ func run_tests() -> void:
 			break
 	check(p.get("status") == "PARKED", "the lift goes back to its bay: %s" % p.get("status"))
 
-	# Bolts from the bins come on a trolley; a reactor on the large one, which fetches it itself.
+	# Bolts from the bins come on a trolley; the heavy lift takes the reactor off its rack
+	# and hands it to a trolley too.
 	bus.fetch_stock("M10", 40, me)
 	bus.fetch_stock("Reactor", 1, me + Vector3(6, 0, 0))
-	var l: Node3D = trolleys["l"]
 	var bolts := ""
-	for i in 8000:
+	var reactor := ""
+	var h_high := 0.0
+	for i in 9000:
 		await get_tree().physics_frame
+		h_high = maxf(h_high, float(h.get("fork_out")))
 		bolts = courier.call("M10")
-		if bolts != "" and l.get("status") == "HERE" and bus.trolley_cargo("l") != "":
+		reactor = courier.call("Reactor")
+		if bolts != "" and reactor != "":
 			break
 	check(bolts != "" and bus.crate_info(bus.trolley_cargo(bolts)).get("qty") == 40, "40 bolts came on a trolley (%s, lift %s)" % [bolts, p.get("status")])
-	check(bus.crate_info(bus.trolley_cargo("l")).get("item") == "Reactor", "the large trolley fetched the reactor itself (%s)" % l.get("status"))
+	check(reactor != "" and h_high > 0.99, "the heavy lift picked the reactor and a trolley brought it (%s, heavy lift %s)" % [reactor, h.get("status")])
 	check(bus.stock_count("M10") == 60 and bus.stock_count("Reactor") == 0, "the stores are down by what left")
 	var before := bus.picked_crates().size()
 	bus.fetch_stock("Reactor", 1, me)
