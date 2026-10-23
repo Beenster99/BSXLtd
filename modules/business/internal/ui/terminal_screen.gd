@@ -45,7 +45,9 @@ func setup(p_bus: BusinessBus, p_interactive: bool) -> void:
 	for sig: String in watch:
 		bus.connect(sig, _mark_dirty.unbind(watch[sig]) if watch[sig] > 0 else _mark_dirty)
 	bus.order_refused.connect(_on_order_refused)
-	bus.clock_changed.connect(func(_m: int) -> void: _refresh_header())
+	bus.clock_changed.connect(func(_m: int) -> void:
+		_refresh_header()
+		_tick_countdowns())
 
 
 func _mark_dirty() -> void:
@@ -162,7 +164,7 @@ func _build() -> void:
 
 	var footer := PanelContainer.new()
 	footer.add_theme_stylebox_override("panel", Look.box(Look.EDGE, Color.TRANSPARENT, 0, 6))
-	var hint := Look.label("%s CLOSE    ·    + / − SET QUANTITIES    ·    TRADE PRICES MOVE DAILY    ·    GOODS ARRIVE AT DELIVERIES" % Keys.prompt(Keys.CANCEL)
+	var hint := Look.label("%s CLOSE    ·    + / − SET QUANTITIES    ·    TRADE PRICES MOVE DAILY    ·    DELIVERIES ARRIVE IN UNDER A MINUTE" % Keys.prompt(Keys.CANCEL)
 			if interactive else "WALK UP AND PRESS %s TO ORDER PARTS" % Keys.prompt(Keys.INTERACT), "display_medium", 16, Look.DIM)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	footer.add_child(hint)
@@ -224,7 +226,7 @@ func _orders() -> Control:
 	market.add_child(cats)
 
 	var head := HBoxContainer.new()
-	for spec: Array in [["PART  /  SUPPLIER", true, 0], ["COND.", false, 92], ["DUE", false, 58], ["LEFT", false, 52], ["UNIT CR", false, 96], ["", false, 46]]:
+	for spec: Array in [["PART  /  SUPPLIER", true, 0], ["COND.", false, 92], ["LEFT", false, 52], ["UNIT CR", false, 96], ["", false, 46]]:
 		var l := Look.label(spec[0], "display_medium", 14, Look.DIM)
 		if spec[1]:
 			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -308,7 +310,6 @@ func _listing_row(l: MarketListing, alt: bool) -> Control:
 	tag_box.custom_minimum_size.x = 92
 	tag_box.add_child(Look.condition_tag(l.condition))
 	h.add_child(tag_box)
-	h.add_child(_cell("%dH" % l.lead_hours, 58, Look.DIM))
 	h.add_child(_cell(str(l.available) if l.available < 999 else "∞", 52, Look.DIM))
 	h.add_child(_cell(Look.money(l.unit_price), 96, Look.TEXT, "mono_bold"))
 	var add_box := CenterContainer.new()
@@ -370,7 +371,7 @@ func _docket() -> Control:
 	rule2.custom_minimum_size.y = 1
 	col.add_child(rule2)
 	col.add_child(_docket_sum("ITEMS", str(count)))
-	col.add_child(_docket_sum("DUE AT DELIVERIES", _due_text(q)))
+	col.add_child(_docket_sum("ARRIVES", _due_text(q)))
 	col.add_child(_docket_sum("CASH AFTER", Look.money(bus.get_cash() - (q.cost if q and q.ok else 0)) + " CR"))
 	var total := HBoxContainer.new()
 	var tl := Look.label("TOTAL", "display_bold", 28, Look.INK)
@@ -441,8 +442,7 @@ func _docket_sum(what: String, value: String) -> Control:
 func _due_text(q: PartsQuote) -> String:
 	if q == null or not q.ok:
 		return "—"
-	var m := q.eta_minute % 1440
-	return "DAY %d  %02d:%02d" % [q.eta_day + 1, m / 60, m % 60]
+	return "IN %d S" % bus.seconds_until(q.eta_minute)
 
 
 ## The purchase order as {listing_id, qty} lines, in the order they were added.
@@ -522,9 +522,9 @@ func _goods() -> Control:
 		var names := PackedStringArray()
 		for line in o.lines:
 			names.append("%d× %s" % [line.qty, bus.part_name(line.part)])
-		var m := o.eta_minute % 1440
 		on_order.list.add_child(_goods_row(o.id, "%s  ·  %s" % [s.display_name.to_upper() if s else o.supplier_id, ", ".join(names)],
-				("DELAYED  " if o.delayed else "") + "DAY %d %02d:%02d" % [o.eta_day + 1, m / 60, m % 60], Look.BAD if o.delayed else Look.ORANGE))
+				("DELAYED  " if o.delayed else "") + bus.arrival_text(o.eta_minute), Look.BAD if o.delayed else Look.ORANGE,
+				o.eta_minute))
 	row.add_child(on_order.root)
 
 	var in_store := _column("IN STORE")
@@ -547,7 +547,8 @@ func _goods() -> Control:
 	return row
 
 
-func _goods_row(id: String, what: String, when: String, when_colour: Color) -> Control:
+## `eta_minute` >= 0 makes `when` count down to it.
+func _goods_row(id: String, what: String, when: String, when_colour: Color, eta_minute := -1) -> Control:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", Look.plate(8))
 	var col := VBoxContainer.new()
@@ -557,7 +558,10 @@ func _goods_row(id: String, what: String, when: String, when_colour: Color) -> C
 	var idl := Look.label(id, "mono_bold", 17, Look.TEXT)
 	idl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(idl)
-	top.add_child(Look.label(when, "mono_medium", 16, when_colour))
+	var when_l := Look.label(when, "mono_medium", 16, when_colour)
+	if eta_minute >= 0:
+		_count_down(when_l, eta_minute, when.trim_suffix(bus.arrival_text(eta_minute)))
+	top.add_child(when_l)
 	col.add_child(top)
 	var w := Look.label(what, "body", 16, Look.DIM)
 	w.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -632,3 +636,21 @@ func _figure(what: String, value: String, colour: Color) -> Control:
 	col.add_child(Look.label(what, "display_medium", 16, Look.DIM))
 	col.add_child(Look.label(value, "mono_bold", 30, colour))
 	return panel
+
+
+## Labels counting down to an order's arrival: each carries meta "eta" (its order's
+## eta_minute) and "prefix"; the clock ticks them without rebuilding the page.
+var _countdowns: Array[Label] = []
+
+
+func _count_down(l: Label, eta_minute: int, prefix := "") -> Label:
+	l.set_meta("eta", eta_minute)
+	l.set_meta("prefix", prefix)
+	_countdowns.append(l)
+	return l
+
+
+func _tick_countdowns() -> void:
+	_countdowns = _countdowns.filter(func(l: Label) -> bool: return is_instance_valid(l))
+	for l in _countdowns:
+		l.text = str(l.get_meta("prefix")) + bus.arrival_text(int(l.get_meta("eta")))

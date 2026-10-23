@@ -171,10 +171,21 @@ func _test_clock() -> void:
 	kessler.reliability = 1.0
 	var at := bus.get_minute()
 	var r := bus.place_order("kessler_fasteners", _lines("M10", 10))
-	bus.advance_minutes(kessler.lead_hours * 60 - 1)
+	var due := bus.get_order(r.order_id).eta_minute
+	var secs := bus.seconds_until(due)
+	check(secs >= kessler.lead_seconds.x and secs <= kessler.lead_seconds.y, "due in its supplier's seconds: %d" % secs)
+	check(bus.arrival_text(due) == "IN %d S" % secs, "the screens count it down: %s" % bus.arrival_text(due))
+	bus.advance_minutes(due - at - 1)
 	check(bus.get_order(r.order_id).state == PartsOrder.State.PLACED, "not before its time")
 	bus.advance_minutes(1)
-	check(bus.get_order(r.order_id).state == PartsOrder.State.DELIVERED and bus.get_minute() == at + kessler.lead_hours * 60, "lands to the minute")
+	check(bus.get_order(r.order_id).state == PartsOrder.State.DELIVERED and bus.arrival_text(due) == "ARRIVING", "lands to the minute")
+
+	# A save from when deliveries took hours: what's on its way comes within a minute.
+	var o2 := bus.get_order(bus.place_order("kessler_fasteners", _lines("M10", 1)).order_id)
+	o2.eta_minute = bus.get_minute() + 12 * 60
+	var old := bus.save_data()
+	bus.load_data(old, bus.save_version())
+	check(bus.seconds_until(bus.get_order(o2.id).eta_minute) <= 60, "an old slow order is cut to a minute: %d s" % bus.seconds_until(bus.get_order(o2.id).eta_minute))
 
 
 func _test_old_save() -> void:

@@ -5,8 +5,11 @@ extends RefCounted
 
 const SAVE_VERSION := 2
 const MINUTES_PER_DAY := 1440
-## How long a supplier's miss holds an order up the first time.
-const DELAY_MINUTES := 12 * 60
+## How long a supplier's miss holds an order up the first time, real seconds. With the
+## longest lead (45 s) a late order still arrives within a minute.
+const DELAY_SECONDS := 15
+## No delivery takes longer than this from the order, real seconds (old saves are cut to it).
+const MAX_DELIVERY_SECONDS := 60
 ## What a player has in their wallet the first time they join, CR.
 const WALLET_START := 1000
 ## The cheapest listing (credits) a supplier puts on a deal.
@@ -146,7 +149,8 @@ func quote(supplier_id: String, lines: Array[OrderLine]) -> PartsQuote:
 		line.unit_price = staple_price(s, line.part)
 		line.condition = PartCondition.NEW
 		q.cost += line.unit_price * line.qty
-	q.eta_minute = minute + s.lead_hours * 60
+	var staple: MarketListing = listings.get("S-%s-%s" % [s.id, lines[0].part])
+	q.eta_minute = minute + lead_minutes(staple.lead_seconds if staple else s.lead_seconds.y)
 	q.eta_day = q.eta_minute / MINUTES_PER_DAY
 	q.ok = true
 	return q
@@ -232,7 +236,7 @@ func refresh_market() -> void:
 			staple.part = part
 			staple.unit_price = staple_price(s, part)
 			staple.available = 999
-			staple.lead_hours = s.lead_hours
+			staple.lead_seconds = _roll_lead(s, staple.id)
 			listings[staple.id] = staple
 		var pool := PackedStringArray()
 		for c in s.categories:
@@ -255,7 +259,7 @@ func refresh_market() -> void:
 			l.condition = condition
 			l.unit_price = trade_price(s, part, condition, r.randf_range(-0.03, 0.03))
 			l.available = _stock_size(catalogue.value_of(part), r)
-			l.lead_hours = s.lead_hours
+			l.lead_seconds = _roll_lead(s, id)
 			listings[id] = l
 	_cover_catalogue()
 	_pick_deals()
@@ -283,8 +287,25 @@ func _cover_catalogue() -> void:
 				l.condition = PartCondition.NEW
 				l.unit_price = trade_price(s, part, PartCondition.NEW)
 				l.available = _stock_size(catalogue.value_of(part), r)
-				l.lead_hours = s.lead_hours
+				l.lead_seconds = _roll_lead(s, l.id)
 				listings[l.id] = l
+
+
+## A listing's delivery time, real seconds, in its supplier's range (the same all day).
+func _roll_lead(s: SupplierDef, listing_id: String) -> int:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([market_seed, day, listing_id, "lead"])
+	return r.randi_range(s.lead_seconds.x, s.lead_seconds.y)
+
+
+## Real seconds as business-clock minutes (the clock runs game_minutes_per_second).
+func lead_minutes(seconds: int) -> int:
+	return maxi(1, ceili(seconds * rules.game_minutes_per_second))
+
+
+## Real seconds until a business-clock minute comes round, 0 once it has.
+func seconds_until(at_minute: int) -> int:
+	return maxi(0, ceili((at_minute - minute) / maxf(rules.game_minutes_per_second, 0.001)))
 
 
 ## Each supplier marks a few of today's listings down: its deals.
@@ -411,7 +432,7 @@ func quote_market(basket: Array) -> PartsQuote:
 		if wanted[l.id] > l.available:
 			q.reason = "only %d %s left" % [l.available, _name(l.part)]
 			return q
-		q.eta_minute = maxi(q.eta_minute, minute + l.lead_hours * 60)
+		q.eta_minute = maxi(q.eta_minute, minute + lead_minutes(l.lead_seconds))
 	for id: String in wanted:
 		var cost := line_cost(listings[id], int(wanted[id]))
 		q.cost += cost
@@ -448,7 +469,7 @@ func place_market_order(basket: Array, contract_id: String) -> BusinessResult:
 		l.available -= qty
 		if not by_supplier.has(l.supplier_id):
 			by_supplier[l.supplier_id] = []
-		by_supplier[l.supplier_id].append([OrderLine.new(l.part, qty, l.condition, roundi(float(cost) / qty)), l.lead_hours, cost])
+		by_supplier[l.supplier_id].append([OrderLine.new(l.part, qty, l.condition, roundi(float(cost) / qty)), l.lead_seconds, cost])
 	var result := BusinessResult.success()
 	result.cost = q.cost
 	var ids := by_supplier.keys()
@@ -461,7 +482,7 @@ func place_market_order(basket: Array, contract_id: String) -> BusinessResult:
 			lines.append(entry[0])
 			cost += int(entry[2])
 			lead = maxi(lead, entry[1])
-		var o := _open_order(sid, lines, cost, minute + lead * 60, contract_id)
+		var o := _open_order(sid, lines, cost, minute + lead_minutes(lead), contract_id)
 		result.order_ids.append(o.id)
 	result.order_id = result.order_ids[0]
 	_bus.market_changed.emit()
@@ -523,7 +544,7 @@ func _land_orders() -> void:
 		var on_time := instant_deliveries or rng.randf() < s.reliability
 		if not on_time and not o.delayed:
 			o.delayed = true
-			o.eta_minute = minute + DELAY_MINUTES
+			o.eta_minute = minute + lead_minutes(DELAY_SECONDS)
 			o.eta_day = o.eta_minute / MINUTES_PER_DAY
 			_bus.order_delayed.emit(o)
 			continue
@@ -708,6 +729,10 @@ func load_data(d: Dictionary, from_version: int) -> void:
 		ledger.append(LedgerEntry.from_dict(e))
 	for od in d.get("orders", []):
 		var o := PartsOrder.from_dict(od)
+		# Saves from when deliveries took hours: anything still on its way comes soon.
+		if o.state == PartsOrder.State.PLACED and o.eta_minute > minute + lead_minutes(MAX_DELIVERY_SECONDS):
+			o.eta_minute = minute + lead_minutes(MAX_DELIVERY_SECONDS)
+			o.eta_day = o.eta_minute / MINUTES_PER_DAY
 		orders[o.id] = o
 	# JSON brings numbers back as floats; keep money whole.
 	for id in d.get("contracts", {}):

@@ -17,9 +17,11 @@ extends Resource
 @export var listings_per_day := 0
 ## Trade price as a share of Void Salvage's value, before condition and the day's swing.
 @export_range(0.1, 2.0) var trade_factor := 0.85
-@export var lead_hours := 24
-## Chance (0-1) an order arrives on time and intact. A miss delays it a day the first
-## time and damages one item the second.
+## How long its deliveries take to arrive, real seconds (a range: each listing rolls its
+## own). Kept short so nobody waits on a truck.
+@export var lead_seconds := Vector2i(10, 40)
+## Chance (0-1) an order arrives on time and intact. A miss holds it up a few seconds
+## (Books.DELAY_SECONDS) the first time and damages one item the second.
 @export_range(0.0, 1.0) var reliability := 0.9
 ## Hidden until the company's reputation reaches this.
 @export var min_reputation := 0.0

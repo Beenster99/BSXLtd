@@ -50,9 +50,11 @@ func _test_fresh_company() -> void:
 func _test_quotes() -> void:
 	var q := bus.quote("kessler_fasteners", _lines("M10", 100))
 	check(q.ok and q.cost == 200, "fasteners priced from the price list: %d" % q.cost)
-	check(q.eta_minute == bus.get_minute() + 4 * 60, "a 4 hour lead time lands 4 hours on: %d" % q.eta_minute)
+	var secs := bus.seconds_until(q.eta_minute)
+	check(secs >= 5 and secs <= 15, "Kessler delivers in 5 to 15 seconds: %d" % secs)
 	q = bus.quote("orbital_surplus", _lines("M12", 100))
-	check(q.ok and q.cost == 200 and q.eta_minute == bus.get_minute() + 12 * 60, "surplus discount and 12 hour lead: %d minute %d" % [q.cost, q.eta_minute])
+	secs = bus.seconds_until(q.eta_minute)
+	check(q.ok and q.cost == 200 and secs >= 20 and secs <= 45, "surplus discount and a 20 to 45 second lead: %d, %d s" % [q.cost, secs])
 	check(not bus.quote("kessler_fasteners", _lines("IonThruster", 1)).ok, "can't buy what a supplier doesn't sell")
 	check(not bus.quote("halden_drive", _lines("IonThruster", 1)).ok, "can't buy from a hidden supplier")
 	check(not bus.quote("kessler_fasteners", _lines("M10", 0)).ok, "zero quantity refused")

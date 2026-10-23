@@ -18,7 +18,7 @@ conditions = {
 }
 listings_per_day = 10
 trade_factor = 0.95
-lead_hours = 4
+lead_seconds = Vector2i(5, 15)
 reliability = 0.95
 min_reputation = 0.0
 cancellation_refund_percent = 75
