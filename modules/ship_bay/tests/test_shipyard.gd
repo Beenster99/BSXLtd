@@ -63,6 +63,16 @@ func run_tests() -> void:
 			["truck door", Vector3(-56, 1, -8), Vector3(-44, 1, -8)]]:
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(path[1], path[2]))
 		check(hit.is_empty(), "%s is open: %s" % [path[0], hit.get("position", "")])
+	# The halls' doorways are tall enough for a picking lift's mast (beenster, 0.3.15).
+	var mast := float(preload("res://modules/ship_bay/internal/yard/hover_trolley.gd").PICKER_MAST) + 0.3
+	for path: Array in [["bay to deliveries", Vector3(-20, mast, 0), Vector3(-36, mast, 0)],
+			["deliveries to stock", Vector3(-39, mast, -18), Vector3(-39, mast, -28.5)],
+			["bay to stock", Vector3(-14, mast, -18), Vector3(-14, mast, -28.5)],
+			["stock to prep", Vector3(-2.0, mast, -35), Vector3(6, mast, -35)],
+			["prep to pre-assembly", Vector3(39, mast, -28), Vector3(39, mast, -18)],
+			["pre-assembly to bay", Vector3(36, mast, 0), Vector3(20, mast, 0)]]:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(path[1], path[2]))
+		check(hit.is_empty(), "%s is open up to %.1f m for the picking lifts: %s" % [path[0], mast, hit.get("position", "")])
 	for wall: Array in [["bay to stock away from its door", Vector3(-24, 1, -20), Vector3(-24, 1, -30)],
 			["stock to prep away from its door", Vector3(-6, 1, -44), Vector3(6, 1, -44)]]:
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(wall[1], wall[2]))
