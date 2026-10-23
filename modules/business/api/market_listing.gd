@@ -11,11 +11,13 @@ var unit_price := 0
 ## How many are left today.
 var available := 0
 var lead_hours := 24
+## The price before today's deal, or 0 when it isn't on a deal.
+var list_price := 0
 
 
 func to_dict() -> Dictionary:
 	return {"id": id, "supplier_id": supplier_id, "part": part, "condition": condition,
-			"unit_price": unit_price, "available": available, "lead_hours": lead_hours}
+			"unit_price": unit_price, "available": available, "lead_hours": lead_hours, "list_price": list_price}
 
 
 static func from_dict(d: Dictionary) -> MarketListing:
@@ -27,4 +29,10 @@ static func from_dict(d: Dictionary) -> MarketListing:
 	l.unit_price = int(d.get("unit_price", 0))
 	l.available = int(d.get("available", 0))
 	l.lead_hours = int(d.get("lead_hours", 24))
+	l.list_price = int(d.get("list_price", 0))
 	return l
+
+
+## Percent off today's deal, 0 when there isn't one.
+func deal_off() -> int:
+	return 0 if list_price <= unit_price else roundi(100.0 * (list_price - unit_price) / list_price)

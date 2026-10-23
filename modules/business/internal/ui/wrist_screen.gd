@@ -1,8 +1,10 @@
 extends HBoxContainer
 ## Business's channels on the wrist holo screen, drawn on glass with UI's TerminalKit so they
 ## match the yard terminal. The wrist draws the header and tabs; this is only the body.
-##   "orders":   the market by category (search, category chips, +), the purchase order, and
-##               the deliveries: what's on order and what has come, filtered the same way
+##   "orders":   BUY/SELL. Buy: the market by category (search, category chips, deals, +),
+##               the purchase order with bulk prices, and the deliveries: what's on order
+##               and what has come. Sell: everything in stock with what each company offers
+##               for it today, sold to the best offer; and today's sales
 ##   "goods":    what's on order and when it lands, and the store by category (search, chips)
 ##   "accounts": cash and reputation, money in and out by kind over a day, week or month,
 ##               a day-by-day graph and the ledger
@@ -28,6 +30,8 @@ var category := ""
 var query := ""
 ## How many order lines the list shows; SHOW MORE adds another MAX_ROWS.
 var limit := MAX_ROWS
+## Buy/Sell page: "buy" (the market) or "sell" (the stock, to other companies).
+var mode := "buy"
 ## Orders page: "on order" or "delivered".
 var deliveries := "on order"
 ## Goods in: the store's category and search.
@@ -38,6 +42,8 @@ var period := "week"
 
 var _search: LineEdit
 var _chips: Control
+var _mode_chips: Control
+var _columns: Control
 var _list: VBoxContainer
 var _side: VBoxContainer
 var _store: VBoxContainer
@@ -90,6 +96,8 @@ func _build() -> void:
 	if page == "orders":
 		var top := HBoxContainer.new()
 		top.add_theme_constant_override("separation", 8)
+		_mode_chips = HBoxContainer.new()
+		top.add_child(_mode_chips)
 		_search = T.search("Search parts", func(t: String) -> void:
 			query = t.strip_edges().to_lower()
 			limit = MAX_ROWS
@@ -99,7 +107,8 @@ func _build() -> void:
 		_chips.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		top.add_child(_chips)
 		main.add_child(top)
-		main.add_child(T.columns([["PART  /  SUPPLIER", 0], ["COND.", 92], ["DUE", 58], ["LEFT", 52], ["UNIT CR", 96], ["", 46]]))
+		_columns = VBoxContainer.new()
+		main.add_child(_columns)
 	elif page == "goods":
 		main.add_child(T.columns([["ON ORDER", 0], ["LANDS", 112]]))
 		var find := T.search("Search the store", func(t: String) -> void:
@@ -128,8 +137,12 @@ func refresh() -> void:
 	_prune_basket()
 	if page == "orders":
 		_refresh_chips()
-		_refresh_list()
-		_refresh_side()
+		if mode == "sell":
+			_refresh_sell()
+			_refresh_sales()
+		else:
+			_refresh_list()
+			_refresh_side()
 	elif page == "goods":
 		_refresh_goods()
 	else:
@@ -139,6 +152,26 @@ func refresh() -> void:
 # --- ORDERS ---------------------------------------------------------------------------------
 
 func _refresh_chips() -> void:
+	_clear(_mode_chips)
+	var modes := HBoxContainer.new()
+	modes.name = "ModeChips"
+	modes.add_theme_constant_override("separation", 4)
+	for n: String in ["buy", "sell"]:
+		var b := T.button(n.to_upper(), false, 16, n == mode, glass)
+		b.name = "Mode_" + n
+		b.pressed.connect(func() -> void:
+			mode = n
+			category = ""
+			limit = MAX_ROWS
+			refresh())
+		modes.add_child(b)
+	_mode_chips.add_child(modes)
+	_search.placeholder_text = "Search the stock" if mode == "sell" else "Search parts"
+	_clear(_columns)
+	if mode == "sell":
+		_columns.add_child(T.columns([["IN STOCK  /  OTHER OFFERS", 0], ["COND.", 92], ["HELD", 52], ["BEST CR", 96], ["", 126]]))
+	else:
+		_columns.add_child(T.columns([["PART  /  SUPPLIER", 0], ["COND.", 92], ["DUE", 58], ["LEFT", 52], ["UNIT CR", 96], ["", 46]]))
 	var holder := _chips
 	_clear(holder)
 	var flow := T.chips(_categories(), category, func(n: String) -> void:
@@ -150,10 +183,18 @@ func _refresh_chips() -> void:
 
 func _categories() -> PackedStringArray:
 	var seen := {}
-	for l in bus.get_listings():
-		seen[bus.listing_category(l)] = true
+	var deals := false
+	if mode == "sell":
+		for line in stock_lines(""):
+			seen[_category_of(line.part)] = true
+	else:
+		for l in bus.get_listings():
+			seen[bus.listing_category(l)] = true
+			deals = deals or l.list_price > l.unit_price
 	var out := PackedStringArray(seen.keys())
 	out.sort()
+	if deals:
+		out.insert(0, "deals")
 	return out
 
 
@@ -161,8 +202,10 @@ func _categories() -> PackedStringArray:
 ## category).
 func shown_listings() -> Array[MarketListing]:
 	var out: Array[MarketListing] = []
-	for l in bus.get_listings(category):
+	for l in bus.get_listings("" if category == "deals" else category):
 		if l.available <= 0:
+			continue
+		if category == "deals" and l.list_price <= l.unit_price:
 			continue
 		if query != "":
 			var s := bus.supplier(l.supplier_id)
@@ -235,12 +278,18 @@ func _listing_row(l: MarketListing, alt: bool) -> Control:
 	add.disabled = int(basket.get(l.id, 0)) >= l.available
 	add.pressed.connect(add_to_basket.bind(l.id, 1))
 	var cond := PartCondition.label(l.condition)
+	var sub := "%s  ·  %s" % [s.display_name if s else l.supplier_id, bus.listing_category(l)]
+	var deal := l.deal_off()
+	if deal > 0:
+		sub += "  ·  DEAL %d%% OFF, WAS %s" % [deal, T.money(l.list_price)]
+	elif s and not l.id.begins_with("S-") and l.available >= 5 and s.bulk_text() != "":
+		sub += "  ·  BULK " + s.bulk_text()
 	return compact(T.row([
-		T.cell_text(bus.part_name(l.part), "%s  ·  %s" % [s.display_name if s else l.supplier_id, bus.listing_category(l)]),
+		T.cell_text(bus.part_name(l.part), sub),
 		_width(T.tag(cond, _condition_colour(l.condition)), 92),
 		T.cell("%dH" % l.lead_hours, 58),
 		T.cell(str(l.available) if l.available < 999 else "∞", 52),
-		T.cell(T.money(l.unit_price), 96, T.TEXT, "mono_bold"),
+		T.cell(T.money(l.unit_price), 96, T.GOOD if deal > 0 else T.TEXT, "mono_bold"),
 		_width(_centred(add), 46),
 	], alt, glass))
 
@@ -341,6 +390,8 @@ func _refresh_side() -> void:
 		body.add_child(_po_line(bus.get_listing(line.listing_id), int(line.qty)))
 	var q := bus.quote_market(lines) if not lines.is_empty() else null
 	var cost := q.cost if q and q.ok else 0
+	if q and q.ok and q.saving > 0:
+		body.add_child(_sum("BULK SAVING", "%s CR" % T.money(q.saving)))
 	body.add_child(_sum("DUE AT DELIVERIES", _due_text(q)))
 	body.add_child(_sum("CASH AFTER", "%s CR" % T.money(bus.get_cash() - cost)))
 	var total := HBoxContainer.new()
@@ -393,7 +444,7 @@ func _refresh_side() -> void:
 func shown_deliveries() -> Array[PartsOrder]:
 	var on_order := deliveries == "on order"
 	var out: Array[PartsOrder] = bus.get_orders(PartsOrder.State.PLACED if on_order else PartsOrder.State.DELIVERED)
-	if category != "":
+	if category != "" and category != "deals":
 		out = out.filter(func(o: PartsOrder) -> bool:
 			return o.lines.any(func(line: OrderLine) -> bool: return _category_of(line.part) == category))
 	out.sort_custom(func(a: PartsOrder, b: PartsOrder) -> bool:
@@ -414,7 +465,11 @@ func _po_line(l: MarketListing, qty: int) -> Control:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 4)
 	var s := bus.supplier(l.supplier_id)
-	var names := T.cell_text(bus.part_name(l.part), "%s  ·  %s" % [s.display_name if s else l.supplier_id, PartCondition.label(l.condition)])
+	var cost := bus.listing_cost(l, qty)
+	var sub := "%s  ·  %s" % [s.display_name if s else l.supplier_id, PartCondition.label(l.condition)]
+	if cost < l.unit_price * qty:
+		sub += "  ·  BULK %d%% OFF" % roundi(100.0 - 100.0 * cost / (l.unit_price * qty))
+	var names := T.cell_text(bus.part_name(l.part), sub)
 	for i in names.get_child_count():
 		(names.get_child(i) as Label).add_theme_color_override("font_color", _ink() if i == 0 else _ink_dim())
 	h.add_child(names)
@@ -431,7 +486,7 @@ func _po_line(l: MarketListing, qty: int) -> Control:
 	plus.disabled = qty >= l.available
 	plus.pressed.connect(add_to_basket.bind(l.id, 1))
 	h.add_child(plus)
-	h.add_child(T.cell(T.money(l.unit_price * qty), 76, _ink()))
+	h.add_child(T.cell(T.money(cost), 76, _ink()))
 	return h
 
 
@@ -456,6 +511,141 @@ func _order_row(o: PartsOrder, on_paper := false) -> Control:
 	w.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(w)
 	return compact(col)
+
+
+# --- SELL -----------------------------------------------------------------------------------
+
+## The stock the Sell list shows: {part, condition, qty, offers} for every part in stock that
+## some company buys, in the category (or "" for all) and matching the search.
+func stock_lines(cat: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var detail := bus.get_stock_detail()
+	for part: String in detail:
+		if cat != "" and _category_of(part) != cat:
+			continue
+		if query != "" and not ("%s %s" % [bus.part_name(part), _category_of(part)]).to_lower().contains(query):
+			continue
+		for c: String in detail[part]:
+			var offers := bus.get_offers(part, c)
+			if int(detail[part][c]) > 0 and not offers.is_empty():
+				out.append({"part": part, "condition": c, "qty": int(detail[part][c]), "offers": offers})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ca := _category_of(a.part)
+		var cb := _category_of(b.part)
+		if ca != cb:
+			return ca < cb
+		var na := bus.part_name(a.part)
+		var nb := bus.part_name(b.part)
+		return na < nb if na != nb else PartCondition.ALL.find(a.condition) < PartCondition.ALL.find(b.condition))
+	return out
+
+
+func _refresh_sell() -> void:
+	var scroll := _list.get_parent() as ScrollContainer
+	var keep := scroll.scroll_vertical
+	_clear(_list)
+	var lines := stock_lines(category)
+	var last := ""
+	for i in mini(lines.size(), limit):
+		var cat := _category_of(lines[i].part)
+		if category == "" and cat != last:
+			_list.add_child(_heading(cat, lines.filter(func(d: Dictionary) -> bool: return _category_of(d.part) == cat).size()))
+			last = cat
+		_list.add_child(_stock_row(lines[i], i % 2 == 1))
+	if lines.size() > limit:
+		var more := T.button("SHOW MORE  (%d more)" % (lines.size() - limit), false, 16, false, glass)
+		more.name = "ShowMore"
+		more.pressed.connect(func() -> void:
+			limit += MAX_ROWS
+			_refresh_sell())
+		_list.add_child(_centred(more))
+	if lines.is_empty():
+		_list.add_child(T.label("Nothing matches." if query != "" else "Nothing in stock that anyone buys. Parts you buy, strip or keep from jobs show here.", "body", 18, T.DIM))
+	scroll.set_deferred("scroll_vertical", keep)
+
+
+func _stock_row(line: Dictionary, alt: bool) -> Control:
+	var offers: Array = line.offers
+	var best: Dictionary = offers[0]
+	var others := PackedStringArray()
+	for o: Dictionary in offers:
+		var s := bus.supplier(o.supplier_id)
+		others.append("%s %s" % [s.display_name if s else o.supplier_id, T.money(o.unit_price)])
+	var key := "%s_%s" % [line.part, line.condition]
+	var one := T.button("SELL 1", true, 14, false, glass)
+	one.name = "Sell_" + key.validate_node_name()
+	one.custom_minimum_size = Vector2(58, 24)
+	one.pressed.connect(sell.bind(best.supplier_id, line.part, line.condition, 1))
+	var all := T.button("ALL", false, 14, false, glass)
+	all.name = "SellAll_" + key.validate_node_name()
+	all.custom_minimum_size = Vector2(44, 24)
+	all.pressed.connect(sell.bind(best.supplier_id, line.part, line.condition, int(line.qty)))
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 4)
+	buttons.add_child(one)
+	buttons.add_child(all)
+	var names := T.cell_text(bus.part_name(line.part), "  ·  ".join(others))
+	for l: Label in names.get_children():
+		l.clip_text = true
+	return compact(T.row([
+		names,
+		_width(T.tag(PartCondition.label(line.condition), _condition_colour(line.condition)), 92),
+		T.cell(str(line.qty), 52),
+		T.cell(T.money(best.unit_price), 96, T.GOOD, "mono_bold"),
+		_width(_centred(buttons), 126),
+	], alt, glass))
+
+
+## Sells from stock to a company at today's offer; the result shows on the Sales docket.
+func sell(supplier_id: String, part: String, condition: String, qty: int) -> BusinessResult:
+	var r := bus.sell_stock(supplier_id, part, condition, qty)
+	var s := bus.supplier(supplier_id)
+	if r.is_ok():
+		_message = "Sold %d %s to %s for %s CR." % [qty, bus.part_name(part), s.display_name if s else supplier_id, T.money(-r.cost)] \
+				if r.cost != 0 else "Sale sent to the host."
+	else:
+		_message = r.message.capitalize() if r.message != "" else "That sale didn't go through."
+	_message_good = r.is_ok()
+	refresh()
+	return r
+
+
+## The side in Sell: today's sales (from the ledger) and the last message.
+func _refresh_sales() -> void:
+	_clear(_side)
+	var d := T.docket("Sales today", "BSX/SALES", glass)
+	d.panel.name = "Sales"
+	d.panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var body := d.body as VBoxContainer
+	var total := 0
+	var list := T.list()
+	for e in bus.get_ledger(bus.get_day()):
+		if e.category != LedgerEntry.RESALE:
+			continue
+		total += e.amount
+		var s := bus.supplier(e.ref)
+		var row := HBoxContainer.new()
+		var w := T.label("%s  →  %s" % [e.note, s.display_name if s else e.ref], "body", 14, _ink())
+		w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		w.clip_text = true
+		row.add_child(w)
+		row.add_child(T.cell(T.money(e.amount), 76, _ink()))
+		list.add_child(row)
+	if total == 0:
+		list.add_child(T.label("Nothing sold today. SELL 1 or ALL sells to the best offer.", "body", 16, _ink_dim()))
+	var sum := HBoxContainer.new()
+	var tl := T.label("TAKEN", "display_bold", 24, _ink())
+	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sum.add_child(tl)
+	sum.add_child(T.label("%s CR" % T.money(total), "mono_bold", 24, T.ORANGE))
+	body.add_child(sum)
+	body.add_child(_sum("CASH", "%s CR" % T.money(bus.get_cash())))
+	if _message != "":
+		var m := T.label(_message, "body_medium", 15, T.GOOD if _message_good else T.BAD)
+		m.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		body.add_child(m)
+	body.add_child(list.get_parent())
+	_side.add_child(d.panel)
 
 
 func _sum(what: String, value: String) -> Control:

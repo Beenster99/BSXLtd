@@ -16,6 +16,8 @@ const LOAN := "loan"
 const REPAYMENT := "repayment"
 ## Bales and ingots sold to the metal broker.
 const SCRAP := "scrap"
+## Parts from stock sold to another company (Buy/Sell).
+const RESALE := "resale"
 ## Money added by a debug button (testing).
 const DEBUG := "debug"
 

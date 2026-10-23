@@ -9,7 +9,7 @@ signal close_requested
 
 const Look := preload("res://modules/business/internal/ui/terminal_look.gd")
 const CHANNELS: PackedStringArray = ["orders", "goods", "accounts"]
-const CHANNEL_NAMES := {"orders": "01  ORDERS", "goods": "02  GOODS IN", "accounts": "03  ACCOUNTS"}
+const CHANNEL_NAMES := {"orders": "01  BUY/SELL", "goods": "02  GOODS IN", "accounts": "03  ACCOUNTS"}
 ## How long a wall monitor shows each channel.
 const CYCLE_SECONDS := 7.0
 const MAX_ROWS := 60

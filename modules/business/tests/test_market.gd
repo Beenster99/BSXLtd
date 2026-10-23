@@ -89,7 +89,7 @@ func _test_listings() -> void:
 	var books: RefCounted = bus.get("_books")
 	for cond: String in PartCondition.ALL:
 		var p: int = books.trade_price(ring, "MainEngine", cond)
-		var expect := bus.get_catalogue().value_of("MainEngine") * ring.trade_factor * PartCondition.price_factor(cond)
+		var expect: float = bus.get_catalogue().value_of("MainEngine") * ring.trade_factor * PartCondition.price_factor(cond) * books.house_factor(ring, "MainEngine")
 		check(absf(p - expect) <= expect * 0.07 + 1, "%s main engine near %d: %d" % [cond, expect, p])
 	check(books.trade_price(ring, "MainEngine", PartCondition.DAMAGED) < books.trade_price(ring, "MainEngine", PartCondition.NEW) * 0.5,
 			"damaged parts are much cheaper")

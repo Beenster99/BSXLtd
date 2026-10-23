@@ -22,3 +22,12 @@ lead_hours = 4
 reliability = 0.95
 min_reputation = 0.0
 cancellation_refund_percent = 75
+bulk_percent = {
+20: 6,
+50: 12,
+100: 18
+}
+deals_per_day = 3
+deal_percent = Vector2i(12, 25)
+buy_factor = 0.3
+price_spread = 0.08
