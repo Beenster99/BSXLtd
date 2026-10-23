@@ -32,6 +32,11 @@ const PLAYER_PREFIX := "player:"
 const CLOCK_SAMPLES := 8
 const PING_INTERVAL := 1.0
 const REFUSE_GRACE := 0.5
+## Movers per packet, so a batch stays under the network's packet size (MTU).
+const MOVES_PER_PACKET := 10
+## How long a silent connection lasts before it drops, ms: long enough for a slow first load.
+const TIMEOUT_MIN_MS := 15000
+const TIMEOUT_MAX_MS := 60000
 
 ## What a joining peer must match: {"game_version": ..., "modules": {id: version}, ...}.
 ## Set by the owner before hosting or joining; PROTOCOL is added automatically.
@@ -340,7 +345,7 @@ func unregister_mover(object_id: String) -> void:
 ## player's head) are always driven by that player.
 func mover_authority(object_id: String) -> int:
 	if object_id.begins_with(PLAYER_PREFIX):
-		return object_id.trim_prefix(PLAYER_PREFIX).to_int()
+		return object_id.trim_prefix(PLAYER_PREFIX).get_slice(":", 0).to_int()
 	var owner: int = _claims.get(object_id, 0)
 	return owner if owner != 0 else HOST_ID
 
@@ -350,16 +355,30 @@ func _is_mine(object_id: String) -> bool:
 
 
 func _send_moves() -> void:
-	var batch := _movers.outgoing(_is_mine)
-	if batch.is_empty():
-		return
+	if state == State.JOINED and _clock_samples.is_empty():
+		return  # Stamped with our own clock the host would take them as far in the future.
 	var t := server_time()
-	if state == State.HOSTING:
-		for id in _peers:
-			if id != HOST_ID:
-				_wire.moves.rpc_id(id, t, batch)
-	else:
-		_wire.moves.rpc_id(HOST_ID, t, batch)
+	var batch := _movers.outgoing(_is_mine, t)
+	for part in _split(batch):
+		if state == State.HOSTING:
+			for id in _peers:
+				if id != HOST_ID:
+					_wire.moves.rpc_id(id, t, part)
+		else:
+			_wire.moves.rpc_id(HOST_ID, t, part)
+
+
+static func _split(batch: Dictionary) -> Array[Dictionary]:
+	var parts: Array[Dictionary] = []
+	var part := {}
+	for id in batch:
+		part[id] = batch[id]
+		if part.size() >= MOVES_PER_PACKET:
+			parts.append(part)
+			part = {}
+	if not part.is_empty():
+		parts.append(part)
+	return parts
 
 
 func _on_moves(sender: int, t: float, batch: Dictionary) -> void:
@@ -369,7 +388,8 @@ func _on_moves(sender: int, t: float, batch: Dictionary) -> void:
 			return
 		for id in _peers:
 			if id != HOST_ID and id != sender:
-				_wire.moves.rpc_id(id, t, taken)
+				for part in _split(taken):
+					_wire.moves.rpc_id(id, t, part)
 	elif state == State.JOINED and sender == HOST_ID:
 		_movers.receive(t, batch, func(id: String) -> bool: return not _is_mine(id))
 
@@ -480,6 +500,7 @@ func _on_hello(sender: int, info: Dictionary) -> void:
 			if _mp.multiplayer_peer is ENetMultiplayerPeer and sender in _mp.get_peers():
 				_mp.multiplayer_peer.disconnect_peer(sender))
 		return
+	_lengthen_timeouts()
 	var peer_profile: Dictionary = info.get("profile", {})
 	for other in _peers:
 		if other != HOST_ID:
@@ -502,6 +523,7 @@ func _on_ping(sender: int, t_client: float) -> void:
 # --- Client side -----------------------------------------------------------------------
 
 func _on_connected_to_server() -> void:
+	_lengthen_timeouts()
 	_wire.hello.rpc_id(HOST_ID, {"compat": _compat_info(), "profile": profile})
 
 
@@ -605,6 +627,16 @@ func _go_offline() -> void:
 			_holds.erase(id)
 	_clock_offset = 0.0
 	_clock_samples.clear()
+
+
+## A player's first trip into the yard can stall the game for seconds while it loads: keep
+## the connection through that rather than dropping them.
+func _lengthen_timeouts() -> void:
+	var enet := _mp.multiplayer_peer as ENetMultiplayerPeer
+	if enet == null or enet.host == null:
+		return
+	for link in enet.host.get_peers():
+		link.set_timeout(0, TIMEOUT_MIN_MS, TIMEOUT_MAX_MS)
 
 
 func _best_sample() -> Vector2:

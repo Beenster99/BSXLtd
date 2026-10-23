@@ -58,7 +58,19 @@ func close() -> void:
 	get_tree().paused = _was_paused
 	HudSlots.release_pointer(POINTER_ID)
 	if DisplayServer.get_name() != "headless":
-		Input.mouse_mode = _mouse_before
+		Input.mouse_mode = resume_mouse_mode(_mouse_before, HudSlots.pointer_claimed())
+
+
+## The mouse after Resume: in a game it goes back to looking (captured, held in the window)
+## unless another screen still has the pointer; the mode it had when Esc came in could
+## already be free (an Esc a scene let go of the mouse for), which left the pointer loose
+## over the window and drifting off it in windowed mode.
+static func resume_mouse_mode(before: Input.MouseMode, pointer_claimed: bool) -> Input.MouseMode:
+	if pointer_claimed:
+		return Input.MOUSE_MODE_VISIBLE
+	if before == Input.MOUSE_MODE_CONFINED or before == Input.MOUSE_MODE_CONFINED_HIDDEN:
+		return before
+	return Input.MOUSE_MODE_CAPTURED
 
 
 func save_now() -> void:

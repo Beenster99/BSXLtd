@@ -25,6 +25,7 @@ const CrusherPlant := preload("res://modules/ship_bay/internal/yard/crusher_plan
 const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 const Transporters := preload("res://modules/ship_bay/internal/yard/transporters.gd")
+const DeliveryTrucks := preload("res://modules/ship_bay/internal/yard/delivery_trucks.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
 	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
@@ -186,6 +187,8 @@ var _stores_paint: Dictionary = {}  # category -> crate material
 var _bus: ShipBayBus
 ## The hover trolleys and their console (TrolleyFleet).
 var trolleys: Node3D
+## The delivery trucks that bring each order to the truck doors (delivery_trucks.gd).
+var trucks: Node3D
 ## The city round the yard (YardCity).
 var city: Node3D
 ## The apron's pad, docks and holding lane and the scrap end (apron.gd), with
@@ -243,6 +246,10 @@ func _ready() -> void:
 	trolleys = TrolleyFleet.new()
 	trolleys.set("yard", self)
 	add_child(trolleys)
+	trucks = DeliveryTrucks.new()
+	trucks.name = "Trucks"
+	trucks.set("yard", self)
+	add_child(trucks)
 	if apron and Flags.is_on("ship_bay.dolly"):
 		transporters = Transporters.new()
 		transporters.set("yard", self)
@@ -373,6 +380,8 @@ func _build_night_lights() -> void:
 func show_view(id: String) -> void:
 	if not VIEWS.has(id):
 		return
+	if id == "hover_truck" and trucks and (trucks.get("runs") as Array).is_empty():
+		trucks.call("park_for_show")
 	var v: Array = VIEWS[id]
 	view_camera.position = v[0]
 	view_camera.look_at(v[1])
@@ -1055,7 +1064,6 @@ func _build_deliveries() -> void:
 		var head := _lib("headlamp/dock", func() -> PartShapes.PartShape:
 				return WreckParts.headlamp_bar(0.6, 2, LAMP))
 		_put(head, Transform3D(FACE_NX, Vector3(-48.1, 3.6, z - 3.9)), _parts, false)
-	_truck(Vector3(-51.3, 0, 8))
 	# Goods-in spots where deliveries are set down (StorageLayout.goods_in), numbered on the floor.
 	var spot_line := _paint(Color(0.9, 0.9, 0.88), 0.0, 0.8)
 	var spots: Array = StorageLayout.get_layout()["goods_in"]
@@ -1543,54 +1551,6 @@ func _build_outside() -> void:
 
 # --- Props --------------------------------------------------------------------------------
 
-## A hover truck backed up to a dock: its cargo pod's doors at `rear` (the pod runs off
-## towards -X), floating on a spine of lift pads with a cab ahead of it: a rounded nose with
-## a wrap-round windscreen, Void Salvage's lit edge strip down both sides, running lamps.
-func _truck(rear: Vector3) -> void:
-	const FLOAT := 0.7   # the spine's underside over the ground, metres
-	var pod := _lib("container/hover_pod", func() -> PartShapes.PartShape:
-			return WreckParts.container(Vector3(2.5, 2.7, 12.0), TRIM))
-	var c := rear + Vector3(-6.05, 0, 0)
-	_put(pod, Transform3D(Basis(Vector3.UP, PI * 0.5), c + Vector3(0, FLOAT + 0.45 + 1.35, 0)), _parts)
-	var paint := _paint(Color(0.9, 0.91, 0.9), 0.2, 0.4, "gloss_paint")
-	# The spine under the pod and cab, its lift pads glowing blue underneath.
-	_put(_lib("cbox/hover_spine", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(17.0, 0.45, 2.2), 0.12)), _at(rear + Vector3(-8.5, FLOAT + 0.22, 0)), _frame, false)
-	var pad := _lib("prism/hover_pad", func() -> PartShapes.PartShape:
-			return PartShapes.prism(16, 0.42, 0.08))
-	var glow := _glow_mat(EDGE, 4.0)
-	for x: float in [-1.6, -5.0, -8.4, -11.8, -15.4]:
-		for side: float in [-0.6, 0.6]:
-			_put(pad, _at(rear + Vector3(x, FLOAT - 0.04, side)), glow, false)
-	for x: float in [-3.3, -10.1]:
-		var lift := OmniLight3D.new()
-		lift.position = rear + Vector3(x, 0.25, 0)
-		lift.light_color = EDGE
-		lift.light_energy = 1.4
-		lift.omni_range = 3.0
-		lift.set_meta("gfx_no_shadow", true)
-		add_child(lift)
-	_put(_box(Vector3(0.15, 0.25, 2.5)), _at(rear + Vector3(0.0, FLOAT + 0.3, 0)), _hazard, false)
-	# The cab: a rounded body, a raked nose, the windscreen wrapping round it.
-	var cab := rear + Vector3(-15.6, 0, 0)
-	_put(_lib("cbox/hover_cab", func() -> PartShapes.PartShape:
-			return PartShapes.chamfer_box(Vector3(3.0, 2.3, 2.5), 0.45)), _at(cab + Vector3(0.2, FLOAT + 0.45 + 1.15, 0)), paint)
-	_put(_lib("wedge/hover_nose", func() -> PartShapes.PartShape:
-			return PartShapes.wedge(Vector3(2.4, 1.2, 1.4))), Transform3D(Basis(Vector3.UP, -PI * 0.5), cab + Vector3(-1.95, FLOAT + 0.45 + 0.6, 0)), paint, false)
-	_put(_lib("window/hover_screen", func() -> PartShapes.PartShape:
-			return PartShapes.window_rect(2.2, 0.9, 0.06)), Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, PI * 0.5 - 0.5), cab + Vector3(-1.38, FLOAT + 0.45 + 1.75, 0)), _frame, false)
-	for side: float in [-1.0, 1.0]:
-		_put(_lib("window/hover_side", func() -> PartShapes.PartShape:
-				return PartShapes.window_rect(1.3, 0.65, 0.05)), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), cab + Vector3(-0.3, FLOAT + 0.45 + 1.75, 1.26 * side)), _frame, false)
-		# The lit edge strip down the cab and the pod.
-		_put(_box(Vector3(16.6, 0.06, 0.04)), _at(rear + Vector3(-8.5, FLOAT + 0.47, 1.12 * side)), glow, false)
-	_put(_lib("headlamp/hover_truck", func() -> PartShapes.PartShape:
-			return WreckParts.headlamp_bar(2.0, 4, LAMP)), Transform3D(FACE_NX, cab + Vector3(-2.62, FLOAT + 0.75, 0)), _parts, false)
-	_put(_box(Vector3(0.1, 0.1, 2.2)), _at(rear + Vector3(0.02, FLOAT + 3.4, 0)), _glow_mat(Color(1.0, 0.2, 0.1), 3.0), false)
-	_collide_xf(_box_shape(Vector3(17.6, 3.2, 2.6)), _at(rear + Vector3(-8.6, FLOAT + 1.6, 0)))
-	_sign("BSX", c + Vector3(0, FLOAT + 2.0, 1.29), 0.0, 1.2, false).modulate = TRIM
-
-
 ## One of a few crate sizes from the parts library, as a shape key.
 func _crate_key(i: int) -> String:
 	var sizes: Array[Vector3] = [Vector3(1.0, 0.8, 0.9), Vector3(1.1, 0.55, 0.9), Vector3(0.8, 0.65, 0.8), Vector3(1.2, 1.1, 1.0)]
@@ -1651,6 +1611,8 @@ func _refresh_stores() -> void:
 		var c: Dictionary = crates[id]
 		if str(c.get("carrier", "")) != "" or c.has("line"):
 			continue   # on a trolley's deck (the trolley draws it) or the line's (it does)
+		if trucks and trucks.call("is_arriving", id):
+			continue   # still on its delivery truck
 		var at := _bus.crate_position(id)
 		var kind := StorageLayout.kind_for(float(c["mass"]), str(c["item"]))
 		var cat := str(StorageLayout.items().get(c["item"], {}).get("category", ""))
