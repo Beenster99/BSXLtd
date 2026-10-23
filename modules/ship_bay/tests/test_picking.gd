@@ -131,6 +131,39 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 	check(bus.picked_crates().size() == before and p.get("status") == "PARKED", "asking for what isn't in stock does nothing")
 
+	# Store 2: goods kept only there are fetched by its own picking lift, which hands them
+	# over in the courtyard outside its door.
+	var p7: Node3D = trolleys.get("p7")
+	check(p7 != null and bool(p7.call("is_picker")), "Store 2 has its own picking lift")
+	for at: Vector3 in [fleet.get("PARKING")["p7"][0], fleet.get("HANDOFFS")["p7"][0], fleet.get("HANDOFF_TROLLEYS")["p7"][0]]:
+		check(bool(nav.call("is_free", at, 0.85)), "room to stand at %s" % at)
+	var spare := ""
+	for loc: String in Layout.get_layout()["locations"]:
+		var l: Dictionary = Layout.get_layout()["locations"][loc]
+		if l["kind"] == "pallet" and str(l["rack"]).begins_with("E") and int(l["level"]) == 2:
+			spare = loc
+			break
+	var item := ""
+	for id: String in Layout.items():
+		if id != "IonThruster" and Layout.kind_of(id) == "pallet":
+			item = id
+			break
+	var mass := float(Layout.items()[item].get("mass", 50.0))
+	bus.receive_delivery("PO-32", [{"item_id": item, "qty": 1, "condition": 1.0, "name": item, "grade": "new", "mass": mass}])
+	bus.store_crate("PO-32/1", spare)
+	check(bus.stock_at(spare).get("qty") == 1, "stocked %s on %s in Store 2" % [item, spare])
+	bus.fetch_stock(item, 1, me)
+	var store_2_by := ""
+	for i in 9000:
+		await get_tree().physics_frame
+		store_2_by = courier.call(item)
+		if store_2_by != "":
+			break
+	check(picked.get(bus.trolley_cargo(store_2_by) if store_2_by != "" else "", "") == spare,
+			"Store 2's lift picked it off %s and a trolley brought it (%s, lift %s, p %s)" % [spare, store_2_by, p7.get("status"), p.get("status")])
+	if store_2_by != "":
+		fleet.call("use_trolley", store_2_by)
+
 	# The console fetches what the ship is missing.
 	check(fleet.has_method("fetch_for_ship"), "the console can fetch for the ship")
 

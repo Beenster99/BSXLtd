@@ -2,7 +2,7 @@ extends ModuleTest
 ## Ship and Bay: the two refurbishment lines in Pre-assembly and the crusher bay outside.
 ## A survey takes a worn lot out of the stores (or its intake bay) and says scrap or
 ## refurbish; a refurbished lot goes straightener -> bath -> coater onto the line's own
-## trolley at 100%, which takes up to 50 to the stores; scrap goes onto the bay's red pallet
+## trolley at 100%, which takes up to 50 to the stores; scrap goes onto the bay's red scrap zone
 ## for a trolley to take to the crusher, which breaks it to dust the smelter casts into
 ## ingots for the ingot yard (Business's raw materials). By hand each machine runs on START
 ## and passes on with SEND ON; AUTO runs both lines. The lines are saved with the bay.
@@ -116,12 +116,12 @@ func run_tests() -> void:
 	await frames(2)
 	check(str((fleet.get("jobs") as Dictionary)["a"].get("do", "")) == "put_away", "SEND TO STORES sends it off to the stores")
 	# (The trolley's run to the stores is test_trolleys' job.) Shelved, it's back like new.
-	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}})
+	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}, "p7": {}})
 	bus.store_crate(load[0])
 	var gyro := bus.find_stock("Gyroscope")
 	check(gyro.size() == 1 and float(bus.stock_at(gyro[0]).condition) == 1.0, "put away, it's back in stock at 100%")
 
-	# The survey's call can be overridden; scrap goes onto the red pallet for the crusher.
+	# The survey's call can be overridden; scrap goes onto the red scrap zone for the crusher.
 	survey.call("press", "go")
 	survey.call("press", "go")
 	await _wait_for(bus, "survey", "done")
@@ -136,7 +136,7 @@ func run_tests() -> void:
 		if str(bus.line_crates()[id].line) == "scrap":
 			scrap = id
 	check(scrap != "" and bus.crate_position(scrap).distance_to(RefurbLineScript.scrap_spot("a")) < 0.01 and _st(bus, "survey").is_empty(),
-			"SEND ON sets it on line A's scrap pallet: %s" % scrap)
+			"SEND ON sets it on line A's scrap zone: %s" % scrap)
 	await get_tree().create_timer(0.7).timeout
 	var called := ""
 	for t: String in ["s", "m", "l"]:
@@ -146,7 +146,7 @@ func run_tests() -> void:
 	check(str(((fleet.get("jobs") as Dictionary)["a"] as Dictionary).get("do", "")) == "" and str(((fleet.get("jobs") as Dictionary)["b"] as Dictionary).get("do", "")) == "",
 			"(never a line's own trolley)")
 	# The trolley's part: it sets the scrap down on the crusher's pad.
-	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}})
+	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}, "p7": {}})
 	bus.carry_crate(scrap, "l")
 	bus.line_request("feed", {"crate": scrap, "line": "crusher"})
 	check(str(bus.crate_info(scrap).get("line", "")) == "crush" and bus.crate_position(scrap).distance_to(Crusher.FEED_SPOTS[0]) < 0.01,

@@ -104,6 +104,8 @@ func _test_generator() -> void:
 					if r.id in ["IonThruster", "TurbineEngine", "HydrogenEngine", "OvalEngine", "EngineBell", "Generator", "MachineUnit",
 							"SwitchCabinet", "BatteryRack", "DrillHead", "LandingClamp", "Searchlight", "Antenna", "SolarPanel", "Container"]:
 						machinery_wanted = true
+			if (o.subject.get("holds", []) as Array).has("Turret"):
+				check("weapons" in o.hazards, "a hull with a turret still on is a weapons hazard: %s" % str(o.hazards))
 			if (o.subject.get("holds", []) as Array).has("jump_tank"):
 				check("fuel" in o.hazards, "a hull with its jump tanks still in is a fuel hazard: %s" % str(o.hazards))
 			var again := g.make(client_id, cycle, 0, 3)

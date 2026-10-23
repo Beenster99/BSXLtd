@@ -10,6 +10,8 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 func run_tests() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
+	# Deliveries land at once here: the trucks have their own test (test_trucks).
+	Flags.set_flag("ship_bay.trucks", false)
 	var scene := load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene
 	var yard := scene.instantiate() as Node3D
 	add_child(yard)
@@ -20,10 +22,11 @@ func run_tests() -> void:
 	check(fleet != null, "the yard has its trolleys")
 	if fleet == null:
 		yard.queue_free()
+		Flags.set_flag("ship_bay.trucks", true)
 		return
 	var trolleys: Dictionary = fleet.get("trolleys")
-	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6"],
-			"small, medium, large, the picking and heavy lifts, the two lines' trolleys and five goods-in lifts: %s" % [trolleys.keys()])
+	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6", "p7"],
+			"small, medium, large, the picking and heavy lifts, the two lines' trolleys, five goods-in lifts and Store 2's picking lift: %s" % [trolleys.keys()])
 	var hall: AABB = bus.shipyard_rooms()["deliveries"]["box"]
 	var court: AABB = bus.shipyard_rooms()["bay"]["box"]
 	var haulers: Array = [trolleys["s"], trolleys["m"], trolleys["l"]]
@@ -355,4 +358,5 @@ func run_tests() -> void:
 	bus.crate_carried.disconnect(on_carry)
 	yard.queue_free()
 	await frames(1)
+	Flags.set_flag("ship_bay.trucks", true)
 	bus.reset_data()

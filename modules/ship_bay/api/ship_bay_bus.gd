@@ -73,9 +73,9 @@ const SAVE_VERSION := 2
 ## the job id.
 const SUBJECT_ORDER := "subject:"
 ## The yard's hover trolleys, small, medium and large, "p" the picking lift and "h" the heavy lift in the
-## stores, the lines' "a" and "b", and the goods-in picking lifts "p2" to "p6". Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
+## stores, the lines' "a" and "b", the goods-in picking lifts "p2" to "p6", and Store 2's picking lift "p7". Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
-const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6"]
+const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6", "p7"]
 const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve", "auto"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
