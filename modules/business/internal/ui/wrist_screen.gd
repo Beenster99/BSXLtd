@@ -153,13 +153,18 @@ func refresh() -> void:
 
 func _refresh_chips() -> void:
 	_clear(_mode_chips)
-	var modes := T.chips(PackedStringArray(["buy", "sell"]), mode, func(n: String) -> void:
-		mode = n
-		category = ""
-		limit = MAX_ROWS
-		refresh(), glass, false)
+	var modes := HBoxContainer.new()
 	modes.name = "ModeChips"
-	modes.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	modes.add_theme_constant_override("separation", 4)
+	for n: String in ["buy", "sell"]:
+		var b := T.button(n.to_upper(), false, 16, n == mode, glass)
+		b.name = "Mode_" + n
+		b.pressed.connect(func() -> void:
+			mode = n
+			category = ""
+			limit = MAX_ROWS
+			refresh())
+		modes.add_child(b)
 	_mode_chips.add_child(modes)
 	_search.placeholder_text = "Search the stock" if mode == "sell" else "Search parts"
 	_clear(_columns)
@@ -579,8 +584,11 @@ func _stock_row(line: Dictionary, alt: bool) -> Control:
 	buttons.add_theme_constant_override("separation", 4)
 	buttons.add_child(one)
 	buttons.add_child(all)
+	var names := T.cell_text(bus.part_name(line.part), "  ·  ".join(others))
+	for l: Label in names.get_children():
+		l.clip_text = true
 	return compact(T.row([
-		T.cell_text(bus.part_name(line.part), "  ·  ".join(others)),
+		names,
 		_width(T.tag(PartCondition.label(line.condition), _condition_colour(line.condition)), 92),
 		T.cell(str(line.qty), 52),
 		T.cell(T.money(best.unit_price), 96, T.GOOD, "mono_bold"),
@@ -619,7 +627,7 @@ func _refresh_sales() -> void:
 		var row := HBoxContainer.new()
 		var w := T.label("%s  →  %s" % [e.note, s.display_name if s else e.ref], "body", 14, _ink())
 		w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		w.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		w.clip_text = true
 		row.add_child(w)
 		row.add_child(T.cell(T.money(e.amount), 76, _ink()))
 		list.add_child(row)
