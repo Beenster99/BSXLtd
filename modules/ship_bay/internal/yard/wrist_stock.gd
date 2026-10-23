@@ -1,12 +1,20 @@
 extends HBoxContainer
 ## The Stock channel on the wrist screen, drawn on glass with UI's TerminalKit: what the
-## stores hold (figures, a search, category chips, a row per location: part / where,
-## condition, quantity, value) and a docket for the picked line, whose BRING ONE TO ME sends
-## the picking lift for it. Crates still waiting in Deliveries are listed too.
+## stores hold (figures, a search, category chips, then the lines under a heading per
+## catalogue category, each folding shut with a click; a line per part and grade with its
+## places, condition, quantity and value, in a smaller font so the screen holds many) and a
+## docket for the picked line, whose BRING ONE TO ME sends the picking lift for it. Crates
+## still waiting in Deliveries are listed first, under Goods in.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
-const MAX_ROWS := 80
+## Rows drawn at most (a category heading counts as one).
+const MAX_ROWS := 160
+## How much smaller the list's text is than TerminalKit's, so the screen holds more lines.
+const COMPACT := 0.82
+const RAW_PREFIX := "raw_"
+## The category of crates waiting in Deliveries.
+const GOODS_IN := "goods_in"
 
 signal close_requested
 
@@ -15,8 +23,10 @@ var fleet: Node
 var glass := true
 var category := ""
 var query := ""
-## The picked row's key: a location id, or "crate:<id>".
+## The picked row's key: "part:<item>/<grade>" or "crate:<id>".
 var selected := ""
+## Category -> true for the headings folded shut (a search opens them all).
+var folded := {}
 
 var _figures: HBoxContainer
 var _chips: Control
@@ -50,7 +60,7 @@ func _init(p_bus: ShipBayBus, p_fleet: Node, p_glass := true) -> void:
 	_chips.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_chips)
 	main.add_child(top)
-	main.add_child(T.columns([["PART  /  WHERE", 0], ["COND.", 96], ["QTY", 56], ["VALUE CR", 104]]))
+	main.add_child(T.columns([["PART  /  WHERE", 0], ["COND.", 92], ["QTY", 72], ["VALUE CR", 104]]))
 	_list = T.list()
 	main.add_child(_list.get_parent())
 	_side = VBoxContainer.new()
@@ -83,35 +93,87 @@ func refresh() -> void:
 	_refresh_side()
 
 
-## Every line held: {key, item, name, category, where, qty, condition, value}, shelves first
-## (in location order), then crates waiting in Deliveries.
+## Every line held: {key, item, name, category, grade, where, qty, condition, value, places}:
+## the crates still waiting in Deliveries first, one line each, then one per part and grade
+## with its places ({loc, where, qty, condition}) on the shelves, by category, then name.
 func lines() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	var items := Layout.items()
 	var locations: Dictionary = Layout.get_layout()["locations"]
 	var ids: Array = bus.stocked_locations()
 	ids.sort()
+	var by_key := {}
 	for loc: String in ids:
 		var s := bus.stock_at(loc)
 		var item := str(s.get("item", ""))
-		out.append(_line(loc, item, str(items.get(item, {}).get("name", item)), where_text(locations.get(loc, {})),
-				int(s.get("qty", 0)), float(s.get("condition", 1.0))))
+		var qty := int(s.get("qty", 0))
+		var cond := float(s.get("condition", 1.0))
+		var key := "part:%s/%s" % [item, grade_of(cond)]
+		if not by_key.has(key):
+			by_key[key] = {"key": key, "item": item, "name": part_name(item), "category": category_of(item),
+					"grade": grade_of(cond), "qty": 0, "condition": 0.0, "places": []}
+		var l: Dictionary = by_key[key]
+		l.condition = (float(l.condition) * int(l.qty) + cond * qty) / maxf(int(l.qty) + qty, 1)
+		l.qty = int(l.qty) + qty
+		(l.places as Array).append({"loc": loc, "where": where_text(locations.get(loc, {})), "qty": qty, "condition": cond})
+	var parts: Array = by_key.values()
+	parts.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ra := category_rank(str(a.category))
+		var rb := category_rank(str(b.category))
+		if ra != rb:
+			return ra < rb
+		return str(a.name) < str(b.name) if a.name != b.name else str(a.grade) < str(b.grade))
 	var crates := bus.delivered_crates()
 	var keys: Array = crates.keys()
 	keys.sort()
 	for id: String in keys:
 		var c: Dictionary = crates[id]
 		var item := str(c.get("item", ""))
-		out.append(_line("crate:" + id, item, str(c.get("name", item)), "Deliveries · goods in",
-				int(c.get("qty", 0)), float(c.get("condition", 1.0))))
+		var cond := float(c.get("condition", 1.0))
+		out.append(_priced({"key": "crate:" + id, "item": item, "name": str(c.get("name", part_name(item))),
+				"category": GOODS_IN, "grade": grade_of(cond), "where": "Deliveries · goods in",
+				"qty": int(c.get("qty", 0)), "condition": cond, "places": []}))
+	for l: Dictionary in parts:
+		var places: Array = l.places
+		l.where = str(places[0].where) if places.size() == 1 else "%d places · %s" % [places.size(), str(places[0].where)]
+		out.append(_priced(l))
 	return out
 
 
-func _line(key: String, item: String, part_name: String, where: String, qty: int, condition: float) -> Dictionary:
-	var unit := bus.part_value(item)
-	return {"key": key, "item": item, "name": part_name, "where": where, "qty": qty, "condition": condition,
-			"category": str(Layout.items().get(item, {}).get("category", "")),
-			"value": -1 if unit < 0 else roundi(unit * qty * price_factor(condition))}
+func _priced(l: Dictionary) -> Dictionary:
+	var unit := bus.part_value(str(l.item))
+	l.value = -1 if unit < 0 else roundi(unit * int(l.qty) * price_factor(float(l.condition)))
+	return l
+
+
+## A part's name: the catalogue's, or for a raw material ("raw_steel") "Steel (raw, kg)", as
+## Business names it.
+static func part_name(item: String) -> String:
+	if item.begins_with(RAW_PREFIX):
+		return "%s (raw, kg)" % item.trim_prefix(RAW_PREFIX).capitalize()
+	return str(Layout.items().get(item, {}).get("name", item))
+
+
+## A part's catalogue category ("engines"), "materials" for raw materials, "" if unknown.
+static func category_of(item: String) -> String:
+	if item.begins_with(RAW_PREFIX):
+		return "materials"
+	return str(Layout.items().get(item, {}).get("category", ""))
+
+
+## Where a category sorts: goods in first, then the catalogue's order, then the rest.
+static func category_rank(cat: String) -> int:
+	if cat == GOODS_IN:
+		return -1
+	var i: int = Layout.CATEGORIES.keys().find(cat)
+	return i if i >= 0 else Layout.CATEGORIES.size() + (0 if cat == "materials" else 1)
+
+
+static func category_name(cat: String) -> String:
+	if cat == GOODS_IN:
+		return "Goods in"
+	if cat == "materials":
+		return "Materials"
+	return str(Layout.CATEGORIES.get(cat, "Other" if cat == "" else cat.capitalize()))
 
 
 ## "Rack B1 · bay 2 · level 3", "Bins C2 · bay 1 · level 2", "Large rack W1 · bay 1 · level 2",
@@ -171,16 +233,21 @@ func _refresh_chips() -> void:
 		c.queue_free()
 	var seen := {}
 	for l in lines():
-		if str(l.category) != "":
-			seen[l.category] = true
-	var names := PackedStringArray()
-	for cat: String in Layout.CATEGORIES:
-		if seen.has(cat):
-			names.append(cat)
+		seen[l.category] = true
+	var cats: Array = seen.keys()
+	cats.sort_custom(func(a: String, b: String) -> bool: return category_rank(a) < category_rank(b))
 	if category != "" and not seen.has(category):
 		category = ""
-	_chips.add_child(T.chips(names, category, func(n: String) -> void:
-		category = n
+	if cats.size() < 2:
+		return
+	var names := PackedStringArray()
+	for cat: String in cats:
+		names.append(category_name(cat))
+	_chips.add_child(T.chips(names, category_name(category) if category != "" else "", func(n: String) -> void:
+		category = ""
+		for cat: String in cats:
+			if category_name(cat) == n:
+				category = cat
 		refresh(), glass))
 
 
@@ -189,15 +256,22 @@ func shown() -> Array[Dictionary]:
 	for l in lines():
 		if category != "" and l.category != category:
 			continue
-		if query != "" and not (str(l.name).to_lower().contains(query) or str(l.where).to_lower().contains(query)
-				or str(l.item).to_lower().contains(query) or str(l.category).contains(query)):
+		if query != "" and not _matches(l):
 			continue
 		out.append(l)
 	return out
 
 
+func _matches(l: Dictionary) -> bool:
+	var text := "%s %s %s %s %s" % [l.name, l.where, l.item, category_name(str(l.category)), l.grade]
+	for p: Dictionary in l.places:
+		text += " " + str(p.where)
+	return text.to_lower().contains(query)
+
+
 func _refresh_list() -> void:
 	for c in _list.get_children():
+		_list.remove_child(c)   # out now, so the new rows and headings keep their names
 		c.queue_free()
 	var rows := shown()
 	if rows.is_empty():
@@ -205,12 +279,24 @@ func _refresh_list() -> void:
 				if lines().is_empty() else "No stock matches.", "body", 17, T.DIM)
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_list.add_child(empty)
-	for i in mini(rows.size(), MAX_ROWS):
-		var l: Dictionary = rows[i]
-		var grade := grade_of(float(l.condition))
-		var r := T.row([T.cell_text(str(l.name), str(l.where)), _w(T.tag(grade, grade_colour(grade)), 96),
-				T.cell(str(l.qty), 56, T.TEXT), T.cell("—" if int(l.value) < 0 else T.money(int(l.value)), 104, T.TEXT, "mono_bold")],
-				i % 2 == 1, glass)
+	var drawn := 0
+	var n := 0
+	var last := "\n"
+	for l: Dictionary in rows:
+		if drawn >= MAX_ROWS:
+			break
+		var cat := str(l.category)
+		if cat != last:
+			last = cat
+			var in_cat := rows.filter(func(r: Dictionary) -> bool: return r.category == cat)
+			_list.add_child(_heading(cat, in_cat))
+			drawn += 1
+			n = 0
+		if is_folded(cat):
+			continue
+		var r := compact(T.row([_name_cell(str(l.name), str(l.where)), _w(T.tag(str(l.grade), grade_colour(str(l.grade)), 12), 92),
+				T.cell(_qty_text(l), 72, T.TEXT), T.cell("—" if int(l.value) < 0 else T.money(int(l.value)), 104, T.TEXT, "mono_bold")],
+				n % 2 == 1, glass))
 		r.name = "Row_" + str(l.key).validate_node_name()
 		if l.key == selected:
 			var st := (r.get_theme_stylebox("panel") as StyleBoxFlat).duplicate() as StyleBoxFlat
@@ -222,10 +308,93 @@ func _refresh_list() -> void:
 			if e is InputEventMouseButton and (e as InputEventMouseButton).pressed and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 				select(str(l.key)))
 		_list.add_child(r)
+		drawn += 1
+		n += 1
 
 
+## A category is shut when its heading was clicked shut, unless a search is on (it shows
+## every match) or it is the only category picked.
+func is_folded(cat: String) -> bool:
+	return bool(folded.get(cat, false)) and query == "" and category == ""
+
+
+## A category's heading: its name, how many lines and items, their value; click to fold it.
+func _heading(cat: String, rows: Array) -> Control:
+	var items := 0
+	var value := 0
+	for r: Dictionary in rows:
+		items += int(r.qty)
+		value += maxi(int(r.value), 0)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	var arrow := T.label("▸" if is_folded(cat) else "▾", "mono_medium", 14, T.ORANGE)
+	h.add_child(arrow)
+	var l := T.label(category_name(cat).to_upper(), "display_bold", 15, T.ORANGE)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(l)
+	h.add_child(T.label("%d LINE%s · %s ITEM%s" % [rows.size(), "" if rows.size() == 1 else "S", T.money(items),
+			"" if items == 1 else "S"], "mono_medium", 13, T.DIM))
+	var v := T.label("CR " + T.money(value) if value > 0 else "", "mono_medium", 13, T.DIM)
+	v.custom_minimum_size.x = T.px(104)
+	v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	h.add_child(v)
+	var pad := MarginContainer.new()
+	pad.name = "Heading_" + (cat if cat != "" else "other").validate_node_name()
+	pad.add_theme_constant_override("margin_left", 4)
+	pad.add_theme_constant_override("margin_top", 6)
+	pad.add_theme_constant_override("margin_right", 8)
+	pad.add_child(h)
+	pad.mouse_filter = Control.MOUSE_FILTER_STOP
+	pad.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and (e as InputEventMouseButton).pressed and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			fold(cat))
+	return pad
+
+
+## Folds a category's heading shut, or opens it again.
+func fold(cat: String) -> void:
+	folded[cat] = not bool(folded.get(cat, false))
+	_refresh_list()
+
+
+## A name over its place, smaller than TerminalKit's list cell.
+func _name_cell(title: String, sub: String) -> VBoxContainer:
+	var names := VBoxContainer.new()
+	names.add_theme_constant_override("separation", -3)
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var t := T.label(title, "body_medium", 19, T.TEXT)
+	t.clip_text = true
+	names.add_child(t)
+	var w := T.label(sub.to_upper(), "display_medium", 14, T.DIM)
+	w.clip_text = true
+	names.add_child(w)
+	return names
+
+
+static func _qty_text(l: Dictionary) -> String:
+	return ("%s KG" % T.money(int(l.qty))) if str(l.item).begins_with(RAW_PREFIX) else "×%d" % int(l.qty)
+
+
+## Shrinks a row's text by COMPACT and its padding, as Business's lists do.
+static func compact(c: Control) -> Control:
+	if c is PanelContainer:
+		var st := c.get_theme_stylebox("panel") as StyleBoxFlat
+		if st:
+			st.content_margin_top = 2
+			st.content_margin_bottom = 2
+	for l: Label in c.find_children("*", "Label", true, false):
+		if l.has_theme_font_size_override("font_size"):
+			l.add_theme_font_size_override("font_size", maxi(10, roundi(l.get_theme_font_size("font_size") * COMPACT)))
+	return c
+
+
+## Picks a line by its key, or the line that holds a location ("B1-2-3").
 func select(key: String) -> void:
 	selected = key
+	for l in lines():
+		for p: Dictionary in l.places:
+			if p.loc == key:
+				selected = str(l.key)
 	_message = ""
 	_refresh_list()
 	_refresh_side()
@@ -254,8 +423,17 @@ func _refresh_side() -> void:
 		_side.add_child(d.panel)
 		return
 	var d := T.docket(str(line.name), str(line.item), glass)
-	var grade := grade_of(float(line.condition))
-	for pair: Array in [["WHERE", line.where], ["QTY", str(line.qty)], ["CONDITION", "%s  %d%%" % [grade.to_upper(), roundi(float(line.condition) * 100)]],
+	var grade := str(line.grade)
+	var places: Array = line.places
+	var where := str(line.where)
+	if places.size() > 1:
+		var at := PackedStringArray()
+		for p: Dictionary in places.slice(0, 5):
+			at.append("%s  ×%d" % [p.where, int(p.qty)])
+		if places.size() > 5:
+			at.append("and %d more" % (places.size() - 5))
+		where = "\n".join(at)
+	for pair: Array in [["WHERE", where], ["QTY", _qty_text(line)], ["CONDITION", "%s  %d%%" % [grade.to_upper(), roundi(float(line.condition) * 100)]],
 			["MASS", "%s kg each" % _mass_text(float(Layout.items().get(line.item, {}).get("mass", 0.0)))],
 			["VALUE", "—" if int(line.value) < 0 else "CR " + T.money(int(line.value))]]:
 		var h := HBoxContainer.new()

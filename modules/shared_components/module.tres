@@ -9,6 +9,6 @@ id = "shared_components"
 display_name = "Shared Components"
 version = "0.1.0"
 depends_on = PackedStringArray()
-flag = "shared_components"
+flag = "core"
 bus = ExtResource("2")
 test_scene = ""
