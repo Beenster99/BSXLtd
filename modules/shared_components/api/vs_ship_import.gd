@@ -97,7 +97,7 @@ static func check(f: Dictionary) -> PackedStringArray:
 	if not (version is Array and version.size() >= 1 and int(version[0]) == 2):
 		out.append("version %s is not 2.x" % str(version))
 		return out
-	var schema := JsonSchema.load_schema(SCHEMA_PATH)
+	var schema := _schema()
 	if schema.is_empty():
 		out.append("schema %s missing" % SCHEMA_PATH)
 	else:
@@ -234,6 +234,8 @@ func _build_part(p: Dictionary) -> void:
 	var glass_mat: Material = material(p["glass_mat"]) if p.has("glass_mat") else null
 	var made := kit.part(p.get("name", "Part"), kind, shape, xform(p.get("xform", {})), mat,
 			p.get("tag", ""), 1.0, glass_mat, path)
+	if is_library_component(p.get("shape", {})):
+		glow_on(kit.model.part_visual(made.id), shape)
 	if p.has("mass"):
 		made.mass = float(p["mass"])
 	if p.has("material"):
@@ -405,6 +407,48 @@ static func make_shape(recipe: Dictionary, rec: Dictionary = {}) -> PartShapes.P
 			return made
 		return null
 	return null
+
+
+static var _schema_cache: Dictionary = {}
+
+## Void Salvage's vsship 2.0 schema, with the WreckParts shapes (engines, thrusters, legs,
+## crates: the components BSX's generated ships carry, which Void Salvage's own ships never
+## do) added to the names a part's recipe may use. Loaded once.
+static func _schema() -> Dictionary:
+	if not _schema_cache.is_empty():
+		return _schema_cache
+	var schema := JsonSchema.load_schema(SCHEMA_PATH)
+	if schema.is_empty():
+		return schema
+	var names: Variant = schema.get("$defs", {}).get("shape", {}).get("properties", {}).get("shape", {}).get("enum")
+	if names is Array:
+		var lib: Script = WreckParts
+		for m: Dictionary in lib.get_script_method_list():
+			var fn: String = m.get("name", "")
+			if not fn.begins_with("_") and not names.has(fn) and m.get("flags", 0) & METHOD_FLAG_STATIC:
+				names.append(fn)
+	_schema_cache = schema
+	return schema
+
+
+## Whether a recipe is a WreckParts component (an engine, a thruster, a crate...): a shape
+## that carries its own glow mesh, drawn by `glow_on`.
+static func is_library_component(recipe: Dictionary) -> bool:
+	var fn: String = RECIPE_ALIASES.get(str(recipe.get("shape", "")), str(recipe.get("shape", "")))
+	if fn == "" or not _static_method(PartShapes, fn).is_empty() or not _static_method(FrameParts, fn).is_empty():
+		return false
+	return not _static_method(WreckParts, fn).is_empty()
+
+
+## Draws a shape's own glow mesh (an engine's lit floor, a status lamp) on the part's visual.
+static func glow_on(visual: Node3D, shape: PartShapes.PartShape) -> void:
+	if visual == null or shape == null or shape.glow == null:
+		return
+	var g := MeshInstance3D.new()
+	g.mesh = shape.glow
+	g.material_override = ShipKit.glow(shape.glow_color, 2.0)
+	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	visual.add_child(g)
 
 
 ## A loom span's look is the loom's own (WiringLoom); its recipe names only its length, the

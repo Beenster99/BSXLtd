@@ -55,7 +55,7 @@ func _run() -> void:
 	var lo := VsShipImport.vec3(bounds.get("pos", [-4, -2, -8]))
 	var size := VsShipImport.vec3(bounds.get("size", [8, 4, 16]))
 	var centre := lo + size * 0.5
-	var r := size.length() * 0.55
+	var r := size.length() * 0.65
 	# Outside: front quarter, rear quarter, side, above.
 	await _shoot(out, id + "_01_front_quarter", centre + Vector3(-0.7, 0.45, -0.75).normalized() * r, centre)
 	await _shoot(out, id + "_02_rear_quarter", centre + Vector3(0.7, 0.4, 0.75).normalized() * r, centre)
@@ -67,6 +67,13 @@ func _run() -> void:
 		var p := VsShipImport.vec3(room.get("pos", [0, 0, 0]))
 		var s := VsShipImport.vec3(room.get("size", [1, 1, 1]))
 		var eye := Vector3(p.x + s.x * 0.5, p.y + minf(1.6, s.y * 0.6), p.z + s.z - 0.3)
+		# Step forward out of anything standing against the aft wall (a reactor cabinet).
+		var q := PhysicsPointQueryParameters3D.new()
+		for i in 8:
+			q.position = eye
+			if _cam.get_world_3d().direct_space_state.intersect_point(q, 1).is_empty():
+				break
+			eye.z -= 0.25
 		var look := Vector3(p.x + s.x * 0.5, p.y + minf(1.2, s.y * 0.45), p.z + 0.5)
 		await _shoot(out, "%s_%02d_room_%d" % [id, n, n - 5], eye, look, 80.0)
 		n += 1

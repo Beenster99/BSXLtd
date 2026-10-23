@@ -2,6 +2,7 @@ extends ModuleTest
 ## ShipGenerator: a ship rolled from a seed in every class and family is a vsship 2.0 file
 ## that checks out, the same seed gives the same ship, another seed another, its hull has a
 ## frame, a deck, linings, three stud walls and the crew's fittings spot-welded to the deck,
+## engines, thrusters, name boards and components outside and in,
 ## the importer builds it clean, the wreck maker damages it, and a design id round-trips
 ## through the contracts' entry points.
 ##   tools/run_tests.sh shared_components
@@ -77,6 +78,41 @@ func _check_one(size: String, family: String, seed_value: int) -> void:
 			if c.kind == ConnectionData.Kind.SPOT and plate and plate.path.contains("/deck/"):
 				held = true
 		check(held, "%s: the console is spot-welded to a deck plate" % tag)
+	# The dressing: engines and thrusters on the outside as library components, bolted on,
+	# name boards on the flanks, and components inside; the importer draws an engine's glow.
+	var engines: Array[PartData] = []
+	var thrusters := 0
+	var inside := 0
+	for p: Dictionary in f["parts"]:
+		var path: String = p["path"]
+		if path.begins_with("component:engine"):
+			engines.append(im.part_at(path))
+		elif path.begins_with("component:thruster"):
+			thrusters += 1
+		elif path.begins_with("component:crate") or path.begins_with("component:rack") or path.begins_with("component:switch_cabinet") \
+				or path.begins_with("component:battery_rack") or path.begins_with("component:generator") or path.begins_with("component:machine"):
+			inside += 1
+	check(engines.size() >= 2 and thrusters >= 4, "%s: %d engines and %d thrusters" % [tag, engines.size(), thrusters])
+	check(inside >= 2, "%s: components inside (%d)" % [tag, inside])
+	var boards := 0
+	for fit: Dictionary in f["fittings"]:
+		if String(fit["path"]).begins_with("fitting:name_board"):
+			boards += 1
+	check(boards == 2, "%s: a name board on each flank" % tag)
+	if not engines.is_empty() and engines[0]:
+		var bolted := false
+		for c: ConnectionData in im.joints_of(engines[0].path):
+			var other: int = c.part_b if c.part_a == engines[0].id else c.part_a
+			var onto: PartData = im.kit.model.parts.get(other)
+			if c.kind == ConnectionData.Kind.BOLT and onto and onto.path.begins_with("hull/cap/back"):
+				bolted = true
+		check(bolted, "%s: an engine is bolted to the stern cap" % tag)
+		var visual := im.kit.model.part_visual(engines[0].id)
+		var lit := false
+		for child in visual.get_children():
+			if child is MeshInstance3D:
+				lit = true
+		check(lit, "%s: the engine's glow is drawn" % tag)
 
 
 func _check_every_family() -> void:

@@ -117,6 +117,8 @@ var _mat_names: Dictionary = {}
 var _mat_table: Dictionary = {}
 var _livery_mats: Dictionary = {}
 var tacks: Dictionary = {}
+## The surfaces things are fixed to: [{part, box}] (`_collect_supports`).
+var _supports: Array = []
 
 
 # --- The API -------------------------------------------------------------------------------
@@ -212,7 +214,9 @@ func generate(seed_in: int, size_in: String, family_in: String) -> Dictionary:
 	_build_deck()
 	_line_hull()
 	_build_walls()
+	_collect_supports()
 	_build_fittings()
+	_dress()
 	_lights()
 	ShipParts.livery = livery_was
 	var file := _write()
@@ -325,6 +329,7 @@ func _materials() -> void:
 		_mat_names[(mats[key] as Material).get_instance_id()] = key
 	for which: String in ["shell", "trim", "dark", "soft", "top", "belly", "lining", "steel", "edge", "screen", "warm", "cold"]:
 		_livery_mats[ShipParts.mat(which).get_instance_id()] = which
+	mats["fit"] = ShipParts.mat("steel")   # library components carry their own colours (named "steel")
 
 
 func mat(key: String) -> Material:
@@ -554,17 +559,24 @@ func _box_of(p: PartData) -> AABB:
 	return box
 
 
-# --- Fittings ------------------------------------------------------------------------------
+# --- Fittings and components ------------------------------------------------------------------
 
-## What the crew needs aboard: seats and a console in the cockpit, lockers and bunks in the
-## cabin, the reactor cabinet and tanks in the engine room. Each is one part, spot-welded to
-## the deck plate it stands on (`_mount`).
+## How solid a library component is, of its bounding volume (its mass).
+const COMPONENT_FILL: float = 0.3
+
+## What the crew needs aboard: seats and a console in the cockpit, bunks, lockers and a galley
+## or a table in the cabin, the reactor cabinet, tanks and cabinets in the engine room. Each is
+## one part, spot-welded to the deck plate under it (`_mount`).
 func _build_fittings() -> void:
 	kit.group = "fittings"
 	var cockpit: AABB = rooms[0]
 	var cabin: AABB = rooms[1]
 	var engine: AABB = rooms[3]
 	var inner_w := cabin.size.x * 0.5
+	# Wall frames: X out of the wall, Y up, Z along it.
+	var right := Basis(Vector3.UP, PI)          # on the right wall (+X), out is -X
+	var left := Basis()                         # on the left wall (-X), out is +X
+	var back := Basis(Vector3.UP, PI * 0.5)     # on the back wall (+Z), out is -Z
 	# The cockpit: a console across the front of the first full bay, a seat or two behind it.
 	var console_z := _station_z(1) + 0.75
 	var console_w := minf(inner_w * 1.4, 2.6)
@@ -575,45 +587,387 @@ func _build_fittings() -> void:
 		var at := Vector3(x, 0.0, console_z + 0.85)
 		ShipParts.seat(kit, at, "seat_%d" % i)
 		seats.append(at + Vector3(0.0, 0.52, 0.0))
-	# The cabin: lockers along the right wall, bunks along the left (behind the side door).
-	var locker_n := 2 if size_class == "S" else 3
-	for i in locker_n:
-		var z := cabin.position.z + 0.5 + float(i) * 0.45
-		ShipParts.locker(kit, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(inner_w - 0.02, 0.0, z)), 0.4, 0.42)
-	var bunk_len := minf(1.95, cabin.size.z - 2.0)
+	# The cabin's right wall: bunks aft, lockers ahead of them.
+	var bunk_len := minf(1.95, cabin.size.z - 1.0)
+	var fore := cabin.position.z + 0.25
 	if bunk_len > 1.2:
-		ShipParts.bunks(kit, Transform3D(Basis(), Vector3(-inner_w + 0.02, 0.0, cabin.end.z - bunk_len * 0.5 - 0.3)), bunk_len)
-	# The engine room: the reactor cabinet against the stern wall, a tank each side.
+		ShipParts.bunks(kit, Transform3D(right, Vector3(inner_w - 0.02, 0.0, cabin.end.z - bunk_len * 0.5 - 0.2)), bunk_len)
+	var locker_room := cabin.end.z - 0.3 - (bunk_len if bunk_len > 1.2 else 0.0) - fore
+	var locker_n := mini(3, int(locker_room / 0.45))
+	for i in locker_n:
+		var z := fore + 0.22 + float(i) * 0.45
+		ShipParts.locker(kit, Transform3D(right, Vector3(inner_w - 0.02, 0.0, z)), 0.4, 0.42)
+	# The left wall, aft of the side door: a galley where it fits, else a table.
+	var door_end := _bay_z(2) + 1.5
+	var left_room := cabin.end.z - 0.2 - door_end
+	if left_room >= 1.2:
+		var galley_len := minf(2.4, left_room)
+		ShipParts.galley(kit, Transform3D(left, Vector3(-inner_w + 0.02, 0.0, cabin.end.z - 0.2 - galley_len * 0.5)), galley_len)
+	elif left_room >= 0.9:
+		ShipParts.table(kit, Transform3D(left, Vector3(-inner_w + 0.02, 0.0, cabin.end.z - 0.2 - 0.45)), Vector2(0.55, 0.9))
+	# The engine room: the reactor cabinet in the back wall, a tank along each side wall, the
+	# breaker panel over the right one.
 	var cab_w := minf(inner_w * 1.2, 2.0)
-	ShipParts.reactor_cabinet(kit, Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, 0.0, engine.end.z - 0.05)), cab_w, 0.45,
+	ShipParts.reactor_cabinet(kit, Transform3D(back, Vector3(0.0, 0.0, engine.end.z - 0.05)), cab_w, 0.45,
 			minf(2.2, engine.size.y - 0.3))
 	var tank := Vector3(minf(0.9, inner_w * 0.4), minf(0.9, engine.size.y * 0.35), minf(1.6, engine.size.z - 1.4))
 	for side: float in [-1.0, 1.0]:
-		var at := Vector3(side * (inner_w - tank.x * 0.5 - 0.1), tank.y + 0.4, engine.position.z + engine.size.z * 0.45)
-		ShipParts.jump_tank(kit, Transform3D(Basis(), at), tank, 0.1)
+		var at := Vector3(side * (inner_w - tank.x * 0.5 - 0.1), tank.y + 0.02, engine.end.z - 0.55 - tank.z * 0.5)
+		ShipParts.jump_tank(kit, Transform3D(Basis(), at), tank, -side)
+	ShipParts.breaker_panel(kit, Transform3D(right, Vector3(inner_w - 0.02, 0.0, engine.end.z - 0.55 - tank.z * 0.5)), 1.5)
 	kit.group = "hull"
 
 
-## A fitting's part is spot-welded to the deck plate under its footprint's corners (phase
-## "fitting"); a looks-only unit rides on that plate.
-func _mount(made: PartData, unit: Dictionary) -> void:
-	var box: AABB = _box_of(made) if made else unit.get("box", AABB())
-	if not box.has_volume() and not box.has_surface():
-		return
-	var plate := _floor_at(box.get_center().x, box.get_center().z)
-	if plate == null:
-		return
-	if made == null:
-		unit["onto"] = plate
-		return
-	var top := _box_of(plate).end.y
-	var inset := minf(0.08, minf(box.size.x, box.size.z) * 0.25)
+## The library components, bolted on: outside, the engines, manoeuvring thrusters, landing
+## legs, antenna, lights, the name boards and the family's own gear (tanks, containers, drills,
+## clamps, panels, fins); inside, cargo, racks, cabinets and machines.
+func _dress() -> void:
+	kit.group = "components"
+	kit.phase = "fitting"
+	_dress_outside()
+	_dress_inside()
+	kit.group = "hull"
+
+
+func _dress_outside() -> void:
+	var w := half_width
+	var chine := BELLY + chine_rise
+	var shoulder := roof - (w - roof_x)
+	var steel := mat("fit")
+	var stern_face := _face("hull/cap/back", 2, 1.0)
+	var nose_face := _face("hull/cap/front", 2, -1.0)
+	var aft := Basis(Vector3.RIGHT, PI * 0.5)        # exhaust +Y turned to blow aft (+Z)
+	var ahead := Basis(Vector3.RIGHT, -PI * 0.5)     # +Y turned to face forward (-Z)
+	# The engines on the stern cap, clear of the stern door.
+	var spots: Array = []   # [x, y, radius]
+	if stern_door.has_area():
+		var door_hw := stern_door.size.x * 0.5
+		var door_top := stern_door.end.y
+		var r := minf(0.9, (w - door_hw - 0.55) * 0.5)
+		if r >= 0.42:
+			var y := clampf(door_top * 0.5, chine + r + 0.15, shoulder - r - 0.15)
+			for side: float in [-1.0, 1.0]:
+				spots.append([side * (door_hw + r + 0.25), y, r])
+		else:
+			r = minf(0.8, (roof - door_top - 0.5) * 0.5)
+			if r >= 0.3:
+				for side: float in [-1.0, 1.0]:
+					spots.append([side * minf(roof_x * 0.5, 1.2), door_top + r + 0.25, r])
+	else:
+		var r := minf(1.0, minf(w * 0.3, roof * 0.36))
+		if size_class == "S":
+			spots = [[-w * 0.45, roof * 0.45, r], [w * 0.45, roof * 0.45, r]]
+		else:
+			spots = [[-w * 0.52, roof * 0.42, r], [0.0, roof * 0.52, r], [w * 0.52, roof * 0.42, r]]
+	for i in spots.size():
+		var x: float = spots[i][0]
+		var y: float = spots[i][1]
+		var r: float = spots[i][2]
+		var at := Vector3(x, y, stern_face)
+		match family:
+			"courier":
+				_component("IonThruster", "ion_thruster", [snappedf(r * 1.8, 0.01), snappedf(r * 1.3, 0.01)], aft, at, Vector3.BACK, steel, "component:engine/%d" % i)
+			"liner":
+				_component("OvalEngine", "oval_engine", [snappedf(r * 2.0, 0.01), snappedf(r * 1.2, 0.01), snappedf(r * 0.9, 0.01)], aft, at, Vector3.BACK, steel, "component:engine/%d" % i)
+			"tug":
+				_component("HydrogenEngine", "hydrogen_engine", [snappedf(r, 0.01), snappedf(r * 1.5, 0.01)], aft, at, Vector3.BACK, steel, "component:engine/%d" % i)
+			"miner":
+				_component("TurbineEngine", "turbine_engine", [snappedf(r, 0.01), snappedf(r * 1.7, 0.01)], aft, at, Vector3.BACK, steel, "component:engine/%d" % i)
+			_:
+				_component("EngineBell", "engine_bell", [snappedf(r, 0.01), snappedf(r * 1.8, 0.01)], aft, at, Vector3.BACK, steel, "component:engine/%d" % i)
+	# Manoeuvring thrusters: a cup on the roof and one under the belly at each corner of the
+	# first full bay and the engine bay.
+	var cup_r := snappedf(clampf(w * 0.09, 0.18, 0.32), 0.01)
+	var cup_len := snappedf(cup_r * 1.7, 0.01)
+	var n := 0
+	for bay: int in [1, bay_count]:
+		var label := _bay_label(bay)
+		var roof_y := _face("hull/bay:%s/skin/e0" % label, 1, 1.0)
+		var belly_y := _face("hull/bay:%s/skin/e4" % label, 1, -1.0)
+		var z := _bay_z(bay) + 0.5 if bay == 1 else _bay_z(bay) + bay_length - 0.5
+		for side: float in [-1.0, 1.0]:
+			_component("CupThruster", "cup_thruster", [cup_r, cup_len], Basis(), Vector3(side * roof_x * 0.55, roof_y, z), Vector3.UP, steel, "component:thruster/%d" % n)
+			n += 1
+			_component("CupThruster", "cup_thruster", [cup_r, cup_len], Basis(Vector3.RIGHT, PI), Vector3(side * bottom_x * 0.2, belly_y, z), Vector3.DOWN, steel, "component:thruster/%d" % n)
+			n += 1
+	# Landing legs under the first full bay and the last hold bay.
+	var leg_h := snappedf(clampf(roof * 0.3, 0.8, 1.3), 0.01)
+	var pad := snappedf(clampf(w * 0.2, 0.45, 0.8), 0.01)
+	var holds := _hold_bays()
+	n = 0
+	for bay: int in [1, holds[holds.size() - 1]]:
+		var belly_y := _face("hull/bay:%s/skin/e4" % _bay_label(bay), 1, -1.0)
+		var z := _bay_z(bay) + bay_length - 0.6
+		for side: float in [-1.0, 1.0]:
+			_component("LandingLeg", "landing_leg", [leg_h, pad], Basis(), Vector3(side * bottom_x * 0.6, belly_y, z), Vector3.DOWN, steel, "component:leg/%d" % n)
+			n += 1
+	# The antenna on the cabin's roof.
+	var ant_h := snappedf(clampf(roof * 0.45, 1.0, 2.2), 0.01)
+	_component("Antenna", "antenna", [ant_h, snappedf(clampf(ant_h * 0.4, 0.4, 0.9), 0.01)], Basis(),
+			Vector3(roof_x * 0.45, _face("hull/bay:cabin/skin/e0", 1, 1.0), _bay_z(2) + bay_length * 0.5), Vector3.UP, steel, "component:antenna")
+	# The name on both flanks of the first hold bay.
+	var board_bay: int = holds[0]
+	var board_z := _bay_z(board_bay) + bay_length * 0.5
+	var board_y := clampf((chine + shoulder) * 0.5 + 0.3, chine + 0.5, shoulder - 0.4)
+	var text := ship_name(seed_value, family).to_upper()
+	var board_w := snappedf(minf(bay_length - 0.5, 0.26 * text.length() + 0.5), 0.01)
+	var flank_x := _face("hull/bay:%s/skin/e2" % _bay_label(board_bay), 0, 1.0)
+	ShipParts.name_board(kit, Transform3D(Basis(), Vector3(flank_x, board_y, board_z)), text, board_w, 0.4)
+	ShipParts.name_board(kit, Transform3D(Basis(Vector3.UP, PI), Vector3(-flank_x, board_y, board_z)), text, board_w, 0.4)
+	# The nose: searchlights on the cap, or a miner's drills, a tug's clamps.
+	var nose_hw := w * float(shape["nose"])
+	var nose_y := roof * NOSE_SCALE_Y
+	var glazed: bool = shape["glazed"]
+	match family:
+		"miner":
+			var r := snappedf(minf(0.7, nose_hw * 0.35), 0.01)
+			for side: float in [-1.0, 1.0]:
+				_component("DrillHead", "drill_head", [r, snappedf(r * 2.4, 0.01)], ahead, Vector3(side * nose_hw * 0.5, nose_y, nose_face), Vector3.FORWARD, steel,
+						"component:drill/%d" % (0 if side < 0.0 else 1))
+		"tug":
+			var s := snappedf(minf(0.9, nose_hw * 0.5), 0.01)
+			for side: float in [-1.0, 1.0]:
+				_component("LandingClamp", "landing_clamp", [s, snappedf(s * 0.5, 0.01)], ahead, Vector3(side * nose_hw * 0.5, nose_y, nose_face), Vector3.FORWARD, steel,
+						"component:clamp/%d" % (0 if side < 0.0 else 1))
+		_:
+			if not glazed:
+				var r := snappedf(minf(0.35, nose_hw * 0.2), 0.01)
+				for side: float in [-1.0, 1.0]:
+					_component("Searchlight", "searchlight", [r, snappedf(r * 1.8, 0.01)], ahead, Vector3(side * nose_hw * 0.5, nose_y + 0.2, nose_face), Vector3.FORWARD, steel,
+							"component:searchlight/%d" % (0 if side < 0.0 else 1))
+	# The family's gear on the roof over the holds.
+	var hold_z0 := _bay_z(holds[0])
+	var hold_z1 := _bay_z(holds[holds.size() - 1]) + bay_length
+	var hold_len := hold_z1 - hold_z0
+	var hold_roof := _face("hull/bay:%s/skin/e0" % _bay_label(holds[0]), 1, 1.0)
+	var mid_z := (hold_z0 + hold_z1) * 0.5
+	match family:
+		"tanker":
+			var r := snappedf(minf(0.85, roof_x * 0.42), 0.01)
+			var len := snappedf(minf(hold_len - 1.0, 7.0), 0.01)
+			for side: float in [-1.0, 1.0]:
+				_component("RoofTank", "banded_tank", [r, len], aft, Vector3(side * roof_x * 0.5, hold_roof, mid_z), Vector3.UP, mat("shell"),
+						"component:tank/%d" % (0 if side < 0.0 else 1))
+		"freighter":
+			var size := Vector3(snappedf(minf(1.2, roof_x * 0.85), 0.01), 1.1, snappedf(minf(2.4, bay_length * 0.9), 0.01))
+			var rows := 1 if hold_len < 2.0 * size.z + 1.5 else 2
+			var k := 0
+			for row in rows:
+				var z := mid_z if rows == 1 else mid_z + (float(row) - 0.5) * (size.z + 0.6)
+				for side: float in [-1.0, 1.0]:
+					_component("Container", "container", [size, _trim_colour()], Basis(), Vector3(side * roof_x * 0.5, hold_roof, z), Vector3.UP, mat("trim"),
+							"component:container/%d" % k)
+					k += 1
+		"liner":
+			var pw := snappedf(minf(1.4, roof_x * 0.85), 0.01)
+			var pl := snappedf(minf(hold_len - 1.0, 5.0), 0.01)
+			for side: float in [-1.0, 1.0]:
+				_component("SolarPanel", "solar_panel", [pw, pl], Basis(), Vector3(side * roof_x * 0.5, hold_roof, mid_z), Vector3.UP, steel,
+						"component:panel/%d" % (0 if side < 0.0 else 1), mat("glass"))
+		"courier":
+			var root := snappedf(minf(1.6, bay_length * 0.6), 0.01)
+			var fin_h := snappedf(minf(1.3, roof * 0.45), 0.01)
+			var fin_roof := _face("hull/bay:engine/skin/e0", 1, 1.0)
+			for side: float in [-1.0, 1.0]:
+				_component("Fin", "fin", [root, fin_h, snappedf(root * 0.4, 0.01), snappedf(root * 0.4, 0.01)], Basis(),
+						Vector3(side * roof_x * 0.6, fin_roof, _bay_z(bay_count) + bay_length * 0.5), Vector3.UP, mat("trim"),
+						"component:fin/%d" % (0 if side < 0.0 else 1), mat("glass"))
+
+
+func _dress_inside() -> void:
+	var hold_room: AABB = rooms[2]
+	var engine: AABB = rooms[3]
+	var inner_w := hold_room.size.x * 0.5
+	var steel := mat("fit")
+	var right := Basis(Vector3.UP, PI)
+	var left := Basis()
+	# Cargo crates along the hold's right wall, clear of the belly hatch; machines against the
+	# engine wall in a wide hold.
+	var machines := inner_w >= 2.1
+	var crate := Vector3(snappedf(minf(1.0, inner_w * 0.45), 0.01), 0.9, 0.8)
+	var crate_x := inner_w - crate.x * 0.5 - 0.08
+	var z := hold_room.position.z + 0.3 + crate.z * 0.5
+	var z_end := hold_room.end.z - (1.5 if machines else 0.3)
+	var keep_out := hatch.grow(0.3) if hatch.has_area() else Rect2()
+	var k := 0
+	while z + crate.z * 0.5 < z_end:
+		var foot := Rect2(crate_x - crate.x * 0.5, z - crate.z * 0.5, crate.x, crate.z)
+		if not (keep_out.has_area() and keep_out.intersects(foot)):
+			_component("CargoCrate", "cargo_crate", [crate], Basis(), Vector3(crate_x, 0.0, z), Vector3.UP, steel, "component:crate/%d" % k)
+			k += 1
+		z += crate.z + 0.25
+	if machines:
+		var gw := snappedf(minf(1.2, inner_w * 0.4), 0.01)
+		_component("Generator", "generator", [Vector3(gw, 1.3, 0.8)], Basis(), Vector3(inner_w - gw * 0.5 - 0.15, 0.0, hold_room.end.z - 0.02), Vector3.FORWARD, steel, "component:generator")
+		_component("MachineUnit", "machine_unit", [Vector3(snappedf(minf(0.9, inner_w * 0.3), 0.01), 1.6, 0.7)], Basis(), Vector3(-inner_w + 0.65, 0.0, hold_room.end.z - 0.02), Vector3.FORWARD, steel, "component:machine")
+	# Racks on the hold's left wall: shelf racks in a wide hold, a wall rack in a narrow one.
+	if inner_w >= 1.9:
+		var rack_w := snappedf(minf(1.6, hold_room.size.z * 0.3), 0.01)
+		var rack_h := snappedf(minf(2.0, hold_room.size.y - 0.4), 0.01)
+		var racks := 1 if hold_room.size.z < 2.0 * rack_w + 1.5 else 2
+		for i in racks:
+			var rz := hold_room.position.z + hold_room.size.z * (float(i) + 0.5) / float(racks)
+			_component("ShelfRack", "shelf_rack", [rack_w, rack_h, 0.5], Basis(Vector3.UP, -PI * 0.5), Vector3(-inner_w, 0.0, rz), Vector3.RIGHT, steel, "component:rack/%d" % i)
+	else:
+		ShipParts.wall_rack(kit, Transform3D(left, Vector3(-inner_w + 0.02, 0.0, hold_room.position.z + hold_room.size.z * 0.5)), minf(1.4, hold_room.size.z - 0.6))
+	# Railings along the hatch, and a catch net under the hold's ceiling.
+	if hatch.has_area():
+		for side: float in [-1.0, 1.0]:
+			var x := hatch.position.x - 0.15 if side < 0.0 else hatch.end.x + 0.15
+			ShipParts.railing(kit, Vector3(x, 0.0, hatch.position.y - 0.1), Vector3(x, 0.0, hatch.end.y + 0.1), 1.0)
+	ShipParts.hold_net(kit, hold_room.end.y - 0.3, Rect2(-inner_w * 0.6, hold_room.position.z + 0.5, inner_w * 1.2, hold_room.size.z - 1.0))
+	# The engine room's front wall: a switch cabinet and a battery rack beside the doorway.
+	var eng_w := engine.size.x * 0.5
+	var wall_z := engine.position.z - 0.02
+	if eng_w >= 1.45:
+		_component("SwitchCabinet", "switch_cabinet", [Vector3(0.7, 1.4, 0.35)], right, Vector3(-(0.55 + 0.15 + 0.35), 0.0, wall_z), Vector3.BACK, steel, "component:switch_cabinet")
+	if eng_w >= 1.9:
+		_component("BatteryRack", "battery_rack", [1.2, 1.4, 0.5], right, Vector3(0.55 + 0.15 + 0.6, 0.0, wall_z), Vector3.BACK, steel, "component:battery_rack")
+
+
+## The trim colour (the stripe on a container).
+func _trim_colour() -> Color:
+	return (mat("trim") as StandardMaterial3D).albedo_color
+
+
+## The outermost face of the parts whose path begins with `prefix` (their looks, ship space):
+## the greatest coordinate along `axis` when `sign` is positive, else the least.
+func _face(prefix: String, axis: int, sign: float) -> float:
+	var best := -INF
+	for p: PartData in kit.model.parts.values():
+		if not p.path.begins_with(prefix):
+			continue
+		var b := _look_box(p)
+		var v := b.end[axis] if sign > 0.0 else -b.position[axis]
+		best = maxf(best, v)
+	return best * sign if best > -INF else 0.0
+
+
+## The bounds of a part's look (ship space).
+func _look_box(p: PartData) -> AABB:
+	var v := kit.model.part_visual(p.id) as MeshInstance3D
+	if v == null or v.mesh == null:
+		return _box_of(p)
+	return v.transform * v.mesh.get_aabb()
+
+
+## A library shape as one component part: `basis` turns it, then its bounds are set on the
+## surface through `at` facing `out` (the face opposite `out` touches it, centred on `at`), and
+## it is bolted to that surface. The recipe is stamped so the importer rebuilds it.
+func _component(part_name: String, recipe: String, args: Array, basis: Basis, at: Vector3, out: Vector3, material: Material,
+		path: String, glass_mat: Material = null) -> PartData:
+	var made_shape: Variant = Callable(WreckParts, recipe).callv(args)
+	if not made_shape is PartShapes.PartShape:
+		return null
+	var shape: PartShapes.PartShape = made_shape
+	PartShapes.stamp(shape, recipe, args)
+	var ra := Transform3D(basis, Vector3.ZERO) * shape.mesh.get_aabb()
+	var axis := out.abs().max_axis_index()
+	var origin := Vector3.ZERO
+	for i in 3:
+		if i == axis:
+			origin[i] = at[i] - (ra.position[i] if out[i] > 0.0 else ra.end[i]) + out[i] * 0.01
+		else:
+			origin[i] = at[i] - (ra.position[i] + ra.end[i]) * 0.5
+	var made := kit.part(part_name, PartData.Kind.COMPONENT, shape, Transform3D(basis, origin), material, "", COMPONENT_FILL,
+			glass_mat if shape.glass else null, path)
+	VsShipImport.glow_on(kit.model.part_visual(made.id), shape)
+	var rec := _fix(made, ConnectionData.Kind.BOLT, path)
+	if not rec.is_empty():
+		tacks[path] = rec
+	return made
+
+
+## The surfaces a part can be fixed to: hull skin and caps, deck plates, linings, wall panels.
+func _collect_supports() -> void:
+	_supports.clear()
+	for p: PartData in kit.model.parts.values():
+		var path := p.path
+		if path.contains("/skin/") or path.contains("/deck/") or path.contains("/lining/") or path.contains("/cap/") or path.contains("/panel/"):
+			_supports.append({"part": p, "box": _box_of(p)})
+
+
+## The support nearest `box` and the side of `box` it lies on: {part, normal} (normal from
+## the box toward the support, along one axis), or {}.
+func _support_near(box: AABB) -> Dictionary:
+	var best := {}
+	var best_d := INF
+	for s: Dictionary in _supports:
+		var b: AABB = s["box"]
+		var gap := Vector3.ZERO
+		for i in 3:
+			gap[i] = maxf(0.0, maxf(b.position[i] - box.end[i], box.position[i] - b.end[i]))
+		var d := gap.length_squared()
+		if d < best_d:
+			best_d = d
+			best = s
+	if best.is_empty():
+		return {}
+	var b: AABB = best["box"]
+	var axis := 0
+	var widest := -INF
+	var normal := Vector3.ZERO
+	for i in 3:
+		var toward := 1.0 if b.get_center()[i] > box.get_center()[i] else -1.0
+		var sep := (b.position[i] - box.end[i]) if toward > 0.0 else (box.position[i] - b.end[i])
+		if sep > widest:
+			widest = sep
+			axis = i
+			normal = Vector3.ZERO
+			normal[i] = toward
+	return {"part": best["part"], "normal": normal, "axis": axis}
+
+
+## Fixes `made` to the nearest support with joints of `kind` at the corners of the face that
+## touches it (two on a narrow foot), heads facing away from the support. Returns the mount
+## record {onto, spots|bolts} or {}.
+func _fix(made: PartData, kind: ConnectionData.Kind, path: String) -> Dictionary:
+	var box := _box_of(made)
+	var s := _support_near(box)
+	if s.is_empty():
+		return {}
+	var n: Vector3 = s["normal"]
+	var axis: int = s["axis"]
+	var face := box.end[axis] if n[axis] > 0.0 else box.position[axis]
+	var u := (axis + 1) % 3
+	var v := (axis + 2) % 3
+	var inset_u := minf(0.08, box.size[u] * 0.25)
+	var inset_v := minf(0.08, box.size[v] * 0.25)
 	var points: Array = []
-	for corner: Vector2 in [Vector2(box.position.x + inset, box.position.z + inset), Vector2(box.end.x - inset, box.position.z + inset),
-			Vector2(box.end.x - inset, box.end.z - inset), Vector2(box.position.x + inset, box.end.z - inset)]:
-		points.append(Vector3(corner.x, top, corner.y))
-	var spots := kit.tack(made, plate, points, Vector3.UP, made.path)
-	tacks[made.path] = {"onto": [plate.path], "spots": spots.size()}
+	for cu: float in [box.position[u] + inset_u, box.end[u] - inset_u]:
+		for cv: float in [box.position[v] + inset_v, box.end[v] - inset_v]:
+			var p := Vector3.ZERO
+			p[axis] = face
+			p[u] = cu
+			p[v] = cv
+			points.append(p)
+	if box.size[u] < 0.3 or box.size[v] < 0.3:
+		points = [points[0], points[3]]
+	var onto: PartData = s["part"]
+	if kind == ConnectionData.Kind.SPOT:
+		var spots := kit.tack(made, onto, points, -n, path)
+		return {"onto": [onto.path], "spots": spots.size()}
+	var bolts := 0
+	for i in points.size():
+		if kit.join(made, onto, kind, points[i], -n, Vector3.ZERO, Vector2.ZERO, "%s/bolt/%d" % [path, i]):
+			bolts += 1
+	return {"onto": [onto.path], "bolts": bolts}
+
+
+## A fitting's part is spot-welded to the nearest surface at the corners of the face that
+## touches it (the deck under a locker, the wall behind a name board; phase "fitting"); a
+## looks-only unit rides on that surface.
+func _mount(made: PartData, unit: Dictionary) -> void:
+	if made == null:
+		var box: AABB = unit.get("box", AABB())
+		if box.has_volume() or box.has_surface():
+			var s := _support_near(box)
+			if not s.is_empty():
+				unit["onto"] = s["part"]
+		return
+	var rec := _fix(made, ConnectionData.Kind.SPOT, made.path)
+	if not rec.is_empty():
+		tacks[made.path] = rec
 
 
 func _lights() -> void:
