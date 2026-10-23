@@ -264,6 +264,21 @@ func run_tests() -> void:
 		check(shown.contains("2,200"), "and values them from what prices the parts (2 thrusters + 100 bolts = CR 2,200)")
 		check(wrist.get_combined_minimum_size().x <= 900.0 and wrist.get_combined_minimum_size().y <= 560.0,
 				"it fits the wrist screen's pane: %s" % wrist.get_combined_minimum_size())
+		var all_lines: Array = wrist.call("lines")
+		var bolts: Array = all_lines.filter(func(l: Dictionary) -> bool: return l.item == "M10")
+		check(bolts.size() == 1 and int(bolts[0].qty) == 100, "a part's places add up to one line: %s" % [bolts])
+		var ranks := all_lines.map(func(l: Dictionary) -> int: return wrist.call("category_rank", str(l.category)))
+		var sorted_ranks := ranks.duplicate()
+		sorted_ranks.sort()
+		check(ranks == sorted_ranks, "lines run category by category")
+		var cat := str(bolts[0].category) if not bolts.is_empty() else ""
+		check(wrist.find_child("Heading_" + cat, true, false) != null and shown.contains("FASTENERS"), "each category has a heading")
+		var rows_before := wrist.find_children("Row_*", "", true, false).size()
+		wrist.call("fold", cat)
+		await frames(2)
+		check(wrist.find_children("Row_*", "", true, false).size() < rows_before and wrist.find_child("Heading_" + cat, true, false) != null,
+				"a click on a heading folds its lines away")
+		wrist.call("fold", cat)
 		wrist.set("query", "ion")
 		wrist.call("refresh")
 		check((wrist.call("shown") as Array).size() == 1, "the search narrows it to the thrusters")
