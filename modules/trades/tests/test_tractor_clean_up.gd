@@ -30,7 +30,12 @@ func forget_loose(slot_id: String) -> void:
 	forgot.append(slot_id)
 	noted.erase(slot_id)
 """
-const SLOT := "net_hold_dor_1"
+## The slot under test: Void Salvage's own slot name, or the hand-built Kestrel's until Ship
+## and Bay's imported Kestrel lands.
+var SLOT: String:
+	get:
+		var bay := Modules.bus("ship_bay") as ShipBayBus
+		return "hold_nets" if bay and bay.get_slot("hold_nets") else "net_hold_dor_1"
 
 
 func run_tests() -> void:
