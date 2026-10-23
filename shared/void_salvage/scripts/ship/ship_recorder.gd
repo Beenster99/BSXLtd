@@ -29,6 +29,15 @@ var bounds := AABB()
 ## them. Their records keep an empty shape so the count shows where they are.
 var recipe_less: int = 0
 
+## vsship 2.0 (a ship built as parts): what each part was made from, by part id: {shape (its
+## recipe, or {} for a loom span), mat, glass_mat, by (the builder that made it: "frame:body",
+## "wall:bulkhead", "pipes"...; "" for a design's own part or a unit's)}.
+var parts: Dictionary = {}
+## Units opened outside a record (a door's leaf, an engine: ShipKit.begin_unit): their pieces
+## carry "unit": n, and units[n] is {kind, name, key, path} (the part they fold into).
+var units: Array[Dictionary] = []
+var _unit_marks: Array[int] = []
+
 ## Open records, outermost first: [record, block]. A nested or quiet one has block "".
 var _open: Array = []
 var _has_bounds := false
@@ -71,11 +80,11 @@ func is_open() -> bool:
 
 ## The kit added a piece.
 func on_piece(shape: PartShapes.PartShape, xform: Transform3D, mat: Material, tag: String, glass_mat: Material,
-		solid: bool, group: String, visual: bool = true) -> void:
+		solid: bool, group: String, visual: bool = true, part_info: Dictionary = {}) -> void:
 	if visual:
 		mesh_count += 1
 	if solid:
-		shape_count += 1
+		shape_count += 1 + shape.extra_collision.size()
 	volume += shape.volume
 	var box := xform * (shape.mesh.get_aabb() if shape.mesh else AABB())
 	bounds = box if not _has_bounds else bounds.merge(box)
@@ -100,7 +109,34 @@ func on_piece(shape: PartShapes.PartShape, xform: Transform3D, mat: Material, ta
 		record["visual"] = false
 	if glass_mat and shape.glass:
 		record["glass_mat"] = glass_mat
+	if not _unit_marks.is_empty():
+		record["unit"] = _unit_marks[_unit_marks.size() - 1]
+	if not part_info.is_empty():
+		record["part"] = part_info
 	pieces.append(record)
+
+
+## The kit made part `id` from `shape` (vsship 2.0): its recipe, materials and builder.
+func on_part(id: int, shape: PartShapes.PartShape, mat: Material, glass_mat: Material, by: String) -> void:
+	var entry := {"shape": shape.recipe if shape else {}, "mat": mat, "by": by}
+	if glass_mat and shape and shape.glass:
+		entry["glass_mat"] = glass_mat
+	parts[id] = entry
+
+
+## A unit opened outside a record begins: the pieces until `end_unit` carry its number.
+func begin_unit(kind: String, unit_name: String, key: String) -> int:
+	units.append({"kind": kind, "name": unit_name, "key": key, "path": ""})
+	_unit_marks.append(units.size() - 1)
+	return units.size() - 1
+
+
+## ...and ends, naming the part its pieces folded into.
+func end_unit(n: int, path: String) -> void:
+	if n >= 0 and n < units.size():
+		units[n]["path"] = path
+	if not _unit_marks.is_empty() and _unit_marks[_unit_marks.size() - 1] == n:
+		_unit_marks.pop_back()
 
 
 ## The kit added a light.
@@ -122,11 +158,11 @@ const PLACES: int = 4
 static func encode(v: Variant, mat_name: Callable = Callable()) -> Variant:
 	match typeof(v):
 		TYPE_FLOAT:
-			return snappedf(v, 0.0001)
+			return _num(v)
 		TYPE_VECTOR2:
-			return [snappedf(v.x, 0.0001), snappedf(v.y, 0.0001)]
+			return [_num(v.x), _num(v.y)]
 		TYPE_VECTOR3:
-			return [snappedf(v.x, 0.0001), snappedf(v.y, 0.0001), snappedf(v.z, 0.0001)]
+			return [_num(v.x), _num(v.y), _num(v.z)]
 		TYPE_RECT2:
 			var r: Rect2 = v
 			return [snappedf(r.position.x, 0.0001), snappedf(r.position.y, 0.0001), snappedf(r.size.x, 0.0001),
@@ -170,6 +206,14 @@ static func encode(v: Variant, mat_name: Callable = Callable()) -> Variant:
 		TYPE_STRING_NAME:
 			return String(v)
 	return v
+
+
+## A float at the file's precision; an infinite one (no limit: a lining not clipped) is null,
+## since JSON has no infinity.
+static func _num(f: float) -> Variant:
+	if is_inf(f) or is_nan(f):
+		return null
+	return snappedf(f, 0.0001)
 
 
 ## A number as the file writes it: at most PLACES decimals, no trailing zeros, no "-0".
@@ -235,10 +279,26 @@ static func canonical(v: Variant) -> String:
 	return to_json(v, "")
 
 
-## "sha256:<hex>" of the canonical JSON of [hulls, walls, fittings, systems, pieces, slots]
-## of an encoded file.
+## The blocks the body hash covers, by the file's major version (1.0: the build order; 2.0:
+## the recipe, the parts and joints aside: they have their own hash).
+const BODY_BLOCKS := {1: ["hulls", "walls", "fittings", "systems", "pieces", "slots"],
+		2: ["frame", "decks", "walls", "services", "fittings", "systems", "pieces", "units", "slots"]}
+
+
+## "sha256:<hex>" of the canonical JSON of the body blocks of an encoded file, in order
+## (BODY_BLOCKS by its major version: 1.0 [hulls, walls, fittings, systems, pieces, slots]).
 static func body_hash(file: Dictionary) -> String:
+	var major := 1
+	var version: Variant = file.get("version")
+	if version is Array and not (version as Array).is_empty():
+		major = int(version[0])
 	var body: Array = []
-	for block in ["hulls", "walls", "fittings", "systems", "pieces", "slots"]:
+	for block: String in BODY_BLOCKS.get(major, BODY_BLOCKS[1]):
 		body.append(file.get(block, []))
 	return "sha256:" + canonical(body).sha256_text()
+
+
+## vsship 2.0: "sha256:<hex>" of the canonical JSON of [parts, joints] of an encoded file (what
+## the recipe builds: a loader checks its own build against it).
+static func parts_hash(file: Dictionary) -> String:
+	return "sha256:" + canonical([file.get("parts", []), file.get("joints", [])]).sha256_text()

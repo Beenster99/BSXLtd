@@ -42,12 +42,6 @@ const KIND_TOOLS := {
 	"weld": [&"welder"],
 	"connector": [&"hands", &"wire_tool"],
 }
-const KIND_HELP := {
-	"bolt": "torque wrench (2)",
-	"rivet": "squeezer (4) to set, drill (3) to drill out",
-	"weld": "welder (5): left click welds; X switches it to unweld, which cuts welds out",
-	"connector": "hands (1) or crimper (6)",
-}
 
 ## The powered wrench (trades.power_wrench, TradesPowerWrench): seconds to run a bolt up to
 ## its setting; how long the trigger can stay down after the clutch slips before the thread
@@ -93,6 +87,17 @@ var _clutch_s := -1.0
 ## slot_id -> the component that came off it (so hands can put it back).
 var _removed: Dictionary = {}
 var _marker: MeshInstance3D
+## The aim ring's colour says the joint's state (beenster, 0.3.14): orange while it's undone,
+## green once it's made (torqued, set, welded, plugged).
+var _bolt_mesh: Mesh
+## Welds traced along their seam (trades.trace_weld): joint_id -> one byte per stretch of
+## the seam, 1 once the arc has run over it. Kept between passes until the weld is done.
+var _traced := {}
+var _trace_last := NAN
+## Fresh bead, glowing orange and cooling: [MeshInstance3D, material, age].
+var _beads: Array = []
+var _ring_loose := TradesLook.glow(Color(1.0, 0.55, 0.1), 2.5)
+var _ring_tight := TradesLook.glow(Color(0.3, 1.0, 0.4), 2.5)
 ## The tractor beam (tool 7), for lifting parts that are off the ship.
 var tractor: TradesTractor
 var _arc: OmniLight3D
@@ -121,9 +126,9 @@ func build() -> void:
 	ring.outer_radius = 0.036
 	ring.rings = 24
 	ring.ring_segments = 8
-	ring.material = TradesLook.glow(TradesLook.HUD, 2.5)
 	_marker = MeshInstance3D.new()
 	_marker.mesh = ring
+	_marker.material_override = _ring_loose
 	_marker.top_level = true
 	_marker.visible = false
 	_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -198,12 +203,29 @@ func _note_made(f: FastenerPoint, quality: float) -> bool:
 
 
 func _note_removed(f: FastenerPoint) -> bool:
+	var gone := false
 	if not is_practice(f):
-		return _bus.note_joint_removed(f.joint_id)
-	if not practice.get(f.joint_id, false):
-		return false
-	practice[f.joint_id] = false
-	return true
+		gone = _bus.note_joint_removed(f.joint_id)
+	elif practice.get(f.joint_id, false):
+		practice[f.joint_id] = false
+		gone = true
+	if gone and f.kind == "bolt":
+		_drop_bolt(f)
+	return gone
+
+
+## A bolt that comes out falls to the floor (beenster, 0.3.14; rivet heads pop off in
+## _work_rivet_out).
+func _drop_bolt(f: FastenerPoint) -> void:
+	var sparks := bay.sparks if bay else null
+	if sparks == null or not sparks.is_inside_tree():
+		return
+	var i := points.find(f)
+	var at := points_world[i] if i >= 0 else ship_xform * f.position
+	var n := (ship_xform.basis * f.normal).normalized()
+	if _bolt_mesh == null:
+		_bolt_mesh = _make_bolt_mesh()
+	sparks.pop(at + n * 0.03, n * 0.6 + Vector3.UP * 0.4, _bolt_mesh, TradesTool.steel())
 
 
 ## The part a joint holds ("" when none): the ship's from Ship and Bay.
@@ -280,7 +302,7 @@ func press(tool: StringName) -> void:
 		if tool == &"hands":
 			_refit(f)
 		else:
-			bay.hint("The part is off. Hands (1) on one of its joints puts it back.")
+			bay.hint("The part is off. %s on one of its joints puts it back." % _named(&"hands").capitalize())
 		return
 	var tight := is_tight(f)
 	if uses_diagram(f) and kind_tools(f.kind).has(tool):
@@ -307,11 +329,11 @@ func press(tool: StringName) -> void:
 			_begin(true, tool)
 		return
 	if not kind_tools(f.kind).has(tool):
-		bay.hint("That's a %s: %s." % [f.kind, KIND_HELP[f.kind]])
+		bay.hint("That's a %s: %s." % [f.kind, kind_help(f.kind)])
 		return
 	if tool == &"drill":
 		if not tight:
-			bay.hint("Nothing to drill out: this rivet hole is empty. Squeezer (4) sets a new one.")
+			bay.hint("Nothing to drill out: this rivet hole is empty. The %s sets a new one." % _named(&"rivet_squeezer"))
 			return
 		_begin(true, tool)
 	elif tight:
@@ -353,22 +375,22 @@ func back_out(tool: StringName) -> void:
 	match f.kind:
 		"bolt":
 			if tool != &"torque_wrench":
-				bay.hint("Breaking a bolt loose takes the torque wrench (2).")
+				bay.hint("Breaking a bolt loose takes the %s." % _named(&"torque_wrench"))
 				return
 		"rivet":
 			if not tool in [&"drill", &"welder", &"cutter"] or not kind_tools("rivet").has(tool):
-				bay.hint("Rivets come out with the drill (3).")
+				bay.hint("Rivets come out with the %s." % " or the ".join(_out_tools("rivet").map(_named)))
 				return
 		"weld":
 			if tool != &"welder":
-				bay.hint("Cut a weld out with the welder (5).")
+				bay.hint("Cut a weld out with the %s." % _named(&"welder"))
 				return
 			if not Flags.is_on("trades.unweld"):
 				bay.hint("Cutting welds isn't switched on yet.")
 				return
 		"connector":
 			if tool != &"hands" and tool != &"wire_tool":
-				bay.hint("Unplug it with your hands (1).")
+				bay.hint("Unplug it with your %s." % _named(&"hands"))
 				return
 	_begin(true, tool)
 
@@ -405,6 +427,7 @@ func motion(relative: Vector2) -> bool:
 
 func update(delta: float) -> void:
 	tractor.update(delta)
+	_cool_beads(delta)
 	if wiring:
 		_update_wiring()
 		return
@@ -433,6 +456,8 @@ func update(delta: float) -> void:
 		_work_rivet_out(f, at, n)
 	elif f.kind == "bolt" and not _undoing:
 		_work_bolt(f, at, n)
+	elif f.kind == "weld" and traces(f):
+		_work_trace(f, at, n)
 	else:
 		var need := _seconds(f.kind)
 		var tool := _place(f.kind, at, n, clampf(_held_s / need, 0.0, 1.0))
@@ -615,9 +640,33 @@ func kind_tools(kind: String) -> Array:
 	if kind == "rivet":
 		if Flags.is_on("trades.rivet_heat"):
 			out.append(&"welder")
-		if bay.hotbar.has(&"cutter"):
-			out.append(&"cutter")
-	return out
+		out.append(&"cutter")
+	# Only what's on the hotbar (trades.slim_hotbar leaves the drill, crimper and cutter off).
+	return out.filter(func(t: StringName) -> bool: return bay.hotbar.has(t))
+
+
+## The tools that take a made joint of `kind` off.
+func _out_tools(kind: String) -> Array:
+	if kind == "rivet":
+		return kind_tools(kind).filter(func(t: StringName) -> bool: return t != &"rivet_squeezer")
+	return kind_tools(kind)
+
+
+## Which tools work a kind of joint, for hints and the inspect sheet: "rivet gun (3) to set,
+## welder (4) to take out".
+func kind_help(kind: String) -> String:
+	match kind:
+		"rivet":
+			return "%s to set, %s to take out" % [_named(&"rivet_squeezer"), " or ".join(_out_tools(kind).map(_named))]
+		"weld":
+			return "%s: left click welds; %s switches it to unweld, which cuts welds out" \
+					% [_named(&"welder"), Keys.key_name(TradesBus.KEY_MODE)]
+	return " or ".join(kind_tools(kind).map(_named))
+
+
+## A tool's name and key: "welder (4)".
+func _named(tool: StringName) -> String:
+	return "%s (%s)" % [TradesBay.label_of(tool).to_lower(), bay.tool_key(tool)]
 
 
 func _torch() -> TradesWeldTorch:
@@ -714,6 +763,7 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 
 func _begin(undo: bool, tool: StringName) -> void:
 	_working = aimed
+	_trace_last = NAN
 	_undoing = undo
 	_tool_held = tool
 	_held_s = 0.0
@@ -745,7 +795,10 @@ func _begin(undo: bool, tool: StringName) -> void:
 			else:
 				bay.hint("Drilling it out..." if undo else "Squeezing...")
 		"weld":
-			bay.hint("Cutting the weld out..." if undo else "Laying the bead...")
+			if traces(points[_working]):
+				bay.hint("Run the arc along the seam to cut it out." if undo else "Run the arc along the seam, end to end.")
+			else:
+				bay.hint("Cutting the weld out..." if undo else "Laying the bead...")
 		"connector":
 			bay.hint("Unplugging..." if undo else "Plugging in...")
 
@@ -781,7 +834,7 @@ func _made(f: FastenerPoint, quality: float) -> void:
 func _refit(f: FastenerPoint) -> void:
 	var slot_id := FastenerPoint.slot_of(f.joint_id)
 	if not tractor.near_mount(slot_id):
-		bay.hint("The part isn't at its mount. Bring it back with the tractor beam (7).")
+		bay.hint("The part isn't at its mount. Bring it back with the %s." % _named(&"tractor"))
 		return
 	var comp: String = _removed.get(slot_id, "")
 	if comp == "":
@@ -973,7 +1026,7 @@ func inspect_lines() -> PackedStringArray:
 	if joint:
 		lines.append("")
 		lines.append("%-9s %s  %s %s  %s" % ["JOINT", joint.joint_id, joint.spec, joint.kind, _state_word(joint)])
-		lines.append("%-9s %s" % ["TOOL", KIND_HELP.get(joint.kind, "-")])
+		lines.append("%-9s %s" % ["TOOL", kind_help(joint.kind)])
 	if not slot.accepts.is_empty():
 		lines.append("%-9s %s" % ["TAKES", ", ".join(slot.accepts)])
 	return lines
@@ -998,7 +1051,7 @@ func _practice_lines(joint: FastenerPoint) -> PackedStringArray:
 		first = false
 	lines.append("")
 	lines.append("%-9s %s  %s %s  %s" % ["JOINT", joint.joint_id, joint.spec, joint.kind, _state_word(joint)])
-	lines.append("%-9s %s" % ["TOOL", KIND_HELP.get(joint.kind, "-")])
+	lines.append("%-9s %s" % ["TOOL", kind_help(joint.kind)])
 	return lines
 
 
@@ -1015,6 +1068,159 @@ static func _kg(kg: float) -> String:
 	return "%d kg" % roundi(kg) if kg < 1000.0 else "%.1f t" % (kg / 1000.0)
 
 
+# --- Welding by tracing the seam (beenster, 0.3.14) -----------------------------------------
+
+## How many stretches a seam is traced in, how near the aim has to pass the seam line
+## (metres), and how long a fresh bead takes to cool from orange (seconds).
+const TRACE_BINS := 12
+const TRACE_M := 0.05
+const BEAD_COOL_S := 7.0
+
+
+## Whether this weld is laid (and cut out) by running the arc along its seam rather than
+## holding still on it.
+func traces(f: FastenerPoint) -> bool:
+	return f.kind == "weld" and f.seam_size.x > 0.0 and Flags.is_on("trades.trace_weld")
+
+
+## How much of a traced weld's seam has been covered this time round (0..1).
+func trace_progress(f: FastenerPoint) -> float:
+	var bins: PackedByteArray = _traced.get(f.joint_id, PackedByteArray())
+	if bins.is_empty():
+		return 0.0
+	return float(bins.count(1)) / bins.size()
+
+
+## The seam's direction (world), across the surface.
+func _seam_dir(f: FastenerPoint, n: Vector3) -> Vector3:
+	var along := ship_xform.basis * f.seam_up
+	return (along - n * along.dot(n)).normalized()
+
+
+## How far along a seam (metres from its middle, clamped to its ends) the aim line passes
+## closest.
+func _seam_offset(f: FastenerPoint, at: Vector3, n: Vector3) -> float:
+	var along := _seam_dir(f, n)
+	var half := f.seam_size.x * 0.5
+	var w := at - bay.worker.aim_origin()
+	var d := bay.worker.aim_dir()
+	var b := along.dot(d)
+	var denom := 1.0 - b * b
+	var s := (b * d.dot(w) - along.dot(w)) / denom if absf(denom) > 0.0001 else 0.0
+	return clampf(s, -half, half)
+
+
+## Where the aim is judged against a joint: its point, or for a traced weld the nearest
+## point of its seam, so the aim stays on it all the way along.
+func _aim_point(i: int) -> Vector3:
+	var f := points[i]
+	if not traces(f):
+		return points_world[i]
+	var n := (ship_xform.basis * f.normal).normalized()
+	return points_world[i] + _seam_dir(f, n) * _seam_offset(f, points_world[i], n)
+
+
+## The arc follows your aim along the seam: wherever the aim line passes within TRACE_M of
+## the seam, that stretch is covered (and every stretch between it and the last, so a quick
+## sweep doesn't skip any). All of it covered and the weld is made, or cut out.
+func _work_trace(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
+	var along := _seam_dir(f, n)
+	var half := f.seam_size.x * 0.5
+	var s := _seam_offset(f, at, n)
+	var p := at + along * s
+	var on := bay.aim_distance(p) < TRACE_M
+	var bins: PackedByteArray = _traced.get(f.joint_id, PackedByteArray())
+	if bins.size() != TRACE_BINS:
+		bins.resize(TRACE_BINS)
+		bins.fill(0)
+	var bin := clampi(int((s + half) / f.seam_size.x * TRACE_BINS), 0, TRACE_BINS - 1)
+	if on:
+		var from := bin if is_nan(_trace_last) else int(_trace_last)
+		for k in range(mini(from, bin), maxi(from, bin) + 1):
+			if bins[k] == 0:
+				bins[k] = 1
+				_bead(f, at + along * ((k + 0.5) / TRACE_BINS * f.seam_size.x - half), along, n)
+		_trace_last = bin
+	else:
+		_trace_last = NAN
+	_traced[f.joint_id] = bins
+	var progress := trace_progress(f)
+	var torch := _place("weld", p, n, progress)
+	_arc.visible = on
+	if not on:
+		(bay.tool_node(&"welder") as TradesWeldTorch).lit = false
+		bay.loop(&"arc", false)
+		bay.hint("Run the arc along the seam: follow the line with your aim.")
+	if torch != &"":
+		bay.worker.right_hand.reach_to(_grip_point(torch, p, n), n)
+		bay.worker.right_hand.set_grip(1.0)
+	var bus := bay.bus()
+	if bus and not is_practice(f):
+		bus.joint_progress.emit(StringName(f.joint_id), progress)
+	if progress >= 1.0:
+		_traced.erase(f.joint_id)
+		_finish(f)
+
+
+## A stretch of fresh bead (or a fresh cut), glowing orange and cooling to nothing.
+func _bead(f: FastenerPoint, at: Vector3, along: Vector3, n: Vector3) -> void:
+	var mesh := CapsuleMesh.new()
+	var width := maxf(f.seam_size.y, 0.008)
+	mesh.radius = width * 0.55
+	mesh.height = f.seam_size.x / TRACE_BINS + width
+	mesh.radial_segments = 6
+	mesh.rings = 1
+	var mat := TradesLook.glow(Color(1.0, 0.45, 0.08), 4.0)
+	mesh.material = mat
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.top_level = true
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	mi.global_transform = Transform3D(Basis(n.cross(along), along, n).orthonormalized(), at + n * width * 0.3)
+	_beads.append([mi, mat, 0.0])
+
+
+func _cool_beads(delta: float) -> void:
+	for i in range(_beads.size() - 1, -1, -1):
+		var b: Array = _beads[i]
+		b[2] += delta
+		var heat: float = 1.0 - float(b[2]) / BEAD_COOL_S
+		if heat <= 0.0:
+			(b[0] as Node).queue_free()
+			_beads.remove_at(i)
+			continue
+		var mat := b[1] as StandardMaterial3D
+		mat.emission = Color(1.0, 0.45, 0.08).lerp(Color(0.6, 0.08, 0.02), 1.0 - heat)
+		mat.emission_energy_multiplier = 4.0 * heat * heat
+		(b[0] as GeometryInstance3D).transparency = 1.0 - minf(1.0, heat * 3.0)
+
+
+## Fresh bead glowing now (tests).
+func hot_beads() -> int:
+	return _beads.size()
+
+
+## A bolt to drop: a hex head on a short threaded shank (metres).
+static func _make_bolt_mesh() -> Mesh:
+	var st := SurfaceTool.new()
+	var head := CylinderMesh.new()
+	head.top_radius = 0.011
+	head.bottom_radius = 0.011
+	head.height = 0.008
+	head.radial_segments = 6
+	head.rings = 1
+	var shank := CylinderMesh.new()
+	shank.top_radius = 0.006
+	shank.bottom_radius = 0.006
+	shank.height = 0.035
+	shank.radial_segments = 8
+	shank.rings = 1
+	st.append_from(head, 0, Transform3D(Basis(), Vector3(0, 0.0215, 0)))
+	st.append_from(shank, 0, Transform3D.IDENTITY)
+	return st.commit()
+
+
 # --- Aim and marker ---------------------------------------------------------------------------
 
 func _update_aim() -> void:
@@ -1022,8 +1228,9 @@ func _update_aim() -> void:
 	var best_d := PICK_M
 	var hand := bay.worker.right_hand
 	for i in points_world.size():
-		var d := bay.aim_distance(points_world[i])
-		if d < best_d and hand.can_reach(points_world[i]):
+		var p := _aim_point(i)
+		var d := bay.aim_distance(p)
+		if d < best_d and hand.can_reach(p):
 			best = i
 			best_d = d
 	if best != aimed:
@@ -1058,7 +1265,28 @@ func aim_spec(tool: StringName) -> String:
 	var comp := _component_of(f)
 	if comp != "":
 		lines.append("Holds %s" % comp)
+	# The part's key details on the card, now there's no Tab sheet (beenster, 22 Oct).
+	var part := _part_line(f)
+	if part != "":
+		lines.append(part)
 	return "\n".join(lines)
+
+
+## The part a joint holds, in a line: "Fitted, 3 of 6 joints in".
+func _part_line(f: FastenerPoint) -> String:
+	var all: Array[FastenerPoint] = []
+	var state := ""
+	if is_practice(f):
+		all = test_stand.joints
+		state = "Practice panel"
+	elif _bus:
+		var slot_id := FastenerPoint.slot_of(f.joint_id)
+		all = _bus.get_fasteners(slot_id)
+		state = str(SLOT_STATES.get(_bus.get_slot_state(slot_id), "")).capitalize()
+	if all.is_empty():
+		return ""
+	var tight := all.filter(func(g: FastenerPoint) -> bool: return is_tight(g)).size()
+	return "%s, %d of %d joints in" % [state, tight, all.size()] if state != "" else "%d of %d joints in" % [tight, all.size()]
 
 
 ## One line of what a joint's spec asks for: "M12 bolt: 80-95 N m, aim for 88".
@@ -1134,12 +1362,13 @@ func actions(tool: StringName) -> Array:
 			"bolt":
 				want = &"torque_wrench"
 			"rivet":
-				want = (&"cutter" if bay.hotbar.has(&"cutter") else &"drill") if tight else &"rivet_squeezer"
+				var out_tools := _out_tools("rivet")
+				want = (out_tools[0] if not out_tools.is_empty() else &"") if tight else &"rivet_squeezer"
 			"weld":
 				want = &"welder"
 			"connector":
 				want = &"hands"
-		if want != tool:
+		if want != &"" and want != tool:
 			out.append([bay.tool_action(want), "take the %s" % TradesBay.label_of(want).to_lower()])
 	return out
 
@@ -1149,6 +1378,7 @@ func _place_marker() -> void:
 	_marker.visible = i >= 0
 	if i < 0:
 		return
+	_marker.material_override = _ring_tight if is_tight(points[i]) else _ring_loose
 	var n := (ship_xform.basis * points[i].normal).normalized()
 	var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
 	_marker.global_transform = Transform3D(Basis(x.normalized(), n, x.normalized().cross(n)), points_world[i] + n * 0.012)

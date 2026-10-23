@@ -29,6 +29,8 @@ const TOOL_LABELS := {
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
 	&"cutter": "Cutter",
 }
+## The tools trades.slim_hotbar leaves off the yard's hotbar.
+const SLIM_DROPS: Array[StringName] = [&"drill", &"wire_tool", &"cutter"]
 ## A tool's name on the hotbar and its display: the wrench is the powered one with
 ## trades.power_wrench, the squeezer the rivet gun in the yard with trades.power_riveter
 ## (the bench's riveting lesson keeps the hand squeezer).
@@ -120,9 +122,13 @@ func _ready() -> void:
 		_build_room()
 		_build_bench()
 	hotbar.assign(TOOLS)
+	if in_yard and Flags.is_on("trades.slim_hotbar"):
+		# beenster, 22 Oct: welds come out with the welder's unweld, rivets by heating them
+		# with the welder, and plugs are wired by hand; so no drill, crimper or cutter.
+		hotbar.assign(hotbar.filter(func(t: StringName) -> bool: return not t in SLIM_DROPS))
 	if in_yard and Flags.is_on("trades.tractor"):
 		hotbar.append(&"tractor")
-	if in_yard and Flags.is_on("trades.cutter"):
+	if in_yard and Flags.is_on("trades.cutter") and not Flags.is_on("trades.slim_hotbar"):
 		hotbar.append(&"cutter")
 	_build_worker()
 	sparks = TradesSparks.new()
@@ -288,6 +294,10 @@ func cycle_tool(step: int) -> void:
 func wheel(step: int) -> void:
 	if _pressed and _pressed.turn_held(step, turn_snap):
 		return
+	# The beam keeps hold after you let go of the button (beenster, 0.3.14): the wheel still
+	# pulls the part in or pushes it out rather than changing tools.
+	if _pressed == null and tool == &"tractor" and _focus and _focus.turn_held(step, turn_snap):
+		return
 	if _pressed == null and _focus and _focus.wheel_setting(tool, step):
 		_refresh_hud()
 		return
@@ -336,9 +346,10 @@ func _keys_line() -> String:
 	var tools := "%s-%s" % [k.call(TradesBus.KEY_TOOL + "1"), k.call(TradesBus.KEY_TOOL + str(hotbar.size()))]
 	var turn := "%s/%s" % [k.call(TradesBus.KEY_TURN_LEFT), k.call(TradesBus.KEY_TURN_RIGHT)]
 	if in_yard:
-		return "%s walk  %s run  %s jump / climb  %s view  wheel/%s tool  LMB use  RMB take off  %s turn  %s part details  %s pause" % [
+		var details := "  %s part details" % k.call(TradesBus.KEY_INSPECT) if Flags.is_on("trades.inspect") else ""
+		return "%s walk  %s run  %s jump / climb  %s view  wheel/%s tool  LMB use  RMB take off  %s turn%s  %s pause" % [
 				walk, k.call(Keys.RUN), k.call(Keys.JUMP), k.call(TradesBus.KEY_VIEW), tools, turn,
-				k.call(TradesBus.KEY_INSPECT), k.call(Keys.CANCEL)]
+				details, k.call(Keys.CANCEL)]
 	return "%s walk  %s view  wheel/%s tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  %s amps  %s part  %s reset  %s pause" % [
 			walk, k.call(TradesBus.KEY_VIEW), tools, turn, k.call(TradesBus.KEY_NEXT), k.call(TradesBus.KEY_RESET), k.call(Keys.CANCEL)]
 
@@ -540,7 +551,7 @@ func look_hint() -> Dictionary:
 	var keys := _focus.actions(tool)
 	if keys.is_empty():
 		return {}
-	if InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
+	if Flags.is_on("trades.inspect") and InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
 		keys.append([TradesBus.KEY_INSPECT, "part details (hold)"])
 	var title := _focus.aim_title(tool)
 	# The spec of what you're looking at, tool in hand (beenster, 2026-10-22).

@@ -26,6 +26,7 @@ extends RefCounted
 ##                 panel lines and a red nav lamp under a lens at the tip
 ##   container     a cargo container: corrugated walls and roof, corner castings, a door
 ##                 end at +Z with two leaves, lock bars, hinges and an enamel data plate
+##   locker, survival_locker  with `leaves` on, a door each comes off as PartShape.leaf
 ##   antenna       a mast with collars and a ribbed dish, a feed horn over it on struts and a
 ##                 red aviation light at the tip (comms, sensors)
 ##   turret        a gun turret: a bolted ring with a dark race, an angular housing with
@@ -431,6 +432,12 @@ extends RefCounted
 
 const DETAIL := PartShapes.DETAIL
 const DARK := Color(0.16, 0.16, 0.17)
+
+## True while a wreck design builds (WreckDesign.build_into): the shapes with a door that
+## can come off (locker, survival_locker) leave that door out of their mesh and hand it over
+## as `PartShape.leaf`, so the design fits it as a part of its own on two hinge welds (docs/
+## DAMAGE_PLAN.md 9.3.3). False (the gallery, captures, BSX): the door is in the mesh.
+static var leaves: bool = false
 const GLOWING := Color(1.0, 0.55, 0.2)
 ## A warning flasher's red (PartShapes emissive kind "warning").
 const RED_WARNING := Color(1.0, 0.12, 0.08)
@@ -2035,30 +2042,53 @@ static func locker(width: float = 0.8, height: float = 1.9, depth: float = 0.5) 
 	var gap := 0.012
 	var dw := (width - 0.05 - gap) * 0.5
 	var face := -d - 0.018
+	# The right leaf can come off (`leaves`): built in its own kit about its middle.
+	var lc := Vector3(gap * 0.5 + dw * 0.5, dy, -d - 0.014)
+	var lk := MeshKit.new() if leaves else k
 	for sx: float in [-1.0, 1.0]:
+		var kit := lk if sx > 0.0 else k
+		var o := -lc if leaves and sx > 0.0 else Vector3.ZERO
 		var cx := sx * (gap * 0.5 + dw * 0.5)
-		k.color = Color.WHITE
-		k.box(Vector3(dw, dh, 0.014), Vector3(cx, dy, -d - 0.011))
+		kit.color = Color.WHITE
+		kit.box(Vector3(dw, dh, 0.014), Vector3(cx, dy, -d - 0.011) + o)
 		# Louvre vents near the top and the bottom of each leaf.
-		k.color = DARK
+		kit.color = DARK
 		for i in 3:
 			for y: float in [door_top - 0.07 - 0.035 * float(i), door_bottom + 0.07 + 0.035 * float(i)]:
-				k.box(Vector3(dw * 0.6, 0.014, 0.006), Vector3(cx, y, face - 0.003))
+				kit.box(Vector3(dw * 0.6, 0.014, 0.006), Vector3(cx, y, face - 0.003) + o)
 		# Two hinge knuckles on the outer edge, a handle and lock by the seam.
 		for y: float in [door_top - 0.28, door_bottom + 0.28]:
-			k.box(Vector3(0.02, 0.09, 0.02), Vector3(sx * (width * 0.5 - 0.02), y, face + 0.003))
-		k.box(Vector3(0.036, 0.036, 0.006), Vector3(sx * (gap * 0.5 + 0.04), dy - 0.08, face - 0.003))
-		k.color = DETAIL
-		k.box(Vector3(0.024, 0.16, 0.02), Vector3(sx * (gap * 0.5 + 0.04), dy + 0.06, face - 0.01))
-		k.color = PLATE
-		k.box(Vector3(dw * 0.45, 0.05, 0.004), Vector3(cx, door_top - 0.24, face - 0.002))
+			kit.box(Vector3(0.02, 0.09, 0.02), Vector3(sx * (width * 0.5 - 0.02), y, face + 0.003) + o)
+		kit.box(Vector3(0.036, 0.036, 0.006), Vector3(sx * (gap * 0.5 + 0.04), dy - 0.08, face - 0.003) + o)
+		kit.color = DETAIL
+		kit.box(Vector3(0.024, 0.16, 0.02), Vector3(sx * (gap * 0.5 + 0.04), dy + 0.06, face - 0.01) + o)
+		kit.color = PLATE
+		kit.box(Vector3(dw * 0.45, 0.05, 0.004), Vector3(cx, door_top - 0.24, face - 0.002) + o)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = width * height * depth * 0.15
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, height, depth)
 	shape.collision = col
+	if leaves:
+		var hx := width * 0.5 - 0.01
+		_leaf(shape, lk, Vector3(dw, dh, 0.02), lc, [Vector3(hx, door_bottom + 0.28, -d - 0.024),
+				Vector3(hx, door_top - 0.28, -d - 0.024)], Vector3.FORWARD)
 	return shape
+
+
+## Hands a door built in `kit` (about its middle `at`, shape space) over as `shape`'s leaf
+## (PartShape.leaf): a `size` box of collision, hinged on the line `hinge` (shape space),
+## opening toward `out`.
+static func _leaf(shape: PartShapes.PartShape, kit: MeshKit, size: Vector3, at: Vector3, hinge: Array,
+		out: Vector3) -> void:
+	var leaf := PartShapes.PartShape.new()
+	leaf.mesh = kit.finish()
+	leaf.volume = size.x * size.y * size.z * 0.7
+	var col := BoxShape3D.new()
+	col.size = size
+	leaf.collision = col
+	shape.leaf = {"shape": leaf, "at": Transform3D(Basis(), at), "hinge": hinge, "out": out}
 
 
 # --- SE2-style exterior parts (0.23 additions) ------------------------------------------
@@ -5001,29 +5031,41 @@ static func survival_locker(width: float = 0.8, height: float = 1.9, depth: floa
 	var lw := dw * 0.5 - 0.006
 	var lh := split - 0.006 - d_lo
 	var ly := d_lo + lh * 0.5
-	for sx: float in [-1.0, 1.0]:
-		_cabinets_pad(k, Vector3(sx * (lw * 0.5 + 0.006), ly, fz - 0.004), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD,
-				lw * 0.5, lh * 0.5, 0.012, 0.006)
+	# The lower right door can come off (`leaves`): built in its own kit about its middle.
+	var lc := Vector3(lw * 0.5 + 0.006, ly, fz - 0.012)
+	var lk := MeshKit.new() if leaves else k
+	var kits: Array[MeshKit] = [k, lk]
+	var offs: Array[Vector3] = [Vector3.ZERO, -lc if leaves else Vector3.ZERO]
+	lk.color = Color.WHITE
+	for i in 2:
+		var sx := -1.0 if i == 0 else 1.0
+		_cabinets_pad(kits[i], Vector3(sx * (lw * 0.5 + 0.006), ly, fz - 0.004) + offs[i], Vector3.RIGHT, Vector3.UP,
+				Vector3.FORWARD, lw * 0.5, lh * 0.5, 0.012, 0.006)
 	var df := fz - 0.016
 	# Hinges: the upper door's on its left edge, the lower doors' on their outer edges.
 	k.color = DETAIL
+	lk.color = DETAIL
 	for sy: float in [-1.0, 1.0]:
 		var y := uy + sy * uh * 0.34
 		_tube(k, Vector3(-dw * 0.5, y - 0.05, df + 0.005), Vector3(-dw * 0.5, y + 0.05, df + 0.005), 0.012, 6)
-		for sx: float in [-1.0, 1.0]:
+		for i in 2:
+			var sx := -1.0 if i == 0 else 1.0
 			var yl := ly + sy * lh * 0.32
-			_tube(k, Vector3(sx * dw * 0.5, yl - 0.05, df + 0.005), Vector3(sx * dw * 0.5, yl + 0.05, df + 0.005), 0.012, 6)
+			_tube(kits[i], Vector3(sx * dw * 0.5, yl - 0.05, df + 0.005) + offs[i], Vector3(sx * dw * 0.5, yl + 0.05, df + 0.005) + offs[i], 0.012, 6)
 	# Handles by the middle on standoffs, name plates and louvres on the lower doors.
-	for sx: float in [-1.0, 1.0]:
+	for i in 2:
+		var sx := -1.0 if i == 0 else 1.0
+		var kit := kits[i]
+		var o := offs[i]
 		var x := sx * 0.06
-		k.color = DETAIL
-		k.strut(Vector3(x, ly + lh * 0.12, df - 0.022), Vector3(x, ly + lh * 0.38, df - 0.022), 0.022)
+		kit.color = DETAIL
+		kit.strut(Vector3(x, ly + lh * 0.12, df - 0.022) + o, Vector3(x, ly + lh * 0.38, df - 0.022) + o, 0.022)
 		for t: float in [0.16, 0.34]:
-			k.box(Vector3(0.018, 0.018, 0.016), Vector3(x, ly + lh * t, df - 0.008))
+			kit.box(Vector3(0.018, 0.018, 0.016), Vector3(x, ly + lh * t, df - 0.008) + o)
 		var cx := sx * (lw * 0.5 + 0.006)
-		k.color = PLATE
-		k.box(Vector3(lw * 0.5, 0.045, 0.004), Vector3(cx + sx * lw * 0.08, ly - lh * 0.02, df - 0.002))
-		_cabinets_louvre(k, Vector3(cx, ly - lh * 0.3, df), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, lw * 0.32, lh * 0.1, 4)
+		kit.color = PLATE
+		kit.box(Vector3(lw * 0.5, 0.045, 0.004), Vector3(cx + sx * lw * 0.08, ly - lh * 0.02, df - 0.002) + o)
+		_cabinets_louvre(kit, Vector3(cx, ly - lh * 0.3, df) + o, Vector3.RIGHT, Vector3.UP, Vector3.FORWARD, lw * 0.32, lh * 0.1, 4)
 	# The upper door: the red cross, a lock box with its keyhole, the lamp in a dark bezel.
 	k.color = CROSS_RED
 	var c := Vector3(0.0, uy + uh * 0.06, df - 0.004)
@@ -5045,12 +5087,16 @@ static func survival_locker(width: float = 0.8, height: float = 1.9, depth: floa
 	shape.mesh = k.finish()
 	shape.volume = width * height * depth * 0.15
 	var col := BoxShape3D.new()
-	col.size = Vector3(width, height, depth + 0.04)
+	# With the door coming off the box stops at the face, clear of the leaf.
+	col.size = Vector3(width, height, depth if leaves else depth + 0.04)
 	shape.collision = col
 	var g := MeshKit.new()
 	g.box(Vector3(0.036, 0.018, 0.004), lamp + Vector3(0.0, 0.0, -0.005))
 	shape.glow = g.finish()
 	shape.glow_color = glow
+	if leaves:
+		_leaf(shape, lk, Vector3(lw, lh, 0.016), lc, [Vector3(dw * 0.5, ly - lh * 0.32, fz - 0.02),
+				Vector3(dw * 0.5, ly + lh * 0.32, fz - 0.02)], Vector3.FORWARD)
 	return shape
 
 

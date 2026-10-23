@@ -16,6 +16,8 @@ const LOAN := "loan"
 const REPAYMENT := "repayment"
 ## Bales and ingots sold to the metal broker.
 const SCRAP := "scrap"
+## Money added by a debug button (testing).
+const DEBUG := "debug"
 
 var day := 0
 var amount := 0

@@ -63,7 +63,11 @@ flags = {
 "trades.wire_diagram": true,
 "trades.hover_specs": true,
 "trades.spec_sheet": true,
+"trades.job_pack_specs": true,
 "trades.test_stand": true,
+"trades.slim_hotbar": true,
+"trades.forearms": true,
+"trades.trace_weld": true,
 "trades.wiring": true,
 "ui": true,
 "ui.debug_tab": true

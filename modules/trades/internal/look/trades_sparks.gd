@@ -23,6 +23,10 @@ const HOT_SHARE := 0.55
 const GRAVITY := 9.8
 const BOUNCE := 0.35
 const LIFE_S := Vector2(0.5, 1.4)
+## Fallen bolts and rivet heads: how many at once, how long they last and fade (seconds).
+const POP_MAX := 100
+const POP_LIFE_S := 15.0
+const POP_FADE_S := 4.0
 ## A streak's thickness and its length per m/s of speed (m).
 const THICK_M := 0.004
 const STREAK_S := 0.012
@@ -95,7 +99,14 @@ func emit(at: Vector3, dir: Vector3, count: int, speed: float, spread := 0.6) ->
 
 
 ## A small part jumping off from `at` with velocity `vel`, tumbling, bouncing and fading.
+## Bolts and rivet heads that come out fall under gravity and lie where they land (beenster,
+## 0.3.14): at most POP_MAX at once (the oldest goes), each gone after POP_LIFE_S, fading
+## over the last POP_FADE_S.
 func pop(at: Vector3, vel: Vector3, mesh: Mesh, mat: Material) -> void:
+	while _pops.size() >= POP_MAX:
+		var old: Dictionary = _pops.pop_front()
+		if is_instance_valid(old.node):
+			(old.node as Node).queue_free()
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = mat
@@ -103,6 +114,20 @@ func pop(at: Vector3, vel: Vector3, mesh: Mesh, mat: Material) -> void:
 	add_child(mi)
 	mi.global_position = at
 	_pops.append({"node": mi, "vel": vel, "spin": Vector3(_rng.randf_range(-20, 20), _rng.randf_range(-20, 20), 0), "age": 0.0})
+
+
+## Fallen bits lying about or still falling (tests).
+func pop_count() -> int:
+	return _pops.size()
+
+
+## Where the fallen bits are (tests).
+func pop_positions() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for p in _pops:
+		if is_instance_valid(p.node):
+			out.append((p.node as Node3D).global_position)
+	return out
 
 
 ## Sparks alive now (tests).
@@ -145,10 +170,13 @@ func _step_pops(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 	for p in _pops.duplicate():
 		var mi: MeshInstance3D = p.node
 		p.age += delta
-		if p.age > 4.0 or not is_instance_valid(mi):
+		if p.age > POP_LIFE_S or not is_instance_valid(mi):
 			if is_instance_valid(mi):
 				mi.queue_free()
 			_pops.erase(p)
+			continue
+		mi.transparency = clampf((p.age - (POP_LIFE_S - POP_FADE_S)) / POP_FADE_S, 0.0, 1.0)
+		if p.get("rest", false):
 			continue
 		var v: Vector3 = p.vel + Vector3.DOWN * GRAVITY * delta
 		var to := mi.global_position + v * delta
@@ -159,10 +187,13 @@ func _step_pops(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 			if not hit.is_empty():
 				v = v.bounce(hit.normal) * 0.4
 				to = (hit.position as Vector3) + (hit.normal as Vector3) * 0.004
+				# Slow on something it can lie on: it settles there.
+				if v.length() < 0.4 and (hit.normal as Vector3).y > 0.6:
+					p.rest = true
+					v = Vector3.ZERO
 		p.vel = v
 		mi.global_position = to
 		mi.rotation += (p.spin as Vector3) * delta * minf(1.0, v.length())
-		mi.transparency = clampf((p.age - 3.0), 0.0, 1.0)
 
 
 func _draw() -> void:

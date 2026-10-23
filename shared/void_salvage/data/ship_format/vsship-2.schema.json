@@ -1,0 +1,2094 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/dantheo999/void-salvage/data/ship_format/vsship-2.schema.json",
+	"title": "vsship 2.x: a Void Salvage ship built as parts and joints",
+	"description": "The prose is docs/SHIP_FORMAT_PLAN.md section 10. A frame build: its builders' recipes (frame, decks, walls, services), the records 1.0 has (fittings, systems, pieces, lights, slots, layout), and the parts and joints the builders made (derived: every part and joint named by its path, each joint with its build phase, in the builder's order). Readers ignore keys they do not know and keep them when they write the file back. Units: metres, kilograms, seconds, newtons, radians. A number that would be infinite (no limit) is null.",
+	"type": "object",
+	"required": [
+		"format",
+		"version",
+		"generator",
+		"ship",
+		"stats",
+		"materials",
+		"frame",
+		"decks",
+		"walls",
+		"services",
+		"fittings",
+		"systems",
+		"pieces",
+		"units",
+		"lights",
+		"slots",
+		"layout",
+		"modules",
+		"parts",
+		"joints",
+		"derived"
+	],
+	"properties": {
+		"format": {
+			"const": "vsship"
+		},
+		"version": {
+			"type": "array",
+			"items": {
+				"type": "integer",
+				"minimum": 0
+			},
+			"minItems": 2,
+			"maxItems": 2,
+			"description": "[2, minor]"
+		},
+		"generator": {
+			"type": "object",
+			"required": [
+				"app",
+				"version"
+			],
+			"properties": {
+				"app": {
+					"type": "string"
+				},
+				"version": {
+					"type": "string"
+				},
+				"date": {
+					"type": "string"
+				}
+			}
+		},
+		"ship": {
+			"type": "object",
+			"required": [
+				"id",
+				"name",
+				"class",
+				"base",
+				"livery",
+				"serial"
+			],
+			"properties": {
+				"id": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"class": {
+					"enum": [
+						"S",
+						"M",
+						"L",
+						"XL"
+					]
+				},
+				"base": {
+					"type": "object",
+					"required": [
+						"design"
+					],
+					"properties": {
+						"design": {
+							"type": "string"
+						},
+						"app_version": {
+							"type": "string"
+						}
+					}
+				},
+				"livery": {
+					"type": "string"
+				},
+				"serial": {
+					"type": "string",
+					"pattern": "^VS-[A-Z0-9]+-[0-9]+$"
+				},
+				"owner": {
+					"type": "string"
+				}
+			}
+		},
+		"stats": {
+			"type": "object",
+			"additionalProperties": {
+				"anyOf": [
+					{
+						"type": "number"
+					},
+					{
+						"type": "boolean"
+					},
+					{
+						"$ref": "#/$defs/vec2"
+					},
+					{
+						"$ref": "#/$defs/vec3"
+					}
+				]
+			}
+		},
+		"materials": {
+			"type": "object",
+			"additionalProperties": {
+				"$ref": "#/$defs/material"
+			}
+		},
+		"frame": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/frame_hull"
+			},
+			"description": "the hull sections (FrameHull runs), in the order they were built"
+		},
+		"decks": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/deck"
+			},
+			"description": "the decks (DeckFrame runs)"
+		},
+		"walls": {
+			"type": "array",
+			"items": {
+				"anyOf": [
+					{
+						"$ref": "#/$defs/stud_wall"
+					},
+					{
+						"$ref": "#/$defs/wall"
+					}
+				]
+			}
+		},
+		"services": {
+			"$ref": "#/$defs/services"
+		},
+		"fittings": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/fitting"
+			}
+		},
+		"systems": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/system"
+			}
+		},
+		"pieces": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/piece"
+			}
+		},
+		"units": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/unit"
+			},
+			"description": "units opened outside a fitting's or system's record (a door's leaf, an engine): the pieces carrying its path fold into one part"
+		},
+		"lights": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/light"
+			}
+		},
+		"slots": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/slot"
+			}
+		},
+		"layout": {
+			"$ref": "#/$defs/layout"
+		},
+		"modules": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "boolean"
+			}
+		},
+		"parts": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/part"
+			},
+			"description": "derived: every part the build made, in the order it made them"
+		},
+		"joints": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/joint"
+			},
+			"description": "derived: every joint, in the builder's order"
+		},
+		"derived": {
+			"type": "object",
+			"required": [
+				"volume_m3",
+				"meshes",
+				"shapes",
+				"lights",
+				"pieces",
+				"fittings",
+				"systems",
+				"recipe_less",
+				"bounds",
+				"body_hash",
+				"parts",
+				"joints",
+				"joints_by_phase",
+				"joints_by_kind",
+				"parts_hash"
+			],
+			"properties": {
+				"volume_m3": {
+					"type": "number",
+					"minimum": 0
+				},
+				"meshes": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"shapes": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"lights": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"pieces": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"fittings": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"systems": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"recipe_less": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"hold_m3": {
+					"type": "number",
+					"minimum": 0
+				},
+				"bounds": {
+					"$ref": "#/$defs/aabb"
+				},
+				"body_hash": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$",
+					"description": "canonical JSON of [frame, decks, walls, services, fittings, systems, pieces, units, slots]"
+				},
+				"parts": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"joints": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"joints_by_phase": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "integer",
+						"minimum": 0
+					}
+				},
+				"joints_by_kind": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "integer",
+						"minimum": 0
+					}
+				},
+				"routes": {
+					"type": "object",
+					"description": "the routes the router laid: \"lead:<device path>\" and \"pipe:<run>\" -> points",
+					"additionalProperties": {
+						"type": "array",
+						"items": {
+							"$ref": "#/$defs/vec3"
+						}
+					}
+				},
+				"parts_hash": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$",
+					"description": "canonical JSON of [parts, joints]"
+				}
+			}
+		},
+		"order": {
+			"type": "object",
+			"properties": {
+				"contract_id": {
+					"type": "string"
+				},
+				"workshop": {
+					"type": "string"
+				},
+				"against": {
+					"type": "string"
+				},
+				"issued": {
+					"type": "string"
+				},
+				"items": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"change_id",
+							"slot"
+						],
+						"properties": {
+							"change_id": {
+								"type": "string"
+							},
+							"slot": {
+								"type": "string"
+							},
+							"component": {
+								"type": [
+									"string",
+									"null"
+								]
+							},
+							"quality": {
+								"type": "number",
+								"minimum": 0,
+								"maximum": 1
+							},
+							"price": {
+								"type": "number"
+							}
+						}
+					}
+				},
+				"total": {
+					"type": "number"
+				}
+			}
+		}
+	},
+	"$defs": {
+		"vec2": {
+			"type": "array",
+			"items": {
+				"type": "number"
+			},
+			"minItems": 2,
+			"maxItems": 2
+		},
+		"vec3": {
+			"type": "array",
+			"items": {
+				"type": "number"
+			},
+			"minItems": 3,
+			"maxItems": 3
+		},
+		"rect": {
+			"type": "array",
+			"items": {
+				"type": "number"
+			},
+			"minItems": 4,
+			"maxItems": 4,
+			"description": "[x, y, w, h]"
+		},
+		"color": {
+			"type": "array",
+			"items": {
+				"type": "number",
+				"minimum": 0
+			},
+			"minItems": 3,
+			"maxItems": 4
+		},
+		"aabb": {
+			"type": "object",
+			"required": [
+				"pos",
+				"size"
+			],
+			"properties": {
+				"pos": {
+					"$ref": "#/$defs/vec3"
+				},
+				"size": {
+					"$ref": "#/$defs/vec3"
+				}
+			}
+		},
+		"xform": {
+			"type": "object",
+			"required": [
+				"o"
+			],
+			"description": "origin, and the basis as its rows (omitted = identity)",
+			"properties": {
+				"o": {
+					"$ref": "#/$defs/vec3"
+				},
+				"b": {
+					"type": "array",
+					"items": {
+						"type": "number"
+					},
+					"minItems": 9,
+					"maxItems": 9
+				}
+			}
+		},
+		"outline": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/vec2"
+			}
+		},
+		"group": {
+			"type": "string"
+		},
+		"mat": {
+			"type": "string",
+			"description": "a key of the file's materials"
+		},
+		"shape": {
+			"type": "object",
+			"required": [
+				"shape",
+				"args"
+			],
+			"description": "a PartShapes or FrameParts constructor by name, and its arguments in order",
+			"properties": {
+				"shape": {
+					"enum": [
+						"box",
+						"wedge",
+						"ridge",
+						"slope",
+						"trapezoid",
+						"corner",
+						"corner_cut",
+						"prism",
+						"frustum",
+						"girder",
+						"i_beam",
+						"truss",
+						"arc_panel",
+						"dome",
+						"chamfer_box",
+						"ring",
+						"nozzle",
+						"louvre",
+						"inset_panel",
+						"porthole_round",
+						"porthole_hex",
+						"window_rect",
+						"window_panel",
+						"window_slit",
+						"window_tri",
+						"canopy_panel",
+						"girder_corner",
+						"node",
+						"plate",
+						"square",
+						"rect",
+						"tri_equilateral",
+						"tri_isosceles",
+						"tri_right",
+						"tri_scalene",
+						"plate_trapezoid",
+						"parallelogram",
+						"rhombus",
+						"polygon",
+						"chamfered_rect",
+						"channel",
+						"rib"
+					]
+				},
+				"args": {
+					"type": "array"
+				}
+			}
+		},
+		"material": {
+			"type": "object",
+			"anyOf": [
+				{
+					"required": [
+						"livery"
+					],
+					"properties": {
+						"livery": {
+							"enum": [
+								"shell",
+								"trim",
+								"dark",
+								"soft",
+								"top",
+								"belly",
+								"lining",
+								"steel",
+								"edge",
+								"screen",
+								"warm",
+								"cold"
+							]
+						}
+					}
+				},
+				{
+					"required": [
+						"paint"
+					],
+					"properties": {
+						"paint": {
+							"$ref": "#/$defs/color"
+						},
+						"metallic": {
+							"type": "number"
+						},
+						"roughness": {
+							"type": "number"
+						},
+						"finish": {
+							"type": "string"
+						}
+					}
+				},
+				{
+					"required": [
+						"glow",
+						"energy"
+					],
+					"properties": {
+						"glow": {
+							"$ref": "#/$defs/color"
+						},
+						"energy": {
+							"type": "number",
+							"minimum": 0
+						}
+					}
+				},
+				{
+					"required": [
+						"glass"
+					],
+					"properties": {
+						"glass": {
+							"type": "string"
+						},
+						"color": {
+							"$ref": "#/$defs/color"
+						},
+						"metallic": {
+							"type": "number"
+						},
+						"roughness": {
+							"type": "number"
+						}
+					}
+				}
+			]
+		},
+		"look": {
+			"anyOf": [
+				{
+					"const": "skip"
+				},
+				{
+					"type": "object",
+					"required": [
+						"mat"
+					],
+					"properties": {
+						"mat": {
+							"$ref": "#/$defs/mat"
+						},
+						"tag": {
+							"type": "string"
+						},
+						"solid": {
+							"type": "boolean"
+						}
+					}
+				}
+			]
+		},
+		"wall": {
+			"type": "object",
+			"required": [
+				"group",
+				"mat"
+			],
+			"anyOf": [
+				{
+					"required": [
+						"wall",
+						"at",
+						"u",
+						"v",
+						"thickness",
+						"holes"
+					]
+				},
+				{
+					"required": [
+						"block"
+					]
+				}
+			],
+			"properties": {
+				"group": {
+					"$ref": "#/$defs/group"
+				},
+				"wall": {
+					"enum": [
+						"x",
+						"y",
+						"z"
+					]
+				},
+				"at": {
+					"type": "number"
+				},
+				"u": {
+					"$ref": "#/$defs/vec2"
+				},
+				"v": {
+					"$ref": "#/$defs/vec2"
+				},
+				"thickness": {
+					"type": "number",
+					"minimum": 0
+				},
+				"holes": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/rect"
+					}
+				},
+				"block": {
+					"type": "object",
+					"required": [
+						"a",
+						"b"
+					],
+					"properties": {
+						"a": {
+							"$ref": "#/$defs/vec3"
+						},
+						"b": {
+							"$ref": "#/$defs/vec3"
+						}
+					}
+				},
+				"mat": {
+					"$ref": "#/$defs/mat"
+				},
+				"tag": {
+					"type": "string"
+				},
+				"box": {
+					"$ref": "#/$defs/aabb"
+				},
+				"tags": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				}
+			}
+		},
+		"fitting": {
+			"type": "object",
+			"required": [
+				"group",
+				"fitting",
+				"args",
+				"box"
+			],
+			"properties": {
+				"group": {
+					"$ref": "#/$defs/group"
+				},
+				"fitting": {
+					"enum": [
+						"seat",
+						"console",
+						"bunks",
+						"locker",
+						"galley",
+						"table",
+						"bench",
+						"suit_stand",
+						"trophy_shelf",
+						"breaker_panel",
+						"reactor_cabinet",
+						"wall_rack",
+						"hold_net",
+						"lamp",
+						"name_board",
+						"armchair",
+						"jump_seat",
+						"railing",
+						"stair_flight",
+						"workbench",
+						"reactor_core",
+						"junction_box",
+						"lamp_driver",
+						"jump_tank",
+						"heat_exchanger"
+					]
+				},
+				"frame": {
+					"$ref": "#/$defs/xform"
+				},
+				"args": {
+					"type": "array"
+				},
+				"box": {
+					"$ref": "#/$defs/aabb"
+				},
+				"label": {
+					"type": "string"
+				},
+				"tags": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				},
+				"path": {
+					"type": "string"
+				},
+				"ports": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/port"
+					}
+				},
+				"mount": {
+					"$ref": "#/$defs/mount"
+				}
+			}
+		},
+		"system": {
+			"type": "object",
+			"required": [
+				"group",
+				"system",
+				"box"
+			],
+			"properties": {
+				"group": {
+					"$ref": "#/$defs/group"
+				},
+				"system": {
+					"enum": [
+						"control_panel",
+						"lift",
+						"bowsers",
+						"fuel_port",
+						"hose_rack",
+						"monitor",
+						"cockpit_monitor",
+						"double_door",
+						"door_panel",
+						"cockpit_screen",
+						"nav_display",
+						"map_screen"
+					]
+				},
+				"key": {
+					"type": "string"
+				},
+				"frame": {
+					"$ref": "#/$defs/xform"
+				},
+				"args": {
+					"type": "array"
+				},
+				"box": {
+					"$ref": "#/$defs/aabb"
+				},
+				"tags": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				},
+				"path": {
+					"type": "string"
+				},
+				"ports": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/port"
+					}
+				},
+				"mount": {
+					"$ref": "#/$defs/mount"
+				}
+			}
+		},
+		"piece": {
+			"type": "object",
+			"required": [
+				"group",
+				"shape",
+				"xform"
+			],
+			"properties": {
+				"group": {
+					"$ref": "#/$defs/group"
+				},
+				"shape": {
+					"$ref": "#/$defs/shape"
+				},
+				"xform": {
+					"$ref": "#/$defs/xform"
+				},
+				"mat": {
+					"type": [
+						"string",
+						"null"
+					]
+				},
+				"tag": {
+					"type": "string"
+				},
+				"solid": {
+					"type": "boolean"
+				},
+				"visual": {
+					"type": "boolean",
+					"description": "false: collision only (a ramp under steps)"
+				},
+				"glass_mat": {
+					"$ref": "#/$defs/mat"
+				},
+				"part": {
+					"type": "object",
+					"required": [
+						"name",
+						"kind",
+						"path"
+					],
+					"properties": {
+						"name": {
+							"type": "string"
+						},
+						"kind": {
+							"enum": [
+								"hull",
+								"frame",
+								"hazard",
+								"conduit",
+								"component",
+								"glass"
+							]
+						},
+						"path": {
+							"$ref": "#/$defs/path"
+						},
+						"fill": {
+							"type": "number"
+						}
+					},
+					"description": "a design's own part (outside every builder and unit)"
+				},
+				"unit": {
+					"type": "string",
+					"description": "the unit (units block) whose part this piece folds into"
+				}
+			}
+		},
+		"light": {
+			"type": "object",
+			"required": [
+				"group",
+				"at",
+				"color",
+				"energy",
+				"range"
+			],
+			"properties": {
+				"group": {
+					"$ref": "#/$defs/group"
+				},
+				"at": {
+					"$ref": "#/$defs/vec3"
+				},
+				"color": {
+					"$ref": "#/$defs/color"
+				},
+				"energy": {
+					"type": "number",
+					"minimum": 0
+				},
+				"range": {
+					"type": "number",
+					"minimum": 0
+				},
+				"shadows": {
+					"type": "boolean"
+				}
+			}
+		},
+		"slot": {
+			"type": "object",
+			"required": [
+				"slot_id",
+				"display_name",
+				"class",
+				"accepts",
+				"fitted",
+				"mount",
+				"box",
+				"access",
+				"group"
+			],
+			"properties": {
+				"slot_id": {
+					"type": "string"
+				},
+				"display_name": {
+					"type": "string"
+				},
+				"class": {
+					"enum": [
+						"engine",
+						"module"
+					]
+				},
+				"accepts": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"minItems": 1
+				},
+				"fitted": {
+					"type": [
+						"string",
+						"null"
+					]
+				},
+				"mount": {
+					"$ref": "#/$defs/xform"
+				},
+				"box": {
+					"$ref": "#/$defs/aabb"
+				},
+				"access": {
+					"type": "string"
+				},
+				"group": {
+					"$ref": "#/$defs/group"
+				},
+				"fasteners": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"id",
+							"kind"
+						],
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"kind": {
+								"type": "string"
+							},
+							"spec": {
+								"type": "string"
+							},
+							"at": {
+								"$ref": "#/$defs/vec3"
+							},
+							"normal": {
+								"$ref": "#/$defs/vec3"
+							}
+						}
+					}
+				}
+			}
+		},
+		"layout": {
+			"type": "object",
+			"required": [
+				"rooms",
+				"hold",
+				"intakes",
+				"seats",
+				"exit_point",
+				"doors",
+				"usable_tags"
+			],
+			"properties": {
+				"rooms": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/aabb"
+					}
+				},
+				"hold": {
+					"$ref": "#/$defs/aabb"
+				},
+				"salvage_bay": {
+					"anyOf": [
+						{
+							"type": "null"
+						},
+						{
+							"$ref": "#/$defs/aabb"
+						}
+					]
+				},
+				"cargo_bay": {
+					"anyOf": [
+						{
+							"type": "null"
+						},
+						{
+							"$ref": "#/$defs/aabb"
+						}
+					]
+				},
+				"cabin_door": {
+					"type": "string"
+				},
+				"hatch_area": {
+					"anyOf": [
+						{
+							"type": "null"
+						},
+						{
+							"$ref": "#/$defs/rect"
+						}
+					]
+				},
+				"intakes": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"key",
+							"mouth",
+							"out",
+							"radius"
+						],
+						"properties": {
+							"key": {
+								"type": "string"
+							},
+							"mouth": {
+								"$ref": "#/$defs/vec3"
+							},
+							"out": {
+								"$ref": "#/$defs/vec3"
+							},
+							"radius": {
+								"type": "number"
+							},
+							"mouth_radius": {
+								"type": "number"
+							},
+							"glow": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				"seats": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"at"
+						],
+						"properties": {
+							"at": {
+								"$ref": "#/$defs/vec3"
+							},
+							"yaw": {
+								"type": "number"
+							},
+							"exit": {
+								"$ref": "#/$defs/vec3"
+							}
+						}
+					}
+				},
+				"exit_point": {
+					"$ref": "#/$defs/vec3"
+				},
+				"lift_rect": {
+					"anyOf": [
+						{
+							"type": "null"
+						},
+						{
+							"$ref": "#/$defs/rect"
+						}
+					]
+				},
+				"doors": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "object",
+						"required": [
+							"travel"
+						],
+						"properties": {
+							"travel": {
+								"type": "number",
+								"minimum": 0
+							},
+							"moves": {
+								"type": "object",
+								"additionalProperties": {
+									"$ref": "#/$defs/vec3"
+								}
+							},
+							"hinges": {
+								"type": "object",
+								"additionalProperties": {
+									"type": "object",
+									"required": [
+										"at",
+										"axis",
+										"open"
+									],
+									"properties": {
+										"at": {
+											"$ref": "#/$defs/vec3"
+										},
+										"axis": {
+											"$ref": "#/$defs/vec3"
+										},
+										"open": {
+											"type": "number"
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				"panel_buttons": {
+					"type": "array",
+					"items": {
+						"type": "array",
+						"minItems": 3,
+						"maxItems": 3
+					}
+				},
+				"usable_tags": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "string"
+					}
+				},
+				"motor_at": {
+					"type": "object",
+					"additionalProperties": {
+						"$ref": "#/$defs/vec3"
+					}
+				},
+				"engine_at": {
+					"$ref": "#/$defs/vec3"
+				},
+				"chase": {
+					"type": "object",
+					"properties": {
+						"focus": {
+							"$ref": "#/$defs/vec3"
+						},
+						"distance": {
+							"type": "number"
+						}
+					}
+				},
+				"floodlights": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"at",
+							"aim"
+						],
+						"properties": {
+							"at": {
+								"$ref": "#/$defs/vec3"
+							},
+							"aim": {
+								"$ref": "#/$defs/vec3"
+							}
+						}
+					}
+				},
+				"hatch_beacons": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/vec3"
+					}
+				},
+				"survey_glass": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/vec3"
+					}
+				},
+				"test_points": {
+					"type": "object"
+				}
+			}
+		},
+		"num_or_null": {
+			"type": [
+				"number",
+				"null"
+			]
+		},
+		"range": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/num_or_null"
+			},
+			"minItems": 2,
+			"maxItems": 2,
+			"description": "[min, max]; null = no limit"
+		},
+		"path": {
+			"type": "string",
+			"minLength": 1,
+			"description": "a part's or joint's name: what it is, not when it was made (docs/SHIP_FRAME_PLAN.md 4.7)"
+		},
+		"part_shape": {
+			"type": "object",
+			"description": "a part's shape: a library shape, or one the services' builders make",
+			"anyOf": [
+				{
+					"$ref": "#/$defs/shape"
+				},
+				{
+					"required": [
+						"shape",
+						"args"
+					],
+					"properties": {
+						"shape": {
+							"enum": [
+								"pipe",
+								"pipe_elbow",
+								"pipe_union",
+								"loom_span"
+							]
+						},
+						"args": {
+							"type": "array"
+						}
+					}
+				},
+				{
+					"type": "object",
+					"maxProperties": 0,
+					"description": "none: a unit's part (its fitting or system record is its look)"
+				}
+			]
+		},
+		"look2": {
+			"anyOf": [
+				{
+					"const": "skip"
+				},
+				{
+					"type": "object",
+					"required": [
+						"mat"
+					],
+					"properties": {
+						"mat": {
+							"$ref": "#/$defs/mat"
+						},
+						"glass": {
+							"type": "boolean"
+						},
+						"tag": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						}
+					}
+				}
+			]
+		},
+		"step": {
+			"type": "object",
+			"required": [
+				"step",
+				"seq"
+			],
+			"properties": {
+				"step": {
+					"enum": [
+						"cap",
+						"lining",
+						"splice"
+					]
+				},
+				"seq": {
+					"type": "integer",
+					"minimum": 1
+				}
+			},
+			"description": "a call made on the section after it was built: cap {end, pieces, mat, tag, glass}, lining {seg, edge, mat, inset, part_name, y_clip, z_clip}, splice {station, to, their_station, pairs}"
+		},
+		"frame_hull": {
+			"type": "object",
+			"required": [
+				"name",
+				"style",
+				"seq",
+				"skin",
+				"depth",
+				"ring_width",
+				"node_size",
+				"stringer_size",
+				"stringer_depth",
+				"stations",
+				"faces",
+				"frame_skip",
+				"openings",
+				"steps"
+			],
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"style": {
+					"enum": [
+						"kestrel",
+						"mitred",
+						"channel",
+						"lattice",
+						"wing"
+					]
+				},
+				"seq": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"skin": {
+					"type": "number",
+					"minimum": 0
+				},
+				"depth": {
+					"type": "number",
+					"minimum": 0
+				},
+				"ring_width": {
+					"type": "number",
+					"minimum": 0
+				},
+				"node_size": {
+					"type": "number",
+					"minimum": 0
+				},
+				"stringer_size": {
+					"type": "number",
+					"minimum": 0
+				},
+				"stringer_depth": {
+					"type": "number",
+					"minimum": 0
+				},
+				"bead": {
+					"type": "integer"
+				},
+				"rivet_pitch": {
+					"type": "number"
+				},
+				"bolt_pitch": {
+					"type": "number"
+				},
+				"rivet_head": {
+					"type": "integer"
+				},
+				"bolt_head": {
+					"type": "integer"
+				},
+				"frame_to_skin": {
+					"type": "boolean"
+				},
+				"groove": {
+					"type": "number"
+				},
+				"lining_inset": {
+					"type": "number"
+				},
+				"lining_thickness": {
+					"type": "number"
+				},
+				"end_gap": {
+					"$ref": "#/$defs/vec2"
+				},
+				"skin_mat": {
+					"$ref": "#/$defs/mat"
+				},
+				"frame_mat": {
+					"$ref": "#/$defs/mat"
+				},
+				"glass_mat": {
+					"type": [
+						"string",
+						"null"
+					]
+				},
+				"stations": {
+					"type": "array",
+					"minItems": 2,
+					"items": {
+						"type": "object",
+						"required": [
+							"label",
+							"z",
+							"profile"
+						],
+						"properties": {
+							"label": {
+								"type": "string"
+							},
+							"z": {
+								"type": "number"
+							},
+							"profile": {
+								"anyOf": [
+									{
+										"const": "same"
+									},
+									{
+										"$ref": "#/$defs/outline"
+									}
+								]
+							}
+						}
+					}
+				},
+				"faces": {
+					"type": "object",
+					"required": [
+						"default"
+					],
+					"additionalProperties": {
+						"$ref": "#/$defs/look2"
+					},
+					"description": "\"default\", \"<edge>\", \"<segment>:<edge>\": the shortest table that gives every face its look"
+				},
+				"frame_skip": {
+					"type": "array",
+					"items": {
+						"type": "array",
+						"items": {
+							"type": "integer"
+						},
+						"minItems": 2,
+						"maxItems": 2
+					}
+				},
+				"openings": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"name",
+							"edge",
+							"box",
+							"frame"
+						],
+						"properties": {
+							"name": {
+								"type": "string"
+							},
+							"edge": {
+								"type": "integer"
+							},
+							"box": {
+								"$ref": "#/$defs/aabb"
+							},
+							"frame": {
+								"$ref": "#/$defs/aabb"
+							},
+							"reveal": {
+								"type": "number"
+							}
+						}
+					}
+				},
+				"spars": {
+					"type": "array",
+					"items": {
+						"type": "integer"
+					}
+				},
+				"steps": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/step"
+					}
+				}
+			}
+		},
+		"deck": {
+			"type": "object",
+			"required": [
+				"name",
+				"hull",
+				"level",
+				"seq",
+				"top",
+				"plate",
+				"beam",
+				"girder",
+				"girder_x",
+				"z0",
+				"z1",
+				"openings"
+			],
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"hull": {
+					"type": "string"
+				},
+				"level": {
+					"type": "string"
+				},
+				"seq": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"top": {
+					"type": "number"
+				},
+				"plate": {
+					"type": "number",
+					"minimum": 0
+				},
+				"beam": {
+					"$ref": "#/$defs/vec2"
+				},
+				"girder": {
+					"$ref": "#/$defs/vec2"
+				},
+				"girder_x": {
+					"type": "array",
+					"items": {
+						"type": "number"
+					}
+				},
+				"z0": {
+					"$ref": "#/$defs/num_or_null"
+				},
+				"z1": {
+					"$ref": "#/$defs/num_or_null"
+				},
+				"openings": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/rect"
+					}
+				},
+				"spot_pitch": {
+					"type": "number"
+				},
+				"trimmer_clear": {
+					"type": "number"
+				},
+				"groove": {
+					"type": "number"
+				},
+				"plate_mat": {
+					"$ref": "#/$defs/mat"
+				},
+				"frame_mat": {
+					"$ref": "#/$defs/mat"
+				},
+				"half_width": {
+					"anyOf": [
+						{
+							"type": "null"
+						},
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/vec2"
+							}
+						}
+					],
+					"description": "[z, half width] points, straight between; null = the hull's own"
+				}
+			}
+		},
+		"stud_wall": {
+			"type": "object",
+			"required": [
+				"stud",
+				"group"
+			],
+			"properties": {
+				"group": {
+					"$ref": "#/$defs/group"
+				},
+				"stud": {
+					"type": "object",
+					"required": [
+						"name",
+						"seq",
+						"z",
+						"thickness",
+						"outline",
+						"floor_y",
+						"openings",
+						"pockets",
+						"faces"
+					],
+					"properties": {
+						"name": {
+							"type": "string"
+						},
+						"seq": {
+							"type": "integer",
+							"minimum": 1
+						},
+						"z": {
+							"type": "number"
+						},
+						"thickness": {
+							"type": "number",
+							"minimum": 0
+						},
+						"outline": {
+							"$ref": "#/$defs/outline"
+						},
+						"floor_y": {
+							"type": "number"
+						},
+						"openings": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/rect"
+							}
+						},
+						"pockets": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/rect"
+							}
+						},
+						"faces": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							},
+							"minItems": 2,
+							"maxItems": 2
+						},
+						"panel_mat": {
+							"$ref": "#/$defs/mat"
+						},
+						"frame_mat": {
+							"$ref": "#/$defs/mat"
+						}
+					}
+				}
+			}
+		},
+		"port": {
+			"type": "object",
+			"required": [
+				"name",
+				"fluid",
+				"radius",
+				"position",
+				"direction"
+			],
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"fluid": {
+					"type": "string",
+					"description": "\"\" for power"
+				},
+				"radius": {
+					"type": "number",
+					"minimum": 0
+				},
+				"position": {
+					"$ref": "#/$defs/vec3"
+				},
+				"direction": {
+					"$ref": "#/$defs/vec3"
+				}
+			},
+			"description": "ship space"
+		},
+		"services": {
+			"type": "object",
+			"required": [
+				"looms",
+				"leads",
+				"pipes"
+			],
+			"properties": {
+				"looms": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"name",
+							"hull",
+							"follow",
+							"spec",
+							"z0",
+							"z1",
+							"seq"
+						],
+						"properties": {
+							"name": {
+								"type": "string"
+							},
+							"hull": {
+								"type": "string"
+							},
+							"follow": {
+								"enum": [
+									"under_ring",
+									"channel"
+								]
+							},
+							"seq": {
+								"type": "integer"
+							},
+							"spec": {
+								"type": "object"
+							},
+							"corner": {
+								"type": "integer"
+							},
+							"edge": {
+								"type": "integer"
+							},
+							"xy": {
+								"$ref": "#/$defs/vec2"
+							},
+							"z0": {
+								"type": "number"
+							},
+							"z1": {
+								"type": "number"
+							},
+							"strap_pitch": {
+								"type": "number"
+							},
+							"boxes": {
+								"type": "array",
+								"items": {
+									"$ref": "#/$defs/path"
+								}
+							}
+						}
+					}
+				},
+				"leads": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"device",
+							"port",
+							"to"
+						],
+						"properties": {
+							"device": {
+								"$ref": "#/$defs/path"
+							},
+							"port": {
+								"type": "string"
+							},
+							"to": {
+								"type": "string",
+								"description": "a part's path, or a loom (\"loom:main\")"
+							},
+							"to_port": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				"pipes": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [
+							"name",
+							"fluid",
+							"radius",
+							"from",
+							"to"
+						],
+						"properties": {
+							"name": {
+								"type": "string"
+							},
+							"fluid": {
+								"type": "string"
+							},
+							"radius": {
+								"type": "number",
+								"minimum": 0
+							},
+							"from": {
+								"type": "array",
+								"minItems": 2,
+								"maxItems": 2
+							},
+							"to": {
+								"type": "array",
+								"minItems": 2,
+								"maxItems": 2
+							}
+						}
+					}
+				}
+			}
+		},
+		"unit": {
+			"type": "object",
+			"required": [
+				"kind",
+				"name",
+				"path"
+			],
+			"properties": {
+				"kind": {
+					"enum": [
+						"leaf",
+						"slot",
+						"fitting",
+						"system"
+					]
+				},
+				"name": {
+					"type": "string"
+				},
+				"key": {
+					"type": "string"
+				},
+				"path": {
+					"type": "string"
+				},
+				"mount": {
+					"$ref": "#/$defs/mount"
+				},
+				"ports": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/port"
+					}
+				}
+			}
+		},
+		"part": {
+			"type": "object",
+			"required": [
+				"id",
+				"path",
+				"name",
+				"kind",
+				"material",
+				"mass",
+				"group",
+				"by",
+				"shape",
+				"xform",
+				"box"
+			],
+			"properties": {
+				"id": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"path": {
+					"$ref": "#/$defs/path"
+				},
+				"name": {
+					"type": "string"
+				},
+				"kind": {
+					"enum": [
+						"hull",
+						"frame",
+						"hazard",
+						"conduit",
+						"component",
+						"glass"
+					]
+				},
+				"material": {
+					"type": "string",
+					"description": "a Materials id"
+				},
+				"mass": {
+					"type": "number",
+					"minimum": 0
+				},
+				"group": {
+					"type": "string"
+				},
+				"by": {
+					"type": "string",
+					"description": "the builder that made it (\"frame:body\", \"deck:body/upper\", \"wall:bulkhead\", \"loom:main\", \"pipes\"), \"unit\" (a fitting's or system's part) or \"piece\" (a design's own)"
+				},
+				"shape": {
+					"$ref": "#/$defs/part_shape"
+				},
+				"mat": {
+					"type": "string"
+				},
+				"glass_mat": {
+					"$ref": "#/$defs/mat"
+				},
+				"xform": {
+					"$ref": "#/$defs/xform"
+				},
+				"box": {
+					"$ref": "#/$defs/aabb"
+				},
+				"tag": {
+					"type": "string"
+				},
+				"power": {
+					"enum": [
+						"source",
+						"conductor",
+						"switch",
+						"consumer"
+					]
+				}
+			}
+		},
+		"joint": {
+			"type": "object",
+			"required": [
+				"id",
+				"path",
+				"kind",
+				"head",
+				"phase",
+				"a",
+				"b",
+				"at",
+				"normal"
+			],
+			"properties": {
+				"id": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"path": {
+					"$ref": "#/$defs/path"
+				},
+				"kind": {
+					"enum": [
+						"weld",
+						"rivet",
+						"bolt",
+						"connector",
+						"spot"
+					]
+				},
+				"head": {
+					"type": "integer"
+				},
+				"phase": {
+					"enum": [
+						"frame",
+						"deck",
+						"skin",
+						"lining",
+						"wall",
+						"fitting",
+						"service"
+					]
+				},
+				"a": {
+					"$ref": "#/$defs/path"
+				},
+				"b": {
+					"$ref": "#/$defs/path"
+				},
+				"at": {
+					"$ref": "#/$defs/vec3"
+				},
+				"normal": {
+					"$ref": "#/$defs/vec3"
+				},
+				"seam_up": {
+					"$ref": "#/$defs/vec3"
+				},
+				"seam_size": {
+					"$ref": "#/$defs/vec2"
+				}
+			}
+		},
+		"mount": {
+			"type": "object",
+			"description": "How a unit is fastened: the parts it is welded or bolted onto (paths), its spot welds, the studs behind it on a stud wall; `rides` for a looks-only unit drawn on the part it sits on.",
+			"required": [
+				"onto"
+			],
+			"properties": {
+				"onto": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/path"
+					}
+				},
+				"spots": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"studs": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/path"
+					}
+				},
+				"rides": {
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false
+		}
+	}
+}

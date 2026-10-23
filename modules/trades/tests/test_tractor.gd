@@ -30,7 +30,9 @@ func run_tests() -> void:
 	var rig: TradesBay = yard.get_node(TradesBus.YARD_RIG)
 	var station := rig.ship_station()
 	var beam := station.tractor
-	check(rig.hotbar.size() >= 7 and rig.hotbar[6] == &"tractor", "the tractor beam is tool 7")
+	var at := rig.hotbar.find(&"tractor")
+	check(at >= 0 and at == rig.hotbar.size() - (2 if rig.hotbar.has(&"cutter") else 1),
+			"the tractor beam is on the hotbar after the hand tools (tool %d)" % (at + 1))
 	rig.set_tool(&"tractor")
 	var slot := ship_bus.get_slot(SLOT)
 	var home := station.ship_xform * slot.mount
@@ -60,12 +62,27 @@ func run_tests() -> void:
 	_run(station, 30)
 	check(part.global_position.distance_to(home.origin) > 1.0, "it follows the beam away from the ship")
 	check(not beam.aligned, "away from its mount it isn't in line")
+	# The line (beenster, 0.3.14): fine and flowing, it bends behind a quick swing and settles.
+	var line := beam._beam as TradesBeamLine
+	check(line.visible and TradesBeamLine.CORE_W < 0.01, "a fine line joins the tool to the part")
+	rig.worker.rotate_y(0.5)
+	_run(station, 2)
+	check(beam.beam_bend() > 0.01, "a quick swing bends it (%.3f m)" % beam.beam_bend())
+	rig.worker.rotate_y(-0.5)
+	_run(station, 90)
+	check(beam.beam_bend() < 0.005, "and it settles straight (%.3f m)" % beam.beam_bend())
 	var before := part.global_position.distance_to(rig.worker.aim_origin())
 	station.turn_held(1, false)
 	station.turn_held(1, false)
 	_run(station, 30)
 	check(part.global_position.distance_to(rig.worker.aim_origin()) > before + 0.15, "the wheel pushes it out")
-	station.turn_held(-2, false)
+	# The wheel itself, button up (beenster, 0.3.14): it pulls the part in, not a tool change.
+	var out := part.global_position.distance_to(rig.worker.aim_origin())
+	rig.wheel(-1)
+	rig.wheel(-1)
+	_run(station, 30)
+	check(rig.tool == &"tractor" and part.global_position.distance_to(rig.worker.aim_origin()) < out - 0.15,
+			"the mouse wheel pulls it back in while the beam holds it")
 	var yaw := part.global_rotation.y
 	station.adjust(1)
 	_run(station, 30)

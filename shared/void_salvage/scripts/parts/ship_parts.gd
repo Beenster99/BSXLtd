@@ -38,6 +38,10 @@ const LIVERIES: Dictionary = {
 ## The livery fittings are built in. A design sets it at the start of its build and puts
 ## "company" back at the end (ships build in one go, so nothing else sees it).
 static var livery: String = "company"
+## Whether the fittings' real pipes are laid (a frame build's PipeRouter, F5b): then they leave
+## out the stubs that stood in for their plumbing. A design sets it while it builds and puts
+## it back, as `livery`.
+static var plumbed: bool = false
 static var _mats: Dictionary = {}
 
 
@@ -325,9 +329,11 @@ static func reactor_cabinet(kit: ShipKit, frame: Transform3D, width: float, dept
 	_box(kit, frame, Vector3(depth + 0.026, height * 0.55, 0), Vector3(0.004, 0.84, 0.06), ShipKit.glow(Color(0.3, 0.8, 1.0), 3.0), false)
 	_box(kit, frame, Vector3(depth + 0.012, 0.18, 0), Vector3(0.024, 0.1, width), ShipKit.paint(Color(0.95, 0.55, 0.1), 0.2, 0.55), false)
 	_box(kit, frame, Vector3(depth + 0.021, height - 0.16, 0), Vector3(0.004, 0.012, width - 0.04), mat("edge"), false)
-	for k in 3:
-		var y := height * 0.25 + float(k) * 0.12
-		_box(kit, frame, Vector3(depth + 0.03, y, -width * 0.5 + 0.08), Vector3(0.06, 0.05, 0.05), mat("steel"), false)
+	# Stand-in pipe stubs, unless its coolant loop is laid for real.
+	if not plumbed:
+		for k in 3:
+			var y := height * 0.25 + float(k) * 0.12
+			_box(kit, frame, Vector3(depth + 0.03, y, -width * 0.5 + 0.08), Vector3(0.06, 0.05, 0.05), mat("steel"), false)
 	return kit.end_fitting(_fitting("reactor cabinet", frame, Vector3(0, 0, -width * 0.5), Vector3(depth + 0.04, height, width * 0.5)))
 
 
@@ -534,11 +540,276 @@ static func reactor_core(kit: ShipKit, frame: Transform3D, radius: float, height
 		_box(kit, frame, at + Vector3(0, height * 0.5, 0), Vector3(0.1, height - 0.2, 0.1), mat("shell"), true)
 		_box(kit, frame, at + Vector3(0, height * 0.5, 0) + Vector3(c.x, 0, c.y).normalized() * 0.052, Vector3(0.012, height - 0.4, 0.012),
 				mat("edge"), false)
-	for x: float in [-radius * 0.35, radius * 0.35]:
-		kit.add(PartShapes.prism(10, 0.09, 0.22), frame * Transform3D(Basis(), Vector3(x, height - 0.11, 0)), mat("steel"), "", null, false)
+	# Stand-in pipes up to the ceiling, unless its coolant loop is laid for real (from its plinth).
+	if not plumbed:
+		for x: float in [-radius * 0.35, radius * 0.35]:
+			kit.add(PartShapes.prism(10, 0.09, 0.22), frame * Transform3D(Basis(), Vector3(x, height - 0.11, 0)), mat("steel"), "", null, false)
+	else:
+		for port: Dictionary in ports("reactor_core", [radius, height]):
+			if port["fluid"] != "":
+				_boss(kit, frame, port)
 	kit.light(frame * Vector3(0, height * 0.5, radius + 0.6), Color(0.4, 0.8, 1.0), 1.2, 6.0)
 	var r := radius + 0.42
 	return kit.end_fitting(_fitting("reactor core", frame, Vector3(-r, 0, -r), Vector3(r, height, r)))
+
+
+# --- Services (docs/SHIP_FRAME_PLAN.md 4.5) -------------------------------------------------
+
+## A junction box in a cavity: a dark steel box with a bolted lid and a trim band, where a
+## loom ends and leads plug in. `frame` sits on the surface it is fixed to at the box's
+## middle, Y out of that surface, Z along the loom; `size` (x across, y out, z along).
+static func junction_box(kit: ShipKit, frame: Transform3D, size: Vector3) -> Dictionary:
+	kit.begin_fitting("junction_box", frame, [size])
+	_box(kit, frame, Vector3(0, size.y * 0.5, 0), size, mat("dark"), true)
+	_box(kit, frame, Vector3(0, size.y + 0.004, 0), Vector3(size.x - 0.03, 0.008, size.z - 0.03), mat("steel"), false)
+	_box(kit, frame, Vector3(0, size.y * 0.5, 0), Vector3(size.x + 0.004, 0.02, size.z + 0.004), mat("trim"), false)
+	return kit.end_fitting(_fitting("junction box", frame, Vector3(-size.x * 0.5, 0, -size.z * 0.5),
+			Vector3(size.x * 0.5, size.y + 0.008, size.z * 0.5)))
+
+
+## A lamp's driver: a small box above the lamp it feeds (on the panel the lamp hangs under),
+## with a green power LED. `frame` on that surface at its middle, Y out of it.
+static func lamp_driver(kit: ShipKit, frame: Transform3D) -> Dictionary:
+	kit.begin_fitting("lamp_driver", frame, [])
+	_box(kit, frame, Vector3(0, 0.025, 0), Vector3(0.16, 0.05, 0.1), mat("steel"), true)
+	_box(kit, frame, Vector3(0.06, 0.052, 0.03), Vector3(0.012, 0.004, 0.012), ShipKit.glow(Color(0.3, 1.0, 0.45), 1.5), false)
+	return kit.end_fitting(_fitting("lamp driver", frame, Vector3(-0.08, 0, -0.05), Vector3(0.08, 0.056, 0.05)))
+
+
+## The ship's jump tank (F5b): a long rounded steel tank hung under a deck between its
+## girders, banded, with a fill spigot at one end and a cross-feed on its inboard side.
+## `frame` sits at the middle of its top face, Y up (it hangs below), Z along it; `size`
+## (across, deep, long); `inboard` +1 or -1, the side (frame X) its cross-feed faces.
+static func jump_tank(kit: ShipKit, frame: Transform3D, size: Vector3, inboard: float) -> Dictionary:
+	kit.begin_fitting("jump_tank", frame, [size, inboard])
+	var tank := ShipKit.paint(Color(0.42, 0.44, 0.46), 0.75, 0.35)
+	kit.add(PartShapes.chamfer_box(size, minf(0.06, size.y * 0.25)), frame * Transform3D(Basis(), Vector3(0, -size.y * 0.5, 0)), tank)
+	for z: float in [-size.z * 0.3, size.z * 0.3]:
+		_box(kit, frame, Vector3(0, -size.y * 0.5, z), Vector3(size.x + 0.01, size.y + 0.01, 0.05), mat("dark"), false)
+	_box(kit, frame, Vector3(0, -size.y - 0.004, 0), Vector3(size.x * 0.5, 0.006, size.z * 0.5),
+			ShipKit.paint(Color(0.95, 0.55, 0.1), 0.2, 0.55), false)
+	for port: Dictionary in ports("jump_tank", [size, inboard]):
+		_boss(kit, frame, port)
+	return kit.end_fitting(_fitting("jump tank", frame, Vector3(-size.x * 0.5, -size.y, -size.z * 0.5), Vector3(size.x * 0.5, 0, size.z * 0.5)))
+
+
+## The reactor's heat exchanger (F5b): a flat finned box on the belly skin, the hull its cold
+## side, with the coolant loop's two spigots on its aft face. `frame` on the skin at its
+## middle, Y up, Z along the ship; `size` (across, tall, long).
+static func heat_exchanger(kit: ShipKit, frame: Transform3D, size: Vector3) -> Dictionary:
+	kit.begin_fitting("heat_exchanger", frame, [size])
+	_box(kit, frame, Vector3(0, size.y * 0.3, 0), Vector3(size.x, size.y * 0.6, size.z), mat("dark"), true)
+	var fins := maxi(3, int(size.x / 0.05))
+	for k in fins:
+		var x := lerpf(-size.x * 0.5 + 0.02, size.x * 0.5 - 0.02, float(k) / float(fins - 1))
+		_box(kit, frame, Vector3(x, size.y * 0.8, 0), Vector3(0.006, size.y * 0.4, size.z - 0.04), mat("steel"), false)
+	_box(kit, frame, Vector3(0, size.y * 0.61, size.z * 0.5 - 0.02), Vector3(size.x, 0.012, 0.03),
+			ShipKit.paint(Color(0.22, 0.52, 0.66), 0.35, 0.5), false)
+	for port: Dictionary in ports("heat_exchanger", [size]):
+		_boss(kit, frame, port)
+	return kit.end_fitting(_fitting("heat exchanger", frame, Vector3(-size.x * 0.5, 0, -size.z * 0.5), Vector3(size.x * 0.5, size.y, size.z * 0.5)))
+
+
+## A spigot's boss on a fitting: a short collar where its pipe bolts on (looks only).
+static func _boss(kit: ShipKit, frame: Transform3D, port: Dictionary) -> void:
+	var r: float = port["radius"]
+	var dir: Vector3 = port["direction"]
+	var y := dir.normalized()
+	var x := y.cross(Vector3.UP if absf(y.y) < 0.9 else Vector3.RIGHT).normalized()
+	var at: Vector3 = (port["position"] as Vector3) - y * 0.01
+	kit.add(PartShapes.prism(10, r * 1.45, 0.02), frame * Transform3D(Basis(x, y, x.cross(y)), at), mat("steel"), "", null, false)
+
+
+## Where a fitting or ship system meets the services (docs/SHIP_FRAME_PLAN.md 4.5; the ship
+## file writes them for BSX, which matches a module's ports by them): each {name, fluid ("" for
+## power), radius (m), position, direction (unit: the way the lead or pipe leaves)} in the frame
+## its builder took, for `kind` (the fitting's or system's name) built with `args`. Power (F5)
+## and the pipes' spigots (F5b: the fuel port's feed, the manifold's inlet and jump-tank feed,
+## the jump tanks', the reactor's coolant loop and its heat exchanger's). [] for anything with
+## no services.
+static func ports(kind: String, args: Array) -> Array[Dictionary]:
+	var lead := 0.008
+	match kind:
+		"console":
+			return [_port("power", "", lead, Vector3(0, 0, -float(args[1]) * 0.5), Vector3.DOWN)]
+		"breaker_panel":
+			var y: float = args[0] if not args.is_empty() else 1.45
+			return [_port("in", "", lead, Vector3(0, y - 0.2, 0.15), Vector3.LEFT),
+					_port("out", "", lead, Vector3(0, y - 0.2, -0.15), Vector3.LEFT)]
+		"reactor_cabinet":
+			var depth := float(args[1])
+			var width := float(args[0])
+			return [_port("power", "", lead, Vector3(depth * 0.5, 0, width * 0.35), Vector3.DOWN),
+					# The coolant loop leaves low on its front (a frame behind its back wall leaves no
+					# room under it) and drops through the floor.
+					_port("coolant_out", "coolant", PIPE_COOLANT, Vector3(depth, 0.09, -width * 0.36), Vector3.RIGHT),
+					_port("coolant_in", "coolant", PIPE_COOLANT, Vector3(depth, 0.09, -width * 0.08), Vector3.RIGHT)]
+		"reactor_core":
+			# Power down through the floor under its plinth; the coolant loop out of the plinth's
+			# aft face, either side of the middle, and down through the floor.
+			var radius := float(args[0])
+			var face := (radius + 0.25) * cos(PI / 16.0)
+			return [_port("power", "", lead, Vector3(radius * 0.7, 0, radius * 0.7), Vector3.DOWN),
+					_port("coolant_out", "coolant", PIPE_COOLANT, Vector3(-0.3, 0.15, face), Vector3.BACK),
+					_port("coolant_in", "coolant", PIPE_COOLANT, Vector3(0.3, 0.15, face), Vector3.BACK)]
+		"fuel_port":
+			# The coupling's back, at the hull's outer face: the feed runs in through the skin.
+			return [_port("feed", "fuel", PIPE_FUEL, Vector3.ZERO, Vector3.LEFT)]
+		"jump_tank":
+			var size: Vector3 = args[0]
+			var inboard := float(args[1])
+			return [_port("fill", "fuel", PIPE_JUMP, Vector3(0, -size.y * 0.25, size.z * 0.5), Vector3.BACK),
+					_port("cross", "fuel", PIPE_JUMP, Vector3(inboard * size.x * 0.5, -size.y * 0.65, -size.z * 0.3),
+							Vector3(inboard, 0, 0))]
+		"heat_exchanger":
+			var size: Vector3 = args[0]
+			return [_port("in", "coolant", PIPE_COOLANT, Vector3(-size.x * 0.25, size.y * 0.3, size.z * 0.5), Vector3.BACK),
+					_port("out", "coolant", PIPE_COOLANT, Vector3(size.x * 0.25, size.y * 0.3, size.z * 0.5), Vector3.BACK)]
+		"junction_box":
+			var size: Vector3 = args[0]
+			return [_port("a", "", 0.035, Vector3(0, size.y * 0.5, -size.z * 0.5), Vector3.FORWARD),
+					_port("b", "", 0.035, Vector3(0, size.y * 0.5, size.z * 0.5), Vector3.BACK),
+					_port("tap", "", lead, Vector3(size.x * 0.5, size.y * 0.5, 0), Vector3.RIGHT)]
+		"lamp_driver":
+			return [_port("power", "", lead, Vector3(-0.08, 0.025, 0), Vector3.LEFT),
+					_port("lamp", "", 0.004, Vector3(0, 0, 0), Vector3.DOWN)]
+		"lamp":
+			return [_port("power", "", 0.004, Vector3(0, 0.07, 0), Vector3.UP)]
+		"door_panel", "control_panel":
+			return [_port("power", "", lead, Vector3.ZERO, Vector3.LEFT)]
+		"monitor":
+			return [_port("power", "", lead, Vector3(0, -0.075, 0), Vector3.LEFT)]
+		"bowsers":
+			# The manifold: the feed in through its back, the jump tanks' feed out of its foot.
+			return [_port("power", "", lead, Vector3(0, 0.42, 0), Vector3.LEFT),
+					_port("in", "fuel", PIPE_FUEL, Vector3(0.02, 0.3, 0.0), Vector3.LEFT),
+					_port("jump", "fuel", PIPE_JUMP, Vector3(0.14, 0.21, 0.04), Vector3.DOWN)]
+		"map_screen":
+			return [_port("power", "", lead, Vector3(0, 0, -0.015), Vector3.FORWARD)]
+	return []
+
+
+static func _port(port_name: String, fluid: String, radius: float, at: Vector3, dir: Vector3) -> Dictionary:
+	return {"name": port_name, "fluid": fluid, "radius": radius, "position": at, "direction": dir}
+
+
+# --- Pipes (F5b: PipeRouter lays them) -------------------------------------------------------
+
+## The ship's pipe radii, metres: the fuel lines, the coolant loop, air, the jump tanks' feed
+## (docs/SHIP_FRAME_PLAN.md 4.5).
+const PIPE_FUEL: float = 0.02
+const PIPE_COOLANT: float = 0.03
+const PIPE_AIR: float = 0.015
+const PIPE_JUMP: float = 0.04
+## A union's flanges, in pipe radii.
+const UNION_FLARE: float = 1.45
+const PIPE_SIDES: int = 10
+
+
+## A straight pipe span along Y, `length` long, centred: a plain steel tube with a collar
+## either side of each panel it passes (`collars`, its Y there). Its collision covers only
+## `solid` ([y0, y1] each: clear of the panels it passes and the parts at its ends).
+static func pipe_shape(radius: float, length: float, solid: Array = [], collars: Array[float] = []) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var h := length * 0.5
+	k.lathe(PackedVector2Array([Vector2(0.0, -h), Vector2(radius, -h), Vector2(radius, h), Vector2(0.0, h)]), PIPE_SIDES)
+	k.color = Color(0.55, 0.56, 0.58)
+	for y in collars:
+		k.lathe(PackedVector2Array([Vector2(radius, y - 0.012), Vector2(radius * 1.5, y - 0.012), Vector2(radius * 1.5, y + 0.012),
+				Vector2(radius, y + 0.012)]), PIPE_SIDES)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = PI * radius * radius * 0.36 * length
+	# A piece under 2 mm long is a speck (a span wholly in what it passes keeps only that).
+	var pieces: Array = solid if not solid.is_empty() else [[-0.0005, 0.0005]]
+	for i in pieces.size():
+		var y0 := float(pieces[i][0])
+		var y1 := float(pieces[i][1])
+		var col := _tube_hull(radius if y1 - y0 > 0.002 else 0.001, y0, y1)
+		if i == 0:
+			shape.collision = col
+		else:
+			shape.extra_collision.append(col)
+	return PartShapes.stamp(shape, "pipe", [radius, length, solid, collars])
+
+
+## A 90 degree elbow: from its origin heading +Y, bending toward +Z round a centre `bend` along
+## +Z, ending at (0, bend, bend) heading +Z. Its collision is the middle of the bend.
+static func pipe_elbow_shape(radius: float, bend: float) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var steps := 6
+	var rings: Array[PackedVector3Array] = []
+	var mid := PackedVector3Array()
+	for i in steps + 1:
+		var a := PI * 0.5 * float(i) / float(steps)
+		var c := Vector3(0.0, sin(a) * bend, bend - cos(a) * bend)
+		var t := Vector3(0.0, cos(a), sin(a))
+		var u := Vector3.RIGHT
+		var v := t.cross(u)
+		var ring := PackedVector3Array()
+		for j in PIPE_SIDES:
+			var b := TAU * float(j) / float(PIPE_SIDES)
+			ring.append(c + (u * cos(b) + v * sin(b)) * radius)
+			if i >= 2 and i <= steps - 2:
+				mid.append(c + (u * cos(b) + v * sin(b)) * radius * 0.85)
+		rings.append(ring)
+	for i in steps:
+		k.loft(rings[i], rings[i + 1], false)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.mesh.set_meta("bend", bend)
+	shape.volume = PI * radius * radius * 0.36 * bend * PI * 0.5
+	var hull := ConvexPolygonShape3D.new()
+	hull.points = mid
+	shape.collision = hull
+	return PartShapes.stamp(shape, "pipe_elbow", [radius, bend])
+
+
+## A flanged union along Y, `length` long, centred: a sleeve between two bolted flanges.
+static func pipe_union_shape(radius: float, length: float) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var h := length * 0.5
+	var fr := radius * UNION_FLARE
+	var ft := minf(0.012, length * 0.2)
+	k.color = Color(0.72, 0.72, 0.7)
+	k.lathe(PackedVector2Array([Vector2(0.0, -h), Vector2(fr, -h), Vector2(fr, -h + ft), Vector2(radius * 1.2, -h + ft),
+			Vector2(radius * 1.2, h - ft), Vector2(fr, h - ft), Vector2(fr, h), Vector2(0.0, h)]), PIPE_SIDES)
+	k.color = Color(0.3, 0.31, 0.33)
+	var bs := maxf(radius * 0.22, 0.006)
+	for y: float in [-h + ft + bs * 0.5, h - ft - bs * 0.5]:
+		for j in 4:
+			var a := TAU * (float(j) + 0.5) / 4.0
+			k.box(Vector3(bs, bs, bs), Vector3(cos(a) * (radius * 1.2 + fr) * 0.5, y, sin(a) * (radius * 1.2 + fr) * 0.5))
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = PI * fr * fr * ft * 2.0 + PI * radius * radius * 0.5 * length
+	shape.collision = _tube_hull(fr, -h + 0.006, h - 0.006)
+	return PartShapes.stamp(shape, "pipe_union", [radius, length])
+
+
+## A pipe clip's look: a band round the pipe (its Y) and a stem out along +Z, `stem` long, to
+## a foot on what holds it.
+static func pipe_clip_mesh(radius: float, stem: float) -> ArrayMesh:
+	var k := MeshKit.new()
+	k.color = Color(0.6, 0.62, 0.64)
+	k.lathe(PackedVector2Array([Vector2(radius, -0.01), Vector2(radius + 0.004, -0.01), Vector2(radius + 0.004, 0.01),
+			Vector2(radius, 0.01)]), PIPE_SIDES)
+	if stem > 0.003:
+		k.box(Vector3(0.012, 0.016, stem), Vector3(0.0, 0.0, radius + stem * 0.5))
+		k.box(Vector3(0.03, 0.03, 0.004), Vector3(0.0, 0.0, radius + stem - 0.002))
+	return k.finish()
+
+
+## A tube's convex collision along Y from y0 to y1.
+static func _tube_hull(radius: float, y0: float, y1: float) -> ConvexPolygonShape3D:
+	var pts := PackedVector3Array()
+	for y: float in [y0, y1]:
+		for j in 8:
+			var a := TAU * float(j) / 8.0
+			pts.append(Vector3(cos(a) * radius, y, sin(a) * radius))
+	var hull := ConvexPolygonShape3D.new()
+	hull.points = pts
+	return hull
 
 
 # --- Helpers -------------------------------------------------------------------------------

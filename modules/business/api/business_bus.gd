@@ -96,11 +96,20 @@ const PAYSLIPS_SECTION := "business.payslips"
 const CompanyPanel := preload("res://modules/business/internal/ui/company_panel.gd")
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
-## Settings > Gameplay > Testing (flag business.debug): orders arrive the moment they're
-## placed. The host's setting is the one that counts; it delivers.
+## Settings > Debug > Company (flag business.debug): instant deliveries (orders arrive the
+## moment they're placed; the host's setting counts, it delivers) and buttons that fill the
+## wallet, the company account and reputation, for testing.
 const SETTINGS_SECTION := "business"
 const INSTANT_KEY := "instant_deliveries"
 const TESTING_SECTION := "business.testing"
+const DEBUG_EVENT := "business.debug"
+## What the debug buttons fill up to.
+const DEBUG_WALLET := 1000000
+const DEBUG_CASH := 10000000
+## Debug button actions.
+const MAX_WALLET := "max_wallet"
+const MAX_CASH := "max_cash"
+const MAX_REPUTATION := "max_reputation"
 
 var _books: Books
 ## The open shipyard Business has furnished, or null; the clock runs while it is open.
@@ -143,7 +152,7 @@ func register_module() -> void:
 		if not Settings.changed.is_connected(_on_setting_changed):
 			Settings.changed.connect(_on_setting_changed)
 		_books.instant_deliveries = bool(Settings.get_value(SETTINGS_SECTION, INSTANT_KEY))
-		Menu.register_settings_section(Menu.GAMEPLAY, TESTING_SECTION, "Testing", _testing_section, 90)
+		Menu.register_settings_section(Menu.DEBUG, TESTING_SECTION, "Company", _testing_section, 20)
 	if Flags.is_on("business.economy"):
 		Menu.register_settings_page(COMPANY_PAGE, "Company", func() -> Control: return CompanyPanel.new(self, "company", false), 20)
 		Menu.register_settings_section(Menu.CHARACTER, PAYSLIPS_SECTION, "Payslips", func() -> Control: return CompanyPanel.new(self, "payslips", false), 30)
@@ -158,12 +167,12 @@ func unregister_module() -> void:
 		yard_bus.disconnect("scrap_recycled", _on_scrap_recycled)
 	var net := _net()
 	if net:
-		for e in [TRANSFER_EVENT, OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT]:
+		for e in [TRANSFER_EVENT, OWNER_EVENT, BONUS_EVENT, LOAN_EVENT, SETTLE_EVENT, DEBUG_EVENT]:
 			net.call("unregister_event", e)
 		net.call("unregister_snapshot_provider", SAVE_SECTION)
 	HudSlots.unregister_holo_section(CREW_CHANNEL, TRANSFER_SECTION)
 	Menu.unregister_settings_page(COMPANY_PAGE)
-	Menu.unregister_settings_section(Menu.GAMEPLAY, TESTING_SECTION)
+	Menu.unregister_settings_section(Menu.DEBUG, TESTING_SECTION)
 	if Settings.changed.is_connected(_on_setting_changed):
 		Settings.changed.disconnect(_on_setting_changed)
 	Menu.unregister_settings_section(Menu.CHARACTER, PAYSLIPS_SECTION)
@@ -190,10 +199,10 @@ func _offer_screen_channels() -> void:
 ## Every player has a wallet of their own and can send money to the crew; the company account
 ## can pay crew too (posted as wages). Players are known by their profile name.
 func _offer_wallets() -> void:
-	if not Flags.is_on("business.wallets"):
-		return
 	var net := _net()
-	if net == null:
+	if net and Flags.is_on("business.debug"):
+		net.call("register_event", DEBUG_EVENT, _apply_debug, _validate_debug)
+	if not Flags.is_on("business.wallets") or net == null:
 		return
 	net.call("register_event", TRANSFER_EVENT, _apply_transfer, _validate_transfer)
 	if Flags.is_on("business.economy"):
@@ -537,6 +546,52 @@ func get_ledger(since_day := 0) -> Array[LedgerEntry]:
 	return _books.ledger.filter(func(e): return e.day >= since_day)
 
 
+## Ledger categories grouped the way the Accounts page shows them, in its order.
+const ACCOUNT_GROUPS := {
+	"contracts": ["deposit", "goodwill", "payment", "penalty"],
+	"sales": ["scrap", "salvage"],
+	"parts": ["parts", "refund"],
+	"wages": ["wages", "bonus"],
+	"rent": ["rent"],
+	"loans": ["loan", "repayment"],
+}
+
+
+## The Accounts page group a ledger category falls in ("other" for the rest).
+static func account_group(category: String) -> String:
+	for g: String in ACCOUNT_GROUPS:
+		if category in ACCOUNT_GROUPS[g]:
+			return g
+	return "other"
+
+
+## Money in and out over the last `days` game days up to today: {income, outgoings, net,
+## groups: {group: {in, out}} (every group, in ACCOUNT_GROUPS order then "other"),
+## days: [{day, in, out}] oldest first}. Outgoings are positive numbers.
+func accounts_summary(days: int) -> Dictionary:
+	var today := get_day()
+	var first := maxi(0, today - maxi(1, days) + 1)
+	var groups := {}
+	for g: String in ACCOUNT_GROUPS.keys() + ["other"]:
+		groups[g] = {"in": 0, "out": 0}
+	var per_day: Array = []
+	for d in range(first, today + 1):
+		per_day.append({"day": d, "in": 0, "out": 0})
+	var income := 0
+	var out := 0
+	for e: LedgerEntry in _books.ledger:
+		if e.day < first or e.day > today:
+			continue
+		var side := "in" if e.amount > 0 else "out"
+		groups[account_group(e.category)][side] += absi(e.amount)
+		per_day[e.day - first][side] += absi(e.amount)
+		if e.amount > 0:
+			income += e.amount
+		else:
+			out -= e.amount
+	return {"income": income, "outgoings": out, "net": income - out, "groups": groups, "days": per_day}
+
+
 ## 0 to 100.
 func get_reputation() -> float:
 	return _books.reputation
@@ -824,13 +879,74 @@ func _on_setting_changed(section: String, key: String, value: Variant) -> void:
 		set_instant_deliveries(bool(value))
 
 
+## Fills something up for testing: MAX_WALLET (the asking player's wallet), MAX_CASH (the
+## company account) or MAX_REPUTATION (BSX's reputation and standing with every client).
+## Goes through the host like any other change to the books.
+func request_debug(action: String) -> void:
+	var net := _net()
+	if net:
+		net.call("request", DEBUG_EVENT, {"action": action})
+	else:
+		var p: Variant = _validate_debug(my_peer(), {"action": action})
+		if p is Dictionary:
+			_apply_debug(p)
+
+
+func _validate_debug(sender: int, p: Dictionary) -> Variant:
+	if not Flags.is_on("business.debug"):
+		return "debug tools are off"
+	var action := str(p.get("action", ""))
+	if not action in [MAX_WALLET, MAX_CASH, MAX_REPUTATION]:
+		return "unknown debug action"
+	return {"action": action, "player": player_name(sender)}
+
+
+func _apply_debug(p: Dictionary) -> void:
+	match str(p.action):
+		MAX_WALLET:
+			var who := str(p.get("player", ""))
+			if who == "":
+				return
+			var add := DEBUG_WALLET - _books.wallet(who)
+			if add > 0:
+				_books.wallets[who] = DEBUG_WALLET
+				wallet_changed.emit(who, DEBUG_WALLET, add)
+		MAX_CASH:
+			var add := DEBUG_CASH - _books.cash
+			if add > 0:
+				_books.post(add, LedgerEntry.DEBUG, "", "debug top-up")
+			_books.days_in_debt = 0
+			_books.insolvent = false
+		MAX_REPUTATION:
+			_books.change_reputation(100.0, "debug")
+			var contracts := Modules.bus("contracts") as ContractsBus
+			if contracts:
+				var top: int = ContractClients.LEVEL_POINTS[ContractClients.LEVEL_POINTS.size() - 1]
+				for client: String in ContractClients.TABLE:
+					contracts.add_standing(client, maxi(0, top - contracts.standing_of(client)))
+
+
 func _testing_section() -> Control:
+	var col := VBoxContainer.new()
+	col.name = "BusinessDebug"
+	col.add_theme_constant_override("separation", 8)
 	var t := CheckButton.new()
 	t.name = "InstantDeliveries"
 	t.text = "Instant deliveries: parts orders arrive as soon as they're placed (host)"
 	t.button_pressed = bool(Settings.get_value(SETTINGS_SECTION, INSTANT_KEY))
 	t.toggled.connect(func(on: bool) -> void: Settings.set_value(SETTINGS_SECTION, INSTANT_KEY, on))
-	return t
+	col.add_child(t)
+	for b: Array in [["MaxWallet", "Max my money (CR %s)" % TerminalKit.money(DEBUG_WALLET), MAX_WALLET],
+			["MaxCash", "Max garage money (CR %s)" % TerminalKit.money(DEBUG_CASH), MAX_CASH],
+			["MaxReputation", "Max reputation, and standing with every company", MAX_REPUTATION]]:
+		var button := Button.new()
+		button.name = b[0]
+		button.text = b[1]
+		button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		var action: String = b[2]
+		button.pressed.connect(func() -> void: request_debug(action))
+		col.add_child(button)
+	return col
 
 
 # --- Scrapyard: break, scrap, refurbish and dispose jobs ---

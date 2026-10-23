@@ -9,7 +9,8 @@ var walker_active := true
 func set_walker_active(on: bool) -> void:
 	walker_active = on
 """
-const FLAGS := ["trades.test_stand", "trades.power_wrench", "trades.wire_diagram", "trades.power_riveter"]
+const FLAGS := ["trades.test_stand", "trades.power_wrench", "trades.wire_diagram", "trades.power_riveter",
+		"trades.rivet_heat", "trades.slim_hotbar", "trades.trace_weld"]
 
 
 func run_tests() -> void:
@@ -58,14 +59,38 @@ func run_tests() -> void:
 	check(not ship_bus.is_joint_tight(station.points[b].joint_id), "Ship and Bay never hears of it")
 	check(reported.is_empty(), "nor does Quality")
 	check(rig._hint_label.text.contains("in at"), "the hint says how tight: %s" % rig._hint_label.text)
+	station.update(0.0)
+	check(station._marker.material_override == station._ring_tight, "the aim ring goes green when it's torqued")
 
-	# A set rivet: drill it out.
+	# Undo it again: the ring goes orange and the bolt drops out and falls.
+	var pops := rig.sparks.pop_count()
+	(rig.tool_node(&"torque_wrench") as TradesPowerWrench).undo = true
+	station.back_out(&"torque_wrench")
+	_run(station, TradesShipJoints.RUN_S * 1.2)
+	station.release()
+	station.update(0.0)
+	check(not station.is_tight(station.points[b]), "undo takes it out")
+	check(rig.sparks.pop_count() == pops + 1, "the bolt drops out (%d falling)" % rig.sparks.pop_count())
+	check(station._marker.material_override == station._ring_loose, "and the aim ring goes orange")
+	(rig.tool_node(&"torque_wrench") as TradesPowerWrench).undo = false
+	station.press(&"torque_wrench")
+	station._stall_at = -1.0
+	_run(station, TradesShipJoints.RUN_S * 1.2)
+	station.release()
+
+	# The slim hotbar (beenster, 22 Oct): no drill, crimper or cutter.
+	check(not rig.hotbar.has(&"drill") and not rig.hotbar.has(&"wire_tool") and not rig.hotbar.has(&"cutter")
+			and rig.hotbar.has(&"welder") and rig.hotbar.has(&"hands"), "no drill, crimper or cutter on the hotbar")
+
+	# A set rivet: heat it out with the welder.
 	var r := _first(station, "rivet", true)
 	_aim_at(rig, station, r)
-	rig.set_tool(&"drill")
-	station.press(&"drill")
-	_run(station, TradesShipJoints.DRILL_S + 0.1)
-	check(not station.is_tight(station.points[r]), "a stand rivet drills out")
+	check(station.kind_tools("rivet") == [&"rivet_squeezer", &"welder"], "rivets: the rivet gun sets them, the welder takes them out")
+	check(station.kind_help("rivet").contains("welder (%s) to take out" % rig.tool_key(&"welder")), "the help names the welder and its key")
+	rig.set_tool(&"welder")
+	station.press(&"welder")
+	_run(station, TradesShipJoints.HEAT_S + 0.2)
+	check(not station.is_tight(station.points[r]), "a stand rivet heats out")
 
 	# The open weld seam: lay a bead.
 	var w := _first(station, "weld", false)
@@ -74,7 +99,15 @@ func run_tests() -> void:
 	(rig.tool_node(&"welder") as TradesWeldTorch).unweld = false
 	station.press(&"welder")
 	_run(station, TradesShipJoints.WELD_S + 0.1)
-	check(station.is_tight(station.points[w]), "a bead welds the open seam")
+	check(not station.is_tight(station.points[w]), "holding the arc on one spot doesn't weld the seam")
+	check(station.trace_progress(station.points[w]) < 0.5, "it only covers that stretch")
+	var at := station.points_world[w]
+	for k in 41:
+		rig.worker.face(at + Vector3.RIGHT * (0.5 * (k / 40.0 - 0.5)))
+		station.update(0.05)
+	check(station.is_tight(station.points[w]), "tracing the arc along the seam welds it")
+	check(station.hot_beads() > 0, "the fresh bead glows orange")
+	station.release()
 
 	# The fuel plug pushes home; the power plug opens the wiring tool.
 	var fuel := _find(station, "fuel")
@@ -95,6 +128,8 @@ func run_tests() -> void:
 	var lines := station.inspect_lines()
 	check(lines.size() > 3 and lines[0] == "TOOL TEST STAND", "Tab shows the stand's sheet")
 	check(station.aim_spec(&"torque_wrench").contains("Holds Test panel"), "the look card names the panel")
+	check(station.aim_spec(&"torque_wrench").contains("of %d joints in" % stand.joints.size()),
+			"and the part's key details, with no Tab sheet: %s" % station.aim_spec(&"torque_wrench"))
 	check(reported.is_empty(), "still nothing sent to Quality")
 	var marker := stand._markers[station.points[b].joint_id] as MeshInstance3D
 	check((marker.get_child(0) as Node3D).visible, "a made joint shows its head on the stand")

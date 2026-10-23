@@ -17,14 +17,19 @@ enum Kind { HULL, FRAME, HAZARD, CONDUIT, COMPONENT, GLASS }
 ##   CONSUMER   uses it and passes nothing on (lights, door panels)
 enum Power { NONE, SOURCE, CONDUCTOR, SWITCH, CONSUMER }
 
-## Faults on a part, as bit flags in `faults` (docs/DAMAGE_PLAN.md 9.3.3; more to come):
+## Faults on a part, as bit flags in `faults` (docs/DAMAGE_PLAN.md 9.3.3):
 ##   DEAD_LAMP     a lamp whose bulb or cell has failed: dark whatever the grid says
-##   BREACHED      a tank or line holed (a rupture's blast): it holds nothing
+##   BREACHED      a tank or line holed: a rupture's (no `breach`: it holds nothing) or an
+##                 event's (`breach` says where: it vents while there is fluid behind it)
 ##   BLOWN_SCREEN  its screens burnt out for good (fire, a hit): never intact for a parts ask
 ##   CRACKED       a pane crazed from the points in `cracks`, still whole
-enum Fault { DEAD_LAMP = 1, BREACHED = 2, BLOWN_SCREEN = 4, CRACKED = 8 }
+##   KINKED        a pipe shoved in at `kink` by a dent: bent, still carrying its fluid
+##   DOOR_HANGING  a door leaf (a locker's) hanging open by one of its two hinge welds
+##   DOOR_OFF      a door leaf torn off both hinge welds, adrift
+enum Fault { DEAD_LAMP = 1, BREACHED = 2, BLOWN_SCREEN = 4, CRACKED = 8, KINKED = 16,
+	DOOR_HANGING = 32, DOOR_OFF = 64 }
 ## What each fault takes off the condition (0..1), by flag.
-const FAULT_CONDITION := {Fault.BLOWN_SCREEN: 0.1, Fault.CRACKED: 0.2}
+const FAULT_CONDITION := {Fault.BLOWN_SCREEN: 0.1, Fault.CRACKED: 0.2, Fault.KINKED: 0.15}
 
 ## How a part came off the wreck (docs/ECONOMY_PLAN.md 3.4), worst so far:
 ##   ATTACHED  still on it (or never off anything)
@@ -78,6 +83,13 @@ var cracks: Array = []
 ## Frayed wire ends left where a plug (a CONNECTOR joint) on this part broke: [[point,
 ## normal], ...] in part space. Every machine replays the same breaks, so the same frays.
 var frays: Array = []
+## BREACHED by an event: [point, out (unit), level left 0..1, frost radius m] in part space:
+## the hole, which way it faces, what the tank was left holding (FluidSystem.setup) and the
+## frost bloom a coolant breach grows. Empty for a rupture's (the tank went with the blast).
+var breach: Array = []
+## KINKED: [point on the pipe's axis, push] in part space: the push's direction is the way
+## the pipe was shoved, its length how far (m). Both ends stay where they were clamped.
+var kink: Array = []
 
 ## --- Fluids (FluidSystem). What a tank holds or a line carries: "", "fuel", "coolant".
 var fluid: String = ""

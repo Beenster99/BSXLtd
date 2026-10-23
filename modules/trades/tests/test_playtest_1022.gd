@@ -80,8 +80,30 @@ func run_tests() -> void:
 	check(str(hint.get("text", "")).contains("%d-%d N m" % [roundi(nm.x), roundi(nm.y)]),
 			"looking at a bolt, the card gives its torque spec: %s" % str(hint.get("text", "")))
 	check(str(hint.get("text", "")).contains("Holds"), "and the part it holds")
+	check(str(hint.get("text", "")).contains("joints in"), "and how many of its joints are in")
+	# Joined-up hands (beenster, 22 Oct): first person, a forearm runs up into view to each hand.
+	Flags.set_flag("trades.forearms", true)
+	rig.worker.set_view(false)
+	await frames(2)
+	var sleeve := rig.worker.right_hand.get_node("Sleeve") as MeshInstance3D
+	var wrist_end := sleeve.global_position + sleeve.global_basis.y * 0.5
+	check(sleeve.visible and wrist_end.distance_to(rig.worker.right_hand.palm().origin) < 0.15,
+			"first person, the hand is on the end of a forearm")
+	# The tool's display rides on the tool (beenster, 0.3.14), clear of the aim.
+	var tool := rig.tool_node(&"torque_wrench") as TradesTool
+	var cam := rig.worker.camera
+	var in_hand := Vector3(0.26, -0.23, -0.46)
+	var shown := tool._beside_tool(cam, in_hand)
+	check(shown.distance_to(in_hand) < 0.12, "the display sits just above the tool in your hand (%.2f m off)" % shown.distance_to(in_hand))
+	var on_work := tool._beside_tool(cam, Vector3(0.02, 0.0, -1.3))
+	var clear := -on_work.z * tan(deg_to_rad(cam.fov) * 0.5) * TradesTool.CLEAR
+	check(Vector2(on_work.x, on_work.y).length() >= clear - 0.001 and -on_work.z <= TradesTool.DISPLAY_FAR,
+			"out on the work it comes back to read, still clear of where you point")
 
 	# The wrist's Specs channel: a paper spec sheet on its right.
+	# The ship-wide layout (the job pack one is test_specs_job_pack).
+	var had_pack := Flags.is_on("trades.job_pack_specs")
+	Flags.set_flag("trades.job_pack_specs", false)
 	var screen := TradesSpecsScreen.new(true)
 	yard.add_child(screen)
 	var sheets := screen.find_children("SpecSheet", "TradesSpecSheet", true, false)
@@ -93,6 +115,7 @@ func run_tests() -> void:
 	check((sheet.paper.get_theme_stylebox("panel") as StyleBoxFlat).bg_color == TradesSpecSheet.PAPER, "on paper")
 	sheet.free()
 	screen.queue_free()
+	Flags.set_flag("trades.job_pack_specs", had_pack)
 	var ship_sheet := TradesSpecSheet.new(null)
 	check(ship_sheet.text().contains("FASTENER SCHEDULE"), "looking at nothing: the ship's fastener schedule")
 	ship_sheet.free()

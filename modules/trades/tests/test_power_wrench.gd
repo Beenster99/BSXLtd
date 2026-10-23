@@ -117,12 +117,16 @@ func run_tests() -> void:
 	var tips := "\n".join(rig.context_tips())
 	check(tips.contains("switch to undo"), "on a tight bolt the tips offer undo: %s" % tips.replace("\n", " | "))
 	check(not HudSlots.holo_channel(TradesBus.SPECS_CHANNEL).is_empty(), "the wrist screen has a Specs channel")
+	# The ship-wide layout (the job pack one is test_specs_job_pack).
+	var had_pack := Flags.is_on("trades.job_pack_specs")
+	Flags.set_flag("trades.job_pack_specs", false)
 	var screen := TradesSpecsScreen.new(true)
 	yard.add_child(screen)
 	var text := _texts(screen)
 	check(text.contains(f.spec) and text.contains("%d-%d N m" % [roundi(spec.x), roundi(spec.y)]),
 			"it lists the bolt's torque window")
 	screen.queue_free()
+	Flags.set_flag("trades.job_pack_specs", had_pack)
 
 	bus.joint_completed.disconnect(on_done)
 	yard.queue_free()
