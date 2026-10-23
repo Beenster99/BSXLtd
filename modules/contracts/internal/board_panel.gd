@@ -148,6 +148,8 @@ func _docket(job: ContractJob) -> Control:
 	var pay := int(o.commercial.get("price", 0))
 	var dep := int(o.commercial.get("deposit_pct", 0))
 	body.add_child(T.label("PAYS CR %s  ·  %d%% DEPOSIT  ·  %s" % [T.money(pay), dep, due_text(o)], "mono_bold", 14, T.ORANGE))
+	if float(o.commercial.get("tonnes", 0.0)) > 0.0:
+		body.add_child(T.label("BY THE TONNE: CR %s A TONNE, %.1f T TO CUT AND BALE" % [T.money(int(o.commercial.get("per_tonne", 0))), float(o.commercial.get("tonnes", 0.0))], "mono_medium", 12, T.ORANGE))
 
 	# The job pack: one chip per document; the open one draws below, else the summary.
 	var pack := bus.job_pack(job.job_id)

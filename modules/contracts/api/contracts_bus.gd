@@ -120,6 +120,12 @@ func set_pricer(pricer: Callable) -> void:
 	_generator.pricer = pricer
 
 
+## Callable(material, kg) -> int: what a scrap job pays BSX by the tonne for cutting and
+## baling (plan stage S5). Business wires its rate in; unset, the generator's own applies.
+func set_scrap_pricer(pricer: Callable) -> void:
+	_generator.scrap_pricer = pricer
+
+
 
 
 func set_component_library(exists: Callable, library_spec: Callable = Callable()) -> void:
@@ -451,6 +457,48 @@ func record_recovery(job_id: String, component: ComponentRef, condition: float, 
 	job.recoveries.append(line)
 	recovery_recorded.emit(job_id, line)
 	return true
+
+
+## Deliveries made for a job's subject carry this order id prefix, then the job id (Ship and
+## Bay's SUBJECT_ORDER); the crates it lands and the lots cut from them keep that order id.
+const SUBJECT_ORDER := "subject:"
+
+
+## The job a subject delivery or a lot cut from it belongs to ("subject:<job id>"), or "".
+func job_of_order(order_id: String) -> String:
+	if not order_id.begins_with(SUBJECT_ORDER):
+		return ""
+	var job_id := order_id.substr(SUBJECT_ORDER.length())
+	return job_id if get_job(job_id) != null else ""
+
+
+## What becomes of metal cut out of a job's subject (plan stage S5): a scrap job's goes back
+## to a client who keeps the rest ("returned") or stays with BSX ("kept"); anything crushed
+## on a break, refurbish or dispose job is "scrapped" (a dispose job's subject is gone once
+## it is). "" for a fit job or an unknown one.
+func scrap_disposition(job_id: String) -> String:
+	var job := get_job(job_id)
+	if job == null or job.order.is_fit():
+		return ""
+	if job.order.kind == WorkOrder.SCRAP:
+		return "returned" if job.order.keeps == "client" else "kept"
+	return "scrapped"
+
+
+## Ship and Bay: a lot cut from a job's subject came out of the crusher as kilograms per
+## material ({material id: kg}, the smelter's cast). Each goes down as scrap with the job's
+## disposition (scrap_disposition). Returns the kilograms recorded, 0 for a job that takes
+## none.
+func record_scrap_lot(job_id: String, materials: Dictionary) -> float:
+	var disposition := scrap_disposition(job_id)
+	if disposition == "":
+		return 0.0
+	var total := 0.0
+	for material: String in materials:
+		var kg := float(materials[material])
+		if kg > 0.0 and record_scrap(job_id, material, kg, disposition):
+			total += kg
+	return total
 
 
 ## Ship and Bay: kilograms of a material cut out of a non-fit job's subject (scrap), or the
