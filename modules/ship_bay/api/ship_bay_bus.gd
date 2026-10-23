@@ -63,6 +63,8 @@ signal cradle_state(payload: Dictionary)
 signal ship_door_state(payload: Dictionary)
 ## Where the transporters and cradles stand came back from a save or the host.
 signal transport_restored(state: Dictionary)
+## The fastener rings show only within `radius_m` of `at` (world space); INF shows them all.
+signal marker_focus_changed(at: Vector3, radius_m: float)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -118,6 +120,12 @@ var _contracts: Node
 ## The Multiplayer bus when that module is loaded (used by duck typing, so Ship and Bay
 ## runs without it: tests that switch only part of the game on, and solo builds).
 var _net: Node
+## Where fastener rings show (set_marker_focus): round this point, world space, within the
+## radius (metres; INF: everywhere).
+var marker_focus_at := Vector3.ZERO
+var marker_focus_radius := INF
+## How far the focus point moves (m) before the rings are sorted again.
+const MARKER_FOCUS_STEP := 0.1
 
 
 func register_module() -> void:
@@ -396,6 +404,18 @@ func unload_ship() -> void:
 	_tracker = null
 	set_ship_powered(false)
 	ship_unloaded.emit(id)
+
+
+## Shows the fastener rings (green tight, amber undone) only within `radius_m` metres of `at`
+## (world space, the point under the crosshair); further off only the heads show. INF shows
+## every ring. Cheap to call every frame: the bays re-sort only when the point has moved
+## MARKER_FOCUS_STEP or the radius changes. Local only (each player's own view).
+func set_marker_focus(at: Vector3, radius_m: float) -> void:
+	if radius_m == marker_focus_radius and (is_inf(radius_m) or at.distance_to(marker_focus_at) < MARKER_FOCUS_STEP):
+		return
+	marker_focus_at = at
+	marker_focus_radius = radius_m
+	marker_focus_changed.emit(at, radius_m)
 
 
 func get_slots() -> Array[MountSlot]:

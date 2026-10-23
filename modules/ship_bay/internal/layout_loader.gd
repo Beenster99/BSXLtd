@@ -7,7 +7,8 @@ extends RefCounted
 ##                          doesn't carry (a module fitted later), what a slot's spot welds
 ##                          are made as in the yard ("spots"), joints BSX adds ("extra"), and
 ##                          file parts BSX treats as replaceable fittings ("fittings", and
-##                          "skin": every riveted outer plate)
+##                          "skin": every riveted outer plate; "frame": every frame member
+##                          by its frame welds)
 ##   <name>.tscn            the model, which builds the ship from the same file
 
 ## Void Salvage joint kinds as BSX's trades work them: a spot weld is a short weld.
@@ -89,6 +90,9 @@ static func load_ship(dir: String) -> ShipDefinition:
 			var s := _fitting_slot(entry, f)
 			if s:
 				def.slots.append(s)
+	if bsx.has("frame"):
+		for s: MountSlot in _frame_fittings(bsx["frame"], f):
+			def.slots.append(s)
 	var model_path := dir.path_join(name + ".tscn")
 	if ResourceLoader.exists(model_path):
 		def.model = load(model_path)
@@ -160,6 +164,51 @@ static func _skin_fittings(rule: Dictionary, f: Dictionary, taken: Dictionary) -
 				"display_name": "%s (%s, %s)" % [rule.get("name", "Hull plate"), body.replace("_", " "), edge],
 				"part": path, "accepts": rule.get("accepts", ["HullPlate"]), "fitted": rule.get("fitted", "HullPlate"),
 				"access": rule.get("access", "outboard")})
+	return out
+
+
+## Every frame member (ring, stringer, node, post, rail) with welds of `rule.phase` ("frame")
+## as a fitting of its own, holding just those welds (each weld goes to its joint's `a` end,
+## so no weld is in two slots; rivets and bolts onto the member stay with the plates and
+## linings they hold): slot "<prefix><body>_<member>" ("frame_cockpit_wall_ring_e0").
+static func _frame_fittings(rule: Dictionary, f: Dictionary) -> Array[MountSlot]:
+	var phase: String = rule.get("phase", "frame")
+	var welds := {}
+	var order: Array = []
+	for j: Dictionary in f.get("joints", []):
+		if str(j.get("kind", "")) != "weld" or str(j.get("phase", "")) != phase:
+			continue
+		var a: String = j.get("a", "")
+		if not welds.has(a):
+			welds[a] = []
+			order.append(a)
+		(welds[a] as Array).append(j)
+	var recs := {}
+	for p: Dictionary in f.get("parts", []):
+		if welds.has(p.get("path", "")):
+			recs[p["path"]] = p
+	var out: Array[MountSlot] = []
+	for path: String in order:
+		if not recs.has(path):
+			continue
+		var rec: Dictionary = recs[path]
+		# "hull/st:cockpit_wall/ring/e0" -> body "cockpit_wall", member "ring_e0".
+		var bits := path.split("/")
+		var body := bits[1].get_slice(":", 1) if bits.size() > 1 and ":" in bits[1] else bits[0]
+		var member := "_".join(bits.slice(2)) if bits.size() > 2 else path.replace("/", "_")
+		var s := MountSlot.new()
+		s.slot_id = "%s%s_%s" % [rule.get("prefix", "frame_"), body, member]
+		s.display_name = "%s (%s, %s)" % [rec.get("name", "Frame"), body.replace("_", " "), member.replace("_", " ")]
+		s.accepts = PackedStringArray([rec.get("name", "")])
+		s.fitted = str(rec.get("name", ""))
+		s.access = rule.get("access", "inboard")
+		s.box = _box(rec.get("box", {}))
+		s.parts = PackedStringArray([path])
+		var counts := {}
+		for j: Dictionary in welds[path]:
+			s.fasteners.append(_file_fastener(s.slot_id, j, counts))
+		s.mount = _facing(s.fasteners[0].normal, s.box.get_center())
+		out.append(s)
 	return out
 
 
