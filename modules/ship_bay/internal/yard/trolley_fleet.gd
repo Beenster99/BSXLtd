@@ -48,6 +48,7 @@ const PARKING := {
 	"p5": [Vector3(-31.0, 0, 18.0), -PI * 0.5],
 	"p6": [Vector3(-31.0, 0, 20.5), -PI * 0.5],
 	"p": [Vector3(-1.7, 0, -43.0), 0.0],
+	"p7": [Vector3(1.6, 0, -43.0), 0.0],
 	"h": [Vector3(-44.0, 0, -43.6), 0.0],
 	"a": [Vector3(35.0, 0, 15.6), 0.0],
 	"b": [Vector3(45.0, 0, 15.6), 0.0],
@@ -56,10 +57,14 @@ const PARKING := {
 ## yaw] the lift stands at. The picking lift's is in Deliveries east of the doorway into the
 ## stores (the trolley along the east wall, its nose to the partition); the heavy lift's is
 ## at the mouth of aisle H, the trolley lying along the transfer aisle in front of it.
-const HANDOFFS := {"p": [Vector3(-34.2, 0, -20.0), -PI * 0.5], "h": [Vector3(-44.0, 0, -29.9), PI]}
+## Store 2's picking lift ("p7") hands over in the courtyard east of Store 2's door, the
+## trolley's nose to the wall.
+const HANDOFFS := {"p": [Vector3(-34.2, 0, -20.0), -PI * 0.5], "h": [Vector3(-44.0, 0, -29.9), PI],
+		"p7": [Vector3(20.2, 0, -20.0), -PI * 0.5]}
 const HANDOFF := [Vector3(-34.2, 0, -20.0), -PI * 0.5]
 ## Where the trolley stands at each hand-in: [floor point, yaw] (stores_in fits it to the deck).
-const HANDOFF_TROLLEYS := {"p": [Vector3(-31.2, 0, -20.0), 0.0], "h": [Vector3(-44.0, 0, -26.0), PI * 0.5]}
+const HANDOFF_TROLLEYS := {"p": [Vector3(-31.2, 0, -20.0), 0.0], "h": [Vector3(-44.0, 0, -26.0), PI * 0.5],
+		"p7": [Vector3(23.2, 0, -20.0), 0.0]}
 const HANDOFF_TROLLEY := [Vector3(-31.2, 0, -20.0), 0.0]
 ## The full-size trolley screen's size, pixels. (Every hall TV, Business's, shows trolley
 ## control as the wrist's Machines channel, so the yard has no trolley TV of its own.)
@@ -524,10 +529,11 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		(_queue.get_or_add(id, []) as Array).append(later)
 		return
 	if command == "fetch":
-		# Bulk goods are the heavy lift's, the rest the picking lift's.
+		# Bulk goods are the heavy lift's, the rest the picking lift's of the hall they are in
+		# (Store 2's when only Store 2 has them).
 		var mass := float(_bus.storage_items().get(str(args.get("item", "")), {}).get("mass", 0.0))
 		var kind := Layout.kind_for(mass, str(args.get("item", "")))
-		var lift := "h" if kind == "bulk" else "p"
+		var lift := "h" if kind == "bulk" else _picker_for(str(args.get("item", "")))
 		if id != lift:
 			_bus.command_trolley(lift, "fetch", args)
 			return
@@ -579,7 +585,7 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 			jobs[id] = {"do": "deliver", "phase": "to_lift", "crate": str(args.get("crate", "")), "to": args.get("to", Vector3.ZERO), "lift": lift}
 			var stand := stores_in(t, lift)
 			_go(t, stand[0], stand[1])
-			t.show_status("TO PICKING LIFT" if lift == "p" else "TO HEAVY LIFT")
+			t.show_status("TO HEAVY LIFT" if lift == "h" else "TO PICKING LIFT")
 		_:
 			jobs[id] = {}
 			t.show_status("STOPPED")
@@ -634,6 +640,19 @@ func _follow(t: Trolley, job: Dictionary) -> void:
 		job["goal"] = to
 		_go(t, to - flat.normalized() * keep, atan2(-flat.x, -flat.z))
 	t.show_status("FOLLOWING")
+
+
+## The picking lift that fetches small goods `item`: Stock's ("p"), or Store 2's ("p7")
+## when every place holding them is in Store 2.
+func _picker_for(item: String) -> String:
+	var found := _bus.find_stock(item)
+	if found.is_empty():
+		return "p"
+	for loc in found:
+		var rack := str(Layout.get_layout()["locations"].get(loc, {}).get("rack", ""))
+		if Layout.lift_for_rack(rack) != "p7":
+			return "p"
+	return "p7"
 
 
 ## The fetch job (the picking lift, or the large trolley for bulk goods).
@@ -764,7 +783,7 @@ func destination_of(id: String) -> String:
 					else ("Hand-over" if str(job.get("phase", "")) in ["to_handoff", "handing"] else "To you")
 		"deliver":
 			if ["to_lift", "loading"].has(str(job.get("phase", ""))):
-				return "Heavy lift" if str(job.get("lift", "p")) == "h" else "Picking lift"
+				return "Heavy lift" if str(job.get("lift", "p")) == "h" else ("Store 2 picker" if str(job.get("lift", "p")) == "p7" else "Picking lift")
 			return "To you"
 		"come", "follow":
 			return "To you"

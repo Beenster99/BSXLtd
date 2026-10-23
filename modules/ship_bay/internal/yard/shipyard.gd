@@ -1,7 +1,7 @@
 extends Node3D
 ## The BSX Ltd shipyard: a big building on a planet, a horseshoe of wings round an open
 ## courtyard. The work flows clockwise round it: trucks unload at Deliveries (west wing),
-## goods go on the racks in Stock and are cut and formed in Material prep (the back wing),
+## goods go on the racks in Stock and Store 2 (the back wing; Store 2 was Material prep),
 ## then built up into modules in Pre-assembly (east wing), which opens wide onto the
 ## courtyard where the salvage ship sits in the bay (the bay scene, on its cradles). The
 ## open end of the horseshoe faces south onto the apron, where ships come and go.
@@ -61,7 +61,7 @@ const CHUNK := 25.0
 const ROOMS := {
 	"deliveries": {"name": "Deliveries", "box": AABB(Vector3(-50, 0, -24), Vector3(22, 12, 48))},
 	"stock": {"name": "Stock", "box": AABB(Vector3(-50, 0, -46), Vector3(50, 12, 22))},
-	"prep": {"name": "Material prep", "box": AABB(Vector3(0, 0, -46), Vector3(50, 12, 22))},
+	"prep": {"name": "Store 2", "box": AABB(Vector3(0, 0, -46), Vector3(50, 12, 22))},
 	"preassembly": {"name": "Pre-assembly", "box": AABB(Vector3(28, 0, -24), Vector3(22, 12, 48))},
 	"bay": {"name": "The bay", "box": AABB(Vector3(-28, 0, -24), Vector3(56, 30, 48))},
 }
@@ -71,7 +71,7 @@ const ROOMS := {
 ## yard when ShipBayBus.shipyard_ready fires.
 const SPOTS := {
 	"bench_preassembly": Transform3D(Basis.IDENTITY, Vector3(40, 0, 12.6)),
-	"bench_prep": Transform3D(Basis.IDENTITY, Vector3(18, 0, -29)),
+	"bench_prep": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(47.2, 0, -35.0)),   # Store 2's work strip
 }
 ## Camera views for screenshots and a quick look round: id -> [eye, target].
 const VIEWS := {
@@ -943,7 +943,7 @@ func _build_signs() -> void:
 	# From the courtyard.
 	_door_sign("DELIVERIES", "z", -court, 0.0, 10.0, 0.3, 1.0, PI * 0.5)
 	_door_sign("STOCK", "x", back, -14.0, 8.0, 0.3, -1.0, 0.0)
-	_door_sign("MATERIAL\nPREP", "x", back, 14.0, 8.0, 0.3, 1.0, 0.0)
+	_door_sign("STORE 2", "x", back, 14.0, 8.0, 0.3, 1.0, 0.0)
 	_door_sign("PRE-\nASSEMBLY", "z", court, 0.0, 20.0, -0.3, 1.0, -PI * 0.5)
 	var name_board := _sign("BSX LTD", Vector3(0, 9.6, back + 0.35), 0.0, 3.2)
 	name_board.modulate = TRIM
@@ -956,10 +956,10 @@ func _build_signs() -> void:
 	# Room to room, round the flow.
 	_door_sign("STOCK", "x", back, -39.0, 10.0, 0.3, 1.0, 0.0)
 	_door_sign("DELIVERIES", "x", back, -39.0, 10.0, -0.3, 1.0, PI)
-	_door_sign("MATERIAL\nPREP", "z", 0.0, -35.0, 8.0, -0.3, 1.0, -PI * 0.5)
+	_door_sign("STORE 2", "z", 0.0, -35.0, 8.0, -0.3, 1.0, -PI * 0.5)
 	_door_sign("STOCK", "z", 0.0, -35.0, 8.0, 0.3, 1.0, PI * 0.5)
 	_door_sign("PRE-\nASSEMBLY", "x", back, 39.0, 10.0, -0.3, -1.0, PI)
-	_door_sign("MATERIAL\nPREP", "x", back, 39.0, 10.0, 0.3, -1.0, 0.0)
+	_door_sign("STORE 2", "x", back, 39.0, 10.0, 0.3, -1.0, 0.0)
 	_sign("GOODS IN", Vector3(-court - WING - 0.4, 7.6, 0), -PI * 0.5, 1.8)
 
 
@@ -1200,8 +1200,23 @@ func _tag(text: String, at: Vector3, height_m: float, face: Vector3, parent: Nod
 	return label
 
 
+## Store 2, in the old Material prep hall (beenster, 0.3.15): its racks are StorageLayout's
+## and built with Stock's (_build_stock); here the lane lines along its transfer aisle and
+## its back cross aisle, the lane down its west wall from Stock's doorway, and its picking
+## lift's hand-in in the courtyard outside its door.
 func _build_prep() -> void:
-	pass   # an open floor: the hall's furniture was taken out (22 Oct)
+	var line := _paint(HAZARD, 0.0, 0.7, "hazard_paint")
+	for z: float in [StorageLayout.TRANSFER_Z - 1.4, StorageLayout.TRANSFER_Z + 1.4]:
+		_block(Vector3(25.0, 0.024, z), Vector3(49.0, 0.004, 0.08), line, false)
+	_block(Vector3(25.0, 0.024, StorageLayout.BACK_Z + 1.3), Vector3(49.0, 0.004, 0.08), line, false)
+	_block(Vector3(2.9, 0.024, -35.0), Vector3(0.08, 0.004, 11.6), line, false)
+	var hand: Array = TrolleyFleet.HANDOFF_TROLLEYS["p7"]
+	var at: Vector3 = hand[0]
+	var box := Vector2(3.6, 7.2)
+	for dx: float in [-box.x * 0.5, box.x * 0.5]:
+		_block(Vector3(at.x + dx, 0.026, -24.0 + box.y * 0.5 + 0.3), Vector3(0.08, 0.004, box.y), line, false)
+	_block(Vector3(at.x, 0.026, -24.0 + box.y + 0.3), Vector3(box.x, 0.004, 0.08), line, false)
+	_sign("STORE 2 HAND-IN", Vector3(at.x, 6.4, -24.0 + 0.4), 0.0, 0.4)
 
 
 ## Marks the four enclosed halls for Graphics (a reflection probe and baked bounce light

@@ -19,6 +19,19 @@ func run_tests() -> void:
 	var locations := bus.storage_locations()
 	check(items.size() >= 190, "the stores know every part BSX can buy: %d" % items.size())
 	check(items.has("IonThruster") and items.has("M10") and items.has("tow_winch"), "parts, fasteners and ship modules")
+	# Store 2, the old Material prep hall: small racks D and E (its own picking lift), large
+	# racks Y and Z and heavy racks J (the heavy lift's), every home still in Stock.
+	for r: String in ["D1", "D2", "E1", "E2", "Y1", "Y2", "Z1", "Z2", "J1", "J2"]:
+		check(Layout.hall_of(r) == "prep" and not Layout.rack(r).is_empty(), "rack %s stands in Store 2" % r)
+	check(Layout.lift_for_rack("D1") == "p7" and Layout.lift_for_rack("C2") == "p" and Layout.lift_for_rack("Y2") == "h"
+			and Layout.lift_for_rack("J1") == "h", "Store 2's picking lift works D and E, the heavy lift Y, Z and J")
+	var in_store_2 := 0
+	var homed_there := 0
+	for loc: Dictionary in locations.values():
+		if Layout.hall_of(str(loc["rack"])) == "prep":
+			in_store_2 += 1
+			homed_there += 1 if str(loc["home"]) != "" else 0
+	check(in_store_2 >= 150 and homed_there == 0, "Store 2 is all spare shelves: %d places, %d homes" % [in_store_2, homed_there])
 	var look: GDScript = load("res://modules/ship_bay/internal/yard/item_look.gd")
 	var stale := PackedStringArray()
 	for id: String in items:
@@ -133,7 +146,7 @@ func run_tests() -> void:
 	var parked: Array[RID] = []
 	for t: Node in (yard.get("trolleys").get("trolleys") as Dictionary).values():
 		parked.append((t as CollisionObject3D).get_rid())
-	for aisle: String in ["A", "B", "C", "W", "X", "H"]:
+	for aisle: String in ["A", "B", "C", "W", "X", "H", "D", "E", "Y", "Z", "J"]:
 		var x := Layout.aisle_x(aisle)
 		var ray := PhysicsRayQueryParameters3D.create(Vector3(x, 1, Layout.TRANSFER_Z), Vector3(x, 1, Layout.BACK_Z))
 		ray.exclude = parked   # the lifts park at the back of their aisles
@@ -143,6 +156,13 @@ func run_tests() -> void:
 		check(not across.is_empty(), "a rack stands beside aisle %s" % aisle)
 	var transfer := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-36, 1, Layout.TRANSFER_Z), Vector3(-2, 1, Layout.TRANSFER_Z)))
 	check(transfer.is_empty(), "the transfer aisle is clear: %s" % transfer.get("position", ""))
+	# Store 2 (beenster, 0.3.15): its transfer aisle, and the lane down its west wall from
+	# Stock's doorway to its back cross aisle.
+	transfer = space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(2, 1, Layout.TRANSFER_Z), Vector3(48, 1, Layout.TRANSFER_Z)))
+	check(transfer.is_empty(), "Store 2's transfer aisle is clear: %s" % transfer.get("position", ""))
+	var lane := PhysicsRayQueryParameters3D.create(Vector3(1.6, 1, Layout.TRANSFER_Z), Vector3(1.6, 1, Layout.BACK_Z))
+	lane.exclude = parked
+	check(space.intersect_ray(lane).is_empty(), "Store 2's west lane is clear end to end")
 	var stores: Node3D = yard.get_node("Stores")
 	check(stores.get_node_or_null("Crate_PO-9_1") != null, "the waiting crate is labelled in the hall")
 	check(stores.get_child_count() >= 4, "goods drawn on the shelves: %d" % stores.get_child_count())

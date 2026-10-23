@@ -116,7 +116,7 @@ func run_tests() -> void:
 	await frames(2)
 	check(str((fleet.get("jobs") as Dictionary)["a"].get("do", "")) == "put_away", "SEND TO STORES sends it off to the stores")
 	# (The trolley's run to the stores is test_trolleys' job.) Shelved, it's back like new.
-	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}})
+	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}, "p7": {}})
 	bus.store_crate(load[0])
 	var gyro := bus.find_stock("Gyroscope")
 	check(gyro.size() == 1 and float(bus.stock_at(gyro[0]).condition) == 1.0, "put away, it's back in stock at 100%")
@@ -146,7 +146,7 @@ func run_tests() -> void:
 	check(str(((fleet.get("jobs") as Dictionary)["a"] as Dictionary).get("do", "")) == "" and str(((fleet.get("jobs") as Dictionary)["b"] as Dictionary).get("do", "")) == "",
 			"(never a line's own trolley)")
 	# The trolley's part: it sets the scrap down on the crusher's pad.
-	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}})
+	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}, "p7": {}})
 	bus.carry_crate(scrap, "l")
 	bus.line_request("feed", {"crate": scrap, "line": "crusher"})
 	check(str(bus.crate_info(scrap).get("line", "")) == "crush" and bus.crate_position(scrap).distance_to(Crusher.FEED_SPOTS[0]) < 0.01,

@@ -22,8 +22,8 @@ func run_tests() -> void:
 		yard.queue_free()
 		return
 	var trolleys: Dictionary = fleet.get("trolleys")
-	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6"],
-			"small, medium, large, the picking and heavy lifts, the two lines' trolleys and five goods-in lifts: %s" % [trolleys.keys()])
+	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6", "p7"],
+			"small, medium, large, the picking and heavy lifts, the two lines' trolleys, five goods-in lifts and Store 2's picking lift: %s" % [trolleys.keys()])
 	var hall: AABB = bus.shipyard_rooms()["deliveries"]["box"]
 	var court: AABB = bus.shipyard_rooms()["bay"]["box"]
 	var haulers: Array = [trolleys["s"], trolleys["m"], trolleys["l"]]
