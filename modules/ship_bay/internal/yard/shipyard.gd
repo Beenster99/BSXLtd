@@ -83,7 +83,7 @@ const DIRECTION_SIGNS := [
 ]
 const FINGERPOST := Vector3(-9.0, 0.0, 16.0)
 ## The direction signs' letters, metres tall.
-const DIRECTION_H := 0.5
+const DIRECTION_H := 0.15   # beenster, 23 Oct: 30% of the first 0.5 m
 ## The direction signs' boards and letters: safety yellow with black letters, to stand out
 ## against the dark roof.
 const DIRECTION_BOARD := Color(0.95, 0.72, 0.1)
@@ -1059,14 +1059,14 @@ func _direction_board(room: String, top: Vector3, yaw: float) -> void:
 	for f: PackedStringArray in faces:
 		for line in f:
 			longest = maxf(longest, direction_width(line))
-	var size := Vector3(longest + DIRECTION_H * 1.6, DIRECTION_H * (1.3 * rows + 0.6), 0.08)
+	var size := Vector3(longest + DIRECTION_H * 1.6, DIRECTION_H * (1.3 * rows + 0.6), 0.04)
 	var at := top - Vector3(0, size.y * 0.5, 0)
 	var basis := Basis(Vector3.UP, yaw)
 	_put(_box(size), Transform3D(basis, at), _direction_paint(), false)
-	_put(_box(Vector3(size.x + 0.02, 0.08, size.z + 0.02)), Transform3D(basis, at + Vector3(0, size.y * 0.5 + 0.03, 0)), _trim, false)
+	_put(_box(Vector3(size.x + 0.01, 0.03, size.z + 0.01)), Transform3D(basis, at + Vector3(0, size.y * 0.5 + 0.012, 0)), _trim, false)
 	for k: float in [-1.0, 1.0]:
 		var rod := H - 0.4 - (at.y + size.y * 0.5)
-		_put(_box(Vector3(0.04, rod, 0.04)), Transform3D(basis, at + basis.x * (k * size.x * 0.38) + Vector3(0, size.y * 0.5 + rod * 0.5, 0)), _galv, false)
+		_put(_box(Vector3(0.015, rod, 0.015)), Transform3D(basis, at + basis.x * (k * size.x * 0.38) + Vector3(0, size.y * 0.5 + rod * 0.5, 0)), _galv, false)
 	for i in 2:
 		var face_yaw := yaw + PI * i
 		var b := Basis(Vector3.UP, face_yaw)
@@ -1079,10 +1079,10 @@ func _direction_board(room: String, top: Vector3, yaw: float) -> void:
 ## A post in the courtyard with a blade pointing to each room's doorway, its name on both
 ## sides with an arrow at the pointed end.
 func _fingerpost(foot: Vector3) -> void:
-	var post_h := 4.2
-	_put(_box(Vector3(0.14, post_h, 0.14)), _at(foot + Vector3(0, post_h * 0.5, 0)), _galv)
-	_put(_box(Vector3(0.24, 0.1, 0.24)), _at(foot + Vector3(0, post_h + 0.05, 0)), _trim, false)
-	var y := post_h - 0.45
+	var post_h := 2.2
+	_put(_box(Vector3(0.07, post_h, 0.07)), _at(foot + Vector3(0, post_h * 0.5, 0)), _galv)
+	_put(_box(Vector3(0.11, 0.04, 0.11)), _at(foot + Vector3(0, post_h + 0.02, 0)), _trim, false)
+	var y := post_h - 0.15
 	for id: String in ROOMS:
 		if id == "bay":
 			continue
@@ -1092,12 +1092,12 @@ func _fingerpost(foot: Vector3) -> void:
 		var name := (ROOMS[id].name as String).to_upper()
 		var length := direction_width(name + "  →") + DIRECTION_H * 1.6
 		var b := Basis(Vector3.UP, yaw)
-		var mid := foot + Vector3(0, y, 0) + b.x * (length * 0.5 + 0.07)
-		_put(_box(Vector3(length, DIRECTION_H * 1.5, 0.05)), Transform3D(b, mid), _direction_paint(), false)
-		_put(_box(Vector3(0.06, DIRECTION_H * 1.5 + 0.02, 0.07)), Transform3D(b, mid + b.x * (length * 0.5 - 0.03)), _trim, false)
-		_direction_text(name + "  →", mid + b.z * 0.03, yaw, length - 0.3)
-		_direction_text("←  " + name, mid - b.z * 0.03, yaw + PI, length - 0.3)
-		y -= DIRECTION_H * 1.5 + 0.12
+		var mid := foot + Vector3(0, y, 0) + b.x * (length * 0.5 + 0.035)
+		_put(_box(Vector3(length, DIRECTION_H * 1.5, 0.02)), Transform3D(b, mid), _direction_paint(), false)
+		_put(_box(Vector3(0.025, DIRECTION_H * 1.5 + 0.01, 0.03)), Transform3D(b, mid + b.x * (length * 0.5 - 0.0125)), _trim, false)
+		_direction_text(name + "  →", mid + b.z * 0.016, yaw, length - DIRECTION_H)
+		_direction_text("←  " + name, mid - b.z * 0.016, yaw + PI, length - DIRECTION_H)
+		y -= DIRECTION_H * 1.5 + 0.04
 
 
 ## How wide a line of direction sign letters is, metres (the font Label3D draws with).
