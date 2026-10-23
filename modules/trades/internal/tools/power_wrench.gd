@@ -14,6 +14,10 @@ const POWER_GRIP := Vector3(0, 0.155, 0.085)
 ## Steps of the wheel on its setting (N m), and the range it can be set to.
 const SET_STEP_NM := 1.0
 const SET_RANGE_NM := Vector2(5.0, 250.0)
+## A wheel notch without Ctrl (N m) when the setting is the player's (trades.torque_kept).
+const COARSE_STEP_NM := 5.0
+## The last setting the player chose (N m), kept across the session's wrenches; < 0 for none.
+static var kept_nm := -1.0
 
 enum State { READY, RUNNING, CLUTCH, STALLED, STRIPPED }
 
@@ -28,6 +32,8 @@ var _socket: Node3D
 
 func _ready() -> void:
 	name = "PowerWrench"
+	if kept_nm > 0.0 and Flags.is_on("trades.torque_kept"):
+		set_nm = kept_nm
 	grip = POWER_GRIP
 	# In a relaxed hand: the barrel points along the fingers, the grip down through the palm.
 	hold = Transform3D(Basis(Vector3(-1, 0, 0), Vector3(0, 0, -1), Vector3(0, -1, 0)), Vector3(0, -0.02, 0))

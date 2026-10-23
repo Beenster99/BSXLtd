@@ -20,6 +20,9 @@ func run_tests() -> void:
 	Flags.set_flag("trades.weld_helmet", true)
 	var was_trace := Flags.is_on("trades.trace_weld")
 	Flags.set_flag("trades.trace_weld", true)
+	# The shield on the arc alone (test_playtest_0316 has its key).
+	var was_toggle := Flags.is_on("trades.helmet_toggle")
+	Flags.set_flag("trades.helmet_toggle", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)
@@ -123,6 +126,7 @@ func run_tests() -> void:
 	Flags.set_flag("trades.unweld", was_unweld)
 	Flags.set_flag("trades.weld_helmet", was_helmet)
 	Flags.set_flag("trades.trace_weld", was_trace)
+	Flags.set_flag("trades.helmet_toggle", was_toggle)
 
 
 ## Runs the station and the bay's shield together, as frames would.

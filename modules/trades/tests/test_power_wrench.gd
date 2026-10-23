@@ -19,6 +19,10 @@ func run_tests() -> void:
 	for flag: String in ["trades.power_wrench", "trades.specs"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The wrench as 0.3.7 had it: set to the bolt's torque as you aim (test_playtest_0316 has
+	# the player's own setting).
+	saved["trades.torque_kept"] = Flags.is_on("trades.torque_kept")
+	Flags.set_flag("trades.torque_kept", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)

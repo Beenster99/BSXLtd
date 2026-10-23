@@ -1,7 +1,7 @@
 extends ModuleTest
 ## beenster's 0.3.15 playtest: the hint stays up while you look at what it's about, the power
 ## wrench works on left click only with X for fasten or undo, the welder's sparks and molten
-## metal bounce about the floor for about three seconds, a weld starts from an end of its seam
+## metal bounce about the floor for about eight seconds (0.3.16), a weld starts from an end of its seam
 ## with no ring in its middle and the bead shows under the shield, the welder is carried clear
 ## of the view, tools and the hand on them are drawn up out on the work, and the wiring tool's
 ## hand keeps off the screen and the tool packs away once plugged in.
@@ -25,6 +25,9 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The shield on the arc alone (test_playtest_0316 has its key).
+	saved["trades.helmet_toggle"] = Flags.is_on("trades.helmet_toggle")
+	Flags.set_flag("trades.helmet_toggle", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)
@@ -109,7 +112,7 @@ func run_tests() -> void:
 	check(station.hot_beads() == 0 and station.beads() > 0, "the bead cools but stays to see (%d)" % station.beads())
 	check(rig.sparks.dim == 0.0, "shield up: the sparks light the place again")
 
-	# The welder's shower lasts about three seconds, and comes to rest on the floor.
+	# The welder's shower lasts about eight seconds, and comes to rest on the floor.
 	var sparks := rig.sparks
 	var floor_at := rig.worker.global_position + Vector3(0, 1.0, -0.5)
 	var before := sparks.count()
@@ -117,15 +120,15 @@ func run_tests() -> void:
 		sparks.emit_weld(floor_at, Vector3.UP, TradesShipJoints.weld_sparks(false), 3.2, 0.7)
 	var step := 1.0 / 60.0
 	var t := 0.0
-	while t < 2.0:
+	while t < 6.5:
 		sparks._physics_process(step)
 		t += step
-	check(sparks.count() > before, "two seconds on, sparks are still about (%d)" % sparks.count())
+	check(sparks.count() > before, "six and a half seconds on, sparks are still about (%d)" % sparks.count())
 	check(sparks.resting() > 0, "some lie on the floor (%d)" % sparks.resting())
-	while t < 3.6:
+	while t < 8.7:
 		sparks._physics_process(step)
 		t += step
-	check(sparks.count() <= before, "by three and a half seconds they're gone (%d)" % sparks.count())
+	check(sparks.count() <= before, "by about eight seconds they're gone (%d)" % sparks.count())
 
 	# The welder is carried low and pointing forward, not stood up in the view.
 	torch.lit = false
