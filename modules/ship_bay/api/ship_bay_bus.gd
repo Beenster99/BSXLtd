@@ -59,6 +59,8 @@ signal clean_up_claimed(slot_id: String, trolley_id: String)
 signal transporter_state(payload: Dictionary)
 ## A transport cradle's pins were thrown, or a dolly picked it up or set it down.
 signal cradle_state(payload: Dictionary)
+## A ship's door was opened or shut (F on its panel): {ship (the ship node's name), door, open}.
+signal ship_door_state(payload: Dictionary)
 ## Where the transporters and cradles stand came back from a save or the host.
 signal transport_restored(state: Dictionary)
 
@@ -224,6 +226,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.line", _apply_line, _check_line)
 	_net.call("register_event", "ship_bay.transporter", _apply_transporter, _pass)
 	_net.call("register_event", "ship_bay.cradle", _apply_cradle, _pass)
+	_net.call("register_event", "ship_bay.ship_door", _apply_ship_door, _pass)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
@@ -273,7 +276,7 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle"]:
+				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -1432,6 +1435,18 @@ func send_cradle(payload: Dictionary) -> void:
 		_net.call("request", "ship_bay.cradle", payload)
 	else:
 		_apply_cradle(payload)
+
+
+## A ship's door opening or shutting, for every player.
+func send_ship_door(payload: Dictionary) -> void:
+	if _net:
+		_net.call("request", "ship_bay.ship_door", payload)
+	else:
+		_apply_ship_door(payload)
+
+
+func _apply_ship_door(payload: Dictionary) -> void:
+	ship_door_state.emit(payload)
 
 
 func _pass(_sender: int, payload: Dictionary) -> Variant:

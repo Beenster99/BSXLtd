@@ -271,13 +271,13 @@ static func subject_name(o: WorkOrder) -> String:
 		return ship_name(o.design)
 	if String(o.subject.get("type", "")) == "part":
 		return "Bench"
-	return ship_name(String(o.subject.get("design", o.design)))
+	return o.subject_name()
 
 
 ## "Naval turret, 55%, 6.2 t" for a part subject; the design for a ship or wreck.
 static func subject_text(o: WorkOrder) -> String:
 	var s := o.subject
-	var what := part_name(o.subject_part().id) if o.subject_part() else ship_name(String(s.get("design", o.design)))
+	var what := part_name(o.subject_part().id) if o.subject_part() else subject_name(o)
 	var bits := PackedStringArray([what, "%d%%" % int(round(float(s.get("condition", 1.0)) * 100.0))])
 	var kg := float(s.get("mass_kg", 0.0))
 	if kg > 0.0:
@@ -321,7 +321,7 @@ static func job_title(job: ContractJob) -> String:
 
 ## "Break a naval turret", "Scrap hull plating", "Refurbish a main thruster", "Dispose of a fuel tank".
 static func kind_title(o: WorkOrder) -> String:
-	var what := part_name(o.subject_part().id) if o.subject_part() else ship_name(String(o.subject.get("design", o.design)))
+	var what := part_name(o.subject_part().id) if o.subject_part() else subject_name(o)
 	what = what.substr(0, 1).to_lower() + what.substr(1)
 	match o.kind:
 		WorkOrder.BREAK:

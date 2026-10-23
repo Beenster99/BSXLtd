@@ -15,6 +15,23 @@ const DUE_IN: PackedInt32Array = [0, 8, 12, 16]
 
 ## Callable(kind: String, size: String, t: float) -> int, or unset for DEFAULT_BANDS.
 var pricer: Callable
+## Whether BSX's own clients send whole ships and wrecks (contracts.wrecks, stage S3).
+var wrecks := false
+
+## A whole ship or wreck is a medium job up to this mass, large above it (kg).
+const MEDIUM_MAX_KG := 400_000.0
+## What the events did to a ship, by job kind: a refurbish takes a tired ship, the rest a wreck.
+const WRECK_EVENTS: Dictionary = {
+	"refurbish": ["weathered:2", "weathered:3", "collision:2"],
+	"break": ["collision:3,stripped:1", "fire:2,stripped:1", "breach:2"],
+	"scrap": ["fire:4,collision:3", "breach:4,stripped:2", "collision:5"],
+	"dispose": ["fire:5,breach:3", "fire:4,stripped:3"],
+}
+## Fittings a break job asks back from a wreck, by part name in the ship file.
+const WANTED_FITTINGS: PackedStringArray = ["galley", "bunks", "console", "map_screen", "monitor", "control_panel",
+		"breaker_panel", "reactor_cabinet", "bowsers", "hose_rack", "locker", "seat", "suit_stand"]
+## Fittings whose presence on the subject is a hazard for the crew.
+const HAZARD_FITTINGS: Dictionary = {"reactor_cabinet": "power", "breaker_panel": "power", "bowsers": "fuel"}
 
 
 ## One offer for a client at a tier (1 to 3), or {} if the client posts nothing. slot
@@ -30,6 +47,9 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 	if kinds.is_empty() or parts.is_empty():
 		return {}
 	var kind := String(kinds[rng.randi_range(0, kinds.size() - 1)])
+	# BSX's own clients at tier two and up send whole ships and wrecks BSX makes itself.
+	if wrecks and String(client.get("game", "")) == "bsx_generated" and tier >= 2 and rng.randf() < 0.6:
+		return _whole_ship(client_id, client, cycle, slot, tier, kind, rng)
 	var part_id := String(parts[rng.randi_range(0, parts.size() - 1)])
 	var part: Dictionary = ContractClients.PARTS.get(part_id, {})
 	if kind == WorkOrder.BREAK and (part.get("yields", []) as Array).is_empty():
@@ -77,6 +97,132 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier},
 		"commercial": {"price": price, "currency": "cr", "deposit_pct": 30, "due_day": cycle + DUE_IN[clampi(tier, 1, 3)]},
 	}
+
+
+## A whole-ship offer: a generated ship (refurbish) or wreck (break, scrap, dispose) from
+## Shared Components' WreckMaker, seeded so every machine builds the same one. The wants
+## come from what is really left on it.
+func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, tier: int, kind: String, rng: RandomNumberGenerator) -> Dictionary:
+	var seed_value := int(hash("%s/%d/%d/ship" % [client_id, cycle, slot])) & 0x7FFFFFFF
+	# The hull is one of BSX's own generated ships (S3b): the client's trade picks the family,
+	# the tier the class (small or medium at tier two, medium or large above), the seed the rest.
+	var family := ShipGenerator.family_for(String(client.get("trade", "")))
+	var sizes: Array = ["S", "M"] if tier <= 2 else ["M", "L"]
+	var design := ShipGenerator.design_id(seed_value, String(sizes[rng.randi_range(0, 1)]), family)
+	var options: Array = WRECK_EVENTS.get(kind, WRECK_EVENTS["scrap"])
+	var events := String(options[rng.randi_range(0, options.size() - 1)])
+	var file := design_source(design)
+	if file.is_empty():
+		return {}
+	var wreck := WreckMaker.make(file, seed_value, events)
+	if wreck.is_empty():
+		return {}
+	var facts := ship_facts(wreck)
+	var is_wreck := kind != WorkOrder.REFURBISH
+	var condition := snappedf(float(facts.get("condition", 1.0)), 0.01)
+	var mass := float(facts.get("mass_kg", 0.0))
+	var holds: Array = facts.get("holds", [])
+	var subject := {"type": "wreck" if is_wreck else "ship", "design": design, "seed": seed_value, "events": events,
+			"name": String(wreck.get("ship", {}).get("name", "")), "condition": condition, "mass_kg": mass, "holds": holds,
+			"parts_left": int(facts.get("parts_left", 0)), "parts_gone": int(facts.get("parts_gone", 0))}
+	var wants: Array = []
+	match kind:
+		WorkOrder.BREAK:
+			var pool: Array = []
+			for name: String in holds:
+				if name in WANTED_FITTINGS and not name in pool:
+					pool.append(name)
+			var n := mini(pool.size(), 1 + rng.randi_range(0, tier))
+			for i in n:
+				var name := String(pool[rng.randi_range(0, pool.size() - 1)])
+				pool.erase(name)
+				var have := holds.count(name)
+				wants.append({"what": "part", "component": {"id": name}, "qty": 1 + rng.randi_range(0, mini(have, 2) - 1),
+						"min_condition": snappedf(rng.randf_range(0.4, 0.6), 0.05)})
+			if wants.is_empty():
+				kind = WorkOrder.SCRAP
+		WorkOrder.REFURBISH:
+			wants.append({"what": "condition", "min_condition": snappedf(rng.randf_range(0.85, 0.92), 0.01)})
+		WorkOrder.DISPOSE:
+			wants.append({"what": "gone"})
+	if kind == WorkOrder.SCRAP:
+		var share := rng.randf_range(0.45, 0.6)
+		wants.append({"what": "material", "material": String(facts.get("material", "steel")), "kg": roundf(mass * share / 1000.0) * 1000.0})
+	var hazards: Array = []
+	for name: String in holds:
+		var h := String(HAZARD_FITTINGS.get(name, ""))
+		if h != "" and not h in hazards:
+			hazards.append(h)
+	var size := "medium" if mass <= MEDIUM_MAX_KG else "large"
+	var t := clampf((float(tier) - 2.0) / 1.0 * 0.5 + rng.randf_range(0.0, 0.3), 0.0, 1.0)
+	var voice: Array = (client.get("voice", {}) as Dictionary).get(kind, ["%s", ""])
+	var name := String(wreck.get("ship", {}).get("name", design)).to_lower() + (" wreck" if is_wreck else "")
+	var id := "%s.g%d_%d" % [client_id, cycle, slot]
+	return {
+		"schema": WorkOrder.SCHEMA, "schema_version": WorkOrder.SCHEMA_VERSION,
+		"contract_id": id, "issued_at": "cycle %d" % cycle, "kind": kind,
+		"client": {"company": client_id, "display_name": String(client.get("display_name", client_id)), "game": String(client.get("game", "bsx_generated"))},
+		"subject": subject, "wants": wants, "keeps": String(client.get("keeps", "bsx")), "hazards": hazards,
+		"manifest": [], "spec_sheet": {"library": true, "overrides": []},
+		"notes": [{"text": String(voice[1])}],
+		"title": String(voice[0]) % name,
+		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier, "size": size},
+		"commercial": {"price": price_for(kind, size, t), "currency": "cr", "deposit_pct": 30, "due_day": cycle + DUE_IN[clampi(tier, 1, 3)] + (6 if size == "medium" else 14)},
+	}
+
+
+## Generating a ship takes up to a second or so, and a cycle's offers reuse the same design,
+## so the clean files are kept by design id (the same id always gives the same ship).
+static var _files: Dictionary = {}
+
+
+static func design_source(design: String) -> Dictionary:
+	if not _files.has(design):
+		_files[design] = VsShipImport.design_source(design)
+	return _files[design]
+
+
+## What a generated ship or wreck file says about itself: the mass left on it, how many parts
+## are left and gone, the fittings still attached (holds, by part name), its main material and
+## a condition from the damage (1 for a clean ship).
+static func ship_facts(file: Dictionary) -> Dictionary:
+	var damage: Dictionary = file.get("damage", {})
+	var dparts: Dictionary = damage.get("parts", {})
+	var mass := 0.0
+	var ship_mass := 0.0
+	var left := 0
+	var gone := 0
+	var holds: Array = []
+	var by_material := {}
+	var wear := 0.0
+	var worn := 0
+	for p: Dictionary in file.get("parts", []):
+		var m := float(p.get("mass", p.get("mass_kg", 0.0)))
+		ship_mass += m
+		var d: Dictionary = dparts.get(String(p.get("path", "")), {})
+		var state := String(d.get("state", "attached"))
+		if state != "attached":
+			gone += 1
+			continue
+		left += 1
+		mass += m
+		var mat := String(p.get("material", "steel"))
+		by_material[mat] = float(by_material.get(mat, 0.0)) + m
+		if String(p.get("kind", "")) == "component":
+			holds.append(String(p.get("name", "")))
+		var c: Dictionary = d.get("condition", {})
+		if not c.is_empty():
+			wear += maxf(float(c.get("wear", 0.0)), float(c.get("scorch", 0.0)))
+			worn += 1
+	var main := "steel"
+	for mat: String in by_material:
+		if by_material[mat] > float(by_material.get(main, 0.0)):
+			main = mat
+	var kept := mass / ship_mass if ship_mass > 0.0 else 1.0
+	var mean_wear := wear / worn if worn > 0 else 0.0
+	var condition := clampf(kept * (1.0 - 0.6 * mean_wear), 0.05, 1.0)
+	return {"mass_kg": roundf(mass), "ship_mass_kg": roundf(ship_mass), "parts_left": left, "parts_gone": gone,
+			"holds": holds, "material": main, "condition": condition}
 
 
 func price_for(kind: String, size: String, t: float) -> int:

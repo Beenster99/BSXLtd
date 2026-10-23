@@ -27,6 +27,8 @@ var _texts: Array[Label3D] = []
 var _dark_mats: Dictionary = {}
 var _power_tween: Tween
 var _hum: AudioStreamPlayer3D
+## Door key ("door_lock_out", "door_bulkhead") -> {by, time, parts, meshes, t, open}.
+var doors: Dictionary = {}
 
 
 func _init() -> void:
@@ -37,7 +39,8 @@ func _init() -> void:
 	if not importer.build(LayoutLoader.read_file(FILE), self):
 		push_error("Kestrel: the ship file didn't build: %s" % "; ".join(importer.errors))
 	_drop_doubled_looks()
-	_open_doors()
+	_build_doors()
+	set_process(false)
 	_build_power_socket()
 	for n: Node in find_children("*", "", true, false):
 		if n is Light3D:
@@ -82,22 +85,111 @@ func _drop_doubled_looks() -> void:
 				break
 
 
-## The sliding doors stand open (the file's `layout.doors` moves: the side door, the
-## bulkhead's pocket door), so crews walk in from the lift and through to the cabin. The
-## hinged stern door and belly hatch stay shut.
-func _open_doors() -> void:
+## The sliding doors (the file's `layout.doors` moves: the side door, the bulkhead's pocket
+## door) start shut and slide on their panels' buttons: F on a door's panel, inside or out,
+## opens a shut door and shuts an open one. Each door's leaf is its part (collision and
+## joints) plus the loose look pieces drawn on it. The hinged stern door and belly hatch stay
+## shut. Door changes go to every player (ShipBayBus.send_ship_door).
+func _build_doors() -> void:
 	var model := importer.kit.model
-	for door: Dictionary in importer.file.get("layout", {}).get("doors", {}).values():
+	for key: String in importer.file.get("layout", {}).get("doors", {}):
+		var door: Dictionary = importer.file["layout"]["doors"][key]
 		var moves: Dictionary = door.get("moves", {})
+		if moves.is_empty():
+			continue
+		var d := {"by": Vector3.ZERO, "time": maxf(float(door.get("travel", 1.0)), 0.2), "parts": {}, "meshes": {}, "t": 0.0, "open": false}
 		for tag: String in moves:
-			var by := VsShipImport.vec3(moves[tag])
+			d["by"] = VsShipImport.vec3(moves[tag])
 			for piece: Dictionary in importer.kit.tagged.get(tag, []):
 				if piece.has("part"):
 					var part: PartData = model.parts.get(int(piece["part"]))
 					if part:
-						model.move_part(part.id, Transform3D(part.local_transform.basis, part.local_transform.origin + by))
+						d["parts"][part.id] = part.local_transform
 				elif piece.get("mesh") is Node3D:
-					(piece["mesh"] as Node3D).position += by
+					d["meshes"][piece["mesh"]] = (piece["mesh"] as Node3D).position
+		# The leaf's loose looks: pieces whose middle is inside a leaf part's box.
+		for id: int in d["parts"]:
+			var look := model.part_visual(id)
+			if look == null:
+				continue
+			var box := look.transform * (look as MeshInstance3D).mesh.get_aabb() if look is MeshInstance3D else AABB()
+			for c: Node in get_children():
+				var mi := c as MeshInstance3D
+				if mi and mi.has_meta("vs_piece") and mi.mesh and box.grow(0.03).has_point(mi.transform * mi.mesh.get_aabb().get_center()):
+					d["meshes"][mi] = mi.position
+		doors[key] = d
+		for path: String in importer.parts_by_path:
+			if path.begins_with("system:%s/door_panel" % key):
+				var shape := model.part_collider((importer.parts_by_path[path] as PartData).id)
+				if shape:
+					shape.set_meta("ship_bay_use", press_door.bind(key))
+
+
+## F on a door's panel: asks every player to open it (or shut it, if open).
+func press_door(key: String) -> void:
+	if not doors.has(key):
+		return
+	var bus := Modules.bus("ship_bay")
+	var payload := {"ship": str(name), "door": key, "open": not bool(doors[key]["open"])}
+	if bus and bus.has_method("send_ship_door"):
+		bus.call("send_ship_door", payload)
+	else:
+		set_door(key, payload["open"])
+
+
+## Opens or shuts a door (it slides over its travel time; `instant` jumps there).
+func set_door(key: String, open: bool, instant := false) -> void:
+	if not doors.has(key):
+		return
+	doors[key]["open"] = open
+	if instant or not is_inside_tree():
+		_place_door(key, 1.0 if open else 0.0)
+	set_process(true)
+
+
+func is_door_open(key: String) -> bool:
+	return doors.has(key) and bool(doors[key]["open"])
+
+
+func _on_ship_door(payload: Dictionary) -> void:
+	if str(payload.get("ship", "")) == str(name):
+		set_door(str(payload.get("door", "")), bool(payload.get("open", false)))
+
+
+func _enter_tree() -> void:
+	var bus := Modules.bus("ship_bay")
+	if bus and bus.has_signal("ship_door_state") and not bus.is_connected("ship_door_state", _on_ship_door):
+		bus.connect("ship_door_state", _on_ship_door)
+
+
+func _exit_tree() -> void:
+	var bus := Modules.bus("ship_bay")
+	if bus and bus.has_signal("ship_door_state") and bus.is_connected("ship_door_state", _on_ship_door):
+		bus.disconnect("ship_door_state", _on_ship_door)
+
+
+func _process(delta: float) -> void:
+	var moving := false
+	for key: String in doors:
+		var d: Dictionary = doors[key]
+		var goal := 1.0 if d["open"] else 0.0
+		if not is_equal_approx(float(d["t"]), goal):
+			_place_door(key, move_toward(float(d["t"]), goal, delta / float(d["time"])))
+			moving = true
+	if not moving:
+		set_process(false)
+
+
+func _place_door(key: String, t: float) -> void:
+	var d: Dictionary = doors[key]
+	d["t"] = t
+	var by: Vector3 = d["by"] * t
+	var model := importer.kit.model
+	for id: int in d["parts"]:
+		var closed: Transform3D = d["parts"][id]
+		model.move_part(id, Transform3D(closed.basis, closed.origin + by))
+	for mi: Node3D in d["meshes"]:
+		mi.position = d["meshes"][mi] + by
 
 
 ## Where the bay's stairs and power cable meet the ship (ship space).

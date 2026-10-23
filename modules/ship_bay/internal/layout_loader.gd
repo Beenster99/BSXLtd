@@ -6,7 +6,8 @@ extends RefCounted
 ##   <name>_fasteners.json  BSX's own data on top: joints for the slots whose part the file
 ##                          doesn't carry (a module fitted later), what a slot's spot welds
 ##                          are made as in the yard ("spots"), joints BSX adds ("extra"), and
-##                          file parts BSX treats as replaceable fittings ("fittings")
+##                          file parts BSX treats as replaceable fittings ("fittings", and
+##                          "skin": every riveted outer plate)
 ##   <name>.tscn            the model, which builds the ship from the same file
 
 ## Void Salvage joint kinds as BSX's trades work them: a spot weld is a short weld.
@@ -77,10 +78,17 @@ static func load_ship(dir: String) -> ShipDefinition:
 		if not entry.get("mount", {}).has("b") and not s.fasteners.is_empty():
 			s.mount = _facing(s.fasteners[0].normal, s.mount.origin)
 		def.slots.append(s)
+	var fitted_parts := {}
 	for entry: Dictionary in bsx.get("fittings", []):
 		var s := _fitting_slot(entry, f)
 		if s:
 			def.slots.append(s)
+			fitted_parts[entry.get("part", "")] = true
+	if bsx.has("skin"):
+		for entry: Dictionary in _skin_fittings(bsx["skin"], f, fitted_parts):
+			var s := _fitting_slot(entry, f)
+			if s:
+				def.slots.append(s)
 	var model_path := dir.path_join(name + ".tscn")
 	if ResourceLoader.exists(model_path):
 		def.model = load(model_path)
@@ -125,6 +133,34 @@ static func _facing(facing: Vector3, origin: Vector3) -> Transform3D:
 	var up := Vector3.UP if absf(z.dot(Vector3.UP)) < 0.99 else Vector3.BACK
 	var x := up.cross(z).normalized()
 	return Transform3D(Basis(x, z.cross(x), z), origin)
+
+
+## Every riveted outer plate of the hull (parts whose path has `rule.under`, "/skin/") as a
+## fitting of its own, so its rivets can be heated out and the plate lifted off: slot
+## "<prefix><body>_<edge>" ("plate_cabin_e3"), named "Hull plate (cabin, e3)". Plates already
+## listed in "fittings" keep their own entry.
+static func _skin_fittings(rule: Dictionary, f: Dictionary, taken: Dictionary) -> Array:
+	var riveted := {}
+	for j: Dictionary in f.get("joints", []):
+		if str(j.get("kind", "")) == "rivet":
+			riveted[j.get("a", "")] = true
+			riveted[j.get("b", "")] = true
+	var under: String = rule.get("under", "/skin/")
+	var out: Array = []
+	for p: Dictionary in f.get("parts", []):
+		var path: String = p.get("path", "")
+		if not under in path or taken.has(path) or not riveted.has(path):
+			continue
+		var head := path.get_slice(under, 0)   # "hull/bay:cabin"
+		var body := head.get_slice(":", 1) if ":" in head else head.get_slice("/", 0)
+		if not head.begins_with("hull/"):
+			body = head.get_slice("/", 0) + "_" + body
+		var edge := path.get_slice(under, 1).replace("/", "_")
+		out.append({"slot_id": "%s%s_%s" % [rule.get("prefix", "plate_"), body, edge],
+				"display_name": "%s (%s, %s)" % [rule.get("name", "Hull plate"), body.replace("_", " "), edge],
+				"part": path, "accepts": rule.get("accepts", ["HullPlate"]), "fitted": rule.get("fitted", "HullPlate"),
+				"access": rule.get("access", "outboard")})
+	return out
 
 
 ## A file part BSX treats as a replaceable fitting (a hull plate): its slot, box and joints
