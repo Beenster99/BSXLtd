@@ -43,6 +43,13 @@ const YARD := Vector2(28.0, 24.0)
 ## How far door frames stand proud of the wall's cut edges into the opening, metres.
 const FRAME_PROUD := 0.02
 const WING := 22.0
+## The big doorways' height between the halls and onto the courtyard, metres: tall enough
+## for the picking lifts' masts (beenster, 0.3.15), their shutters rolled up over them.
+const BAY_DOOR_H := 10.0
+## Room signs stand beside the doorways (not over them): their middle this high, metres,
+## and their letters this tall.
+const DOOR_SIGN_Y := 4.6
+const DOOR_SIGN_H := 0.8
 ## Column and truss spacing, metres; stations sit at BAY * k + BAY / 2 all over the yard.
 const BAY := 6.0
 ## Repeated parts are batched per patch of the yard this wide (metres), so the
@@ -546,13 +553,13 @@ func _walls() -> Array:
 		["x", zb, x0, x1, [], -1],                                        # north
 		["z", x1, zb, YARD.y, [[0.0, 1.4, 2.4]], 1],                      # east: a door
 		["x", YARD.y, x0, -YARD.x, [[-39.0, 1.4, 2.4]], 1],               # west wing's end
-		["x", YARD.y, YARD.x, x1, [[39.0, 8.0, 8.0]], 1],                 # east wing's end
-		["z", -YARD.x, -YARD.y, YARD.y, [[0.0, 10.0, 8.0]], 1],           # on the courtyard
-		["x", -YARD.y, -YARD.x, YARD.x, [[-14.0, 8.0, 7.0], [14.0, 8.0, 7.0]], 1],
-		["z", YARD.x, -YARD.y, YARD.y, [[0.0, 20.0, 9.0]], -1],
-		["x", -YARD.y, x0, -YARD.x, [[-39.0, 10.0, 7.0]], 0],             # between the rooms
-		["z", 0.0, zb, -YARD.y, [[-35.0, 8.0, 7.0]], 0],
-		["x", -YARD.y, YARD.x, x1, [[39.0, 10.0, 7.0]], 0],
+		["x", YARD.y, YARD.x, x1, [[39.0, 8.0, BAY_DOOR_H]], 1],          # east wing's end
+		["z", -YARD.x, -YARD.y, YARD.y, [[0.0, 10.0, BAY_DOOR_H]], 1],    # on the courtyard
+		["x", -YARD.y, -YARD.x, YARD.x, [[-14.0, 8.0, BAY_DOOR_H], [14.0, 8.0, BAY_DOOR_H]], 1],
+		["z", YARD.x, -YARD.y, YARD.y, [[0.0, 20.0, BAY_DOOR_H]], -1],
+		["x", -YARD.y, x0, -YARD.x, [[-39.0, 10.0, BAY_DOOR_H]], 0],      # between the rooms
+		["z", 0.0, zb, -YARD.y, [[-35.0, 8.0, BAY_DOOR_H]], 0],
+		["x", -YARD.y, YARD.x, x1, [[39.0, 10.0, BAY_DOOR_H]], 0],
 	]
 
 
@@ -879,7 +886,8 @@ func _build_doors() -> void:
 						_wall_point(axis, wall[1], o[0], height + 0.55, float(-side if side != 0 else 1) * (T * 0.5 + 0.03))),
 						_glow_mat(Color(0.3, 1.0, 0.45), 3.0), false)
 				continue
-			var bottom := maxf(3.2, height * 0.66)
+			# Rolled up clear of the lifts' masts (the heavy lift's is 9.3 m) in the tall doorways.
+			var bottom := maxf(3.2, maxf(height * 0.66, height - 0.3))
 			var drop := height - bottom
 			var basis := _wall_basis(axis)
 			_put(_box(Vector3(width - 0.01, drop, 0.03)), Transform3D(basis, _wall_point(axis, wall[1], o[0], bottom + drop * 0.5, face)), curtain, false)
@@ -927,32 +935,51 @@ func _build_lights() -> void:
 		add_child(lamp)
 
 
-## Signs over every doorway naming the room it leads into, and the company name on the
-## back wing's courtyard face.
+## Signs beside every doorway naming the room it leads into (beside, not over: the doorways
+## are tall for the picking lifts), and the company name on the back wing's courtyard face.
 func _build_signs() -> void:
 	var court := YARD.x
 	var back := -YARD.y
 	# From the courtyard.
-	_sign("DELIVERIES", Vector3(-court + 0.3, 10.0, 0), PI * 0.5, 1.6)
-	_sign("STOCK", Vector3(-14, 9.0, back + 0.3), 0.0, 1.3)
-	_sign("MATERIAL PREP", Vector3(14, 9.0, back + 0.3), 0.0, 1.3)
-	_sign("PRE-ASSEMBLY", Vector3(court - 0.3, 11.0, 0), -PI * 0.5, 1.2)
+	_door_sign("DELIVERIES", "z", -court, 0.0, 10.0, 0.3, 1.0, PI * 0.5)
+	_door_sign("STOCK", "x", back, -14.0, 8.0, 0.3, -1.0, 0.0)
+	_door_sign("MATERIAL\nPREP", "x", back, 14.0, 8.0, 0.3, 1.0, 0.0)
+	_door_sign("PRE-\nASSEMBLY", "z", court, 0.0, 20.0, -0.3, 1.0, -PI * 0.5)
 	var name_board := _sign("BSX LTD", Vector3(0, 9.6, back + 0.35), 0.0, 3.2)
 	name_board.modulate = TRIM
 	_sign("SHIP MODIFICATION  /  REFIT  /  REPAIR", Vector3(0, 7.4, back + 0.35), 0.0, 0.5, false)
 	# Back out to the bay.
-	_sign("THE BAY", Vector3(-court - 0.3, 10.0, 0), -PI * 0.5, 1.4)
-	_sign("THE BAY", Vector3(-14, 9.0, back - 0.3), PI, 1.2)
-	_sign("THE BAY", Vector3(14, 9.0, back - 0.3), PI, 1.2)
-	_sign("THE BAY", Vector3(court + 0.3, 11.0, 0), PI * 0.5, 1.2)
+	_door_sign("THE BAY", "z", -court, 0.0, 10.0, -0.3, -1.0, -PI * 0.5)
+	_door_sign("THE BAY", "x", back, -14.0, 8.0, -0.3, 1.0, PI)
+	_door_sign("THE BAY", "x", back, 14.0, 8.0, -0.3, -1.0, PI)
+	_door_sign("THE BAY", "z", court, 0.0, 20.0, 0.3, -1.0, PI * 0.5)
 	# Room to room, round the flow.
-	_sign("STOCK", Vector3(-39, 9.0, back + 0.3), 0.0, 1.2)
-	_sign("DELIVERIES", Vector3(-39, 9.0, back - 0.3), PI, 1.2)
-	_sign("MATERIAL PREP", Vector3(-0.3, 9.0, -35), -PI * 0.5, 1.2)
-	_sign("STOCK", Vector3(0.3, 9.0, -35), PI * 0.5, 1.2)
-	_sign("PRE-ASSEMBLY", Vector3(39, 9.0, back - 0.3), PI, 1.2)
-	_sign("MATERIAL PREP", Vector3(39, 9.0, back + 0.3), 0.0, 1.2)
+	_door_sign("STOCK", "x", back, -39.0, 10.0, 0.3, 1.0, 0.0)
+	_door_sign("DELIVERIES", "x", back, -39.0, 10.0, -0.3, 1.0, PI)
+	_door_sign("MATERIAL\nPREP", "z", 0.0, -35.0, 8.0, -0.3, 1.0, -PI * 0.5)
+	_door_sign("STOCK", "z", 0.0, -35.0, 8.0, 0.3, 1.0, PI * 0.5)
+	_door_sign("PRE-\nASSEMBLY", "x", back, 39.0, 10.0, -0.3, -1.0, PI)
+	_door_sign("MATERIAL\nPREP", "x", back, 39.0, 10.0, 0.3, -1.0, 0.0)
 	_sign("GOODS IN", Vector3(-court - WING - 0.4, 7.6, 0), -PI * 0.5, 1.8)
+
+
+## A room sign beside a doorway: on wall `axis` at `at`, the doorway centred at `u` and
+## `width` wide, the sign `w` off the wall's middle line (its face), to side `dir` along the
+## wall, a jamb's width clear of the doorway.
+func _door_sign(text: String, axis: String, at: float, u: float, width: float, w: float, dir: float, yaw: float) -> Label3D:
+	var wide := _board_size(text, DOOR_SIGN_H).x
+	var along := u + dir * (width * 0.5 + 0.55 + wide * 0.5)
+	return _sign(text, _wall_point(axis, at, along, DOOR_SIGN_Y, w), yaw, DOOR_SIGN_H)
+
+
+## The dark board behind a sign's letters: wide enough for its longest line, tall enough
+## for all of them.
+static func _board_size(text: String, height_m: float) -> Vector2:
+	var lines := text.split("\n")
+	var longest := 0
+	for line in lines:
+		longest = maxi(longest, line.length())
+	return Vector2(longest * height_m * 0.62 + height_m * 0.8, height_m * (1.3 + 1.2 * (lines.size() - 1)))
 
 
 ## A sign on a dark board with an orange edge (unless `board` is off), facing `yaw`.
@@ -971,7 +998,8 @@ func _sign(text: String, at: Vector3, yaw: float, height_m: float, board := true
 	add_child(label)
 	if board:
 		var basis := Basis(Vector3.UP, yaw)
-		var size := Vector3(text.length() * height_m * 0.62 + height_m * 0.8, height_m * 1.3, 0.06)
+		var board_size := _board_size(text, height_m)
+		var size := Vector3(board_size.x, board_size.y, 0.06)
 		_put(_box(size), Transform3D(basis, at - basis.z * 0.06), _paint(Color(0.1, 0.11, 0.12), 0.3, 0.5, "satin_paint"), false)
 		# The trim strip a touch wider, lower and shallower than the board, so no face of one
 		# lies in the other's plane (that flickered).
@@ -1039,7 +1067,8 @@ func _build_deliveries() -> void:
 			_block(at + Vector3(dx, 0.024, 0), Vector3(0.06, 0.004, 1.5), spot_line, false)
 		var n := _tag("GI-%02d" % (i + 1), at + Vector3(0, 0.03, 0.95), 0.18, Vector3.ZERO)
 		n.rotation = Vector3(-PI * 0.5, 0, 0)
-	_sign("GOODS IN", Vector3(-40.8, 5.6, -23.6), 0.0, 0.45)
+	# Beside the doorway into the stores, not hanging in it.
+	_sign("GOODS IN", Vector3(-44.0 - 0.55 - _board_size("GOODS IN", 0.45).x * 0.5, 5.6, -23.68), 0.0, 0.45)
 
 
 ## The storage hall, laid out by StorageLayout: three aisles of small racking (the bins in
@@ -1089,7 +1118,7 @@ func _build_stock() -> void:
 		_block(hand + Vector3(0, 0.026, dz), Vector3(9.0, 0.004, 0.08), line, false)
 	for dx: float in [-4.5, 4.5]:
 		_block(hand + Vector3(dx, 0.026, 0), Vector3(0.08, 0.004, 3.2), line, false)
-	_sign("HEAVY LIFT HAND-IN", Vector3(-44.0, 6.4, -24.4), 0.0, 0.4)
+	_sign("HEAVY LIFT HAND-IN", Vector3(-44.0 - 0.55 - _board_size("HEAVY LIFT HAND-IN", 0.4).x * 0.5, 4.6, -23.68), 0.0, 0.4)
 
 
 ## One rack of StorageLayout: lattice end frames at each bay, orange beams and grating decks

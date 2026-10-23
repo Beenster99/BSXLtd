@@ -102,6 +102,7 @@ var status := "PARKED"
 var _speed := 0.0
 var _yaw := 0.0
 var _mast: Array[MeshInstance3D] = []
+var _chains: Array[MeshInstance3D] = []
 ## The picking lift's shuttle fork, how far out it is (0 in .. 1 into the rack) and which side.
 var _fork: Node3D
 var fork_out := 0.0
@@ -501,6 +502,81 @@ func _build_picker(d: Vector2) -> void:
 	for sz: float in [-0.3, 0.3]:
 		_box(Vector3(d.x + 0.2, 0.05, 0.12), Vector3(0, 0.03, sz), _mats["steel"], _fork)
 	_box(Vector3(0.06, 0.25, d.y * 0.6), Vector3(0, 0.15, 0), _mats["body"], _fork)
+	_detail_picker(d, mast, back, stripe)
+
+
+## The picking lift's finer parts (beenster, 0.3.15: "more fidelity on the picking trolley"):
+## a crosshead with twin pulleys and lift chains down to the carriage, guide rollers and a
+## side-shift on the carriage, tines with a load backrest, an energy chain up the back of the
+## mast, a counterweight with hazard chevrons, a battery box with a charge bar, corner
+## bumpers, and a sensor puck and scanner bar for finding its way.
+func _detail_picker(d: Vector2, mast: float, back: float, stripe: Material) -> void:
+	var hazard := ShipSurface.of(ShipKit.paint(Color(0.95, 0.75, 0.1), 0.2, 0.5, "gloss_paint"))
+	var chain := ShipSurface.of(ShipKit.paint(Color(0.2, 0.2, 0.22), 0.8, 0.4, "gunmetal"))
+	var col_x := d.x * 0.5 - 0.1
+	# Column faces: a flange down each column's front, bolt plates at the foot and head.
+	for sx: float in [-1.0, 1.0]:
+		var x := sx * col_x
+		_box(Vector3(0.2, mast - CHASSIS_TOP - 0.1, 0.02), Vector3(x, (CHASSIS_TOP + mast) * 0.5, back - 0.09), _mats["steel"])
+		for y: float in [CHASSIS_TOP + 0.06, mast - 0.16]:
+			_box(Vector3(0.26, 0.08, 0.26), Vector3(x, y, back), _mats["dark"])
+	# The crosshead: twin pulleys over the columns, chains down to the carriage (_set_deck
+	# keeps their length).
+	for sx: float in [-1.0, 1.0]:
+		var x := sx * (col_x - 0.16)
+		_cyl(0.09, 0.06, Vector3(x, mast + 0.02, back - 0.05), _mats["steel"], null, Basis(Vector3.BACK, PI * 0.5))
+		var run := _box(Vector3(0.03, 1.0, 0.03), Vector3(x, mast * 0.5, back - 0.05), chain)
+		run.name = "LiftChain"
+		_chains.append(run)
+	# Energy chain: links up the back of the mast carrying the carriage's power and data.
+	var link := Vector3(0.12, 0.1, 0.06)
+	var y := CHASSIS_TOP + 0.2
+	while y < mast - 0.2:
+		_box(link, Vector3(0.0, y, back + 0.36), chain if int(y * 10.0) % 2 == 0 else _mats["dark"])
+		y += 0.13
+	_box(Vector3(0.14, mast - CHASSIS_TOP - 0.2, 0.02), Vector3(0, (CHASSIS_TOP + mast) * 0.5, back + 0.4), _mats["dark"])
+	# The carriage: guide rollers on each column, a side-shift plate, a backrest over the tines.
+	for sx: float in [-1.0, 1.0]:
+		for ry: float in [0.1, 0.5]:
+			_cyl(0.05, 0.05, Vector3(sx * (col_x - 0.12), ry, d.y * 0.5 - 0.16), _mats["steel"], deck, Basis(Vector3.BACK, PI * 0.5))
+	_box(Vector3(d.x * 0.7, 0.14, 0.06), Vector3(0, 0.52, d.y * 0.5 - 0.27), stripe, deck)
+	_cyl(0.035, 0.4, Vector3(d.x * 0.25, 0.3, d.y * 0.5 - 0.3), _mats["steel"], deck, Basis.IDENTITY)
+	for sz: float in [-0.3, 0.3]:
+		# Tine tips and a short backrest at the fork's root.
+		_box(Vector3(0.06, 0.04, 0.12), Vector3((d.x + 0.2) * 0.5 + 0.03, 0.02, sz), _mats["dark"], _fork)
+		_box(Vector3(0.06, 0.04, 0.12), Vector3(-(d.x + 0.2) * 0.5 - 0.03, 0.02, sz), _mats["dark"], _fork)
+	_box(Vector3(0.04, 0.4, d.y * 0.7), Vector3(0, 0.45, 0), _mats["steel"], _fork)
+	# The base: a counterweight under the mast with hazard chevrons, a battery box with its
+	# charge bar, yellow corner bumpers, a scanner bar and a sensor puck at the front.
+	var front := -d.y * 0.5
+	_box(Vector3(d.x - 0.1, 0.28, 0.34), Vector3(0, CHASSIS_TOP + 0.14, back - 0.12), _mats["dark"])
+	for k in 4:
+		var cx := -d.x * 0.36 + k * d.x * 0.24
+		_box(Vector3(0.1, 0.22, 0.02), Vector3(cx, CHASSIS_TOP + 0.14, back - 0.3),
+				hazard if k % 2 == 0 else _mats["dark"]).rotation.z = 0.6
+	_box(Vector3(0.36, 0.22, 0.28), Vector3(d.x * 0.22, CHASSIS_TOP + 0.11, front + 0.48), _mats["dark"])
+	_box(Vector3(0.24, 0.04, 0.01), Vector3(d.x * 0.22, CHASSIS_TOP + 0.15, front + 0.335), _mats["go"])
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			_box(Vector3(0.12, 0.14, 0.12), Vector3(sx * (d.x * 0.5 + 0.02), HOVER + 0.1, sz * (d.y * 0.5 + 0.02)), hazard)
+	_box(Vector3(d.x * 0.5, 0.05, 0.05), Vector3(0, HOVER + 0.12, front - 0.03), _mats["pad"])
+	_cyl(0.06, 0.07, Vector3(0, mast + 0.27, back + 0.12), _mats["dark"], null, Basis.IDENTITY)
+	_cyl(0.045, 0.03, Vector3(0, mast + 0.32, back + 0.12), _mats["pad"], null, Basis.IDENTITY)
+
+
+func _cyl(radius: float, height: float, at: Vector3, mat: Material, parent: Node3D, basis: Basis) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var c := CylinderMesh.new()
+	c.top_radius = radius
+	c.bottom_radius = radius
+	c.height = height
+	c.radial_segments = 12
+	c.rings = 1
+	mi.mesh = c
+	mi.material_override = mat
+	mi.transform = Transform3D(basis, at)
+	(parent if parent else self).add_child(mi)
+	return mi
 
 
 func _set_deck(h: float) -> void:
@@ -516,6 +592,12 @@ func _set_deck(h: float) -> void:
 		var y0 := bottom + i * (each - overlap)
 		(sec.mesh as BoxMesh).size.y = each
 		sec.position = Vector3(0, y0 + each * 0.5, 0)
+	# A picking lift's chains run from its crosshead down to the carriage.
+	var top := float(spec.get("mast", PICKER_MAST))
+	for run in _chains:
+		var length := maxf(top - (h + 0.6), 0.05)
+		(run.mesh as BoxMesh).size.y = length
+		run.position.y = h + 0.6 + length * 0.5
 
 
 func _box(size: Vector3, at: Vector3, mat: Material, parent: Node3D = null) -> MeshInstance3D:
