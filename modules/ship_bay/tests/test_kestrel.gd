@@ -103,8 +103,8 @@ func run_tests() -> void:
 	var wires := model.get_node_or_null("Wires") as MeshInstance3D
 	check(wires != null and wires.mesh.get_aabb().size.z > 5.0, "the leads' wires run along the ship")
 	model.call("set_door", "door_bulkhead", true, true)
-	var lamps: Array = (dressing.get("door_lamps") as Dictionary).get("door_bulkhead", [])
-	check(lamps.size() == 2 and (lamps[0] as StandardMaterial3D).emission.g > 0.8, "an open door's panel lamps show green")
+	var panel_lamps: Array = (dressing.get("door_lamps") as Dictionary).get("door_bulkhead", [])
+	check(panel_lamps.size() == 2 and (panel_lamps[0] as StandardMaterial3D).emission.g > 0.8, "an open door's panel lamps show green")
 	model.call("set_door", "door_bulkhead", false, true)
 	var plates := def.slots.filter(func(s: MountSlot) -> bool: return s.slot_id.begins_with("plate_"))
 	var rivets := 0
