@@ -42,16 +42,20 @@ func run_tests() -> void:
 	var truck: Node3D = runs[0]["body"]
 	check(str(truck.get_meta("brand", "")) == str(Trucks.brand_for("PO-77")["name"]), "in its company's livery: %s" % truck.get_meta("brand", ""))
 	var start := truck.global_position
-	check(start.x < -150.0, "it starts out along the road: %s" % start)
+	check(start.x < -100.0 and absf(start.z - 30.0) < 0.1, "it starts out along the road: %s" % start)
 	var docked_at := Vector3.INF
+	var took := INF
 	for i in 6000:
 		await get_tree().physics_frame
 		if not bool(trucks.call("is_arriving", crate)):
 			docked_at = truck.global_position
+			took = float(runs[0]["age"])
 			break
 	var dock: Vector3 = trucks.call("_dock_xform", Trucks.DOCKS[0]).origin
 	check(docked_at.distance_to(dock) < 0.2, "it backed onto the truck door before unloading: %s (dock %s)" % [docked_at, dock])
 	check(truck.global_transform.basis.z.dot(Vector3.RIGHT) > 0.99, "rear to the door")
+	# beenster, 23 Oct: the truck turns up within a minute; Business lands orders by 45 s.
+	check(took < 16.0, "at the door %.1f s after the order lands" % took)
 	await frames(2)
 	check(stores.get_node_or_null("Crate_" + crate.replace("/", "_")) != null, "the crate is on the goods-in floor now")
 	for i in 9000:

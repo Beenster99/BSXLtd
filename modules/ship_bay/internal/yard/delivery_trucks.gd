@@ -4,7 +4,9 @@ extends Node3D
 ## doors. It glides in along the road from the west, turns up the dock apron, swings round
 ## and backs onto a free truck door, opens its doors and sets the crates down, then closes
 ## up and drives away. Until it has unloaded, its crates aren't drawn on the goods-in floor
-## and the trolleys leave them be.
+## and the trolleys leave them be. Since 23 Oct (beenster: "the delivery truck should turn up
+## within a minute") a truck reaches the door about 15 s after the order lands: Business lands
+## orders up to 45 s after they're placed, so the crates are at the door within the minute.
 ##
 ## Presentation on every peer: each yard sends its own truck when it hears delivery_landed
 ## (the crates themselves are bus state, the same everywhere). With the flag
@@ -26,16 +28,22 @@ const LENGTH := 16.2
 ## Where trucks come from and go to along the road, yard space.
 const ROAD_START := Vector3(-175.0, 0, 30.0)
 const ROAD_TURN := Vector3(-92.0, 0, 30.0)
+## Where a truck stops on the apron to swing round before backing onto its door (x), metres.
+const SWING_X := -76.0
 ## The lift pads' float over the ground, metres.
 const FLOAT := 0.7
 
 ## Cruising speed on the road and backing speed onto the dock, metres per second.
-@export var road_speed := 9.0
-@export var back_speed := 2.2
+@export var road_speed := 16.0
+@export var back_speed := 4.0
+## How hard a truck speeds up and slows down backing, metres per second squared.
+@export var back_accel := 2.5
 ## How fast a truck turns on the spot, radians per second.
-@export var spin_rate := 0.6
+@export var spin_rate := 1.4
+## How fast the rear doors swing, of their full travel per second.
+@export var door_rate := 1.5
 ## How long a docked truck stands with its doors open, seconds.
-@export var dwell := 7.0
+@export var dwell := 6.0
 ## Everything a truck does runs this much faster (tests).
 @export var time_scale := 1.0
 ## After this long a delivery's crates land even if its truck hasn't got there, seconds.
@@ -114,21 +122,22 @@ func _send(order_id: String, crate_ids: PackedStringArray, dock: int) -> void:
 	var park := _dock_xform(z).origin
 	var plan: Array = [
 		{"go": ROAD_TURN, "speed": road_speed},
-		{"go": Vector3(-86.0, 0, z + 9.0), "speed": road_speed * 0.6},
-		{"go": Vector3(-86.0, 0, z), "speed": 3.0, "stop": true},
+		{"go": Vector3(SWING_X, 0, z + 9.0), "speed": road_speed * 0.6},
+		{"go": Vector3(SWING_X, 0, z), "speed": 5.0, "stop": true},
 		{"spin": PI * 0.5},
 		{"back": park},
 		{"doors": 1.0},
 		{"unload": true},
 		{"wait": dwell},
 		{"doors": 0.0},
-		{"go": Vector3(-96.0, 0, z), "speed": 4.0},
+		{"go": Vector3(SWING_X - 10.0, 0, z), "speed": 5.0},
 		{"go": Vector3(-104.0, 0, 24.0), "speed": 6.0},
 		{"go": ROAD_START, "speed": road_speed},
 		{"leave": true},
 	]
 	runs.append({"body": body, "order": order_id, "dock": dock, "plan": plan, "step": 0, "v": 0.0, "t": 0.0,
 			"doors": 0.0, "crates": crate_ids, "age": 0.0})
+	(runs[-1] as Dictionary)["v"] = road_speed   # it comes off the far road already at speed
 
 
 ## A docked truck's place: nose to the west, rear doors on the truck door at z.
@@ -165,7 +174,7 @@ func _step(run: Dictionary, dt: float) -> void:
 			_next(run)
 			return
 		var dir := off / dist
-		var yaw := _turn_toward(xf.basis.get_euler().y, atan2(-dir.x, -dir.z), 1.2 * dt)
+		var yaw := _turn_toward(xf.basis.get_euler().y, atan2(-dir.x, -dir.z), 2.0 * dt)
 		body.global_transform = Transform3D(Basis(Vector3.UP, yaw), xf.origin + dir * float(run["v"]) * dt)
 	elif s.has("spin"):
 		var now := xf.basis.get_euler().y
@@ -178,7 +187,7 @@ func _step(run: Dictionary, dt: float) -> void:
 		var off := to - xf.origin
 		off.y = 0.0
 		var dist := off.length()
-		run["v"] = move_toward(float(run["v"]), minf(back_speed, sqrt(2.0 * 1.2 * dist) + 0.05), 1.2 * dt)
+		run["v"] = move_toward(float(run["v"]), minf(back_speed, sqrt(2.0 * back_accel * dist) + 0.05), back_accel * dt)
 		if dist <= maxf(float(run["v"]) * dt, 0.01):
 			body.global_transform = Transform3D(xf.basis, to)
 			_next(run)
@@ -186,7 +195,7 @@ func _step(run: Dictionary, dt: float) -> void:
 		body.global_transform = Transform3D(xf.basis, xf.origin + off / dist * float(run["v"]) * dt)
 	elif s.has("doors"):
 		var target := float(s["doors"])
-		_set_doors(run, move_toward(float(run["doors"]), target, 0.7 * dt))
+		_set_doors(run, move_toward(float(run["doors"]), target, door_rate * dt))
 		if is_equal_approx(float(run["doors"]), target):
 			_next(run)
 	elif s.has("unload"):
