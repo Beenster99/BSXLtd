@@ -20,6 +20,9 @@ extends Resource
 ## ConnectionData have them.
 @export var seam_up := Vector3.ZERO
 @export var seam_size := Vector2.ZERO
+## The joint's path in the ship's Void Salvage file ("slot:eng_port/engine/spot:hull/cap/back/0/0"),
+## "" for BSX's own joints (a slot whose part the file doesn't carry).
+@export var path := ""
 
 
 static func slot_of(id: String) -> String:

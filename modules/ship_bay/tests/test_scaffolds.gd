@@ -67,11 +67,17 @@ func run_tests() -> void:
 	var moved_hit := yard.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(
 			rig.to_global(Vector3(0.2, 7.0, 3.0)), rig.to_global(Vector3(0.2, 0.5, 3.0))))
 	check(absf(float(moved_hit.get("position", Vector3.ZERO).y) - 4.35) < 0.1, "its frame went with it (the deck is there): %s" % moved_hit.get("position", ""))
+	# Where the frame would reach into the hull, it won't grow: set 0.3 m into the ship's side.
+	var beside := rig.global_position
+	rig.global_position += rig.global_basis.x * 0.3
+	await get_tree().physics_frame
 	var grow_ok: bool = rig.call("fits", 2, 3)
-	check(not grow_ok, "against the hull it can't grow another lift into the ship's shoulder")
+	check(not grow_ok, "reaching into the hull it can't grow another lift")
 	press.call("lift_up")
 	await get_tree().physics_frame
 	check(int(rig.get("lifts")) == 2, "so LIFT + is refused there")
+	rig.global_position = beside
+	await get_tree().physics_frame
 	var handle := rig.find_child("PushHandle", true, false) as Node
 	check(handle != null and handle.has_meta("ship_bay_use"), "F on the post's handle takes it to push")
 

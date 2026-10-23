@@ -1,87 +1,43 @@
 {
-	"version": 1,
+	"version": 2,
 	"ship_id": "vs_kestrel",
-	"note": "BSX's own data: how each slot's part is held on. Ship space, metres. Specs are Shared Components fastener ids.",
+	"note": "BSX's own joints for the slots whose part kestrel.vsship.json does not carry (a module fitted later, or a fitting with no part yet). Slots that have a part take their joints from the file. Ship space, metres. Specs are Shared Components fastener ids.",
 	"slots": {
-		"eng_aft_port_1": [
-			{"id": "b1", "kind": "bolt", "spec": "M12", "at": [-2.38, 0.72, 6.54], "normal": [0, 0, 1]},
-			{"id": "b2", "kind": "bolt", "spec": "M12", "at": [-1.82, 0.72, 6.54], "normal": [0, 0, 1]},
-			{"id": "b3", "kind": "bolt", "spec": "M12", "at": [-1.82, 1.78, 6.54], "normal": [0, 0, 1]},
-			{"id": "b4", "kind": "bolt", "spec": "M12", "at": [-2.38, 1.78, 6.54], "normal": [0, 0, 1]},
-			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [-2.1, 0.72, 6.54], "normal": [0, 0, 1]},
-			{"id": "p2", "kind": "connector", "spec": "power", "at": [-2.1, 1.78, 6.54], "normal": [0, 0, 1]}
+		"hold_nets": [
+			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-1.85, 2.74, 2.0], "normal": [0, -1, 0]},
+			{"id": "b2", "kind": "bolt", "spec": "M10", "at": [1.85, 2.74, 2.0], "normal": [0, -1, 0]},
+			{"id": "b3", "kind": "bolt", "spec": "M10", "at": [-1.85, 2.74, 4.05], "normal": [0, -1, 0]},
+			{"id": "b4", "kind": "bolt", "spec": "M10", "at": [1.85, 2.74, 4.05], "normal": [0, -1, 0]},
+			{"id": "b5", "kind": "bolt", "spec": "M10", "at": [-1.85, 2.74, 6.1], "normal": [0, -1, 0]},
+			{"id": "b6", "kind": "bolt", "spec": "M10", "at": [1.85, 2.74, 6.1], "normal": [0, -1, 0]}
 		],
-		"eng_aft_stbd_1": [
-			{"id": "b1", "kind": "bolt", "spec": "M12", "at": [1.82, 0.72, 6.54], "normal": [0, 0, 1]},
-			{"id": "b2", "kind": "bolt", "spec": "M12", "at": [2.38, 0.72, 6.54], "normal": [0, 0, 1]},
-			{"id": "b3", "kind": "bolt", "spec": "M12", "at": [2.38, 1.78, 6.54], "normal": [0, 0, 1]},
-			{"id": "b4", "kind": "bolt", "spec": "M12", "at": [1.82, 1.78, 6.54], "normal": [0, 0, 1]},
-			{"id": "p1", "kind": "connector", "spec": "fuel", "at": [2.1, 0.72, 6.54], "normal": [0, 0, 1]},
-			{"id": "p2", "kind": "connector", "spec": "power", "at": [2.1, 1.78, 6.54], "normal": [0, 0, 1]}
+		"attractor_coil": [
+			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-0.6, 2.4, 6.0], "normal": [0, -1, 0]},
+			{"id": "b2", "kind": "bolt", "spec": "M10", "at": [0.6, 2.4, 6.0], "normal": [0, -1, 0]},
+			{"id": "b3", "kind": "bolt", "spec": "M10", "at": [-0.6, 2.4, 6.3], "normal": [0, -1, 0]},
+			{"id": "b4", "kind": "bolt", "spec": "M10", "at": [0.6, 2.4, 6.3], "normal": [0, -1, 0]},
+			{"id": "p1", "kind": "connector", "spec": "power", "at": [0.0, 2.25, 5.95], "normal": [0, 0, -1]}
 		],
-		"net_hold_dor_1": [
-			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-1.9, 2.84, 1.95], "normal": [0, -1, 0]},
-			{"id": "b2", "kind": "bolt", "spec": "M10", "at": [1.9, 2.84, 1.95], "normal": [0, -1, 0]},
-			{"id": "b3", "kind": "bolt", "spec": "M10", "at": [-1.9, 2.84, 4.05], "normal": [0, -1, 0]},
-			{"id": "b4", "kind": "bolt", "spec": "M10", "at": [1.9, 2.84, 4.05], "normal": [0, -1, 0]},
-			{"id": "b5", "kind": "bolt", "spec": "M10", "at": [-1.9, 2.84, 6.15], "normal": [0, -1, 0]},
-			{"id": "b6", "kind": "bolt", "spec": "M10", "at": [1.9, 2.84, 6.15], "normal": [0, -1, 0]}
+		"radar": [
+			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-1.55, 3.2, 5.35], "normal": [0, 1, 0]},
+			{"id": "b2", "kind": "bolt", "spec": "M10", "at": [-1.05, 3.2, 5.35], "normal": [0, 1, 0]},
+			{"id": "b3", "kind": "bolt", "spec": "M10", "at": [-1.05, 3.2, 5.85], "normal": [0, 1, 0]},
+			{"id": "b4", "kind": "bolt", "spec": "M10", "at": [-1.55, 3.2, 5.85], "normal": [0, 1, 0]},
+			{"id": "p1", "kind": "connector", "spec": "power", "at": [-1.3, 3.2, 5.9], "normal": [0, 0, 1]}
 		],
-		"att_hold_aft_1": [
-			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-1.56, 0.3, 6.36], "normal": [0, 0, -1]},
-			{"id": "b2", "kind": "bolt", "spec": "M10", "at": [1.56, 0.3, 6.36], "normal": [0, 0, -1]},
-			{"id": "b3", "kind": "bolt", "spec": "M10", "at": [-1.4, 2.4, 6.36], "normal": [0, 0, -1]},
-			{"id": "b4", "kind": "bolt", "spec": "M10", "at": [1.4, 2.4, 6.36], "normal": [0, 0, -1]},
-			{"id": "p1", "kind": "connector", "spec": "power", "at": [0.0, 2.4, 6.36], "normal": [0, 0, -1]}
+		"survey_array": [
+			{"id": "b1", "kind": "bolt", "spec": "M10", "at": [-0.55, 3.45, -4.45], "normal": [0, 1, 0]},
+			{"id": "b2", "kind": "bolt", "spec": "M10", "at": [0.55, 3.45, -4.45], "normal": [0, 1, 0]},
+			{"id": "b3", "kind": "bolt", "spec": "M10", "at": [0.55, 3.45, -3.55], "normal": [0, 1, 0]},
+			{"id": "b4", "kind": "bolt", "spec": "M10", "at": [-0.55, 3.45, -3.55], "normal": [0, 1, 0]},
+			{"id": "p1", "kind": "connector", "spec": "data", "at": [0.0, 3.45, -3.5], "normal": [0, 0, 1]}
 		],
-		"pnl_roof_hold_1": [
-			{"id": "r1", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r2", "kind": "rivet", "spec": "RIVET_4", "at": [-0.529, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r3", "kind": "rivet", "spec": "RIVET_4", "at": [-0.317, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r4", "kind": "rivet", "spec": "RIVET_4", "at": [-0.106, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r5", "kind": "rivet", "spec": "RIVET_4", "at": [0.106, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r6", "kind": "rivet", "spec": "RIVET_4", "at": [0.317, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r7", "kind": "rivet", "spec": "RIVET_4", "at": [0.529, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r8", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 2.46], "normal": [0, 1, 0]},
-			{"id": "r9", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 2.667], "normal": [0, 1, 0]},
-			{"id": "r10", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 2.875], "normal": [0, 1, 0]},
-			{"id": "r11", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 3.082], "normal": [0, 1, 0]},
-			{"id": "r12", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 3.289], "normal": [0, 1, 0]},
-			{"id": "r13", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 3.496], "normal": [0, 1, 0]},
-			{"id": "r14", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 3.704], "normal": [0, 1, 0]},
-			{"id": "r15", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 3.911], "normal": [0, 1, 0]},
-			{"id": "r16", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 4.118], "normal": [0, 1, 0]},
-			{"id": "r17", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 4.325], "normal": [0, 1, 0]},
-			{"id": "r18", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 4.533], "normal": [0, 1, 0]},
-			{"id": "r19", "kind": "rivet", "spec": "RIVET_4", "at": [0.74, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r20", "kind": "rivet", "spec": "RIVET_4", "at": [0.529, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r21", "kind": "rivet", "spec": "RIVET_4", "at": [0.317, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r22", "kind": "rivet", "spec": "RIVET_4", "at": [0.106, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r23", "kind": "rivet", "spec": "RIVET_4", "at": [-0.106, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r24", "kind": "rivet", "spec": "RIVET_4", "at": [-0.317, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r25", "kind": "rivet", "spec": "RIVET_4", "at": [-0.529, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r26", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 4.74], "normal": [0, 1, 0]},
-			{"id": "r27", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 4.533], "normal": [0, 1, 0]},
-			{"id": "r28", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 4.325], "normal": [0, 1, 0]},
-			{"id": "r29", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 4.118], "normal": [0, 1, 0]},
-			{"id": "r30", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 3.911], "normal": [0, 1, 0]},
-			{"id": "r31", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 3.704], "normal": [0, 1, 0]},
-			{"id": "r32", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 3.496], "normal": [0, 1, 0]},
-			{"id": "r33", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 3.289], "normal": [0, 1, 0]},
-			{"id": "r34", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 3.082], "normal": [0, 1, 0]},
-			{"id": "r35", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 2.875], "normal": [0, 1, 0]},
-			{"id": "r36", "kind": "rivet", "spec": "RIVET_4", "at": [-0.74, 3.26, 2.667], "normal": [0, 1, 0]}
-		],
-		"brk_hold_port_1": [
-			{"id": "w1", "kind": "weld", "spec": "", "at": [-2.224, 2.25, 3.15], "normal": [1, 0, 0], "seam_up": [0, 0, 1], "seam_size": [0.4, 0.012]},
-			{"id": "w2", "kind": "weld", "spec": "", "at": [-2.224, 2.1, 2.95], "normal": [1, 0, 0], "seam_up": [0, 1, 0], "seam_size": [0.3, 0.012]},
-			{"id": "w3", "kind": "weld", "spec": "", "at": [-2.224, 2.1, 3.35], "normal": [1, 0, 0], "seam_up": [0, 1, 0], "seam_size": [0.3, 0.012]}
-		],
-		"plt_hull_stbd_1": [
-			{"id": "w1", "kind": "weld", "spec": "", "at": [2.622, 1.35, 2.7], "normal": [1, 0, 0], "seam_up": [0, 0, 1], "seam_size": [1.0, 0.012]},
-			{"id": "w2", "kind": "weld", "spec": "", "at": [2.622, 0.75, 2.7], "normal": [1, 0, 0], "seam_up": [0, 0, 1], "seam_size": [1.0, 0.012]},
-			{"id": "w3", "kind": "weld", "spec": "", "at": [2.622, 1.05, 2.2], "normal": [1, 0, 0], "seam_up": [0, 1, 0], "seam_size": [0.6, 0.012]},
-			{"id": "w4", "kind": "weld", "spec": "", "at": [2.622, 1.05, 3.2], "normal": [1, 0, 0], "seam_up": [0, 1, 0], "seam_size": [0.6, 0.012]}
+		"tow_winch": [
+			{"id": "b1", "kind": "bolt", "spec": "M12", "at": [-0.45, -0.5, 6.2], "normal": [0, -1, 0]},
+			{"id": "b2", "kind": "bolt", "spec": "M12", "at": [0.45, -0.5, 6.2], "normal": [0, -1, 0]},
+			{"id": "b3", "kind": "bolt", "spec": "M12", "at": [0.45, -0.5, 6.4], "normal": [0, -1, 0]},
+			{"id": "b4", "kind": "bolt", "spec": "M12", "at": [-0.45, -0.5, 6.4], "normal": [0, -1, 0]},
+			{"id": "p1", "kind": "connector", "spec": "power", "at": [0.0, -0.5, 6.15], "normal": [0, 0, -1]}
 		]
 	}
 }
