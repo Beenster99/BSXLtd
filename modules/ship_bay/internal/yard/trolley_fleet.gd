@@ -1240,6 +1240,8 @@ func _next_crate(id: String, t: Trolley) -> String:
 			continue
 		if ["in", "crush"].has(str(c.get("line", ""))):
 			continue   # waiting in a line's intake bay or on the crusher's pad, not for the stores
+		if yard and yard.get("trucks") and yard.get("trucks").call("is_arriving", cid):
+			continue   # still on its delivery truck
 		if t.is_picker() and (c.has("line") or ["refurb", "grind"].has(str(c.get("route", "")))):
 			continue   # a lift only shelves: line goods go on a trolley
 		if not t.carries(Layout.kind_for(float(c["mass"]), str(c["item"]))) or not _bus.trolley_has_room(id, cid):
