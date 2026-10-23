@@ -10,7 +10,7 @@ extends Node
 ##     gets the outdoor lighting baseline (G1, flag "graphics.light");
 ##   - a node in group "gfx_interactable" is something the player can use: it highlights
 ##     while the pointer is over it within reach ("graphics.hover") and lights up in the
-##     pinger's colour when pinged ("graphics.ping", middle mouse). Give it meta "gfx_id"
+##     pinger's colour when pinged ("graphics.ping", middle mouse or Z). Give it meta "gfx_id"
 ##     (the same stable data id on every machine, e.g. "trolley:2") so a crewmate's ping
 ##     finds it; without one a ping lights the usable thing it lands on or beside. A ping
 ##     writes what it's on by its marker: meta "gfx_name" if set, else the title of its
@@ -118,6 +118,8 @@ func register_module() -> void:
 func unregister_module() -> void:
 	if Keys.has(Profiler.ACTION):
 		Keys.unregister(Profiler.ACTION)
+	if Keys.has(PointerLook.ACTION):
+		Keys.unregister(PointerLook.ACTION)
 	_drop_torch()
 	if pointer:
 		pointer.detach()
@@ -290,6 +292,10 @@ func _on_flags() -> void:
 		pointer.hover_on = Flags.is_on(HOVER)
 		pointer.ping_on = Flags.is_on(PING)
 		pointer.set_process(pointer.hover_on or pointer.ping_on)
+		if pointer.ping_on and not Keys.has(PointerLook.ACTION):
+			Keys.register(PointerLook.ACTION, "Ping (also the middle mouse button)", KEY_Z)
+		elif not pointer.ping_on and Keys.has(PointerLook.ACTION):
+			Keys.unregister(PointerLook.ACTION)
 	var want := Flags.is_on(PROFILER)
 	if want and profiler == null:
 		Keys.register(Profiler.ACTION, "Profiler (frame rate, GPU time)", KEY_F3)
