@@ -98,6 +98,7 @@ func _ready() -> void:
 		"cast": _paint(Color(0.3, 0.32, 0.34), 0.55, 0.5, "cast_iron"),
 		"furnace": _paint(Color(0.42, 0.2, 0.12), 0.35, 0.6, "cast_iron"),
 		"wood": _paint(Color(0.55, 0.42, 0.28), 0.0, 0.8, "wood"),
+		"zone_red": _paint(Color(0.36, 0.13, 0.11), 0.0, 0.85, "satin_paint"),
 		"white": _paint(Color(0.9, 0.9, 0.88), 0.0, 0.8, "satin_paint"),
 		"red": _paint(Color(0.75, 0.16, 0.12), 0.1, 0.6, "satin_paint"),
 	}
@@ -144,7 +145,7 @@ func _on_line_changed() -> void:
 	if now == "running" and then != "running":
 		running = crush_time
 		_start(true)
-		# The lot left its pallet: it rides up the ramp into the mouth.
+		# The lot left its feed zone: it rides up the ramp into the mouth.
 		_feed_in(_state.get("lot", {}), _state.get("from", []))
 	elif now != "running" and then == "running":
 		running = 0.0
@@ -255,7 +256,7 @@ func _nip() -> Vector3:
 	return CRUSHER + Vector3(0, BED * K - 0.2, 0)
 
 
-## A copy of the lot riding from its pallet up the ramp into the mouth.
+## A copy of the lot riding from its feed zone up the ramp into the mouth.
 func _feed_in(lot: Dictionary, from: Array) -> void:
 	if lot.is_empty():
 		return
@@ -378,7 +379,7 @@ func _start(on: bool) -> void:
 
 # --- Building --------------------------------------------------------------------------------
 
-## The feed pad: three marked pallets on the bay's west side, and the bay's outline.
+## The feed pad: three drop-off zones painted on the bay's west side, and the bay's outline.
 func _build_pad() -> void:
 	var root := Node3D.new()
 	root.name = "FeedPad"
@@ -388,10 +389,8 @@ func _build_pad() -> void:
 		_part(PartShapes.box(Vector3(BAY.size.x, 0.01, 0.2)).mesh, Vector3(BAY.get_center().x, 0.006, z), _mats["yellow"], root)
 	for x: float in [BAY.position.x, BAY.end.x]:
 		_part(PartShapes.box(Vector3(0.2, 0.01, BAY.size.y)).mesh, Vector3(x, 0.0068, BAY.get_center().y), _mats["yellow"], root)
-	for p: Vector3 in FEED_SPOTS:
-		_part(PartShapes.box(Vector3(1.6, 0.14, 1.8)).mesh, p + Vector3(0, 0.07, 0), _mats["wood"], root)
-		for k: float in [-1.0, 1.0]:
-			_part(PartShapes.box(Vector3(2.0, 0.01, 0.1)).mesh, p + Vector3(0, 0.006, k * 1.05), _mats["red"], root)
+	for i in FEED_SPOTS.size():
+		_drop_zone(FEED_SPOTS[i], Vector2(2.2, 2.4), _mats["zone_red"], _mats["red"], "FEED %d" % (i + 1), Color(0.95, 0.4, 0.3), root)
 	var words := _plate("CRUSHER FEED", Color(0.95, 0.75, 0.1))
 	words.font_size = 96
 	words.position = Vector3(FEED_SPOTS[0].x - 1.9, 0.02, FEED_SPOTS[1].z)
@@ -667,6 +666,25 @@ static func _kg(kg: float) -> String:
 
 static func _paint(colour: Color, metallic: float, roughness: float, finish: String) -> Material:
 	return ShipSurface.of(ShipKit.paint(colour, metallic, roughness, finish))
+
+
+## A drop-off zone painted on the floor where a trolley sets goods down (beenster, 0.3.15:
+## paint the floor, no pallets): a filled patch `size` (x, z) metres with a bolder edge, corner
+## marks and its name across the front.
+func _drop_zone(at: Vector3, size: Vector2, fill: Material, edge: Material, text: String, colour: Color, parent: Node3D) -> void:
+	_part(PartShapes.box(Vector3(size.x, 0.003, size.y)).mesh, at + Vector3(0, 0.012, 0), fill, parent)
+	for k: float in [-1.0, 1.0]:
+		_part(PartShapes.box(Vector3(size.x, 0.003, 0.08)).mesh, at + Vector3(0, 0.016, k * (size.y * 0.5 - 0.04)), edge, parent)
+		_part(PartShapes.box(Vector3(0.08, 0.003, size.y - 0.16)).mesh, at + Vector3(k * (size.x * 0.5 - 0.04), 0.0165, 0), edge, parent)
+		for j: float in [-1.0, 1.0]:
+			# Corner marks: short bars just inside each corner.
+			var c := at + Vector3(k * (size.x * 0.5 - 0.3), 0.021, j * (size.y * 0.5 - 0.17))
+			_part(PartShapes.box(Vector3(0.4, 0.003, 0.06)).mesh, c, edge, parent)
+	var words := _plate(text, colour)
+	words.font_size = 64
+	words.position = at + Vector3(0, 0.026, size.y * 0.5 - 0.32)
+	words.rotation = Vector3(-PI * 0.5, 0, 0)
+	parent.add_child(words)
 
 
 func _part(mesh: Mesh, at: Vector3, mat: Material, parent: Node3D = null, basis := Basis()) -> MeshInstance3D:
