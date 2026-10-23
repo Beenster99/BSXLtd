@@ -54,6 +54,7 @@ func _init(p_bus: BusinessBus, p_page := "orders", p_glass := true) -> void:
 			"order_delayed": 1, "reputation_changed": 3, "day_closed": 1, "stock_added": 4}
 	for sig: String in watch:
 		bus.connect(sig, _mark_dirty.unbind(watch[sig]) if watch[sig] > 0 else _mark_dirty)
+	bus.order_refused.connect(_on_order_refused)
 
 
 ## The purchase order being built, kept on the bus so it survives closing the wrist.
@@ -455,11 +456,23 @@ func clear_basket() -> void:
 	refresh()
 
 
+## The host turned a crew member's order down.
+func _on_order_refused(reason: String) -> void:
+	Sfx.play("error")
+	_message = reason.left(1).to_upper() + reason.substr(1) + "."
+	_message_good = false
+	refresh()
+
+
 func place_order() -> BusinessResult:
 	var r := bus.place_market_order(basket_as_lines())
 	if r.is_ok():
 		basket.clear()
-		_message = "Placed %s for %s CR." % [", ".join(r.order_ids), T.money(r.cost)]
+		# A crew member's order goes to the host, which places it (or says why not).
+		if r.order_ids.is_empty():
+			_message = "Order sent to the host."
+		else:
+			_message = "Placed %s for %s CR." % [", ".join(r.order_ids), T.money(r.cost)]
 		_message_good = true
 		Sfx.play("chime")
 	else:

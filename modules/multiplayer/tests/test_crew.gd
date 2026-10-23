@@ -1,7 +1,7 @@
 extends ModuleTest
 ## The Crew channel: chat and activity solo, the wrist screen's crew list, chat log, helmet
 ## cam and other modules' sections, then two players over ENet on localhost seeing each
-## other's chat, avatars and helmet cams.
+## other's chat, avatars, hands, what they hold, helmet cams and the host's time of day.
 ##   tools/run_tests.sh multiplayer
 
 const PORT := 24597
@@ -79,6 +79,10 @@ func _two_players() -> void:
 	b.join("127.0.0.1", PORT)
 	check(await _until(func(): return b.peers().size() == 2 and a.peers().size() == 2), "client joins")
 	var b_id := b.local_peer_id()
+	var sky := AlienSky.new()
+	add_child(sky)
+	check(await _until(func(): return is_equal_approx(sky.hour_override, AlienSky.setting_hour())), "joiner's sky shows the host's hour from the start")
+	var hour_was: Variant = Settings.get_value(AlienSky.SECTION, AlienSky.KEY)
 	check(b.chat_log().is_empty() or b.chat_log().size() == a.chat_log().size(), "joiner gets the chat so far")
 
 	b.say("bucking bar ready")
@@ -115,8 +119,42 @@ func _two_players() -> void:
 	check(screen.find_child("Cam_%d" % b_id, true, false) != null, "CAM button by Ben's name")
 	screen.queue_free()
 
+	# Ben shares his hands and what he holds: his avatar reaches there, Tools can dress it.
+	var b_hand := Node3D.new()
+	add_child(b_hand)
+	b_hand.global_position = Vector3(3.4, 1.2, -2.5)
+	var a_held: Array = []
+	a.held_changed.connect(func(peer: int, h: Dictionary) -> void: a_held.append([peer, h]))
+	b.set_local_hands(b_hand, null)
+	check(await _until(func(): var h := a.avatar_hand(b_id); return h != null and h.global_position.distance_to(Vector3(3.4, 1.2, -2.5)) < 0.01), "avatar's hand follows the player's real hand")
+	check(a.avatar(b_id) != null and bool(a.avatar(b_id).get("hands_live")), "avatar knows the hands are live")
+	var hands := get_tree().get_nodes_in_group("crew_hand").filter(func(n: Node) -> bool:
+		return n.get_meta("peer_id", 0) == b_id)
+	check(hands.size() == 2 and a.avatar_hand(b_id, false) in hands and a.avatar_hand(b_id, false).get_meta("side") == "left",
+			"Ben's hands are in crew_hand with his peer id and side")
+	check(a.avatar_hand(1) == null and a.avatar(1) == null, "no avatar or hand for yourself")
+	b.set_held({"tool": "welder", "using": true, "junk": Node3D, "blob": [1, 2]})
+	check(await _until(func(): return a.held(b_id).get("tool") == "welder"), "what Ben holds reaches the host")
+	check(a.held(b_id) == {"tool": "welder", "using": true, "hands": true}, "held keeps small values and the hands flag: %s" % str(a.held(b_id)))
+	check(not a_held.is_empty() and a_held.back()[0] == b_id, "held_changed tells Tools")
+	var c := _bus("BusC", "Cas")
+	c.join("127.0.0.1", PORT)
+	check(await _until(func(): return c.held(b_id).get("tool") == "welder"), "a later joiner learns what Ben holds")
+	c.leave()
+	b_hand.free()
+	check(await _until(func(): return a.avatar_hand(b_id) != null), "a hand that's gone doesn't break the avatar")
+	b.set_local_hands(null, null)
+	check(await _until(func(): return not bool(a.held(b_id).get("hands", true))), "hands go back to rest when unshared")
+
+	# The host's time of day is everyone's.
+	Settings.set_value(AlienSky.SECTION, AlienSky.KEY, 21.5)
+	check(await _until(func(): return is_equal_approx(sky.hour_override, 21.5)), "the host's new hour reaches the joiner's sky")
+
 	b.leave()
 	check(await _until(func(): return a._crew.head_of(b_id) == null), "avatar goes when the player leaves")
+	check(await _until(func(): return sky.hour_override < 0.0), "a leaver's sky goes back to their own setting")
+	sky.queue_free()
+	Settings.set_value(AlienSky.SECTION, AlienSky.KEY, hour_was)
 	a.leave()
 	Flags.use(saved)
 

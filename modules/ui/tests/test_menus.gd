@@ -487,6 +487,10 @@ func _test_pause() -> void:
 	check(pause.is_open and (pause.root.find_child("Body", true, false) as Control).visible, "Esc goes back out of Settings")
 	pause._input(esc)
 	check(not pause.is_open and not get_tree().paused and not HudSlots.pointer_claimed(), "Esc resumes where you were")
+	check(PauseMenu.resume_mouse_mode(Input.MOUSE_MODE_VISIBLE, false) == Input.MOUSE_MODE_CAPTURED,
+			"Resume takes the mouse back for looking, even if it was free when Esc came in")
+	check(PauseMenu.resume_mouse_mode(Input.MOUSE_MODE_CAPTURED, true) == Input.MOUSE_MODE_VISIBLE,
+			"but leaves it free while another screen has the pointer")
 	await frames(1)
 	pause._unhandled_input(esc)
 	check(pause.is_open, "an Esc nothing else used opens it")

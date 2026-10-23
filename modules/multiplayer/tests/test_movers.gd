@@ -64,6 +64,7 @@ func run_tests() -> void:
 	b.leave()
 	check(await _until(func(): return a_holds.has("unit:pump")), "leaver's hold ends")
 	check(a.mover_authority("trolley:large_1") == 1, "host drives the trolley again")
+	check(a.mover_authority("player:77:hand_r") == 77 and a.mover_authority("player:77") == 77, "a player drives their own head and hands")
 	a.leave()
 
 
@@ -72,6 +73,28 @@ func _check_sampling() -> void:
 	check(NetMovers.sample_at(list, 1.5).origin.is_equal_approx(Vector3(5, 0, 0)), "halfway between samples")
 	check(NetMovers.sample_at(list, 0.0).origin.is_equal_approx(Vector3.ZERO), "held before the first sample")
 	check(NetMovers.sample_at(list, 9.0).origin.is_equal_approx(Vector3(10, 0, 0)), "held after the last sample")
+
+	# Only what moved goes out, plus a keepalive; a clock put right starts the buffer over.
+	var m := NetMovers.new()
+	var n := _node(self, Vector3.ZERO)
+	var still := _node(self, Vector3.ZERO)
+	m.register("a", n)
+	m.register("b", still)
+	var mine := func(_id: String) -> bool: return true
+	check(m.outgoing(mine, 0.0).size() == 2, "first send carries every mover")
+	n.position = Vector3(1, 0, 0)
+	check(m.outgoing(mine, 0.05).keys() == ["a"], "then only what moved")
+	check(m.outgoing(mine, 0.1).is_empty(), "nothing when nothing moved")
+	check(m.outgoing(mine, 1.2).size() == 2, "a keepalive after a second")
+	var anyone := func(_id: String) -> bool: return true
+	m.receive(50.0, {"a": Transform3D(Basis(), Vector3(9, 0, 0))}, anyone)
+	m.receive(10.0, {"a": Transform3D(Basis(), Vector3(2, 0, 0))}, anyone)
+	m.play_back(10.0, func(_id: String) -> bool: return false)
+	check(n.position.is_equal_approx(Vector3(2, 0, 0)), "samples from before a clock fix are dropped")
+	n.free()
+	still.free()
+	var parts := NetSession._split({"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, "11": 11})
+	check(parts.size() == 2 and parts[0].size() == NetSession.MOVES_PER_PACKET, "big batches go in packet-sized parts")
 
 
 func _make(node_name: String, player: String) -> NetSession:
