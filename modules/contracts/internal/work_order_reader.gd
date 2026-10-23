@@ -133,6 +133,16 @@ func _read_subject(d: Dictionary, o: WorkOrder) -> void:
 		subject["component"] = _component(src.get("component"), "subject.component")
 	else:
 		subject["design"] = String(src.get("design", o.design))
+		# A generated ship or wreck (S3): the seed and events rebuild it on every machine.
+		subject["seed"] = _whole(src.get("seed", 0))
+		subject["events"] = String(src.get("events", ""))
+		var holds: Variant = src.get("holds", [])
+		if holds is Array:
+			subject["holds"] = holds
+		else:
+			errors.append("subject.holds must be a list.")
+		subject["parts_left"] = _whole(src.get("parts_left", 0))
+		subject["parts_gone"] = _whole(src.get("parts_gone", 0))
 		if src.has("file"):
 			subject["file"] = String(src.get("file"))
 	subject["condition"] = _fraction(src.get("condition", 1.0), "subject.condition")
