@@ -18,6 +18,13 @@ extends RefCounted
 const SCHEMA_PATH := "res://shared/void_salvage/data/ship_format/vsship-2.schema.json"
 ## Recipe names that are not a library constructor's own name.
 const RECIPE_ALIASES := {"pipe": "pipe_shape", "pipe_elbow": "pipe_elbow_shape", "pipe_union": "pipe_union_shape"}
+## The ship files BSX ships with (Void Salvage's exports, pinned): design id -> file. Short
+## names map to them (`design_file`), so a contract may say "kestrel" or "manta".
+const SHIPS := {
+	"kestrel_frame": "res://modules/shared_components/data/ships/kestrel_frame.vsship.json",
+	"manta_frame": "res://modules/shared_components/data/ships/manta_frame.vsship.json",
+}
+const DESIGN_ALIASES := {"kestrel": "kestrel_frame", "manta": "manta_frame"}
 ## A unit piece within this (m) of its part's box, in position and size, covers that part's visual.
 const SAME_BOX_M := 0.003
 
@@ -58,6 +65,17 @@ static func read(path: String) -> Dictionary:
 		return parsed
 	push_error("VsShipImport: %s is not a JSON object" % path)
 	return {}
+
+
+## The file for a design id or short name ("kestrel", "manta_frame"), "" if BSX has none.
+static func design_file(design: String) -> String:
+	var id: String = DESIGN_ALIASES.get(design, design)
+	return SHIPS.get(id, "")
+
+
+## The design ids BSX has files for.
+static func designs() -> PackedStringArray:
+	return PackedStringArray(SHIPS.keys())
 
 
 ## Every problem with a file as data, before anything is built: the format and version, the

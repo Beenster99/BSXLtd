@@ -5,7 +5,7 @@ extends ModuleTest
 ## wreck is lighter, and the file goes out and comes back as JSON.
 ##   tools/run_tests.sh shared_components
 
-const FIXTURE := "res://modules/shared_components/tests/fixtures/kestrel_frame.vsship.json"
+const FIXTURE := "res://modules/shared_components/data/ships/kestrel_frame.vsship.json"
 
 
 func run_tests() -> void:
@@ -17,6 +17,7 @@ func run_tests() -> void:
 	_check_build(f)
 	_check_roundtrip(f)
 	_check_parsing()
+	_check_api()
 
 
 func _check_events(f: Dictionary) -> void:
@@ -157,3 +158,20 @@ func _check_parsing() -> void:
 	check(WreckMaker.parse_events("fire:3,stripped:1:84") == [["fire", 3], ["stripped", 1, 84]], "events parse from text")
 	check(WreckMaker.parse_events([["impact", 9], ["no_such", 1]]) == [["collision", 5]], "aliases map, unknown events drop, strength clamps")
 	check(WreckMaker.parse_events("fire") == [["fire", 2]], "a bare name is strength 2")
+
+
+## What Contracts and Ship and Bay call: a wreck by design name and seed, and its manifest.
+func _check_api() -> void:
+	check(VsShipImport.design_file("kestrel") == VsShipImport.SHIPS["kestrel_frame"] and VsShipImport.design_file("manta_frame") != "",
+			"a design file by short name or id")
+	check(VsShipImport.design_file("no_such") == "" and WreckMaker.for_design("no_such", 1).is_empty(), "an unknown design gives nothing")
+	var w := WreckMaker.for_design("kestrel", 84, "fire:3,stripped:2")
+	check(not w.is_empty() and WreckMaker.damage_of(w).has("parts"), "a wreck by design name and seed")
+	var m := WreckMaker.manifest(w)
+	check(m["design"] == "kestrel_frame" and m["class"] == "S" and m["wreck"] == true, "the manifest names the design and class")
+	check(m["parts"].size() == w["parts"].size() and m["gone"] > 0 and m["mass_kg"] < m["ship_mass_kg"],
+			"the manifest lists every part with its state and weighs what is left (%.0f of %.0f kg)" % [m["mass_kg"], m["ship_mass_kg"]])
+	var first: Dictionary = m["parts"][0]
+	check(first.has("material") and first.has("removal") and first.has("scorch"), "a manifest part carries material, removal and condition")
+	var clean := WreckMaker.manifest(VsShipImport.read(VsShipImport.design_file("kestrel")))
+	check(clean["wreck"] == false and clean["gone"] == 0 and is_equal_approx(clean["mass_kg"], clean["ship_mass_kg"]), "a clean ship's manifest is whole")

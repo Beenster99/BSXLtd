@@ -80,6 +80,53 @@ static func make(file: Dictionary, seed_value: int, events: Variant) -> Dictiona
 	return out
 
 
+## A wreck of one of BSX's own ship files (VsShipImport.SHIPS, by design id or short name:
+## "kestrel", "manta"), rolled from `seed` with `events`; {} if BSX has no file for `design`.
+## No events: the ship as it is, still marked a wreck.
+static func for_design(design: String, seed_value: int, events: Variant = []) -> Dictionary:
+	var path := VsShipImport.design_file(design)
+	if path == "":
+		return {}
+	var file := VsShipImport.read(path)
+	if file.is_empty():
+		return {}
+	return make(file, seed_value, events)
+
+
+## What a contract can price and ask for: the file's parts as they stand (gone ones listed with
+## their state, so a break job knows what is left), the mass of what is left, the size class.
+##   {design, name, class, wreck, mass_kg, ship_mass_kg, parts: [{path, name, kind, material,
+##    mass_kg, state, removal, wear, scorch}], gone, detached, broken_joints, events}
+static func manifest(file: Dictionary) -> Dictionary:
+	var d := damage_of(file)
+	var dparts: Dictionary = d.get("parts", {})
+	var ship: Dictionary = file.get("ship", {})
+	var out := {"design": str(ship.get("id", "")), "name": str(ship.get("name", "")), "class": str(ship.get("class", "")),
+			"wreck": not d.is_empty(), "mass_kg": 0.0, "ship_mass_kg": 0.0, "parts": [], "gone": 0, "detached": 0,
+			"broken_joints": 0, "events": d.get("events", [])}
+	for p: Dictionary in file.get("parts", []):
+		var path := str(p.get("path", ""))
+		var e: Dictionary = dparts.get(path, {})
+		var c: Dictionary = e.get("condition", {})
+		var state := str(e.get("state", STATE_ATTACHED))
+		var kg := float(p.get("mass", 0.0))
+		out["ship_mass_kg"] += kg
+		if state == STATE_ATTACHED:
+			out["mass_kg"] += kg
+		elif state == STATE_GONE:
+			out["gone"] += 1
+		else:
+			out["detached"] += 1
+		(out["parts"] as Array).append({"path": path, "name": str(p.get("name", "")), "kind": str(p.get("kind", "")),
+				"material": str(p.get("material", "")), "mass_kg": kg, "state": state,
+				"removal": str(e.get("removal", "ON THE WRECK")), "wear": float(c.get("wear", 0.0)),
+				"scorch": float(c.get("scorch", 0.0))})
+	for path: String in d.get("joints", {}):
+		if bool(d["joints"][path].get("broken", false)):
+			out["broken_joints"] += 1
+	return out
+
+
 ## "fire:3,stripped:1:84" -> [["fire", 3], ["stripped", 1, 84]]; a list goes through as is,
 ## names mapped by ALIASES, unknown ones dropped, strengths clamped to 1..5.
 static func parse_events(events: Variant) -> Array:
