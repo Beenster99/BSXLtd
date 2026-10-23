@@ -1389,7 +1389,8 @@
 						"mitred",
 						"channel",
 						"lattice",
-						"wing"
+						"wing",
+						"bowhead"
 					]
 				},
 				"seq": {
@@ -1429,6 +1430,18 @@
 				"bolt_pitch": {
 					"type": "number"
 				},
+				"rivet_share": {
+					"type": "number"
+				},
+				"bolt_share": {
+					"type": "number"
+				},
+				"min_rivets": {
+					"type": "integer"
+				},
+				"min_bolts": {
+					"type": "integer"
+				},
 				"rivet_head": {
 					"type": "integer"
 				},
@@ -1446,6 +1459,17 @@
 				},
 				"lining_thickness": {
 					"type": "number"
+				},
+				"tilt_by_edge": {
+					"type": "boolean",
+					"description": "node styles: each edge's members stand in by its own faces' slope across a station, not every member by the steepest face's"
+				},
+				"edge_insets": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "number"
+					},
+					"description": "node styles: a lining's inset by profile edge (\"<edge>\": metres), where the faces of one bay stand at different depths; the edges not named take lining_inset"
 				},
 				"end_gap": {
 					"$ref": "#/$defs/vec2"

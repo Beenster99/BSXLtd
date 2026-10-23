@@ -4,7 +4,7 @@ extends Node
 ## and two close-ups of the fasteners. Needs a renderer:
 ##   xvfb-run -a -s "-screen 0 1600x900x24" godot --path . --rendering-driver opengl3 \
 ##       res://modules/shared_components/internal/tools/vs_ship_capture.tscn \
-##       -- --file=res://modules/shared_components/data/ships/kestrel_frame.vsship.json --out=/abs/dir
+##       -- --file=res://modules/shared_components/data/ships/kestrel.vsship.json --out=/abs/dir
 
 const SIZE := Vector2i(1600, 900)
 
@@ -17,7 +17,7 @@ func _ready() -> void:
 
 func _run() -> void:
 	var out := "user://vs_ship_capture"
-	var path := "res://modules/shared_components/data/ships/kestrel_frame.vsship.json"
+	var path := "res://modules/shared_components/data/ships/kestrel.vsship.json"
 	var damage := ""
 	var seed_value := 84
 	for arg: String in OS.get_cmdline_user_args():

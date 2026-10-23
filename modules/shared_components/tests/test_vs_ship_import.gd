@@ -2,19 +2,20 @@ extends ModuleTest
 ## The vsship 2.0 importer on the frame Kestrel and frame Manta as Void Salvage exported them
 ## (fixtures/*.vsship.json, F7a): the files check out (schema, hashes, paths), every part and
 ## joint builds onto a body with its path, kind, head and phase, the fittings dress their
-## parts, and a part is found by its path.
+## parts, the systems (bowsers, fuel port, hose rack, panels, screens) get their looks, and a
+## part is found by its path.
 ##   tools/run_tests.sh shared_components
 
 const FIXTURES := "res://modules/shared_components/data/ships/"
 
 
 func run_tests() -> void:
-	_check_ship("kestrel_frame", 529, 1748, 33)
-	_check_ship("manta_frame", 1410, 6677, 77)
+	_check_ship("kestrel", 529, 1375, 33, 13)
+	_check_ship("manta", 1410, 5065, 77, 16)
 	_check_encodings()
 
 
-func _check_ship(id: String, parts: int, joints: int, fittings: int) -> void:
+func _check_ship(id: String, parts: int, joints: int, fittings: int, systems: int) -> void:
 	var f := VsShipImport.read(FIXTURES + id + ".vsship.json")
 	check(not f.is_empty(), "%s: the file reads" % id)
 	if f.is_empty():
@@ -32,6 +33,18 @@ func _check_ship(id: String, parts: int, joints: int, fittings: int) -> void:
 	check(im.kit.model.parts.size() == parts and im.kit.model.connections.size() == joints,
 			"%s: the body's PartModel holds them" % id)
 	check(im.fittings_built.size() == fittings, "%s: every fitting record rebuilt (%d of %d)" % [id, im.fittings_built.size(), fittings])
+	check(im.systems_built.size() == systems, "%s: every system record rebuilt (%d of %d)" % [id, im.systems_built.size(), systems])
+	var bowsers: Dictionary = im.systems_built.get("slot:bowser_tank/bowsers", {})
+	check(not bowsers.is_empty() and im.systems_built.has("system:hose_rack") and im.systems_built.has("system:fuel_port"),
+			"%s: the bowsers, hose rack and fuel port have their looks (%s)" % [id, str(im.systems_built.keys().slice(0, 6))])
+	var panels := 0
+	for key: String in im.systems_built:
+		if key.contains("door_panel"):
+			panels += 1
+	check(panels >= 4, "%s: the door panels with their buttons (%d)" % [id, panels])
+	var bowser_part := im.part_at("slot:bowser_tank/bowsers")
+	check(bowser_part != null and not (im.kit.model.part_visual(bowser_part.id) as Node3D).visible,
+			"%s: the bowsers' plain box hides under their look" % id)
 	# Loose pieces get the kit's tiny inset (no z-fighting), and a unit's look pieces cover the
 	# plain visuals of the parts they sit on (engines, door leaves).
 	var inset_ok := true

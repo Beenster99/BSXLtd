@@ -5,7 +5,9 @@ extends RefCounted
 ## ship onto a `RigidBody3D` with the synced builders: every derived part from its library
 ## shape recipe through `ShipKit.part`, every joint through `ShipKit.join` (so the body holds
 ## a `PartModel` with the same paths, kinds, heads and phases the file has), the fittings'
-## looks from their `ShipParts` records, the loose pieces as visuals, the lights.
+## looks from their `ShipParts` records, the systems' looks (bowsers, fuel port, hose rack,
+## control and door panels, monitors, screens, the lift) from theirs through
+## `ShipParts.system`, the loose pieces as visuals, the lights.
 ##
 ## The parts and joints are the truth (what a work order points at); the fittings' records
 ## only dress them. Nothing here rebuilds the recipe (the frame, decks, walls and services):
@@ -21,10 +23,15 @@ const RECIPE_ALIASES := {"pipe": "pipe_shape", "pipe_elbow": "pipe_elbow_shape",
 ## The ship files BSX ships with (Void Salvage's exports, pinned): design id -> file. Short
 ## names map to them (`design_file`), so a contract may say "kestrel" or "manta".
 const SHIPS := {
-	"kestrel_frame": "res://modules/shared_components/data/ships/kestrel_frame.vsship.json",
-	"manta_frame": "res://modules/shared_components/data/ships/manta_frame.vsship.json",
+	"kestrel": "res://modules/shared_components/data/ships/kestrel.vsship.json",
+	"manta": "res://modules/shared_components/data/ships/manta.vsship.json",
 }
-const DESIGN_ALIASES := {"kestrel": "kestrel_frame", "manta": "manta_frame"}
+## Void Salvage's old ids for the frame builds (before they became the Kestrel and the Manta).
+const DESIGN_ALIASES := {"kestrel_frame": "kestrel", "manta_frame": "manta"}
+## The arguments each system's record carries since Void Salvage's S3 (`ShipParts.system`
+## reads them by index); a record with fewer is from an earlier export and is left as its box.
+const SYSTEM_ARGS := {"control_panel": 2, "lift": 2, "bowsers": 1, "fuel_port": 0, "hose_rack": 0, "monitor": 1,
+		"cockpit_monitor": 1, "double_door": 4, "door_panel": 1, "cockpit_screen": 2, "nav_display": 3, "map_screen": 2}
 ## A unit piece within this (m) of its part's box, in position and size, covers that part's visual.
 const SAME_BOX_M := 0.003
 
@@ -38,6 +45,10 @@ var joints_by_path: Dictionary = {}
 var materials: Dictionary = {}
 ## Fitting path -> the `ShipParts` result {name, box} where its record was rebuilt.
 var fittings_built: Dictionary = {}
+## System path -> what `ShipParts.system` returned (lamps, labels, screens) where its record was rebuilt.
+var systems_built: Dictionary = {}
+## System records from an export before S3 (no arguments to rebuild from): left as their boxes.
+var systems_skipped: PackedStringArray = []
 ## Paths of parts whose plain visual a unit's look pieces cover (hidden under them).
 var hidden_visuals: PackedStringArray = []
 ## A wreck's `damage` block (WreckMaker's, or a Void Salvage wreck file's), {} on a clean ship.
@@ -182,6 +193,8 @@ func build(f: Dictionary, target: RigidBody3D) -> bool:
 			made.health = clampf(float(jd.get("health", made.health)), 0.0, made.max_health)
 	for rec: Dictionary in f.get("fittings", []):
 		_build_fitting(rec)
+	for rec: Dictionary in f.get("systems", []):
+		_build_system(rec)
 	for piece: Dictionary in f.get("pieces", []):
 		_build_piece(piece)
 	for l: Dictionary in f.get("lights", []):
@@ -333,6 +346,31 @@ func _build_fitting(rec: Dictionary) -> void:
 		if part:
 			var look := kit.model.part_visual(part.id)
 			if look:
+				look.visible = false
+
+
+## A system record ({system, key, frame, args, path}: a pump bowser pair, the fuel port, the
+## hose rack, a control or door panel with its buttons, a monitor, a screen, the lift) is one
+## `ShipParts.system` call: rebuilding it dresses the system's part (a plain box in `parts`)
+## with its real look, whose visual then goes off as a fitting's does. Returns the handles the
+## game wires (lamps, labels, glass quads), kept in `systems_built` by path.
+func _build_system(rec: Dictionary) -> void:
+	var system_name: String = str(rec.get("system", ""))
+	if not ShipParts.SYSTEMS.has(system_name):
+		warnings.append("system %s: ShipParts.system does not build it" % system_name)
+		return
+	if (rec.get("args", []) as Array).size() < int(SYSTEM_ARGS.get(system_name, 0)):
+		systems_skipped.append(str(rec.get("path", system_name)))   # an export before S3: its box stays
+		return
+	kit.group = rec.get("group", "")
+	var made: Dictionary = ShipParts.system(kit, rec)   # {} for one with nothing to wire (the hose rack)
+	var path: String = str(rec.get("path", "")) if rec.get("path") != null else "system:" + system_name
+	systems_built[path] = made
+	for p: String in parts_by_path:
+		if p == path or p.begins_with(path + "/"):
+			var part: PartData = parts_by_path[p]
+			var look := kit.model.part_visual(part.id)
+			if look and not p.ends_with("/leaf") and not p.contains("/leaf_"):
 				look.visible = false
 
 

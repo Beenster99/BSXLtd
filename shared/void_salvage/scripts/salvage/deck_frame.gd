@@ -126,7 +126,7 @@ func _build_now() -> void:
 	for i in stations_in:
 		_beam(i, y0, y1)
 	for k in stations_in.size() - 1:
-		_girders(stations_in[k], stations_in[k + 1], y0, y1)
+		_girders(stations_in[k], stations_in[k + 1], y0, y1, k == stations_in.size() - 2)
 	_trimmers(y0, y1)
 	for seg in hull.stations.size() - 1:
 		_plates(seg)
@@ -241,7 +241,7 @@ func _beam(i: int, y0: float, y1: float) -> void:
 	beams[i] = made
 
 
-func _girders(s0: int, s1: int, y0: float, y1: float) -> void:
+func _girders(s0: int, s1: int, y0: float, y1: float, final: bool = false) -> void:
 	var za := hull.ring_z(s0) + beam.x * 0.5 + FrameHull.GAP
 	var zb := hull.ring_z(s1) - beam.x * 0.5 - FrameHull.GAP
 	var split_a := not _split_at(hull.ring_z(s0)).is_empty()
@@ -284,9 +284,10 @@ func _girders(s0: int, s1: int, y0: float, y1: float) -> void:
 				welds.append(target.join(p, holder, ConnectionData.Kind.WELD, at, Vector3.BACK, Vector3.UP, seam,
 						"%s/weld:%s" % [p.path, role]))
 	girders[s0] = row
-	# A split station's stubs end at these girders: weld them on.
-	for s: int in [s0]:
-		if not split_a:
+	# A split station's stubs end at these girders: weld them on (the deck's last station's to its
+	# last bay's, there being no bay after it).
+	for s: int in [s0, s1]:
+		if not (split_a if s == s0 else (split_b and final)):
 			continue
 		var stubs: Array = beams.get(s, [])
 		var split := _split_at(hull.ring_z(s))
