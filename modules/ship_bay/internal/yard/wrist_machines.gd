@@ -78,7 +78,10 @@ func machines() -> Array:
 		var trolleys: Dictionary = fleet.get("trolleys")
 		for id: String in trolleys:
 			var t: Node = trolleys[id]
-			var acts := ["drive", "come", "fast", "bring", "stores"] if bool(t.call("is_picker")) else ["drive", "come", "fast", "put_away"]
+			var acts := ["drive", "come", "fast", "bring", "stores"] if bool(t.call("is_picker")) and not t.get("spec").has("putaway") \
+					else ["drive", "come", "fast", "put_away"]
+			if (fleet.get("auto_load") as Dictionary).has(id):
+				acts.append("auto")
 			out.append(["trolley:" + id, str(t.get("spec")["name"]), acts])
 	var access := _access()
 	if access:
@@ -342,6 +345,9 @@ func _label_for(id: String, action: String) -> String:
 			return "TO STORES"
 		"put_away":
 			return "PUT AWAY"
+		"auto":
+			var on := bool((fleet.get("auto_load") as Dictionary).get(id.trim_prefix("trolley:"), false)) if fleet else false
+			return "AUTO LOAD ON" if on else "AUTO LOAD OFF"
 		"up":
 			return "RAISE"
 		"down":
@@ -379,6 +385,8 @@ func press(id: String, action: String) -> void:
 			fleet.call("park", trolley)
 		"put_away":
 			(Modules.bus("ship_bay") as ShipBayBus).command_trolley(trolley, "put_away")
+		"auto":
+			fleet.call("toggle_auto", trolley)
 		"up":
 			access.call("lift_up")
 		"down":

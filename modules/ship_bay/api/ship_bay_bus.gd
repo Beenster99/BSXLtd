@@ -71,10 +71,10 @@ const SAVE_VERSION := 2
 ## the job id.
 const SUBJECT_ORDER := "subject:"
 ## The yard's hover trolleys, small, medium and large, "p" the picking lift and "h" the heavy lift in the
-## stores. Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
+## stores, the lines' "a" and "b", and the goods-in picking lifts "p2" to "p6". Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
-const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b"]
-const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve"]
+const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve", "auto"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
@@ -596,13 +596,15 @@ func take_stock(item_id: String, qty := 1) -> void:
 ##   sends it again as they move, and any other command ends it
 ## - "fast" {on: bool}: fast mode on or off
 ## - "put_away": take delivered crates it can carry to their places in the stores, one by one
-## - "park": go back to its parking bay in Deliveries; "stop": stop where it is
+## - "park": go back to its parking bay; "stop": stop where it is
 ## - "deck" {height}: raise or lower its deck (metres, its top over the floor)
 ## - "fetch" {item, qty, to: Vector3} (the picking lift "p"): pick the goods off their shelf
 ##   and hand them to a trolley that brings them to `to`; it waits there until collected
 ## - "deliver" {crate, to}: (the lift asks a trolley) take a picked crate from the lift to `to`
 ## - "shelve" {from} (the picking lift): take the goods off a loaded trolley standing at the
 ##   stores' hand-in one by one and put each on its shelf
+## - "auto" {on: bool}: whether it goes to put new deliveries away by itself (on for the
+##   goods-in picking lifts and the heavy lift, off for the small, medium and large trolleys)
 func command_trolley(trolley_id: String, command: String, args: Dictionary = {}) -> void:
 	var payload := {"trolley": trolley_id, "command": command, "args": args.duplicate()}
 	if _net:

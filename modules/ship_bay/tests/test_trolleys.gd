@@ -22,11 +22,19 @@ func run_tests() -> void:
 		yard.queue_free()
 		return
 	var trolleys: Dictionary = fleet.get("trolleys")
-	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b"], "small, medium, large, the picking and heavy lifts and the two lines' trolleys: %s" % [trolleys.keys()])
+	check(trolleys.keys() == ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6"],
+			"small, medium, large, the picking and heavy lifts, the two lines' trolleys and five goods-in lifts: %s" % [trolleys.keys()])
 	var hall: AABB = bus.shipyard_rooms()["deliveries"]["box"]
+	var court: AABB = bus.shipyard_rooms()["bay"]["box"]
 	var haulers: Array = [trolleys["s"], trolleys["m"], trolleys["l"]]
-	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))),
-			"parked in Deliveries")
+	var pickers: Array = ["p2", "p3", "p4", "p5", "p6"].map(func(id: String) -> Node3D: return trolleys[id])
+	check(haulers.all(func(t: Node3D) -> bool: return court.has_point(t.global_position + Vector3(0, 1, 0))),
+			"the small, medium and large trolleys parked in the courtyard")
+	check(pickers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0)) and bool(t.call("is_picker"))),
+			"five picking lifts parked in Deliveries")
+	var auto: Dictionary = fleet.get("auto_load")
+	check(not auto["s"] and not auto["m"] and not auto["l"] and auto["p2"] and auto["p6"] and auto["h"],
+			"the big trolleys don't load by themselves; the goods-in lifts and the heavy lift do: %s" % [auto])
 	check((bus.shipyard_rooms()["stock"]["box"] as AABB).has_point(trolleys["p"].global_position + Vector3(0, 1, 0)), "the lift in the stores")
 	# The walker stays out of the way at the far end of the courtyard.
 	yard.call("set_walker_active", false)
@@ -56,8 +64,8 @@ func run_tests() -> void:
 	var stand: Array = fleet.call("stores_in", trolleys["l"])
 	check(not (nav.call("route", trolleys["l"].global_position, stand[0], trolleys["l"].call("radius")) as PackedVector3Array).is_empty(),
 			"the large trolley has a way to the stores' hand-in")
-	var court: PackedVector3Array = nav.call("route", m.global_position, Vector3(-6, 0, 16), float(trolleys["l"].call("radius")))
-	check(not court.is_empty(), "even the large trolley finds a way into the courtyard")
+	var to_court: PackedVector3Array = nav.call("route", Vector3(-40, 0, 0), Vector3(-6, 0, 16), float(trolleys["l"].call("radius")))
+	check(not to_court.is_empty(), "even the large trolley finds a way from Deliveries into the courtyard")
 	check(not bool(nav.call("is_free", Vector3(Layout.rack_x("B1"), 0, Layout.bay_z(2)), 0.3)), "racks are in the way")
 
 	# Put deliveries away: a pallet, a bin and a bulk crate, each by the trolley that fits.
@@ -79,6 +87,10 @@ func run_tests() -> void:
 		elif trolley_id == "p" or trolley_id == "h":
 			shelved[crate_id] = trolley_id
 	bus.crate_carried.connect(on_carry)
+	# Sent by hand, with every trolley's AUTO LOAD off for now.
+	var auto_was := auto.duplicate()
+	for id: String in auto:
+		auto[id] = false
 	for id: String in ["s", "m", "l"]:
 		bus.command_trolley(id, "put_away")
 	var beams: Node = fleet.get("beams")
@@ -118,9 +130,14 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 		if trolleys.values().all(func(t: Node) -> bool: return t.get("status") == "PARKED" or t.get("status") == "ALL PUT AWAY" and (t.get("path") as PackedVector3Array).is_empty()):
 			break
-	check(haulers.all(func(t: Node3D) -> bool: return hall.has_point(t.global_position + Vector3(0, 1, 0))), "back in Deliveries")
+	check(haulers.all(func(t: Node3D) -> bool: return court.has_point(t.global_position + Vector3(0, 1, 0))), "back in the courtyard")
 
-	# A delivery nobody asks about: idle trolleys go and put it away by themselves.
+	# A delivery nobody asks about: a goods-in picking lift goes and puts it away by itself,
+	# straight off the floor; the big trolleys stay parked.
+	for id: String in auto_was:
+		auto[id] = auto_was[id]
+	carried.clear()
+	var parked_at: Array = haulers.map(func(t: Node3D) -> Vector3: return t.global_position)
 	bus.receive_delivery("PO-22", [{"item_id": "IonThruster", "qty": 1, "condition": 1.0, "name": "Ion thruster", "grade": "new", "mass": 311.0}])
 	for i in 3600:
 		await get_tree().physics_frame
@@ -128,6 +145,10 @@ func run_tests() -> void:
 			break
 	check(bus.delivered_crates().is_empty() and bus.stock_at(bus.home_location("IonThruster")).get("qty") == 3,
 			"a new delivery is put away without being asked: %s" % [bus.delivered_crates().keys()])
+	check(carried.size() == 1 and str(carried.values()[0]).begins_with("p") and str(carried.values()[0]) != "p",
+			"by a goods-in picking lift: %s" % [carried])
+	check(range(3).all(func(i: int) -> bool: return (haulers[i] as Node3D).global_position.distance_to(parked_at[i]) < 0.2),
+			"the big trolleys stayed parked")
 	bus.take_stock("IonThruster", 1)   # back to the two the stock checks below count
 	for i in 2400:
 		await get_tree().physics_frame

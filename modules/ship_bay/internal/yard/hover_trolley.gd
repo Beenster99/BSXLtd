@@ -28,6 +28,18 @@ const SPECS := {
 			"speed": 1.4, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.95, 0.75, 0.1)},
 	"p": {"name": "Picking lift", "letter": "P", "deck": Vector2(1.1, 1.3), "radius": 0.8,
 			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true},
+	# Five more picking lifts that put deliveries away straight off the goods-in floor
+	# (beenster, 0.3.15: the big trolleys stand parked in the yard unless you send them).
+	"p2": {"name": "Picking lift 2", "letter": "P2", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p3": {"name": "Picking lift 3", "letter": "P3", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p4": {"name": "Picking lift 4", "letter": "P4", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p5": {"name": "Picking lift 5", "letter": "P5", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
+	"p6": {"name": "Picking lift 6", "letter": "P6", "deck": Vector2(1.1, 1.3), "radius": 0.8,
+			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
 	# The heavy lift works the large and heavy racks (aisles W, X and H): a broad deck, a
 	# stout mast and a long fork for the big machines.
 	"h": {"name": "Heavy lift", "letter": "H", "deck": Vector2(3.0, 3.4), "radius": 1.9, "clear": 1.75,
@@ -343,7 +355,7 @@ func _build() -> void:
 	screen.name = "Screen"
 	screen.transform = Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -0.25), Vector3(0, CHASSIS_TOP + 0.26, front - 0.055))
 	add_child(screen)
-	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else ("PICKER" if kind == "p" else "HEAVY LIFT"), 2)
+	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else ("PICKER" if kind == "p" else ("PICKER %s" % kind.substr(1) if spec.has("putaway") else "HEAVY LIFT")), 2)
 	for b: Array in [["call", "FOLLOW ME"], ["park", "PARK"], ["fast", "FAST"], ["remote", "REMOTE CONTROL"]]:
 		screen.call("add_button", b[0], b[1], func() -> void: screen_action.emit(b[0]), b[0] == "remote")
 	var col := CollisionShape3D.new()
