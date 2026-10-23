@@ -1,12 +1,15 @@
 extends Node
 ## Builds a vsship 2.0 file with VsShipImport and shoots it: four views round the outside,
 ## one from each room in `layout.rooms` (from its aft end looking forward), the seats' view,
-## and two close-ups of the fasteners. Needs a renderer:
+## two close-ups of the fasteners, then the cavity (the linings hidden: the loom and the device
+## leads on the frame, from the hold) and the bare frame (the skin hidden too). Needs a renderer:
 ##   xvfb-run -a -s "-screen 0 1600x900x24" godot --path . --rendering-driver opengl3 \
 ##       res://modules/shared_components/internal/tools/vs_ship_capture.tscn \
 ##       -- --file=res://modules/shared_components/data/ships/kestrel.vsship.json --out=/abs/dir
 
 const SIZE := Vector2i(1600, 900)
+## Hidden for the services shots: the skin, the linings, the walls' and ceilings' panels.
+const SKIN_AND_LININGS: PackedStringArray = ["HullPlate", "WindowPane", "CapPlate", "InnerPanel", "WallPanel", "CeilingPanel"]
 
 var _cam: Camera3D
 
@@ -97,7 +100,33 @@ func _run() -> void:
 				await _shoot(out, "%s_%02d_close_%s" % [id, n, want.to_lower()], mid + outward * 1.2 + Vector3(0, 0.3, 0), mid, 55.0)
 				n += 1
 				break
+	# The services: skin and linings off, a close-up of the first device lead's route (the
+	# breaker panel's where there is one) on the frame; then the bare frame whole.
+	var routes: Dictionary = f.get("derived", {}).get("routes", {})
+	var lead_key := "lead:fitting:breaker_panel" if routes.has("lead:fitting:breaker_panel") else ""
+	for key: String in routes:
+		if lead_key == "" and key.begins_with("lead:"):
+			lead_key = key
+	_hide(im, SKIN_AND_LININGS)
+	if lead_key != "":
+		var pts: Array = routes[lead_key]
+		var mid := VsShipImport.vec3(pts[pts.size() / 2])
+		# From inside the room, below and across from the route's middle, looking up at it.
+		var across := -signf(mid.x) if absf(mid.x) > 0.3 else 1.0
+		await _shoot(out, "%s_%02d_cavity" % [id, n], mid + Vector3(across * 0.8, -0.45, 0.5), mid, 50.0)
+		n += 1
+	await _shoot(out, "%s_%02d_frame" % [id, n], centre + Vector3(-0.7, 0.55, -0.75).normalized() * r * 0.8, centre)
 	get_tree().quit()
+
+
+## Hides every part of these names (linings, skin) so the frame and what runs on it show.
+func _hide(im: VsShipImport, names: PackedStringArray) -> void:
+	for path: String in im.parts_by_path:
+		var part: PartData = im.parts_by_path[path]
+		if names.has(part.part_name):
+			var look := im.kit.model.part_visual(part.id) as Node3D
+			if look != null:
+				look.visible = false
 
 
 func _light() -> void:
