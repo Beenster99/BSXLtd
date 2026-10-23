@@ -71,6 +71,7 @@ func _test_generator() -> void:
 	var kinds := {}
 	var sizes := {}
 	var n := 0
+	var machinery_wanted := false
 	for client_id: String in ["hesper_line", "carrow_underwriters", "scatter_metals", "tallow_reserve"]:
 		for cycle in range(1, 9):
 			var d := g.make(client_id, cycle, 0, 3)
@@ -98,10 +99,18 @@ func _test_generator() -> void:
 			if o.kind == WorkOrder.BREAK:
 				var ref: ComponentRef = o.wants[0]["component"]
 				check((o.subject.get("holds", []) as Array).has(ref.id), "a break wants a fitting still aboard: %s" % ref.id)
+				for w in o.wants:
+					var r: ComponentRef = w["component"]
+					if r.id in ["IonThruster", "TurbineEngine", "HydrogenEngine", "OvalEngine", "EngineBell", "Generator", "MachineUnit",
+							"SwitchCabinet", "BatteryRack", "DrillHead", "LandingClamp", "Searchlight", "Antenna", "SolarPanel", "Container"]:
+						machinery_wanted = true
+			if (o.subject.get("holds", []) as Array).has("jump_tank"):
+				check("fuel" in o.hazards, "a hull with its jump tanks still in is a fuel hazard: %s" % str(o.hazards))
 			var again := g.make(client_id, cycle, 0, 3)
 			check(again == d, "the same seed makes the same ship and the same wants")
 	check(n >= 8, "whole-ship offers come up often enough at tier three: %d" % n)
 	check(kinds.size() >= 3, "several kinds: %s" % str(kinds.keys()))
+	check(machinery_wanted, "some break job asks for the generated ship's machinery or trade gear back")
 	check(sizes.has("medium"), "a medium hull is a medium job: %s" % str(sizes.keys()))
 	var small_or_medium := true
 	var saw_tier2 := false

@@ -36,10 +36,15 @@ const WRECK_EVENTS: Dictionary = {
 	"dispose": ["fire:5,breach:3", "fire:4,stripped:3"],
 }
 ## Fittings a break job asks back from a wreck, by part name in the ship file.
+## Imported Void Salvage hulls carry the snake_case ones; BSX's generated ships also carry
+## the CamelCase machinery and trade gear Shared Components fits them with.
 const WANTED_FITTINGS: PackedStringArray = ["galley", "bunks", "console", "map_screen", "monitor", "control_panel",
-		"breaker_panel", "reactor_cabinet", "bowsers", "hose_rack", "locker", "seat", "suit_stand"]
+		"breaker_panel", "reactor_cabinet", "bowsers", "hose_rack", "locker", "seat", "suit_stand",
+		"IonThruster", "TurbineEngine", "HydrogenEngine", "OvalEngine", "EngineBell", "Generator", "MachineUnit",
+		"SwitchCabinet", "BatteryRack", "DrillHead", "LandingClamp", "Searchlight", "Antenna", "SolarPanel", "Container"]
 ## Fittings whose presence on the subject is a hazard for the crew.
-const HAZARD_FITTINGS: Dictionary = {"reactor_cabinet": "power", "breaker_panel": "power", "bowsers": "fuel"}
+const HAZARD_FITTINGS: Dictionary = {"reactor_cabinet": "power", "breaker_panel": "power", "bowsers": "fuel",
+		"Generator": "power", "jump_tank": "fuel", "RoofTank": "fuel"}
 
 
 ## One offer for a client at a tier (1 to 3), or {} if the client posts nothing. slot
