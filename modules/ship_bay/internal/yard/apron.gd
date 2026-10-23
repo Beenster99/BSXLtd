@@ -24,8 +24,10 @@ const DOCK_PEDESTAL_X := 9.0
 const DOCK_PEDESTAL_Z: Array[float] = [-36.0, -24.0, -12.0, 0.0, 12.0, 24.0, 36.0]
 ## The holding lane's bays along the apron's east edge (x, z), metres: one cradle each, of
 ## these sizes (TransportCradle.SIZES).
-const HOLDING: Array[Rect2] = [Rect2(130, 42, 36, 32), Rect2(130, 78, 36, 32), Rect2(130, 114, 36, 32)]
+const HOLDING: Array[Rect2] = [Rect2(137, 42, 36, 32), Rect2(137, 78, 36, 32), Rect2(137, 114, 36, 32)]
 const HOLDING_SIZES: PackedStringArray = ["s", "m", "m"]
+## The holding cradles' heading: their ends face west (the apron) and east, radians.
+const HOLDING_YAW := -PI * 0.5
 ## The docks that start with a large cradle on their pedestals.
 const DOCK_CRADLES: PackedStringArray = ["3"]
 ## The pad's cradle (empty).
@@ -135,7 +137,9 @@ func _build_docks() -> void:
 
 
 ## The holding lane: three bays outlined in white along the apron's east edge, each with a
-## cradle on its pedestals waiting for a hull.
+## cradle on its pedestals waiting for a hull. The cradles lie east-west (HOLDING_YAW), so a
+## transporter drives in under one from the open apron to the west; lying north-south, the
+## bays either side left the 30 m crawler no room to line up.
 func _build_holding() -> void:
 	var white: Material = y.call("_paint", Color(0.9, 0.9, 0.88), 0.0, 0.8)
 	for i in HOLDING.size():
@@ -143,8 +147,8 @@ func _build_holding() -> void:
 		_outline(r, 0.25, white)
 		var c := Vector3(r.get_center().x, 0, r.get_center().y)
 		_floor_text("H%d" % (i + 1), c + Vector3(-r.size.x * 0.5 + 3.0, 0, r.size.y * 0.5 - 3.0), 2.4, Color(0.9, 0.9, 0.88))
-		_pedestals(c, 0.0, HOLDING_SIZES[i])
-		holding_cradles.append(_cradle("HoldingCradle%d" % (i + 1), c, HOLDING_SIZES[i]))
+		_pedestals(c, HOLDING_YAW, HOLDING_SIZES[i])
+		holding_cradles.append(_cradle("HoldingCradle%d" % (i + 1), c, HOLDING_SIZES[i], HOLDING_YAW))
 	_floor_text("HOLDING", Vector3(HOLDING[0].get_center().x, 0, HOLDING[0].position.y - 3.0), 3.0, Color(0.9, 0.9, 0.88))
 
 
@@ -164,11 +168,11 @@ func _pedestals(at: Vector3, yaw: float, size := "s") -> void:
 			_pedestal(at + Basis(Vector3.UP, yaw) * Vector3(side * float(spec.side_x), 0, z))
 
 
-func _cradle(node_name: String, at: Vector3, size := "s") -> Node3D:
+func _cradle(node_name: String, at: Vector3, size := "s", yaw := 0.0) -> Node3D:
 	var c := Cradle.new(size)
 	c.name = node_name
 	add_child(c)
-	c.global_transform = Transform3D(Basis(), at + Vector3(0, Cradle.REST, 0))
+	c.global_transform = Transform3D(Basis(Vector3.UP, yaw), at + Vector3(0, Cradle.REST, 0))
 	return c
 
 
@@ -183,7 +187,7 @@ func _build_masts() -> void:
 	var galv: Material = y.get("_galv")
 	var concrete: Material = y.get("_concrete")
 	for mast: Array in [[Vector3(-122, 0, 92), Vector3(-90, 0, 92)], [Vector3(122, 0, 60), Vector3(90, 0, 92)],
-			[Vector3(172, 0, 94), Vector3(148, 0, 94)], [Vector3(0, 0, 146), Vector3(0, 0, 100)]]:
+			[Vector3(180, 0, 94), Vector3(155, 0, 94)], [Vector3(0, 0, 146), Vector3(0, 0, 100)]]:
 		var foot: Vector3 = mast[0]
 		y.call("_put", lattice, Transform3D(Basis(Vector3(0, 1, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1)), foot + Vector3(0, 7.5, 0)), galv)
 		y.call("_put", y.call("_box", Vector3(1.4, 0.4, 1.4)), Transform3D(Basis(), foot + Vector3(0, 0.2, 0)), concrete)
