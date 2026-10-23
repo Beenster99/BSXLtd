@@ -1,5 +1,5 @@
 extends RigidBody3D
-## The Kestrel as Void Salvage exported it (kestrel.vsship.json, vsship 2.0), built by Shared
+## The Kestrel as Void Salvage exported it (Shared Components' kestrel.vsship.json, vsship 2.0), built by Shared
 ## Components' VsShipImport: every part and joint with the path the file gives it, so a work
 ## order's paths find them. BSX adds one thing a flying ship doesn't have: the shore power
 ## socket the bay's ground power unit plugs into.
@@ -9,7 +9,7 @@ extends RigidBody3D
 ##
 ## Ship space: -Z forward, +Y up, the deck floor at y = 0.
 
-const FILE := "res://modules/ship_bay/internal/ships/kestrel/kestrel.vsship.json"
+const DIR := "res://modules/ship_bay/internal/ships/kestrel"
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
 const Dressing := preload("res://modules/ship_bay/internal/ships/kestrel/kestrel_dressing.gd")
 ## Where the bay's stairs meet the port side door (its sill, on the hull's side), and the
@@ -30,7 +30,7 @@ var _power_tween: Tween
 var _hum: AudioStreamPlayer3D
 ## Door key ("door_lock_out", "door_bulkhead") -> {by, time, parts, meshes, t, open}.
 var doors: Dictionary = {}
-## The ship systems' looks the file only carries as boxes (KestrelDressing).
+## What the file leaves for BSX to draw: wires, floodlights, standby text (KestrelDressing).
 var dressing: Dressing
 
 
@@ -39,7 +39,7 @@ func _init() -> void:
 	freeze = true
 	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	importer = VsShipImport.new()
-	if not importer.build(LayoutLoader.read_file(FILE), self):
+	if not importer.build(LayoutLoader.ship_file(DIR), self):
 		push_error("Kestrel: the ship file didn't build: %s" % "; ".join(importer.errors))
 	_drop_doubled_looks()
 	_fit_leaves()
@@ -119,13 +119,11 @@ func _fit_leaves() -> void:
 		model.transform_part(part.id, Transform3D(Basis(), centre - part.local_transform.origin))
 
 
-## The bowsers, hose rack, fuel port, panels' buttons, screens, floodlights and wires.
+## The wires, floodlights, nav lamps and screens' standby text over the systems the importer
+## built (KestrelDressing).
 func _dress() -> void:
-	var by_path := {}
-	for rec: Dictionary in importer.file.get("parts", []):
-		by_path[str(rec.get("path", ""))] = rec
 	dressing = Dressing.new(self, importer.file)
-	dressing.build(by_path)
+	dressing.build(importer.systems_built)
 	for key: String in doors:
 		dressing.show_door(key, false)
 
