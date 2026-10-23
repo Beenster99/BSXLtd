@@ -38,7 +38,10 @@
     }
   ],
   "commercial": {
-    "price": 3100,
+    "price": 8220,
+    "per_tonne": 640,
+    "tonnes": 8.0,
+    "fee": 5120,
     "currency": "cr",
     "deposit_pct": 30,
     "due_day": 9

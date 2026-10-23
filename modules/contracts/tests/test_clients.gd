@@ -80,8 +80,8 @@ func _test_generator() -> void:
 				check(o.kind in ContractClients.TABLE[client_id]["kinds"] or o.kind == WorkOrder.SCRAP, "%s posts its own kinds" % client_id)
 				check(o.subject_part() != null and float(o.subject.get("mass_kg", 0.0)) > 0.0, "a part subject with mass")
 				check(not o.wants.is_empty() and o.title != "" and o.notes.size() == 1, "wants, a title and a note")
-				var price := int(o.commercial.get("price", 0))
-				check(price >= 1600 and price <= 15000, "small band price: %d" % price)
+				var price := int(o.commercial.get("price", 0)) - int(o.commercial.get("fee", 0))
+				check(price >= 1600 and price <= 15000, "small band price before the scrap fee: %d" % price)
 				if o.kind == WorkOrder.BREAK:
 					var ref: ComponentRef = o.wants[0]["component"]
 					check(ref.id in ContractClients.PARTS[o.subject_part().id]["yields"], "a break wants what the part yields")

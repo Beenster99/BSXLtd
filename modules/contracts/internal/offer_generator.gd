@@ -15,6 +15,14 @@ const DUE_IN: PackedInt32Array = [0, 8, 12, 16]
 
 ## Callable(kind: String, size: String, t: float) -> int, or unset for DEFAULT_BANDS.
 var pricer: Callable
+## Callable(material: String, kg: float) -> int: what a client pays BSX for cutting and
+## baling kilograms of a material (scrap jobs pay by the tonne, plan stage S5); unset,
+## SCRAP_PER_TONNE scaled by the material's price applies. Business tunes it.
+var scrap_pricer: Callable
+## The processing fee for a tonne of mild steel, CR (dearer materials scale by their price).
+## Below the broker's own price for the metal, so a client who keeps the metal pays BSX less
+## than BSX would make keeping it.
+const SCRAP_PER_TONNE := 400.0
 ## Whether BSX's own clients send whole ships and wrecks (contracts.wrecks, stage S3).
 var wrecks := false
 
@@ -83,7 +91,6 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 
 	var voice: Array = (client.get("voice", {}) as Dictionary).get(kind, ["%s", ""])
 	var name := part_id.to_snake_case().replace("_", " ")
-	var price := price_for(kind, "small", t)
 	var id := "%s.g%d_%d" % [client_id, cycle, slot]
 	return {
 		"schema": WorkOrder.SCHEMA, "schema_version": WorkOrder.SCHEMA_VERSION,
@@ -95,8 +102,40 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 		"notes": [{"text": String(voice[1])}],
 		"title": String(voice[0]) % name,
 		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier},
-		"commercial": {"price": price, "currency": "cr", "deposit_pct": 30, "due_day": cycle + DUE_IN[clampi(tier, 1, 3)]},
+		"commercial": commercial(kind, "small", t, wants, cycle + DUE_IN[clampi(tier, 1, 3)]),
 	}
+
+
+## An offer's terms: labour by kind and size, plus, for a scrap job, the processing fee by
+## the tonne for every kilogram the client wants out (per_tonne, tonnes and the whole fee
+## say so on the order). 30% deposit, due on due_day.
+func commercial(kind: String, size: String, t: float, wants: Array, due_day: int) -> Dictionary:
+	var out := {"price": price_for(kind, size, t), "currency": "cr", "deposit_pct": 30, "due_day": due_day}
+	if kind == WorkOrder.SCRAP:
+		var tonnes := 0.0
+		var fee := 0
+		for w: Variant in wants:
+			if w is Dictionary and String(w.get("what", "")) == "material":
+				var kg := float(w.get("kg", 0.0))
+				tonnes += kg / 1000.0
+				fee += scrap_fee(String(w.get("material", "steel")), kg)
+		if tonnes > 0.0:
+			out["tonnes"] = snappedf(tonnes, 0.1)
+			out["per_tonne"] = int(roundf(float(fee) / tonnes))
+			out["fee"] = fee
+			out["price"] = int(out["price"]) + fee
+	return out
+
+
+## What a client pays BSX to cut and bale kg of a material, CR (the scrap_pricer's word, or
+## SCRAP_PER_TONNE by the material's price, rounded to the ten).
+func scrap_fee(material: String, kg: float) -> int:
+	if kg <= 0.0:
+		return 0
+	if scrap_pricer.is_valid():
+		return int(scrap_pricer.call(material, kg))
+	var factor := float((Materials.TABLE.get(material, {}) as Dictionary).get("price", 1.0))
+	return int(roundf(kg / 1000.0 * SCRAP_PER_TONNE * factor / 10.0) * 10.0)
 
 
 ## A whole-ship offer: a generated ship (refurbish) or wreck (break, scrap, dispose) from
@@ -167,7 +206,7 @@ func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, t
 		"notes": [{"text": String(voice[1])}],
 		"title": String(voice[0]) % name,
 		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier, "size": size},
-		"commercial": {"price": price_for(kind, size, t), "currency": "cr", "deposit_pct": 30, "due_day": cycle + DUE_IN[clampi(tier, 1, 3)] + (6 if size == "medium" else 14)},
+		"commercial": commercial(kind, size, t, wants, cycle + DUE_IN[clampi(tier, 1, 3)] + (6 if size == "medium" else 14)),
 	}
 
 

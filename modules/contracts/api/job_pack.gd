@@ -94,6 +94,8 @@ static func order_doc(job: ContractJob) -> Dictionary:
 	_section(d, "Subject", subject)
 	var c := o.commercial
 	var terms := PackedStringArray(["Pays CR %s" % money(int(c.get("price", 0)))])
+	if float(c.get("tonnes", 0.0)) > 0.0:
+		terms.append("By the tonne: CR %s a tonne for %.1f t cut and baled" % [money(int(c.get("per_tonne", 0))), float(c.get("tonnes", 0.0))])
 	if int(c.get("deposit_pct", 0)) > 0:
 		terms.append("%d%% deposit on acceptance" % int(c.get("deposit_pct", 0)))
 	if c.has("due_day"):
