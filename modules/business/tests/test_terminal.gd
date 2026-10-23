@@ -122,10 +122,17 @@ func run_tests() -> void:
 		var q := PhysicsShapeQueryParameters3D.new()
 		q.shape = box
 		q.transform = Transform3D(m.global_basis, m.global_position + m.global_basis.z * 1.8 + Vector3(0, -0.6, 0))
+		q.exclude = [(m.get_node("Body") as StaticBody3D).get_rid()]
 		var hits := space.intersect_shape(q, 8)
 		check(hits.is_empty(), "%s has clear floor in front: %s" % [m.name, str(hits.map(func(x): return x.collider.name))])
 	check(halls.keys().size() == 4 and halls.has("deliveries") and halls.has("stock") and halls.has("prep") and halls.has("preassembly"),
 			"one in each hall: %s" % str(halls.keys()))
+
+	# Every TV shows the wrist terminal without being aimed at, big enough to read across a hall.
+	check(monitors.all(func(m: Node3D) -> bool: return m.get_node("Viewport").get_node_or_null("Terminal") is HoloTerminal),
+			"every TV shows the wrist terminal")
+	var big: Vector2 = front.get("SCREEN_M")
+	check(big.x >= 7.0 and monitors.all(func(m: Node3D) -> bool: return m.global_position.y > 3.5), "the TVs are big and hung high: %s" % str(big))
 
 	# Stand a camera in front of the first terminal: the prompt shows.
 	var cam: Camera3D = front.call("stage_monitor_view", 0)
@@ -176,7 +183,7 @@ func run_tests() -> void:
 				"F takes it full screen with the order")
 		bus.wrist_basket.clear()
 		front.call("close_terminal")
-	cam.global_position += cam.global_basis.z * 8
+	cam.global_position += cam.global_basis.z * 20
 	await frames(2)
 	check(front.get("aimed") == -1 and not HudSlots.pointer_claimed(), "looking away drops the pointer and gives the click back")
 

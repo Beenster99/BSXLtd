@@ -1,5 +1,6 @@
 extends Node3D
-## Business in the shipyard: a big wall TV in every hall (walk up, press F, order parts)
+## Business in the shipyard: a big wall TV in every hall showing the wrist terminal (aim and
+## click on it from across the hall, or walk up and press F for full screen)
 ## and, until Ship and Bay takes deliveries itself, crates in the deliveries hall for what
 ## is in store. Added by BusinessBus when Ship and Bay builds its shipyard.
 
@@ -7,24 +8,33 @@ const Look := preload("res://modules/business/internal/ui/terminal_look.gd")
 const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 
 ## Where the yard TVs hang, one per hall, yard space (Ship and Bay's shipyard.gd ROOMS): hall id
-## -> the wall face at screen height, +Z out of the wall. Deliveries: the north wall beside
-## the door to stock. Stock: the south wall in the clear corner by the door to prep. Prep and
-## pre-assembly: the north walls, clear of the benches and stations.
+## -> the wall face at floor level, +Z out of the wall. Ship and Bay's shipyard spot
+## "tv_<hall>" wins where it has one (it knows its walls); HALLS without either get no TV.
+## Deliveries and pre-assembly: the outer end walls, facing the big courtyard doors, between
+## the truck doors (deliveries) and south of the refurb machines (pre-assembly). Stock: the south wall
+## by the door to prep. Prep: the north wall, clear of the benches.
 const MONITORS := {
-	"deliveries": Transform3D(Basis.IDENTITY, Vector3(-47.3, 2.1, -23.75)),
-	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 2.1, -24.25)),
-	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 2.1, -45.75)),
-	"preassembly": Transform3D(Basis.IDENTITY, Vector3(47.3, 2.1, -23.75)),
+	"deliveries": Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-49.75, 0.0, 0.0)),
+	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 0.0, -24.25)),
+	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 0.0, -45.75)),
+	"preassembly": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(49.75, 0.0, 12.0)),
 }
+## Every hall that should have a TV, in order.
+const HALLS := ["deliveries", "stock", "prep", "preassembly", "bay", "crusher", "store"]
+## Height (metres) of the screen's centre over the floor: high enough to read across a hall
+## over racks and trolleys.
+const CENTRE_Y := 4.8
 ## Claimed while a TV is aimed at or full screen, so tools don't fire on the same click.
 const POINTER_ID := "business.tv"
 ## The screen's texture size; the terminal is laid out for it. 16:9 like a TV.
 const SCREEN_PX := Vector2i(1280, 720)
-const SCREEN_M := Vector2(4.4, 2.475)
-## How far the screen's face stands off the wall (metres).
-const DEPTH := 0.24
-## How close (metres) and how square-on a player must be to use a terminal.
-const REACH := 6.0
+const SCREEN_M := Vector2(8.8, 4.95)
+## How far the screen's face stands off the wall (metres): clear of the conduit drops.
+const DEPTH := 0.45
+## How close (metres) and how square-on a player must be to take a TV full screen (F).
+const REACH := 8.0
+## How far (metres) the floating pointer reaches across a hall to a TV.
+const AIM_REACH := 16.0
 const FACING := 0.3
 ## Crates for goods in store: a grid in the deliveries hall clear of the pallets, the truck
 ## door and the walkways (x, z of the first crate; spacing; columns; rows).
@@ -46,17 +56,17 @@ var _crates: Node3D
 ## The TV the player is aiming at and where on it (pixels), or -1: the floating pointer.
 var aimed := -1
 var aimed_px := Vector2.ZERO
-## Seconds since each awake TV was last aimed at; it goes back to broadcasting after IDLE.
-var _idle: Array[float] = []
-## How long (seconds) a TV stays on the terminal after you look away.
-const IDLE := 6.0
 
 
 func setup(p_bus: BusinessBus, yard: Node3D) -> void:
 	bus = p_bus
 	_yard = yard
-	for hall: String in MONITORS:
-		monitors.append(_make_monitor(hall, MONITORS[hall]))
+	for hall: String in HALLS:
+		var xf := wall_spot(hall)
+		if xf != Transform3D.IDENTITY:
+			monitors.append(_make_monitor(hall, xf.translated_local(Vector3(0, CENTRE_Y, 0))))
+	for i in monitors.size():
+		wake(i)
 	_crates = Node3D.new()
 	_crates.name = "GoodsIn"
 	add_child(_crates)
@@ -71,7 +81,7 @@ func _exit_tree() -> void:
 func _process(delta: float) -> void:
 	if overlay:
 		return
-	_update_pointer(delta)
+	_update_pointer()
 	var near := nearest_monitor()
 	if near != _near:
 		for i in monitors.size():
@@ -187,6 +197,17 @@ func _is_offline() -> bool:
 	return peer == null or peer is OfflineMultiplayerPeer or multiplayer.get_peers().is_empty()
 
 
+## Where hall `hall`'s TV hangs: Ship and Bay's "tv_<hall>" spot, else ours, else IDENTITY
+## (no TV). Origin on the wall face at floor level, +Z into the hall.
+func wall_spot(hall: String) -> Transform3D:
+	var yard_bus := Modules.bus("ship_bay")
+	if yard_bus and yard_bus.has_method("shipyard_spot"):
+		var spot: Transform3D = yard_bus.call("shipyard_spot", "tv_" + hall)
+		if spot != Transform3D.IDENTITY:
+			return spot
+	return MONITORS.get(hall, Transform3D.IDENTITY)
+
+
 # --- The floating pointer -----------------------------------------------------------------
 
 ## Where the view's centre meets a TV within reach: [index, pixel] or [-1, ZERO].
@@ -204,7 +225,7 @@ func aim() -> Array:
 		if denom >= -0.05:
 			continue
 		var t := (face - from).dot(n) / denom
-		if t <= 0.0 or t > REACH:
+		if t <= 0.0 or t > AIM_REACH:
 			continue
 		var local := m.to_local(from + dir * t)
 		var uv := Vector2(local.x / SCREEN_M.x + 0.5, 0.5 - local.y / SCREEN_M.y)
@@ -213,7 +234,7 @@ func aim() -> Array:
 	return [-1, Vector2.ZERO]
 
 
-func _update_pointer(delta: float) -> void:
+func _update_pointer() -> void:
 	var hit := aim()
 	var was := aimed
 	aimed = hit[0]
@@ -226,7 +247,6 @@ func _update_pointer(delta: float) -> void:
 		var moved: bool = aimed != was or (hit[1] as Vector2).distance_to(aimed_px) > 0.5
 		aimed_px = hit[1]
 		wake(aimed)
-		_idle[aimed] = 0.0
 		if moved:
 			var motion := InputEventMouseMotion.new()
 			motion.position = aimed_px
@@ -237,10 +257,8 @@ func _update_pointer(delta: float) -> void:
 		pointer.visible = i == aimed
 		if i == aimed:
 			pointer.position = aimed_px
-		if is_awake(i) and i != aimed:
-			_idle[i] += delta
-			if _idle[i] > IDLE:
-				sleep(i)
+		if not is_awake(i) and overlay == null:
+			wake(i)
 
 
 func _press_screen(i: int, button: InputEventMouseButton) -> void:
@@ -258,7 +276,7 @@ func is_awake(i: int) -> bool:
 	return _viewport(i).has_node("Terminal")
 
 
-## Swaps a TV's broadcast for the working terminal (the pointer clicks on it).
+## Puts the wrist terminal on TV `i` (every TV shows it, as on the wrist; the pointer clicks on it).
 func wake(i: int) -> Control:
 	var vp := _viewport(i)
 	if vp.has_node("Terminal"):
@@ -272,11 +290,10 @@ func wake(i: int) -> Control:
 	vp.add_child(screen)
 	vp.move_child(screen, vp.get_node("Pointer").get_index())
 	screen.call("show_channel", holo_channel(str(tv.get("channel"))))
-	_idle[i] = 0.0
 	return screen
 
 
-## Back to broadcasting.
+## Takes TV `i`'s terminal down while the full screen shows it; it comes back after.
 func sleep(i: int) -> void:
 	var vp := _viewport(i)
 	if not vp.has_node("Terminal"):
@@ -333,8 +350,8 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	# Wall plate and arm, the set's back, then a slim gloss-black bezel round the panel.
 	_box(m, Vector3(0.7, 0.45, 0.05), Vector3(0, 0, 0.025), dark)
 	for x: float in [-0.18, 0.18]:
-		_box(m, Vector3(0.06, 0.3, 0.1), Vector3(x, 0, 0.1), dark)
-	_box(m, Vector3(w - 0.4, h - 0.3, 0.06), Vector3(0, 0, 0.17), gloss)
+		_box(m, Vector3(0.06, 0.3, DEPTH - 0.1), Vector3(x, 0, (DEPTH - 0.1) * 0.5 + 0.05), dark)
+	_box(m, Vector3(w - 0.4, h - 0.3, 0.06), Vector3(0, 0, DEPTH - 0.07), gloss)
 	# The bezel stops a centimetre short of the screen so the two never share a plane.
 	_box(m, Vector3(w + 0.07, h + 0.07, 0.04), Vector3(0, 0, DEPTH - 0.03), gloss)
 	# A chin under the panel: BSX in orange and a standby light.
@@ -371,7 +388,6 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	pointer.name = "Pointer"
 	pointer.visible = false
 	vp.add_child(pointer)
-	_idle.append(0.0)
 
 	var quad := MeshInstance3D.new()
 	quad.name = "Screen"
@@ -403,9 +419,9 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	m.add_child(sheen)
 	var glow := OmniLight3D.new()
 	glow.light_color = Color(0.85, 0.9, 1.0)
-	glow.light_energy = 0.5
-	glow.omni_range = 3.5
-	glow.position = Vector3(0, 0, 0.9)
+	glow.light_energy = 0.8
+	glow.omni_range = 6.0
+	glow.position = Vector3(0, 0, 1.4)
 	glow.shadow_enabled = false
 	m.add_child(glow)
 
