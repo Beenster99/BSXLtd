@@ -13,8 +13,8 @@ func run_tests() -> void:
 	if def == null:
 		return
 	check(def.model != null, "Kestrel model loads")
-	check(def.slot_ids() == PackedStringArray(["eng_port", "eng_stbd", "attractor_coil", "hold_nets", "radar",
-			"survey_array", "tow_winch", "bowser_tank", "plate_hold_port"]), "the file's slots: %s" % ", ".join(def.slot_ids()))
+	check(def.slot_ids().slice(0, 9) == PackedStringArray(["eng_port", "eng_stbd", "attractor_coil", "hold_nets", "radar",
+			"survey_array", "tow_winch", "bowser_tank", "plate_hold_port"]), "the file's slots: %s" % ", ".join(def.slot_ids().slice(0, 9)))
 	check(def.slot("eng_port").takes("kestrel_engine") and def.slot("eng_port").fitted == "kestrel_engine",
 			"engines take and carry the Kestrel engine")
 	check(def.slot("attractor_coil").fitted == "" and def.slot("attractor_coil").takes("attractor_coil_1"),
@@ -72,6 +72,24 @@ func run_tests() -> void:
 		check((found[id] as Array).size() > 0, "%s finds model pieces: %d" % [id, (found[id] as Array).size()])
 	var hull := importer.kit.model.part_visual(importer.part_at("hull/cap/back/0").id)
 	check(not (found["eng_port"] as Array).has(hull), "the stern cap the engine sits on is not the engine")
+	# The sliding doors start shut and slide open (and shut) on their panels.
+	var leaf := importer.part_at("system:door_lock_out/leaf")
+	var shut := leaf.local_transform.origin
+	check(not bool(model.call("is_door_open", "door_lock_out")) and not bool(model.call("is_door_open", "door_bulkhead")),
+			"both sliding doors start shut")
+	var panel := importer.kit.model.part_collider(importer.part_at("system:door_lock_out/door_panel/1").id)
+	check(panel != null and panel.has_meta("ship_bay_use"), "the side door's outside panel is a button")
+	model.call("set_door", "door_lock_out", true, true)
+	check(leaf.local_transform.origin.distance_to(shut + Vector3(0, 0, 0.85)) < 0.001, "open, the leaf is in its pocket")
+	check(importer.kit.model.part_collider(leaf.id).position.distance_to(shut) > 0.8, "and so is its collision")
+	model.call("set_door", "door_lock_out", false, true)
+	check(leaf.local_transform.origin.distance_to(shut) < 0.001, "shut again")
+	var plates := def.slots.filter(func(s: MountSlot) -> bool: return s.slot_id.begins_with("plate_"))
+	var rivets := 0
+	for s: MountSlot in plates:
+		rivets += s.fasteners.filter(func(f: FastenerPoint) -> bool: return f.kind == "rivet").size()
+	check(plates.size() == 69 and rivets == 369, "every riveted outer plate is a fitting: %d plates, %d rivets" % [plates.size(), rivets])
+	check(def.slot("plate_cabin_e0") != null and def.slot("plate_cabin_e0").access == "outboard", "plates are named by body and edge, worked from outside")
 	model.free()
 
 	var scene := load("res://modules/ship_bay/internal/bay/bay.tscn") as PackedScene

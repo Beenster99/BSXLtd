@@ -63,6 +63,13 @@ func run_tests() -> void:
 	check(absf(platform.position.y - sill) < 0.02, "held RAISE, let go at the door sill, it stopped there: %.3f" % platform.position.y)
 	check(str(deck_screen.call("text")).contains("1.6 M"), "its screen shows the height: %s" % deck_screen.call("text"))
 	check(absf(walker.position.y - sill) < 0.15, "riding up on it: y %.2f" % walker.position.y)
+	# The side door is shut: F on its outside panel slides it open.
+	check(not bool(model.call("is_door_open", "door_lock_out")), "the side door starts shut")
+	var panel := model.to_global(Vector3(-2.75, 1.3, 3.1))
+	var eye := model.to_global(Vector3(-3.4, 1.4, 3.1))
+	check(bool(bay.call("use_along", eye, panel - eye)), "F on the side door's outside panel does something")
+	await get_tree().create_timer(1.3).timeout
+	check(bool(model.call("is_door_open", "door_lock_out")), "and the side door slid open")
 	for i in 240:
 		walker.velocity = Vector3(2.5, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, 0.0)
 		walker.move_and_slide()
