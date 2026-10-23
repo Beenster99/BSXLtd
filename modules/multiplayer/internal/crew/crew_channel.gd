@@ -1,16 +1,24 @@
 extends Node
 ## The crew: text chat, what each player is doing, and the presence that makes everyone
 ## visible to everyone (an avatar for each other player, and this player's head streamed
-## as the mover "player:<peer id>" for avatars and helmet cams). Owned by MultiplayerBus.
+## as the mover "player:<peer id>" for avatars and helmet cams, their hands as
+## "player:<peer id>:hand_r" and ":hand_l" once Tools shares them). What each player holds
+## and does with their hands ("held": {"tool": "welder", "using": true, ...}) is shared too,
+## so Tools can draw it on their avatar and play its sounds there. Owned by MultiplayerBus.
 
 signal chat_received(line: Dictionary)
 signal activity_changed(peer_id: int, text: String)
 signal ping_received(ping: Dictionary)
 signal ping_removed(ping_id: int)
+signal held_changed(peer_id: int, held: Dictionary)
+signal avatar_added(peer_id: int, avatar: Node3D)
 
 const SAY := "crew.say"
 const ACTIVITY := "crew.activity"
 const PING := "crew.ping"
+const HELD := "crew.held"
+const HELD_KEYS := 8
+const HELD_TEXT := 48
 const PING_LIFE := 10.0
 const PINGS_EACH := 5  # live pings per player; a sixth replaces their oldest
 const MAX_LABEL := 48
@@ -27,6 +35,10 @@ var _log: Array[Dictionary] = []  # {"time", "peer", "name", "text"}
 var _activity: Dictionary = {}  # peer id -> text
 var _head := Node3D.new()  # this player's head, copied from the active camera
 var _head_id := ""
+var _hands: Array[Node3D] = [Node3D.new(), Node3D.new()]  # this player's hands, right then left
+var _hand_sources: Array = [null, null]  # what Tools gave set_local_hands(), weakrefs
+var _hand_ids: Array[String] = []
+var _held: Dictionary = {}  # peer id -> held state
 var _avatars: Dictionary = {}  # peer id -> avatar node
 var _check := 0.0
 var _pings: Array[Dictionary] = []
@@ -37,9 +49,13 @@ var _ping_seq := 0  # host side: ping ids
 func _ready() -> void:
 	_head.name = "LocalHead"
 	add_child(_head)
+	for i in 2:
+		_hands[i].name = "LocalHandR" if i == 0 else "LocalHandL"
+		add_child(_hands[i])
 	net.register_event(SAY, _apply_say, _validate_say)
 	net.register_event(ACTIVITY, _apply_activity, _validate_activity)
 	net.register_event(PING, _apply_ping, _validate_ping)
+	net.register_event(HELD, _apply_held, _validate_held)
 	net.register_snapshot_provider("crew", self)
 	for s: Signal in [net.session_started, net.session_ended, net.peer_joined, net.peer_left]:
 		s.connect(func(_a = null, _b = null) -> void: _sync_presence())
@@ -57,6 +73,10 @@ func _process(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	if cam and not cam.get_viewport() is SubViewport:
 		_head.global_transform = cam.global_transform
+	for i in 2:
+		var src: Node3D = _hand_sources[i].get_ref() if _hand_sources[i] else null
+		if is_instance_valid(src) and src.is_inside_tree():
+			_hands[i].global_transform = src.global_transform
 	_check -= delta
 	if _check <= 0.0:
 		_check = 0.5
@@ -137,6 +157,71 @@ func _apply_ping(p: Dictionary) -> void:
 	ping_received.emit(p)
 
 
+# --- Hands and what they hold --------------------------------------------------------
+
+## Tools hands over this player's hand nodes (null for none): their transforms stream to the
+## crew, whose avatars of this player then reach where these hands are.
+func set_local_hands(right: Node3D, left: Node3D) -> void:
+	_hand_sources = [weakref(right) if right else null, weakref(left) if left else null]
+	var live := right != null or left != null
+	_share_hands()
+	if bool(held(net.local_peer_id()).get("hands", false)) != live:
+		var state := held(net.local_peer_id())
+		state["hands"] = live
+		set_held(state)
+
+
+## Streams the hands Tools gave us, and nothing while there are none.
+func _share_hands() -> void:
+	for i in mini(2, _hand_ids.size()):
+		if _hand_sources[i]:
+			net.register_mover(_hand_ids[i], _hands[i])
+		else:
+			net.unregister_mover(_hand_ids[i])
+
+
+## Shares what this player holds and does: small values only (at most HELD_KEYS keys of
+## bool, number or short text), e.g. {"tool": "welder", "using": true}. Replaces the last.
+func set_held(state: Dictionary) -> void:
+	var keep := held(net.local_peer_id())
+	if keep.has("hands") and not state.has("hands"):
+		state = state.duplicate()
+		state["hands"] = keep.hands
+	if state != keep:
+		net.request(HELD, {"held": state})
+
+
+## What a player holds ({} when nothing is known).
+func held(peer_id: int) -> Dictionary:
+	return (_held.get(peer_id, {}) as Dictionary).duplicate()
+
+
+func _validate_held(sender: int, p: Dictionary) -> Variant:
+	var given: Variant = p.get("held")
+	if not given is Dictionary:
+		return "nothing held"
+	var clean := {}
+	for key in given:
+		if clean.size() >= HELD_KEYS:
+			break
+		var v: Variant = given[key]
+		if v is String or v is StringName:
+			v = str(v).left(HELD_TEXT)
+		elif not (v is bool or v is int or v is float):
+			continue
+		clean[str(key).left(HELD_TEXT)] = v
+	return {"peer": sender, "held": clean}
+
+
+func _apply_held(p: Dictionary) -> void:
+	var peer := int(p.peer)
+	_held[peer] = p.held
+	var a: Node = _avatars.get(peer)
+	if is_instance_valid(a):
+		a.set("hands_live", bool((p.held as Dictionary).get("hands", false)))
+	held_changed.emit(peer, (p.held as Dictionary).duplicate())
+
+
 # --- Activity --------------------------------------------------------------------------
 
 func set_activity(text: String) -> void:
@@ -164,7 +249,7 @@ func player_name(peer_id: int) -> String:
 # --- Snapshot --------------------------------------------------------------------------
 
 func get_net_snapshot() -> Dictionary:
-	return {"log": _log.duplicate(true), "activity": _activity.duplicate()}
+	return {"log": _log.duplicate(true), "activity": _activity.duplicate(), "held": _held.duplicate(true)}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
@@ -175,6 +260,11 @@ func apply_net_snapshot(data: Dictionary) -> void:
 	var acts: Dictionary = data.get("activity", {})
 	for id in acts:
 		_activity[int(id)] = str(acts[id])
+	_held.clear()
+	var holds: Dictionary = data.get("held", {})
+	for id in holds:
+		if holds[id] is Dictionary:
+			_held[int(id)] = holds[id]
 
 
 # --- Presence --------------------------------------------------------------------------
@@ -187,19 +277,44 @@ func head_of(peer_id: int) -> Node3D:
 	return a.get_node("Head") as Node3D if is_instance_valid(a) else null
 
 
+## Another player's avatar, or null (none for this player).
+func avatar_of(peer_id: int) -> Node3D:
+	var a: Node = _avatars.get(peer_id)
+	return a as Node3D if is_instance_valid(a) and not a.is_queued_for_deletion() else null
+
+
+## Another player's hand on their avatar (right or left), or null.
+func hand_of(peer_id: int, right := true) -> Node3D:
+	var a := avatar_of(peer_id)
+	return a.get_node("HandR" if right else "HandL") as Node3D if a else null
+
+
 static func head_id(peer_id: int) -> String:
 	return "player:%d" % peer_id
+
+
+static func hand_id(peer_id: int, right: bool) -> String:
+	return "player:%d:%s" % [peer_id, "hand_r" if right else "hand_l"]
 
 
 func _sync_presence() -> void:
 	if _head_id != "":
 		net.unregister_mover(_head_id)
+	for id in _hand_ids:
+		net.unregister_mover(id)
 	_head_id = head_id(net.local_peer_id())
 	net.register_mover(_head_id, _head)
+	_hand_ids = [hand_id(net.local_peer_id(), true), hand_id(net.local_peer_id(), false)]
+	_share_hands()
 	var peers := net.peers()
+	for id in _held.keys():
+		if not peers.has(id):
+			_held.erase(id)
 	for id in _avatars.keys():
 		if not peers.has(id) or id == net.local_peer_id():
 			net.unregister_mover(head_id(id))
+			net.unregister_mover(hand_id(id, true))
+			net.unregister_mover(hand_id(id, false))
 			if is_instance_valid(_avatars[id]):
 				_avatars[id].queue_free()
 			_avatars.erase(id)
@@ -224,6 +339,10 @@ func _place_avatars() -> void:
 		a.name = "Crew_%d" % id
 		a.set_meta("player_name", player_name(id))
 		a.set_meta("peer_id", id)
+		a.set("hands_live", bool(held(id).get("hands", false)))
 		world.add_child(a)
 		_avatars[id] = a
 		net.register_mover(head_id(id), a.get_node("Head"))
+		net.register_mover(hand_id(id, true), a.get_node("HandR"))
+		net.register_mover(hand_id(id, false), a.get_node("HandL"))
+		avatar_added.emit(id, a)

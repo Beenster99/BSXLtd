@@ -43,6 +43,11 @@ signal ping_received(ping: Dictionary)
 signal ping_removed(ping_id: int)
 ## The home router's port for hosting changed: see router_info().
 signal router_changed(info: Dictionary)
+## What a player holds or does changed (set_held()); fires for this player too.
+signal held_changed(peer_id: int, held: Dictionary)
+## An avatar for another player was put in the scene (joining, or a scene change rebuilt it):
+## dress it now, e.g. the tool in its hand from held(peer_id).
+signal avatar_added(peer_id: int, avatar: Node3D)
 
 const ONLINE_FLAG := "multiplayer.online"
 const DEFAULT_PORT := 24570
@@ -84,7 +89,13 @@ func register_module() -> void:
 	_crew.activity_changed.connect(activity_changed.emit)
 	_crew.ping_received.connect(ping_received.emit)
 	_crew.ping_removed.connect(ping_removed.emit)
+	_crew.held_changed.connect(held_changed.emit)
+	_crew.avatar_added.connect(avatar_added.emit)
 	add_child(_crew)
+	var world: Node = preload("res://modules/multiplayer/internal/world_sync.gd").new()
+	world.name = "World"
+	world.net = self
+	add_child(world)
 	if Flags.is_on(CREW_CHANNEL):
 		HudSlots.register_holo_channel(CREW_CHANNEL, "Crew", _crew_screen, 45)
 	if Flags.is_on(ONLINE_FLAG):
@@ -317,6 +328,37 @@ func avatar_head(peer_id: int) -> Node3D:
 	if peer_id == local_peer_id():
 		return null
 	return _crew.head_of(peer_id)
+
+
+## Another player's avatar (feet at the origin, facing -Z), or null for this player or none.
+func avatar(peer_id: int) -> Node3D:
+	return null if peer_id == local_peer_id() else _crew.avatar_of(peer_id)
+
+
+## Another player's hand on their avatar (right or left; it holds what their real hand holds
+## when Tools shares hands), for putting their tool in and playing its sounds from; null for
+## this player or when there is no avatar. Hands are in group "crew_hand" with metas
+## "peer_id" and "side".
+func avatar_hand(peer_id: int, right := true) -> Node3D:
+	return null if peer_id == local_peer_id() else _crew.hand_of(peer_id, right)
+
+
+## Tools: this player's hand nodes (null for none). Their transforms stream to the crew so
+## this player's avatar reaches where the hands really are; otherwise its hands hang at rest.
+func set_local_hands(right: Node3D, left: Node3D) -> void:
+	_crew.set_local_hands(right, left)
+
+
+## Tools: what this player holds and does, for the crew to show on their avatar and hear,
+## e.g. {"tool": "welder", "using": true}. Small values only: up to 8 keys of bool, number
+## or short text. Send it when it changes, not every frame; held_changed follows everywhere.
+func set_held(state: Dictionary) -> void:
+	_crew.set_held(state)
+
+
+## What a player last shared with set_held() ({} for nothing).
+func held(peer_id: int) -> Dictionary:
+	return _crew.held(peer_id)
 
 
 ## This player's crew colour (host orange, then cyan, green, amber), for markers and names.
