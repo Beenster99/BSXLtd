@@ -4,7 +4,7 @@ extends Node
 ## and two close-ups of the fasteners. Needs a renderer:
 ##   xvfb-run -a -s "-screen 0 1600x900x24" godot --path . --rendering-driver opengl3 \
 ##       res://modules/shared_components/internal/tools/vs_ship_capture.tscn \
-##       -- --file=res://modules/shared_components/tests/fixtures/kestrel_frame.vsship.json --out=/abs/dir
+##       -- --file=res://modules/shared_components/data/ships/kestrel_frame.vsship.json --out=/abs/dir
 
 const SIZE := Vector2i(1600, 900)
 
@@ -17,17 +17,27 @@ func _ready() -> void:
 
 func _run() -> void:
 	var out := "user://vs_ship_capture"
-	var path := "res://modules/shared_components/tests/fixtures/kestrel_frame.vsship.json"
+	var path := "res://modules/shared_components/data/ships/kestrel_frame.vsship.json"
+	var damage := ""
+	var seed_value := 84
 	for arg: String in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="):
 			out = arg.trim_prefix("--out=")
 		elif arg.begins_with("--file="):
 			path = arg.trim_prefix("--file=")
+		elif arg.begins_with("--damage="):
+			damage = arg.trim_prefix("--damage=")   # "fire:3,stripped:1": shoot it as a wreck (WreckMaker)
+		elif arg.begins_with("--seed="):
+			seed_value = int(arg.trim_prefix("--seed="))
 	DirAccess.make_dir_recursive_absolute(out)
 	DisplayServer.window_set_size(SIZE)
 	get_tree().root.size = SIZE
 	var f := VsShipImport.read(path)
 	var id: String = str(f.get("ship", {}).get("id", "ship"))
+	if damage != "":
+		f = WreckMaker.make(f, seed_value, damage)
+		id += "_wreck"
+		print("vs_ship_capture: wreck %s seed %d: %s" % [damage, seed_value, str(WreckMaker.summary(f))])
 	var body := RigidBody3D.new()
 	body.freeze = true
 	var im := VsShipImport.new()

@@ -5,7 +5,7 @@ extends ModuleTest
 ## parts, and a part is found by its path.
 ##   tools/run_tests.sh shared_components
 
-const FIXTURES := "res://modules/shared_components/tests/fixtures/"
+const FIXTURES := "res://modules/shared_components/data/ships/"
 
 
 func run_tests() -> void:
