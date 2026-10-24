@@ -100,7 +100,8 @@ func run_tests() -> void:
 		_done(saved, yard)
 		return
 	var monitors: Array = front.get("monitors")
-	check(monitors.size() == 4, "a TV in every hall: %d" % monitors.size())
+	# The four halls, the bay (the courtyard round the ship) and the crusher house (beenster, 0.3.17).
+	check(monitors.size() == 6, "a TV in every hall: %d" % monitors.size())
 	var halls := {}
 	var space := yard.get_world_3d().direct_space_state
 	await get_tree().physics_frame
@@ -125,7 +126,7 @@ func run_tests() -> void:
 		q.exclude = [(m.get_node("Body") as StaticBody3D).get_rid()]
 		var hits := space.intersect_shape(q, 8)
 		check(hits.is_empty(), "%s has clear floor in front: %s" % [m.name, str(hits.map(func(x): return x.collider.name))])
-	check(halls.keys().size() == 4 and halls.has("deliveries") and halls.has("stock") and halls.has("prep") and halls.has("preassembly"),
+	check(halls.keys().size() == 6 and halls.has("deliveries") and halls.has("stock") and halls.has("prep") and halls.has("preassembly") and halls.has("bay"),
 			"one in each hall: %s" % str(halls.keys()))
 
 	# Every TV shows the wrist terminal without being aimed at, big enough to read across a hall.
