@@ -134,10 +134,15 @@ func _bus(bus: QualityBus) -> void:
 	bus.run_field_sweep(_req(addons, ["coil_bay_bolts", "horn_bolts"]))
 	check(heard.back().serial == "BSX-U-0002", "serials keep counting after a load")
 
-	var rig := bus.rig_request("rig_a", "attractor_coil_1", {"open": false, "fitted": ["quantum_core_1"],
+	var rig := bus.rig_request("rig_a", "attractor_coil_1", {"open": false,
+			"fitted": {"core": "quantum_core_1", "emitter": "field_emitter_1", "board": "control_board"},
 			"joints": {"unit_rig_a_core/b1": 0.9}})
-	check(rig.base.attract_reach == 18.0 and rig.addons[0].part == "quantum_core" and rig.rig_id == "rig_a",
-			"a rig's unit becomes a sweep request")
+	check(rig.base == UpgradeRules.base_stats("attractor_coil") and rig.rated == UpgradeRules.stats("attractor_coil_1",
+			PackedStringArray(["quantum_core_1", "field_emitter_1", "control_board"])),
+			"the rig's figures come from the shared upgrade rules: %s" % [rig.rated])
+	check(rig.addons.size() == 3 and rig.addons[0] == {"part": "quantum_core", "tier": 1, "mount": "core"} and rig.tier == 1,
+			"a rig's unit becomes a sweep request: %s" % [rig.addons])
+	check(bus.rig_request("rig_b", "attractor_coil_2", {"fitted": {}}).tier == 2, "the housing sets the tier")
 	bus.run_field_sweep(rig)
 	check(heard.back().passed and heard.back().rig_id == "rig_a", "a rig's sweep comes back with its rig")
 

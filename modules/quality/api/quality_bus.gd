@@ -276,13 +276,37 @@ func _on_rig_test_requested(rig_id: String, unit_id: String) -> void:
 
 
 ## The sweep request for the unit on a rig, from Tools' unit_state(rig_id) (or `state`).
+## Figures come from Shared Components' upgrade rules: "before" is the stock ship (nothing in
+## the slot), rated is the housing's tier plus every fitted add-on. A unit the rules don't
+## know falls back to Quality's stand-in (internal/data/rig_rules.tres).
 func rig_request(rig_id: String, unit_id: String, state: Dictionary = {}) -> Dictionary:
 	var trades := Modules.bus("trades")
 	if state.is_empty() and trades and trades.has_method("unit_state"):
 		state = trades.call("unit_state", rig_id)
-	var addons := FieldSweep.addons_from_fitted(state.get("fitted", []), rig_rules)
-	return {"unit_id": unit_id, "rig_id": rig_id, "base": rig_rules.base_figures.get(unit_id, {}).duplicate(),
-			"addons": addons, "joint_scores": state.get("joints", {}), "open": bool(state.get("open", false))}
+	var fitted: Variant = state.get("fitted", [])
+	var req := {"unit_id": unit_id, "rig_id": rig_id, "joint_scores": state.get("joints", {}),
+			"open": bool(state.get("open", false))}
+	var fam := UpgradeRules.family_of_unit(unit_id)
+	if fam == "":
+		req["base"] = rig_rules.base_figures.get(unit_id, {}).duplicate()
+		req["addons"] = FieldSweep.addons_from_fitted(fitted, rig_rules)
+		return req
+	var ids := PackedStringArray()
+	var addons: Array[Dictionary] = []
+	var seats: Dictionary = fitted if fitted is Dictionary else {}
+	for seat in seats if not seats.is_empty() else fitted:
+		var id := str(seats[seat]) if not seats.is_empty() else str(seat)
+		var parsed := UpgradeRules.parse_addon(id)
+		if parsed.is_empty():
+			continue
+		ids.append(id)
+		addons.append({"part": parsed.kind, "tier": parsed.tier, "mount": str(seat)})
+	req["family"] = fam
+	req["tier"] = maxi(1, UpgradeRules.tier_of_unit(fam, unit_id))
+	req["base"] = UpgradeRules.base_stats(fam)
+	req["rated"] = UpgradeRules.stats(unit_id, ids)
+	req["addons"] = addons
+	return req
 
 
 func _validate_sweep(_sender: int, p: Dictionary) -> Variant:
