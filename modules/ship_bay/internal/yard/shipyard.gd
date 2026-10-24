@@ -26,6 +26,7 @@ const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 const Transporters := preload("res://modules/ship_bay/internal/yard/transporters.gd")
 const DeliveryTrucks := preload("res://modules/ship_bay/internal/yard/delivery_trucks.gd")
+const EmitterRig := preload("res://modules/ship_bay/internal/yard/emitter_rig.gd")
 const YardShips := preload("res://modules/ship_bay/internal/yard/yard_ships.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
@@ -101,6 +102,11 @@ const DIRECTION_INK := Color(0.04, 0.04, 0.05)
 const SPOTS := {
 	"bench_preassembly": Transform3D(Basis.IDENTITY, Vector3(40, 0, 12.6)),
 	"bench_prep": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(47.2, 0, -35.0)),   # Store 2's work strip
+	# The emitter frame rig on the free strip down Pre-assembly's west side, between the
+	# walkway and line A's trolley, south of the courtyard doorway: the middle of its deck at
+	# deck height (EmitterRig.DECK_H), +X (the coil, then the test mass rail) to the south,
+	# its worker to the west.
+	"rig_emitter": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(31.3, 0.95, 14.6)),
 }
 ## Camera views for screenshots and a quick look round: id -> [eye, target].
 const VIEWS := {
@@ -216,6 +222,9 @@ var _stores_paint: Dictionary = {}  # category -> crate material
 var _bus: ShipBayBus
 ## The hover trolleys and their console (TrolleyFleet).
 var trolleys: Node3D
+## The emitter frame rig in Pre-assembly (emitter_rig.gd, Component Upgrades U1), with the
+## flag "ship_bay.emitter_rig" on; else null.
+var emitter_rig: Node3D
 ## Ships stood on the apron for a look, Settings > Debug > Ship (yard_ships.gd).
 var yard_ships: Node3D
 ## The delivery trucks that bring each order to the truck doors (delivery_trucks.gd).
@@ -283,6 +292,11 @@ func _ready() -> void:
 	add_child(trucks)
 	yard_ships = YardShips.new()
 	add_child(yard_ships)
+	if Flags.is_on("ship_bay.emitter_rig"):
+		emitter_rig = EmitterRig.new()
+		var rig_spot: Transform3D = SPOTS["rig_emitter"]
+		emitter_rig.transform = Transform3D(rig_spot.basis, rig_spot.origin - Vector3(0, EmitterRig.DECK_H, 0))
+		add_child(emitter_rig)
 	if apron and Flags.is_on("ship_bay.dolly"):
 		transporters = Transporters.new()
 		transporters.set("yard", self)
