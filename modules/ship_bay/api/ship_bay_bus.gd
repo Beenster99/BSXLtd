@@ -438,6 +438,10 @@ func load_ship(ship_id: String) -> bool:
 	ship = def
 	_tracker = SlotTracker.new(def, _emit)
 	ship_loaded.emit(ship_id)
+	# A ship comes into the bay on shore power, lit, its screens on (beenster, 0.3.17: cold,
+	# it read as flat and broken); a save puts back whatever it had.
+	if Flags.is_on("ship_bay.ship_starts_powered"):
+		set_ship_powered(true)
 	return true
 
 
@@ -1229,7 +1233,7 @@ func call_trolley_for(crate_id: String) -> String:
 	var at := crate_position(crate_id)
 	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(float(c.get("mass", 0.0)), str(c.get("item", ""))), at, _beam_claims.values()))
 	if id != "":
-		command_trolley(id, "put_away")
+		command_trolley(id, "put_away", {"crate": crate_id})
 	return id
 
 

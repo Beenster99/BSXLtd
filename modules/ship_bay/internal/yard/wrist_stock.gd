@@ -480,9 +480,9 @@ func press(action: String) -> void:
 				_message = "On its way."
 				Sfx.play("click")
 		"put_away":
-			for id: String in ["s", "m", "l"]:
+			for id: String in ["p2", "p3", "p4", "p5", "p6", "h"]:
 				bus.command_trolley(id, "put_away")
-			_message = "The trolleys are putting the deliveries away."
+			_message = "The goods-in lifts are putting the deliveries away."
 			Sfx.play("click")
 	_refresh_side()
 

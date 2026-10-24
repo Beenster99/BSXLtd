@@ -80,6 +80,8 @@ func machines() -> Array:
 			var t: Node = trolleys[id]
 			var acts := ["drive", "come", "fast", "bring", "stores"] if bool(t.call("is_picker")) and not t.get("spec").has("putaway") \
 					else ["drive", "come", "fast", "put_away"]
+			if ["s", "m", "l"].has(id):   # the yard's trolleys leave deliveries to goods-in
+				acts = ["drive", "come", "fast"]
 			if (fleet.get("auto_load") as Dictionary).has(id):
 				acts.append("auto")
 			out.append(["trolley:" + id, str(t.get("spec")["name"]), acts])

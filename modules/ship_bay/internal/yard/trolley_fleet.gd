@@ -1,6 +1,7 @@
 extends Node3D
 ## The yard's hover trolleys and what they are doing. Built by the shipyard on every peer:
-## three trolleys (small, medium, large) parked in the courtyard, five goods-in picking lifts
+## three trolleys (small, medium, large: parts fallen off ships in the yard and stock to the
+## people working there, never deliveries) parked in the courtyard, five goods-in picking lifts
 ## (p2 to p6) along Deliveries' east wall that put new deliveries away, the picking lift in the
 ## stores, the two refurbishment lines' own trolleys ("a", "b") at the ends of their lines,
 ## and the route planner (YardNav) once the yard's collision is in.
@@ -33,6 +34,8 @@ const CargoBeam := preload("res://modules/ship_bay/internal/yard/cargo_beam.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 ## While a clean-up has parts no trolley was free for, how often it asks again, seconds.
 const CLEAN_UP_RETRY := 1.5
+## The yard's own hover trolleys: fallen parts and stock to workers, never deliveries.
+const YARD_TROLLEYS := ["s", "m", "l"]
 
 ## Parking bays: trolley id -> [floor point, yaw]. The small, medium and large trolleys
 ## stand in the courtyard west of the dock, out of the goods-in floor's way; the goods-in
@@ -87,9 +90,11 @@ const GOODS_IN_EVERY := 2.0
 ## Idle hover trolleys put deliveries away by themselves (the host sends them).
 @export var auto_put_away := true
 ## Which trolleys go to put new deliveries away by themselves: the goods-in picking lifts
-## and the heavy lift (for bulk goods) are on; the small, medium and large trolleys are off
-## till you turn them on (AUTO LOAD on the wrist's Machines channel; every peer hears it).
-var auto_load := {"s": false, "m": false, "l": false, "h": true, "p2": true, "p3": true, "p4": true, "p5": true, "p6": true}
+## and the heavy lift (for bulk goods), each with AUTO LOAD on the wrist's Machines channel
+## (every peer hears it). The small, medium and large trolleys never handle deliveries
+## (beenster, 0.3.17): they pick up parts fallen off ships in the yard and bring stock to
+## the people working there (YARD_TROLLEYS).
+var auto_load := {"h": true, "p2": true, "p3": true, "p4": true, "p5": true, "p6": true}
 
 var trolleys: Dictionary = {}       # id -> HoverTrolley
 var jobs: Dictionary = {}           # id -> {do, phase, crate, place, goal, yaw}
@@ -172,7 +177,7 @@ func _ready() -> void:
 			if held == "" or not _drives(id):
 				continue
 			var info := _bus.crate_info(held)
-			if trolleys[id].is_picker() and not info.has("to"):
+			if (trolleys[id].is_picker() or YARD_TROLLEYS.has(id)) and not info.has("to"):
 				jobs[id] = {"do": "put_away", "phase": "find"}
 			elif not info.has("to"):
 				_next_job(id, trolleys[id])
@@ -517,6 +522,8 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		return
 	if command == "put_away" and t.is_picker() and not auto_load.has(id):
 		return   # the picking lift only fetches
+	if command == "put_away" and YARD_TROLLEYS.has(id) and not args.has("crate"):
+		return   # the yard's trolleys leave deliveries to goods-in; they come for yard goods (call_trolley_for)
 	if t.is_line() and not ["put_away", "park", "deck", "come", "follow"].has(command):
 		return   # a line's trolley only takes its line's goods to the stores
 	if command == "shelve" and (not t.is_picker() or ["shelve", "fetch"].has(str((jobs[id] as Dictionary).get("do", ""))) \
@@ -1244,6 +1251,8 @@ func _next_crate(id: String, t: Trolley) -> String:
 			continue   # still on its delivery truck
 		if t.is_picker() and (c.has("line") or ["refurb", "grind"].has(str(c.get("route", "")))):
 			continue   # a lift only shelves: line goods go on a trolley
+		if YARD_TROLLEYS.has(id) and not (c.has("line") or ["refurb", "grind"].has(str(c.get("route", "")))):
+			continue   # a delivery on the goods-in floor: the goods-in lifts' job
 		if not t.carries(Layout.kind_for(float(c["mass"]), str(c["item"]))) or not _bus.trolley_has_room(id, cid):
 			continue
 		if _bus.place_for(str(c["item"])) == "":
