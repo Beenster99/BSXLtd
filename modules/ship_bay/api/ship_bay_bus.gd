@@ -71,6 +71,14 @@ signal plug_changed(payload: Dictionary)
 signal marker_focus_changed(at: Vector3, radius_m: float)
 ## The ships stood on the apron for a look changed (Settings > Debug > Ship): short design names.
 signal yard_ships_changed(ships: PackedStringArray)
+## A component rig's state changed (a unit mounted or taken off, a test started or shown), on
+## every player: {unit, testing, result}. See RIGS.
+signal rig_changed(rig_id: String, state: Dictionary)
+## Host only: a player pressed a rig's test button with a unit on it. Quality runs the test
+## and answers with rig_show_test.
+signal rig_test_requested(rig_id: String, unit_id: String)
+## A rig's test result arrived (rig_show_test), on every player; the rig plays its sweep.
+signal rig_test_shown(rig_id: String, result: Dictionary)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -89,9 +97,14 @@ const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
+const EmitterRig := preload("res://modules/ship_bay/internal/yard/emitter_rig.gd")
 const DebugShipsPanel := preload("res://modules/ship_bay/internal/ui/debug_ships_panel.gd")
 ## The Debug page's section (Settings > Debug > Ship).
 const DEBUG_SECTION := "ship_bay"
+## Component rigs in the yard (Component Upgrades): id -> {kind, takes (a unit family: unit
+## ids start with it), room}. The rig's place is shipyard_spot(id): origin on its deck's
+## middle at deck height, +X along the unit, +Z towards the worker.
+const RIGS := {"rig_emitter": {"kind": "emitter_frame", "takes": "attractor_coil", "room": "preassembly"}}
 ## Designs that can stand on the apron for a look (YardShips.PLACES).
 const YARD_SHIP_DESIGNS: PackedStringArray = ["manta"]
 const SlotTracker := preload("res://modules/ship_bay/internal/slot_tracker.gd")
@@ -138,6 +151,10 @@ var yard_ships: PackedStringArray = []
 ## True once the bay was emptied from Settings > Debug > Ship: the bay stays empty until
 ## the Kestrel is brought back.
 var bay_cleared := false
+## Rig id -> {unit, testing, result, joints}: what's on each component rig (RIGS).
+var rigs: Dictionary = {}
+## Rig id -> the rig's node in the yard (it adds itself), for rig_unit.
+var rig_nodes: Dictionary = {}
 
 ## Where fastener rings show (set_marker_focus): round this point, world space, within the
 ## radius (metres; INF: everywhere).
@@ -260,6 +277,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.slot", _apply_slot_move, _stamp)
 	_net.call("register_event", "ship_bay.plug", _apply_plug, _check_plug)
 	_net.call("register_event", "ship_bay.debug_ship", _apply_debug_ship, _check_debug_ship)
+	_net.call("register_event", "ship_bay.rig", _apply_rig, _check_rig)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
@@ -311,7 +329,7 @@ func unregister_module() -> void:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
 				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
-				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship"]:
+				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -464,16 +482,22 @@ func get_component(slot_id: String) -> String:
 
 
 func get_fasteners(slot_id: String) -> Array[FastenerPoint]:
+	if RIGS.has(slot_id):
+		return rig_points(slot_id)
 	var s := get_slot(slot_id)
 	return s.fasteners if s else ([] as Array[FastenerPoint])
 
 
 func is_joint_tight(joint_id: String) -> bool:
+	if _is_rig_joint(joint_id):
+		return _rig_joints(joint_id).has(joint_id)
 	return _tracker != null and _tracker.is_tight(joint_id)
 
 
 ## 0..1 as Trades reported it; 0 when the joint isn't made.
 func joint_quality(joint_id: String) -> float:
+	if _is_rig_joint(joint_id):
+		return float(_rig_joints(joint_id).get(joint_id, 0.0))
 	return _tracker.joint_quality(joint_id) if _tracker else 0.0
 
 
@@ -495,6 +519,8 @@ func try_remove(slot_id: String) -> bool:
 
 ## Trades: a joint was made (bolt torqued, rivet set, seam welded, plug seated).
 func note_joint_made(joint_id: String, quality: float) -> bool:
+	if _is_rig_joint(joint_id):
+		return _rig_joint(joint_id, true, quality, true)
 	var ok := _tracker != null and _tracker.joint_made(joint_id, quality)
 	if ok:
 		_share("ship_bay.joint", {"joint": joint_id, "made": true, "quality": quality})
@@ -503,6 +529,8 @@ func note_joint_made(joint_id: String, quality: float) -> bool:
 
 ## Trades: a joint was undone.
 func note_joint_removed(joint_id: String) -> bool:
+	if _is_rig_joint(joint_id):
+		return _rig_joint(joint_id, false, 0.0, true)
 	var ok := _tracker != null and _tracker.joint_removed(joint_id)
 	if ok:
 		_share("ship_bay.joint", {"joint": joint_id, "made": false})
@@ -527,7 +555,13 @@ func _from_here(payload: Dictionary) -> bool:
 
 
 func _apply_joint(payload: Dictionary) -> void:
-	if _tracker == null or _from_here(payload):
+	if _from_here(payload):
+		return
+	var joint := str(payload.get("joint", ""))
+	if _is_rig_joint(joint):
+		_rig_joint(joint, bool(payload.get("made", false)), float(payload.get("quality", 1.0)), false)
+		return
+	if _tracker == null:
 		return
 	if bool(payload.get("made", false)):
 		_tracker.joint_made(str(payload.get("joint", "")), float(payload.get("quality", 1.0)))
@@ -579,7 +613,7 @@ func set_ship_powered(on: bool) -> void:
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
 	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true),
-			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared}
+			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared, "rigs": rigs.duplicate(true)}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -616,6 +650,14 @@ func restore(state: Dictionary) -> void:
 	yard_ships = PackedStringArray(state.get("yard_ships", []))
 	yard_ships_changed.emit(yard_ships)
 	bay_cleared = bool(state.get("bay_cleared", false))
+	rigs = {}
+	for id: String in (state.get("rigs", {}) as Dictionary):
+		if RIGS.has(id):
+			var r: Dictionary = (state["rigs"][id] as Dictionary).duplicate(true)
+			r["testing"] = false   # a sweep that was running when the game was saved isn't
+			rigs[id] = r
+	for id: String in RIGS:
+		rig_changed.emit(id, rig_state(id))
 	var id: String = state.get("ship_id", "")
 	if id == "":
 		unload_ship()
@@ -1576,6 +1618,158 @@ func debug_ship(action: String, design := "") -> void:
 		_net.call("request", "ship_bay.debug_ship", payload)
 	elif _check_debug_ship(0, payload) is Dictionary:
 		_apply_debug_ship(payload)
+
+
+# --- Component rigs (Component Upgrades) -----------------------------------------------
+
+## A rig's state: {unit ("" when empty), tier (the unit's, 0 when empty), testing (a sweep is
+## running), result (the last test's, {} until one is shown), joints (hold-down joint id ->
+## quality, for the ones made)}. {} for an unknown rig.
+func rig_state(rig_id: String) -> Dictionary:
+	if not RIGS.has(rig_id):
+		return {}
+	var r: Dictionary = rigs.get(rig_id, {})
+	var unit := str(r.get("unit", ""))
+	return {"unit": unit, "tier": EmitterRig.tier_of(unit) if unit != "" else 0,
+			"testing": bool(r.get("testing", false)),
+			"result": (r.get("result", {}) as Dictionary).duplicate(true),
+			"joints": (r.get("joints", {}) as Dictionary).duplicate()}
+
+
+## The unit on a rig as Shared Components built it (UpgradeUnits.attractor_coil's result:
+## unit, tier, part, cover, bolts, tacks, box, mounts, xform, path; xform in rig space, the
+## rig node's own frame), {} while the rig is empty or shows a stand-in.
+func rig_unit(rig_id: String) -> Dictionary:
+	var node: Node = rig_nodes.get(rig_id)
+	return (node.get("unit_parts") as Dictionary) if is_instance_valid(node) else {}
+
+
+## Puts a unit on a rig ("attractor_coil_1" on "rig_emitter"), for every player. Refused
+## while the rig has one, or for a unit the rig doesn't take (RIGS takes).
+func rig_mount(rig_id: String, unit_id: String) -> void:
+	_send_rig({"rig": rig_id, "op": "mount", "unit": unit_id})
+
+
+## Takes the unit off a rig, for every player. Refused while a hold-down is still made.
+func rig_unmount(rig_id: String) -> void:
+	_send_rig({"rig": rig_id, "op": "unmount"})
+
+
+## The rig's test button: with a unit on, the host hears rig_test_requested and the rig
+## shows it's waiting on the test.
+func request_rig_test(rig_id: String) -> void:
+	_send_rig({"rig": rig_id, "op": "test"})
+
+
+## Quality's answer to rig_test_requested: {lines: [[label, old, new], ...], passed, note}.
+## Every player's rig runs its sweep and shows the result.
+func rig_show_test(rig_id: String, result: Dictionary) -> void:
+	_send_rig({"rig": rig_id, "op": "result", "result": result.duplicate(true)})
+
+
+## A rig's hold-down bolts for the unit on it, in spot space (shipyard_spot(rig_id): origin
+## on the deck's middle at deck height, +X along the unit, +Z to the worker, y up): four M12
+## bolts at the housing's base corners, 5 cm in ("rig_emitter/b1".."b4"), following the
+## unit's tier. Tools works them. Empty for an unknown or empty rig.
+func rig_points(rig_id: String) -> Array[FastenerPoint]:
+	var out: Array[FastenerPoint] = []
+	var unit := str(rig_state(rig_id).get("unit", ""))
+	if rig_id != "rig_emitter" or unit == "":
+		return out
+	var i := 1
+	for p: Vector3 in EmitterRig.hold_down_points(unit):
+		var f := FastenerPoint.new()
+		f.joint_id = "%s/b%d" % [rig_id, i]
+		f.kind = "bolt"
+		f.spec = "M12"
+		f.position = p
+		f.normal = Vector3.UP
+		out.append(f)
+		i += 1
+	return out
+
+
+func _is_rig_joint(joint_id: String) -> bool:
+	return RIGS.has(FastenerPoint.slot_of(joint_id))
+
+
+func _rig_joints(joint_id: String) -> Dictionary:
+	return (rigs.get(FastenerPoint.slot_of(joint_id), {}) as Dictionary).get("joints", {})
+
+
+## Notes a rig hold-down made or undone here (and, `share`, for the other players). Refused
+## for a rig with nothing on it or a joint it doesn't have.
+func _rig_joint(joint_id: String, made: bool, quality: float, share: bool) -> bool:
+	var id := FastenerPoint.slot_of(joint_id)
+	if not rigs.has(id) or not rig_points(id).any(func(f: FastenerPoint) -> bool: return f.joint_id == joint_id):
+		return false
+	var joints: Dictionary = (rigs[id] as Dictionary).get("joints", {})
+	if made == joints.has(joint_id) and (not made or is_equal_approx(float(joints[joint_id]), quality)):
+		return false
+	if made:
+		joints[joint_id] = clampf(quality, 0.0, 1.0)
+	else:
+		joints.erase(joint_id)
+	rigs[id]["joints"] = joints
+	if share:
+		_share("ship_bay.joint", {"joint": joint_id, "made": made, "quality": quality})
+	rig_changed.emit(id, rig_state(id))
+	return true
+
+
+func _send_rig(payload: Dictionary) -> void:
+	if _net:
+		_net.call("request", "ship_bay.rig", payload)
+	elif _check_rig(0, payload) is Dictionary:
+		_apply_rig(payload)
+
+
+func _check_rig(_sender: int, payload: Dictionary) -> Variant:
+	var id := str(payload.get("rig", ""))
+	if not RIGS.has(id):
+		return "no such rig"
+	var on := str(rig_state(id).get("unit", ""))
+	match str(payload.get("op", "")):
+		"mount":
+			var unit := str(payload.get("unit", ""))
+			if on != "":
+				return "the rig already has a unit on it"
+			return payload if unit.begins_with(str(RIGS[id]["takes"])) else "that unit doesn't go on this rig"
+		"unmount":
+			if on == "":
+				return "the rig is empty"
+			return payload if (rig_state(id)["joints"] as Dictionary).is_empty() else "the unit is still bolted down"
+		"test":
+			return payload if on != "" else "the rig is empty"
+		"result":
+			return payload
+	return "unknown rig action"
+
+
+func _apply_rig(payload: Dictionary) -> void:
+	var id := str(payload.get("rig", ""))
+	var r: Dictionary = rigs.get(id, {})
+	match str(payload.get("op", "")):
+		"mount":
+			r = {"unit": str(payload.get("unit", "")), "testing": false, "result": {}, "joints": {}}
+		"unmount":
+			r = {}
+		"test":
+			r["testing"] = true
+		"result":
+			r["testing"] = false
+			r["result"] = (payload.get("result", {}) as Dictionary).duplicate(true)
+	if r.is_empty():
+		rigs.erase(id)
+	else:
+		rigs[id] = r
+	rig_changed.emit(id, rig_state(id))
+	match str(payload.get("op", "")):
+		"test":
+			if _net == null or bool(_net.call("is_host")):
+				rig_test_requested.emit(id, str(r.get("unit", "")))
+		"result":
+			rig_test_shown.emit(id, rig_state(id)["result"])
 
 
 ## A ship's door opening or shutting, for every player.

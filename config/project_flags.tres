@@ -43,6 +43,7 @@ flags = {
 "ship_bay.apron": true,
 "ship_bay.clean_up": true,
 "ship_bay.dolly": true,
+"ship_bay.emitter_rig": true,
 "ship_bay.shipyard": true,
 "ship_bay.trucks": true,
 "shared_components": true,
