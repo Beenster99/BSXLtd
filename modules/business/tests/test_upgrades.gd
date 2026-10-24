@@ -1,7 +1,7 @@
 extends ModuleTest
 ## Component Upgrades U1 (beenster, 24 Oct): Corvane Field Works sells BSX's attractor coil
-## add-ons (quantum cores Q1-Q3, field emitter arrays F1-F3, the control board and a coil heat
-## exchanger) behind business.upgrades, and Business prices an upgraded coil at tiers 1 to 3.
+## add-ons (quantum cores Q1-Q3, field emitter arrays F1-F3 and the control board, keyed on
+## Shared Components' upgrade rules ids) behind business.upgrades, and Business prices an upgraded coil at tiers 1 to 3.
 ##   tools/run_tests.sh business
 
 
@@ -31,16 +31,16 @@ func run_tests() -> void:
 	check(bus.upgrade_units() == PackedStringArray(["attractor_coil"]), "U1 upgrades the attractor coil: %s" % str(bus.upgrade_units()))
 	check(bus.upgrade_tiers("attractor_coil") == [1, 2, 3], "in three tiers")
 	var listed := bus.get_listings("upgrades").map(func(l): return l.part)
-	for part in ["BsxQuantumCore1", "BsxQuantumCore2", "BsxQuantumCore3", "BsxFieldEmitter1", "BsxFieldEmitter2",
-			"BsxFieldEmitter3", "BsxCoilBoard", "BsxCoilHeatExchanger"]:
+	for part in ["quantum_core_1", "quantum_core_2", "quantum_core_3", "field_emitter_1", "field_emitter_2",
+			"field_emitter_3", "control_board"]:
 		check(listed.has(part), "%s is on sale" % part)
 		check(bus.part_name(part) != part, "%s has a name: %s" % [part, bus.part_name(part)])
 	check(bus.get_listings("upgrades").all(func(l): return l.supplier_id == BusinessBus.UPGRADE_SUPPLIER),
 			"only from BSX's own supplier")
 	var t1 := bus.upgrade_parts("attractor_coil", 1)
 	var t3 := bus.upgrade_parts("attractor_coil", 3)
-	check(t1.has("BsxQuantumCore1") and t1.has("BsxFieldEmitter1") and t1.has("BsxCoilBoard"), "tier 1: Q1, F1 and a board")
-	check(t3.has("BsxCoilHeatExchanger") and not t1.has("BsxCoilHeatExchanger"), "tier 3 needs a heat exchanger")
+	check(t1.has("quantum_core_1") and t1.has("field_emitter_1") and t1.has("control_board"), "tier 1: Q1, F1 and a board")
+	check(t3.size() == 3 and t3.has("quantum_core_3") and t3.has("field_emitter_3"), "tier 3: Q3, F3 and a board: %s" % str(t3))
 	var lines: Array[OrderLine] = []
 	for part: String in t1:
 		lines.append(OrderLine.new(part, int(t1[part])))

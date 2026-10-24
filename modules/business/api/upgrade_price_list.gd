@@ -2,8 +2,9 @@ class_name UpgradePriceList
 extends Resource
 ## What BSX's component upgrades cost and sell for (internal/data/upgrades.tres): per unit
 ## family, per tier, the BSX-only add-on parts it takes and roughly how many joints fitting
-## them is. The rated figures a tier must reach belong to the shared upgrade rules
-## (Shared Components); this only prices the work.
+## them is. Part ids are the add-on ids of Shared Components' upgrade rules (quantum_core_1,
+## field_emitter_1, control_board...), so one id runs from the crate to the certificate; the
+## rated figures a tier reaches are theirs too. This only prices the work.
 
 @export var version := 1
 ## Unit id ("attractor_coil") -> {"name": String, "unit_value": int (CR, a stock unit),

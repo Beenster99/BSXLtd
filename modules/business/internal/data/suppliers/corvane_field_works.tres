@@ -8,14 +8,13 @@ version = 2
 id = "corvane_field_works"
 display_name = "Corvane Field Works"
 parts = {
-"BsxCoilBoard": 1.0,
-"BsxCoilHeatExchanger": 1.0,
-"BsxFieldEmitter1": 1.0,
-"BsxFieldEmitter2": 1.0,
-"BsxFieldEmitter3": 1.0,
-"BsxQuantumCore1": 1.0,
-"BsxQuantumCore2": 1.0,
-"BsxQuantumCore3": 1.0
+"control_board": 1.0,
+"field_emitter_1": 1.0,
+"field_emitter_2": 1.0,
+"field_emitter_3": 1.0,
+"quantum_core_1": 1.0,
+"quantum_core_2": 1.0,
+"quantum_core_3": 1.0
 }
 categories = PackedStringArray()
 conditions = {
