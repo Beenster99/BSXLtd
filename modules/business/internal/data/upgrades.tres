@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="UpgradePriceList" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/business/api/upgrade_price_list.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+units = {
+"attractor_coil": {
+"name": "Attractor coil",
+"tiers": {
+1: {
+"joints": 20,
+"parts": {
+"BsxCoilBoard": 1,
+"BsxFieldEmitter1": 1,
+"BsxQuantumCore1": 1
+}
+},
+2: {
+"joints": 32,
+"parts": {
+"BsxCoilBoard": 1,
+"BsxFieldEmitter2": 1,
+"BsxQuantumCore2": 1
+}
+},
+3: {
+"joints": 48,
+"parts": {
+"BsxCoilBoard": 1,
+"BsxCoilHeatExchanger": 1,
+"BsxFieldEmitter3": 1,
+"BsxQuantumCore3": 1
+}
+}
+},
+"unit_value": 24000
+}
+}
+parts_markup_percent = 25
+labour_per_joint = 150
+scrape_share = 0.85
+beat_step = 0.03
+best_share = 1.2

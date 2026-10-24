@@ -9,6 +9,7 @@ flags = {
 "business.debug": true,
 "business.economy": true,
 "business.market": true,
+"business.upgrades": true,
 "business.wallets": true,
 "contracts": true,
 "contracts.board": true,

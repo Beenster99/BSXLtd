@@ -8,6 +8,9 @@ extends Resource
 @export var prices: Dictionary = {}
 ## Part name -> what players read, for staples the market catalogue doesn't list.
 @export var names: Dictionary = {}
+## Part name -> its category on the market, for parts the catalogue doesn't list ("staples"
+## when missing): BSX's own upgrade add-ons are "upgrades".
+@export var categories: Dictionary = {}
 
 
 func price_of(part: String) -> int:

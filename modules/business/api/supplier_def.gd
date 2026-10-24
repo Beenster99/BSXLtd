@@ -37,6 +37,9 @@ extends Resource
 @export_range(0.0, 1.5) var buy_factor := 0.5
 ## How far its own prices sit from the trade price, part by part (0.1 = +/- 10%).
 @export_range(0.0, 0.5) var price_spread := 0.1
+## A feature flag it trades behind ("" = always): BSX's own add-on supplier waits on
+## "business.upgrades".
+@export var flag := ""
 
 
 ## The bulk discount (percent off) for buying `qty` of one listing.

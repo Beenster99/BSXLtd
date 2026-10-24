@@ -123,6 +123,8 @@ var _yard: Node3D
 var _clock_carry := 0.0
 ## The purchase order being built on the wrist, kept here so it survives closing the screen.
 var wrist_basket: Dictionary = {}
+## Component upgrade pricing (internal/data/upgrades.tres).
+var _upgrades: UpgradePriceList = load(DATA_DIR + "/upgrades.tres")
 ## The cost estimate being built on the wrist (listing id -> qty): a price list to work out
 ## what a job's parts would cost, not an order. Kept here so it survives closing the screen.
 var wrist_estimate: Dictionary = {}
@@ -721,7 +723,14 @@ func get_listing(listing_id: String) -> MarketListing:
 
 ## A listing's catalogue category, or "staples" for a supplier's counter goods.
 func listing_category(l: MarketListing) -> String:
-	return _books.catalogue.category_of(l.part) if _books.catalogue.has_part(l.part) else "staples"
+	return part_category(l.part)
+
+
+## A part's category: the catalogue's, BSX's own ("upgrades"), else "staples".
+func part_category(part: String) -> String:
+	if _books.catalogue.has_part(part):
+		return _books.catalogue.category_of(part)
+	return str(_books.prices.categories.get(part, "staples"))
 
 
 func part_name(part: String) -> String:
@@ -1156,6 +1165,65 @@ func job_recoveries(contract_id: String) -> Array:
 
 ## Labour for a job of this kind and size, CR, rounded to the hundred. t (0-1) places it
 ## within the size's range in the rules; the kind's factor scales it.
+# --- Component upgrades (Component Upgrades U1) ---
+# BSX-only add-ons from Corvane Field Works (flag business.upgrades) turn a unit into a tier
+# 1 to 3 upgrade. In U1 only the attractor coil, sold to BSX's own clients.
+
+## The supplier that stocks BSX's upgrade add-ons.
+const UPGRADE_SUPPLIER := "corvane_field_works"
+
+
+## Unit ids BSX prices upgrades for ("attractor_coil").
+func upgrade_units() -> PackedStringArray:
+	var ids := PackedStringArray(_upgrades.units.keys())
+	ids.sort()
+	return ids
+
+
+## A unit's upgrade tiers, lowest first; empty for a unit BSX doesn't upgrade.
+func upgrade_tiers(unit: String) -> Array[int]:
+	var out: Array[int] = []
+	for t in _upgrades.units.get(unit, {}).get("tiers", {}):
+		out.append(int(t))
+	out.sort()
+	return out
+
+
+## The add-on parts a tier takes: part -> qty ({} for an unknown unit or tier).
+func upgrade_parts(unit: String, tier: int) -> Dictionary:
+	var t: Dictionary = _upgrades.units.get(unit, {}).get("tiers", {}).get(tier, {})
+	return (t.get("parts", {}) as Dictionary).duplicate()
+
+
+## What upgrading a unit to `tier` sells for, broken down: {ok, parts (BSX's cost at today's
+## counter price), markup, labour, joints, quality (share of full price for tested/rated
+## `ratio`; 0 = it failed its test), unit (a stock unit's value when `with_unit`, else 0),
+## price}. `ratio` is tested over rated: Quality's UpgradePlate.efficiency (0 when the plate
+## didn't pass). 1.05 is a good pass; leave it at that to quote before the work.
+func upgrade_quote(unit: String, tier: int, ratio := 1.05, with_unit := false) -> Dictionary:
+	var spec: Dictionary = _upgrades.units.get(unit, {})
+	var t: Dictionary = spec.get("tiers", {}).get(tier, {})
+	if t.is_empty():
+		return {"ok": false, "price": 0}
+	var parts := 0
+	var s := supplier(UPGRADE_SUPPLIER)
+	for part: String in t.parts:
+		parts += (_books.staple_price(s, part) if s else _books.prices.price_of(part)) * int(t.parts[part])
+	var markup := parts * _upgrades.parts_markup_percent / 100
+	var joints := int(t.get("joints", 0))
+	var labour := joints * _upgrades.labour_per_joint
+	var share := _upgrades.quality_share(ratio)
+	var stock := int(spec.get("unit_value", 0)) if with_unit else 0
+	var price := roundi((parts + markup + labour + stock) * share / 100.0) * 100
+	return {"ok": share > 0.0, "parts": parts, "markup": markup, "labour": labour, "joints": joints,
+			"quality": share, "unit": stock, "price": price}
+
+
+## What a client pays for an upgrade to `tier` (see upgrade_quote); 0 if it failed its test.
+func upgrade_price(unit: String, tier: int, ratio := 1.05, with_unit := false) -> int:
+	return int(upgrade_quote(unit, tier, ratio, with_unit).get("price", 0))
+
+
 func labour_price(kind: String, size: String, t := 0.5) -> int:
 	var r := get_rules()
 	var span: Vector2i = {"medium": r.labour_medium, "large": r.labour_large}.get(size, r.labour_small)
