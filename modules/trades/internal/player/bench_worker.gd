@@ -2,7 +2,8 @@ class_name BenchWorker
 extends CharacterBody3D
 ## The BSX worker on foot: walk with WASD, Space jumps, look with the mouse, V swaps first and
 ## third person. On a ladder (a scaffold's climbing space calls set_ladder) forward or Space
-## climbs and back climbs down.
+## climbs and back climbs down. C crouches (beenster, 0.3.17), and stands back up only where
+## there's room over your head.
 ## Two symbolic stretchy hands hang in front of the camera (StretchHand), so you see your own
 ## hands doing the work in either view. The origin is at the feet.
 ##
@@ -13,6 +14,8 @@ const EYE := 1.62
 const CHEST := Vector3(0, EYE - 0.3, 0)
 ## The upper arm, shoulder to elbow (metres); the stretchy forearm goes on from the elbow.
 const UPPER_ARM_M := 0.3
+## Standing height of the body's capsule (m).
+const HEIGHT := 1.8
 ## Footsteps kept soft (beenster, 0.3.6: "walking sound needs to be more subtle"), dB.
 const STEP_DB := -18.0
 
@@ -38,6 +41,11 @@ const STEP_DB := -18.0
 @export var lean_down_m := 0.12
 @export var lean_from_deg := 25.0
 @export var lean_full_deg := 60.0
+## Crouched (Keys.CROUCH toggles it): how far the body drops (m), how fast you get down or up
+## (s for the whole way), and the walk then (m/s; no running or jumping).
+@export var crouch_drop_m := 0.5
+@export var crouch_time_s := 0.18
+@export var crouch_speed := 1.2
 
 var third_person := false
 ## Jumping and climbing ladders (the bay turns them on with trades.jump).
@@ -63,16 +71,26 @@ var _kick := 0.0
 var _ladders := 0
 ## Footsteps underfoot (UI's Footsteps: steps by the surface, a thud on landing).
 var footsteps: Footsteps
+## Crouching (wanted), and how far down the body is now (0 standing, 1 all the way).
+var crouched := false
+var _crouch := 0.0
+var _body_shape: CapsuleShape3D
+var _shape: CollisionShape3D
+## Each leg's pieces, re-posed as the knees bend: {side, thigh, shin, boot, strut_up,
+## strut_down, knee, calf}.
+var _legs: Array[Dictionary] = []
 
 
 func _ready() -> void:
 	var shape := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.28
-	capsule.height = 1.8
+	capsule.height = HEIGHT
 	shape.shape = capsule
-	shape.position.y = 0.9
+	shape.position.y = HEIGHT * 0.5
 	add_child(shape)
+	_body_shape = capsule
+	_shape = shape
 
 	footsteps = Footsteps.new()
 	footsteps.volume_db = STEP_DB
@@ -111,6 +129,10 @@ func kick(amount: float) -> void:
 
 func _process(delta: float) -> void:
 	_kick = move_toward(_kick, 0.0, delta * 0.15)
+	var want := 1.0 if crouched else 0.0
+	if _crouch != want:
+		_crouch = move_toward(_crouch, want, delta / maxf(crouch_time_s, 0.01))
+		_pose_legs()
 	_lean()
 	_place_camera()
 	_pose_arms()
@@ -119,7 +141,41 @@ func _process(delta: float) -> void:
 func _lean() -> void:
 	var down := rad_to_deg(-_pitch)
 	var l := smoothstep(lean_from_deg, lean_full_deg, down)
-	head.position = Vector3(0.0, EYE - lean_down_m * l, -lean_forward_m * l)
+	head.position = Vector3(0.0, eye_height() - lean_down_m * l, -lean_forward_m * l)
+
+
+## The eye's height over the feet now (m): lower while crouched.
+func eye_height() -> float:
+	return EYE - crouch_drop_m * _crouch
+
+
+## Crouch or stand (C). Getting down is at once; standing waits for headroom and returns
+## whether you're up.
+func set_crouch(on: bool) -> bool:
+	if on == crouched:
+		return true
+	if on:
+		crouched = true
+		_size_capsule(HEIGHT - crouch_drop_m)
+		return true
+	if not room_to_stand():
+		return false
+	crouched = false
+	_size_capsule(HEIGHT)
+	return true
+
+
+## Nothing over your head stops you standing up.
+func room_to_stand() -> bool:
+	if not is_inside_tree():
+		return true
+	var gap := HEIGHT - _body_shape.height
+	return gap <= 0.0 or not test_move(global_transform, Vector3.UP * gap)
+
+
+func _size_capsule(h: float) -> void:
+	_body_shape.height = h
+	_shape.position.y = h * 0.5
 
 
 func _place_camera() -> void:
@@ -127,7 +183,7 @@ func _place_camera() -> void:
 		camera.transform = Transform3D(Basis(), Vector3(0, -_kick, 0))
 		return
 	var look_at_point := head.global_transform * Vector3(0, 0, -boom_look_m)
-	var from := global_transform * boom + Vector3(0, -_kick, 0)
+	var from := global_transform * (boom - Vector3(0, crouch_drop_m * _crouch, 0)) + Vector3(0, -_kick, 0)
 	camera.global_transform = Transform3D(Basis.looking_at(look_at_point - from, Vector3.UP), from)
 
 
@@ -168,11 +224,15 @@ func _physics_process(delta: float) -> void:
 	if not look_locked and not held_still:
 		input.x = Input.get_action_strength(Keys.RIGHT) - Input.get_action_strength(Keys.LEFT)
 		input.y = Input.get_action_strength(Keys.BACK) - Input.get_action_strength(Keys.FORWARD)
+	if InputMap.has_action(Keys.CROUCH) and Input.is_action_just_pressed(Keys.CROUCH) and not held_still and _ladders == 0:
+		set_crouch(not crouched)
 	var speed := run_speed if Input.is_action_pressed(Keys.RUN) else walk_speed
+	if crouched:
+		speed = crouch_speed
 	var move := (global_basis * Vector3(input.x, 0.0, input.y)).normalized() * speed
 	velocity.x = move.x
 	velocity.z = move.z
-	var jump := agile and not look_locked and not held_still and Input.is_action_pressed(Keys.JUMP)
+	var jump := agile and not look_locked and not held_still and not crouched and Input.is_action_pressed(Keys.JUMP)
 	if _ladders > 0:
 		# On a ladder: forward or jump climbs, back climbs down; you stay on it unless you're
 		# standing at its foot.
@@ -250,14 +310,16 @@ func _build_body() -> Node3D:
 		var hip := Vector3(side * 0.11, -0.45, 0.0)
 		var knee := Vector3(side * 0.12, -0.84, -0.06)
 		var ankle := Vector3(side * 0.12, -1.16, 0.02)
-		_limb(hip, knee, 0.08, suit, root)
-		_limb(knee, ankle, 0.07, suit, root)
-		_part(_box(Vector3(0.11, 0.07, 0.24)), ankle + Vector3(0, -0.05, -0.05), frame, root)  # boot
+		var leg := {"side": side}
+		leg.thigh = _limb(hip, knee, 0.08, suit, root)
+		leg.shin = _limb(knee, ankle, 0.07, suit, root)
+		leg.boot = _part(_box(Vector3(0.11, 0.07, 0.24)), ankle + Vector3(0, -0.05, -0.05), frame, root)
 		# Exoskeleton: leg struts with powered knees, an arm strut, jets on the pack and calves.
 		var strut_x := side * 0.21
-		_limb(Vector3(strut_x, -0.42, 0.04), Vector3(strut_x, -0.84, -0.02), 0.022, frame, root)
-		_limb(Vector3(strut_x, -0.84, -0.02), Vector3(strut_x, -1.14, 0.05), 0.022, frame, root)
-		_part(_cylinder(0.05, 0.05), Vector3(strut_x, -0.84, -0.02), accent, root).rotation.z = up
+		leg.strut_up = _limb(Vector3(strut_x, -0.42, 0.04), Vector3(strut_x, -0.84, -0.02), 0.022, frame, root)
+		leg.strut_down = _limb(Vector3(strut_x, -0.84, -0.02), Vector3(strut_x, -1.14, 0.05), 0.022, frame, root)
+		leg.knee = _part(_cylinder(0.05, 0.05), Vector3(strut_x, -0.84, -0.02), accent, root)
+		(leg.knee as Node3D).rotation.z = up
 		var strut := _limb(shoulder + Vector3(side * 0.06, 0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), 0.018, frame, root)
 		var joint := _part(_cylinder(0.04, 0.05), elbow + Vector3(side * 0.06, 0.0, 0.03), accent, root)
 		joint.rotation.z = up
@@ -267,7 +329,9 @@ func _build_body() -> Node3D:
 			var jet := Vector3(side * 0.2, y, 0.3)
 			_part(_cylinder(0.045, 0.1), jet, frame, root).rotation.x = up
 			_part(_cylinder(0.05, 0.02), jet + Vector3(0, 0, 0.055), accent, root).rotation.x = up
-		_part(_cylinder(0.035, 0.08), Vector3(side * 0.12, -1.0, 0.12), frame, root).rotation.x = up
+		leg.calf = _part(_cylinder(0.035, 0.08), Vector3(side * 0.12, -1.0, 0.12), frame, root)
+		(leg.calf as Node3D).rotation.x = up
+		_legs.append(leg)
 	# Spine: backpack frame, shoulder yoke, hip belt.
 	_part(_box(Vector3(0.3, 0.46, 0.14)), Vector3(0, -0.02, 0.27), frame, root)
 	_part(_box(Vector3(0.12, 0.3, 0.02)), Vector3(0, 0.0, 0.345), accent, root)
@@ -275,6 +339,38 @@ func _build_body() -> Node3D:
 	_part(_box(Vector3(0.56, 0.05, 0.08)), Vector3(0, 0.16, 0.14), frame, root)
 	_part(_box(Vector3(0.46, 0.06, 0.3)), Vector3(0, -0.36, 0.03), frame, root)
 	return root
+
+
+## Crouching: the body drops and the knees bend forward to keep the boots on the floor.
+func _pose_legs() -> void:
+	if _body_model == null:
+		return
+	var drop := crouch_drop_m * _crouch
+	_body_model.position = CHEST - Vector3(0, drop, 0)
+	for leg in _legs:
+		var side := float(leg.side)
+		var hip := Vector3(side * 0.11, -0.45, 0.0)
+		var ankle := Vector3(side * 0.12, -1.16 + drop, 0.02)
+		var knee := _knee(hip, ankle, 0.39, 0.33)
+		_pose_limb(leg.thigh, hip, knee)
+		_pose_limb(leg.shin, knee, ankle)
+		(leg.boot as Node3D).position = ankle + Vector3(0, -0.05, -0.05)
+		var off := Vector3(side * 0.09, 0.0, 0.04)
+		_pose_limb(leg.strut_up, hip + Vector3(side * 0.1, 0.03, 0.04), knee + off)
+		_pose_limb(leg.strut_down, knee + off, ankle + Vector3(side * 0.09, 0.02, 0.03))
+		(leg.knee as Node3D).position = knee + off
+		(leg.calf as Node3D).position = knee.lerp(ankle, 0.5) + Vector3(0, 0, 0.1)
+
+
+## Where a knee goes between hip and ankle for thigh and shin lengths (m), bending forward (-Z).
+static func _knee(hip: Vector3, ankle: Vector3, thigh: float, shin: float) -> Vector3:
+	var span := ankle - hip
+	var d := clampf(span.length(), 0.01, thigh + shin - 0.001)
+	var along := span.normalized()
+	var a := (thigh * thigh - shin * shin + d * d) / (2.0 * d)
+	var h := sqrt(maxf(thigh * thigh - a * a, 0.0))
+	var fwd := Vector3.FORWARD - along * along.dot(Vector3.FORWARD)
+	return hip + along * a + fwd.normalized() * h
 
 
 ## A capsule from a to b (a limb or strut).

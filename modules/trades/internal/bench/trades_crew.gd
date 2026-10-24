@@ -75,7 +75,7 @@ func _online() -> bool:
 ## What this player holds and does now, as the crew sees it.
 func held_state() -> Dictionary:
 	return {"tool": String(bay.tool), "sound": String(bay.looping()),
-			"helmet": bay.helmet_down() > 0.5}
+			"helmet": bay.helmet_down() > 0.5, "crouch": bay.worker.crouched}
 
 
 func _process(_delta: float) -> void:

@@ -232,13 +232,25 @@ func _on_rig_changed(rig_id: String, state: Dictionary) -> void:
 		if s.unit and s.unit.rig_id == rig_id:
 			s.remove_unit()
 	elif s.unit == null or s.unit.rig_id != rig_id or s.unit.unit_id != unit_id:
-		# Once Ship and Bay draws the unit on its rig (rig_unit), its housing is theirs and the
-		# inside is clear from 0.12 m up: ours goes in on that.
-		var yard_bus := Modules.bus("ship_bay") as ShipBayBus
-		var bare := yard_bus != null and yard_bus.has_method("rig_unit")
-		var at: Transform3D = s.rigs[rig_id]
-		s.add_unit(rig_id, unit_id, int(state.get("tier", 3)), at.translated_local(Vector3(0, BARE_FLOOR_M, 0)) if bare else at, bare)
+		# The rig builds the unit when it hears the same signal: look once it has.
+		_place_unit.call_deferred(rig_id, unit_id, int(state.get("tier", 3)))
 	s.refresh_points()
+
+
+## Puts the unit on the rig to work: on Shared Components' coil as the rig built it
+## (rig_unit), else on our own, set in the rig's housing stand-in (clear from 0.12 m up).
+func _place_unit(rig_id: String, unit_id: String, tier: int) -> void:
+	var s := ship_station()
+	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	if s == null or yard_bus == null or str(yard_bus.rig_state(rig_id).get("unit", "")) != unit_id:
+		return
+	var rec := yard_bus.rig_unit(rig_id)
+	var kit := rec.get("kit") as ShipKit
+	if kit and kit.model and is_instance_valid(kit.model.body):
+		s.add_unit(rig_id, unit_id, tier, kit.model.body.global_transform, true, rec)
+	else:
+		var at: Transform3D = s.rigs[rig_id]
+		s.add_unit(rig_id, unit_id, tier, at.translated_local(Vector3(0, BARE_FLOOR_M, 0)), true)
 
 
 ## True while you drive a hover trolley on remote (Ship and Bay): W A S D and the mouse are

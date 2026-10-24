@@ -26,6 +26,9 @@ var _lit: Array[MeshInstance3D] = []
 var _lamps: Array[Light3D] = []
 var _texts: Array[Label3D] = []
 var _dark_mats: Dictionary = {}
+## The door panels' buttons: lit on the ship's standby battery, so they stay on without shore
+## power (like their lamps).
+var _standby_lit: Dictionary = {}
 var _power_tween: Tween
 var _hum: AudioStreamPlayer3D
 ## Door key ("door_lock_out", "door_bulkhead") -> {by, time, parts, meshes, t, open}.
@@ -54,7 +57,7 @@ func _init() -> void:
 			_texts.append(n)
 		elif n is MeshInstance3D:
 			var m := (n as MeshInstance3D).material_override as StandardMaterial3D
-			if m and m.emission_enabled:
+			if m and m.emission_enabled and not _standby_lit.has(n) and not _door_lamp(m):
 				_lit.append(n)
 	set_powered(false)
 
@@ -161,6 +164,17 @@ func _build_doors() -> void:
 				if mi and mi.has_meta("vs_piece") and mi.mesh and box.grow(0.03).has_point(mi.transform * mi.mesh.get_aabb().get_center()):
 					d["meshes"][mi] = mi.position
 		doors[key] = d
+		# The panels' OPEN and CLOSE buttons stand proud of the panel, so F lands on them.
+		var prefix := "doorbtn_%s_" % key
+		for tag: String in importer.kit.tagged:
+			if not tag.begins_with(prefix):
+				continue
+			var open := tag.trim_prefix(prefix).get_slice("_", 0) == "open"
+			for piece: Dictionary in importer.kit.tagged[tag]:
+				if piece.get("shape") is CollisionShape3D:
+					(piece["shape"] as CollisionShape3D).set_meta("ship_bay_use", press_door.bind(key, 1 if open else 0))
+				if piece.get("mesh") is MeshInstance3D:
+					_standby_lit[piece["mesh"]] = true
 		for path: String in importer.parts_by_path:
 			if path.begins_with("system:%s/door_panel" % key):
 				var shape := model.part_collider((importer.parts_by_path[path] as PartData).id)
@@ -168,12 +182,14 @@ func _build_doors() -> void:
 					shape.set_meta("ship_bay_use", press_door.bind(key))
 
 
-## F on a door's panel: asks every player to open it (or shut it, if open).
-func press_door(key: String) -> void:
+## F on a door's panel: asks every player to open it (or shut it, if open). `want`: the OPEN
+## (1) or CLOSE (0) button's own way; -1 for the panel itself, which toggles.
+func press_door(key: String, want: int = -1) -> void:
 	if not doors.has(key):
 		return
 	var bus := Modules.bus("ship_bay")
-	var payload := {"ship": str(name), "door": key, "open": not bool(doors[key]["open"])}
+	var open := not bool(doors[key]["open"]) if want < 0 else want == 1
+	var payload := {"ship": str(name), "door": key, "open": open}
 	if bus and bus.has_method("send_ship_door"):
 		bus.call("send_ship_door", payload)
 	else:
@@ -190,6 +206,14 @@ func set_door(key: String, open: bool, instant := false) -> void:
 	if instant or not is_inside_tree():
 		_place_door(key, 1.0 if open else 0.0)
 	set_process(true)
+
+
+func _door_lamp(m: Material) -> bool:
+	if dressing:
+		for lamps: Array in dressing.door_lamps.values():
+			if lamps.has(m):
+				return true
+	return false
 
 
 func is_door_open(key: String) -> bool:

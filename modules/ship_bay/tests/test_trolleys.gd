@@ -48,8 +48,8 @@ func run_tests() -> void:
 			return h != null and h.volume_db <= -20.0 and h.max_distance <= 25.0),
 			"and hums, low and quiet")
 	var auto: Dictionary = fleet.get("auto_load")
-	check(not auto["s"] and not auto["m"] and not auto["l"] and auto["p2"] and auto["p6"] and auto["h"],
-			"the big trolleys don't load by themselves; the goods-in lifts and the heavy lift do: %s" % [auto])
+	check(not auto.has("s") and not auto.has("m") and not auto.has("l") and auto["p2"] and auto["p6"] and auto["h"],
+			"the yard's trolleys never load deliveries; the goods-in lifts and the heavy lift do: %s" % [auto])
 	check((bus.shipyard_rooms()["stock"]["box"] as AABB).has_point(trolleys["p"].global_position + Vector3(0, 1, 0)), "the lift in the stores")
 	# The walker stays out of the way at the far end of the courtyard.
 	yard.call("set_walker_active", false)
@@ -108,6 +108,11 @@ func run_tests() -> void:
 		auto[id] = false
 	for id: String in ["s", "m", "l"]:
 		bus.command_trolley(id, "put_away")
+	await get_tree().physics_frame
+	check(["s", "m", "l"].all(func(id: String) -> bool: return (fleet.get("jobs")[id] as Dictionary).is_empty()),
+			"the small, medium and large trolleys won't put deliveries away")
+	for id: String in ["p2", "p3", "h"]:
+		bus.command_trolley(id, "put_away")
 	var beams: Node = fleet.get("beams")
 	var flown := {}
 	var beam_like_player := true
@@ -129,10 +134,9 @@ func run_tests() -> void:
 	for id: String in trolleys:
 		states[id] = "%s at %s" % [trolleys[id].get("status"), trolleys[id].global_position.snapped(Vector3(0.1, 0.1, 0.1))]
 	check(bus.delivered_crates().is_empty(), "every crate put away: %s (%s)" % [bus.delivered_crates().keys(), states])
-	check(carried.size() == 3 and carried.values().all(func(by: String) -> bool: return by != "p" and by != "h"),
-			"hover trolleys load them off the goods-in floor: %s" % [carried])
-	check(shelved.get("PO-21/1") == "p" and shelved.get("PO-21/2") == "p" and shelved.get("PO-21/3") == "h",
-			"the picking lift takes the shelf goods off the trolley, the heavy lift the reactor: %s" % [shelved])
+	check(carried.size() == 3 and carried.values().all(func(by: String) -> bool: return not ["s", "m", "l"].has(by)),
+			"the goods-in lifts and the heavy lift load them off the goods-in floor: %s" % [carried])
+	check(str(carried.get("PO-21/3", "")) == "h" or shelved.get("PO-21/3") == "h", "the heavy lift takes the reactor: %s %s" % [carried, shelved])
 	check(bus.stock_at(bus.home_location("IonThruster")).get("qty") == 2, "the thrusters are on their home")
 	check(flown.size() >= 3, "goods are beamed on and off the trolleys, not just moved: %s" % [flown.keys()])
 	check(beam_like_player, "in a beam drawn like the player's tractor beam")
@@ -142,7 +146,8 @@ func run_tests() -> void:
 	check(bus.stock_count("M10") == 100 and reactor_at.size() == 1 and str(Layout.get_layout()["locations"][reactor_at[0]]["store"]) != "small",
 			"the bolts in their bin, the reactor on a big rack: %s" % [reactor_at])
 	var level: float = (Layout.get_layout()["locations"][place]["at"] as Vector3).y
-	check(float(lifted["p"]) >= level - 0.02, "the picking lift raised the thrusters to their shelf: %.2f of %.2f" % [lifted["p"], level])
+	var raiser := str(shelved.get("PO-21/1", carried.get("PO-21/1", "p")))
+	check(float(lifted[raiser]) >= level - 0.02, "the lift raised the thrusters to their shelf: %s %.2f of %.2f" % [raiser, lifted[raiser], level])
 	# Then they go home and park.
 	for i in 2400:
 		await get_tree().physics_frame
