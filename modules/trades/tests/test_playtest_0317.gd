@@ -96,6 +96,37 @@ func run_tests() -> void:
 	station._update_ring_focus()
 	check(stand.focus_radius == TradesShipJoints.QUIET_NEAR_M or not rig.hud_showing(), "only those within %.1f m show" % TradesShipJoints.QUIET_NEAR_M)
 
+	# Crouching (C): the body gets down, the eye drops, the walk slows, and it stands back up
+	# only where there's room.
+	var worker := rig.worker
+	worker.global_position = Vector3(10, 0.0, 10)
+	await frames(2)
+	var boot := worker._legs[0].boot as Node3D
+	var boot_up := (boot.global_position - worker.global_position).y
+	check(worker.set_crouch(true) and worker.crouched, "C gets you down")
+	await get_tree().create_timer(worker.crouch_time_s + 0.15).timeout
+	check(absf(worker.eye_height() - (BenchWorker.EYE - worker.crouch_drop_m)) < 0.01, "the eye drops (%.2f m)" % worker.eye_height())
+	check(absf(worker._body_shape.height - (BenchWorker.HEIGHT - worker.crouch_drop_m)) < 0.001, "and the body's capsule is shorter")
+	check(absf((boot.global_position - worker.global_position).y - boot_up) < 0.02, "the boots stay on the floor (%.2f m up)" % (boot.global_position - worker.global_position).y)
+	check(rig.crew.held_state().get("crouch", false), "the crew are told you're crouched")
+	var roof := StaticBody3D.new()
+	var roof_shape := CollisionShape3D.new()
+	var roof_box := BoxShape3D.new()
+	roof_box.size = Vector3(2, 0.1, 2)
+	roof_shape.shape = roof_box
+	roof.add_child(roof_shape)
+	yard.add_child(roof)
+	roof.global_position = worker.global_position + Vector3(0, 1.5, 0)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	check(not worker.set_crouch(false) and worker.crouched, "under something low you stay down")
+	roof.queue_free()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	check(worker.set_crouch(false) and not worker.crouched, "out from under it you stand")
+	await get_tree().create_timer(worker.crouch_time_s + 0.15).timeout
+	check(absf(worker.eye_height() - BenchWorker.EYE) < 0.001, "eye back up")
+
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
 
