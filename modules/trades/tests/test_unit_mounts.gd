@@ -39,7 +39,7 @@ func run_tests() -> void:
 
 	# A coil goes on the rig (as Ship and Bay's rig_changed says): closed, its cover's joints in.
 	station.rigs[RIG] = Transform3D(Basis(), AT)
-	rig._on_rig_changed(RIG, {"unit": "attractor_coil_1", "tier": 3})
+	station.add_unit(RIG, "attractor_coil_1", 3, Transform3D(Basis(), AT))
 	await frames(1)
 	var unit := station.unit
 	check(unit != null and unit.unit_id == "attractor_coil_1", "the coil is on the rig")
@@ -140,7 +140,7 @@ func run_tests() -> void:
 	check(bus.unit_state(RIG).is_empty(), "unit_state is empty")
 
 	# A tier 1 coil has only the core seat.
-	rig._on_rig_changed(RIG, {"unit": "attractor_coil_1", "tier": 1})
+	station.add_unit(RIG, "attractor_coil_1", 1, Transform3D(Basis(), AT))
 	check(station.unit.seats.size() == 1 and station.unit.seats[0] == "core", "tier 1: the core seat only (%s)" % [station.unit.seats])
 	station.remove_unit()
 	var bare := station.add_unit(RIG, "attractor_coil_1", 3, Transform3D(Basis(), AT), true)
@@ -148,10 +148,85 @@ func run_tests() -> void:
 			"when the rig draws the case, ours draws none but keeps the cover's joints")
 	station.remove_unit()
 
+	await _rig_path(ship_bus, rig, station)
+	await _on_the_model(bus, rig, station)
+
 	yard.queue_free()
 	await frames(1)
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
+
+
+## Ship and Bay's rig: a unit mounted there comes to Tools, set in the rig's housing while the
+## rig has no model of it (this fake yard has no rig node), and goes when it's taken off.
+func _rig_path(ship_bus: ShipBayBus, rig: TradesBay, station: TradesShipJoints) -> void:
+	ship_bus.rig_mount(RIG, "attractor_coil_2")
+	await frames(2)
+	check(station.unit != null and station.unit.unit_id == "attractor_coil_2" and station.unit.bare,
+			"a coil mounted on Ship and Bay's rig comes to Tools")
+	check(station.points.any(func(f: FastenerPoint) -> bool: return f.joint_id == "rig_emitter/b1"),
+			"with the rig's hold-down bolts to work")
+	ship_bus.rig_unmount(RIG)
+	await frames(2)
+	check(station.unit == null, "taken off the rig, it's gone")
+
+
+## On Shared Components' coil (what the rig builds): its cover's bolts and tacks, add-ons fitted
+## with fit_addon and taken off again, each joint on the model only while it's made.
+func _on_the_model(bus: TradesBus, rig: TradesBay, station: TradesShipJoints) -> void:
+	var body := RigidBody3D.new()
+	body.freeze = true
+	add_child(body)
+	body.global_position = AT
+	var kit := ShipKit.new(body)
+	kit.model = PartModel.new(body, true)
+	var rec := UpgradeUnits.attractor_coil(kit, 3, Transform3D(Basis(), Vector3(0, 0.15, 0)), "rig:emitter")
+	rec["kit"] = kit
+	var model := kit.model
+	var before := model.connections.size()
+	var unit := station.add_unit(RIG, "attractor_coil_3", 3, body.global_transform, true, rec)
+	await frames(1)
+	check(unit.model == model and unit.seats.size() == 3, "on their model, three mounts: %s" % [unit.seats])
+	check(model.connections.size() == before, "the trial fits leave nothing behind (%d, was %d)" % [model.connections.size(), before])
+	var cover := unit.mount_joints("cover")
+	check(cover.filter(func(f: FastenerPoint) -> bool: return f.kind == "bolt").size() == 4
+			and cover.filter(func(f: FastenerPoint) -> bool: return f.kind == "weld").size() == 2, "the cover's 4 bolts and 2 tacks are theirs")
+	check(unit.mount_joints("core").size() == 2 and unit.mount_joints("emitter").size() == 1 and unit.mount_joints("board").size() == 1,
+			"the core's 2 clamps, the array's seam, the board's plug")
+	var c0 := (rec["bolts"] as Array)[0] as ConnectionData
+	check(cover[0].position.is_equal_approx(c0.local_position), "where their model has them")
+	for f in cover:
+		station._note_removed(_point(station, f.joint_id))
+	await frames(1)
+	var lid := rec["cover"] as PartData
+	check(unit.is_open() and model.connections.size() == before - 6, "cover joints out: off the model too (%d)" % model.connections.size())
+	check(not lid.local_transform.is_equal_approx(unit._cover_closed), "and the cover lifts off")
+	for seat: String in unit.seats:
+		station._set_seat(unit.slot_of(seat) + "/fitted", true)
+	await frames(1)
+	var names := model.parts.values().map(func(p: PartData) -> String: return p.part_name)
+	check(names.has("QuantumCore") and names.has("FieldEmitter") and names.has("ControlBoard"), "their add-ons go in: %s" % [names])
+	check(bus.unit_state(RIG).get("fitted") == {"core": "quantum_core_3", "emitter": "field_emitter_3", "board": "control_board"},
+			"Quality reads the part ids: %s" % [bus.unit_state(RIG).get("fitted")])
+	check(model.connections.size() == before - 6, "their joints start undone")
+	var clamp := unit.mount_joints("core")[0]
+	station._made(_point(station, clamp.joint_id), 0.9)
+	check(model.connections.size() == before - 5, "a clamp bolt made is on the model")
+	station._note_removed(_point(station, clamp.joint_id))
+	station._set_seat(unit.slot_of("board") + "/fitted", false)
+	names = model.parts.values().map(func(p: PartData) -> String: return p.part_name)
+	check(not names.has("ControlBoard") and model.connections.size() == before - 6, "the board lifts back out")
+	station._made(_point(station, cover[0].joint_id), 1.0)
+	check(lid.local_transform.is_equal_approx(unit._cover_closed) and model.connections.size() == before - 5, "a cover bolt in: the cover's back on")
+	station.remove_unit()
+	body.queue_free()
+
+
+func _point(station: TradesShipJoints, joint_id: String) -> FastenerPoint:
+	for f in station.points:
+		if f.joint_id == joint_id:
+			return f
+	return null
 
 
 ## The mount patterns on their own: what holds each add-on, ids unique, in mount space.
