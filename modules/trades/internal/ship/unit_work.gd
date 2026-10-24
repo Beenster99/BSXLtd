@@ -51,6 +51,9 @@ var rig_id := ""
 var unit_id := ""
 var seats: Array[String] = []
 var tier := 3
+## True when the rig draws the unit's housing itself (Ship and Bay's stand-in, then Shared
+## Components' coil): no case, lid or windings of ours, only the seats, add-ons and joints.
+var bare := false
 ## Every joint in unit space: the cover's, then each seat's.
 var joints: Array[FastenerPoint] = []
 ## joint_id -> true while made (the station's `practice`); "<slot>/fitted" for the seats.
@@ -195,7 +198,11 @@ func _ready() -> void:
 	_ring_on = TradesLook.glow(GREEN, 0.9)
 	_ring_off = TradesLook.glow(AMBER, 0.9)
 	_head = TradesLook.metal(Color(0.62, 0.64, 0.66), 0.9, 0.35)
-	_build_housing()
+	if bare:
+		_cover = Node3D.new()
+		add_child(_cover)
+	else:
+		_build_housing()
 	for seat in seats:
 		_ghosts[seat] = _build_ghost(seat)
 		_addons[seat] = _build_addon(seat)

@@ -204,9 +204,11 @@ func _add_fixture(list: Array, at: Transform3D) -> void:
 
 
 ## Puts a unit on the rig `rig_id` (at: the rig's world transform), closed, nothing in yet.
-func add_unit(rig_id: String, unit_id: String, tier: int, at: Transform3D) -> TradesUnitWork:
+## `bare`: the rig draws the unit's case itself.
+func add_unit(rig_id: String, unit_id: String, tier: int, at: Transform3D, bare := false) -> TradesUnitWork:
 	remove_unit()
 	unit = TradesUnitWork.new(rig_id, unit_id, tier)
+	unit.bare = bare
 	var start := unit.starting_state()
 	for id: String in start:
 		practice[id] = start[id]

@@ -58,6 +58,8 @@ const YARD_STRETCH_M := 3.4
 const YARD_SHIP_AT := Vector3(0, 1.6, 0)
 ## The upgrade rig (Component Upgrades U1): Ship and Bay's spot, origin on its deck.
 const RIG_SPOT := "rig_emitter"
+## How high the inside of Ship and Bay's stand-in housing is clear from (m).
+const BARE_FLOOR_M := 0.09
 ## Where the tool test stand goes (Ship and Bay's shipyard_spot: the Pre-assembly wing).
 const TEST_STAND_SPOT := "bench_preassembly"
 
@@ -230,7 +232,12 @@ func _on_rig_changed(rig_id: String, state: Dictionary) -> void:
 		if s.unit and s.unit.rig_id == rig_id:
 			s.remove_unit()
 	elif s.unit == null or s.unit.rig_id != rig_id or s.unit.unit_id != unit_id:
-		s.add_unit(rig_id, unit_id, int(state.get("tier", 3)), s.rigs[rig_id])
+		# Once Ship and Bay draws the unit on its rig (rig_unit), its housing is theirs and the
+		# inside is clear from 0.12 m up: ours goes in on that.
+		var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+		var bare := yard_bus != null and yard_bus.has_method("rig_unit")
+		var at: Transform3D = s.rigs[rig_id]
+		s.add_unit(rig_id, unit_id, int(state.get("tier", 3)), at.translated_local(Vector3(0, BARE_FLOOR_M, 0)) if bare else at, bare)
 	s.refresh_points()
 
 

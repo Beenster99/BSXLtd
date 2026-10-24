@@ -143,6 +143,10 @@ func run_tests() -> void:
 	rig._on_rig_changed(RIG, {"unit": "attractor_coil_1", "tier": 1})
 	check(station.unit.seats.size() == 1 and station.unit.seats[0] == "core", "tier 1: the core seat only (%s)" % [station.unit.seats])
 	station.remove_unit()
+	var bare := station.add_unit(RIG, "attractor_coil_1", 3, Transform3D(Basis(), AT), true)
+	check(bare.get_node_or_null("Body") == null and bare.mount_joints("cover").size() == 6,
+			"when the rig draws the case, ours draws none but keeps the cover's joints")
+	station.remove_unit()
 
 	yard.queue_free()
 	await frames(1)
