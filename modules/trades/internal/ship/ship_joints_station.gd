@@ -119,6 +119,13 @@ var _looms: Dictionary = {}
 ## than by Ship and Bay: joint_id -> true while made.
 var test_stand: TradesTestStand
 var practice := {}
+## A unit opened on an upgrade rig for its add-ons (trades.unit_mounts, TradesUnitWork): its
+## joints and seats keep their state in `practice` too, and their qualities here for Quality.
+var unit: TradesUnitWork
+var _unit_quality := {}
+## Upgrade rigs' hold-down bolts are Ship and Bay's joints (rig_points): rig_id -> the rig's
+## world transform, so their points are read in with the ship's.
+var rigs := {}
 
 
 func build() -> void:
@@ -175,7 +182,107 @@ func refresh_points() -> void:
 				g.seam_up = (to_ship.basis * f.seam_up).normalized()
 			points.append(g)
 			points_world.append(test_stand.global_transform * f.position)
+	if unit and unit.is_inside_tree():
+		_add_fixture(unit.workable(), unit.global_transform)
+	if _bus and _bus.has_method("rig_points"):
+		for rig_id: String in rigs:
+			_add_fixture(_bus.call("rig_points", rig_id), rigs[rig_id])
 	aimed = -1
+
+
+## Joints given in a fixture's own space (`at`: its world transform), read in as ship space.
+func _add_fixture(list: Array, at: Transform3D) -> void:
+	var to_ship := ship_xform.affine_inverse() * at
+	for f: FastenerPoint in list:
+		var g := f.duplicate() as FastenerPoint
+		g.position = to_ship * f.position
+		g.normal = (to_ship.basis * f.normal).normalized()
+		if f.seam_up != Vector3.ZERO:
+			g.seam_up = (to_ship.basis * f.seam_up).normalized()
+		points.append(g)
+		points_world.append(at * f.position)
+
+
+## Puts a unit on the rig `rig_id` (at: the rig's world transform), closed, nothing in yet.
+func add_unit(rig_id: String, unit_id: String, tier: int, at: Transform3D) -> TradesUnitWork:
+	remove_unit()
+	unit = TradesUnitWork.new(rig_id, unit_id, tier)
+	var start := unit.starting_state()
+	for id: String in start:
+		practice[id] = start[id]
+	unit.state = practice
+	add_child(unit)
+	unit.global_transform = at
+	refresh_points()
+	_unit_changed()
+	return unit
+
+
+## The unit came off its rig.
+func remove_unit() -> void:
+	if unit == null:
+		return
+	for id: String in unit.starting_state():
+		practice.erase(id)
+		_unit_quality.erase(id)
+	var rig_id := unit.rig_id
+	unit.queue_free()
+	unit = null
+	refresh_points()
+	var bus := bay.bus() if bay else null
+	if bus:
+		bus.note_unit(rig_id, {})
+
+
+## A rig joint (Ship and Bay's hold-down bolts): its slot is the rig's id.
+func is_rig(f: FastenerPoint) -> bool:
+	return rigs.has(FastenerPoint.slot_of(f.joint_id))
+
+
+static func is_unit(f: FastenerPoint) -> bool:
+	return FastenerPoint.slot_of(f.joint_id).begins_with("unit_")
+
+
+## The unit's joints or seats changed (here or by a crewmate): the points to work, and Quality.
+func _unit_changed(joint_id: String = "") -> void:
+	if unit == null:
+		return
+	refresh_points.call_deferred()
+	var bus := bay.bus() if bay else null
+	if bus == null:
+		return
+	if joint_id != "" and not joint_id.ends_with("/fitted"):
+		bus.unit_joint_changed.emit(unit.rig_id, joint_id, bool(practice.get(joint_id, false)), float(_unit_quality.get(joint_id, 1.0)))
+	bus.note_unit(unit.rig_id, unit.report(_unit_quality))
+
+
+## F at the unit: puts an add-on on the empty seat you point at, or lifts one off whose
+## joints are all out. True when it did something.
+func use_unit() -> bool:
+	if unit == null:
+		return false
+	var seat := unit.seat_near(bay.worker.aim_origin(), bay.worker.aim_dir())
+	if seat == "":
+		return false
+	var id := unit.slot_of(seat) + "/fitted"
+	if not unit.is_fitted(seat):
+		_set_seat(id, true)
+		bay.play(&"clunk", 0.9)
+		bay.hint("%s in. Fasten it down." % TradesUnitWork.ADDON_NAMES[seat])
+	elif unit.can_lift(seat):
+		_set_seat(id, false)
+		bay.play(&"clunk", 1.2)
+		bay.hint("%s out." % TradesUnitWork.ADDON_NAMES[seat])
+	else:
+		bay.hint("Undo the %s's joints first." % TradesUnitWork.ADDON_NAMES[seat].to_lower())
+	return true
+
+
+func _set_seat(id: String, on: bool) -> void:
+	practice[id] = on
+	if bay and bay.crew:
+		bay.crew.share_practice(id, on)
+	_unit_changed(id)
 
 
 ## Puts the tool test stand up at `at` (world; +Z toward where you stand).
@@ -190,8 +297,10 @@ func add_test_stand(at: Transform3D) -> TradesTestStand:
 	return test_stand
 
 
+## A joint Tools keeps the state of itself (the test stand's, an opened unit's), rather
+## than Ship and Bay.
 static func is_practice(f: FastenerPoint) -> bool:
-	return FastenerPoint.slot_of(f.joint_id) == TradesTestStand.SLOT
+	return FastenerPoint.slot_of(f.joint_id) == TradesTestStand.SLOT or is_unit(f)
 
 
 ## Whether a joint is made: the ship's from Ship and Bay, the test stand's from `practice`.
@@ -209,6 +318,9 @@ func _note_made(f: FastenerPoint, quality: float) -> bool:
 	practice[f.joint_id] = true
 	if bay and bay.crew:
 		bay.crew.share_practice(f.joint_id, true)
+	if is_unit(f):
+		_unit_quality[f.joint_id] = quality
+		_unit_changed(f.joint_id)
 	return true
 
 
@@ -216,6 +328,8 @@ func _note_made(f: FastenerPoint, quality: float) -> bool:
 func set_practice(joint_id: String, made: bool) -> void:
 	if practice.has(joint_id):
 		practice[joint_id] = made
+		if joint_id.begins_with("unit_"):
+			_unit_changed(joint_id)
 
 
 func _note_removed(f: FastenerPoint) -> bool:
@@ -227,6 +341,9 @@ func _note_removed(f: FastenerPoint) -> bool:
 		gone = true
 		if bay and bay.crew:
 			bay.crew.share_practice(f.joint_id, false)
+		if is_unit(f):
+			_unit_quality.erase(f.joint_id)
+			_unit_changed(f.joint_id)
 	if gone and f.kind == "bolt":
 		_drop_bolt(f)
 	return gone
@@ -266,8 +383,13 @@ func pop_part(kind: String, at: Vector3, vel: Vector3) -> void:
 
 ## The part a joint holds ("" when none): the ship's from Ship and Bay.
 func _component_of(f: FastenerPoint) -> String:
+	if is_unit(f) and unit:
+		var mount := unit.mount_of(f.joint_id)
+		return "Unit cover" if mount == "cover" else str(TradesUnitWork.ADDON_NAMES.get(mount, ""))
 	if is_practice(f):
 		return "Test panel"
+	if is_rig(f):
+		return "Unit hold-down"
 	return _bus.get_component(FastenerPoint.slot_of(f.joint_id)) if _bus else ""
 
 
@@ -671,7 +793,7 @@ func _bolt_made(f: FastenerPoint, nm: float, stripped: bool) -> void:
 ## Tells Quality (through Tools' joint_completed) what was built on the ship.
 func _report(f: FastenerPoint, trade: StringName, measurements: Dictionary) -> void:
 	var bus := bay.bus()
-	if bus == null or is_practice(f):
+	if bus == null or is_practice(f) or is_rig(f):
 		return
 	var site := JointSite.new()
 	site.joint_id = StringName(f.joint_id)
@@ -1099,10 +1221,20 @@ func inspect_lines() -> PackedStringArray:
 ## The test stand's sheet: what's on it, how many of each are in, and the joint you're on.
 func _practice_lines(joint: FastenerPoint) -> PackedStringArray:
 	var lines := PackedStringArray(["TOOL TEST STAND"])
-	lines.append("%-9s %s" % ["PART", "Test panel (practice only)"])
-	lines.append("%-9s %s" % ["SLOT", TradesTestStand.SLOT])
+	var all := test_stand.joints if test_stand else ([] as Array[FastenerPoint])
+	if is_unit(joint) and unit:
+		# An opened unit's mount: what goes there, and the unit it's in.
+		var mount := unit.mount_of(joint.joint_id)
+		lines = PackedStringArray([_component_of(joint).to_upper()])
+		lines.append("%-9s %s" % ["UNIT", unit.unit_id if unit.unit_id != "" else "-"])
+		lines.append("%-9s %s" % ["MOUNT", mount])
+		lines.append("%-9s %s" % ["STATE", "open" if unit.is_open() else "closed"])
+		all = unit.mount_joints(mount)
+	else:
+		lines.append("%-9s %s" % ["PART", "Test panel (practice only)"])
+		lines.append("%-9s %s" % ["SLOT", TradesTestStand.SLOT])
 	var groups := {}
-	for f in test_stand.joints:
+	for f in all:
 		var g: Array = groups.get_or_add("%s %s" % [f.kind, f.spec], [0, 0, f])
 		g[0] += 1
 		if practice.get(f.joint_id, false):
@@ -1378,6 +1510,9 @@ func _update_ring_focus() -> void:
 	if test_stand:
 		test_stand.focus = at
 		test_stand.focus_radius = radius
+	if unit:
+		unit.focus = at
+		unit.focus_radius = radius
 	if radius == _focus_radius_sent and (radius == INF or at.distance_to(_focus_sent) < 0.05):
 		return
 	_focus_sent = at
@@ -1450,7 +1585,10 @@ func aim_spec(tool: StringName) -> String:
 func _part_line(f: FastenerPoint) -> String:
 	var all: Array[FastenerPoint] = []
 	var state := ""
-	if is_practice(f):
+	if is_unit(f) and unit:
+		all = unit.mount_joints(unit.mount_of(f.joint_id))
+		state = "Cover" if unit.mount_of(f.joint_id) == "cover" else "Fitted"
+	elif is_practice(f):
 		all = test_stand.joints
 		state = "Practice panel"
 	elif _bus:
@@ -1486,7 +1624,7 @@ func actions(tool: StringName) -> Array:
 	if tool == &"tractor":
 		return tractor.actions()
 	if aimed < 0:
-		return []
+		return _unit_actions()
 	var f := points[aimed]
 	if _working >= 0:
 		return [["Let go", "stop"]]
@@ -1574,7 +1712,7 @@ func _place_marker() -> void:
 
 ## No joint of its part is in yet.
 func _first_joint(f: FastenerPoint) -> bool:
-	if is_practice(f):
+	if is_practice(f) or is_rig(f):
 		return false
 	for g in _bus.get_fasteners(FastenerPoint.slot_of(f.joint_id)):
 		if _bus.is_joint_tight(g.joint_id):
@@ -1583,7 +1721,7 @@ func _first_joint(f: FastenerPoint) -> bool:
 
 
 func _slot_empty(f: FastenerPoint) -> bool:
-	if is_practice(f):
+	if is_practice(f) or is_rig(f):
 		return false
 	return _bus.get_slot_state(FastenerPoint.slot_of(f.joint_id)) == ShipBayBus.SlotState.EMPTY
 
@@ -1607,6 +1745,25 @@ func _tight_count() -> int:
 func reset() -> void:
 	tractor.release()
 	_stop()
+
+
+func key(action: String) -> bool:
+	if action == Keys.INTERACT and aimed < 0 and _working < 0:
+		return use_unit()
+	return false
+
+
+## F's tip when you point into an opened unit, at a seat.
+func _unit_actions() -> Array:
+	if unit == null:
+		return []
+	var seat := unit.seat_near(bay.worker.aim_origin(), bay.worker.aim_dir())
+	if seat == "":
+		return []
+	var what := str(TradesUnitWork.ADDON_NAMES[seat]).to_lower()
+	if not unit.is_fitted(seat):
+		return [[Keys.INTERACT, "fit the %s" % what]]
+	return [[Keys.INTERACT, "lift the %s out" % what]] if unit.can_lift(seat) else []
 
 
 ## Release screenshot: a joint of `kind` mid-job (a bolt being torqued, a plug pulled...),
