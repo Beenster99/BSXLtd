@@ -87,6 +87,7 @@ flags = {
 "trades.near_rings": true,
 "trades.no_pinning": true,
 "trades.crew_tools": true,
+"trades.unit_mounts": true,
 "ui": true,
 "ui.debug_tab": true
 }

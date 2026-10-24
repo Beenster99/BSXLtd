@@ -16,6 +16,11 @@ signal joint_removed(joint_id: StringName)
 ## A player's tractor beam moved a loose part (yard space is the world here), or let go of it
 ## (holding false). Multiplayer can mirror the part from this.
 signal part_beamed(peer_id: int, slot_id: String, xform: Transform3D, holding: bool)
+## Component Upgrades (trades.unit_mounts): a joint inside a unit on an upgrade rig was made
+## or taken out ("unit_<rig>_<mount>/<b1|w1|c1...>"; quality 0..1 as for ship joints).
+signal unit_joint_changed(rig_id: String, joint_id: String, made: bool, quality: float)
+## The unit on a rig changed: its state as unit_state() gives it ({} once it's off the rig).
+signal unit_changed(rig_id: String, state: Dictionary)
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
@@ -50,6 +55,7 @@ const HOTBAR_KEYS := 9
 var _sites: Dictionary = {}
 var _results: Dictionary = {}
 var _modifiers: Dictionary = {}  # str(player_id) -> {effect_key: value}
+var _units: Dictionary = {}  # rig_id -> unit_state()
 
 
 func register_module() -> void:
@@ -156,6 +162,23 @@ func complete_joint(joint_site: JointSite, measurements: Dictionary, peer_id: in
 	_results[r.joint_id] = r
 	joint_completed.emit(r)
 	return r
+
+
+## The unit on an upgrade rig as Tools has it: {unit (id), tier, open (cover off), seats (the
+## add-on seats it has: "core", "emitter", "board"), fitted (seat -> the add-on part in it,
+## Shared Components' id: "quantum_core_3", "field_emitter_3", "control_board"),
+## joints (joint_id -> quality 0..1, or -1.0 while not made)}; {} with no unit on the rig.
+func unit_state(rig_id: String) -> Dictionary:
+	return (_units.get(rig_id, {}) as Dictionary).duplicate(true)
+
+
+## Called by the module's own station when a unit's joints or add-ons change.
+func note_unit(rig_id: String, state: Dictionary) -> void:
+	if state.is_empty():
+		_units.erase(rig_id)
+	else:
+		_units[rig_id] = state.duplicate(true)
+	unit_changed.emit(rig_id, state)
 
 
 ## Called by the module's own tools when a finished joint is taken apart.
