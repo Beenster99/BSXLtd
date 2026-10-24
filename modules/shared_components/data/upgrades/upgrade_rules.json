@@ -1,0 +1,56 @@
+{
+  "format": "bsx-upgrade-rules",
+  "version": 1,
+  "notes": [
+    "BSX's side of Component Upgrades (stage U1). A family is a Void Salvage slot unit BSX builds at tiers; an add-on is a BSX-only part fitted inside it on one of the unit's internal mount points.",
+    "Base figures are Void Salvage's BaseShip exports as built (attract_max_mass 8000 kg, attract_reach 18 m, attract_speed 5 m/s, attract_accel 14 m/s2). A tier's figures replace the base; an add-on adds its tier's amount to a figure.",
+    "A unit holds at most max_addons add-ons, one per mount point; an add-on's tier can't be above its unit's tier. Tier 3 needs no special bay in U1 (the heat exchanger rule is U2)."
+  ],
+  "families": {
+    "attractor_coil": {
+      "display_name": "Attractor coil",
+      "slot": "attractor_coil",
+      "slot_box": [1.4, 0.3, 0.4],
+      "base": {"attract_max_mass": 8000, "attract_reach": 18, "attract_speed": 5, "attract_accel": 14},
+      "tiers": [
+        {"tier": 1, "unit": "attractor_coil_1", "display_name": "Attractor coil Mk I", "size": [0.9, 0.22, 0.24], "attract_max_mass": 12000, "attract_reach": 18},
+        {"tier": 2, "unit": "attractor_coil_2", "display_name": "Attractor coil Mk II", "size": [1.15, 0.26, 0.28], "attract_max_mass": 20000, "attract_reach": 24},
+        {"tier": 3, "unit": "attractor_coil_3", "display_name": "Attractor coil Mk III", "size": [1.4, 0.3, 0.3], "attract_max_mass": 32000, "attract_reach": 30}
+      ],
+      "max_addons": 3,
+      "mounts": [
+        {"id": "core_bay", "display_name": "Coil bay", "trade": "bolt", "accepts": ["quantum_core"]},
+        {"id": "emitter_flange", "display_name": "Emitter flange", "trade": "weld", "accepts": ["field_emitter"]},
+        {"id": "harness", "display_name": "Cable harness", "trade": "wire", "accepts": ["control_board"]}
+      ],
+      "tier_3_needs_bay": false,
+      "test": "field_sweep"
+    }
+  },
+  "addons": {
+    "quantum_core": {
+      "display_name": "Quantum core",
+      "blurb": "A sealed cylinder that grows in diameter per tier; it widens the beam's field and lets it hold more.",
+      "fits": ["attractor_coil"],
+      "mount": "core_bay",
+      "tiers": [1, 2, 3],
+      "raises": {"attract_reach": [2, 4, 6], "attract_max_mass": [1000, 2500, 5000]}
+    },
+    "field_emitter": {
+      "display_name": "Field emitter array",
+      "blurb": "Extra emitter horns on the coil housing: the beam reaches further and pulls faster.",
+      "fits": ["attractor_coil"],
+      "mount": "emitter_flange",
+      "tiers": [1, 2, 3],
+      "raises": {"attract_reach": [3, 5, 8], "attract_speed": [1, 2, 3]}
+    },
+    "control_board": {
+      "display_name": "Control board",
+      "blurb": "BSX firmware, wired in: it unlocks the tier and holds the certificate. Every upgraded unit has one.",
+      "fits": ["attractor_coil"],
+      "mount": "harness",
+      "tiers": [1],
+      "raises": {}
+    }
+  }
+}

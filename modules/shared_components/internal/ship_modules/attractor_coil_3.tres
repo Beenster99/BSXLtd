@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShipModuleSpec" format=3]
+
+[ext_resource type="Script" path="res://modules/shared_components/api/ship_module_spec.gd" id="1_smod"]
+
+[resource]
+script = ExtResource("1_smod")
+id = "attractor_coil_3"
+display_name = "Attractor coil Mk III"
+blurb = "BSX's own top coil, built in the shop: the beam lifts four times as much and reaches further."
+category = "handling"
+fits = PackedStringArray("M", "L", "XL")
+mount = "hold"
+stat = "attractor_cap"
+factor = 4.0
+requires = "attractor_coil_2"
+hours = 16.0

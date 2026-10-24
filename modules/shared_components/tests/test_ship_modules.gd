@@ -15,7 +15,7 @@ func run_tests() -> void:
 	if lib == null:
 		return
 	var ids := lib.ship_module_ids()
-	check(ids.size() == 10, "ten ship modules: %s" % [ids])
+	check(ids.size() == 11, "eleven ship modules: %s" % [ids])
 	for id in ["attractor_coil_1", "hold_net"]:
 		check(lib.is_ship_module(id), "contracts' module id '%s' exists" % id)
 	check(lib.ship_module("no_such_module") == null, "unknown module is null")
