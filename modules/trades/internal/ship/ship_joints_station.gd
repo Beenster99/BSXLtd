@@ -106,6 +106,12 @@ var _trace_last := NAN
 var _beads: Array = []
 var _ring_loose := TradesLook.glow(Color(1.0, 0.55, 0.1), 2.5)
 var _ring_tight := TradesLook.glow(Color(0.3, 1.0, 0.4), 2.5)
+## trades.quiet_rings: one pale ring, thinner, whatever the state.
+var _ring_quiet := TradesLook.quiet_ring()
+var _ring_mesh: TorusMesh
+var _quiet_mesh: TorusMesh
+## The chalk line along a seam and the torch tip's point (trades.weld_guide).
+var guide: TradesWeldGuide
 ## The tractor beam (tool 7), for lifting parts that are off the ship.
 var tractor: TradesTractor
 var _arc: OmniLight3D
@@ -141,6 +147,12 @@ func build() -> void:
 	ring.outer_radius = 0.036
 	ring.rings = 24
 	ring.ring_segments = 8
+	_ring_mesh = ring
+	_quiet_mesh = TorusMesh.new()
+	_quiet_mesh.inner_radius = 0.029
+	_quiet_mesh.outer_radius = 0.032
+	_quiet_mesh.rings = 24
+	_quiet_mesh.ring_segments = 6
 	_marker = MeshInstance3D.new()
 	_marker.mesh = ring
 	_marker.material_override = _ring_loose
@@ -154,6 +166,8 @@ func build() -> void:
 	_arc.top_level = true
 	_arc.visible = false
 	add_child(_arc)
+	guide = TradesWeldGuide.new()
+	add_child(guide)
 	tractor = TradesTractor.new()
 	tractor.name = "Tractor"
 	tractor.station = self
@@ -611,6 +625,7 @@ func update(delta: float) -> void:
 	_cool_beads(delta)
 	if wiring:
 		_update_wiring()
+		guide.hide_all()
 		return
 	if _working < 0 and not tractor.is_holding():
 		_update_aim()
@@ -618,6 +633,7 @@ func update(delta: float) -> void:
 	_update_ring_focus()
 	_arc.visible = false
 	if _working < 0:
+		_update_guide()
 		return
 	var f := points[_working]
 	var at := points_world[_working]
@@ -640,6 +656,7 @@ func update(delta: float) -> void:
 		_work_bolt(f, at, n)
 	elif f.kind == "weld" and traces(f):
 		_work_trace(f, at, n)
+		_update_guide()
 	else:
 		var need := _seconds(f.kind)
 		var tool := _place(f.kind, at, n, clampf(_held_s / need, 0.0, 1.0))
@@ -1415,6 +1432,25 @@ func _work_trace(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 		_finish(f)
 
 
+## With the welder in hand on a traced seam (trades.weld_guide): the chalk line over the
+## stretches still to run with ticks where an arc may be struck, and the point where the
+## torch's tip meets the work, lit once it's on the line.
+func _update_guide() -> void:
+	var i := _working if _working >= 0 else aimed
+	if not Flags.is_on("trades.weld_guide") or bay.tool != &"welder" or tractor.is_holding() or i < 0 or not traces(points[i]):
+		guide.hide_all()
+		return
+	var f := points[i]
+	var n := (ship_xform.basis * f.normal).normalized()
+	var along := _seam_dir(f, n)
+	var bins: PackedByteArray = _traced.get(f.joint_id, PackedByteArray())
+	guide.show_seam(points_world[i], along, n, f.seam_size.x, bins,
+			start_points(f) if from_end(f) and _working < 0 else PackedFloat32Array())
+	var on_line := points_world[i] + along * _seam_offset(f, points_world[i], n)
+	var on := bay.aim_distance(on_line) < TRACE_M
+	guide.show_tip(on_line if on else pointer_point(), n, on)
+
+
 ## A stretch of fresh bead (or a fresh cut), glowing orange and cooling to nothing.
 func _bead(f: FastenerPoint, at: Vector3, along: Vector3, n: Vector3) -> void:
 	var mesh := CapsuleMesh.new()
@@ -1490,6 +1526,9 @@ static func _make_bolt_mesh() -> Mesh:
 ## Only the rings within this of where you point are lit (m; trades.near_rings, beenster
 ## 0.3.16: "the scene is very busy with green and orange highlights").
 const NEAR_RINGS_M := 2.0
+## With trades.quiet_rings only the few right round the crosshair (beenster, 0.3.17: "only
+## near to where you are pointing").
+const QUIET_NEAR_M := 0.5
 ## How far the pointer looks for something to land on (m).
 const POINTER_RAY_M := 20.0
 var _focus_sent := Vector3.INF
@@ -1513,7 +1552,8 @@ func pointer_point() -> Vector3:
 ## Tells the stand, and the ship's markers (Ship and Bay's set_marker_focus, when it has
 ## it), which rings to light.
 func _update_ring_focus() -> void:
-	var radius := NEAR_RINGS_M if Flags.is_on("trades.near_rings") and bay.hud_showing() else INF
+	var near := QUIET_NEAR_M if Flags.is_on("trades.quiet_rings") else NEAR_RINGS_M
+	var radius := near if Flags.is_on("trades.near_rings") and bay.hud_showing() else INF
 	var at := pointer_point() if radius != INF else Vector3.ZERO
 	if test_stand:
 		test_stand.focus = at
@@ -1702,7 +1742,9 @@ func _place_marker() -> void:
 	_marker.visible = i >= 0
 	if i < 0:
 		return
-	_marker.material_override = _ring_tight if is_tight(points[i]) else _ring_loose
+	var quiet := Flags.is_on("trades.quiet_rings")
+	_marker.mesh = _quiet_mesh if quiet else _ring_mesh
+	_marker.material_override = _ring_quiet if quiet else (_ring_tight if is_tight(points[i]) else _ring_loose)
 	var n := (ship_xform.basis * points[i].normal).normalized()
 	var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
 	var at := points_world[i]

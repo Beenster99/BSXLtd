@@ -75,6 +75,7 @@ var _addons := {}
 var _ghosts := {}
 var _ring_on: StandardMaterial3D
 var _ring_off: StandardMaterial3D
+var _ring_quiet := TradesLook.quiet_ring()
 var _head: StandardMaterial3D
 var _cover_angle := 0.0
 ## Shared Components' unit record (rig_unit), its model, and the add-on in each seat now
@@ -399,7 +400,7 @@ func _show(delta: float) -> void:
 		if not show:
 			continue
 		var on := made(f.joint_id)
-		m.material_override = _ring_on if on else _ring_off
+		m.material_override = _ring_quiet if Flags.is_on("trades.quiet_rings") else (_ring_on if on else _ring_off)
 		# On Shared Components' model the heads are the model's own.
 		(m.get_child(0) as Node3D).visible = on and model == null
 		m.transparency = 0.0 if focus_radius == INF or m.global_position.distance_to(focus) <= focus_radius else 1.0
