@@ -14,6 +14,15 @@ extends Node
 ## the crew can call one from the wrist screen or a TV (the Surveys channel), and marking the
 ## job complete (Contracts' inspection state) brings the final survey, which hands the job
 ## over or sends it back for rework. The host runs the visits; every player gets the reports.
+##
+## Rig tests (quality.rig_tests, Component Upgrades U1): when a crew has fitted add-ons to a
+## unit on a rig, the rig calls run_field_sweep() with the unit, its add-ons and the joint ids
+## it made; Quality scores the sweep from those joints and answers with an UpgradePlate on
+## rig_test_finished (serial, tier, grade, tested figures, or the snags that failed it):
+##   quality.run_field_sweep({"unit_id": "attractor_coil_1", "base": {"attract_reach": 18.0},
+##           "addons": [{"part": "quantum_core", "tier": 2, "mount": "coil_bay"}],
+##           "joint_ids": ["coil_bay_bolts", "loom_plug"]})
+## make_sweep_screen() and make_plate_node() draw the result on the rig and on the unit.
 
 ## A joint was graded (also fired again when a reworked joint is regraded).
 signal joint_graded(record: JointRecord)
@@ -23,22 +32,29 @@ signal record_dropped(joint_id: StringName)
 signal survey_started(kind: StringName, job_id: String, joint_ids: Array)
 ## The surveyors left and their report is in.
 signal survey_finished(report: SurveyReport)
+## A rig test is done; plate.passed says whether the unit is certified (it has a serial).
+signal rig_test_finished(plate: UpgradePlate)
 
 const SCORES := "quality.scores"
 const SURVEYS := "quality.surveys"
 const SCORE_CARD := "quality_score_card"
 const SURVEYS_CHANNEL := "quality.surveys"
+const RIG_TESTS := "quality.rig_tests"
 const SAVE_VERSION := 2
 
 const CALL_EVENT := "quality.survey_call"
 const START_EVENT := "quality.survey_start"
 const REPORT_EVENT := "quality.survey_report"
+const SWEEP_EVENT := "quality.field_sweep"
+const PLATE_EVENT := "quality.plate"
 const NOTICE := "quality.survey"
 const NOTICE_S := 14.0
 
 const SurveyScreen := preload("res://modules/quality/internal/survey_screen.gd")
 const SurveyCrew := preload("res://modules/quality/internal/survey_crew.gd")
 const SurveyDemo := preload("res://modules/quality/internal/survey_demo.gd")
+const SweepScreen := preload("res://modules/quality/internal/sweep_screen.gd")
+const PlateNode := preload("res://modules/quality/internal/plate_node.gd")
 
 var _records: Dictionary = {}
 var _modifiers: Dictionary = {}  # str(peer_id) -> {effect_key: value}
@@ -57,6 +73,9 @@ var _final_pending := false
 var _notice_left := 0.0
 var _yard: Node3D
 var _rng := RandomNumberGenerator.new()
+var rig_rules: RigRules = load("res://modules/quality/internal/data/rig_rules.tres")
+var _plates: Array[UpgradePlate] = []
+var _serials := 0
 
 
 func register_module() -> void:
@@ -91,7 +110,7 @@ func unregister_module() -> void:
 	HudSlots.clear_info(NOTICE)
 	Saves.unregister_section("quality")
 	if _net:
-		for e in [CALL_EVENT, START_EVENT, REPORT_EVENT]:
+		for e in [CALL_EVENT, START_EVENT, REPORT_EVENT, SWEEP_EVENT, PLATE_EVENT]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "quality")
 	if _contracts and _contracts.job_state_changed.is_connected(_on_job_state_changed):
@@ -110,6 +129,8 @@ func attach(contracts: Node, net: Node) -> void:
 		_net.call("register_event", CALL_EVENT, _apply_call, _validate_call)
 		_net.call("register_event", START_EVENT, _apply_start)
 		_net.call("register_event", REPORT_EVENT, _apply_report)
+		_net.call("register_event", SWEEP_EVENT, _apply_sweep, _validate_sweep)
+		_net.call("register_event", PLATE_EVENT, _apply_plate)
 		_net.call("register_snapshot_provider", "quality", self)
 	_random_left = _next_random()
 
@@ -191,6 +212,84 @@ func clear() -> void:
 	_survey = {}
 	_count = 0
 	_final_pending = false
+	_plates = []
+	_serials = 0
+
+
+# Rig tests
+
+## What a field sweep would show now, without running it (rig screens, previews, tests).
+func field_sweep(request: Dictionary) -> UpgradePlate:
+	return FieldSweep.run(request, _records, rig_rules, int(_now()))
+
+
+## Runs the rig's field sweep on a unit (any player may ask; the host scores it). The plate
+## comes back on rig_test_finished for every player. request: see the header.
+func run_field_sweep(request: Dictionary) -> void:
+	if _net:
+		_net.call("request", SWEEP_EVENT, request)
+	elif _validate_sweep(0, request) is Dictionary:
+		_apply_sweep(request)
+
+
+## Every plate, newest first; certified ones carry a serial.
+func plates() -> Array[UpgradePlate]:
+	return _plates.duplicate()
+
+
+func get_plate(serial: String) -> UpgradePlate:
+	for p in _plates:
+		if p.serial == serial and serial != "":
+			return p
+	return null
+
+
+## The latest plate for a unit, or null.
+func last_plate(unit_id: String) -> UpgradePlate:
+	for p in _plates:
+		if p.unit_id == unit_id:
+			return p
+	return null
+
+
+## The rig's screen for a plate: before, rated and tested figures, grade and snags.
+func make_sweep_screen(plate: UpgradePlate, glass := false) -> Control:
+	return SweepScreen.new(plate, glass)
+
+
+## The plate itself, to fix on the unit (a reject tag when it failed). Faces +Z.
+func make_plate_node(plate: UpgradePlate) -> Node3D:
+	return PlateNode.new(plate)
+
+
+func _validate_sweep(_sender: int, p: Dictionary) -> Variant:
+	if not Flags.is_on(RIG_TESTS):
+		return "Rig tests are switched off"
+	if str(p.get("unit_id", "")) == "" or not p.get("base", null) is Dictionary:
+		return "No unit on the rig"
+	return p
+
+
+func _apply_sweep(p: Dictionary) -> void:
+	if not _is_host():
+		return
+	var plate := field_sweep(p)
+	if plate.passed:
+		_serials += 1
+		plate.serial = "%s%04d" % [rig_rules.serial_prefix, _serials]
+	_host_send(PLATE_EVENT, {"plate": plate.to_dict(), "serials": _serials})
+
+
+func _apply_plate(p: Dictionary) -> void:
+	var plate := UpgradePlate.from_dict(p.get("plate", {}))
+	_serials = maxi(_serials, int(p.get("serials", 0)))
+	_plates.push_front(plate)
+	if plate.passed:
+		_notice("%s certified: grade %s" % [FieldSweep.part_words(plate.unit_id).capitalize(), plate.grade],
+				"Tier %d  ·  plate %s" % [plate.tier, plate.serial], NOTICE_S)
+	else:
+		_notice("Field sweep failed", str(plate.snags[0].get("text", "")) if not plate.snags.is_empty() else "", NOTICE_S)
+	rig_test_finished.emit(plate)
 
 
 # Surveys
@@ -406,6 +505,8 @@ func _host_send(event_name: String, payload: Dictionary) -> void:
 		_net.call("host_emit", event_name, payload)
 	elif event_name == START_EVENT:
 		_apply_start(payload)
+	elif event_name == PLATE_EVENT:
+		_apply_plate(payload)
 	else:
 		_apply_report(payload)
 
@@ -440,11 +541,12 @@ static func _kind_words(kind: StringName) -> String:
 # Multiplayer snapshot: a joining player gets the reports and any visit under way.
 
 func get_net_snapshot() -> Dictionary:
-	return {"reports": _report_rows(), "survey": _survey, "count": _count}
+	return {"reports": _report_rows(), "survey": _survey, "count": _count, "plates": _plate_rows(), "serials": _serials}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
 	_load_reports(data)
+	_load_plates(data)
 	_survey = data.get("survey", {})
 
 
@@ -458,7 +560,7 @@ func save_data() -> Dictionary:
 	var rows: Array = []
 	for r: JointRecord in _records.values():
 		rows.append(r.to_dict())
-	return {"records": rows, "reports": _report_rows(), "count": _count}
+	return {"records": rows, "reports": _report_rows(), "count": _count, "plates": _plate_rows(), "serials": _serials}
 
 
 ## Version 1 saves have no reports; their records load with no job and unsurveyed.
@@ -468,6 +570,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 		var r := JointRecord.from_dict(row)
 		_records[r.joint_id] = r
 	_load_reports(data)
+	_load_plates(data)
 	_survey = {}
 	_final_pending = false
 
@@ -477,6 +580,20 @@ func _report_rows() -> Array:
 	for r in _reports:
 		rows.append(r.to_dict())
 	return rows
+
+
+func _plate_rows() -> Array:
+	var rows: Array = []
+	for p in _plates:
+		rows.append(p.to_dict())
+	return rows
+
+
+func _load_plates(data: Dictionary) -> void:
+	_plates = []
+	for row in data.get("plates", []):
+		_plates.append(UpgradePlate.from_dict(row))
+	_serials = int(data.get("serials", 0))
 
 
 func _load_reports(data: Dictionary) -> void:
