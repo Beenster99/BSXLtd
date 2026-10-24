@@ -520,8 +520,10 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 		stop_following()
 	if not _drives(id):
 		return
-	if command == "put_away" and (YARD_TROLLEYS.has(id) or t.is_picker()) and not auto_load.has(id):
-		return   # the picking lift only fetches; the yard's trolleys leave deliveries to goods-in
+	if command == "put_away" and t.is_picker() and not auto_load.has(id):
+		return   # the picking lift only fetches
+	if command == "put_away" and YARD_TROLLEYS.has(id) and not args.has("crate"):
+		return   # the yard's trolleys leave deliveries to goods-in; they come for yard goods (call_trolley_for)
 	if t.is_line() and not ["put_away", "park", "deck", "come", "follow"].has(command):
 		return   # a line's trolley only takes its line's goods to the stores
 	if command == "shelve" and (not t.is_picker() or ["shelve", "fetch"].has(str((jobs[id] as Dictionary).get("do", ""))) \
@@ -1249,6 +1251,8 @@ func _next_crate(id: String, t: Trolley) -> String:
 			continue   # still on its delivery truck
 		if t.is_picker() and (c.has("line") or ["refurb", "grind"].has(str(c.get("route", "")))):
 			continue   # a lift only shelves: line goods go on a trolley
+		if YARD_TROLLEYS.has(id) and not (c.has("line") or ["refurb", "grind"].has(str(c.get("route", "")))):
+			continue   # a delivery on the goods-in floor: the goods-in lifts' job
 		if not t.carries(Layout.kind_for(float(c["mass"]), str(c["item"]))) or not _bus.trolley_has_room(id, cid):
 			continue
 		if _bus.place_for(str(c["item"])) == "":

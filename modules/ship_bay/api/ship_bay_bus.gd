@@ -1229,7 +1229,7 @@ func call_trolley_for(crate_id: String) -> String:
 	var at := crate_position(crate_id)
 	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(float(c.get("mass", 0.0)), str(c.get("item", ""))), at, _beam_claims.values()))
 	if id != "":
-		command_trolley(id, "put_away")
+		command_trolley(id, "put_away", {"crate": crate_id})
 	return id
 
 
