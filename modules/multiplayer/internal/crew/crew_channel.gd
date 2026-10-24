@@ -219,6 +219,7 @@ func _apply_held(p: Dictionary) -> void:
 	var a: Node = _avatars.get(peer)
 	if is_instance_valid(a):
 		a.set("hands_live", bool((p.held as Dictionary).get("hands", false)))
+		a.set("crouch", bool((p.held as Dictionary).get("crouch", false)))
 	held_changed.emit(peer, (p.held as Dictionary).duplicate())
 
 
@@ -340,6 +341,7 @@ func _place_avatars() -> void:
 		a.set_meta("player_name", player_name(id))
 		a.set_meta("peer_id", id)
 		a.set("hands_live", bool(held(id).get("hands", false)))
+		a.set("crouch", bool(held(id).get("crouch", false)))
 		world.add_child(a)
 		_avatars[id] = a
 		net.register_mover(head_id(id), a.get_node("Head"))

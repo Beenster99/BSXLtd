@@ -137,6 +137,13 @@ func _two_players() -> void:
 	check(await _until(func(): return a.held(b_id).get("tool") == "welder"), "what Ben holds reaches the host")
 	check(a.held(b_id) == {"tool": "welder", "using": true, "hands": true}, "held keeps small values and the hands flag: %s" % str(a.held(b_id)))
 	check(not a_held.is_empty() and a_held.back()[0] == b_id, "held_changed tells Tools")
+	var stand_y := a.avatar(b_id).global_position.y
+	b.set_held({"tool": "welder", "using": true, "crouch": true})
+	check(await _until(func(): return bool(a.avatar(b_id).get("crouch"))), "avatar learns Ben crouched")
+	await frames(2)
+	check(is_equal_approx(a.avatar(b_id).global_position.y, stand_y + 0.5), "crouched suit keeps its feet on the floor")
+	b.set_held({"tool": "welder", "using": true})
+	check(await _until(func(): return not bool(a.avatar(b_id).get("crouch"))), "and stands back up")
 	var c := _bus("BusC", "Cas")
 	c.join("127.0.0.1", PORT)
 	check(await _until(func(): return c.held(b_id).get("tool") == "welder"), "a later joiner learns what Ben holds")

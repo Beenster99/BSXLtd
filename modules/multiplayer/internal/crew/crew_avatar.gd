@@ -10,6 +10,8 @@ extends Node3D
 const HEAD_GROUP := "crew_head"
 const HAND_GROUP := "crew_hand"
 const EYE_HEIGHT := 1.65
+## Eye height while crouched (Tools drops the eye 0.5 m and sends "crouch" in held).
+const CROUCH_EYE := 1.15
 const SUIT := Color("e8792b")
 const VISOR := Color("16191c")
 const GLOVE := Color("2b2f33")
@@ -24,6 +26,9 @@ var hand_r := Node3D.new()
 var hand_l := Node3D.new()
 ## True while the player's real hand positions stream in; false keeps the hands at rest.
 var hands_live := false
+## True while the player crouches: the suit squats so its feet stay on the floor.
+var crouch := false
+var _body: MeshInstance3D
 var _arms: Array[MeshInstance3D] = []
 
 
@@ -47,6 +52,7 @@ func _ready() -> void:
 	(body.mesh as CapsuleMesh).height = 1.4
 	body.position = Vector3(0, 0.75, 0)
 	add_child(body)
+	_body = body
 	var tag := Label3D.new()
 	tag.text = str(get_meta("player_name", "")).to_upper()
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -81,7 +87,11 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	var at := head.global_transform
 	var yaw := at.basis.get_euler().y
-	global_transform = Transform3D(Basis(Vector3.UP, yaw), at.origin - Vector3(0, EYE_HEIGHT, 0))
+	var eye := CROUCH_EYE if crouch else EYE_HEIGHT
+	global_transform = Transform3D(Basis(Vector3.UP, yaw), at.origin - Vector3(0, eye, 0))
+	var squat := eye / EYE_HEIGHT
+	_body.scale = Vector3(1, squat, 1)
+	_body.position = Vector3(0, 0.75 * squat, 0)
 	if not hands_live:
 		_rest_hands()
 	_reach(_arms[0], _shoulder(1.0), hand_r.global_position)
