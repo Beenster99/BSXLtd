@@ -89,6 +89,10 @@ func register_module() -> void:
 			Modules.modules_ready.connect(_hook_clock)
 		if _cycle == 0:
 			advance_cycle(1)
+	if Flags.is_on(DEBUG_FLAG) and Flags.is_on(CLIENTS_FLAG):
+		Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Contracts", _debug_section, 30)
+		if not Modules.modules_ready.is_connected(_hook_net):
+			Modules.modules_ready.connect(_hook_net)
 
 
 func unregister_module() -> void:
@@ -96,6 +100,12 @@ func unregister_module() -> void:
 	HudSlots.unregister_holo_channel(BOARD_CHANNEL)
 	if Modules.modules_ready.is_connected(_hook_clock):
 		Modules.modules_ready.disconnect(_hook_clock)
+	if Modules.modules_ready.is_connected(_hook_net):
+		Modules.modules_ready.disconnect(_hook_net)
+	Menu.unregister_settings_section(Menu.DEBUG, DEBUG_SECTION)
+	var net := _net()
+	if net:
+		net.call("unregister_event", DEBUG_EVENT)
 
 
 ## Business runs the day clock when it is on; its day_closed is the board's cycle. Found
@@ -354,8 +364,114 @@ func _open_offers(client_id: String) -> int:
 	return n
 
 
-func _post_generated(client_id: String, at_cycle: int, slot: int) -> String:
-	var tier := maxi(1, level_of(client_id))
+# Debug: call in a contract of any level (Esc > Settings > Debug > Contracts)
+
+## The debug tools (the "Contracts" section on the Debug settings page).
+const DEBUG_FLAG := "contracts.debug"
+const DEBUG_SECTION := "contracts_debug"
+## The host-applied event a call-in goes through in multiplayer.
+const DEBUG_EVENT := "contracts.call_in"
+## Called-in offers take slots from here up, clear of the cycle's own (slot 0).
+const CALL_IN_SLOT := 100
+## Tiers a client posts at: tier 1 for New and Known, up to tier 3 for Preferred.
+const TIERS: PackedStringArray = ["1", "2", "3"]
+
+
+func _net() -> Node:
+	return Modules.bus("multiplayer")
+
+
+func _hook_net() -> void:
+	var net := _net()
+	if net and net.has_method("register_event"):
+		net.call("register_event", DEBUG_EVENT, _apply_call_in, _validate_call_in)
+
+
+## Asks for an offer from a client at a tier (1 to 3), whatever BSX's standing with them:
+## through the host in multiplayer, so every player gets the same offer, else at once.
+func request_call_in(client_id: String, tier: int) -> void:
+	var net := _net()
+	if net and net.has_method("request"):
+		net.call("request", DEBUG_EVENT, {"client": client_id, "tier": tier})
+	else:
+		var p: Variant = _validate_call_in(1, {"client": client_id, "tier": tier})
+		if p is Dictionary:
+			_apply_call_in(p)
+
+
+func _validate_call_in(_sender: int, p: Dictionary) -> Variant:
+	if not Flags.is_on(DEBUG_FLAG):
+		return "debug tools are off"
+	var client_id := str(p.get("client", ""))
+	if not ContractClients.has(client_id):
+		return "no such client"
+	var tier := int(p.get("tier", 0))
+	if tier < 1 or tier > 3:
+		return "tier must be 1 to 3"
+	return {"client": client_id, "tier": tier}
+
+
+func _apply_call_in(p: Dictionary) -> void:
+	call_in(str(p.get("client", "")), int(p.get("tier", 1)))
+
+
+## Posts a generated offer from the client at the tier now, in the first free call-in slot
+## (so the same call on every machine makes the same offer). The new job's id, or "".
+func call_in(client_id: String, tier: int) -> String:
+	if not ContractClients.has(client_id):
+		return ""
+	for slot in range(CALL_IN_SLOT, CALL_IN_SLOT + 100):
+		if _jobs.has("%s.g%d_%d" % [client_id, _cycle, slot]):
+			continue
+		return _post_generated(client_id, _cycle, slot, clampi(tier, 1, 3))
+	return ""
+
+
+## The Debug page's section: pick a client and a tier, call the offer in.
+func _debug_section() -> Control:
+	var col := VBoxContainer.new()
+	col.name = "ContractsDebug"
+	col.add_theme_constant_override("separation", 8)
+	var intro := Label.new()
+	intro.text = "Call in a contract offer from any client at any level, whatever BSX's standing with them. It lands on the board as an offer (host)."
+	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(intro)
+	var picked := {"client": String(ContractClients.TABLE.keys()[0]), "tier": "1"}
+	var names := PackedStringArray()
+	var by_name := {}
+	for id: String in ContractClients.TABLE:
+		var name := ContractClients.display_name(id)
+		names.append(name)
+		by_name[name] = id
+	var client_row := HBoxContainer.new()
+	client_row.add_child(TerminalKit.label("Client", "mono_medium", 13, TerminalKit.DIM))
+	var client_chips := TerminalKit.chips(names, ContractClients.display_name(String(picked["client"])),
+			func(name: String) -> void: picked["client"] = String(by_name.get(name, picked["client"])), false, false)
+	client_chips.name = "ClientChips"
+	client_row.add_child(client_chips)
+	col.add_child(client_row)
+	var tier_row := HBoxContainer.new()
+	tier_row.add_child(TerminalKit.label("Level", "mono_medium", 13, TerminalKit.DIM))
+	var tier_names := PackedStringArray()
+	for t: String in TIERS:
+		tier_names.append("Tier %s (%s)" % [t, ContractClients.level_name(int(t))])
+	var tier_chips := TerminalKit.chips(tier_names, tier_names[0],
+			func(name: String) -> void: picked["tier"] = name.substr(5, 1), false, false)
+	tier_chips.name = "TierChips"
+	tier_row.add_child(tier_chips)
+	col.add_child(tier_row)
+	var button := Button.new()
+	button.name = "CallIn"
+	button.text = "Call in an offer"
+	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	button.pressed.connect(func() -> void: request_call_in(String(picked["client"]), int(String(picked["tier"]))))
+	col.add_child(button)
+	return col
+
+
+func _post_generated(client_id: String, at_cycle: int, slot: int, tier := -1) -> String:
+	if tier < 0:
+		tier = maxi(1, level_of(client_id))
 	_generator.wrecks = Flags.is_on(WRECKS_FLAG)
 	var data := _generator.make(client_id, at_cycle, slot, tier)
 	if data.is_empty() or _jobs.has(String(data.get("contract_id", ""))):
