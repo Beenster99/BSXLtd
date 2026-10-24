@@ -38,8 +38,11 @@ func _ready() -> void:
 	_build_cradles()
 	if _bus == null:
 		return
-	if _bus.ship == null or _bus.ship.ship_id != ship_id:
+	# An emptied bay (Settings > Debug > Ship) stays empty until the Kestrel is brought back.
+	if (_bus.ship == null and not _bus.bay_cleared) or (_bus.ship and _bus.ship.ship_id != ship_id):
 		_bus.load_ship(ship_id)
+	_bus.ship_loaded.connect(_on_ship_changed)
+	_bus.ship_unloaded.connect(_on_ship_changed)
 	_bus.slot_state_changed.connect(_on_slot_changed)
 	_bus.ship_power_changed.connect(_on_power)
 	_bus.component_installed.connect(func(_s: String, _c: String) -> void: _refresh_markers())
@@ -48,6 +51,9 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	if _bus and _bus.ship_loaded.is_connected(_on_ship_changed):
+		_bus.ship_loaded.disconnect(_on_ship_changed)
+		_bus.ship_unloaded.disconnect(_on_ship_changed)
 	if _bus and _bus.slot_state_changed.is_connected(_on_slot_changed):
 		_bus.slot_state_changed.disconnect(_on_slot_changed)
 	if _bus and _bus.ship_power_changed.is_connected(_on_power):
@@ -124,9 +130,21 @@ func _build_stage() -> void:
 	cam.look_at(Vector3(0, cradle_height + 1.2, 2.5))
 
 
+## The bay's ship came or went (Settings > Debug > Ship, or a load): show what's there now.
+func _on_ship_changed(_id: String) -> void:
+	var def := _bus.ship if _bus else null
+	if def == null or model == null or model.get_meta("ship_id", "") != def.ship_id:
+		_show_ship(def)
+
+
 func _show_ship(def: ShipDefinition) -> void:
 	if ship_root:
 		ship_root.queue_free()
+		ship_root = null
+	model = null
+	if access:
+		access.queue_free()
+		access = null
 	pieces = {}
 	markers = {}
 	if def == null:
@@ -137,6 +155,7 @@ func _show_ship(def: ShipDefinition) -> void:
 	add_child(ship_root)
 	if def.model:
 		model = def.model.instantiate() as Node3D
+		model.set_meta("ship_id", def.ship_id)
 		ship_root.add_child(model)
 	pieces = model.call("slot_pieces", def) if model and model.has_method("slot_pieces") else pieces_by_slot(ship_root, def)
 	_build_access()

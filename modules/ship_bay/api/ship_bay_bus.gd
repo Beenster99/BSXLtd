@@ -69,6 +69,8 @@ signal plug_changed(payload: Dictionary)
 
 ## The fastener rings show only within `radius_m` of `at` (world space); INF shows them all.
 signal marker_focus_changed(at: Vector3, radius_m: float)
+## The ships stood on the apron for a look changed (Settings > Debug > Ship): short design names.
+signal yard_ships_changed(ships: PackedStringArray)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -87,6 +89,11 @@ const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
+const DebugShipsPanel := preload("res://modules/ship_bay/internal/ui/debug_ships_panel.gd")
+## The Debug page's section (Settings > Debug > Ship).
+const DEBUG_SECTION := "ship_bay"
+## Designs that can stand on the apron for a look (YardShips.PLACES).
+const YARD_SHIP_DESIGNS: PackedStringArray = ["manta"]
 const SlotTracker := preload("res://modules/ship_bay/internal/slot_tracker.gd")
 const Shipyard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
 const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
@@ -126,6 +133,11 @@ var _contracts: Node
 var _net: Node
 ## The power plug as last shared (plug_changed): late joiners get it in the net snapshot.
 var plug_info: Dictionary = {}
+## Ships stood on the apron's Dock 2 for a look (Settings > Debug > Ship): "manta".
+var yard_ships: PackedStringArray = []
+## True once the bay was emptied from Settings > Debug > Ship: the bay stays empty until
+## the Kestrel is brought back.
+var bay_cleared := false
 
 ## Where fastener rings show (set_marker_focus): round this point, world space, within the
 ## radius (metres; INF: everywhere).
@@ -137,6 +149,8 @@ const MARKER_FOCUS_STEP := 0.1
 
 func register_module() -> void:
 	Saves.register_section("ship_bay", self)
+	Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Ship",
+			func() -> Control: return DebugShipsPanel.new(self), 20)
 	# Driving the yard's vehicles (the lift, the power unit, a trolley on remote control).
 	for k: Array in [["ship_bay.raise", "Raise the lift or deck", KEY_UP], ["ship_bay.lower", "Lower the lift or deck", KEY_DOWN],
 			["ship_bay.call_trolley", "Call a trolley (Shift: large, Ctrl: small)", KEY_T],
@@ -245,6 +259,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.joint", _apply_joint, _stamp)
 	_net.call("register_event", "ship_bay.slot", _apply_slot_move, _stamp)
 	_net.call("register_event", "ship_bay.plug", _apply_plug, _check_plug)
+	_net.call("register_event", "ship_bay.debug_ship", _apply_debug_ship, _check_debug_ship)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
 
@@ -285,6 +300,7 @@ func _on_subject_landed(order_id: String, _crate_ids: PackedStringArray) -> void
 
 func unregister_module() -> void:
 	Saves.unregister_section("ship_bay")
+	Menu.unregister_settings_section(Menu.DEBUG, DEBUG_SECTION)
 	if _contracts and _contracts.is_connected("subject_due", _on_subject_due):
 		_contracts.disconnect("subject_due", _on_subject_due)
 	_contracts = null
@@ -295,7 +311,7 @@ func unregister_module() -> void:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
 				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
-				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug"]:
+				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -562,7 +578,8 @@ func set_ship_powered(on: bool) -> void:
 
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
-	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true)}
+	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true),
+			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -596,6 +613,9 @@ func restore(state: Dictionary) -> void:
 	line_changed.emit()
 	transport_state = (state.get("transport", {}) as Dictionary).duplicate(true)
 	transport_restored.emit(transport_state)
+	yard_ships = PackedStringArray(state.get("yard_ships", []))
+	yard_ships_changed.emit(yard_ships)
+	bay_cleared = bool(state.get("bay_cleared", false))
 	var id: String = state.get("ship_id", "")
 	if id == "":
 		unload_ship()
@@ -1547,6 +1567,17 @@ func send_cradle(payload: Dictionary) -> void:
 		_apply_cradle(payload)
 
 
+## Settings > Debug > Ship, applied by the host for every player: "spawn" or "remove" a
+## design standing on the apron (YARD_SHIP_DESIGNS), "clear_bay" takes the ship out of the
+## bay, "restore_bay" brings the Kestrel back.
+func debug_ship(action: String, design := "") -> void:
+	var payload := {"action": action, "design": design}
+	if _net:
+		_net.call("request", "ship_bay.debug_ship", payload)
+	elif _check_debug_ship(0, payload) is Dictionary:
+		_apply_debug_ship(payload)
+
+
 ## A ship's door opening or shutting, for every player.
 func send_ship_door(payload: Dictionary) -> void:
 	if _net:
@@ -1561,6 +1592,33 @@ func _apply_ship_door(payload: Dictionary) -> void:
 
 func _pass(_sender: int, payload: Dictionary) -> Variant:
 	return payload
+
+
+func _check_debug_ship(_sender: int, payload: Dictionary) -> Variant:
+	var action := str(payload.get("action", ""))
+	if action in ["spawn", "remove"]:
+		return payload if YARD_SHIP_DESIGNS.has(str(payload.get("design", ""))) else "no such ship to stand on the apron"
+	return payload if action in ["clear_bay", "restore_bay"] else "unknown debug action"
+
+
+func _apply_debug_ship(payload: Dictionary) -> void:
+	var design := str(payload.get("design", ""))
+	match str(payload.get("action", "")):
+		"spawn":
+			if not yard_ships.has(design):
+				yard_ships.append(design)
+				yard_ships_changed.emit(yard_ships)
+		"remove":
+			if yard_ships.has(design):
+				yard_ships.remove_at(yard_ships.find(design))
+				yard_ships_changed.emit(yard_ships)
+		"clear_bay":
+			bay_cleared = true
+			unload_ship()
+		"restore_bay":
+			bay_cleared = false
+			if ship == null:
+				load_ship("vs_kestrel")
 
 
 func _apply_transporter(payload: Dictionary) -> void:

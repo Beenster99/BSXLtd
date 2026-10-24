@@ -26,6 +26,7 @@ const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 const Transporters := preload("res://modules/ship_bay/internal/yard/transporters.gd")
 const DeliveryTrucks := preload("res://modules/ship_bay/internal/yard/delivery_trucks.gd")
+const YardShips := preload("res://modules/ship_bay/internal/yard/yard_ships.gd")
 ## Crate tints by category for goods in the stores.
 const CATEGORY_TINT := {
 	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
@@ -215,6 +216,8 @@ var _stores_paint: Dictionary = {}  # category -> crate material
 var _bus: ShipBayBus
 ## The hover trolleys and their console (TrolleyFleet).
 var trolleys: Node3D
+## Ships stood on the apron for a look, Settings > Debug > Ship (yard_ships.gd).
+var yard_ships: Node3D
 ## The delivery trucks that bring each order to the truck doors (delivery_trucks.gd).
 var trucks: Node3D
 ## The city round the yard (YardCity).
@@ -278,6 +281,8 @@ func _ready() -> void:
 	trucks.name = "Trucks"
 	trucks.set("yard", self)
 	add_child(trucks)
+	yard_ships = YardShips.new()
+	add_child(yard_ships)
 	if apron and Flags.is_on("ship_bay.dolly"):
 		transporters = Transporters.new()
 		transporters.set("yard", self)
