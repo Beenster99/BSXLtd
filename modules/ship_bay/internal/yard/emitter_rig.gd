@@ -4,8 +4,8 @@ extends Node3D
 ## add-ons and field-swept. Ship and Bay builds the rig and keeps which unit is on it;
 ## Shared Components draws the unit, Tools works its joints, Quality runs the test.
 ##
-##   DECK      a T-slotted steel plate on four legs and two I-beam skids, four hold-down
-##             bosses where the unit's feet bolt down (ShipBayBus.rig_points)
+##   DECK      a T-slotted steel plate on four legs and two I-beam skids; four M12 bolts
+##             hold the unit's base corners down (ShipBayBus.rig_points, Tools works them)
 ##   GANTRY    a portal hoop riding rails either side of the deck, with the field probe hung
 ##             from its crown: during a test it runs the deck's length and back
 ##   TEST MASS a steel block on a carriage at the end of a 3 m rail off the deck's +X end:
@@ -24,13 +24,13 @@ const RIG_ID := "rig_emitter"
 ## The deck's top over the floor, and its plate (x, z), metres.
 const DECK_H := 0.95
 const DECK := Vector2(2.0, 0.9)
-## The hold-down bosses on the deck (x, z), metres from its middle.
-const HOLD_DOWNS: Array[Vector2] = [Vector2(-0.6, -0.25), Vector2(0.6, -0.25), Vector2(-0.6, 0.25), Vector2(0.6, 0.25)]
 ## The biggest unit the deck takes: footprint (x, z) and height, metres.
 const UNIT_MAX := Vector3(1.8, 0.8, 0.7)
-## The grey-box coil housing drawn until Shared Components draws the unit (the Kestrel's
-## attractor coil slot box), metres.
-const STAND_IN := Vector3(1.4, 0.4, 0.3)
+## The attractor coil's housing per tier, metres (Shared Components' UpgradeRules.unit_size,
+## data/upgrades/upgrade_rules.json): x along the coil, y up, z across.
+const COIL_SIZES := {1: Vector3(0.9, 0.22, 0.24), 2: Vector3(1.15, 0.26, 0.28), 3: Vector3(1.4, 0.3, 0.3)}
+## How far in from the housing's base corners the hold-down clamps bite, metres.
+const CLAMP_INSET := 0.05
 ## The gantry's rails (z either side) and the hoop's inner radius over the deck, metres.
 const RAIL_Z := 0.62
 const HOOP_R := 0.78
@@ -59,6 +59,13 @@ var _beacon_off: Material
 var _beacon_on: Material
 var _solid: StaticBody3D
 var _result: Dictionary = {}
+## Shared Components' unit on the deck (UpgradeUnits.attractor_coil's result: unit, tier,
+## part, cover, bolts, tacks, box, mounts..., plus "kit", the ShipKit it was built on, for
+## fitting add-ons), {} for the stand-in or an empty deck.
+var unit_parts: Dictionary = {}
+## Quality's plate on the housing after a test, or null.
+var plate_node: Node3D
+var _quality: Node
 
 
 func _ready() -> void:
@@ -83,20 +90,42 @@ func _ready() -> void:
 		_bus.rig_changed.connect(_on_rig_changed)
 		_bus.rig_test_shown.connect(_on_test_shown)
 		_on_rig_changed(RIG_ID, _bus.rig_state(RIG_ID))
+	if _bus:
+		_bus.rig_nodes[RIG_ID] = self
+	_quality = Modules.bus("quality")
+	if _quality and _quality.has_signal("rig_test_finished"):
+		_quality.connect("rig_test_finished", _on_plate)
 	set_process(false)
 
 
 func _exit_tree() -> void:
+	if _bus and _bus.rig_nodes.get(RIG_ID) == self:
+		_bus.rig_nodes.erase(RIG_ID)
 	if _bus and _bus.rig_changed.is_connected(_on_rig_changed):
 		_bus.rig_changed.disconnect(_on_rig_changed)
 		_bus.rig_test_shown.disconnect(_on_test_shown)
+	if _quality and _quality.has_signal("rig_test_finished") and _quality.is_connected("rig_test_finished", _on_plate):
+		_quality.disconnect("rig_test_finished", _on_plate)
 
 
-## The hold-down points in rig space: on the deck over each boss.
-static func hold_down_points() -> Array[Vector3]:
+## A unit's tier from its id ("attractor_coil_2" -> 2); 1 when it carries none.
+static func tier_of(unit: String) -> int:
+	var t := unit.get_slice("_", unit.get_slice_count("_") - 1)
+	return clampi(int(t), 1, 3) if t.is_valid_int() else 1
+
+
+## A unit's housing (x along it, y up, z across), metres.
+static func unit_size(unit: String) -> Vector3:
+	return COIL_SIZES[tier_of(unit)]
+
+
+## The hold-down clamps for a unit in spot space (origin on the deck's middle at deck height,
+## +X along the unit): the base corners of its housing, CLAMP_INSET in.
+static func hold_down_points(unit: String) -> Array[Vector3]:
+	var half := unit_size(unit) * 0.5 - Vector3(CLAMP_INSET, 0, CLAMP_INSET)
 	var out: Array[Vector3] = []
-	for p: Vector2 in HOLD_DOWNS:
-		out.append(Vector3(p.x, DECK_H + 0.03, p.y))
+	for k: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		out.append(Vector3(k.x * half.x, 0.0, k.y * half.z))
 	return out
 
 
@@ -119,8 +148,7 @@ func _build_floor() -> void:
 	add_child(words)
 
 
-## The deck: two I-beam skids, four square legs with cross bracing, the T-slotted plate and
-## its four hold-down bosses.
+## The deck: two I-beam skids, four square legs with cross bracing and the T-slotted plate.
 func _build_deck() -> void:
 	for z: float in [-0.38, 0.38]:
 		_part(PartShapes.i_beam(DECK.x + 0.3, 0.2, 0.16, 0.02), Vector3(0, 0.08, z), _blue)
@@ -134,9 +162,6 @@ func _build_deck() -> void:
 	_part(PartShapes.box(Vector3(DECK.x, 0.06, DECK.y)), Vector3(0, DECK_H - 0.03, 0), _steel)
 	for i in 5:   # the T-slots, dark grooves along the plate
 		_part(PartShapes.box(Vector3(DECK.x - 0.1, 0.004, 0.025)), Vector3(0, DECK_H + 0.001, -0.32 + i * 0.16), _dark)
-	for p: Vector3 in hold_down_points():
-		_part(PartShapes.prism(12, 0.055, 0.03), p - Vector3(0, 0.015, 0), _yellow)
-		_part(PartShapes.prism(6, 0.022, 0.012), p + Vector3(0, 0.006, 0), _dark)
 	_collide(Vector3(DECK.x, DECK_H, DECK.y), Vector3(0, DECK_H * 0.5, 0))
 
 
@@ -261,49 +286,105 @@ func _on_rig_changed(rig_id: String, state: Dictionary) -> void:
 	_show_screen(state)
 
 
-## Shared Components' look for the unit when it has one (make_unit), else a grey-box coil
-## housing with four feet on the hold-down bosses. Sits on the deck, its base at deck height.
+## The unit on the deck, its base on the plate and its origin (the housing's centre) over the
+## deck's middle: Shared Components' coil as parts and joints (UpgradeUnits.attractor_coil on
+## a frozen body; unit_parts keeps its record) once that class is in the game, else a
+## tier-sized open housing as a stand-in.
 func _unit_look(unit: String) -> Node3D:
-	var shared := Modules.bus("shared_components")
-	if shared and shared.has_method("make_unit"):
-		var made: Variant = shared.call("make_unit", unit)
-		if made is Node3D:
-			(made as Node3D).position = Vector3(0, DECK_H, 0)
-			return made
+	var size := unit_size(unit)
+	var xform := Transform3D(Basis.IDENTITY, Vector3(0, DECK_H + size.y * 0.5, 0))
+	var units := _global_script("UpgradeUnits")
+	if units:
+		var body := RigidBody3D.new()
+		body.name = "Unit"
+		body.freeze = true
+		var kit := ShipKit.new(body)
+		kit.model = PartModel.new(body, true)
+		var made: Variant = units.call("attractor_coil", kit, tier_of(unit), xform, "rig:emitter")
+		if made is Dictionary and not (made as Dictionary).is_empty():
+			unit_parts = made
+			unit_parts["kit"] = kit
+			return body
+		body.free()
+	return _stand_in(unit, size, xform)
+
+
+## A grey-box housing the size of the unit, open on top (Tools draws the cover and what goes
+## inside), with copper windings low along it.
+func _stand_in(unit: String, size: Vector3, xform: Transform3D) -> Node3D:
 	var look := Node3D.new()
 	look.name = "Unit"
-	look.position = Vector3(0, DECK_H, 0)
-	var body := MeshInstance3D.new()
-	body.mesh = PartShapes.chamfer_box(STAND_IN, 0.03).mesh
-	body.material_override = ShipSurface.of(ShipKit.paint(Color(0.42, 0.45, 0.48), 0.6, 0.4, "satin_paint"))
-	body.position = Vector3(0, 0.06 + STAND_IN.y * 0.5, 0)
-	look.add_child(body)
-	for i in 3:   # the coil's winding bands
+	look.transform = xform
+	var grey := ShipSurface.of(ShipKit.paint(Color(0.28, 0.3, 0.33), 0.6, 0.5, "satin_paint"))
+	var h := size * 0.5
+	var sheet := 0.02
+	var wall_h := size.y - 0.035
+	var pieces := [[Vector3(size.x, sheet, size.z), Vector3(0, -h.y + sheet * 0.5, 0)]]
+	for sx: float in [-1.0, 1.0]:
+		pieces.append([Vector3(sheet, wall_h, size.z), Vector3(sx * (h.x - sheet * 0.5), -h.y + wall_h * 0.5, 0)])
+	for sz: float in [-1.0, 1.0]:
+		pieces.append([Vector3(size.x - 2 * sheet, wall_h, sheet), Vector3(0, -h.y + wall_h * 0.5, sz * (h.z - sheet * 0.5))])
+	for piece: Array in pieces:
+		var mi := MeshInstance3D.new()
+		mi.mesh = PartShapes.box(piece[0]).mesh
+		mi.material_override = grey
+		mi.position = piece[1]
+		look.add_child(mi)
+	var copper := ShipSurface.of(ShipKit.paint(Color(0.74, 0.46, 0.22), 0.9, 0.35, "copper"))
+	var r := minf(0.1, h.z - sheet - 0.015)
+	var span := size.x - 0.3
+	for i in 6:   # windings, kept under 0.12 m so the inside stays clear above it
 		var band := MeshInstance3D.new()
-		band.mesh = PartShapes.box(Vector3(0.06, STAND_IN.y + 0.02, STAND_IN.z + 0.02)).mesh
-		band.material_override = ShipSurface.of(ShipKit.paint(Color(0.72, 0.42, 0.2), 0.9, 0.3, "copper"))
-		band.position = body.position + Vector3(-0.4 + i * 0.4, 0, 0)
+		band.mesh = PartShapes.box(Vector3(span / 8.0, 0.1, r * 2.0)).mesh
+		band.material_override = copper
+		band.position = Vector3(-0.08 - span * 0.5 + span * (i + 0.5) / 6.0, -h.y + sheet + 0.05, 0)
 		look.add_child(band)
-	for p: Vector2 in HOLD_DOWNS:
-		var foot := MeshInstance3D.new()
-		foot.mesh = PartShapes.box(Vector3(0.14, 0.03, 0.12)).mesh
-		foot.material_override = _dark
-		foot.position = Vector3(p.x, 0.015, signf(p.y) * 0.21)
-		look.add_child(foot)
-		var leg := MeshInstance3D.new()
-		leg.mesh = PartShapes.box(Vector3(0.06, 0.06, 0.05)).mesh
-		leg.material_override = _dark
-		leg.position = Vector3(p.x, 0.045, signf(p.y) * 0.17)
-		look.add_child(leg)
-	var plate := Label3D.new()
-	plate.text = unit.to_upper().replace("_", " ")
-	plate.font_size = 48
-	plate.pixel_size = 0.002
-	plate.outline_size = 0
-	plate.modulate = Color(0.95, 0.95, 0.9)
-	plate.position = body.position + Vector3(0.2, 0, STAND_IN.z * 0.5 + 0.012)
-	look.add_child(plate)
+	var tag := Label3D.new()
+	tag.text = unit.to_upper().replace("_", " ")
+	tag.font_size = 40
+	tag.pixel_size = 0.0018
+	tag.outline_size = 0
+	tag.modulate = Color(0.95, 0.95, 0.9)
+	tag.position = Vector3(-h.x * 0.4, 0, h.z + 0.003)
+	look.add_child(tag)
 	return look
+
+
+## Quality's plate after a test of this rig's unit: fixed on the housing's worker (+Z) face,
+## right of the middle. It stays until the unit comes off.
+func _on_plate(plate: Variant) -> void:
+	if unit_look == null or _quality == null or not _quality.has_method("make_plate_node"):
+		return
+	var rig := str(_field(plate, "rig_id"))
+	var unit := str(_field(plate, "unit_id"))
+	if rig != RIG_ID and unit != str(unit_look.get_meta("unit", "")):
+		return
+	var made: Variant = _quality.call("make_plate_node", plate)
+	if not made is Node3D:
+		return
+	if plate_node:
+		plate_node.queue_free()
+	plate_node = made
+	plate_node.name = "Plate"
+	var size := unit_size(str(unit_look.get_meta("unit", "")))
+	plate_node.position = Vector3(size.x * 0.22, DECK_H + size.y * 0.45, size.z * 0.5 + 0.004)
+	add_child(plate_node)
+
+
+static func _field(o: Variant, key: String) -> Variant:
+	if o is Dictionary:
+		return (o as Dictionary).get(key, "")
+	if o is Object:
+		return (o as Object).get(key) if key in o else ""
+	return ""
+
+
+## A project class's script by name, or null while no module defines it.
+static func _global_script(class_id: String) -> Script:
+	for c: Dictionary in ProjectSettings.get_global_class_list():
+		if str(c["class"]) == class_id:
+			return load(str(c["path"])) as Script
+	return null
 
 
 func _on_test_shown(rig_id: String, result: Dictionary) -> void:
@@ -347,11 +428,14 @@ func _show_screen(state: Dictionary) -> void:
 		return
 	if result.is_empty():
 		screen.call("set_status", "READY", T.GOOD)
-		screen.call("set_body", "%s on the deck.\nRun a field sweep to test it." % unit.to_upper().replace("_", " "))
+		screen.call("set_body", "%s on the deck.\nHold-downs %d/4 tight.\nRun a field sweep to test it." % [
+				unit.to_upper().replace("_", " "), (state.get("joints", {}) as Dictionary).size()])
 		return
 	var lines := PackedStringArray()
 	for l: Array in result.get("lines", []):
 		lines.append("%-14s %8s  ->  %s" % [str(l[0]), str(l[1]), str(l[2])])
+	for r: Array in result.get("rated", []):
+		lines.append("%-14s rated %s" % [str(r[0]), str(r[1])])
 	if str(result.get("note", "")) != "":
 		lines.append(str(result["note"]))
 	var passed := bool(result.get("passed", false))

@@ -151,8 +151,10 @@ var yard_ships: PackedStringArray = []
 ## True once the bay was emptied from Settings > Debug > Ship: the bay stays empty until
 ## the Kestrel is brought back.
 var bay_cleared := false
-## Rig id -> {unit, testing, result}: what's on each component rig (RIGS).
+## Rig id -> {unit, testing, result, joints}: what's on each component rig (RIGS).
 var rigs: Dictionary = {}
+## Rig id -> the rig's node in the yard (it adds itself), for rig_unit.
+var rig_nodes: Dictionary = {}
 
 ## Where fastener rings show (set_marker_focus): round this point, world space, within the
 ## radius (metres; INF: everywhere).
@@ -480,16 +482,22 @@ func get_component(slot_id: String) -> String:
 
 
 func get_fasteners(slot_id: String) -> Array[FastenerPoint]:
+	if RIGS.has(slot_id):
+		return rig_points(slot_id)
 	var s := get_slot(slot_id)
 	return s.fasteners if s else ([] as Array[FastenerPoint])
 
 
 func is_joint_tight(joint_id: String) -> bool:
+	if _is_rig_joint(joint_id):
+		return _rig_joints(joint_id).has(joint_id)
 	return _tracker != null and _tracker.is_tight(joint_id)
 
 
 ## 0..1 as Trades reported it; 0 when the joint isn't made.
 func joint_quality(joint_id: String) -> float:
+	if _is_rig_joint(joint_id):
+		return float(_rig_joints(joint_id).get(joint_id, 0.0))
 	return _tracker.joint_quality(joint_id) if _tracker else 0.0
 
 
@@ -511,6 +519,8 @@ func try_remove(slot_id: String) -> bool:
 
 ## Trades: a joint was made (bolt torqued, rivet set, seam welded, plug seated).
 func note_joint_made(joint_id: String, quality: float) -> bool:
+	if _is_rig_joint(joint_id):
+		return _rig_joint(joint_id, true, quality, true)
 	var ok := _tracker != null and _tracker.joint_made(joint_id, quality)
 	if ok:
 		_share("ship_bay.joint", {"joint": joint_id, "made": true, "quality": quality})
@@ -519,6 +529,8 @@ func note_joint_made(joint_id: String, quality: float) -> bool:
 
 ## Trades: a joint was undone.
 func note_joint_removed(joint_id: String) -> bool:
+	if _is_rig_joint(joint_id):
+		return _rig_joint(joint_id, false, 0.0, true)
 	var ok := _tracker != null and _tracker.joint_removed(joint_id)
 	if ok:
 		_share("ship_bay.joint", {"joint": joint_id, "made": false})
@@ -543,7 +555,13 @@ func _from_here(payload: Dictionary) -> bool:
 
 
 func _apply_joint(payload: Dictionary) -> void:
-	if _tracker == null or _from_here(payload):
+	if _from_here(payload):
+		return
+	var joint := str(payload.get("joint", ""))
+	if _is_rig_joint(joint):
+		_rig_joint(joint, bool(payload.get("made", false)), float(payload.get("quality", 1.0)), false)
+		return
+	if _tracker == null:
 		return
 	if bool(payload.get("made", false)):
 		_tracker.joint_made(str(payload.get("joint", "")), float(payload.get("quality", 1.0)))
@@ -1604,14 +1622,26 @@ func debug_ship(action: String, design := "") -> void:
 
 # --- Component rigs (Component Upgrades) -----------------------------------------------
 
-## A rig's state: {unit ("" when empty), testing (a sweep is running), result (the last
-## test's, {} until one is shown)}. {} for an unknown rig.
+## A rig's state: {unit ("" when empty), tier (the unit's, 0 when empty), testing (a sweep is
+## running), result (the last test's, {} until one is shown), joints (hold-down joint id ->
+## quality, for the ones made)}. {} for an unknown rig.
 func rig_state(rig_id: String) -> Dictionary:
 	if not RIGS.has(rig_id):
 		return {}
 	var r: Dictionary = rigs.get(rig_id, {})
-	return {"unit": str(r.get("unit", "")), "testing": bool(r.get("testing", false)),
-			"result": (r.get("result", {}) as Dictionary).duplicate(true)}
+	var unit := str(r.get("unit", ""))
+	return {"unit": unit, "tier": EmitterRig.tier_of(unit) if unit != "" else 0,
+			"testing": bool(r.get("testing", false)),
+			"result": (r.get("result", {}) as Dictionary).duplicate(true),
+			"joints": (r.get("joints", {}) as Dictionary).duplicate()}
+
+
+## The unit on a rig as Shared Components built it (UpgradeUnits.attractor_coil's result:
+## unit, tier, part, cover, bolts, tacks, box, mounts, xform, path; xform in rig space, the
+## rig node's own frame), {} while the rig is empty or shows a stand-in.
+func rig_unit(rig_id: String) -> Dictionary:
+	var node: Node = rig_nodes.get(rig_id)
+	return (node.get("unit_parts") as Dictionary) if is_instance_valid(node) else {}
 
 
 ## Puts a unit on a rig ("attractor_coil_1" on "rig_emitter"), for every player. Refused
@@ -1620,7 +1650,7 @@ func rig_mount(rig_id: String, unit_id: String) -> void:
 	_send_rig({"rig": rig_id, "op": "mount", "unit": unit_id})
 
 
-## Takes the unit off a rig, for every player.
+## Takes the unit off a rig, for every player. Refused while a hold-down is still made.
 func rig_unmount(rig_id: String) -> void:
 	_send_rig({"rig": rig_id, "op": "unmount"})
 
@@ -1637,25 +1667,54 @@ func rig_show_test(rig_id: String, result: Dictionary) -> void:
 	_send_rig({"rig": rig_id, "op": "result", "result": result.duplicate(true)})
 
 
-## A rig's hold-down bolts in yard space: four M12 bolts through the unit's feet into the
-## deck ("rig_emitter/b1".."b4"); Tools works them. Empty for an unknown rig.
+## A rig's hold-down bolts for the unit on it, in spot space (shipyard_spot(rig_id): origin
+## on the deck's middle at deck height, +X along the unit, +Z to the worker, y up): four M12
+## bolts at the housing's base corners, 5 cm in ("rig_emitter/b1".."b4"), following the
+## unit's tier. Tools works them. Empty for an unknown or empty rig.
 func rig_points(rig_id: String) -> Array[FastenerPoint]:
 	var out: Array[FastenerPoint] = []
-	if rig_id != "rig_emitter":
+	var unit := str(rig_state(rig_id).get("unit", ""))
+	if rig_id != "rig_emitter" or unit == "":
 		return out
-	var spot := shipyard_spot(rig_id)
 	var i := 1
-	for p: Vector3 in EmitterRig.hold_down_points():
+	for p: Vector3 in EmitterRig.hold_down_points(unit):
 		var f := FastenerPoint.new()
 		f.joint_id = "%s/b%d" % [rig_id, i]
 		f.kind = "bolt"
 		f.spec = "M12"
-		# Rig space has its origin on the floor; the spot is at deck height.
-		f.position = spot * (p - Vector3(0, EmitterRig.DECK_H, 0))
-		f.normal = spot.basis.y
+		f.position = p
+		f.normal = Vector3.UP
 		out.append(f)
 		i += 1
 	return out
+
+
+func _is_rig_joint(joint_id: String) -> bool:
+	return RIGS.has(FastenerPoint.slot_of(joint_id))
+
+
+func _rig_joints(joint_id: String) -> Dictionary:
+	return (rigs.get(FastenerPoint.slot_of(joint_id), {}) as Dictionary).get("joints", {})
+
+
+## Notes a rig hold-down made or undone here (and, `share`, for the other players). Refused
+## for a rig with nothing on it or a joint it doesn't have.
+func _rig_joint(joint_id: String, made: bool, quality: float, share: bool) -> bool:
+	var id := FastenerPoint.slot_of(joint_id)
+	if not rigs.has(id) or not rig_points(id).any(func(f: FastenerPoint) -> bool: return f.joint_id == joint_id):
+		return false
+	var joints: Dictionary = (rigs[id] as Dictionary).get("joints", {})
+	if made == joints.has(joint_id) and (not made or is_equal_approx(float(joints[joint_id]), quality)):
+		return false
+	if made:
+		joints[joint_id] = clampf(quality, 0.0, 1.0)
+	else:
+		joints.erase(joint_id)
+	rigs[id]["joints"] = joints
+	if share:
+		_share("ship_bay.joint", {"joint": joint_id, "made": made, "quality": quality})
+	rig_changed.emit(id, rig_state(id))
+	return true
 
 
 func _send_rig(payload: Dictionary) -> void:
@@ -1676,7 +1735,11 @@ func _check_rig(_sender: int, payload: Dictionary) -> Variant:
 			if on != "":
 				return "the rig already has a unit on it"
 			return payload if unit.begins_with(str(RIGS[id]["takes"])) else "that unit doesn't go on this rig"
-		"unmount", "test":
+		"unmount":
+			if on == "":
+				return "the rig is empty"
+			return payload if (rig_state(id)["joints"] as Dictionary).is_empty() else "the unit is still bolted down"
+		"test":
 			return payload if on != "" else "the rig is empty"
 		"result":
 			return payload
@@ -1688,7 +1751,7 @@ func _apply_rig(payload: Dictionary) -> void:
 	var r: Dictionary = rigs.get(id, {})
 	match str(payload.get("op", "")):
 		"mount":
-			r = {"unit": str(payload.get("unit", "")), "testing": false, "result": {}}
+			r = {"unit": str(payload.get("unit", "")), "testing": false, "result": {}, "joints": {}}
 		"unmount":
 			r = {}
 		"test":
