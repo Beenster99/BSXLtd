@@ -57,6 +57,7 @@ const LAMPS := "graphics.lamps"
 const TORCH := "graphics.torch"
 const SKY := "graphics.sky"
 const SURFACES := "graphics.surfaces"
+const SCREENS := "graphics.screens"
 ## Group of rooms (halls, the bay) that get their own bounce light and reflections.
 const ROOM := "gfx_room"
 ## Meta on a room: its inside as an AABB in the room node's space.
@@ -77,6 +78,7 @@ const HelmetTorch := preload("res://modules/graphics/internal/helmet_torch.gd")
 const SkyLook := preload("res://modules/graphics/internal/sky_look.gd")
 const ZFightCheck := preload("res://modules/graphics/internal/zfight_check.gd")
 const SurfaceLook := preload("res://modules/graphics/internal/surface_look.gd")
+const LedScreen := preload("res://modules/graphics/internal/led_screen.gd")
 ## Seconds after a room appears before its bounce light bakes (its owner may still be
 ## building it).
 const BAKE_DELAY := 0.5
@@ -192,6 +194,20 @@ func hover_target() -> Node:
 func ping(at: Vector3, thing: Node = null, normal := Vector3.UP, label := "") -> void:
 	if pointer and Flags.is_on(PING):
 		pointer.ping(at, thing, normal, label)
+
+
+## G6, a ship's screen ("graphics.screens"): a glowing page laid over `glass` (a quad facing
+## its +Z, like Void Salvage's ShipParts screens), in the look of Void Salvage's monitors.
+## `kind` picks the page: "monitor" (the hold monitor with its soft keys), "cockpit_screen"
+## (flight readout and gauges), "cockpit_monitor", "nav_display" (a radar sweep),
+## "map_screen" (orbits); anything else is text only. `text`'s first line is the title; a
+## line starting "!" shows amber. The screen starts off: call set_on(true) when the ship has
+## power (it boots with a flicker) and set_on(false) to blank it; set_text() changes the page.
+## Null while the flag is off (keep your own text then).
+func led_screen(glass: MeshInstance3D, kind: String, text: String) -> Node3D:
+	if not Flags.is_on(SCREENS) or glass == null or glass.get_parent() == null:
+		return null
+	return LedScreen.over(glass, kind, text)
 
 
 ## Faces under root that Z-fight: [{a, b, area, at, normal}], biggest overlap first (a and b
