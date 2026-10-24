@@ -479,8 +479,7 @@ func shown_deliveries() -> Array[PartsOrder]:
 func _category_of(part: String) -> String:
 	if part.begins_with(BusinessBus.RAW_PREFIX):
 		return "materials"
-	var cat := bus.get_catalogue().category_of(part)
-	return cat if cat != "" else "staples"
+	return bus.part_category(part)
 
 
 func _po_line(l: MarketListing, qty: int) -> Control:

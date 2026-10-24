@@ -9,6 +9,13 @@ prices = {
 "M10": 2,
 "M12": 3,
 "RIVET_4": 1,
+"control_board": 2000,
+"field_emitter_1": 3000,
+"field_emitter_2": 7500,
+"field_emitter_3": 18000,
+"quantum_core_1": 4500,
+"quantum_core_2": 11000,
+"quantum_core_3": 26000,
 "upgrade.calibrated_torque_wrench": 1500,
 "upgrade.inspection_scanner": 4000,
 "upgrade.pneumatic_rivet_gun": 2500,
@@ -18,5 +25,21 @@ prices = {
 names = {
 "M10": "M10 bolts",
 "M12": "M12 bolts",
-"RIVET_4": "4 mm rivets"
+"RIVET_4": "4 mm rivets",
+"control_board": "BSX control board",
+"field_emitter_1": "Field emitter array F1",
+"field_emitter_2": "Field emitter array F2",
+"field_emitter_3": "Field emitter array F3",
+"quantum_core_1": "Quantum core Q1",
+"quantum_core_2": "Quantum core Q2",
+"quantum_core_3": "Quantum core Q3"
+}
+categories = {
+"control_board": "upgrades",
+"field_emitter_1": "upgrades",
+"field_emitter_2": "upgrades",
+"field_emitter_3": "upgrades",
+"quantum_core_1": "upgrades",
+"quantum_core_2": "upgrades",
+"quantum_core_3": "upgrades"
 }

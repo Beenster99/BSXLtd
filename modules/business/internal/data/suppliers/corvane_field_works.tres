@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="SupplierDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/business/api/supplier_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 2
+id = "corvane_field_works"
+display_name = "Corvane Field Works"
+parts = {
+"control_board": 1.0,
+"field_emitter_1": 1.0,
+"field_emitter_2": 1.0,
+"field_emitter_3": 1.0,
+"quantum_core_1": 1.0,
+"quantum_core_2": 1.0,
+"quantum_core_3": 1.0
+}
+categories = PackedStringArray()
+conditions = {
+"new": 1.0
+}
+listings_per_day = 0
+trade_factor = 1.0
+lead_seconds = Vector2i(20, 45)
+reliability = 0.95
+min_reputation = 0.0
+cancellation_refund_percent = 50
+bulk_percent = {}
+deals_per_day = 0
+deal_percent = Vector2i(0, 0)
+buy_factor = 0.0
+price_spread = 0.0
+flag = "business.upgrades"

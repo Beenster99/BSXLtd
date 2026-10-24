@@ -123,8 +123,9 @@ func visible_suppliers() -> Array[SupplierDef]:
 	var ids := suppliers.keys()
 	ids.sort()
 	for id in ids:
-		if reputation >= suppliers[id].min_reputation:
-			out.append(suppliers[id])
+		var s: SupplierDef = suppliers[id]
+		if reputation >= s.min_reputation and (s.flag == "" or Flags.is_on(s.flag)):
+			out.append(s)
 	return out
 
 
