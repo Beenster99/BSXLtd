@@ -64,7 +64,9 @@ func run_tests() -> void:
 	var heard := func(id: String, unit: String) -> void: asked.append([id, unit])
 	bus.rig_test_requested.connect(heard)
 	rig.screen.call("press", "test")
-	check(asked == [["rig_emitter", "attractor_coil_1"]] and bool(bus.rig_state("rig_emitter")["testing"]),
+	# Quality may answer at once (its rig test is in), so the rig is testing or has a result.
+	var st := bus.rig_state("rig_emitter")
+	check(asked == [["rig_emitter", "attractor_coil_1"]] and (bool(st["testing"]) or not (st["result"] as Dictionary).is_empty()),
 			"TEST asks the host for a field sweep")
 	check(rig.sweep >= 0.0, "and the rig starts sweeping")
 	bus.rig_test_requested.disconnect(heard)

@@ -139,14 +139,14 @@ func run_tests() -> void:
 	var aimed: Array = pointer.call("aim") if pointer else [null]
 	check(aimed[0] == unit_screen and str(unit_screen.call("button_at", aimed[1])) == "power",
 			"looking at the power unit's screen points at its POWER button")
-	check(not bool(access.get("switch_on")), "the unit starts switched off")
+	check(bool(access.get("switch_on")), "the unit starts switched on (the ship comes in on shore power)")
 	for down: bool in [true, false]:
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
 		click.pressed = down
 		pointer.call("_input", click)
 		await frames(1)
-	check(bool(access.get("switch_on")), "a left click there switches it on")
+	check(not bool(access.get("switch_on")), "a left click there switches it off")
 	access.call("toggle_power")
 	cam.queue_free()
 
@@ -174,9 +174,16 @@ func run_tests() -> void:
 	check(lift.global_position.x < -2.0, "it can't be driven into the hull: x %.2f" % lift.global_position.x)
 	lift.global_transform = into
 
-	# Shore power: off to start with. The switch alone does nothing; the plug clipped to the
+	# Shore power: on to start with. The switch alone does nothing; the plug clipped to the
 	# hull (anywhere in reach) with the switch on powers the ship.
-	check(not bus.ship_powered and not bool(model.get("powered")), "the ship is cold in the yard")
+	check(bus.ship_powered and bool(model.get("powered")) and access.get("plug_state") == "hull",
+			"the ship comes into the bay on shore power, plugged in")
+	# Unplugged and switched off, to try the unit from cold.
+	unit_screen.call("press", "power")
+	access.set("plug_state", "hook")
+	access.call("_place_plug_on_hook")
+	access.call("_update_power")
+	check(not bus.ship_powered and not bool(model.get("powered")), "switched off and unplugged, the ship is cold")
 	unit_screen.call("press", "power")
 	check(bool(access.get("switch_on")) and not bus.ship_powered, "switched on, the plug still on its hook: no power")
 	check(str(unit_screen.call("text")).contains("NO PLUG") and str(unit_screen.call("text")).contains("POWER OFF"),
