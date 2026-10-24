@@ -25,6 +25,7 @@ flags = {
 "graphics.light": true,
 "graphics.ping": true,
 "graphics.profiler": true,
+"graphics.screens": true,
 "graphics.sky": true,
 "graphics.surfaces": true,
 "graphics.torch": true,
