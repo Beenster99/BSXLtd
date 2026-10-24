@@ -316,6 +316,8 @@ func _local_xform(node: Node3D) -> Transform3D:
 ## a flicker, and a quiet hum starts (`instant` skips the show: loading, screenshots).
 func set_powered(on: bool, instant := false) -> void:
 	powered = on
+	if dressing:
+		dressing.show_power(on)
 	if _power_tween:
 		_power_tween.kill()
 		_power_tween = null

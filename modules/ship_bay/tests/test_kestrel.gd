@@ -96,13 +96,17 @@ func run_tests() -> void:
 	var texts := {}
 	for l: Label3D in model.find_children("*", "Label3D", true, false):
 		texts[l.text.get_slice("\n", 0)] = true
+	var lit_pages := Flags.is_on("graphics.screens")   # the glass screens show Graphics' pages instead
 	for want: String in ["FUEL", "COOLANT", "FUEL HOSE", "CARGO CONTROL", "STERN DOOR", "OPEN", "CLOSE", "HOLD MONITOR                 KESTREL", "SYSTEM MAP", "PUMP"]:
+		if lit_pages and want in ["HOLD MONITOR                 KESTREL", "SYSTEM MAP"]:
+			continue
 		check(texts.has(want), "the Kestrel has a %s label" % want.get_slice(" ", 0))
 	check(model.get_node_or_null("Bowser_fuel") is CollisionShape3D and model.get_node_or_null("Bowser_coolant") is CollisionShape3D,
 			"the bowsers' drums are solid")
 	var dressing: RefCounted = model.get("dressing")
 	check((dressing.get("spots") as Array).size() == 4, "four floodlights")
-	check((dressing.get("screens") as Array).size() == 5, "every screen shows a parked ship's standby text")
+	check((dressing.get("screens") as Array).size() + (dressing.get("leds") as Array).size() == 5,
+			"every screen shows a parked ship's standby text")
 	check(model.get_node_or_null("Wires") == null and importer.leads_built.size() == 14,
 			"the leads' wires come from the importer, not BSX: %d" % importer.leads_built.size())
 	model.call("set_door", "door_bulkhead", true, true)
@@ -130,6 +134,14 @@ func run_tests() -> void:
 	check(opens == 2 and shuts == 2, "OPEN opens the inside door and CLOSE shuts it, from both sides")
 	remove_child(model)
 	check((panel_lamps[0] as StandardMaterial3D) == dressing.get("door_lamps")["door_bulkhead"][0], "the panel lamps keep their own light")
+	# Graphics' lit pages on the screens' glass, on with the ship's power.
+	var leds: Array = dressing.get("leds")
+	if Flags.is_on("graphics.screens"):
+		check(leds.size() >= 2, "the monitor and the cockpit's screens get Graphics' lit pages: %d" % leds.size())
+		model.call("set_powered", true, true)
+		check(leds.all(func(l: Node3D) -> bool: return bool(l.get("on"))), "on with the ship's power")
+		model.call("set_powered", false, true)
+		check(leds.all(func(l: Node3D) -> bool: return not bool(l.get("on"))), "and off without it")
 	var plates := def.slots.filter(func(s: MountSlot) -> bool: return s.slot_id.begins_with("plate_"))
 	var rivets := 0
 	for s: MountSlot in plates:

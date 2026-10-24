@@ -31,6 +31,8 @@ var door_lamps: Dictionary = {}
 var spots: Array[SpotLight3D] = []
 ## The standby text put on each built screen.
 var screens: Array[Label3D] = []
+## Graphics' glowing pages over the screens' glass (led_screen), on with the ship's power.
+var leds: Array[Node3D] = []
 
 
 func _init(target: Node3D, f: Dictionary) -> void:
@@ -61,7 +63,11 @@ func build(built: Dictionary) -> void:
 			(made["text"] as Label3D).text = STANDBY[kind]
 			screens.append(made["text"])
 		elif made.get("glass") is MeshInstance3D:
-			_standby(made["glass"], STANDBY[kind], int(STANDBY_SIZE.get(kind, 22)))
+			var led := _led(made["glass"], kind, STANDBY[kind])
+			if led:
+				leds.append(led)
+			else:
+				_standby(made["glass"], STANDBY[kind], int(STANDBY_SIZE.get(kind, 22)))
 	_floodlights()
 	_nav_lamps()
 
@@ -102,6 +108,23 @@ func _hose_coil(frame: Transform3D) -> void:
 	_add(PartShapes.prism(10, 0.017, 0.3), frame * Transform3D(Basis(), Vector3(0.29, -0.12, -0.3)), hose)
 	_add(PartShapes.prism(12, 0.035, 0.16), frame * Transform3D(Basis(), Vector3(0.29, -0.34, -0.3)), brass)
 	_add(PartShapes.frustum(0.03, 0.018, 0.08, 12), frame * Transform3D(Basis(Vector3.RIGHT, PI), Vector3(0.29, -0.46, -0.3)), steel)
+
+
+## Graphics' lit page for a screen (its led_screen, "graphics.screens"), or null: then the
+## screen keeps the plain standby text.
+func _led(glass: MeshInstance3D, kind: String, text: String) -> Node3D:
+	var gfx := Modules.bus("graphics")
+	if gfx == null or not gfx.has_method("led_screen"):
+		return null
+	var made: Variant = gfx.call("led_screen", glass, kind, text)
+	return made as Node3D
+
+
+## Screens on or off with the ship's power.
+func show_power(on: bool) -> void:
+	for led: Node3D in leds:
+		if is_instance_valid(led):
+			led.call("set_on", on)
 
 
 ## Standby text in the top left of a screen's glass (a quad facing its +Z).
