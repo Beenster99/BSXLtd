@@ -13,6 +13,13 @@ extends Node3D
 ##            control board (a power and a data plug). F on an empty seat puts its add-on in;
 ##            F on one with every joint out lifts it back off.
 ##
+## Once Shared Components' coil is on the rig (ShipBayBus.rig_unit: UpgradeUnits.attractor_coil
+## on the rig's body), the unit is theirs: its cover, bolts, tacks and mounts, add-ons put in
+## with UpgradeUnits.fit_addon (UpgradeRules says what fits), each joint on their model
+## dropped while it's undone and joined again when made, so their heads show what's in. Then
+## the core takes its 2 clamp bolts, the emitter array a seam along its flange's foot and the
+## board one plug. Without it (`rec` empty) Tools draws its own housing, layout and add-ons.
+##
 ## The joints are FastenerPoints like the ship's, worked by the same station
 ## (TradesShipJoints), which keeps their state (`practice`) and shares it with the crew; the
 ## seats' "fitted" flags ride in the same dictionary ("<slot>/fitted"). Quality hears about
@@ -70,14 +77,35 @@ var _ring_on: StandardMaterial3D
 var _ring_off: StandardMaterial3D
 var _head: StandardMaterial3D
 var _cover_angle := 0.0
+## Shared Components' unit record (rig_unit), its model, and the add-on in each seat now
+## (seat -> fit_addon's record); each joint's ConnectionData while made and how to make it
+## again: joint_id -> {c, a, b, kind, at, normal, seam_up, seam_size}.
+var rec: Dictionary = {}
+var model: PartModel
+var _fits := {}
+var _links := {}
+var _cover_closed := Transform3D.IDENTITY
+## Model seats -> Shared Components' mount ids.
+const MODEL_MOUNTS := {"core": "core_bay", "emitter": "emitter_flange", "board": "harness"}
+const MODEL_JOINT_SPEC := {"core": "M12", "cover": "M10"}
 
 
-func _init(rig: String = "rig_emitter", unit: String = "", tier: int = 3) -> void:
+func _init(rig: String = "rig_emitter", unit: String = "", tier: int = 3, record: Dictionary = {}) -> void:
 	name = "UnitWork"
 	top_level = true
 	rig_id = rig
 	unit_id = unit
 	self.tier = clampi(tier, 1, 3)
+	rec = record
+	var kit := rec.get("kit") as ShipKit
+	if kit and kit.model:
+		model = kit.model
+		self.tier = int(rec.get("tier", self.tier))
+		for seat: String in SEATS:
+			if not UpgradeUnits.mount_of(rec, MODEL_MOUNTS[seat]).is_empty():
+				seats.append(seat)
+		_lay_out_model()
+		return
 	for i in clampi(tier, 1, SEATS.size()):
 		seats.append(SEATS[i])
 	_lay_out()
@@ -157,6 +185,8 @@ func seat_near(origin: Vector3, dir: Vector3) -> String:
 
 
 func seat_centre(seat: String) -> Vector3:
+	if model:
+		return UpgradeUnits.mount_of(rec, MODEL_MOUNTS[seat]).get("at", Vector3.ZERO) as Vector3
 	var m: Array = MOUNTS[seat]
 	return (m[1] as Vector3) + Vector3(0, (m[2] as Vector3).y * 0.5, 0)
 
@@ -164,6 +194,13 @@ func seat_centre(seat: String) -> Vector3:
 ## The add-on part a seat takes on this unit ("quantum_core_3", "control_board").
 func part_of(seat: String) -> String:
 	var kind := str(ADDON_PARTS.get(seat, ""))
+	if model:
+		# The best tier of it the unit takes.
+		for t in range(tier, 0, -1):
+			var id := UpgradeRules.addon_id(kind, t)
+			if id != "":
+				return id
+		return ""
 	return kind if kind == "control_board" or kind == "" else "%s_%d" % [kind, tier]
 
 
@@ -184,6 +221,130 @@ func report(qualities: Dictionary) -> Dictionary:
 	return {"unit": unit_id, "tier": tier, "open": is_open(), "fitted": parts, "seats": seats.duplicate(), "joints": js}
 
 
+## Shared Components' joints as FastenerPoints, in the model's body space: the cover's from
+## the record, each add-on's from a trial fit taken straight back out.
+func _lay_out_model() -> void:
+	var cover := rec.get("cover") as PartData
+	_cover_closed = cover.local_transform if cover else Transform3D.IDENTITY
+	var n := 0
+	for c: ConnectionData in rec.get("bolts", []):
+		n += 1
+		_link(_model_point("cover", "b%d" % n, "bolt", MODEL_JOINT_SPEC["cover"], c), c)
+	n = 0
+	for c: ConnectionData in rec.get("tacks", []):
+		if c == null:
+			continue
+		n += 1
+		_link(_model_point("cover", "w%d" % n, "weld", "", c), c)
+	for seat in seats:
+		var fit := UpgradeUnits.fit_addon(rec["kit"], rec, part_of(seat), PackedStringArray())
+		if fit.is_empty():
+			continue
+		var k := 0
+		for c: ConnectionData in fit.get("joints", []):
+			if c == null:
+				continue
+			k += 1
+			var f: FastenerPoint
+			match seat:
+				"core":
+					f = _model_point(seat, "b%d" % k, "bolt", MODEL_JOINT_SPEC["core"], c)
+				"emitter":
+					# Their bead runs round the flange's foot; ours is traced along it.
+					f = _model_point(seat, "w%d" % k, "weld", "", c)
+					var plate := 0.08 + 0.06 * UpgradeUnits.HORNS[tier]
+					f.seam_up = Vector3.RIGHT
+					f.seam_size = Vector2(plate - 0.02, 0.008)
+				_:
+					f = _model_point(seat, "c%d" % k, "connector", "power", c)
+			_link(f, c)
+		_take_out(seat, fit)
+
+
+func _model_point(mount: String, n: String, kind: String, spec: String, c: ConnectionData) -> FastenerPoint:
+	var f := FastenerPoint.new()
+	f.joint_id = "%s/%s" % [slot_of(mount), n]
+	f.kind = kind
+	f.spec = spec
+	f.position = c.local_position
+	f.normal = c.local_normal
+	joints.append(f)
+	return f
+
+
+## Keeps how to make joint `f` again on the model, and the ConnectionData it has now.
+func _link(f: FastenerPoint, c: ConnectionData) -> void:
+	_links[f.joint_id] = {"c": c, "a": c.part_a, "b": c.part_b, "kind": c.kind, "at": c.local_position,
+			"normal": c.local_normal, "seam_up": c.seam_up, "seam_size": c.seam_size}
+
+
+## An add-on fitted by fit_addon taken back off the model, joints and all.
+func _take_out(seat: String, fit: Dictionary) -> void:
+	for c: ConnectionData in fit.get("joints", []):
+		if c:
+			model.drop_connection(c)
+	var part := fit.get("part") as PartData
+	if part:
+		model.erase_part(part.id)
+	_fits.erase(seat)
+	for f in mount_joints(seat):
+		(_links[f.joint_id] as Dictionary)["c"] = null
+
+
+## Brings Shared Components' model in line with the state: each add-on in or out, every joint
+## joined while made and dropped while not, and the cover shut or lifted off its housing.
+func sync() -> void:
+	if model == null:
+		return
+	for seat in seats:
+		if is_fitted(seat) and not _fits.has(seat):
+			var fit := UpgradeUnits.fit_addon(rec["kit"], rec, part_of(seat), _fitted_ids())
+			if fit.is_empty():
+				continue
+			_fits[seat] = fit
+			var k := 0
+			for c: ConnectionData in fit.get("joints", []):
+				if c == null:
+					continue
+				var f := mount_joints(seat)[k] if k < mount_joints(seat).size() else null
+				k += 1
+				if f:
+					_link(f, c)
+		elif not is_fitted(seat) and _fits.has(seat):
+			_take_out(seat, _fits[seat])
+	var cover := rec.get("cover") as PartData
+	var open := is_open()
+	if cover and open != (cover.local_transform != _cover_closed):
+		model.move_part(cover.id, _cover_open() if open else _cover_closed)
+	for f in joints:
+		var mount := mount_of(f.joint_id)
+		if mount != "cover" and not _fits.has(mount):
+			continue
+		var l: Dictionary = _links[f.joint_id]
+		var c := l.get("c") as ConnectionData
+		if made(f.joint_id) and c == null:
+			l["c"] = model.connect_parts(model.parts[l.a], model.parts[l.b], l.kind, l.at, l.normal, l.seam_up, l.seam_size)
+		elif not made(f.joint_id) and c != null:
+			model.drop_connection(c)
+			l["c"] = null
+
+
+func _fitted_ids() -> PackedStringArray:
+	var out := PackedStringArray()
+	for seat: String in _fits:
+		out.append(str((_fits[seat] as Dictionary).get("addon", "")))
+	return out
+
+
+## The cover swung up on its back edge (-z, away from the worker at the rig).
+func _cover_open() -> Transform3D:
+	var box: AABB = rec.get("box", AABB())
+	var unit_x: Transform3D = rec.get("xform", Transform3D.IDENTITY)
+	var hinge := unit_x * Vector3(0, box.end.y, box.position.z)
+	var turn := Transform3D(Basis(unit_x.basis.x.normalized(), -OPEN_ANGLE), Vector3.ZERO)
+	return Transform3D(Basis(), hinge) * turn * Transform3D(Basis(), -hinge) * _cover_closed
+
+
 func _lay_out() -> void:
 	var mounts: Array[String] = ["cover"]
 	mounts.append_array(seats)
@@ -198,19 +359,20 @@ func _ready() -> void:
 	_ring_on = TradesLook.glow(GREEN, 0.9)
 	_ring_off = TradesLook.glow(AMBER, 0.9)
 	_head = TradesLook.metal(Color(0.62, 0.64, 0.66), 0.9, 0.35)
-	if bare:
+	if bare or model:
 		_cover = Node3D.new()
 		add_child(_cover)
 	else:
 		_build_housing()
 	for seat in seats:
 		_ghosts[seat] = _build_ghost(seat)
-		_addons[seat] = _build_addon(seat)
+		_addons[seat] = _build_addon(seat) if model == null else Node3D.new()
 	for f in joints:
 		var m := _marker(f)
 		_markers[f.joint_id] = m
 		# On the rim and the seats, not the lid: they stay where the aim finds them.
 		add_child(m)
+	sync()
 	_show(0.0)
 
 
@@ -238,7 +400,8 @@ func _show(delta: float) -> void:
 			continue
 		var on := made(f.joint_id)
 		m.material_override = _ring_on if on else _ring_off
-		(m.get_child(0) as Node3D).visible = on
+		# On Shared Components' model the heads are the model's own.
+		(m.get_child(0) as Node3D).visible = on and model == null
 		m.transparency = 0.0 if focus_radius == INF or m.global_position.distance_to(focus) <= focus_radius else 1.0
 
 
@@ -296,6 +459,8 @@ func _build_housing() -> void:
 
 ## A seat with nothing in it: a lit outline on the floor and its name.
 func _build_ghost(seat: String) -> Node3D:
+	if model:
+		return _model_ghost(seat)
 	var m: Array = MOUNTS[seat]
 	var at: Vector3 = m[1]
 	var size: Vector3 = m[2]
@@ -311,6 +476,26 @@ func _build_ghost(seat: String) -> Node3D:
 	var l := _label("%s\nF to fit" % ADDON_NAMES[seat].to_upper(), Vector3(0, 0.01, 0), 22, g)
 	l.rotation = Vector3(-PI * 0.5, 0, 0)
 	l.modulate = AMBER
+	return g
+
+
+## An empty mount on Shared Components' unit: a lit ring at the point and what goes there.
+func _model_ghost(seat: String) -> Node3D:
+	var m := UpgradeUnits.mount_of(rec, MODEL_MOUNTS[seat])
+	var n: Vector3 = (m.get("normal", Vector3.UP) as Vector3).normalized()
+	var g := Node3D.new()
+	g.name = "Seat_" + seat
+	add_child(g)
+	var side := Vector3.RIGHT if absf(n.x) < 0.9 else Vector3.BACK
+	g.transform = Transform3D(Basis(side, n, side.cross(n)), m.get("at", Vector3.ZERO) as Vector3)
+	var ring := MeshInstance3D.new()
+	ring.mesh = TradesTestStand._ring(0.035, 0.045)
+	ring.material_override = TradesLook.glow(AMBER, 0.8)
+	g.add_child(ring)
+	var l := _label("%s\nF to fit" % ADDON_NAMES[seat].to_upper(), Vector3(0, 0.06, 0), 20, g)
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.modulate = AMBER
+	l.no_depth_test = true
 	return g
 
 

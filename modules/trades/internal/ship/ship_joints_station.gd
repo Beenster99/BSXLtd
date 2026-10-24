@@ -205,9 +205,11 @@ func _add_fixture(list: Array, at: Transform3D) -> void:
 
 ## Puts a unit on the rig `rig_id` (at: the rig's world transform), closed, nothing in yet.
 ## `bare`: the rig draws the unit's case itself.
-func add_unit(rig_id: String, unit_id: String, tier: int, at: Transform3D, bare := false) -> TradesUnitWork:
+## `record`: Shared Components' unit on the rig (ShipBayBus.rig_unit), whose model the work is
+## then done on; `at` is then its body's world transform.
+func add_unit(rig_id: String, unit_id: String, tier: int, at: Transform3D, bare := false, record: Dictionary = {}) -> TradesUnitWork:
 	remove_unit()
-	unit = TradesUnitWork.new(rig_id, unit_id, tier)
+	unit = TradesUnitWork.new(rig_id, unit_id, tier, record)
 	unit.bare = bare
 	var start := unit.starting_state()
 	for id: String in start:
@@ -249,6 +251,7 @@ static func is_unit(f: FastenerPoint) -> bool:
 func _unit_changed(joint_id: String = "") -> void:
 	if unit == null:
 		return
+	unit.sync()
 	refresh_points.call_deferred()
 	var bus := bay.bus() if bay else null
 	if bus == null:
@@ -267,7 +270,10 @@ func use_unit() -> bool:
 	if seat == "":
 		return false
 	var id := unit.slot_of(seat) + "/fitted"
-	if not unit.is_fitted(seat):
+	var refused := UpgradeRules.refusal(unit.unit_id, unit.part_of(seat), unit._fitted_ids()) if unit.model and not unit.is_fitted(seat) else ""
+	if refused != "":
+		bay.hint("It won't go in: %s." % refused)
+	elif not unit.is_fitted(seat):
 		_set_seat(id, true)
 		bay.play(&"clunk", 0.9)
 		bay.hint("%s in. Fasten it down." % TradesUnitWork.ADDON_NAMES[seat])
