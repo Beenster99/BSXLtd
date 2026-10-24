@@ -20,6 +20,9 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The rings' colours (the quiet one-colour rings are test_playtest_0317's).
+	saved["trades.quiet_rings"] = Flags.is_on("trades.quiet_rings")
+	Flags.set_flag("trades.quiet_rings", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)

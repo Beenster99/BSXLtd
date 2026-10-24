@@ -48,7 +48,7 @@ func run_tests() -> void:
 	check(not bus.is_joint_tight(f.joint_id), "another player undoes it: undone here")
 	var markers: Dictionary = bay.get("markers")
 	await frames(1)
-	check((markers[f.joint_id] as MeshInstance3D).material_override == bay.get("_loose_mat"), "its ring shows amber here")
+	check((markers[f.joint_id] as MeshInstance3D).material_override == bay.get("_loose_mat"), "its ring follows it here")
 	bus.call("_apply_joint", {"joint": f.joint_id, "made": true, "quality": 0.9, "by": OTHER})
 	check(bus.is_joint_tight(f.joint_id) and is_equal_approx(bus.joint_quality(f.joint_id), 0.9), "made again, with their quality")
 	# A part they lift out and set back.

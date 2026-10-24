@@ -59,6 +59,18 @@ static func glow(color: Color, energy: float) -> StandardMaterial3D:
 	return m
 
 
+## The joint rings with trades.quiet_rings (beenster, 0.3.17: "too bright and big, I can't
+## actually see them because of the highlight. Make them one colour, more subtle"): one pale
+## blue-grey whatever the joint's state (the look card says the state), lit just enough to
+## find.
+const QUIET_RING := Color(0.62, 0.74, 0.86)
+const QUIET_ENERGY := 0.35
+
+
+static func quiet_ring() -> StandardMaterial3D:
+	return glow(QUIET_RING, QUIET_ENERGY)
+
+
 ## Plain metal for tools and the suit (SalvageTool.metal).
 static func metal(color: Color, metallic: float, roughness: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()

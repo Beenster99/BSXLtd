@@ -10,8 +10,11 @@ extends Node3D
 ## own ground, sky, sun and camera; the bay then adds only its cradles and the ship.
 @export var standalone := true
 
-const TIGHT := Color(0.3, 0.9, 0.4)
-const LOOSE := Color(1.0, 0.65, 0.1)
+## The fastener rings' one quiet colour and glow, tight or undone (beenster, 0.3.17: the
+## green and amber rings hid the fasteners; Tools' look card says a joint's state). Matches
+## Tools' TradesLook.QUIET_RING.
+const QUIET_RING := Color(0.62, 0.74, 0.86)
+const QUIET_GLOW := 0.35
 
 const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
 ## How far Use (F) reaches from the camera, metres.
@@ -26,8 +29,8 @@ var pieces: Dictionary = {}
 ## joint_id -> MeshInstance3D marker.
 var markers: Dictionary = {}
 var _bus: ShipBayBus
-var _tight_mat := _paint(TIGHT, true)
-var _loose_mat := _paint(LOOSE, true)
+var _tight_mat := _quiet_ring()
+var _loose_mat := _tight_mat
 var _head_mat := ShipSurface.of(ShipKit.paint(Color(0.55, 0.57, 0.6), 0.85, 0.35))
 
 
@@ -255,8 +258,8 @@ func _call_along(from: Vector3, direction: Vector3, meta: String) -> bool:
 
 
 ## A fastener as it looks on the ship: its head (a hex bolt, a domed rivet, a round plug) on
-## a thin washer ring lit green when tight and amber when undone. The ring is the marker
-## (its material shows the state); the head is its child, so hiding the ring hides both.
+## a thin washer ring in one quiet pale blue, tight or undone. The ring is the marker
+## (Tools' look card names the state); the head is its child, so hiding the ring hides both.
 func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
 	var n := f.normal.normalized()
 	if f.kind == "weld" and f.seam_up != Vector3.ZERO:
@@ -265,7 +268,7 @@ func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
 		var strip := MeshInstance3D.new()
 		var length := maxf(f.seam_size.x, 0.02)
 		var width := maxf(f.seam_size.y, 0.006)
-		strip.mesh = PartShapes.box(Vector3(width + 0.012, 0.003, length)).mesh
+		strip.mesh = PartShapes.box(Vector3(width + 0.005, 0.002, length)).mesh
 		strip.transform = Transform3D(Basis(n.cross(along), n, along), f.position + n * 0.002)
 		strip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var bead := MeshInstance3D.new()
@@ -278,7 +281,7 @@ func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
 	var x := side.cross(n).normalized()
 	var ring := MeshInstance3D.new()
 	var big := f.kind != "rivet"
-	ring.mesh = PartShapes.ring(0.024 if big else 0.016, 0.034 if big else 0.022, 0.004, 16).mesh
+	ring.mesh = PartShapes.ring(0.026 if big else 0.017, 0.031 if big else 0.020, 0.003, 16).mesh
 	ring.transform = Transform3D(Basis(x, n, x.cross(n)), f.position + n * 0.002)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var head := MeshInstance3D.new()
@@ -356,6 +359,12 @@ func _on_marker_focus(at: Vector3, radius_m: float) -> void:
 			m.set_meta("ring_mesh", m.mesh)
 		var near := is_inf(radius_m) or m.position.distance_to(local) <= radius_m
 		m.mesh = m.get_meta("ring_mesh") if near else null
+
+
+static func _quiet_ring() -> StandardMaterial3D:
+	var m := _paint(QUIET_RING, true)
+	m.emission_energy_multiplier = QUIET_GLOW
+	return m
 
 
 static func _paint(c: Color, lit := false) -> StandardMaterial3D:
