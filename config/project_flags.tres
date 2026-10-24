@@ -86,6 +86,8 @@ flags = {
 "trades.torque_kept": true,
 "trades.helmet_toggle": true,
 "trades.near_rings": true,
+"trades.quiet_rings": true,
+"trades.weld_guide": true,
 "trades.no_pinning": true,
 "trades.crew_tools": true,
 "trades.unit_mounts": true,
