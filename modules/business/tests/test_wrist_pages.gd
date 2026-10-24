@@ -28,33 +28,38 @@ func run_tests() -> void:
 	add_child(orders)
 	await frames(2)
 	var list: VBoxContainer = orders.get("_list")
-	var headings := list.get_children().filter(func(c: Node) -> bool: return c.name.begins_with("Heading_"))
+	var entries: Array = orders.get("_entries")
 	var cats := {}
 	for l in bus.get_listings():
 		cats[bus.listing_category(l)] = true
-	check(headings.size() == cats.size(), "a heading per category: %d of %d" % [headings.size(), cats.size()])
-	# Every Void Salvage part is on sale, so ALL shows a few of each and SEE ALL opens the rest.
-	var see_all := list.get_children().filter(func(c: Node) -> bool: return c.name.begins_with("SeeAll_"))
-	check(not see_all.is_empty() and list.get_child_count() < 200, "ALL is a short list with SEE ALL buttons: %d rows" % list.get_child_count())
-	if not see_all.is_empty():
-		(see_all[0].get_child(0) as Button).pressed.emit()
-		await frames(1)
-		check(orders.category != "" and orders.shown_listings().size() > Wrist.PREVIEW_ROWS, "SEE ALL opens its category: %s" % orders.category)
-		orders.category = "hull"
-		orders.limit = Wrist.MAX_ROWS
-		orders.refresh()
-		var more := list.find_child("ShowMore", true, false)
-		check(more != null, "a long category pages with SHOW MORE")
-		if more:
-			(more as Button).pressed.emit()
-			await frames(1)
-			check(orders.limit == Wrist.MAX_ROWS * 2, "SHOW MORE shows another page")
-		orders.query = "ion thruster"
-		orders.category = ""
-		orders.refresh()
-		check(orders.shown_listings().any(func(l: MarketListing) -> bool: return l.part == "IonThruster"), "search finds a part by name")
-		orders.query = ""
-		orders.limit = Wrist.MAX_ROWS
+	var heads := entries.filter(func(e: Variant) -> bool: return e is String)
+	check(heads.size() == cats.size(), "a heading per category: %d of %d" % [heads.size(), cats.size()])
+	check(list.get_children().any(func(c: Node) -> bool: return c.name.begins_with("Heading_")), "headings drawn in the list")
+	# Every Void Salvage part is on sale and ALL lists every one (beenster, 0.3.17), building
+	# only the lines in view.
+	check(entries.size() - heads.size() == bus.get_listings().size(), "ALL lists every listing: %d of %d" % [entries.size() - heads.size(), bus.get_listings().size()])
+	check(list.get_child_count() < 200, "but builds only the lines near the view: %d" % list.get_child_count())
+	var last_l: MarketListing = entries[entries.size() - 1]
+	check(list.find_child("Add_" + last_l.id, true, false) == null, "the last line isn't built at the top")
+	var scroll := list.get_parent() as ScrollContainer
+	await frames(1)
+	scroll.get_v_scroll_bar().value = scroll.get_v_scroll_bar().max_value
+	orders.call("_on_list_scrolled", float(list.get_combined_minimum_size().y))
+	await frames(1)
+	check(list.find_child("Add_" + last_l.id, true, false) != null, "scrolled to the end, the last line is there")
+	var drawn: float = list.get_combined_minimum_size().y
+	var laid: PackedFloat32Array = orders.get("_offsets")
+	check(absf(drawn - (laid[laid.size() - 1] - 3.0)) < 2.0, "the list keeps its full height while windowed: %.0f of %.0f" % [drawn, laid[laid.size() - 1] - 3.0])
+	orders.category = "hull"
+	orders.refresh()
+	entries = orders.get("_entries")
+	check(entries.size() == bus.get_listings("hull").size() and entries.all(func(e: Variant) -> bool: return e is MarketListing),
+			"a category lists all of it, no headings: %d" % entries.size())
+	orders.query = "ion thruster"
+	orders.category = ""
+	orders.refresh()
+	check(orders.shown_listings().any(func(l: MarketListing) -> bool: return l.part == "IonThruster"), "search finds a part by name")
+	orders.query = ""
 	var cat: String = bus.listing_category(orders.shown_listings()[0])
 	orders.category = cat
 	orders.refresh()

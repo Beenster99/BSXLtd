@@ -12,8 +12,12 @@ const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 ## "tv_<hall>" wins where it has one (it knows its walls); HALLS without either get no TV.
 ## Deliveries and pre-assembly: the outer end walls, facing the big courtyard doors, between
 ## the truck doors (deliveries) and south of the refurb machines (pre-assembly). Stock: the south wall
-## by the door to prep. Prep: the north wall, clear of the benches.
+## by the door to prep. Prep: the north wall, clear of the benches. The bay: the courtyard's
+## north wall between the doorways to stock and Store 2, facing the ship and the apron doors.
+## The crusher house: its east end wall, past the smelter, facing the plant.
 const MONITORS := {
+	"bay": Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -23.75)),
+	"crusher": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(88.0, 0.0, 9.5)),
 	"deliveries": Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-49.75, 0.0, 0.0)),
 	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 0.0, -24.25)),
 	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 0.0, -45.75)),

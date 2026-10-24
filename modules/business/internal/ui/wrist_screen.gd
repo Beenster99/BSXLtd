@@ -12,8 +12,9 @@ extends HBoxContainer
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const MAX_ROWS := 120
-## Lines per category in the ALL list before its SEE ALL button.
-const PREVIEW_ROWS := 8
+## The buy list holds every listing (well over a thousand under ALL), so only the lines in
+## view and this many past each edge are built; spacers stand in for the rest.
+const WINDOW_SPARE := 16
 ## Text in list rows is drawn at this share of TerminalKit's size.
 const COMPACT := 0.82
 ## How many past deliveries the Orders page lists.
@@ -53,6 +54,17 @@ var _store_chips: Control
 var _message := ""
 var _message_good := true
 var _dirty := false
+## The buy list as laid out: a category heading (String) or a MarketListing per entry, each
+## entry's top in the list (pixels, one more for the end), and the entries built now.
+var _entries: Array = []
+var _offsets := PackedFloat32Array()
+var _counts := {}
+var _built := Vector2i(-1, -1)
+var _row_h := 0.0
+var _head_h := 0.0
+var _measured_in_tree := false
+## The category and search the list was last drawn for: a new one starts at the top.
+var _list_key := ""
 
 
 func _init(p_bus: BusinessBus, p_page := "orders", p_glass := true) -> void:
@@ -84,6 +96,12 @@ var estimate: Dictionary:
 
 func _mark_dirty() -> void:
 	_dirty = true
+
+
+func _notification(what: int) -> void:
+	# Lines measured before the screen had a theme are measured again in it.
+	if what == NOTIFICATION_ENTER_TREE and page == "orders" and not _measured_in_tree:
+		_dirty = true
 
 
 func _process(_delta: float) -> void:
@@ -139,6 +157,8 @@ func _build() -> void:
 		_side.add_child(ledger_head)
 	_list = T.list()
 	(_side if page == "accounts" else main).add_child(_list.get_parent())
+	if page == "orders":
+		(_list.get_parent() as ScrollContainer).get_v_scroll_bar().value_changed.connect(_on_list_scrolled)
 	refresh()
 
 
@@ -237,7 +257,13 @@ func shown_listings() -> Array[MarketListing]:
 func _refresh_list() -> void:
 	var scroll := _list.get_parent() as ScrollContainer
 	var keep := scroll.scroll_vertical
-	_clear(_list)
+	if _list_key != category + "|" + query:
+		_list_key = category + "|" + query
+		keep = 0
+	_drop_rows()
+	_entries.clear()
+	_counts.clear()
+	_built = Vector2i(-1, -1)
 	var shown := shown_listings()
 	if category == "":
 		# Every category: grouped under headings, in the catalogue's category order.
@@ -249,43 +275,113 @@ func _refresh_list() -> void:
 			var na := bus.part_name(a.part)
 			var nb := bus.part_name(b.part)
 			return na < nb if na != nb else a.unit_price < b.unit_price)
-	var preview := category == "" and query == ""
-	var counts := {}
+	var last: Variant = null
 	for l in shown:
-		var c := bus.listing_category(l)
-		counts[c] = int(counts.get(c, 0)) + 1
-	var last := ""
-	var in_cat := 0
-	var rows := 0
-	for l in shown:
-		if rows >= limit:
-			break
 		var cat := bus.listing_category(l)
+		_counts[cat] = int(_counts.get(cat, 0)) + 1
 		if category == "" and cat != last:
-			if preview and in_cat > PREVIEW_ROWS:
-				_list.add_child(_see_all(last, int(counts[last])))
-			_list.add_child(_heading(cat, int(counts[cat])))
+			_entries.append(cat)
 			last = cat
-			in_cat = 0
-		in_cat += 1
-		# Every Void Salvage part is on sale, so ALL shows a few of each type to pick from.
-		if preview and in_cat > PREVIEW_ROWS:
-			continue
-		_list.add_child(_listing_row(l, rows % 2 == 1))
-		rows += 1
-	if preview and in_cat > PREVIEW_ROWS:
-		_list.add_child(_see_all(last, int(counts[last])))
-	var left := 0 if preview else shown.size() - rows
-	if left > 0:
-		var more := T.button("SHOW MORE  (%d more)" % left, false, 16, false, glass)
-		more.name = "ShowMore"
-		more.pressed.connect(func() -> void:
-			limit += MAX_ROWS
-			_refresh_list())
-		_list.add_child(_centred(more))
+		_entries.append(l)
 	if shown.is_empty():
 		_list.add_child(T.label("Nothing matches." if query != "" else "Nothing on the market here today.", "body", 18, T.DIM))
+		return
+	_lay_out()
+	_draw_window(keep)
 	scroll.set_deferred("scroll_vertical", keep)
+
+
+## Every line of the buy list is the same height, and every heading: measured once from a
+## real one, then each entry's top follows.
+func _lay_out() -> void:
+	if not _measured_in_tree:
+		_measured_in_tree = _list.is_inside_tree()
+		for e: Variant in [_entries[0] if _entries[0] is String else "", _first_listing()]:
+			var c := _entry(e, 0)
+			_list.add_child(c)
+			var h := c.get_combined_minimum_size().y
+			if e is String:
+				_head_h = h
+			else:
+				_row_h = h
+			_list.remove_child(c)
+			c.free()
+	var sep := float(_list.get_theme_constant("separation"))
+	_offsets.resize(_entries.size() + 1)
+	var y := 0.0
+	for i in _entries.size():
+		_offsets[i] = y
+		y += (_head_h if _entries[i] is String else _row_h) + sep
+	_offsets[_entries.size()] = y
+
+
+func _first_listing() -> MarketListing:
+	for e: Variant in _entries:
+		if e is MarketListing:
+			return e
+	return null
+
+
+## Builds the entries in view at scroll position `at` (pixels), unless they're built already.
+func _draw_window(at: float) -> void:
+	if _entries.is_empty() or _offsets.size() != _entries.size() + 1:
+		return
+	var scroll := _list.get_parent() as ScrollContainer
+	var view := maxf(scroll.size.y, 400.0)
+	var first := maxi(0, _entry_at(at) - WINDOW_SPARE)
+	var last := mini(_entries.size() - 1, _entry_at(at + view) + WINDOW_SPARE)
+	if _built.x >= 0 and first >= _built.x and last <= _built.y:
+		return
+	# Build a little further than needed so a slow scroll doesn't rebuild every step.
+	first = maxi(0, first - WINDOW_SPARE)
+	last = mini(_entries.size() - 1, last + WINDOW_SPARE)
+	_drop_rows()
+	var sep := float(_list.get_theme_constant("separation"))
+	if first > 0:
+		_list.add_child(_spacer("Above", _offsets[first] - sep))
+	var row := 0
+	for i in first:
+		if _entries[i] is MarketListing:
+			row += 1
+	for i in range(first, last + 1):
+		_list.add_child(_entry(_entries[i], row))
+		if _entries[i] is MarketListing:
+			row += 1
+	if last < _entries.size() - 1:
+		_list.add_child(_spacer("Below", _offsets[_entries.size()] - _offsets[last + 1] - sep))
+	_built = Vector2i(first, last)
+
+
+func _entry(e: Variant, row: int) -> Control:
+	if e is String:
+		return _heading(e, int(_counts.get(e, 0)))
+	return _listing_row(e, row % 2 == 1)
+
+
+## The entry at height `y` in the list.
+func _entry_at(y: float) -> int:
+	return clampi(_offsets.bsearch(y, false) - 1, 0, _entries.size() - 1)
+
+
+func _spacer(n: String, h: float) -> Control:
+	var c := Control.new()
+	c.name = n
+	c.custom_minimum_size.y = maxf(0.0, h)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+func _on_list_scrolled(at: float) -> void:
+	if page == "orders" and mode == "buy" and not _entries.is_empty():
+		_draw_window(at)
+
+
+## Takes the list's lines out at once (a pressed + may be one of them, so they're freed
+## after), so the windowed list never lays out stale lines.
+func _drop_rows() -> void:
+	for c in _list.get_children():
+		_list.remove_child(c)
+		c.queue_free()
 
 
 func _listing_row(l: MarketListing, alt: bool) -> Control:
@@ -316,19 +412,6 @@ func _listing_row(l: MarketListing, alt: bool) -> Control:
 	], alt, glass))
 
 
-## Under a category's first few lines in ALL: a button that opens the whole category.
-func _see_all(cat: String, count: int) -> Control:
-	var b := T.button("SEE ALL %d %s  ›" % [count, cat.to_upper()], false, 14, false, glass)
-	b.pressed.connect(func() -> void:
-		category = cat
-		limit = MAX_ROWS
-		refresh())
-	var box := _centred(b)
-	box.name = "SeeAll_" + (cat if cat != "" else "other").validate_node_name()
-	return box
-
-
-## A category heading in a list, with how many lines are under it.
 func _heading(cat: String, count: int) -> Control:
 	var h := HBoxContainer.new()
 	var l := T.label(cat.to_upper() if cat != "" else "OTHER", "display_bold", 16, T.ORANGE)
