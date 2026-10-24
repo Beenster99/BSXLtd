@@ -25,7 +25,7 @@ func run_tests() -> void:
 func _sweep() -> void:
 	var rules := RigRules.new()
 	var addons := [{"part": "quantum_core", "tier": 2, "mount": "coil_bay"},
-			{"part": "field_emitter_array", "tier": 1, "mount": "horn_mount"}]
+			{"part": "field_emitter", "tier": 1, "mount": "horn_mount"}]
 	var rated := FieldSweep.rated(BASE, addons, rules)
 	check(is_equal_approx(rated.attract_max_mass, 15000.0), "a Q2 core rates the coil at 2.5x mass: %s" % rated.attract_max_mass)
 	check(is_equal_approx(rated.attract_reach, 18.0 * 1.2 * 1.15), "add-ons stack on reach: %s" % rated.attract_reach)
@@ -52,10 +52,13 @@ func _sweep() -> void:
 	check(not p.passed and _codes(p).has("trip") and p.grade == "D", "a failed joint trips the sweep")
 
 	var t3 := [{"part": "quantum_core", "tier": 3, "mount": "coil_bay"}]
+	check(FieldSweep.run(_req(t3, ["a", "b"]), good, rules).passed, "U1 has no heat exchanger, so tier 3 runs")
+	rules.coolers = PackedStringArray(["heat_exchanger"])
 	p = FieldSweep.run(_req(t3, ["a", "b"]), good, rules)
 	check(_codes(p) == ["overheat"] and p.tier == 3, "tier 3 without a heat exchanger overheats")
 	t3.append({"part": "heat_exchanger", "tier": 1, "mount": "jacket"})
 	check(FieldSweep.run(_req(t3, ["a", "b"]), good, rules).passed, "a heat exchanger lets tier 3 run")
+	rules.coolers = PackedStringArray()
 
 	p = FieldSweep.run(_req([], []), good, rules)
 	check(_codes(p) == ["nothing_fitted"] and p.tested.attract_reach == 18.0, "an empty unit can't pass")
@@ -73,7 +76,7 @@ func _sweep() -> void:
 func _unit_joints(rules: RigRules) -> void:
 	var fitted := FieldSweep.addons_from_fitted({"core": "quantum_core_2", "emitter": "emitter", "board": "board"}, rules)
 	check(fitted[0] == {"part": "quantum_core", "tier": 2, "mount": "core"}, "a part id carries its tier: %s" % [fitted[0]])
-	check(fitted[1].part == "field_emitter_array" and fitted[1].tier == 1, "a bare mount name is a tier 1 part")
+	check(fitted[1].part == "field_emitter" and fitted[1].tier == 1, "a bare mount name is a tier 1 part")
 	check(FieldSweep.addons_from_fitted(["heat_exchanger"], rules)[0].part == "heat_exchanger", "an Array of parts works too")
 	var req := {"unit_id": "attractor_coil_1", "rig_id": "rig_a", "base": rules.base_figures.attractor_coil_1,
 			"addons": fitted, "joint_scores": {"unit_rig_a_core/b1": 0.95, "unit_rig_a_core/b2": 0.9}}
@@ -89,7 +92,7 @@ func _unit_joints(rules: RigRules) -> void:
 	check(not p.passed and _codes(p).has("trip"), "a poor unit joint trips the sweep")
 	var shown := FieldSweep.rig_result(FieldSweep.run({"unit_id": "attractor_coil_1", "base": rules.base_figures.attractor_coil_1,
 			"addons": fitted, "joint_scores": {"a": 1.0}}, {}, rules))
-	check(shown.passed and shown.lines.size() == 3 and shown.lines[1] == ["Max mass (t)", "6.0", "15.5"],
+	check(shown.passed and shown.lines.size() == 3 and shown.lines[1] == ["Max mass (t)", "8.0", "20.6"],
 			"the rig screen gets before and after lines: %s" % [shown.lines])
 
 

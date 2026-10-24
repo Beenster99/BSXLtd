@@ -86,7 +86,7 @@ static func run(request: Dictionary, records: Dictionary, rules: RigRules, time 
 				"text": "Tripped at %s: %s." % [SurveyDesk.joint_words(line), why.to_lower()]})
 	var cooled := p.addons.any(func(a: Dictionary) -> bool: return str(a.get("part", "")) in rules.coolers)
 	for a in p.addons:
-		if int(a.get("tier", 1)) >= 3 and not cooled:
+		if not rules.coolers.is_empty() and int(a.get("tier", 1)) >= 3 and not cooled:
 			p.snags.append({"code": "overheat", "part": str(a.get("part", "")),
 					"text": "Overheated: the tier 3 %s needs a heat exchanger fitted first." % part_words(str(a.get("part", "")))})
 	if graded > 0 and p.efficiency < rules.pass_efficiency:
@@ -153,7 +153,7 @@ static func family_of(unit_id: String) -> String:
 	return "_".join(parts)
 
 
-## "field_emitter_array" -> "field emitter array".
+## "field_emitter" -> "field emitter array".
 static func part_words(part: String) -> String:
 	return part.replace("_", " ")
 
