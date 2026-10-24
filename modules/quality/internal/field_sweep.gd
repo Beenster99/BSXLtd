@@ -15,12 +15,15 @@ const STATS := {
 
 
 ## request: {unit_id, family?, tier?, base: {stat: value}, addons: [{part, tier, mount}],
-## joint_ids: [...], rated?: {stat: value}, job_id?}. records: joint_id -> JointRecord.
+## joint_ids: [...] (graded ship-style joints) and/or joint_scores: {joint_id: 0..1, -1 when
+## not made} (Tools' unit joints), open?: bool, rated?: {stat: value}, job_id?, rig_id?}.
+## records: joint_id -> JointRecord.
 static func run(request: Dictionary, records: Dictionary, rules: RigRules, time := 0) -> UpgradePlate:
 	var p := UpgradePlate.new()
 	p.unit_id = str(request.get("unit_id", ""))
 	p.family = str(request.get("family", family_of(p.unit_id)))
 	p.job_id = str(request.get("job_id", ""))
+	p.rig_id = str(request.get("rig_id", ""))
 	p.time = time
 	p.base = _floats(request.get("base", {}))
 	p.addons.assign(request.get("addons", []))
@@ -46,6 +49,23 @@ static func run(request: Dictionary, records: Dictionary, rules: RigRules, time 
 			total += r.score
 		if r.grade == JointRecord.FAIL:
 			fails.append(line)
+	var unmade := 0
+	var scores: Dictionary = request.get("joint_scores", {})
+	for id in scores:
+		var q := float(scores[id])
+		if q < 0.0:
+			unmade += 1
+			continue
+		var score := roundi(clampf(q, 0.0, 1.0) * 100.0)
+		var g := JointRecord.PASS if score >= rules.pass_score else (JointRecord.MARGINAL if score >= rules.marginal_score else JointRecord.FAIL)
+		var line := {"joint_id": str(id), "trade": "", "component_id": str(id).get_slice("/", 0),
+				"mount_id": "", "score": score, "grade": String(g),
+				"faults": [{"code": "poor_joint", "hole": -1, "text": "Joint not good enough"}] if g == JointRecord.FAIL else []}
+		p.joints.append(line)
+		graded += 1
+		total += score
+		if g == JointRecord.FAIL:
+			fails.append(line)
 	p.average = float(total) / graded if graded > 0 else 0.0
 	p.quality = p.average / 100.0
 	p.grade = SurveyReport.letter(p.average, fails.size()) if graded > 0 else "–"
@@ -56,6 +76,10 @@ static func run(request: Dictionary, records: Dictionary, rules: RigRules, time 
 
 	if p.addons.is_empty() or graded == 0:
 		p.snags.append({"code": "nothing_fitted", "text": "No add-ons fitted and joined on this unit yet."})
+	if bool(request.get("open", false)):
+		p.snags.append({"code": "open", "text": "The covers are off: close the unit up before testing."})
+	if unmade > 0:
+		p.snags.append({"code": "unfinished", "text": "%d joint%s not made yet." % [unmade, "" if unmade == 1 else "s"]})
 	for line in fails:
 		var why: String = str(line.faults[0].get("text", "")) if not line.faults.is_empty() else "failed"
 		p.snags.append({"code": "trip", "joint_id": line.joint_id,
@@ -81,6 +105,44 @@ static func rated(base: Dictionary, addons: Array, rules: RigRules) -> Dictionar
 			if out.has(stat):
 				out[stat] = float(out[stat]) * float(mult[stat])
 	return out
+
+
+## Tools' fitted list ("core", or part ids like "quantum_core_2", in an Array or as the values
+## of a mount -> part Dictionary) as add-ons: {part, tier, mount}. A trailing _1.._3 is the tier.
+static func addons_from_fitted(fitted: Variant, rules: RigRules) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var pairs: Array = []
+	if fitted is Dictionary:
+		for mount in fitted:
+			pairs.append([str(mount), str(fitted[mount])])
+	elif fitted is Array:
+		for f in fitted:
+			pairs.append([str(f), str(f)])
+	for pair in pairs:
+		var id: String = rules.mount_parts.get(pair[1], pair[1])
+		var tier := 1
+		var bits := id.split("_")
+		if bits.size() > 1 and bits[-1].is_valid_int():
+			tier = clampi(int(bits[-1]), 1, 3)
+			id = family_of(id)
+		out.append({"part": id, "tier": tier, "mount": pair[0]})
+	return out
+
+
+## The rig's screen result (Ship and Bay's rig_show_test): {lines: [[label, old, new]], rated:
+## [[label, rated]], passed, note, serial, tier, grade}.
+static func rig_result(p: UpgradePlate) -> Dictionary:
+	var lines: Array = []
+	var rated_lines: Array = []
+	for stat in p.base:
+		var w: Array = STATS.get(stat, [str(stat).capitalize(), "", 1.0])
+		var label := "%s (%s)" % [w[0], w[1]] if str(w[1]) != "" else str(w[0])
+		lines.append([label, _fmt(float(p.base[stat]) * w[2]), _fmt(float(p.tested.get(stat, p.base[stat])) * w[2])])
+		rated_lines.append([label, _fmt(float(p.rated.get(stat, p.base[stat])) * w[2])])
+	var note := "Tier %d  ·  grade %s  ·  plate %s" % [p.tier, p.grade, p.serial] if p.passed \
+			else (str(p.snags[0].get("text", "")) if not p.snags.is_empty() else "Failed")
+	return {"lines": lines, "rated": rated_lines, "passed": p.passed, "note": note, "serial": p.serial,
+			"tier": p.tier, "grade": p.grade}
 
 
 ## "attractor_coil_1" -> "attractor_coil".
@@ -110,6 +172,10 @@ static func _short_words(p: UpgradePlate) -> String:
 			return "%s of %s rated" % [stat_text(stat, float(p.tested[stat])),
 					("%.1f %s" % [float(p.rated[stat]) * float(w[2]), w[1]]).strip_edges()]
 	return "below the tier's rating"
+
+
+static func _fmt(v: float) -> String:
+	return ("%.1f" % v) if absf(v) < 100.0 else str(roundi(v))
 
 
 static func _floats(d: Dictionary) -> Dictionary:

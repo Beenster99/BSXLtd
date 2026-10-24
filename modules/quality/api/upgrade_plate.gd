@@ -38,6 +38,8 @@ const VERSION := 1
 ## What stopped a pass: [{"code": "trip" | "overheat" | "short" | "nothing_fitted", "text"}].
 @export var snags: Array[Dictionary] = []
 @export var job_id := ""
+## The rig it was tested on ("" when the test didn't come from a rig).
+@export var rig_id := ""
 @export var time := 0
 
 
@@ -51,7 +53,7 @@ func to_dict() -> Dictionary:
 		"version": version, "serial": serial, "unit_id": unit_id, "family": family, "tier": tier,
 		"test": test, "base": base, "rated": rated, "tested": tested, "addons": addons,
 		"joints": joints, "average": average, "quality": quality, "grade": grade,
-		"efficiency": efficiency, "passed": passed, "snags": snags, "job_id": job_id, "time": time,
+		"efficiency": efficiency, "passed": passed, "snags": snags, "job_id": job_id, "rig_id": rig_id, "time": time,
 	}
 
 
@@ -74,5 +76,6 @@ static func from_dict(d: Dictionary) -> UpgradePlate:
 	p.passed = bool(d.get("passed", false))
 	p.snags.assign(d.get("snags", []))
 	p.job_id = str(d.get("job_id", ""))
+	p.rig_id = str(d.get("rig_id", ""))
 	p.time = int(d.get("time", 0))
 	return p

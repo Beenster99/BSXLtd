@@ -66,6 +66,31 @@ func _sweep() -> void:
 	check(is_equal_approx(p.rated.attract_reach, 30.0) and p.tested.attract_max_mass == 6000.0,
 			"figures from the shared rules file replace Quality's stand-in")
 	check(FieldSweep.stat_text("attract_max_mass", 15000.0) == "Max mass 15.0 t", "mass shows in tonnes")
+	_unit_joints(rules)
+
+
+## Tools' opened unit on a Ship and Bay rig: mounts fitted with part ids, joints as 0..1.
+func _unit_joints(rules: RigRules) -> void:
+	var fitted := FieldSweep.addons_from_fitted({"core": "quantum_core_2", "emitter": "emitter", "board": "board"}, rules)
+	check(fitted[0] == {"part": "quantum_core", "tier": 2, "mount": "core"}, "a part id carries its tier: %s" % [fitted[0]])
+	check(fitted[1].part == "field_emitter_array" and fitted[1].tier == 1, "a bare mount name is a tier 1 part")
+	check(FieldSweep.addons_from_fitted(["heat_exchanger"], rules)[0].part == "heat_exchanger", "an Array of parts works too")
+	var req := {"unit_id": "attractor_coil_1", "rig_id": "rig_a", "base": rules.base_figures.attractor_coil_1,
+			"addons": fitted, "joint_scores": {"unit_rig_a_core/b1": 0.95, "unit_rig_a_core/b2": 0.9}}
+	var p := FieldSweep.run(req, {}, rules)
+	check(p.passed and p.joints.size() == 2 and p.rig_id == "rig_a", "unit joint qualities grade the sweep")
+	req.joint_scores["unit_rig_a_board/c1"] = -1.0
+	req["open"] = true
+	p = FieldSweep.run(req, {}, rules)
+	check(_codes(p) == ["open", "unfinished"], "an open, unfinished unit can't pass: %s" % [_codes(p)])
+	req.joint_scores = {"unit_rig_a_core/b1": 0.95, "unit_rig_a_core/w1": 0.3}
+	req["open"] = false
+	p = FieldSweep.run(req, {}, rules)
+	check(not p.passed and _codes(p).has("trip"), "a poor unit joint trips the sweep")
+	var shown := FieldSweep.rig_result(FieldSweep.run({"unit_id": "attractor_coil_1", "base": rules.base_figures.attractor_coil_1,
+			"addons": fitted, "joint_scores": {"a": 1.0}}, {}, rules))
+	check(shown.passed and shown.lines.size() == 3 and shown.lines[1] == ["Max mass (t)", "6.0", "15.5"],
+			"the rig screen gets before and after lines: %s" % [shown.lines])
 
 
 func _bus(bus: QualityBus) -> void:
@@ -105,6 +130,13 @@ func _bus(bus: QualityBus) -> void:
 	check(bus.plates().size() == 2 and bus.get_plate("BSX-U-0001").tested.has("attract_max_mass"), "plates survive a save")
 	bus.run_field_sweep(_req(addons, ["coil_bay_bolts", "horn_bolts"]))
 	check(heard.back().serial == "BSX-U-0002", "serials keep counting after a load")
+
+	var rig := bus.rig_request("rig_a", "attractor_coil_1", {"open": false, "fitted": ["quantum_core_1"],
+			"joints": {"unit_rig_a_core/b1": 0.9}})
+	check(rig.base.attract_reach == 18.0 and rig.addons[0].part == "quantum_core" and rig.rig_id == "rig_a",
+			"a rig's unit becomes a sweep request")
+	bus.run_field_sweep(rig)
+	check(heard.back().passed and heard.back().rig_id == "rig_a", "a rig's sweep comes back with its rig")
 
 	Flags.set_flag(QualityBus.RIG_TESTS, false)
 	var n := heard.size()

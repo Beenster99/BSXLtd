@@ -18,6 +18,17 @@ extends Resource
 		3: {"attract_reach": 1.5, "attract_speed": 1.4},
 	},
 }
+## A stock unit's figures before any add-ons, by unit id (stand-in for the shared library's
+## unit designs; a request's own `base` wins). Mass in kg, as Void Salvage's attract_max_mass.
+@export var base_figures: Dictionary = {
+	"attractor_coil_1": {"attract_reach": 18.0, "attract_max_mass": 6000.0, "attract_speed": 5.0},
+}
+## Tools' mount names for a fitted add-on that came without a part id.
+@export var mount_parts: Dictionary = {"core": "quantum_core", "emitter": "field_emitter_array", "board": "control_board"}
+## A unit joint's quality (0..1 from Tools) as a grade: PASS from pass_score, MARGINAL from
+## marginal_score, FAIL below (the same marks as ship joints).
+@export var pass_score := 70
+@export var marginal_score := 50
 ## Parts that let a tier 3 add-on run without overheating.
 @export var coolers: PackedStringArray = ["heat_exchanger"]
 ## How much of the rated gain the unit reaches: floor + slope * (mean joint score / 100).

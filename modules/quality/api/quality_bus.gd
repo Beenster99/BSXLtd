@@ -23,6 +23,9 @@ extends Node
 ##           "addons": [{"part": "quantum_core", "tier": 2, "mount": "coil_bay"}],
 ##           "joint_ids": ["coil_bay_bolts", "loom_plug"]})
 ## make_sweep_screen() and make_plate_node() draw the result on the rig and on the unit.
+## The emitter frame rig needs none of that: its TEST button fires Ship and Bay's
+## rig_test_requested(rig_id, unit_id); Quality reads the opened unit from Tools
+## (TradesBus.unit_state) and answers with ShipBayBus.rig_show_test(rig_id, result).
 
 ## A joint was graded (also fired again when a reworked joint is regraded).
 signal joint_graded(record: JointRecord)
@@ -93,6 +96,10 @@ func register_module() -> void:
 		HudSlots.register_panel(SCORE_CARD, "res://modules/quality/internal/score_card.tscn",
 				HudSlots.NOTICES)
 	attach(Modules.bus("contracts"), Modules.bus("multiplayer"))
+	# Ship and Bay's rigs and Tools' opened units arrive in U1; listen when they're there.
+	var rigs := Modules.bus("ship_bay")
+	if Flags.is_on(RIG_TESTS) and rigs and rigs.has_signal("rig_test_requested"):
+		rigs.connect("rig_test_requested", _on_rig_test_requested)
 	if Flags.is_on(SURVEYS):
 		HudSlots.register_holo_channel(SURVEYS_CHANNEL, "Surveys",
 				func(glass: bool) -> Control: return SurveyScreen.new(self, glass), 58)
@@ -262,6 +269,22 @@ func make_plate_node(plate: UpgradePlate) -> Node3D:
 	return PlateNode.new(plate)
 
 
+## A rig's TEST button (Ship and Bay, on the host): read the unit off Tools and sweep it.
+func _on_rig_test_requested(rig_id: String, unit_id: String) -> void:
+	if _is_host():
+		run_field_sweep(rig_request(rig_id, unit_id))
+
+
+## The sweep request for the unit on a rig, from Tools' unit_state(rig_id) (or `state`).
+func rig_request(rig_id: String, unit_id: String, state: Dictionary = {}) -> Dictionary:
+	var trades := Modules.bus("trades")
+	if state.is_empty() and trades and trades.has_method("unit_state"):
+		state = trades.call("unit_state", rig_id)
+	var addons := FieldSweep.addons_from_fitted(state.get("fitted", []), rig_rules)
+	return {"unit_id": unit_id, "rig_id": rig_id, "base": rig_rules.base_figures.get(unit_id, {}).duplicate(),
+			"addons": addons, "joint_scores": state.get("joints", {}), "open": bool(state.get("open", false))}
+
+
 func _validate_sweep(_sender: int, p: Dictionary) -> Variant:
 	if not Flags.is_on(RIG_TESTS):
 		return "Rig tests are switched off"
@@ -290,6 +313,9 @@ func _apply_plate(p: Dictionary) -> void:
 	else:
 		_notice("Field sweep failed", str(plate.snags[0].get("text", "")) if not plate.snags.is_empty() else "", NOTICE_S)
 	rig_test_finished.emit(plate)
+	var rigs := Modules.bus("ship_bay")
+	if plate.rig_id != "" and _is_host() and rigs and rigs.has_method("rig_show_test"):
+		rigs.call("rig_show_test", plate.rig_id, FieldSweep.rig_result(plate))
 
 
 # Surveys
