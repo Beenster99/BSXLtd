@@ -22,6 +22,9 @@ extends Node3D
 
 ## The seats in fitting order; a unit of tier n has the first n (all three from tier 3).
 const SEATS := ["core", "emitter", "board"]
+## The add-on part each seat takes (Shared Components' ids: kind, then "_<tier>" where it has
+## tiers; the unit's own tier, as an add-on is never above its unit's).
+const ADDON_PARTS := {"core": "quantum_core", "emitter": "field_emitter", "board": "control_board"}
 ## What goes on each seat, as the player reads it.
 const ADDON_NAMES := {"core": "Quantum core", "emitter": "Field emitter horns", "board": "Control board"}
 ## The housing (m): the coil's case, its walls and floor; low, so you see in over the front
@@ -47,6 +50,7 @@ const GREEN := Color(0.3, 1.0, 0.45)
 var rig_id := ""
 var unit_id := ""
 var seats: Array[String] = []
+var tier := 3
 ## Every joint in unit space: the cover's, then each seat's.
 var joints: Array[FastenerPoint] = []
 ## joint_id -> true while made (the station's `practice`); "<slot>/fitted" for the seats.
@@ -70,6 +74,7 @@ func _init(rig: String = "rig_emitter", unit: String = "", tier: int = 3) -> voi
 	top_level = true
 	rig_id = rig
 	unit_id = unit
+	self.tier = clampi(tier, 1, 3)
 	for i in clampi(tier, 1, SEATS.size()):
 		seats.append(SEATS[i])
 	_lay_out()
@@ -153,17 +158,27 @@ func seat_centre(seat: String) -> Vector3:
 	return (m[1] as Vector3) + Vector3(0, (m[2] as Vector3).y * 0.5, 0)
 
 
+## The add-on part a seat takes on this unit ("quantum_core_3", "control_board").
+func part_of(seat: String) -> String:
+	var kind := str(ADDON_PARTS.get(seat, ""))
+	return kind if kind == "control_board" or kind == "" else "%s_%d" % [kind, tier]
+
+
 ## Whether an add-on can come off: in, with every one of its joints out.
 func can_lift(seat: String) -> bool:
 	return is_fitted(seat) and not mount_joints(seat).any(func(f: FastenerPoint) -> bool: return made(f.joint_id))
 
 
-## Quality's view (TradesBus.unit_state): open, what's in, and each joint's quality (or -1).
+## Quality's view (TradesBus.unit_state): open, what's in (seat -> part id), and each joint's
+## quality (or -1).
 func report(qualities: Dictionary) -> Dictionary:
 	var js := {}
 	for f in joints:
 		js[f.joint_id] = float(qualities.get(f.joint_id, 1.0)) if made(f.joint_id) else -1.0
-	return {"unit": unit_id, "open": is_open(), "fitted": fitted(), "seats": seats.duplicate(), "joints": js}
+	var parts := {}
+	for seat in fitted():
+		parts[seat] = part_of(seat)
+	return {"unit": unit_id, "tier": tier, "open": is_open(), "fitted": parts, "seats": seats.duplicate(), "joints": js}
 
 
 func _lay_out() -> void:

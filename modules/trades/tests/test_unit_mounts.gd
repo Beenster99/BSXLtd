@@ -52,7 +52,7 @@ func run_tests() -> void:
 	var cover_bolt := mine.filter(func(i: int) -> bool: return station.points[i].kind == "bolt")[0] as int
 	check(station.points_world[cover_bolt].distance_to(AT + unit.joints[0].position) < 0.001
 			or mine.any(func(i: int) -> bool: return station.points_world[i].y > AT.y + 0.4), "the cover's joints sit on the unit's rim, in the world")
-	check(bus.unit_state(RIG).get("open") == false and (bus.unit_state(RIG).get("fitted") as Array).is_empty(), "Quality reads it closed, empty")
+	check(bus.unit_state(RIG).get("open") == false and (bus.unit_state(RIG).get("fitted") as Dictionary).is_empty(), "Quality reads it closed, empty")
 
 	# Aim at a cover bolt: it's picked like a ship bolt.
 	_aim(rig, station, station.points_world[cover_bolt])
@@ -87,7 +87,8 @@ func run_tests() -> void:
 			check(not station.is_tight(f), "%s starts undone" % f.joint_id)
 	check(kinds == {"core:bolt": 6, "emitter:weld": 2, "board:connector": 2},
 			"the core's 6 bolts, the horns' 2 seams, the board's 2 plugs: %s" % [kinds])
-	check(_unit_events.size() >= 4 and (bus.unit_state(RIG).get("fitted") as Array).size() == 3, "Quality heard each add-on go in")
+	check(_unit_events.size() >= 4 and bus.unit_state(RIG).get("fitted") == {"core": "quantum_core_3", "emitter": "field_emitter_3", "board": "control_board"},
+			"Quality heard each add-on go in, by part: %s" % [bus.unit_state(RIG).get("fitted")])
 
 	# Nowhere for a fourth: every seat is taken, and F on a fitted one lifts it, never adds.
 	check(unit.seats.size() == 3 and unit.fitted().size() == 3, "three in, no seat left")

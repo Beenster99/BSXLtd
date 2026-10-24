@@ -164,8 +164,9 @@ func complete_joint(joint_site: JointSite, measurements: Dictionary, peer_id: in
 	return r
 
 
-## The unit on an upgrade rig as Tools has it: {unit (id), open (cover off), seats (the
-## add-on seats it has: "core", "emitter", "board"), fitted (those with their add-on in),
+## The unit on an upgrade rig as Tools has it: {unit (id), tier, open (cover off), seats (the
+## add-on seats it has: "core", "emitter", "board"), fitted (seat -> the add-on part in it,
+## Shared Components' id: "quantum_core_3", "field_emitter_3", "control_board"),
 ## joints (joint_id -> quality 0..1, or -1.0 while not made)}; {} with no unit on the rig.
 func unit_state(rig_id: String) -> Dictionary:
 	return (_units.get(rig_id, {}) as Dictionary).duplicate(true)
