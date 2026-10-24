@@ -109,6 +109,27 @@ func run_tests() -> void:
 	var panel_lamps: Array = (dressing.get("door_lamps") as Dictionary).get("door_bulkhead", [])
 	check(panel_lamps.size() == 2 and (panel_lamps[0] as StandardMaterial3D).emission.g > 0.8, "an open door's panel lamps show green")
 	model.call("set_door", "door_bulkhead", false, true)
+	# F lands on the panels' OPEN and CLOSE buttons, which stand proud of the panel: each does
+	# its own thing, and they stay lit with the ship off shore power.
+	var opens := 0
+	var shuts := 0
+	add_child(model)   # in the tree, it hears the door events
+	await frames(1)
+	for tag: String in importer.kit.tagged:
+		if str(tag).begins_with("doorbtn_door_bulkhead_"):
+			var shape: CollisionShape3D = importer.kit.tagged[tag][0]["shape"]
+			check(shape.has_meta("ship_bay_use"), "the inside door's %s button is a button" % tag)
+			(shape.get_meta("ship_bay_use") as Callable).call()
+			model.call("set_door", "door_bulkhead", bool(model.call("is_door_open", "door_bulkhead")), true)
+			if tag.contains("_open_"):
+				opens += int(bool(model.call("is_door_open", "door_bulkhead")))
+			else:
+				shuts += int(not bool(model.call("is_door_open", "door_bulkhead")))
+			var mesh: MeshInstance3D = importer.kit.tagged[tag][0]["mesh"]
+			check((mesh.material_override as StandardMaterial3D).emission_energy_multiplier > 0.5, "and lit with the ship unpowered")
+	check(opens == 2 and shuts == 2, "OPEN opens the inside door and CLOSE shuts it, from both sides")
+	remove_child(model)
+	check((panel_lamps[0] as StandardMaterial3D) == dressing.get("door_lamps")["door_bulkhead"][0], "the panel lamps keep their own light")
 	var plates := def.slots.filter(func(s: MountSlot) -> bool: return s.slot_id.begins_with("plate_"))
 	var rivets := 0
 	for s: MountSlot in plates:
