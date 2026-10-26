@@ -165,7 +165,7 @@ static func addons_for(family_id: String) -> PackedStringArray:
 ## Why `addon_id` can't go into `unit` with `fitted` (add-on ids) already in it: "" when it
 ## can. The rules: a known add-on of a kind the family takes; the unit's tier at least the
 ## add-on's; a mount point free for it; room under `max_addons`.
-static func refusal(unit: String, addon_part: String, fitted: PackedStringArray = []) -> String:
+static func refusal(unit: String, addon_part: String, fitted: PackedStringArray = PackedStringArray()) -> String:
 	var fam := family_of_unit(unit)
 	if fam == "":
 		return "no such unit"
@@ -188,7 +188,7 @@ static func refusal(unit: String, addon_part: String, fitted: PackedStringArray 
 	return ""
 
 
-static func can_fit(unit: String, addon_part: String, fitted: PackedStringArray = []) -> bool:
+static func can_fit(unit: String, addon_part: String, fitted: PackedStringArray = PackedStringArray()) -> bool:
 	return refusal(unit, addon_part, fitted) == ""
 
 
@@ -200,7 +200,7 @@ static func mount_for(addon_part: String) -> String:
 
 ## The figures a unit gives a ship (its tier's over the base, plus each fitted add-on's
 ## amounts at its tier), in Void Salvage's names: Void Salvage's `unit_stats` for the module.
-static func stats(unit: String, fitted: PackedStringArray = []) -> Dictionary:
+static func stats(unit: String, fitted: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var fam := family_of_unit(unit)
 	if fam == "":
 		return {}

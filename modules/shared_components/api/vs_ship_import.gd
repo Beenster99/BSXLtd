@@ -48,22 +48,22 @@ var fittings_built: Dictionary = {}
 ## System path -> what `ShipParts.system` returned (lamps, labels, screens) where its record was rebuilt.
 var systems_built: Dictionary = {}
 ## System records from an export before S3 (no arguments to rebuild from): left as their boxes.
-var systems_skipped: PackedStringArray = []
+var systems_skipped: PackedStringArray = PackedStringArray()
 ## Paths of parts whose plain visual a unit's look pieces cover (hidden under them).
-var hidden_visuals: PackedStringArray = []
+var hidden_visuals: PackedStringArray = PackedStringArray()
 ## Device paths whose lead (the thin twisted wire from the device to its loom plug) was drawn
 ## from the file's `derived.routes`; it hangs on the device's visual, as in Void Salvage.
-var leads_built: PackedStringArray = []
+var leads_built: PackedStringArray = PackedStringArray()
 ## A wreck's `damage` block (WreckMaker's, or a Void Salvage wreck file's), {} on a clean ship.
 var damage: Dictionary = {}
 ## Parts the damage says are gone (not built), and sections cut off the wreck (not built
 ## unless `build_detached`), by path; joints the damage broke (not built).
-var gone_parts: PackedStringArray = []
-var detached_parts: PackedStringArray = []
-var broken_joints: PackedStringArray = []
+var gone_parts: PackedStringArray = PackedStringArray()
+var detached_parts: PackedStringArray = PackedStringArray()
+var broken_joints: PackedStringArray = PackedStringArray()
 var build_detached := false
-var errors: PackedStringArray = []
-var warnings: PackedStringArray = []
+var errors: PackedStringArray = PackedStringArray()
+var warnings: PackedStringArray = PackedStringArray()
 
 static var _method_cache: Dictionary = {}
 
@@ -104,7 +104,7 @@ static func designs() -> PackedStringArray:
 ## Every problem with a file as data, before anything is built: the format and version, the
 ## schema, the two hashes against a recount, duplicate paths, joints whose parts are missing.
 static func check(f: Dictionary) -> PackedStringArray:
-	var out: PackedStringArray = []
+	var out: PackedStringArray = PackedStringArray()
 	if f.get("format", "") != "vsship":
 		out.append("format is %s, not vsship" % str(f.get("format", "")))
 	var version: Variant = f.get("version", [])

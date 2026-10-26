@@ -22,8 +22,8 @@ extends Resource
 @export var shape_args: Array = []
 ## The joints that hold it on, and the order they are made in (indexes into joints).
 @export var joints: Array[PartJointSpec] = []
-@export var order: PackedInt32Array = []
+@export var order: PackedInt32Array = PackedInt32Array()
 ## Crane attach points, part space, metres.
-@export var lift_points: PackedVector3Array = []
+@export var lift_points: PackedVector3Array = PackedVector3Array()
 ## For quoting: a crew's hours to fit it.
 @export var hours := 0.0

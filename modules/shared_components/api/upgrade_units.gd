@@ -150,7 +150,7 @@ static func mount_of(unit: Dictionary, mount_id: String) -> Dictionary:
 ## on its mount point, joined by the mount's trade (bolt, weld or wire), and returns
 ## {addon, kind, tier, mount, part, joints}; {} when the rules refuse it (`last_refusal`
 ## says why; `fitted` is what the unit already holds, add-on ids).
-static func fit_addon(kit: ShipKit, unit: Dictionary, addon_id: String, fitted: PackedStringArray = []) -> Dictionary:
+static func fit_addon(kit: ShipKit, unit: Dictionary, addon_id: String, fitted: PackedStringArray = PackedStringArray()) -> Dictionary:
 	last_refusal = UpgradeRules.refusal(unit.get("unit", ""), addon_id, fitted)
 	if last_refusal != "":
 		return {}
