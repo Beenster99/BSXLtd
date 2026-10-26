@@ -1056,8 +1056,26 @@ func deck_position(id: String) -> Variant:
 func _go_to_person(t: Trolley, to: Vector3) -> void:
 	var from_them := t.global_position - to
 	from_them.y = 0.0
-	var stand := to + (from_them.normalized() if from_them.length() > 0.1 else Vector3.BACK) * (t.radius() + COME_GAP)
+	var dir := from_them.normalized() if from_them.length() > 0.1 else Vector3.BACK
+	var reach := t.radius() + COME_GAP
+	var stand := to + dir * reach
+	# Another trolley already waiting there (goods brought earlier, not yet collected): stand
+	# beside it, round the person, rather than queue behind it for good.
+	for k in 12:
+		var a := (float((k + 1) / 2) * (1.0 if k % 2 == 0 else -1.0)) * PI / 6.0 if k > 0 else 0.0
+		var p := to + dir.rotated(Vector3.UP, a) * reach
+		if _stand_free(t, p) and (nav == null or nav.is_free(p, t.clearance())):
+			stand = p
+			break
 	_go(t, stand, atan2(stand.x - to.x, stand.z - to.z))
+
+
+## No other trolley stands (still, with nowhere to go) where `t` would stand at `p`.
+func _stand_free(t: Trolley, p: Vector3) -> bool:
+	for o: Trolley in trolleys.values():
+		if o != t and o.path.is_empty() and Vector2(o.global_position.x - p.x, o.global_position.z - p.z).length() < o.radius() + t.radius() + 0.4:
+			return false
+	return true
 
 
 ## Putting deliveries away: the trolley goes round the goods-in floor loading the crates it
