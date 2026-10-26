@@ -294,7 +294,7 @@ func actions() -> Array:
 	if held:
 		var rotate := Keys.key_name(TradesBus.KEY_ROTATE) if InputMap.has_action(TradesBus.KEY_ROTATE) else "-"
 		return [["Let go", "lock it in its mount" if aligned else "drop it"],
-				[TradesBay.WHEEL, "pull it in, push it out"],
+				[TradesBay.WHEEL, "up pushes it away, down pulls it in" if Flags.is_on("trades.wheel_away") else "pull it in, push it out"],
 				["Hold %s, move the mouse" % rotate, "turn it any way"],
 				["%s / %s" % [Keys.key_name(TradesBus.KEY_TURN_LEFT), Keys.key_name(TradesBus.KEY_TURN_RIGHT)], "turn it a step"],
 				[TradesBay.RIGHT_CLICK, "park it in the air"]]

@@ -692,9 +692,11 @@ func wheel_setting(tool: StringName, step: int) -> bool:
 	return true
 
 
-## Wheel while the beam holds a part: pull it in or push it out.
+## Wheel while the beam holds a part: pull it in or push it out. With trades.wheel_away
+## (beenster, 0.3.20: "move an object away on roll mouse up and towards on roll down") wheel
+## up (-1) pushes it away.
 func turn_held(step: int, _snap: bool) -> bool:
-	return tractor.push(step)
+	return tractor.push(-step if Flags.is_on("trades.wheel_away") else step)
 
 
 ## Q / E: turn the part in the beam.
