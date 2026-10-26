@@ -44,6 +44,12 @@ func pick(job_id: String) -> void:
 	if job_id != selected:
 		doc = ""
 	selected = job_id
+	var job := bus.get_job(job_id)
+	if job != null:
+		for t in TABS:
+			if bus.board(_tab_key(t)).has(job):
+				tab = t
+				break
 	refresh()
 
 

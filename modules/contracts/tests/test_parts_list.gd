@@ -24,6 +24,8 @@ func run_tests() -> void:
 	var catalogue: Variant = business.call("get_catalogue")
 	var listed := func(id: String) -> bool: return bool(catalogue.call("has_part", id))
 	check(catalogue.call("part_names").size() > 500, "the parts list is the market catalogue")
+	var shots: Array = Shots.all().map(func(s: Dictionary) -> String: return str(s.id))
+	check("contracts_board" in shots and "contracts_job_under_way" in shots, "the release tour shoots the board: %s" % str(shots))
 
 	# The tables only name real parts.
 	var off := PackedStringArray()
