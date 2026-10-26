@@ -7,6 +7,9 @@ extends ModuleTest
 ##   tools/run_tests.sh ship_bay
 
 
+const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
+
+
 func run_tests() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	var scene := load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene
@@ -47,7 +50,7 @@ func run_tests() -> void:
 	check(deck_screen.global_basis.z.dot(lift.global_basis.x) > 0.6 and deck_screen.global_basis.z.y > 0.2,
 			"the platform's screen faces in at whoever stands on it, tilted up")
 	# Hold RAISE until the sill comes level, then let go: it stops there.
-	var sill := 1.6
+	var sill: float = bay.get("cradle_height")
 	deck_screen.call("hold", "raise", true)
 	for i in 400:
 		walker.velocity = Vector3(0, walker.velocity.y - 9.0 / 60.0 if not walker.is_on_floor() else 0.0, 0)
@@ -61,7 +64,7 @@ func run_tests() -> void:
 		walker.move_and_slide()
 		await get_tree().physics_frame
 	check(absf(platform.position.y - sill) < 0.02, "held RAISE, let go at the door sill, it stopped there: %.3f" % platform.position.y)
-	check(str(deck_screen.call("text")).contains("1.6 M"), "its screen shows the height: %s" % deck_screen.call("text"))
+	check(str(deck_screen.call("text")).contains("%.1f M" % sill), "its screen shows the height: %s" % deck_screen.call("text"))
 	check(absf(walker.position.y - sill) < 0.15, "riding up on it: y %.2f" % walker.position.y)
 	# The side door is shut: F on its outside panel slides it open.
 	check(not bool(model.call("is_door_open", "door_lock_out")), "the side door starts shut")
@@ -77,19 +80,24 @@ func run_tests() -> void:
 		if walker.position.x > -1.2:
 			break
 	check(walker.position.x > -1.6, "walked off it through the side door into the hold: x %.2f" % walker.position.x)
-	check(absf(walker.position.y - 1.6) < 0.15, "standing on the hold's floor: y %.2f" % walker.position.y)
+	check(absf(walker.position.y - sill) < 0.15, "standing on the hold's floor: y %.2f" % walker.position.y)
 	walker.set_physics_process(true)
 	yard.call("set_walker_active", false)
 
 	# UP again to the flank stop, DOWN to stop it partway, DOWN back to the bottom.
 	access.call("lift_up")
-	for i in 200:
+	for i in 400:
 		await get_tree().physics_frame
-	check(absf(platform.position.y - 2.4) < 0.01, "UP goes on to the flank stop: %.2f" % platform.position.y)
+	var next_up := 0.0
+	for h: float in access.get("stops"):
+		if h > sill + 0.01:
+			next_up = h
+			break
+	check(absf(platform.position.y - next_up) < 0.01, "UP goes on to the next stop: %.2f" % platform.position.y)
 	access.call("lift_down")
-	for i in 200:
+	for i in 400:
 		await get_tree().physics_frame
-	check(absf(platform.position.y - 1.6) < 0.01, "DOWN steps back to the sill: %.2f" % platform.position.y)
+	check(absf(platform.position.y - sill) < 0.01, "DOWN steps back to the sill: %.2f" % platform.position.y)
 	access.call("lift_down")
 	for i in 20:
 		await get_tree().physics_frame
@@ -97,7 +105,7 @@ func run_tests() -> void:
 	var held := platform.position.y
 	for i in 30:
 		await get_tree().physics_frame
-	check(absf(platform.position.y - held) < 0.001 and held < 1.6 and held > 0.4, "pressed while moving it stops: %.2f" % held)
+	check(absf(platform.position.y - held) < 0.001 and held < sill and held > 0.4, "pressed while moving it stops: %.2f" % held)
 	access.call("lift_down")
 	for i in 300:
 		await get_tree().physics_frame
@@ -171,7 +179,19 @@ func run_tests() -> void:
 		for i in 100:
 			if not bool(access.call("drive", "lift", 0.05, 0.0)):
 				break
-	check(lift.global_position.x < -2.0, "it can't be driven into the hull: x %.2f" % lift.global_position.x)
+	if bay.get("cradle") != null:
+		# On the transport cradle the hull stands high enough to roll the lowered lift in
+		# under the frame; it just won't rise into it.
+		access.call("lift_up")
+		for i in 240:
+			await get_tree().physics_frame
+		check(lift.global_position.x < -2.0 or platform.position.y < TransportCradle.REST - 0.2,
+				"it can't be driven or raised into the hull: x %.2f, platform %.2f" % [lift.global_position.x, platform.position.y])
+		access.call("lift_down")
+		for i in 240:
+			await get_tree().physics_frame
+	else:
+		check(lift.global_position.x < -2.0, "it can't be driven into the hull: x %.2f" % lift.global_position.x)
 	lift.global_transform = into
 
 	# Shore power: on to start with. The switch alone does nothing; the plug clipped to the

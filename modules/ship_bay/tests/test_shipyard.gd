@@ -64,7 +64,7 @@ func run_tests() -> void:
 	else:
 		check(arrows == 16, "the halls' boards and the courtyard's fingerpost are up: %d lines" % arrows)
 	var ship_bay: Node3D = yard.get("bay")
-	check(ship_bay != null and ship_bay.get_node_or_null("Ship") != null, "the bay scene sits in the courtyard")
+	check(ship_bay != null and ship_bay.get("ship_root") != null, "the bay scene sits in the courtyard")
 	check(ship_bay.find_child("Floor", false, false) == null, "inside the yard the bay brings no floor of its own")
 
 	# Every doorway the flow uses is open at walking height; walls stand between the rooms.
@@ -115,7 +115,13 @@ func run_tests() -> void:
 	check(not walker.is_physics_processing() and not walker_cam.current, "handed over: the walker stops and its camera stands down")
 	check(walker.collision_layer == 0 and walker.collision_mask == 0, "handed over: the walker no longer collides")
 	var ship_xf := bay.ship_transform(yard)
-	check(ship_xf.origin.is_equal_approx(Vector3(0, 1.6, 0)), "ship space sits on the cradles: %s" % ship_xf.origin)
+	check(ship_xf.origin.is_equal_approx(Vector3(0, float(yard.get("bay").get("cradle_height")), 0)), "ship space sits on the cradles: %s" % ship_xf.origin)
+	if Flags.is_on("ship_bay.bay_cradle"):
+		var bay_cradle: Node3D = yard.get("bay").get("cradle")
+		check(bay_cradle != null and bay_cradle.get("load_node") == yard.get("bay").get("ship_root"),
+				"the courtyard ship sits in a transport cradle that carries it (beenster, 0.3.19)")
+		var tr: Node = yard.find_child("Transporters", true, false)
+		check(tr == null or tr.call("cradle", "BayCradle") == bay_cradle, "the transporters can lift the courtyard's cradle")
 	check(bay.ship_to_yard(yard) == ship_xf, "ship_to_yard is ship_transform")
 	var other := Camera3D.new()
 	yard.add_child(other)

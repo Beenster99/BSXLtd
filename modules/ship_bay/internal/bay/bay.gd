@@ -17,10 +17,15 @@ const QUIET_RING := Color(0.62, 0.74, 0.86)
 const QUIET_GLOW := 0.35
 
 const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
+const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 ## How far Use (F) reaches from the camera, metres.
 const USE_REACH := 3.5
 
 var ship_root: Node3D
+## With ship_bay.bay_cradle (beenster, 0.3.19): the ship sits in a transport cradle ("BayCradle")
+## on four pedestals instead of three fixed stands, so a transporter can drive it out; the
+## ship rides with the cradle. Null with the flag off.
+var cradle: Node3D
 ## The ship's model (its root node), and the lift and power unit round it.
 var model: Node3D
 var access: Node3D
@@ -38,7 +43,10 @@ func _ready() -> void:
 	_bus = Modules.bus("ship_bay") as ShipBayBus
 	if standalone:
 		_build_stage()
-	_build_cradles()
+	if Flags.is_on("ship_bay.bay_cradle"):
+		_build_transport_cradle()
+	else:
+		_build_cradles()
 	if _bus == null:
 		return
 	# An emptied bay (Settings > Debug > Ship) stays empty until the Kestrel is brought back.
@@ -99,6 +107,34 @@ func _build_cradles() -> void:
 		cradle.add_child(solid)
 
 
+## The transport cradle the ship sits in, on its four pedestals: the ship's deck then stands
+## at the cradle's saddle tops (cradle_height follows).
+func _build_transport_cradle() -> void:
+	cradle = TransportCradle.new("s")
+	cradle.name = "BayCradle"
+	add_child(cradle)
+	cradle.position = Vector3(0, TransportCradle.REST, 0)
+	cradle_height = TransportCradle.REST + float(cradle.get("saddle_top"))
+	var frame := ShipSurface.of(ShipKit.paint(Color(0.34, 0.37, 0.4), 0.6, 0.45, "gunmetal"))
+	var bare := ShipSurface.of(ShipKit.paint(Color(0.5, 0.52, 0.55), 0.7, 0.5))
+	var stands := StaticBody3D.new()
+	stands.name = "Pedestals"
+	add_child(stands)
+	var spots: Array[Vector3] = []
+	for x: float in [-float(cradle.get("side_x")), float(cradle.get("side_x"))]:
+		for z: float in cradle.get("pedestal_z"):
+			spots.append(Vector3(x, 0, z))
+	for at: Vector3 in spots:
+		var h := TransportCradle.REST - 0.06
+		_part(self, PartShapes.chamfer_box(Vector3(0.9, h, 0.9), 0.05), Transform3D(Basis(), at + Vector3(0, 0.06 + h * 0.5, 0)), frame)
+		_part(self, PartShapes.box(Vector3(1.3, 0.05, 1.3)), Transform3D(Basis(), at + Vector3(0, 0.035, 0)), bare)
+		var shape := CollisionShape3D.new()
+		shape.shape = BoxShape3D.new()
+		(shape.shape as BoxShape3D).size = Vector3(0.9, TransportCradle.REST, 0.9)
+		shape.position = at + Vector3(0, TransportCradle.REST * 0.5, 0)
+		stands.add_child(shape)
+
+
 static func _part(parent: Node3D, shape: PartShapes.PartShape, xform: Transform3D, mat: Material) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = shape.mesh
@@ -154,8 +190,12 @@ func _show_ship(def: ShipDefinition) -> void:
 		return
 	ship_root = Node3D.new()
 	ship_root.name = "Ship"
-	ship_root.position = Vector3(0, cradle_height, 0)
-	add_child(ship_root)
+	if cradle:
+		cradle.call("carry", ship_root, Vector3(0, float(cradle.get("saddle_top")), 0))
+		cradle.set("load_t", 25.0)
+	else:
+		ship_root.position = Vector3(0, cradle_height, 0)
+		add_child(ship_root)
 	if def.model:
 		model = def.model.instantiate() as Node3D
 		model.set_meta("ship_id", def.ship_id)
@@ -183,7 +223,19 @@ func _build_access() -> void:
 	access = Access.new()
 	access.name = "Access"
 	add_child(access)
-	access.call("build", cradle_height, points["side_door"], points["power_socket"], ship_root)
+	if cradle:
+		# Outboard of the cradle's side beam and its pin levers, with a gangway over them.
+		var sill: Vector3 = points["side_door"]
+		var clear := float(cradle.get("side_x")) + 0.2 + 0.35 + 0.05
+		# The flank and roof stops go up with the ship.
+		var levels: Array[float] = []
+		for h: float in access.get("lift_levels"):
+			levels.append(h if h < 1.0 else h + cradle_height - 1.6)
+		access.set("lift_levels", levels)
+		access.call("build", cradle_height, sill, points["power_socket"], ship_root, maxf(clear - absf(sill.x), 0.0),
+				TransportCradle.REST + TransportCradle.SIZES["s"].side_h + 0.15)
+	else:
+		access.call("build", cradle_height, points["side_door"], points["power_socket"], ship_root)
 	access.connect("power_switched", func(on: bool) -> void:
 		if _bus:
 			_bus.set_ship_powered(on)

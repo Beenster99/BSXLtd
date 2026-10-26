@@ -72,6 +72,9 @@ func _ready() -> void:
 		cradles.append(apron.get("pad_cradle"))
 		for c: Node3D in apron.get("holding_cradles") + apron.get("dock_cradles"):
 			cradles.append(c)
+	var bay: Node = yard.get("bay") if yard else null
+	if bay and bay.get("cradle") != null:
+		cradles.append(bay.get("cradle"))   # the courtyard ship's own (ship_bay.bay_cradle)
 	for c: Node3D in cradles:
 		for i in (c as Cradle).levers.size():
 			(c as Cradle).levers[i].set_meta("ship_bay_use", Callable(self, "throw_pin").bind(c.name, i))
@@ -267,9 +270,17 @@ func _clear_way(lin: Vector3, turn: float, d: Dolly) -> String:
 	var boxes: Array = [[Vector3(0, (0.15 + d.deck_height - 0.05) * 0.5, -Dolly.CAB.z * 0.5), Vector3(s.x, d.deck_height - 0.2, s.y + Dolly.CAB.z)]]
 	if d.load_cradle:
 		skip.append(d.load_cradle.get_rid())
-		var hull := (d.load_cradle as Cradle).load_node as CollisionObject3D
+		# Whatever rides on it: the hull and every body inside it.
+		var hull := (d.load_cradle as Cradle).load_node
 		if hull:
-			skip.append(hull.get_rid())
+			if hull is CollisionObject3D:
+				skip.append((hull as CollisionObject3D).get_rid())
+			for n: Node in hull.find_children("*", "CollisionObject3D", true, false):
+				skip.append((n as CollisionObject3D).get_rid())
+			# And what is clipped on to it (the bay's power plug).
+			for n: Node in get_tree().get_nodes_in_group("ship_bay_rides"):
+				if n is CollisionObject3D:
+					skip.append((n as CollisionObject3D).get_rid())
 		# The cradle's frame and the hull on it, from the beams' underside up.
 		var c_local := d.global_transform.affine_inverse() * d.load_cradle.global_transform
 		var lc := d.load_cradle as Cradle
