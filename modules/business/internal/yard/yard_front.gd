@@ -19,15 +19,18 @@ const MONITORS := {
 	"bay": Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, -23.75)),
 	"crusher": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(88.0, 0.0, 9.5)),
 	"deliveries": Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-49.75, 0.0, 0.0)),
-	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-5.85, 0.0, -24.25)),
-	"prep": Transform3D(Basis.IDENTITY, Vector3(29.0, 0.0, -45.75)),
+	"stock": Transform3D(Basis(Vector3.UP, PI), Vector3(-6.0, 0.0, -24.25)),
+	"prep": Transform3D(Basis.IDENTITY, Vector3(30.0, 0.0, -45.75)),
 	"preassembly": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(49.75, 0.0, 12.0)),
 }
 ## Every hall that should have a TV, in order.
 const HALLS := ["deliveries", "stock", "prep", "preassembly", "bay", "crusher", "store"]
-## Height (metres) of the screen's centre over the floor: high enough to read across a hall
-## over racks and trolleys, the bottom edge over people's heads.
-const CENTRE_Y := 3.9
+## Height (metres) of the screen's centre over the floor (beenster, 0.3.20: lower on the
+## walls): the bottom edge about a metre up, the middle near eye height across a hall.
+const CENTRE_Y := 2.45
+## Halls whose TV hangs higher than CENTRE_Y (metres): pre-assembly's looks over Line B's
+## trolley, parked along that wall.
+const RAISED := {"preassembly": 3.2}
 ## Claimed while a TV is aimed at or full screen, so tools don't fire on the same click.
 const POINTER_ID := "business.tv"
 ## The screen's texture size; the terminal is laid out for it. 16:9 like a TV.
@@ -69,7 +72,7 @@ func setup(p_bus: BusinessBus, yard: Node3D) -> void:
 	for hall: String in HALLS:
 		var xf := wall_spot(hall)
 		if xf != Transform3D.IDENTITY:
-			monitors.append(_make_monitor(hall, xf.translated_local(Vector3(0, CENTRE_Y, 0))))
+			monitors.append(_make_monitor(hall, xf.translated_local(Vector3(0, float(RAISED.get(hall, CENTRE_Y)), 0))))
 	for i in monitors.size():
 		wake(i)
 	_crates = Node3D.new()
