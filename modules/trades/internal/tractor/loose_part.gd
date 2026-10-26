@@ -87,14 +87,27 @@ var _on_deck_s := 0.0
 ## Builds the part from its slot: Ship and Bay's copy of the model pieces when it offers one,
 ## otherwise a plain painted box of the slot's outline.
 func setup(slot: MountSlot, comp: String, visual: Node3D) -> void:
-	slot_id = slot.slot_id
-	component = comp
+	_build(slot.slot_id, comp, slot.mount.affine_inverse() * slot.box, visual)
 	name = "Loose_" + slot.slot_id
+
+
+## Builds goods taken off a trolley (no slot on the ship): `id` stands in for a slot id
+## ("stock:<crate>"), `box` is their outline in their own space, `visual` their look.
+func setup_goods(id: String, comp: String, box: AABB, visual: Node3D, cond: float) -> void:
+	_build(id, comp, box, visual)
+	name = "Goods_" + id.validate_node_name()
+	condition = clampf(cond, 0.0, 1.0)
+	set_meta("condition", condition)
+
+
+func _build(id: String, comp: String, shape_box: AABB, visual: Node3D) -> void:
+	slot_id = id
+	component = comp
 	# Graphics lights it under the pointer, and crewmates' pings find it by its id.
 	add_to_group("gfx_interactable")
-	set_meta("gfx_id", "trades.loose:" + slot.slot_id)
+	set_meta("gfx_id", "trades.loose:" + id)
 	set_meta("component", comp)
-	outline = slot.mount.affine_inverse() * slot.box
+	outline = shape_box
 	mass = maxf(5.0, outline.size.x * outline.size.y * outline.size.z * DENSITY)
 	contact_monitor = true
 	max_contacts_reported = 6
