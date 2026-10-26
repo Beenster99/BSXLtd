@@ -62,7 +62,8 @@ func run_tests() -> void:
 	wrist.size = Vector2(1200, 600)
 	await frames(1)
 	var first: MarketListing = bus.get_listings().filter(func(l): return l.available >= 2 and l.unit_price < 3000)[0]
-	var word := bus.part_name(first.part).split(" ")[0].to_lower()
+	# The whole name: a first word ("cargo") can match more lines than the windowed list builds.
+	var word := bus.part_name(first.part).to_lower()
 	wrist.set("query", word)
 	wrist.call("refresh")
 	var found: Array = wrist.call("shown_listings")
@@ -85,7 +86,7 @@ func run_tests() -> void:
 	check(placed.is_ok() and bus.get_cash() == wcash - first.unit_price * 2 and bus.wrist_basket.is_empty(), "PLACE ORDER on the wrist buys it")
 	var on_order := false
 	for l: Label in wrist.find_children("*", "Label", true, false):
-		if l.text == placed.order_ids[0]:
+		if not placed.order_ids.is_empty() and l.text == placed.order_ids[0]:
 			on_order = true
 	check(on_order, "the order shows under ON ORDER")
 	wrist.free()
