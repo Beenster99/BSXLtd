@@ -36,6 +36,11 @@ signal stock_changed
 ## A part beamed off the ship landed on a trolley's deck as a crate (`crate_id`, carried by
 ## `trolley_id`, which puts it away like a delivery): it is stock now. Every peer hears it.
 signal part_beamed(crate_id: String, trolley_id: String, component: String, slot_id: String)
+## A part beamed off the ship (a crate whose part_beamed carried a slot) left the trolley it
+## rode on: into the stores, a line, the crusher, or onto another trolley. With
+## trades.parts_on_decks on, Tools' loose body lies on the deck in place of a drawn crate,
+## and lets it go on this (every peer hears it).
+signal deck_part_left(crate_id: String, trolley_id: String)
 ## A piece of the bay's kit was changed (a scaffold rig's bays, lifts or open ends): every peer
 ## hears it. payload {rig, bays, lifts, ends}.
 signal kit_changed(payload: Dictionary)
