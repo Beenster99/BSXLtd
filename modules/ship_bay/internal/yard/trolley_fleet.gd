@@ -72,6 +72,20 @@ const HANDOFF_TROLLEY := [Vector3(-31.2, 0, -20.0), 0.0]
 ## The full-size trolley screen's size, pixels. (Every hall TV, Business's, shows trolley
 ## control as the wrist's Machines channel, so the yard has no trolley TV of its own.)
 const TV_PIXELS := Vector2(1280, 720)
+## How long a trolley with goods aboard waits after it found no way or no place before it
+## tries again, seconds.
+const RETRY_AFTER := 5.0
+## A lift waiting for an aisle south of this line (z, the stores' front partition) first
+## moves out to one of HOLD_SPOTS: on Deliveries' floor and the strip in front of the stores,
+## clear of the doorways (x -42..-37 and -16..-13).
+const HOLD_NORTH_OF := -23.0
+const HOLD_SPOTS: Array[Vector3] = [Vector3(-47.0, 0, -19.0), Vector3(-47.0, 0, -15.5), Vector3(-34.0, 0, -19.0),
+		Vector3(-34.0, 0, -15.5), Vector3(-22.0, 0, -19.0), Vector3(-8.0, 0, -19.0), Vector3(-4.0, 0, -16.0)]
+## How far a held-up trolley with no way round backs off out of the other's way, metres.
+const GIVE_WAY := 3.5
+## How many metres further away goods for an aisle another lift is working count as, per
+## lift there, when a goods-in lift picks its next crate.
+const AISLE_BUSY_COST := 40.0
 ## How long a trolley waits held up before it plans a new way round, seconds.
 const REPLAN_AFTER := 3.0
 ## How far behind you a following trolley keeps, past its own radius, metres (near you, but
@@ -247,8 +261,10 @@ func _physics_process(delta: float) -> void:
 			t.boost = false
 			_run_job(id, t)
 		t.step(delta, _obstacles(t))
-		if t.blocked_for > REPLAN_AFTER and not t.path.is_empty() and not _has_way(t):
-			_go(t, t.path[t.path.size() - 1], t.final_yaw, true)
+		# Held up: the one without right of way finds another way; one held up a long time
+		# even with right of way does too (the other may be boxed in and unable to move off).
+		if t.blocked_for > REPLAN_AFTER and not t.path.is_empty() and (not _has_way(t) or t.blocked_for > REPLAN_AFTER * 4.0):
+			_replan(t)
 			t.blocked_for = 0.0
 	_free_aisles()
 
@@ -1000,8 +1016,26 @@ func deck_position(id: String) -> Variant:
 func _go_to_person(t: Trolley, to: Vector3) -> void:
 	var from_them := t.global_position - to
 	from_them.y = 0.0
-	var stand := to + (from_them.normalized() if from_them.length() > 0.1 else Vector3.BACK) * (t.radius() + COME_GAP)
+	var dir := from_them.normalized() if from_them.length() > 0.1 else Vector3.BACK
+	var reach := t.radius() + COME_GAP
+	var stand := to + dir * reach
+	# Another trolley already waiting there (goods brought earlier, not yet collected): stand
+	# beside it, round the person, rather than queue behind it for good.
+	for k in 12:
+		var a := (float((k + 1) / 2) * (1.0 if k % 2 == 0 else -1.0)) * PI / 6.0 if k > 0 else 0.0
+		var p := to + dir.rotated(Vector3.UP, a) * reach
+		if _stand_free(t, p) and (nav == null or nav.is_free(p, t.clearance())):
+			stand = p
+			break
 	_go(t, stand, atan2(stand.x - to.x, stand.z - to.z))
+
+
+## No other trolley stands (still, with nowhere to go) where `t` would stand at `p`.
+func _stand_free(t: Trolley, p: Vector3) -> bool:
+	for o: Trolley in trolleys.values():
+		if o != t and o.path.is_empty() and Vector2(o.global_position.x - p.x, o.global_position.z - p.z).length() < o.radius() + t.radius() + 0.4:
+			return false
+	return true
 
 
 ## Putting deliveries away: the trolley goes round the goods-in floor loading the crates it
@@ -1075,6 +1109,10 @@ func _put_away(id: String, t: Trolley, job: Dictionary) -> void:
 				job["phase"] = "find"
 		"waiting":
 			_head_for_place(id, t, job)
+		"retry":
+			job["wait"] = float(job.get("wait", 0.0)) - get_physics_process_delta_time()
+			if float(job["wait"]) <= 0.0:
+				job["phase"] = "find"
 		"to_stores":
 			if _arrived(t):
 				job["phase"] = "handing"
@@ -1231,7 +1269,15 @@ func _head_for_place(id: String, t: Trolley, job: Dictionary) -> void:
 	if aisle != "" and _aisles.get(aisle, id) != id:
 		job["phase"] = "waiting"
 		t.show_status("WAITING FOR AISLE " + aisle)
+		# Waiting in the stores' transfer aisle blocks every other lift: wait out of the way,
+		# on the open floor outside the stores' doors (0.3.19: lifts stalled nose to tail).
+		if not job.has("hold") and t.global_position.z < HOLD_NORTH_OF:
+			var hold := _hold_spot(id, t)
+			if hold != Vector3.INF:
+				job["hold"] = hold
+				_go(t, hold, 0.0)
 		return
+	job.erase("hold")
 	if aisle != "":
 		_aisles[aisle] = id
 	_reserved_places[place] = id
@@ -1250,6 +1296,7 @@ func _next_crate(id: String, t: Trolley) -> String:
 	var best_d := INF
 	var skip: Array = (jobs[id] as Dictionary).get("skip", [])
 	var crates := _bus.delivered_crates()
+	var busy := _busy_aisles(id) if t.is_picker() else {}
 	for cid: String in crates:
 		var c: Dictionary = crates[cid]
 		if str(c.get("carrier", "")) != "" or (_reserved_crates.has(cid) and _reserved_crates[cid] != id) or skip.has(cid):
@@ -1264,13 +1311,63 @@ func _next_crate(id: String, t: Trolley) -> String:
 			continue   # a delivery on the goods-in floor: the goods-in lifts' job
 		if not t.carries(Layout.kind_for(float(c["mass"]), str(c["item"]))) or not _bus.trolley_has_room(id, cid):
 			continue
-		if _bus.place_for(str(c["item"])) == "":
+		var place := _bus.place_for(str(c["item"]))
+		if place == "":
 			continue
 		var d := t.global_position.distance_to(_bus.crate_position(cid))
+		# A lift takes goods for an aisle no other lift is working or headed for first, so the
+		# lifts spread over the aisles instead of queueing at one (0.3.19).
+		d += AISLE_BUSY_COST * int(busy.get(_aisle_of(place), 0))
 		if d < best_d:
 			best_d = d
 			best = cid
 	return best
+
+
+## A free place for a waiting lift to stand, out of the stores and the doorways: the
+## nearest HOLD_SPOTS one the planner can reach that no other trolley stands at or is holding
+## at; Vector3.INF for none.
+func _hold_spot(id: String, t: Trolley) -> Vector3:
+	var best := Vector3.INF
+	var best_d := INF
+	for spot: Vector3 in HOLD_SPOTS:
+		if nav and not nav.is_free(spot, t.clearance()):
+			continue
+		var taken := false
+		for o: String in trolleys:
+			if o == id:
+				continue
+			var held: Variant = (jobs.get(o, {}) as Dictionary).get("hold")
+			if (held is Vector3 and (held as Vector3).distance_to(spot) < 0.5) or (trolleys[o] as Trolley).global_position.distance_to(spot) < 3.0:
+				taken = true
+				break
+		var d := t.global_position.distance_to(spot)
+		if not taken and d < best_d:
+			best_d = d
+			best = spot
+	return best
+
+
+## Aisles other trolleys are in or have goods aboard for: aisle -> how many.
+func _busy_aisles(but: String) -> Dictionary:
+	var out := {}
+	for aisle: String in _aisles:
+		if _aisles[aisle] != but:
+			out[aisle] = int(out.get(aisle, 0)) + 1
+	for cid: String in _reserved_crates:
+		if _reserved_crates[cid] == but:
+			continue
+		var aisle := _aisle_of(_bus.place_for(str(_bus.crate_info(cid).get("item", ""))))
+		if aisle != "":
+			out[aisle] = int(out.get(aisle, 0)) + 1
+	for id: String in trolleys:
+		if id == but:
+			continue
+		for cid in _bus.trolley_load(id):
+			var aisle := _aisle_of(_bus.place_for(str(_bus.crate_info(cid).get("item", ""))))
+			if aisle != "":
+				out[aisle] = int(out.get(aisle, 0)) + 1
+	return out
 
 
 ## What a trolley with goods aboard does next: the line's goods to the line first, then the
@@ -1321,6 +1418,60 @@ func _go(t: Trolley, to: Vector3, yaw: float, around := false) -> bool:
 	t.final_yaw = yaw
 	var far := Vector2(to.x - t.global_position.x, to.z - t.global_position.z).length() > 0.3
 	return not (t.path.is_empty() and far)
+
+
+## Held up with no right of way: a way round whatever is in the way; failing that (the
+## aisle is too narrow to pass), back off out of its way first and then go on; failing that,
+## keep the old way and wait. (0.3.19: a trolley that found no way round lost its route
+## and stood there for good, and the lift it was blocking waited on it for good.)
+func _replan(t: Trolley) -> void:
+	var old := t.path
+	var target := old[old.size() - 1]
+	var yaw := t.final_yaw
+	# Replanned from here before and still stuck: the way round didn't help, so back off.
+	var again := t.has_meta("replanned_at") and (t.get_meta("replanned_at") as Vector3).distance_to(t.global_position) < 0.5
+	t.set_meta("replanned_at", t.global_position)
+	if not again:
+		_go(t, target, yaw, true)
+		if not t.path.is_empty():
+			return
+	t.path = old
+	t.final_yaw = yaw
+	var back := _give_way_point(t)
+	if back == Vector3.INF:
+		return
+	var there := nav.route(t.global_position, back, t.clearance())
+	var on := nav.route(back, target, t.clearance())
+	if there.is_empty() or on.is_empty():
+		return
+	there.append_array(on)
+	t.path = there
+
+
+## A free floor point GIVE_WAY metres or so away from the trolley holding this one up,
+## straight back from it or off to either side; Vector3.INF for none.
+func _give_way_point(t: Trolley) -> Vector3:
+	var near: Trolley = null
+	var near_d := INF
+	for o: Trolley in trolleys.values():
+		var d := o.global_position.distance_to(t.global_position)
+		if o != t and d < near_d:
+			near_d = d
+			near = o
+	if near == null:
+		return Vector3.INF
+	var away := t.global_position - near.global_position
+	away.y = 0.0
+	if away.length() < 0.01:
+		away = Vector3.BACK
+	away = away.normalized()
+	for dist: float in [GIVE_WAY, GIVE_WAY * 1.6]:
+		for turn: float in [0.0, 0.8, -0.8, 1.57, -1.57]:
+			var p := t.global_position + away.rotated(Vector3.UP, turn) * dist
+			p.y = 0.0
+			if nav.is_free(p, t.clearance()) and p.distance_to(near.global_position) > near.radius() + t.radius():
+				return p
+	return Vector3.INF
 
 
 ## Two trolleys stuck nose to nose: the one with goods aboard (or else the bigger) keeps
@@ -1374,6 +1525,10 @@ func _fail(id: String, t: Trolley, why: String) -> void:
 	jobs[id] = {}
 	t.path = PackedVector3Array()
 	t.show_status(why)
+	# Goods still aboard: try again in a while (a way may clear, or a place come free)
+	# rather than standing there loaded for good.
+	if _bus and not _bus.trolley_load(id).is_empty():
+		jobs[id] = {"do": "put_away", "phase": "retry", "wait": RETRY_AFTER}
 
 
 func _release(id: String) -> void:

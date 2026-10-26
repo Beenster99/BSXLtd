@@ -82,6 +82,13 @@ func run_tests() -> void:
 	var to_court: PackedVector3Array = nav.call("route", Vector3(-40, 0, 0), Vector3(-6, 0, 16), float(trolleys["l"].call("radius")))
 	check(not to_court.is_empty(), "even the large trolley finds a way from Deliveries into the courtyard")
 	check(not bool(nav.call("is_free", Vector3(Layout.rack_x("B1"), 0, Layout.bay_z(2)), 0.3)), "racks are in the way")
+	# The heavy lift fits down every aisle it shelves in (0.3.19: too wide for W and X, it
+	# never shelved large parts there), and can plan its way to the back of each.
+	var heavy: Node3D = trolleys["h"]
+	for aisle: String in ["W", "X", "H"]:
+		var back := Vector3(Layout.aisle_x(aisle), 0, -40.0)
+		check(bool(nav.call("is_free", back, float(heavy.call("clearance")))) and not (nav.call("route", Vector3(-44, 0, -26), back, float(heavy.call("clearance"))) as PackedVector3Array).is_empty(),
+				"the heavy lift gets down aisle %s" % aisle)
 
 	# Put deliveries away: a pallet, a bin and a bulk crate, each by the trolley that fits.
 	for t: Node in trolleys.values():

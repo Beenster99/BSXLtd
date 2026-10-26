@@ -43,6 +43,8 @@ flags = {
 "ship_bay": true,
 "ship_bay.apron": true,
 "ship_bay.clean_up": true,
+"ship_bay.no_signs": true,
+"ship_bay.flat_lift_forks": true,
 "ship_bay.open_trolley_decks": true,
 "ship_bay.tidy_to_refurb": true,
 "ship_bay.refurb_runs_intake": true,

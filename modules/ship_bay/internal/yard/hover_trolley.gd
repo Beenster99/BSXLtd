@@ -46,7 +46,9 @@ const SPECS := {
 			"speed": 1.8, "lift": 7.6, "carries": ["bin", "pallet"], "colour": Color(0.9, 0.91, 0.9), "picker": true, "putaway": true},
 	# The heavy lift works the large and heavy racks (aisles W, X and H): a broad deck, a
 	# stout mast and a long fork for the big machines.
-	"h": {"name": "Heavy lift", "letter": "H", "deck": Vector2(3.0, 3.4), "radius": 1.9, "clear": 1.75,
+	# 2.4 m wide so it fits down the large-parts aisles W and X (3.3 m between the racks'
+	# faces): at 3.0 m it found no way in and never shelved anything there (0.3.19).
+	"h": {"name": "Heavy lift", "letter": "H", "deck": Vector2(2.4, 3.4), "radius": 1.9, "clear": 1.45,
 			"speed": 1.2, "lift": 7.4, "carries": ["bulk"], "colour": Color(0.95, 0.42, 0.12), "picker": true,
 			"mast": 9.3, "reach": 2.0},
 	# The refurbishment lines' own trolleys: finished lots are stacked on them at the end
@@ -511,7 +513,10 @@ func _build_picker(d: Vector2) -> void:
 	deck.add_child(_fork)
 	for sz: float in [-0.3, 0.3]:
 		_box(Vector3(d.x + 0.2, 0.05, 0.12), Vector3(0, 0.03, sz), _mats["steel"], _fork)
-	_box(Vector3(0.06, 0.25, d.y * 0.6), Vector3(0, 0.15, 0), _mats["body"], _fork)
+	# A spine along the fork's middle (off with ship_bay.flat_lift_forks: the load sits on
+	# flat tines, beenster 0.3.19).
+	if not Flags.is_on("ship_bay.flat_lift_forks"):
+		_box(Vector3(0.06, 0.25, d.y * 0.6), Vector3(0, 0.15, 0), _mats["body"], _fork)
 	_detail_picker(d, mast, back, stripe)
 
 
@@ -555,7 +560,8 @@ func _detail_picker(d: Vector2, mast: float, back: float, stripe: Material) -> v
 		# Tine tips and a short backrest at the fork's root.
 		_box(Vector3(0.06, 0.04, 0.12), Vector3((d.x + 0.2) * 0.5 + 0.03, 0.02, sz), _mats["dark"], _fork)
 		_box(Vector3(0.06, 0.04, 0.12), Vector3(-(d.x + 0.2) * 0.5 - 0.03, 0.02, sz), _mats["dark"], _fork)
-	_box(Vector3(0.04, 0.4, d.y * 0.7), Vector3(0, 0.45, 0), _mats["steel"], _fork)
+	if not Flags.is_on("ship_bay.flat_lift_forks"):
+		_box(Vector3(0.04, 0.4, d.y * 0.7), Vector3(0, 0.45, 0), _mats["steel"], _fork)
 	# The base: a counterweight under the mast with hazard chevrons, a battery box with its
 	# charge bar, yellow corner bumpers, a scanner bar and a sensor puck at the front.
 	var front := -d.y * 0.5
