@@ -1297,7 +1297,7 @@ func _line_spot_taken(kind: String, line: String, spot: int) -> bool:
 static func _line_spot_at(kind: String, line: String, spot: int) -> Vector3:
 	match kind:
 		"crush":
-			return CrusherPlant.FEED_SPOTS[spot]
+			return CrusherPlant.feed_spots()[spot]
 		"scrap":
 			return RefurbLine.scrap_spot(line)
 	return RefurbLine.in_spots(line)[spot]
@@ -1377,7 +1377,7 @@ func _check_line(sender: int, payload: Dictionary) -> Variant:
 			if c.is_empty() or str(c.get("carrier", "")) == "":
 				return "no part on a trolley"
 			var kind := "crush" if l == "crusher" else "in"
-			var count := CrusherPlant.FEED_SPOTS.size() if l == "crusher" else RefurbLine.IN_X.size()
+			var count := CrusherPlant.feed_spots().size() if l == "crusher" else RefurbLine.in_spots(l).size()
 			var spot := int(payload.get("spot", -1))
 			if spot < 0:
 				spot = _free_line_spot(kind, l, count)

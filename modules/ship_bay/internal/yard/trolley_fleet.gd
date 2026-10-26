@@ -942,19 +942,40 @@ func _to_line(id: String, t: Trolley, job: Dictionary) -> void:
 				_bus.line_request("feed", {"crate": crate, "line": job["line"], "spot": job["spot"]})
 		"setting_down":
 			if not _bus.trolley_load(id).has(crate) and not beaming(id):
+				# More for the same drop area aboard: set it down too from where it stands
+				# (one drop area, ship_bay.open_feed_areas), then go on to other work.
+				var more := _more_for_area(id, str(job["line"])) if Flags.is_on("ship_bay.open_feed_areas") else []
+				if not more.is_empty():
+					job["crate"] = more[0]
+					job["spot"] = more[1]
+					_bus.line_request("feed", {"crate": more[0], "line": job["line"], "spot": more[1]})
+					return
 				_release(id)
 				t.show_status("SET DOWN")
 				_next_job(id, t)
 
 
+## The next crate on trolley `id` for drop area `line` and a free place for it there:
+## [crate, spot], or [] when nothing more goes there or it is full.
+func _more_for_area(id: String, line: String) -> Array:
+	for cid in _bus.trolley_load(id):
+		var route := str(_bus.crate_info(cid).get("route", ""))
+		if (line == "crusher") != (route == "grind") or route == "":
+			continue
+		var place := _free_line_place(id, line == "crusher", line)
+		if not place.is_empty():
+			return [cid, place[1]]
+	return []
+
+
 ## A place nothing stands on and no other trolley is headed for: [line ("a", "b" or
 ## "crusher"), spot, floor point], the line with the fewest waiting first; [] for none.
-func _free_line_place(id: String, grind: bool) -> Array:
-	var lines: Array = ["crusher"] if grind else ShipBayBus.LINES
+func _free_line_place(id: String, grind: bool, only := "") -> Array:
+	var lines: Array = [only] if only != "" else (["crusher"] if grind else ShipBayBus.LINES)
 	var best: Array = []
 	var best_n := 1 << 30
 	for line: String in lines:
-		var spots: Array[Vector3] = CrusherPlant.FEED_SPOTS if line == "crusher" else RefurbLine.in_spots(line)
+		var spots: Array[Vector3] = CrusherPlant.feed_spots() if line == "crusher" else RefurbLine.in_spots(line)
 		var kind := "crush" if line == "crusher" else "in"
 		var taken := {}
 		for c: Dictionary in _bus.line_crates().values():
