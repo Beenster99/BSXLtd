@@ -76,6 +76,9 @@ signal plug_changed(payload: Dictionary)
 signal marker_focus_changed(at: Vector3, radius_m: float)
 ## The ships stood on the apron for a look changed (Settings > Debug > Ship): short design names.
 signal yard_ships_changed(ships: PackedStringArray)
+## A random wreck went into the bay in place of the Kestrel, or out of it (Settings > Debug >
+## Ship): see bay_wreck.
+signal bay_wreck_changed
 ## A component rig's state changed (a unit mounted or taken off, a test started or shown), on
 ## every player: {unit, testing, result}. See RIGS.
 signal rig_changed(rig_id: String, state: Dictionary)
@@ -182,6 +185,9 @@ var yard_ships: PackedStringArray = []
 ## True once the bay was emptied from Settings > Debug > Ship: the bay stays empty until
 ## the Kestrel is brought back.
 var bay_cleared := false
+## The random wreck in the bay (Settings > Debug > Ship), or {}: {design (a generated ship's
+## id), seed, events, name}. Every machine builds the same wreck from it.
+var bay_wreck: Dictionary = {}
 ## Rig id -> {unit, testing, result, joints}: what's on each component rig (RIGS).
 var rigs: Dictionary = {}
 ## Rig id -> the rig's node in the yard (it adds itself), for rig_unit.
@@ -668,7 +674,7 @@ func set_ship_powered(on: bool) -> void:
 func snapshot() -> Dictionary:
 	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true),
 			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared, "rigs": rigs.duplicate(true), "sales": sales.duplicate(true),
-			"hulls": hulls.duplicate(true), "hull_queue": hull_queue.duplicate(true), "organising": organising.keys()}
+			"hulls": hulls.duplicate(true), "hull_queue": hull_queue.duplicate(true), "organising": organising.keys(), "bay_wreck": bay_wreck.duplicate(true)}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -705,6 +711,8 @@ func restore(state: Dictionary) -> void:
 	yard_ships = PackedStringArray(state.get("yard_ships", []))
 	yard_ships_changed.emit(yard_ships)
 	bay_cleared = bool(state.get("bay_cleared", false))
+	bay_wreck = (state.get("bay_wreck", {}) as Dictionary).duplicate(true)
+	bay_wreck_changed.emit()
 	sales = (state.get("sales", {}) as Dictionary).duplicate(true)
 	hulls = (state.get("hulls", {}) as Dictionary).duplicate(true)
 	hull_queue = (state.get("hull_queue", []) as Array).duplicate(true)
@@ -1949,13 +1957,38 @@ func send_cradle(payload: Dictionary) -> void:
 
 ## Settings > Debug > Ship, applied by the host for every player: "spawn" or "remove" a
 ## design standing on the apron (YARD_SHIP_DESIGNS), "clear_bay" takes the ship out of the
-## bay, "restore_bay" brings the Kestrel back.
+## bay, "restore_bay" brings the Kestrel back, "random_wreck" puts a random wreck in the bay
+## in place of the Kestrel (rolled here, built the same on every machine).
 func debug_ship(action: String, design := "") -> void:
 	var payload := {"action": action, "design": design}
+	if action == "random_wreck":
+		payload["wreck"] = random_wreck()
 	if _net:
 		_net.call("request", "ship_bay.debug_ship", payload)
 	elif _check_debug_ship(0, payload) is Dictionary:
 		_apply_debug_ship(payload)
+
+
+## A random wreck for the bay: a small generated ship of any family, with one to three of
+## Void Salvage's wreck events at random strengths. {design, seed, events, name}.
+static func random_wreck(seed_value := -1) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	if seed_value >= 0:
+		rng.seed = seed_value
+	else:
+		rng.randomize()
+	var family: String = ShipGenerator.FAMILIES[rng.randi_range(0, ShipGenerator.FAMILIES.size() - 1)]
+	var ship_seed := rng.randi_range(1, 999999)
+	var events: Array = []
+	var pool: Array[String] = []
+	for e: String in WreckMaker.EVENTS:
+		pool.append(e)
+	var n := rng.randi_range(1, 3)
+	while events.size() < n and not pool.is_empty():
+		var e: String = pool.pop_at(rng.randi_range(0, pool.size() - 1))
+		events.append([e, rng.randi_range(1, 4), rng.randi_range(1, 999999)])
+	return {"design": ShipGenerator.design_id(ship_seed, "S", family), "seed": rng.randi_range(1, 999999), "events": events,
+			"name": "%s wreck" % family.capitalize()}
 
 
 # --- Component rigs (Component Upgrades) -----------------------------------------------
@@ -2130,6 +2163,9 @@ func _check_debug_ship(_sender: int, payload: Dictionary) -> Variant:
 	var action := str(payload.get("action", ""))
 	if action in ["spawn", "remove"]:
 		return payload if YARD_SHIP_DESIGNS.has(str(payload.get("design", ""))) else "no such ship to stand on the apron"
+	if action == "random_wreck":
+		var w: Variant = payload.get("wreck", {})
+		return payload if w is Dictionary and ShipGenerator.is_generated(str((w as Dictionary).get("design", ""))) else "no wreck rolled"
 	return payload if action in ["clear_bay", "restore_bay"] else "unknown debug action"
 
 
@@ -2149,8 +2185,16 @@ func _apply_debug_ship(payload: Dictionary) -> void:
 			unload_ship()
 		"restore_bay":
 			bay_cleared = false
+			if not bay_wreck.is_empty():
+				bay_wreck = {}
+				bay_wreck_changed.emit()
 			if ship == null:
 				load_ship("vs_kestrel")
+		"random_wreck":
+			bay_cleared = true
+			unload_ship()
+			bay_wreck = (payload.get("wreck", {}) as Dictionary).duplicate(true)
+			bay_wreck_changed.emit()
 
 
 func _apply_transporter(payload: Dictionary) -> void:

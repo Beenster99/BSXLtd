@@ -94,29 +94,40 @@ func _build_hull(job: String, h: Dictionary) -> Node3D:
 	var cradle: Node3D = yard.find_child(str(h.get("cradle", "")), true, false) as Node3D if yard else null
 	if cradle == null or not cradle.has_method("carry"):
 		return null
-	var file := WreckMaker.for_design(str(h.get("design", "")), int(h.get("seed", 0)), h.get("events", []))
+	var body := hull_body("Hull_" + job.validate_node_name(), str(h.get("design", "")), int(h.get("seed", 0)), h.get("events", []))
+	if body == null:
+		return null
+	body.set_meta("job_id", job)
+	body.set_meta("look_hint", {"title": str(h.get("name", "")).capitalize() if str(h.get("name", "")) != "" else "Contract hull",
+			"text": "In for a job, on a transport cradle: a transporter can move it about.", "keys": []})
+	var centre: Vector3 = body.get_meta("belly")
+	cradle.call("carry", body, Vector3(-centre.x, float(cradle.get("saddle_top")) - centre.y + 0.02, -centre.z))
+	cradle.set("load_t", float(h.get("mass_kg", 0.0)) / 1000.0)
+	return body
+
+
+## A wreck (or ship) of `design` rolled from `seed` with `events`, built as a frozen body
+## named `node_name`; null if it has no file or doesn't build. Its meta "belly" is the middle
+## of its belly in its own space (set that on a cradle's saddles), "importer" the importer.
+static func hull_body(node_name: String, design: String, seed_value: int, events: Variant) -> RigidBody3D:
+	var file := WreckMaker.for_design(design, seed_value, events)
 	if file.is_empty():
-		file = VsShipImport.design_source(str(h.get("design", "")))
+		file = VsShipImport.design_source(design)
 	if file.is_empty():
 		return null
 	var body := RigidBody3D.new()
-	body.name = "Hull_" + job.validate_node_name()
+	body.name = node_name
 	body.freeze = true
 	body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	var importer := VsShipImport.new()
 	if not importer.build(file, body):
-		push_error("ShipBay: contract hull %s didn't build: %s" % [job, "; ".join(importer.errors)])
+		push_error("ShipBay: %s (%s) didn't build: %s" % [node_name, design, "; ".join(importer.errors)])
 		body.free()
 		return null
 	body.set_meta("importer", importer)
-	body.set_meta("job_id", job)
-	body.set_meta("look_hint", {"title": str(h.get("name", "")).capitalize() if str(h.get("name", "")) != "" else "Contract hull",
-			"text": "In for a job, on a transport cradle: a transporter can move it about.", "keys": []})
-	# Its belly on the saddles, its middle over the cradle's.
 	var b: Dictionary = importer.file.get("derived", {}).get("bounds", {})
 	var pos: Array = b.get("pos", [0, 0, 0])
 	var size: Array = b.get("size", [0, 0, 0])
-	var centre := Vector3(float(pos[0]) + float(size[0]) * 0.5, float(pos[1]), float(pos[2]) + float(size[2]) * 0.5)
-	cradle.call("carry", body, Vector3(-centre.x, float(cradle.get("saddle_top")) - centre.y + 0.02, -centre.z))
-	cradle.set("load_t", float(h.get("mass_kg", 0.0)) / 1000.0)
+	body.set_meta("belly", Vector3(float(pos[0]) + float(size[0]) * 0.5, float(pos[1]), float(pos[2]) + float(size[2]) * 0.5))
+	body.set_meta("mass_kg", float(importer.file.get("stats", {}).get("mass_kg", 0.0)))
 	return body
