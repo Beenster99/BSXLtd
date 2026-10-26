@@ -95,6 +95,8 @@ flags = {
 "trades.vs_tools": true,
 "trades.weld_skill": true,
 "trades.quiet_tractor": true,
+"trades.part_landing": true,
+"trades.parts_on_decks": true,
 "trades.no_pinning": true,
 "trades.crew_tools": true,
 "trades.unit_mounts": true,
