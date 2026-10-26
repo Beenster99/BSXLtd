@@ -19,7 +19,7 @@ const WARN := Color(1.0, 0.75, 0.25)
 const BAD := Color(1.0, 0.4, 0.3)
 
 ## Frame times (ms), oldest first.
-var frames: PackedFloat32Array = []
+var frames: PackedFloat32Array = PackedFloat32Array()
 ## The last readings, by name (tests read them).
 var stats: Dictionary = {}
 var _label: Label
@@ -107,7 +107,7 @@ func sample() -> void:
 
 
 func text() -> String:
-	var lines: PackedStringArray = []
+	var lines: PackedStringArray = PackedStringArray()
 	lines.append("%4.0f FPS   %5.1f ms   worst %5.1f ms" % [stats.get("fps", 0.0), stats.get("frame_ms", 0.0), stats.get("worst_ms", 0.0)])
 	lines.append("CPU  game %4.1f  physics %4.1f  render %4.1f ms" % [stats.get("cpu_ms", 0.0), stats.get("physics_ms", 0.0), stats.get("render_cpu_ms", 0.0)])
 	lines.append("GPU  %5.1f ms" % stats.get("gpu_ms", 0.0))
