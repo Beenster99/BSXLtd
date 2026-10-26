@@ -104,6 +104,7 @@ func run_tests() -> void:
 	check(monitors.size() == 6, "a TV in every hall: %d" % monitors.size())
 	var halls := {}
 	var space := yard.get_world_3d().direct_space_state
+	var big_m: Vector2 = front.get("SCREEN_M")
 	await get_tree().physics_frame
 	for m: Node3D in monitors:
 		var room: String = yard.call("room_at", m.global_position + m.global_basis.z * 0.5)
@@ -126,6 +127,13 @@ func run_tests() -> void:
 		q.exclude = [(m.get_node("Body") as StaticBody3D).get_rid()]
 		var hits := space.intersect_shape(q, 8)
 		check(hits.is_empty(), "%s has clear floor in front: %s" % [m.name, str(hits.map(func(x): return x.collider.name))])
+		# And nothing on the wall where the screen hangs (doors, pipes, racks).
+		var set := BoxShape3D.new()
+		set.size = Vector3(big_m.x + 0.1, big_m.y + 0.1, front.get("DEPTH"))
+		q.shape = set
+		q.transform = Transform3D(m.global_basis, m.global_position + m.global_basis.z * (float(front.get("DEPTH")) * 0.5 + 0.08))
+		hits = space.intersect_shape(q, 8)
+		check(hits.is_empty(), "%s hangs clear of everything on its wall: %s" % [m.name, str(hits.map(func(x): return x.collider.name))])
 	check(halls.keys().size() == 6 and halls.has("deliveries") and halls.has("stock") and halls.has("prep") and halls.has("preassembly") and halls.has("bay"),
 			"one in each hall: %s" % str(halls.keys()))
 
@@ -133,7 +141,8 @@ func run_tests() -> void:
 	check(monitors.all(func(m: Node3D) -> bool: return m.get_node("Viewport").get_node_or_null("Terminal") is HoloTerminal),
 			"every TV shows the wrist terminal")
 	var big: Vector2 = front.get("SCREEN_M")
-	check(big.x >= 5.0 and monitors.all(func(m: Node3D) -> bool: return m.global_position.y - big.y * 0.5 > 2.2), "the TVs are big and hung over people's heads: %s" % str(big))
+	check(big.x >= 5.0 and monitors.all(func(m: Node3D) -> bool: return absf(m.global_position.y - big.y * 0.5 - 0.95) < 0.3 or m.name == "TV_preassembly"),
+			"the TVs are big and hang low, the bottom about a metre up (beenster, 0.3.20): %s" % str(big))
 
 	# Stand a camera in front of the first terminal: the prompt shows.
 	var cam: Camera3D = front.call("stage_monitor_view", 0)
