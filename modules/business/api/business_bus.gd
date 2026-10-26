@@ -75,7 +75,6 @@ const WristScreen := preload("res://modules/business/internal/ui/wrist_screen.gd
 ## between them at 20 to 40.
 const SCREEN_CHANNELS := {
 	"business.orders": ["Buy/Sell", "orders", 10],
-	"business.goods": ["Goods in", "goods", 30],
 	"business.accounts": ["Accounts", "accounts", 50],
 }
 const CASH_READOUT := "business.cash"
@@ -118,6 +117,8 @@ const MAX_CASH := "max_cash"
 const MAX_REPUTATION := "max_reputation"
 
 var _books: Books
+## Sales sent out through Ship and Bay this session (numbers their dispatch ids).
+var _sales_out := 0
 ## The open shipyard Business has furnished, or null; the clock runs while it is open.
 var _yard: Node3D
 var _clock_carry := 0.0
@@ -521,7 +522,7 @@ func apply_net_snapshot(data: Dictionary) -> void:
 		wallet_changed.emit(str(player), _books.wallets[str(player)], 0)
 
 
-## A yard terminal on `channel` ("orders", "goods", "accounts"), laid out at 1280 x 800 and
+## A yard terminal on `channel` ("orders", "accounts"), laid out at 1280 x 800 and
 ## happy at any size; interactive takes the mouse and can place orders. It emits
 ## close_requested when the player is done with it.
 func make_screen(interactive: bool, channel := "orders") -> Control:
@@ -761,9 +762,17 @@ func quote_market(basket: Array) -> PartsQuote:
 	return _books.quote_market(basket)
 
 
-## What `qty` of one listing costs after its supplier's bulk discount.
+## What `qty` of one listing costs after its supplier's bulk discount and the company's
+## standing with it (standing_with).
 func listing_cost(l: MarketListing, qty: int) -> int:
 	return _books.line_cost(l, qty)
+
+
+## The company's standing with a supplier, from what it has sold it: {name ("New", "Known",
+## "Regular", "Partner"), off (percent off what it buys there), sold (CR sold to it ever),
+## next_name, next_at (CR sold for the next one; "" and 0 at the top)}.
+func standing_with(supplier_id: String) -> Dictionary:
+	return _books.standing_with(supplier_id)
 
 
 ## Today's offers for a part in a condition from the companies you trade with, best first:
@@ -937,10 +946,34 @@ func sell_stock(supplier_id: String, part: String, condition: String, qty := 1) 
 
 
 func _sell_stock(supplier_id: String, part: String, condition: String, qty: int) -> BusinessResult:
+	if qty > shelved_count(part):
+		return BusinessResult.fail(ERR_UNAVAILABLE, "only %d %s on the shelves" % [maxi(0, shelved_count(part)), part_name(part)])
 	var r := _books.sell_stock(supplier_id, part, condition, qty)
 	if r.is_ok():
 		_refresh_yard()
+		_dispatch(supplier_id, part, condition, qty)
 	return r
+
+
+## How many of a part are on the stores' shelves, so can be sold (beenster, 0.3.19: parts on
+## their way in aren't stock yet). Raw materials, and everything when Ship and Bay isn't
+## running the stores, count what the books hold.
+func shelved_count(part: String) -> int:
+	var yard_bus := Modules.bus("ship_bay")
+	if part.begins_with(RAW_PREFIX) or yard_bus == null or not yard_bus.has_method("stock_count") or not ship_bay_takes_deliveries():
+		return _books.stock_total(part)
+	return int(yard_bus.call("stock_count", part))
+
+
+## Sold parts go out: Ship and Bay's picking lift takes them off the shelf to goods in and a
+## truck collects them (when it offers dispatch_stock).
+func _dispatch(supplier_id: String, part: String, condition: String, qty: int) -> void:
+	var yard_bus := Modules.bus("ship_bay")
+	if part.begins_with(RAW_PREFIX) or yard_bus == null or not yard_bus.has_method("dispatch_stock"):
+		return
+	var s := supplier(supplier_id)
+	_sales_out += 1
+	yard_bus.call("dispatch_stock", "SALE-%d-%d" % [_books.minute, _sales_out], part, 1.0 - PartCondition.wear_of(condition), qty, s.display_name if s else supplier_id)
 
 
 func cancel_order(order_id: String) -> BusinessResult:

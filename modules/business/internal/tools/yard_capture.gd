@@ -59,7 +59,7 @@ class Runner:
 			# Each channel square on, close enough to read.
 			var first: Node3D = monitors[0]
 			var tv: Control = first.find_child("Broadcast", true, false)
-			for ch: String in ["orders", "goods", "accounts"]:
+			for ch: String in ["orders", "accounts"]:
 				tv.call("show_channel", ch)
 				cam.global_position = first.global_position + first.global_basis.z * 3.4 + Vector3(0, -0.4, 0)
 				cam.look_at(first.global_position)

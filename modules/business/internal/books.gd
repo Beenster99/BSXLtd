@@ -14,6 +14,10 @@ const MAX_DELIVERY_SECONDS := 60
 const WALLET_START := 1000
 ## The cheapest listing (credits) a supplier puts on a deal.
 const DEAL_MIN_PRICE := 100
+## Standing with a supplier from what the company has sold it (beenster, 0.3.19: selling to
+## a lower bidder can be worth it to build up a supplier): [CR sold to it, name, percent off
+## everything bought from it].
+const SUPPLIER_TIERS := [[0, "New", 0], [5000, "Known", 2], [20000, "Regular", 4], [60000, "Partner", 6]]
 const Company := preload("res://modules/business/internal/company.gd")
 
 var rules: BusinessRules
@@ -30,6 +34,9 @@ var day: int:
 var cash := 0
 var reputation := 50.0
 var ledger: Array[LedgerEntry] = []
+## sold_to() worked out from the ledger, and the ledger length it was worked out at.
+var _sold := {}
+var _sold_at := -1
 var orders: Dictionary = {}  # id -> PartsOrder
 ## Contract id -> {value, due_day, deposit, penalties, state}; state is open, done or cancelled.
 var contracts: Dictionary = {}
@@ -69,6 +76,7 @@ func reset() -> void:
 	cash = rules.starting_cash
 	reputation = rules.starting_reputation
 	ledger = []
+	_sold_at = -1
 	orders = {}
 	contracts = {}
 	stock = {}
@@ -443,11 +451,44 @@ func quote_market(basket: Array) -> PartsQuote:
 	return q
 
 
-## What `qty` of one listing costs, less its supplier's bulk discount.
+## What `qty` of one listing costs, less its supplier's bulk discount and the company's
+## standing with it.
 func line_cost(l: MarketListing, qty: int) -> int:
 	var s: SupplierDef = suppliers.get(l.supplier_id)
 	var off := s.bulk_off(qty) if s and not l.id.begins_with("S-") else 0
+	off += loyalty_off(l.supplier_id)
 	return roundi(l.unit_price * qty * (100 - off) / 100.0)
+
+
+## CR the company has sold a supplier, ever (its sales in the ledger).
+func sold_to(supplier_id: String) -> int:
+	if _sold_at != ledger.size():
+		_sold.clear()
+		for e in ledger:
+			if e.category == LedgerEntry.RESALE:
+				_sold[e.ref] = int(_sold.get(e.ref, 0)) + e.amount
+		_sold_at = ledger.size()
+	return int(_sold.get(supplier_id, 0))
+
+
+## The company's standing with a supplier: its SUPPLIER_TIERS entry, and the next one up
+## ([] at the top): {name, off, sold, next_name, next_at}.
+func standing_with(supplier_id: String) -> Dictionary:
+	var sold := sold_to(supplier_id)
+	var at := 0
+	for i in SUPPLIER_TIERS.size():
+		if sold >= int(SUPPLIER_TIERS[i][0]):
+			at = i
+	var out := {"name": SUPPLIER_TIERS[at][1], "off": int(SUPPLIER_TIERS[at][2]), "sold": sold, "next_name": "", "next_at": 0}
+	if at + 1 < SUPPLIER_TIERS.size():
+		out.next_name = SUPPLIER_TIERS[at + 1][1]
+		out.next_at = int(SUPPLIER_TIERS[at + 1][0])
+	return out
+
+
+## Percent off everything bought from a supplier for the company's standing with it.
+func loyalty_off(supplier_id: String) -> int:
+	return int(standing_with(supplier_id).off)
 
 
 ## Buys a basket: one order per supplier, paid now, taken off today's listings.
@@ -726,6 +767,7 @@ func load_data(d: Dictionary, from_version: int) -> void:
 	cash = int(d.get("cash", rules.starting_cash))
 	reputation = float(d.get("reputation", rules.starting_reputation))
 	ledger = []
+	_sold_at = -1
 	for e in d.get("ledger", []):
 		ledger.append(LedgerEntry.from_dict(e))
 	for od in d.get("orders", []):

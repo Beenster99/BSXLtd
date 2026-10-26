@@ -82,8 +82,28 @@ func _test_bulk() -> void:
 	check(r.is_ok() and bus.get_cash() == cash - q.cost, "the bulk price is what's paid")
 
 
+## Puts `qty` of a part on the stores' shelves, as a delivery the trolleys put away.
+func _shelve(part: String, qty: int) -> void:
+	var yard := Modules.bus("ship_bay") as ShipBayBus
+	var before := yard.delivered_crates().keys()
+	yard.receive_delivery("PO-SHELF-%s-%d" % [part, qty], [{"item_id": part, "qty": qty, "condition": 0.6, "name": part, "grade": PartCondition.USED, "mass": 10.0}])
+	for id: String in yard.delivered_crates():
+		if not id in before:
+			yard.store_crate(id)
+
+
 func _test_selling() -> void:
 	bus.add_stock("IonThruster", 3, PartCondition.USED, "test")
+	# Not on a shelf yet: not stock to sell (beenster, 0.3.19).
+	check(bus.shelved_count("IonThruster") == 0, "nothing on the shelves yet")
+	var w0 := Wrist.new(bus, "orders", true)
+	w0.mode = "sell"
+	check(not w0.stock_lines("").any(func(d: Dictionary) -> bool: return d.part == "IonThruster"), "so the Sell list leaves it out")
+	w0.free()
+	var early := bus.get_offers("IonThruster", PartCondition.USED)
+	check(not bus.sell_stock(early[0].supplier_id, "IonThruster", PartCondition.USED, 1).is_ok(), "and it can't be sold")
+	_shelve("IonThruster", 3)
+	check(bus.shelved_count("IonThruster") == 3, "put away, it's on the shelves: %d" % bus.shelved_count("IonThruster"))
 	var offers := bus.get_offers("IonThruster", PartCondition.USED)
 	check(offers.size() >= 1, "companies offer for a used ion thruster: %s" % str(offers))
 	for i in offers.size() - 1:
@@ -104,6 +124,24 @@ func _test_selling() -> void:
 			"the host takes a crew member's sale")
 	check(bus.call("_validate_order", 1, {"kind": "sell", "supplier": offers[0].supplier_id, "part": "IonThruster", "condition": PartCondition.USED, "qty": 9}) is String,
 			"but not more than is held")
+	_test_standing(offers[0].supplier_id)
+
+
+## Selling to a company builds standing with it, which takes a little off what it sells you.
+func _test_standing(buyer: String) -> void:
+	var st := bus.standing_with(buyer)
+	check(st.sold > 0 and st.name == "New" and st.off == 0 and st.next_name == "Known", "a first sale: still New, %s" % str(st))
+	var l: MarketListing = null
+	for each in bus.get_listings(""):
+		if each.supplier_id == buyer and each.unit_price >= 500 and each.available >= 1:
+			l = each
+			break
+	var before := bus.listing_cost(l, 1) if l else 0
+	(bus.get("_books") as Object).call("post", 20000, LedgerEntry.RESALE, buyer, "test sales")
+	st = bus.standing_with(buyer)
+	check(st.name == "Regular" and st.off == 4 and st.next_name == "Partner", "20,000 sold: a Regular, 4%% off: %s" % str(st))
+	if l:
+		check(bus.listing_cost(l, 1) < before and bus.listing_cost(l, 1) == roundi(l.unit_price * 0.96), "which comes off buying there: %d < %d" % [bus.listing_cost(l, 1), before])
 
 
 func _test_page() -> void:
@@ -130,4 +168,41 @@ func _test_page() -> void:
 		await frames(1)
 		check(bus.get_cash() > cash and int(bus.get_stock_detail().get("IonThruster", {}).get("used", 0)) == 0, "which sells to the best offer")
 		check(w.get_node_or_null("../") != null and (w.get("_side") as Node).find_child("Sales", true, false) != null, "and today's sales show beside it")
+	# Picking the buyer: click a stock line, its buyers show with their own SELL buttons.
+	bus.add_stock("IonThruster", 2, PartCondition.USED, "test")
+	_shelve("IonThruster", 2)
+	var offers := bus.get_offers("IonThruster", PartCondition.USED)
+	w.pick_stock("IonThruster|used")
+	await frames(1)
+	var buyers := (w.get("_side") as Node).find_child("Buyers", true, false)
+	check(buyers != null, "clicking a stock line shows its buyers")
+	if buyers and offers.size() >= 2:
+		var second: String = offers[1].supplier_id
+		var to := buyers.find_child("SellTo_" + ("%s_IonThruster_used" % second).validate_node_name(), true, false) as Button
+		check(to != null and buyers.find_children("SellTo_*", "Button", true, false).size() == offers.size(), "one SELL per buyer: %d" % offers.size())
+		if to:
+			to.pressed.emit()
+			await frames(1)
+			check(bus.get_ledger(bus.get_day()).any(func(e: LedgerEntry) -> bool: return e.category == LedgerEntry.RESALE and e.ref == second),
+					"selling to the second-best buyer sells to it")
+	# Deals: the terms of a deal, its bulk prices and the standing there.
+	w.mode = "buy"
+	w.category = "deals"
+	w.refresh()
+	await frames(1)
+	var terms := (w.get("_side") as Node).find_child("Terms", true, false)
+	check(terms != null, "DEALS explains itself beside the list")
+	var deal: MarketListing = w.shown_listings()[0]
+	w.pick_listing(deal.id)
+	await frames(1)
+	terms = (w.get("_side") as Node).find_child("Terms", true, false)
+	var said := " ".join(terms.find_children("*", "Label", true, false).map(func(x: Label) -> String: return x.text)) if terms else ""
+	check("%d%% OFF" % deal.deal_off() in said and T_money(deal.list_price) in said and "EACH" in said, "a picked deal shows what's off, the old price and the price each: %s" % said)
+	var tiers: Array = w.bulk_tiers(deal)
+	if not tiers.is_empty():
+		check("BUY %d OR MORE" % tiers[0].x in said, "and its bulk prices")
 	w.queue_free()
+
+
+func T_money(n: int) -> String:
+	return (load("res://modules/ui/api/terminal_kit.gd") as GDScript).call("money", n)

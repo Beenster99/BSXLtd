@@ -1,15 +1,15 @@
 extends Control
-## The yard terminal: three channels on one screen. ORDERS is today's parts market and a
-## purchase order (pick listings, set quantities, see the bill, place it); GOODS IN shows
-## what is on its way and what is in store; ACCOUNTS shows cash, reputation and the ledger.
+## The yard terminal: two channels on one screen. ORDERS is today's parts market and a
+## purchase order (pick listings, set quantities, see the bill, place it); ACCOUNTS shows
+## cash, reputation and the ledger.
 ## The same screen runs on the wall monitors (display only, cycling channels) and full
 ## size when a player uses one (interactive).
 
 signal close_requested
 
 const Look := preload("res://modules/business/internal/ui/terminal_look.gd")
-const CHANNELS: PackedStringArray = ["orders", "goods", "accounts"]
-const CHANNEL_NAMES := {"orders": "01  BUY/SELL", "goods": "02  GOODS IN", "accounts": "03  ACCOUNTS"}
+const CHANNELS: PackedStringArray = ["orders", "accounts"]
+const CHANNEL_NAMES := {"orders": "01  BUY/SELL", "accounts": "02  ACCOUNTS"}
 ## How long a wall monitor shows each channel.
 const CYCLE_SECONDS := 7.0
 const MAX_ROWS := 60
@@ -86,8 +86,6 @@ func refresh() -> void:
 	match channel:
 		"orders":
 			_body.add_child(_orders())
-		"goods":
-			_body.add_child(_goods())
 		_:
 			_body.add_child(_accounts())
 	scroll = _body.find_child("Scroll", true, false) as ScrollContainer
@@ -506,67 +504,6 @@ func _prune_basket() -> void:
 			basket.erase(id)
 		elif basket[id] > l.available:
 			basket[id] = l.available
-
-
-# --- GOODS IN ------------------------------------------------------------------------------
-
-func _goods() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-	var on_order := _column("ON ORDER")
-	var open := bus.get_orders(PartsOrder.State.PLACED)
-	if open.is_empty():
-		on_order.list.add_child(Look.label("Nothing on order.", "body", 18, Look.DIM))
-	for o in open:
-		var s := bus.supplier(o.supplier_id)
-		var names := PackedStringArray()
-		for line in o.lines:
-			names.append("%d× %s" % [line.qty, bus.part_name(line.part)])
-		on_order.list.add_child(_goods_row(o.id, "%s  ·  %s" % [s.display_name.to_upper() if s else o.supplier_id, ", ".join(names)],
-				("DELAYED  " if o.delayed else "") + bus.arrival_text(o.eta_minute), Look.BAD if o.delayed else Look.ORANGE,
-				o.eta_minute))
-	row.add_child(on_order.root)
-
-	var in_store := _column("IN STORE")
-	var stock := bus.get_stock_detail()
-	var parts := stock.keys()
-	parts.sort()
-	if parts.is_empty():
-		in_store.list.add_child(Look.label("The store is empty.", "body", 18, Look.DIM))
-	for part in parts:
-		for c: String in PartCondition.ALL:
-			if stock[part].has(c):
-				var h := HBoxContainer.new()
-				var n := Look.label(bus.part_name(part), "body_medium", 18, Look.TEXT)
-				n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				h.add_child(n)
-				h.add_child(Look.condition_tag(c, 13))
-				h.add_child(_cell("×%d" % int(stock[part][c]), 70, Look.TEXT, "mono_bold"))
-				in_store.list.add_child(h)
-	row.add_child(in_store.root)
-	return row
-
-
-## `eta_minute` >= 0 makes `when` count down to it.
-func _goods_row(id: String, what: String, when: String, when_colour: Color, eta_minute := -1) -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Look.plate(8))
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", -2)
-	panel.add_child(col)
-	var top := HBoxContainer.new()
-	var idl := Look.label(id, "mono_bold", 17, Look.TEXT)
-	idl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(idl)
-	var when_l := Look.label(when, "mono_medium", 16, when_colour)
-	if eta_minute >= 0:
-		_count_down(when_l, eta_minute, when.trim_suffix(bus.arrival_text(eta_minute)))
-	top.add_child(when_l)
-	col.add_child(top)
-	var w := Look.label(what, "body", 16, Look.DIM)
-	w.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(w)
-	return panel
 
 
 func _column(title: String) -> Dictionary:
