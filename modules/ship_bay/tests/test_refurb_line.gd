@@ -16,6 +16,9 @@ const Crusher := preload("res://modules/ship_bay/internal/yard/crusher_plant.gd"
 func run_tests() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
+	# These checks run the machines by hand: the bay's lots don't run on by themselves here.
+	var intake_was := Flags.is_on("ship_bay.refurb_runs_intake")
+	Flags.set_flag("ship_bay.refurb_runs_intake", false)
 	var scene := load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene
 	var yard := scene.instantiate() as Node3D
 	add_child(yard)
@@ -213,6 +216,7 @@ func run_tests() -> void:
 		t += 0.1
 	check(str((fleet.get("jobs") as Dictionary)["b"].get("do", "")) == "put_away", "and with the line run dry the trolley takes it to the stores")
 	bus.line_request("auto", {"on": false})
+	Flags.set_flag("ship_bay.refurb_runs_intake", intake_was)
 	yard.queue_free()
 	await frames(1)
 	bus.reset_data()

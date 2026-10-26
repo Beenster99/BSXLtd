@@ -371,6 +371,9 @@ func _on_screen_action(action: String, id: String) -> void:
 			park(id)
 		"remote":
 			toggle_remote(id)
+		"tidy":
+			if _bus:
+				_bus.tidy_up()
 
 
 ## Takes a trolley on remote control, or lets it go again. On remote its camera shows in a

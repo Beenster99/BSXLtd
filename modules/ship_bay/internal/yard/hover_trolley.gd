@@ -56,6 +56,8 @@ const SPECS := {
 	"b": {"name": "Line B trolley", "letter": "B", "deck": Vector2(3.4, 10.0), "radius": 1.7, "clear": 1.3,
 			"speed": 1.3, "lift": 7.6, "carries": ["bin", "pallet", "bulk"], "colour": Color(0.62, 0.45, 0.92), "line": "b"},
 }
+## The yard's own trolleys (small, medium, large): open decks, and they tidy the yard.
+const YARD: PackedStringArray = ["s", "m", "l"]
 ## The picking lift's mast height over the floor (under the aisle signs), metres.
 const PICKER_MAST := 8.9
 ## Chassis underside and top over the floor while hovering, metres.
@@ -392,13 +394,18 @@ func _build() -> void:
 	screen.call("setup", Vector2(box_w - 0.06, 0.36), "TROLLEY %s" % spec["letter"] if not spec.get("picker", false) else str(spec.get("title", "PICKER" if kind == "p" else ("PICKER %s" % kind.substr(1) if spec.has("putaway") else "HEAVY LIFT"))), 2)
 	for b: Array in [["call", "FOLLOW ME"], ["park", "PARK"], ["fast", "FAST"], ["remote", "REMOTE CONTROL"]]:
 		screen.call("add_button", b[0], b[1], func() -> void: screen_action.emit(b[0]), b[0] == "remote")
+	# The yard trolleys tidy the yard: every loose part off a ship to refurb, which sorts it.
+	if kind in YARD and Flags.is_on("ship_bay.tidy_to_refurb"):
+		screen.call("add_button", "tidy", "TIDY UP TO REFURB", func() -> void: screen_action.emit("tidy"))
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(d.x, CHASSIS_TOP - HOVER + 0.5, d.y)
 	col.shape = shape
 	col.position = Vector3(0, (HOVER + CHASSIS_TOP + 0.5) * 0.5, 0)
 	add_child(col)
-	# The deck: a grating plate on a frame, a waist rail round three sides (not the back).
+	# The deck: a grating plate on a frame; the line trolleys have a waist rail round three
+	# sides (not the back). The yard trolleys have none, so parts stack on an open deck
+	# (beenster, 0.3.18).
 	deck = AnimatableBody3D.new()
 	deck.name = "Deck"
 	deck.sync_to_physics = false
@@ -417,7 +424,7 @@ func _build() -> void:
 	deck.add_child(frame)
 	if is_picker():
 		_build_picker(d)
-	elif kind != "l":
+	elif not (kind == "l" or (kind in YARD and Flags.is_on("ship_bay.open_trolley_decks"))):
 		var post := Vector3(0.04, 1.0, 0.04)
 		for p: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
 			_box(post, Vector3(p.x * (d.x * 0.5 - 0.03), 0.5, p.y * (d.y * 0.5 - 0.03)), _mats["body"], deck)
