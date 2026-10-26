@@ -61,6 +61,44 @@ static func rattle(seconds: float, volume: float, tone_hz: float, blows_hz: floa
 	return _wav(data, rate, true)
 
 
+## A metal part landing: a sharp knock, then a few inharmonic ringing modes (a struck plate's)
+## dying away, with a thud under it. `heavy` 0..1 lengthens the ring and deepens the thud.
+## Cached per tenth of `heavy`.
+static var _clangs: Dictionary = {}
+
+
+static func clang(heavy: float) -> AudioStreamWAV:
+	var key := roundi(clampf(heavy, 0.0, 1.0) * 10.0)
+	if _clangs.has(key):
+		return _clangs[key]
+	var h := key / 10.0
+	var rate := 22050
+	var seconds := lerpf(0.45, 1.1, h)
+	var n := int(seconds * rate)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 17 + key
+	# A plate's modes: far from whole multiples, so it rings rather than hums.
+	var base := lerpf(620.0, 240.0, h)
+	var modes := [[1.0, 1.0, 9.0], [1.59, 0.7, 11.0], [2.14, 0.55, 14.0], [2.65, 0.4, 18.0], [3.91, 0.3, 24.0]]
+	var thud_hz := lerpf(140.0, 60.0, h)
+	var y := 0.0
+	for i in n:
+		var t := float(i) / rate
+		var ring := 0.0
+		for m: Array in modes:
+			ring += sin(TAU * base * float(m[0]) * t + float(m[0])) * float(m[1]) * exp(-t * float(m[2]) / lerpf(1.0, 1.8, h))
+		y += 0.5 * (rng.randf_range(-1.0, 1.0) - y)
+		var knock := y * exp(-t * 90.0) * 1.4
+		var thud := sin(TAU * thud_hz * t) * exp(-t * 22.0) * (0.4 + h * 0.6)
+		var v := (ring * 0.32 + knock + thud) * 0.75
+		data.encode_s16(i * 2, int(clampf(v, -1.0, 1.0) * 32767))
+	var wav := _wav(data, rate, false)
+	_clangs[key] = wav
+	return wav
+
+
 static func _wav(data: PackedByteArray, rate: int, looped: bool) -> AudioStreamWAV:
 	var wav := AudioStreamWAV.new()
 	wav.format = AudioStreamWAV.FORMAT_16_BITS
