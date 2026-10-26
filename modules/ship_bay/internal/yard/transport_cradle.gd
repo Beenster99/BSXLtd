@@ -66,6 +66,26 @@ var _out_mat: Material
 
 func _init(size_id := "s") -> void:
 	sync_to_physics = false
+	_build(size_id)
+
+
+## Rebuilds it as another size (the bay's cradle, for the ship in it: beenster, 26 Oct). The
+## hull it carries and its pin levers (with whatever F does on them) are kept; its pins are
+## where they were, as every size has them in the same places.
+func resize(size_id: String) -> void:
+	if not SIZES.has(size_id) or size_id == size:
+		return
+	for c: Node in get_children():
+		if c == load_node or (c is CollisionShape3D and levers.has(c)):
+			continue
+		remove_child(c)
+		c.queue_free()
+	_pin_meshes.clear()
+	_handles.clear()
+	_build(size_id)
+
+
+func _build(size_id: String) -> void:
 	size = size_id if SIZES.has(size_id) else "s"
 	var spec: Dictionary = SIZES[size]
 	side_x = spec.side_x
@@ -120,18 +140,21 @@ func _init(size_id := "s") -> void:
 	# shows green when the pin is in, red when it is drawn.
 	_in_mat = ShipKit.glow(Color(0.3, 1.0, 0.45), 2.0)
 	_out_mat = ShipKit.glow(Color(1.0, 0.25, 0.15), 2.0)
-	for p: Vector3 in PINS:
+	var fresh := levers.is_empty()
+	for i in PINS.size():
+		var p := PINS[i]
 		var out := signf(p.x) * (side_x + flange * 0.5)
 		var at := Vector3(out + signf(p.x) * 0.08, side_h * 0.5, p.z)
 		_part(PartShapes.chamfer_box(Vector3(0.16, 0.36, 0.3), 0.02), Transform3D(Basis(), at), dark)
 		_handles.append(_part(PartShapes.box(Vector3(0.06, 0.08, 0.22)), Transform3D(Basis(), at + Vector3(signf(p.x) * 0.11, 0.08, 0)), _out_mat))
-		var lever := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = Vector3(0.3, 0.4, 0.4)
-		lever.shape = box
-		lever.position = at + Vector3(signf(p.x) * 0.07, 0, 0)
-		add_child(lever)
-		levers.append(lever)
+		if fresh:
+			var lever := CollisionShape3D.new()
+			var box := BoxShape3D.new()
+			box.size = Vector3(0.3, 0.4, 0.4)
+			lever.shape = box
+			add_child(lever)
+			levers.append(lever)
+		levers[i].position = at + Vector3(signf(p.x) * 0.07, 0, 0)
 	show_pins()
 
 

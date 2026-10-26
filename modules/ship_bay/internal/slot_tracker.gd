@@ -15,13 +15,21 @@ var _slots: Dictionary = {}
 func _init(def: ShipDefinition, on_change: Callable) -> void:
 	_def = def
 	emit = on_change
+	var loose := {}
+	for id: String in def.loose:
+		loose[id] = true
 	for s in def.slots:
 		var tight := {}
 		if s.fitted != "":
 			for f in s.fasteners:
-				tight[f.joint_id] = 1.0
-		_slots[s.slot_id] = {"state": State.FITTED if s.fitted != "" else State.EMPTY,
-				"component": s.fitted, "tight": tight, "tight_state": State.FITTED}
+				if not loose.has(f.joint_id):
+					tight[f.joint_id] = 1.0
+		# A part with some of its joints broken (a wreck's) starts loosened, the rest still
+		# holding it.
+		var st := State.EMPTY
+		if s.fitted != "":
+			st = State.FITTED if tight.size() == s.fasteners.size() else State.LOOSENED
+		_slots[s.slot_id] = {"state": st, "component": s.fitted, "tight": tight, "tight_state": State.FITTED}
 
 
 func state(slot_id: String) -> int:
