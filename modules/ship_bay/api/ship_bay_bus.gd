@@ -928,6 +928,13 @@ func clean_up() -> int:
 	return sent
 
 
+## TIDY UP TO REFURB on a yard trolley's screen: the same clean-up. The refurbishment lines
+## then run what lands in their intake bays by themselves (ship_bay.refurb_runs_intake), so
+## parts end up refurbished in the stores, or as ingots in the crusher house.
+func tidy_up() -> int:
+	return clean_up()
+
+
 ## Calls off the trolley sent for a part (the player took it with their own beam): it parks.
 func cancel_beam(slot_id: String) -> void:
 	if not _beam_claims.has(slot_id):

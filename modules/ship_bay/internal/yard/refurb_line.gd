@@ -325,6 +325,8 @@ func _process(delta: float) -> void:
 			_call_for_scrap()
 			if bool(_state.get("auto", false)):
 				_auto_step()
+			elif Flags.is_on("ship_bay.refurb_runs_intake"):
+				_auto_step(true)
 
 
 ## Scrap on the bay's red scrap zone always gets a trolley to take it out to the crusher (host).
@@ -339,8 +341,11 @@ func _call_for_scrap() -> void:
 
 ## One look round the line on AUTO (host): pass finished lots on from the end of the line
 ## back, start whatever waits, load the survey, and send the trolley off when it is full or
-## the line has nothing left to do.
-func _auto_step() -> void:
+## the line has nothing left to do. `intake_only`: AUTO is off, so only lots trolleys set
+## down in the intake bay are loaded (worn goods in the stores wait for AUTO or a hand),
+## though whatever is already on the line still runs on.
+func _auto_step(intake_only := false) -> void:
+	var todo := lots.filter(func(l: Dictionary) -> bool: return str(l.location) == "INTAKE") if intake_only else lots
 	var st := _stations_of(_state)
 	var busy := false
 	for s: String in ["coater", "bath", "straightener", "survey"]:
@@ -354,12 +359,12 @@ func _auto_step() -> void:
 			_request("send", {"station": s})
 		elif str(at.state) == "waiting":
 			_request("start", {"station": s})
-	if (st.get("survey", {}) as Dictionary).is_empty() and not lots.is_empty() and not _moving():
-		_request("load", _load_args(lots[0]))
+	if (st.get("survey", {}) as Dictionary).is_empty() and not todo.is_empty() and not _moving():
+		_request("load", _load_args(todo[0]))
 		busy = true
 	var goods := _bus.trolley_goods(line_id)
 	if goods > 0 and _bus.line_trolley_home(line_id) and not _moving() \
-			and (goods >= _bus.trolley_capacity(line_id) or (not busy and lots.is_empty())):
+			and (goods >= _bus.trolley_capacity(line_id) or (not busy and todo.is_empty())):
 		_bus.command_trolley(line_id, "put_away")
 
 

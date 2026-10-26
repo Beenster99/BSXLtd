@@ -15,6 +15,9 @@ func run_tests() -> void:
 	bus.reset_data()
 	var was_on := Flags.is_on("ship_bay.clean_up")
 	Flags.set_flag("ship_bay.clean_up", true)
+	# The lines wait (AUTO off, intake not run by itself) till the bay's parts are checked.
+	var intake_was := Flags.is_on("ship_bay.refurb_runs_intake")
+	Flags.set_flag("ship_bay.refurb_runs_intake", false)
 	check(ShipBayBus.clean_up_route(0.95) == "store" and ShipBayBus.clean_up_route(0.5) == "refurb" and ShipBayBus.clean_up_route(0.1) == "grind",
 			"the trolleys sort by condition: stores, refurbishing, crusher")
 	check(is_equal_approx(bus.fitted_condition("hold_panel_1"), 1.0), "with no work order a fitted part counts as new")
@@ -81,11 +84,13 @@ func run_tests() -> void:
 	var lots: Array = line.get("lots")
 	check(not lots.is_empty() and lots[0].has("crate"), "the survey offers the bay's parts before the stores: %s" % [lots])
 
-	# The line takes the gyroscope into its survey; the crusher takes the pump by itself.
+	# With AUTO off the line still runs what trolleys set down in its bay (beenster, 0.3.18:
+	# tidy up, and refurb sorts it by itself); the crusher takes the pump by itself.
 	var crusher: Node3D = yard.get("crusher")
 	crusher.set("crush_time", 0.3)
 	crusher.set("feed_time", 0.1)
-	bus.line_request("auto", {"on": true})
+	check(not bool(bus.line_state().get("auto", false)), "AUTO is off")
+	Flags.set_flag("ship_bay.refurb_runs_intake", true)
 	var t := 0.0
 	while t < 10.0 and (not _in_feed(bus).is_empty() or not _on_pad(bus).is_empty() or str(bus.line_state().crusher.state) != ""):
 		await get_tree().create_timer(0.1).timeout
@@ -96,14 +101,15 @@ func run_tests() -> void:
 	for m: String in bus.ingots():
 		dust += int(bus.ingots()[m]) * ShipBayBus.INGOT_KG
 	check(dust > 0.0, "the scrap pump went through the crusher (%.1f kg)" % dust)
-	check(_in_feed(bus).is_empty(), "and the gyroscope went on down the line")
-	bus.line_request("auto", {"on": false})
+	check(_in_feed(bus).is_empty(), "and the gyroscope went on down the line by itself")
+	check(not bool(bus.line_state().get("auto", false)), "without AUTO being switched on")
 
 	bus.clean_up_claimed.disconnect(on_claim)
 	wrist.queue_free()
 	yard.queue_free()
 	await frames(1)
 	Flags.set_flag("ship_bay.clean_up", was_on)
+	Flags.set_flag("ship_bay.refurb_runs_intake", intake_was)
 	bus.reset_data()
 
 
