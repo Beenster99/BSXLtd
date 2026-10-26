@@ -207,7 +207,7 @@ func _port() -> int:
 
 ## This machine's local network addresses, for crew on the same network.
 static func _addresses() -> String:
-	var out: PackedStringArray = []
+	var out := PackedStringArray()
 	for a in IP.get_local_addresses():
 		if a.contains(".") and not a.begins_with("127.") and not a.begins_with("169.254."):
 			out.append(a)
