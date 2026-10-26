@@ -312,7 +312,9 @@ func actions() -> Array:
 func status_line() -> String:
 	if held == null:
 		return "Tractor: %d part%s off the ship" % [loose.size(), "" if loose.size() == 1 else "s"]
-	return "TRACTOR  %s  %s" % [held.slot_id.to_upper(), "IN LINE" if aligned else "OUT %.1f m" % _distance]
+	# Goods off a trolley go by their name, not their stand-in slot id ("stock:<crate>").
+	var what := _name_of(held.component) if is_goods(held) else held.slot_id
+	return "TRACTOR  %s  %s" % [what.to_upper(), "IN LINE" if aligned else "OUT %.1f m" % _distance]
 
 
 # --- Every frame --------------------------------------------------------------------------
