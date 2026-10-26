@@ -18,6 +18,7 @@ const QUIET_GLOW := 0.35
 
 const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
+const YardShips := preload("res://modules/ship_bay/internal/yard/yard_ships.gd")
 ## How far Use (F) reaches from the camera, metres.
 const USE_REACH := 3.5
 
@@ -58,8 +59,10 @@ func _ready() -> void:
 	_bus.ship_power_changed.connect(_on_power)
 	_bus.component_installed.connect(func(_s: String, _c: String) -> void: _refresh_markers())
 	_bus.joint_changed.connect(_on_joint_changed)
+	_bus.bay_wreck_changed.connect(_show_wreck)
 	_bus.marker_focus_changed.connect(_on_marker_focus)
 	_show_ship(_bus.ship)
+	_show_wreck()
 
 
 func _exit_tree() -> void:
@@ -74,6 +77,8 @@ func _exit_tree() -> void:
 		_bus.marker_focus_changed.disconnect(_on_marker_focus)
 	if _bus and _bus.joint_changed.is_connected(_on_joint_changed):
 		_bus.joint_changed.disconnect(_on_joint_changed)
+	if _bus and _bus.bay_wreck_changed.is_connected(_show_wreck):
+		_bus.bay_wreck_changed.disconnect(_show_wreck)
 
 
 ## Three ship cradles, each an I-beam base on the floor with two posts, a head beam under
@@ -177,6 +182,39 @@ func _on_ship_changed(_id: String) -> void:
 	var def := _bus.ship if _bus else null
 	if def == null or model == null or model.get_meta("ship_id", "") != def.ship_id:
 		_show_ship(def)
+
+
+## The random wreck in the bay (Settings > Debug > Ship), or null.
+var wreck: Node3D
+
+
+## Builds the bay's random wreck (ShipBayBus.bay_wreck) on the cradle, in place of the
+## Kestrel, or takes it away.
+func _show_wreck() -> void:
+	var want: Dictionary = _bus.bay_wreck if _bus else {}
+	if wreck and is_instance_valid(wreck):
+		if not want.is_empty() and wreck.get_meta("wreck", {}) == want:
+			return
+		if cradle and cradle.get("load_node") == wreck:
+			cradle.set("load_node", null)
+			cradle.set("load_t", 0.0)
+		wreck.queue_free()
+	wreck = null
+	if want.is_empty():
+		return
+	var body := YardShips.hull_body("BayWreck", str(want.get("design", "")), int(want.get("seed", 0)), want.get("events", []))
+	if body == null:
+		return
+	wreck = body
+	body.set_meta("wreck", want.duplicate(true))
+	body.set_meta("look_hint", {"title": str(want.get("name", "Wreck")), "text": "A random wreck, in for a look (Settings > Debug > Ship).", "keys": []})
+	var centre: Vector3 = body.get_meta("belly")
+	if cradle:
+		cradle.call("carry", body, Vector3(-centre.x, float(cradle.get("saddle_top")) - centre.y + 0.02, -centre.z))
+		cradle.set("load_t", float(body.get_meta("mass_kg", 0.0)) / 1000.0)
+	else:
+		add_child(body)
+		body.position = Vector3(-centre.x, cradle_height - centre.y, -centre.z)
 
 
 func _show_ship(def: ShipDefinition) -> void:
