@@ -41,14 +41,14 @@ const POP_FADE_S := 4.0
 const THICK_M := 0.004
 const STREAK_S := 0.012
 
-var _pos: PackedVector3Array = []
-var _vel: PackedVector3Array = []
-var _age: PackedFloat32Array = []
-var _life: PackedFloat32Array = []
-var _bounce: PackedFloat32Array = []
-var _thick: PackedFloat32Array = []
+var _pos: PackedVector3Array = PackedVector3Array()
+var _vel: PackedVector3Array = PackedVector3Array()
+var _age: PackedFloat32Array = PackedFloat32Array()
+var _life: PackedFloat32Array = PackedFloat32Array()
+var _bounce: PackedFloat32Array = PackedFloat32Array()
+var _thick: PackedFloat32Array = PackedFloat32Array()
 ## 1 while a spark lies still on the floor (no more rays for it).
-var _rest: PackedByteArray = []
+var _rest: PackedByteArray = PackedByteArray()
 var _mm: MultiMesh
 var _view: MultiMeshInstance3D
 var _rng := RandomNumberGenerator.new()

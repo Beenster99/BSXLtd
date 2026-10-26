@@ -374,7 +374,7 @@ func _on_joint_completed() -> void:
 	var lines: PackedStringArray = ["BOLTED JOINT COMPLETE", ""]
 	var torques: Array = m.torque_nm
 	for i in torques.size():
-		var notes: PackedStringArray = []
+		var notes: PackedStringArray = PackedStringArray()
 		if m.cross_threaded[i]:
 			notes.append("cross-threaded")
 		if not m.washer[i]:
@@ -523,7 +523,7 @@ func _flat(v: Vector3) -> Vector2:
 
 
 func _one_based(seq: PackedInt32Array) -> String:
-	var parts: PackedStringArray = []
+	var parts: PackedStringArray = PackedStringArray()
 	for i in seq:
 		parts.append(str(i + 1))
 	return "-".join(parts)

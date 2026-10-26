@@ -102,8 +102,9 @@ func show_seam(centre: Vector3, along: Vector3, n: Vector3, length: float, bins:
 
 
 ## The point where the torch's tip meets the work (on the plate with normal `n`), ringed;
-## `on_seam` lights it up once it's on the line.
-func show_tip(at: Vector3, n: Vector3, on_seam: bool) -> void:
+## `on_seam` lights it up once it's on the line, in `tone` (the welding pace, trades.weld_skill).
+func show_tip(at: Vector3, n: Vector3, on_seam: bool, tone := Color.WHITE) -> void:
+	_tip_on.albedo_color = tone
 	var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
 	x = x.normalized()
 	_tip.global_transform = Transform3D(Basis(x, n, x.cross(n)), at + n * LIFT_M)

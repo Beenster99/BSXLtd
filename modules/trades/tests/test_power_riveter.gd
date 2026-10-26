@@ -17,6 +17,10 @@ func run_tests() -> void:
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var bus := Modules.bus("trades") as TradesBus
 	var saved := {}
+	# The tools before trades.vs_tools (test_vs_tools has the reworked ones).
+	for old: String in ["trades.vs_tools", "trades.weld_skill"]:
+		saved[old] = Flags.is_on(old)
+		Flags.set_flag(old, false)
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)

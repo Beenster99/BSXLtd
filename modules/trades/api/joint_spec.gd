@@ -11,5 +11,5 @@ const VERSION := 1
 @export var fastener_id: StringName = &"bolt_m8x25_8.8"
 @export var torque_target_nm := 25.0
 ## Hole indices in the order final torque should be applied. Empty means any order.
-@export var sequence: PackedInt32Array = []
+@export var sequence: PackedInt32Array = PackedInt32Array()
 @export var needs_washer := true

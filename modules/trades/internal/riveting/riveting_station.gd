@@ -337,7 +337,7 @@ func _on_joint_completed() -> void:
 		bus.complete_joint(site, m)
 	var lines: PackedStringArray = ["RIVETED JOINT COMPLETE", ""]
 	for i in MARKS.size():
-		var notes: PackedStringArray = []
+		var notes: PackedStringArray = PackedStringArray()
 		if m.cracked_head[i]:
 			notes.append("cracked")
 		if not m.seated[i]:

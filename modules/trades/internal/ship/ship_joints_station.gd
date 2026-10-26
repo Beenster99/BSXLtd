@@ -13,6 +13,11 @@ extends TradesStation
 ##              whose screen you drag the loom's wires onto the pins (TradesWireLoom,
 ##              TradesWiringPanel, TradesWiringTablet)
 ##
+## With trades.vs_tools (after Void Salvage's tools) the power wrench takes a tight bolt out
+## and runs a loose one in to its setting on one held click, the cutter grinds rivet heads off,
+## and a held click on a weld cuts it out where you point; with trades.weld_skill a bead comes
+## out well only at a steady pace near the line.
+##
 ## Ship and Bay hears about every joint made or taken off (note_joint_made/removed) and keeps
 ## the slot's state: take every joint off a part and the part comes off; hands on one of its
 ## joints puts it back in place, ready to fasten again. The station has no bench: `bay` is
@@ -71,11 +76,47 @@ const PRESS_S := 0.8
 const HEAT_S := 1.6
 const GRIND_S := 1.8
 
+## trades.vs_tools (beenster, 0.3.18: "copy the behaviours of the cutter ... wrench ...
+## unweld should just be a point and click hold", after Void Salvage's grinder and socket):
+## the wrench turns a tight bolt out or a loose one in to its setting by itself, the cutter's
+## disc spins up and grinds a rivet's head off, unweld cuts a weld where you point. Let go and
+## what's done stays done; drift the aim off the joint and the tool slips off it.
+## Seconds for a bolt to back out, to run in to its setting, and to cut a weld out.
+const UNDO_S := 2.0
+const SPIN_S := 1.6
+const UNWELD_S := 3.5
+## How far a bolt backs out before it comes free (m).
+const BOLT_TRAVEL_M := 0.022
+## The cutter's disc spinning up before it bites (s).
+const SPIN_UP_S := 0.3
+## The aim this far off the joint and the tool slips off it (m).
+const SLIP_M := 0.14
+
+## trades.weld_skill (beenster, 0.3.18: "our welder should be more of a skill game"): a
+## bead takes where the arc lingers long enough and comes out well at an even, steady pace
+## near the line. The travel speed it wants (mm/s); a stretch takes once the arc has stayed
+## TAKE_R of the time that speed gives it; past SLOW_R it piles up, past BURN_R it burns
+## through. Off the line by more than OFF_OK_MM and the arc runs long.
+const WELD_SPEED_MM_S := 50.0
+const TAKE_R := 0.45
+const GOOD_R := 0.6
+const SLOW_R := 1.8
+const BURN_R := 3.5
+const OFF_OK_MM := 12.0
+
+
+static func vs_tools() -> bool:
+	return Flags.is_on("trades.vs_tools")
+
+
+static func weld_skill() -> bool:
+	return Flags.is_on("trades.weld_skill")
+
 ## Ship space to this station's world: set from the yard on every ship_loaded.
 var ship_xform := Transform3D.IDENTITY
 ## The loaded ship's joints and where each one is in the world.
 var points: Array[FastenerPoint] = []
-var points_world: PackedVector3Array = []
+var points_world: PackedVector3Array = PackedVector3Array()
 ## The joint under the aim (index into points), or -1.
 var aimed := -1
 
@@ -92,6 +133,23 @@ var _frozen := false
 ## clutch slipped (-1: not yet).
 var _stall_at := -1.0
 var _clutch_s := -1.0
+## trades.vs_tools: seconds since this pull of the trigger, and the work done on a joint when
+## it was let go ("<joint_id>:out" or ":in" -> seconds), so pulling it again carries on.
+var _run_s := 0.0
+var _kept_s := {}
+## Where along a seam an unweld struck its arc (joint_id -> bin), spreading from there.
+var _cut_from := {}
+## The bolt's shank showing under the wrench as it backs out or runs in.
+var _shank: MeshInstance3D
+## trades.weld_skill: per joint, seconds the arc has spent on each stretch of the seam and its
+## distance off the line over that time (m s); the bead drawn for each stretch; the travel
+## speed (mm/s, smoothed) and the last word said about it.
+var _dwell := {}
+var _off := {}
+var _bin_beads := {}
+var _speed_mm_s := 0.0
+var _trace_s := NAN
+var _pace_word := ""
 ## slot_id -> the component that came off it (so hands can put it back).
 var _removed: Dictionary = {}
 var _marker: MeshInstance3D
@@ -168,6 +226,20 @@ func build() -> void:
 	add_child(_arc)
 	guide = TradesWeldGuide.new()
 	add_child(guide)
+	var shank := CylinderMesh.new()
+	shank.top_radius = 0.006
+	shank.bottom_radius = 0.006
+	shank.height = 1.0
+	shank.radial_segments = 8
+	shank.rings = 1
+	shank.material = TradesTool.steel()
+	_shank = MeshInstance3D.new()
+	_shank.name = "BoltShank"
+	_shank.mesh = shank
+	_shank.top_level = true
+	_shank.visible = false
+	_shank.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_shank)
 	tractor = TradesTractor.new()
 	tractor.name = "Tractor"
 	tractor.station = self
@@ -492,7 +564,17 @@ func press(tool: StringName) -> void:
 			open_wiring(aimed)
 		return
 	if f.kind == "bolt" and tool == &"torque_wrench" and powered():
-		_press_power(f, tight)
+		if vs_tools() and (tight or not _blocked(f)):
+			# No fasten or undo to pick: a tight bolt comes out, a loose one goes in.
+			_begin(tight, &"torque_wrench")
+		elif vs_tools():
+			bay.hint("The beam holding this part has it out of line. Its first joint waits until it's in line.")
+		else:
+			_press_power(f, tight)
+		return
+	if f.kind == "weld" and tool == &"welder" and vs_tools() and tight and Flags.is_on("trades.unweld"):
+		# Point and hold on a weld cuts it out; no unweld mode to switch to.
+		_begin(true, tool)
 		return
 	if f.kind == "rivet" and tool in [&"welder", &"cutter"] and kind_tools("rivet").has(tool):
 		if not tight:
@@ -500,7 +582,7 @@ func press(tool: StringName) -> void:
 		else:
 			_begin(true, tool)
 		return
-	if f.kind == "weld" and tool == &"welder" and _torch() and _torch().unweld:
+	if f.kind == "weld" and tool == &"welder" and _torch() and _torch().unweld and not vs_tools():
 		if not tight:
 			bay.hint("Nothing to cut out. %s switches the welder back to weld." % Keys.key_name(TradesBus.KEY_MODE))
 		elif not Flags.is_on("trades.unweld"):
@@ -518,15 +600,24 @@ func press(tool: StringName) -> void:
 		_begin(true, tool)
 	elif tight:
 		bay.hint("Already %s. Right click takes it off." % _state_word(f).to_lower())
-	elif _first_joint(f) and tractor.blocks_first_joint(FastenerPoint.slot_of(f.joint_id)):
+	elif _blocked(f):
 		bay.hint("The beam holding this part has it out of line. Its first joint waits until it's in line.")
 	else:
 		_begin(false, tool)
 
 
+## A part held out of line in the beam: its first joint can't be made yet.
+func _blocked(f: FastenerPoint) -> bool:
+	return _first_joint(f) and tractor.blocks_first_joint(FastenerPoint.slot_of(f.joint_id))
+
+
 func release() -> void:
 	tractor.release()
 	if _working < 0:
+		return
+	if _keep():
+		bay.hint("Let go. Hold again to carry on from where you stopped.")
+		_stop()
 		return
 	if _working_power():
 		_release_power(points[_working])
@@ -559,7 +650,7 @@ func back_out(tool: StringName) -> void:
 				return
 			# The powered wrench works on left click only, X picking fasten or undo (beenster,
 			# 0.3.15).
-			if powered() and Flags.is_on("trades.wrench_left_only"):
+			if powered() and Flags.is_on("trades.wrench_left_only") and not vs_tools():
 				var w := _power()
 				bay.hint("The wrench is on left click. %s switches it to %s." % [Keys.prompt(TradesBus.KEY_MODE), "fasten" if w and w.undo else "undo"])
 				return
@@ -643,10 +734,21 @@ func update(delta: float) -> void:
 		bay.hint("Too far: step closer to the ship.")
 		_stop()
 		return
+	if _job_key() != "" and bay.aim_distance(_aim_point(_working)) > SLIP_M:
+		_keep()
+		bay.play(&"clunk", 0.6)
+		bay.hint("Slipped off. Aim back at it and hold again to carry on.")
+		_stop()
+		return
 	if not _frozen:
-		_held_s += delta
+		_run_s += delta
+		# The cutter's disc spins up before it bites.
+		if _run_s >= _spin_up():
+			_held_s += delta
 	var bus := bay.bus()
-	if _working_power():
+	if _working_power() and vs_tools():
+		_work_power_vs(f, at, n, delta)
+	elif _working_power():
 		_work_power(f, at, n, delta)
 	elif _working_gun():
 		_work_gun(f, at, n)
@@ -654,8 +756,10 @@ func update(delta: float) -> void:
 		_work_rivet_out(f, at, n)
 	elif f.kind == "bolt" and not _undoing:
 		_work_bolt(f, at, n)
+	elif f.kind == "weld" and _undoing and vs_tools():
+		_work_unweld(f, at, n)
 	elif f.kind == "weld" and traces(f):
-		_work_trace(f, at, n)
+		_work_trace(f, at, n, delta)
 		_update_guide()
 	else:
 		var need := _seconds(f.kind)
@@ -788,6 +892,115 @@ func _work_power(f: FastenerPoint, at: Vector3, n: Vector3, delta: float) -> voi
 		_stop()
 
 
+## trades.vs_tools: the wrench turns the bolt by itself, out of a tight joint or in to its
+## setting on a loose one. It rides up the bolt as it backs out (down as it runs in), the
+## shank showing under it; at the setting the clutch clicks and it's done.
+func _work_power_vs(f: FastenerPoint, at: Vector3, n: Vector3, delta: float) -> void:
+	var w := _power()
+	var share := clampf(_held_s / (UNDO_S if _undoing else SPIN_S), 0.0, 1.0)
+	# How far the bolt stands out of its hole (0..1).
+	var out := share if _undoing else 1.0 - share
+	var lift := n * BOLT_TRAVEL_M * out
+	var xform := _on_surface(at + lift, n, 0.0)
+	bay.place_tool(&"torque_wrench", xform)
+	bay.worker.right_hand.reach_to(xform * TradesPowerWrench.POWER_GRIP, n)
+	bay.worker.right_hand.set_grip(1.0)
+	_show_shank(at, n, BOLT_TRAVEL_M * out)
+	if _undoing:
+		w.turned -= delta * 30.0
+		w.applied_nm = w.set_nm * (1.0 - share) * 0.4
+	else:
+		w.turned += delta * 30.0 * (1.0 - share * 0.8)
+		# The thread bites near the end: the torque climbs to the setting.
+		w.applied_nm = w.set_nm * share * share
+	bay.loop(&"impact", true, (0.85 if _undoing else 1.0) + share * 0.25)
+	var bus := bay.bus()
+	if bus:
+		bus.joint_progress.emit(StringName(f.joint_id), share)
+	if share < 1.0:
+		return
+	if _undoing:
+		_finish(f)
+		return
+	w.state = TradesPowerWrench.State.CLUTCH
+	w.click()
+	bay.play(&"click")
+	bay.worker.kick(0.008)
+	_kept_s.erase(_job_key())
+	_bolt_made(f, w.set_nm, false)
+	bay.hint("Click: %s in at %d N m." % [f.spec, roundi(w.set_nm)])
+	_stop()
+
+
+## The threaded shank between the joint and the wrench, `length` metres of it (0 hides it).
+func _show_shank(at: Vector3, n: Vector3, length: float) -> void:
+	_shank.visible = length > 0.002
+	if not _shank.visible:
+		return
+	var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
+	x = x.normalized()
+	_shank.global_transform = Transform3D(Basis(x, n * length, x.cross(n)), at + n * length * 0.5)
+
+
+## The job in hand's key for keeping its work when let go ("" for jobs that start over).
+func _job_key() -> String:
+	if _working < 0 or not vs_tools():
+		return ""
+	var f := points[_working]
+	var keeps := _working_power() or (f.kind == "rivet" and _undoing and _tool_held in [&"welder", &"cutter"]) \
+			or (f.kind == "weld" and _undoing and _tool_held == &"welder")
+	return "%s:%s" % [f.joint_id, "out" if _undoing else "in"] if keeps else ""
+
+
+## Keeps the work done on the joint in hand (trades.vs_tools). True if it was kept.
+func _keep() -> bool:
+	var key := _job_key()
+	if key == "":
+		return false
+	_kept_s[key] = _held_s
+	return true
+
+
+## Seconds the tool in hand runs before it bites: the cutter's disc spinning up.
+func _spin_up() -> float:
+	return SPIN_UP_S if vs_tools() and _tool_held == &"cutter" else 0.0
+
+
+## trades.vs_tools: unweld is point and hold. The arc gouges the bead out where you aim it,
+## the cut glowing as it spreads both ways along the seam until the weld gives.
+func _work_unweld(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
+	var progress := clampf(_held_s / UNWELD_S, 0.0, 1.0)
+	var p := at
+	if traces(f):
+		var along := _seam_dir(f, n)
+		var half := f.seam_size.x * 0.5
+		var s := _seam_offset(f, at, n)
+		p = at + along * s
+		var bins: PackedByteArray = _traced.get(f.joint_id, PackedByteArray())
+		if bins.size() != TRACE_BINS:
+			bins.resize(TRACE_BINS)
+			bins.fill(0)
+		var from: int = _cut_from.get(f.joint_id, clampi(int((s + half) / f.seam_size.x * TRACE_BINS), 0, TRACE_BINS - 1))
+		_cut_from[f.joint_id] = from
+		var reach := progress * TRACE_BINS
+		for k in TRACE_BINS:
+			if bins[k] == 0 and absf(k - from) <= reach:
+				bins[k] = 1
+				_bead(f, at + along * ((k + 0.5) / TRACE_BINS * f.seam_size.x - half), along, n)
+		_traced[f.joint_id] = bins
+	var torch := _place("weld", p, n, progress)
+	if torch != &"":
+		bay.worker.right_hand.reach_to(_grip_point(torch, p, n), n)
+		bay.worker.right_hand.set_grip(1.0)
+	var bus := bay.bus()
+	if bus and not is_practice(f):
+		bus.joint_progress.emit(StringName(f.joint_id), progress)
+	if progress >= 1.0:
+		_traced.erase(f.joint_id)
+		_cut_from.erase(f.joint_id)
+		_finish(f)
+
+
 ## Letting go of the trigger: past the clutch the bolt is in at the setting; before it, not.
 func _release_power(f: FastenerPoint) -> void:
 	var w := _power()
@@ -858,6 +1071,8 @@ func kind_help(kind: String) -> String:
 		"rivet":
 			return "%s to set, %s to take out" % [_named(&"rivet_squeezer"), " or ".join(_out_tools(kind).map(_named))]
 		"weld":
+			if vs_tools():
+				return "%s: hold left click along the seam to weld it; hold it on a weld to cut it out" % _named(&"welder")
 			return "%s: left click welds; %s switches it to unweld, which cuts welds out" \
 					% [_named(&"welder"), Keys.key_name(TradesBus.KEY_MODE)]
 	return " or ".join(kind_tools(kind).map(_named))
@@ -929,12 +1144,22 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 			sparks.emit(at + n * 0.004, n, SPARKS_HEAT, 1.8, 0.9)
 	else:
 		var cutter := bay.tool_node(&"cutter") as TradesCutter
-		cutter.spin = 1.0
 		cutter.ground = progress
 		var xform := _on_surface(at, n, 0.0)
 		bay.place_tool(&"cutter", xform)
 		bay.worker.right_hand.reach_to(xform * TradesCutter.GRIP, n)
-		bay.loop(&"grind", true, 0.95 + randf() * 0.1)
+		if vs_tools():
+			# The disc whines up to speed, then the note drops as it bites into the head.
+			cutter.spin = clampf(_run_s / SPIN_UP_S, 0.0, 1.0)
+			cutter.biting = _run_s >= SPIN_UP_S
+			if cutter.biting:
+				bay.loop(&"grind", true, 0.82 + randf() * 0.06)
+				bay.worker.kick(0.0015)
+			else:
+				bay.loop(&"grind", true, 0.6 + cutter.spin * 0.6)
+		else:
+			cutter.spin = 1.0
+			bay.loop(&"grind", true, 0.95 + randf() * 0.1)
 		if sparks:
 			# Off the disc's edge, down along the surface.
 			var down := Vector3.DOWN - n * n.dot(Vector3.DOWN)
@@ -960,29 +1185,40 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 # --- Doing the work -------------------------------------------------------------------------
 
 func _begin(undo: bool, tool: StringName) -> void:
-	if aimed >= 0 and from_end(points[aimed]) and not _at_start(aimed):
+	if aimed >= 0 and from_end(points[aimed]) and not (undo and vs_tools()) and not _at_start(aimed):
 		bay.hint("Start at one end of the seam, at the ring, and run the arc along it.")
 		return
 	_working = aimed
 	_trace_last = NAN
+	_trace_s = NAN
+	_pace_word = ""
+	_speed_mm_s = 0.0
 	_undoing = undo
 	_tool_held = tool
 	_held_s = 0.0
+	_run_s = 0.0
 	_pull_px = 0.0
 	_clicked = false
-	bay.worker.look_locked = points[_working].kind == "bolt" and not undo
+	_held_s = _kept_s.get(_job_key(), 0.0)
+	bay.worker.look_locked = points[_working].kind == "bolt" and not undo and not (vs_tools() and _working_power())
 	if _working_power():
 		var w := _power()
 		w.state = TradesPowerWrench.State.RUNNING
 		w.applied_nm = 0.0
 		_clutch_s = -1.0
 		_stall_at = randf_range(0.15, 0.85) * (BREAK_S if undo else RUN_S) if randf() < STALL_CHANCE else -1.0
+		if vs_tools():
+			# Nothing stalls; the display shows which way it's turning.
+			_stall_at = -1.0
+			w.undo = undo
 	var bus := bay.bus()
 	if bus and not undo and not is_practice(points[_working]):
 		bus.joint_started.emit(StringName(points[_working].joint_id), StringName(points[_working].kind), 1)
 	match points[_working].kind:
 		"bolt":
-			if _working_power():
+			if _working_power() and vs_tools():
+				bay.hint("Backing it out..." if undo else "Running it in to %d N m..." % roundi(_power().set_nm))
+			elif _working_power():
 				bay.hint("Undoing..." if undo else "Running it in: let go when the clutch slips.")
 			else:
 				bay.hint("Breaking it loose..." if undo else "Pull the mouse back until the wrench clicks.")
@@ -996,7 +1232,11 @@ func _begin(undo: bool, tool: StringName) -> void:
 			else:
 				bay.hint("Drilling it out..." if undo else "Squeezing...")
 		"weld":
-			if traces(points[_working]):
+			if undo and vs_tools():
+				bay.hint("Cutting the weld out: keep the arc on it...")
+			elif traces(points[_working]) and weld_skill() and not undo:
+				bay.hint("Run the arc along the line at a steady pace: too fast won't take, too slow burns.")
+			elif traces(points[_working]):
 				bay.hint("Run the arc along the seam to cut it out." if undo else "Run the arc along the seam, end to end.")
 			else:
 				bay.hint("Cutting the weld out..." if undo else "Laying the bead...")
@@ -1005,6 +1245,7 @@ func _begin(undo: bool, tool: StringName) -> void:
 
 
 func _finish(f: FastenerPoint) -> void:
+	_kept_s.erase(_job_key())
 	if _undoing:
 		if _note_removed(f):
 			if _looms.has(f.joint_id):
@@ -1070,6 +1311,12 @@ func _stop() -> void:
 	if cutter:
 		cutter.spin = 0.0
 		cutter.ground = 0.0
+		cutter.biting = false
+	if _shank:
+		_shank.visible = false
+	var torch := _torch()
+	if torch:
+		torch.speed_mm_s = -1.0
 	bay.loop(&"pressure", false)
 	bay.loop(&"grind", false)
 	var wrench := bay.tool_node(&"torque_wrench") as TradesTorqueWrench
@@ -1077,6 +1324,8 @@ func _stop() -> void:
 		wrench.applied_nm = 0.0
 	if wrench is TradesPowerWrench and (wrench as TradesPowerWrench).state != TradesPowerWrench.State.STRIPPED:
 		(wrench as TradesPowerWrench).state = TradesPowerWrench.State.READY
+	if wrench is TradesPowerWrench and vs_tools():
+		(wrench as TradesPowerWrench).undo = false
 	bay.loop(&"impact", false)
 	bay.loop(&"drill", false)
 	bay.loop(&"arc", false)
@@ -1393,7 +1642,7 @@ func _aim_point(i: int) -> Vector3:
 ## The arc follows your aim along the seam: wherever the aim line passes within TRACE_M of
 ## the seam, that stretch is covered (and every stretch between it and the last, so a quick
 ## sweep doesn't skip any). All of it covered and the weld is made, or cut out.
-func _work_trace(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
+func _work_trace(f: FastenerPoint, at: Vector3, n: Vector3, delta := 0.0) -> void:
 	var along := _seam_dir(f, n)
 	var half := f.seam_size.x * 0.5
 	var s := _seam_offset(f, at, n)
@@ -1404,16 +1653,22 @@ func _work_trace(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 		bins.resize(TRACE_BINS)
 		bins.fill(0)
 	var bin := clampi(int((s + half) / f.seam_size.x * TRACE_BINS), 0, TRACE_BINS - 1)
+	var skill := weld_skill() and not _undoing
 	if on:
 		var from := bin if is_nan(_trace_last) else int(_trace_last)
-		for k in range(mini(from, bin), maxi(from, bin) + 1):
-			if bins[k] == 0:
-				bins[k] = 1
-				_bead(f, at + along * ((k + 0.5) / TRACE_BINS * f.seam_size.x - half), along, n)
+		if skill:
+			_lay(f, bins, mini(from, bin), maxi(from, bin), delta, bay.aim_distance(p), at, along, n)
+		else:
+			for k in range(mini(from, bin), maxi(from, bin) + 1):
+				if bins[k] == 0:
+					bins[k] = 1
+					_bead(f, at + along * ((k + 0.5) / TRACE_BINS * f.seam_size.x - half), along, n)
 		_trace_last = bin
 	else:
 		_trace_last = NAN
 	_traced[f.joint_id] = bins
+	if skill:
+		_pace(f, s, bin, on, delta)
 	var progress := trace_progress(f)
 	var torch := _place("weld", p, n, progress)
 	_arc.visible = on
@@ -1421,15 +1676,156 @@ func _work_trace(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 		(bay.tool_node(&"welder") as TradesWeldTorch).lit = false
 		bay.loop(&"arc", false)
 		bay.hint("Run the arc along the seam: follow the line with your aim.")
+		_pace_word = ""
 	if torch != &"":
 		bay.worker.right_hand.reach_to(_grip_point(torch, p, n), n)
 		bay.worker.right_hand.set_grip(1.0)
 	var bus := bay.bus()
 	if bus and not is_practice(f):
 		bus.joint_progress.emit(StringName(f.joint_id), progress)
-	if progress >= 1.0:
+	if progress >= 1.0 and skill:
+		_traced.erase(f.joint_id)
+		bay.play(&"clunk")
+		_weld_made(f)
+		_stop()
+	elif progress >= 1.0:
 		_traced.erase(f.joint_id)
 		_finish(f)
+
+
+## Seconds the arc should spend on each stretch of a seam at the speed a weld wants.
+func _ideal_dwell(f: FastenerPoint) -> float:
+	return f.seam_size.x / TRACE_BINS / (WELD_SPEED_MM_S / 1000.0)
+
+
+## trades.weld_skill: the arc over stretches lo..hi this frame (more than one when it moves
+## fast, sharing the frame between them). A stretch takes once the arc has stayed on it long
+## enough; its bead swells the longer it stays.
+func _lay(f: FastenerPoint, bins: PackedByteArray, lo: int, hi: int, delta: float, off_m: float,
+		at: Vector3, along: Vector3, n: Vector3) -> void:
+	var dwell: PackedFloat32Array = _dwell.get(f.joint_id, PackedFloat32Array())
+	var off: PackedFloat32Array = _off.get(f.joint_id, PackedFloat32Array())
+	if dwell.size() != TRACE_BINS:
+		dwell.resize(TRACE_BINS)
+		dwell.fill(0.0)
+		off.resize(TRACE_BINS)
+		off.fill(0.0)
+	var beads: Dictionary = _bin_beads.get(f.joint_id, {})
+	var ideal := _ideal_dwell(f)
+	var share := delta / (hi - lo + 1)
+	for k in range(lo, hi + 1):
+		dwell[k] += share
+		off[k] += share * off_m
+		var r := dwell[k] / ideal
+		if bins[k] == 0 and r >= TAKE_R:
+			bins[k] = 1
+			beads[k] = _bead(f, at + along * ((k + 0.5) / TRACE_BINS - 0.5) * f.seam_size.x, along, n)
+		var bead: MeshInstance3D = beads.get(k)
+		if is_instance_valid(bead):
+			var fat := clampf(sqrt(r), 0.7, 1.8)
+			bead.scale = Vector3(fat, 1.0, fat)
+	_dwell[f.joint_id] = dwell
+	_off[f.joint_id] = off
+	_bin_beads[f.joint_id] = beads
+
+
+## trades.weld_skill: the travel speed along the seam (shown on the torch), and a word when
+## the pace changes: too fast and the bead doesn't take, too slow and it piles up and burns.
+func _pace(f: FastenerPoint, s: float, bin: int, on: bool, delta: float) -> void:
+	var torch := _torch()
+	if not on or delta <= 0.0:
+		_trace_s = NAN
+		if torch:
+			torch.speed_mm_s = -1.0
+		return
+	if not is_nan(_trace_s):
+		var v := absf(s - _trace_s) / delta * 1000.0
+		_speed_mm_s = lerpf(_speed_mm_s, v, 1.0 - exp(-delta / 0.25))
+	_trace_s = s
+	if torch:
+		torch.speed_mm_s = _speed_mm_s
+	var dwell: PackedFloat32Array = _dwell.get(f.joint_id, PackedFloat32Array())
+	var r := dwell[bin] / _ideal_dwell(f) if bin < dwell.size() else 0.0
+	var word := "good"
+	if _speed_mm_s > WELD_SPEED_MM_S / TAKE_R:
+		word = "fast"
+	elif r > SLOW_R:
+		word = "slow"
+	if word == _pace_word:
+		return
+	_pace_word = word
+	match word:
+		"fast":
+			bay.hint("Too fast: slow down, the bead isn't taking.")
+		"slow":
+			bay.hint("Too slow: keep moving or it burns through.")
+		_:
+			bay.hint("Steady. Good bead.")
+
+
+## How good a stretch of bead is from how long the arc stayed on it (r: share of the time
+## the right speed gives) and how far off the line it ran (mm).
+static func bin_quality(r: float, off_mm: float) -> float:
+	var q := 1.0
+	if r < GOOD_R:
+		q = lerpf(0.55, 1.0, clampf((r - TAKE_R) / (GOOD_R - TAKE_R), 0.0, 1.0))
+	elif r >= BURN_R:
+		q = 0.1
+	elif r > SLOW_R:
+		q = lerpf(1.0, 0.35, (r - SLOW_R) / (BURN_R - SLOW_R))
+	return q * (1.0 - 0.5 * clampf((off_mm - OFF_OK_MM) / (TRACE_M * 1000.0 - OFF_OK_MM), 0.0, 1.0))
+
+
+## A traced weld finished under trades.weld_skill: its quality from each stretch, and the
+## readings Quality grades (travel speed, arc length, penetration, burn through).
+func _weld_made(f: FastenerPoint) -> void:
+	var dwell: PackedFloat32Array = _dwell.get(f.joint_id, PackedFloat32Array())
+	var off: PackedFloat32Array = _off.get(f.joint_id, PackedFloat32Array())
+	_dwell.erase(f.joint_id)
+	_off.erase(f.joint_id)
+	_bin_beads.erase(f.joint_id)
+	var ideal := _ideal_dwell(f)
+	var bin_mm := f.seam_size.x / TRACE_BINS * 1000.0
+	var speeds: Array = []
+	var arcs: Array = []
+	var angles: Array = []
+	var pens: Array = []
+	var total := 0.0
+	var fast := 0
+	var slow := 0
+	var burnt := false
+	for k in dwell.size():
+		var t := maxf(dwell[k], 0.0001)
+		var r := t / ideal
+		var off_mm := off[k] / t * 1000.0
+		total += bin_quality(r, off_mm)
+		speeds.append(snappedf(bin_mm / t, 0.1))
+		# Held off the line, the arc runs long.
+		arcs.append(snappedf(3.0 + off_mm * 0.04, 0.01))
+		angles.append(TORCH_TILT_DEG)
+		pens.append(snappedf(minf(1.0, sqrt(r)), 0.01))
+		burnt = burnt or r >= BURN_R
+		if r < GOOD_R:
+			fast += 1
+		elif r > SLOW_R:
+			slow += 1
+	var quality := total / maxi(1, dwell.size())
+	_made(f, quality)
+	var amps := _torch().amps if _torch() else 110.0
+	_report(f, &"WELD", {"travel_speed_mm_s": speeds, "travel_speed_target_mm_s": WELD_SPEED_MM_S,
+			"torch_angle_deg": angles, "torch_angle_target_deg": TORCH_TILT_DEG,
+			"arc_length_mm": arcs, "arc_length_target_mm": 3.0, "coverage": 1.0,
+			"penetration": snappedf(pens.reduce(func(a: float, b: float) -> float: return a + b, 0.0) / maxi(1, pens.size()), 0.01),
+			"penetration_samples": pens, "burn_through": burnt, "restarts": 0, "amps": amps})
+	var why := "a steady, even bead"
+	if burnt:
+		why = "it burned through where the arc stayed too long"
+	elif fast > 0 and fast >= slow:
+		why = "thin in places where it went on too fast"
+	elif slow > 0:
+		why = "lumpy in places where it went on too slowly"
+	var how := "spot on" if quality >= 0.95 else ("near enough" if quality >= 0.6 else "poor: cut it out and try again")
+	bay.hint("Weld done, %s: %s." % [how, why])
 
 
 ## With the welder in hand on a traced seam (trades.weld_guide): the chalk line over the
@@ -1444,15 +1840,23 @@ func _update_guide() -> void:
 	var n := (ship_xform.basis * f.normal).normalized()
 	var along := _seam_dir(f, n)
 	var bins: PackedByteArray = _traced.get(f.joint_id, PackedByteArray())
+	# A made weld (trades.vs_tools) cuts out wherever you point: no ends to start from.
+	var ticks := from_end(f) and _working < 0 and not (vs_tools() and is_tight(f))
 	guide.show_seam(points_world[i], along, n, f.seam_size.x, bins,
-			start_points(f) if from_end(f) and _working < 0 else PackedFloat32Array())
+			start_points(f) if ticks else PackedFloat32Array())
 	var on_line := points_world[i] + along * _seam_offset(f, points_world[i], n)
 	var on := bay.aim_distance(on_line) < TRACE_M
-	guide.show_tip(on_line if on else pointer_point(), n, on)
+	# trades.weld_skill: the tip says the pace, pale blue too fast, amber too slow.
+	var tone := Color.WHITE
+	if _working >= 0 and _pace_word == "fast":
+		tone = Color(0.45, 0.8, 1.0)
+	elif _working >= 0 and _pace_word == "slow":
+		tone = Color(1.0, 0.6, 0.2)
+	guide.show_tip(on_line if on else pointer_point(), n, on, tone)
 
 
 ## A stretch of fresh bead (or a fresh cut), glowing orange and cooling to nothing.
-func _bead(f: FastenerPoint, at: Vector3, along: Vector3, n: Vector3) -> void:
+func _bead(f: FastenerPoint, at: Vector3, along: Vector3, n: Vector3) -> MeshInstance3D:
 	var mesh := CapsuleMesh.new()
 	var width := maxf(f.seam_size.y, 0.008)
 	mesh.radius = width * 0.55
@@ -1468,6 +1872,7 @@ func _bead(f: FastenerPoint, at: Vector3, along: Vector3, n: Vector3) -> void:
 	add_child(mi)
 	mi.global_transform = Transform3D(Basis(n.cross(along), along, n).orthonormalized(), at + n * width * 0.3)
 	_beads.append([mi, mat, 0.0])
+	return mi
 
 
 func _cool_beads(delta: float) -> void:
@@ -1682,7 +2087,10 @@ func actions(tool: StringName) -> Array:
 	var out: Array = []
 	match f.kind:
 		"bolt":
-			if tool == &"torque_wrench" and powered():
+			if tool == &"torque_wrench" and powered() and vs_tools():
+				out.append([TradesBay.HOLD_CLICK, "spin it out" if tight else "run it in to %d N m" % roundi(_power().set_nm)])
+				out.append([TradesBay.WHEEL, "set the torque, %d N m now (Ctrl: fine)" % roundi(_power().set_nm)])
+			elif tool == &"torque_wrench" and powered():
 				var w := _power()
 				if w.undo == tight:
 					out.append([TradesBay.HOLD_CLICK, "undo it" if tight else "run it in, let go at the clutch"])
@@ -1706,7 +2114,14 @@ func actions(tool: StringName) -> Array:
 			elif tool == &"rivet_squeezer" and not tight:
 				out.append([TradesBay.HOLD_CLICK, "set a rivet"])
 		"weld":
-			if tool == &"welder":
+			if tool == &"welder" and vs_tools():
+				if not tight:
+					out.append([TradesBay.HOLD_CLICK, "lay the bead along the line"])
+				elif Flags.is_on("trades.unweld"):
+					out.append([TradesBay.HOLD_CLICK, "cut the weld out where you point"])
+				if Flags.is_on("trades.helmet_toggle") and Flags.is_on("trades.weld_helmet"):
+					out.append([TradesBus.KEY_HELMET, "lift the shield" if bay.helmet_lowered else "drop the shield"])
+			elif tool == &"welder":
 				var unweld := _torch() != null and _torch().unweld
 				if not tight and not unweld:
 					out.append([TradesBay.HOLD_CLICK, "lay the bead"])

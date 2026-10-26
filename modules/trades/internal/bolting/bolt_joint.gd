@@ -25,7 +25,7 @@ var fastener: Array[StringName] = []
 var turns: PackedFloat64Array
 var torque: PackedFloat64Array
 ## Holes in the order they first got final torque.
-var order: PackedInt32Array = []
+var order: PackedInt32Array = PackedInt32Array()
 
 var _pull_hole := -1
 var _pull_clicked := false

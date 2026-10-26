@@ -86,7 +86,7 @@ func status_text() -> String:
 	if loom.tested:
 		if loom.is_right():
 			return "Plugged in. All %d pins test good." % loom.pins.size()
-		var bad: PackedStringArray = []
+		var bad: PackedStringArray = PackedStringArray()
 		var ok := loom.pins_ok()
 		for p in ok.size():
 			if not ok[p]:
