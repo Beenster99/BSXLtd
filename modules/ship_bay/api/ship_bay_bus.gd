@@ -113,6 +113,11 @@ const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b", "p2", "p
 const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve", "auto"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
+## The ship id of the random wreck in the bay (bay_wreck): a ship like the Kestrel, built from
+## its rolled file, with a slot and a fastener for every joint still on it.
+const WRECK_ID := "bay_wreck"
+## The random wreck's sizes (Settings > Debug > Ship): ShipGenerator's classes.
+const WRECK_SIZES := {"S": "Small", "M": "Medium", "L": "Large"}
 
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
 const EmitterRig := preload("res://modules/ship_bay/internal/yard/emitter_rig.gd")
@@ -138,6 +143,9 @@ const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport
 var ship: ShipDefinition
 var _tracker: SlotTracker
 var _definitions: Dictionary = {}
+## The random wreck's definition and the bay_wreck it was built from.
+var _wreck_def: ShipDefinition
+var _wreck_key: Dictionary = {}
 ## Whether the ship in the bay is on shore power (its lamps, screens and systems live).
 var ship_powered := false
 var _stock := StorageStock.new()
@@ -477,9 +485,31 @@ func ship_ids() -> PackedStringArray:
 
 ## The definition of a known ship (read once, then cached), or null.
 func definition(ship_id: String) -> ShipDefinition:
+	if ship_id == WRECK_ID:
+		return _wreck_definition()
 	if not _definitions.has(ship_id) and SHIPS.has(ship_id):
 		_definitions[ship_id] = LayoutLoader.load_ship(SHIPS[ship_id])
 	return _definitions.get(ship_id)
+
+
+## The bay's random wreck as a ship (WRECK_ID): its rolled file under LayoutLoader's
+## WRECK_RULES, built once per bay_wreck. Null with no wreck.
+func _wreck_definition() -> ShipDefinition:
+	if bay_wreck.is_empty():
+		return null
+	if _wreck_def and _wreck_key == bay_wreck:
+		return _wreck_def
+	var f := WreckMaker.for_design(str(bay_wreck.get("design", "")), int(bay_wreck.get("seed", 0)), bay_wreck.get("events", []))
+	if f.is_empty():
+		return null
+	var def := LayoutLoader.from_file(f, WRECK_ID, LayoutLoader.WRECK_RULES)
+	if def == null:
+		return null
+	def.display_name = str(bay_wreck.get("name", def.display_name))
+	def.file = f
+	_wreck_def = def
+	_wreck_key = bay_wreck.duplicate(true)
+	return def
 
 
 func load_ship(ship_id: String) -> bool:
@@ -732,10 +762,12 @@ func restore(state: Dictionary) -> void:
 	for id: String in RIGS:
 		rig_changed.emit(id, rig_state(id))
 	var id: String = state.get("ship_id", "")
+	if id == "" and not bay_wreck.is_empty():
+		id = WRECK_ID   # 0.3.22 saved its wreck with no ship in the bay
 	if id == "":
 		unload_ship()
 		return
-	if (ship == null or ship.ship_id != id) and not load_ship(id):
+	if (ship == null or ship.ship_id != id or (id == WRECK_ID and ship != definition(id))) and not load_ship(id):
 		return
 	_tracker.restore(state.get("slots", {}))
 	set_ship_powered(bool(state.get("powered", false)))
@@ -1959,19 +1991,21 @@ func send_cradle(payload: Dictionary) -> void:
 ## design standing on the apron (YARD_SHIP_DESIGNS), "clear_bay" takes the ship out of the
 ## bay, "restore_bay" brings the Kestrel back, "random_wreck" puts a random wreck in the bay
 ## in place of the Kestrel (rolled here, built the same on every machine).
+## For "random_wreck", `design` is its size (WRECK_SIZES; "" for small).
 func debug_ship(action: String, design := "") -> void:
 	var payload := {"action": action, "design": design}
 	if action == "random_wreck":
-		payload["wreck"] = random_wreck()
+		payload["wreck"] = random_wreck(-1, design if WRECK_SIZES.has(design) else "S")
 	if _net:
 		_net.call("request", "ship_bay.debug_ship", payload)
 	elif _check_debug_ship(0, payload) is Dictionary:
 		_apply_debug_ship(payload)
 
 
-## A random wreck for the bay: a small generated ship of any family, with one to three of
-## Void Salvage's wreck events at random strengths. {design, seed, events, name}.
-static func random_wreck(seed_value := -1) -> Dictionary:
+## A random wreck for the bay: a generated ship of any family, of `size` (WRECK_SIZES), with
+## one to three of Void Salvage's wreck events at random strengths. {design, seed, events,
+## name, size}.
+static func random_wreck(seed_value := -1, size := "S") -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	if seed_value >= 0:
 		rng.seed = seed_value
@@ -1987,8 +2021,10 @@ static func random_wreck(seed_value := -1) -> Dictionary:
 	while events.size() < n and not pool.is_empty():
 		var e: String = pool.pop_at(rng.randi_range(0, pool.size() - 1))
 		events.append([e, rng.randi_range(1, 4), rng.randi_range(1, 999999)])
-	return {"design": ShipGenerator.design_id(ship_seed, "S", family), "seed": rng.randi_range(1, 999999), "events": events,
-			"name": "%s wreck" % family.capitalize()}
+	if not WRECK_SIZES.has(size):
+		size = "S"
+	return {"design": ShipGenerator.design_id(ship_seed, size, family), "seed": rng.randi_range(1, 999999), "events": events,
+			"name": "%s %s wreck" % [WRECK_SIZES[size], family], "size": size}
 
 
 # --- Component rigs (Component Upgrades) -----------------------------------------------
@@ -2183,8 +2219,13 @@ func _apply_debug_ship(payload: Dictionary) -> void:
 		"clear_bay":
 			bay_cleared = true
 			unload_ship()
+			if not bay_wreck.is_empty():
+				bay_wreck = {}
+				bay_wreck_changed.emit()
 		"restore_bay":
 			bay_cleared = false
+			if ship and ship.ship_id == WRECK_ID:
+				unload_ship()
 			if not bay_wreck.is_empty():
 				bay_wreck = {}
 				bay_wreck_changed.emit()
@@ -2195,6 +2236,7 @@ func _apply_debug_ship(payload: Dictionary) -> void:
 			unload_ship()
 			bay_wreck = (payload.get("wreck", {}) as Dictionary).duplicate(true)
 			bay_wreck_changed.emit()
+			load_ship(WRECK_ID)
 
 
 func _apply_transporter(payload: Dictionary) -> void:

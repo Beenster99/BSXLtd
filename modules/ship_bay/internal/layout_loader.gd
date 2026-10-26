@@ -30,21 +30,44 @@ static func load_ship(dir: String) -> ShipDefinition:
 	var f := ship_file(dir)
 	if f.is_empty():
 		return null
+	var def := from_file(f, "vs_" + name, _read_json(dir.path_join(name + "_fasteners.json")))
+	if def == null:
+		return null
+	var model_path := dir.path_join(name + ".tscn")
+	if ResourceLoader.exists(model_path):
+		def.model = load(model_path)
+	return def
+
+
+## BSX's rules for a ship that has no folder of its own (a generated wreck): every riveted
+## outer plate, every frame member and every other part held by joints is a fitting with its
+## own joints, so every weld, bolt and rivet still on the ship can be worked.
+const WRECK_RULES := {
+	"skin": {"under": "/skin/", "prefix": "plate_", "name": "Hull plate", "accepts": ["HullPlate"], "fitted": "HullPlate", "access": "outboard"},
+	"frame": {"phase": "frame", "prefix": "frame_", "access": "inboard"},
+	"rest": {"prefix": "part_", "access": "inboard"},
+}
+
+
+## The definition of the ship in file `f` (vsship 2.x) under `bsx`'s rules (a
+## <name>_fasteners.json's data, or WRECK_RULES), with no model. A wreck's damage counts:
+## parts gone or cut off it have no slots and their joints no fasteners, and its broken
+## joints start undone (`loose`). Null when the file isn't 2.x.
+static func from_file(f: Dictionary, ship_id: String, bsx: Dictionary) -> ShipDefinition:
 	var version: Variant = f.get("version", [])
 	if not (version is Array and int(version[0]) == 2):
-		push_error("ShipBay: %s is vsship %s, not 2.x" % [name, str(version)])
+		push_error("ShipBay: %s is vsship %s, not 2.x" % [ship_id, str(version)])
 		return null
-	var bsx := _read_json(dir.path_join(name + "_fasteners.json"))
 	var own: Dictionary = bsx.get("slots", {})
 	var spots: Dictionary = bsx.get("spots", {})
 	var extra: Dictionary = bsx.get("extra", {})
 	var def := ShipDefinition.new()
 	def.version = int(version[0])
-	def.ship_id = "vs_" + name
+	def.ship_id = ship_id
 	var ship: Dictionary = f.get("ship", {})
-	def.display_name = ship.get("name", name)
+	def.display_name = ship.get("name", ship_id)
 	var gen: Dictionary = f.get("generator", {})
-	def.source = "%s %s, design %s" % [gen.get("app", "void-salvage"), gen.get("version", "?"), ship.get("id", name)]
+	def.source = "%s %s, design %s" % [gen.get("app", "void-salvage"), gen.get("version", "?"), ship.get("id", ship_id)]
 	def.bounds = _box(f.get("derived", {}).get("bounds", {}))
 	var layout: Dictionary = f.get("layout", {})
 	var rooms: Array = layout.get("rooms", [])
@@ -93,9 +116,10 @@ static func load_ship(dir: String) -> ShipDefinition:
 	if bsx.has("frame"):
 		for s: MountSlot in _frame_fittings(bsx["frame"], f):
 			def.slots.append(s)
-	var model_path := dir.path_join(name + ".tscn")
-	if ResourceLoader.exists(model_path):
-		def.model = load(model_path)
+	if bsx.has("rest"):
+		for s: MountSlot in _rest_fittings(bsx["rest"], f, def.slots):
+			def.slots.append(s)
+	_apply_damage(def, f)
 	return def
 
 
@@ -205,6 +229,8 @@ static func _frame_fittings(rule: Dictionary, f: Dictionary) -> Array[MountSlot]
 		# "hull/st:cockpit_wall/ring/e0" -> body "cockpit_wall", member "ring_e0".
 		var bits := path.split("/")
 		var body := bits[1].get_slice(":", 1) if bits.size() > 1 and ":" in bits[1] else bits[0]
+		if bits[0] != "hull" and body != bits[0]:
+			body = bits[0] + "_" + body   # a second hull's ("nacelle_l/st:n0" -> "nacelle_l_n0")
 		var member := "_".join(bits.slice(2)) if bits.size() > 2 else path.replace("/", "_")
 		var s := MountSlot.new()
 		s.slot_id = "%s%s_%s" % [rule.get("prefix", "frame_"), body, member]
@@ -220,6 +246,88 @@ static func _frame_fittings(rule: Dictionary, f: Dictionary) -> Array[MountSlot]
 		s.mount = _facing(s.fasteners[0].normal, s.box.get_center())
 		out.append(s)
 	return out
+
+
+## Every other part with joints not yet in a slot (decks, walls, linings, fittings and units),
+## a fitting holding those joints (each by its `a` end, or its `b` end when `a` has no part
+## record): slot "<prefix><path>" ("part_deck_0_plate_3"), named by the part.
+static func _rest_fittings(rule: Dictionary, f: Dictionary, taken: Array[MountSlot]) -> Array[MountSlot]:
+	var covered := {}
+	for s: MountSlot in taken:
+		for p in s.fasteners:
+			covered[p.path] = true
+	var recs := {}
+	for p: Dictionary in f.get("parts", []):
+		recs[str(p.get("path", ""))] = p
+	var joints := {}
+	var order: Array = []
+	for j: Dictionary in f.get("joints", []):
+		if covered.has(str(j.get("path", ""))):
+			continue
+		var at := str(j.get("a", "")) if recs.has(str(j.get("a", ""))) else str(j.get("b", ""))
+		if not recs.has(at):
+			continue
+		if not joints.has(at):
+			joints[at] = []
+			order.append(at)
+		(joints[at] as Array).append(j)
+	var out: Array[MountSlot] = []
+	for path: String in order:
+		var rec: Dictionary = recs[path]
+		var s := MountSlot.new()
+		s.slot_id = str(rule.get("prefix", "part_")) + path.replace("/", "_").replace(":", "_")
+		var where := path.get_slice("/", 1).get_slice(":", 1) if ":" in path.get_slice("/", 1) else path.get_slice("/", 0)
+		s.display_name = "%s (%s)" % [rec.get("name", "Part"), where.replace("_", " ")]
+		s.accepts = PackedStringArray([rec.get("name", "")])
+		s.fitted = str(rec.get("name", "Part"))
+		s.access = rule.get("access", "inboard")
+		s.box = _box(rec.get("box", {}))
+		s.parts = PackedStringArray([path])
+		var counts := {}
+		for j: Dictionary in joints[path]:
+			s.fasteners.append(_file_fastener(s.slot_id, j, counts))
+		s.mount = _facing(s.fasteners[0].normal, s.box.get_center())
+		out.append(s)
+	return out
+
+
+## A wreck's damage (the file's "damage" block, WreckMaker): slots whose parts are all gone or
+## cut off go, fasteners on joints to such parts go, slots left with none go, and the broken
+## joints left are `loose` (undone, ready to make again).
+static func _apply_damage(def: ShipDefinition, f: Dictionary) -> void:
+	var d: Dictionary = f.get("damage", {}) if f.get("damage") is Dictionary else {}
+	if d.is_empty():
+		return
+	var off := {}
+	var dparts: Dictionary = d.get("parts", {})
+	for path: String in dparts:
+		if str((dparts[path] as Dictionary).get("state", "attached")) != "attached":
+			off[path] = true
+	var dead := {}
+	var broken := {}
+	var djoints: Dictionary = d.get("joints", {})
+	for j: Dictionary in f.get("joints", []):
+		var path := str(j.get("path", ""))
+		if off.has(str(j.get("a", ""))) or off.has(str(j.get("b", ""))):
+			dead[path] = true
+		elif bool((djoints.get(path, {}) as Dictionary).get("broken", false)):
+			broken[path] = true
+	var kept: Array[MountSlot] = []
+	for s: MountSlot in def.slots:
+		if not s.parts.is_empty() and Array(s.parts).all(func(p: String) -> bool: return off.has(p)):
+			continue
+		var fasteners: Array[FastenerPoint] = []
+		for p in s.fasteners:
+			if dead.has(p.path):
+				continue
+			fasteners.append(p)
+			if broken.has(p.path):
+				def.loose.append(p.joint_id)
+		if fasteners.is_empty():
+			continue
+		s.fasteners = fasteners
+		kept.append(s)
+	def.slots = kept
 
 
 ## A file part BSX treats as a replaceable fitting (a hull plate): its slot, box and joints

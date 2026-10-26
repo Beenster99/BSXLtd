@@ -51,6 +51,8 @@ const BASE_TOP := 0.3
 const STAGES := 3
 const RAIL_H := 1.05
 const RAMP := 1.3
+## The highest stop the lift's three scissor stages reach, platform top over the floor, metres.
+const MAX_LIFT := 6.2
 const PUSH_BAR := 0.22   # how far the lift's push bar stands off its -Z end
 ## Collision bottoms of the vehicles over the floor, so driving never scrapes it, metres.
 const CLEAR := 0.06

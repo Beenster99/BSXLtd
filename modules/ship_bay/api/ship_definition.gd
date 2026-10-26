@@ -17,6 +17,11 @@ extends Resource
 ## Room name -> its span along Z, metres (Vector2(from, to)).
 @export var rooms: Dictionary = {}
 @export var slots: Array[MountSlot] = []
+## Joint ids that start undone: a wreck's broken joints, there to be made again.
+@export var loose: PackedStringArray = PackedStringArray()
+## The ship's Void Salvage file, for a ship with no model scene of its own (a generated
+## wreck): the bay builds it from this. {} otherwise.
+var file: Dictionary = {}
 
 
 func slot(slot_id: String) -> MountSlot:
