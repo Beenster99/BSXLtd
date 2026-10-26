@@ -973,7 +973,7 @@ func _dispatch(supplier_id: String, part: String, condition: String, qty: int) -
 		return
 	var s := supplier(supplier_id)
 	_sales_out += 1
-	yard_bus.call("dispatch_stock", "SALE-%d-%d" % [_books.minute, _sales_out], part, condition, qty, s.display_name if s else supplier_id)
+	yard_bus.call("dispatch_stock", "SALE-%d-%d" % [_books.minute, _sales_out], part, 1.0 - PartCondition.wear_of(condition), qty, s.display_name if s else supplier_id)
 
 
 func cancel_order(order_id: String) -> BusinessResult:
