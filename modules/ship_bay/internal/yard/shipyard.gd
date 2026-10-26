@@ -1084,6 +1084,8 @@ static func wall_sign_lines(d: Array) -> PackedStringArray:
 ## A board on a hall's wall (a DIRECTION_SIGNS entry) listing the way to every other room,
 ## between the wall's columns as near the doorway as it fits.
 func _direction_board(d: Array) -> void:
+	if Flags.is_on("ship_bay.no_signs"):
+		return
 	var lines := wall_sign_lines(d)
 	var longest := 0.0
 	for line in lines:
@@ -1105,6 +1107,8 @@ func _direction_board(d: Array) -> void:
 ## A post in the courtyard with a blade pointing to each room's doorway, its name on both
 ## sides with an arrow at the pointed end.
 func _fingerpost(foot: Vector3) -> void:
+	if Flags.is_on("ship_bay.no_signs"):
+		return
 	var post_h := 2.2
 	_put(_box(Vector3(0.07, post_h, 0.07)), _at(foot + Vector3(0, post_h * 0.5, 0)), _galv)
 	_put(_box(Vector3(0.11, 0.04, 0.11)), _at(foot + Vector3(0, post_h + 0.02, 0)), _trim, false)
@@ -1182,6 +1186,12 @@ static func _board_size(text: String, height_m: float) -> Vector2:
 ## A sign on a dark board with an orange edge (unless `board` is off), facing `yaw`.
 func _sign(text: String, at: Vector3, yaw: float, height_m: float, board := true) -> Label3D:
 	var label := Label3D.new()
+	# No signs in the yard (beenster, 0.3.19: "not really that helpful"): an empty label
+	# stands in so callers can still name or tint it.
+	if Flags.is_on("ship_bay.no_signs"):
+		label.visible = false
+		add_child(label)
+		return label
 	label.text = text
 	label.font_size = 96
 	label.outline_size = 12

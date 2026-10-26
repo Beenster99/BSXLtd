@@ -59,7 +59,10 @@ func run_tests() -> void:
 				func(hit: Dictionary) -> bool: return yard.call("is_own_body", hit.collider))
 		check(hits.is_empty(), "%s is clear for a bench and a worker: %d" % [spot, hits.size()])
 	var arrows := yard.get_tree().get_nodes_in_group("direction_sign").size()
-	check(arrows == 16, "the halls' boards and the courtyard's fingerpost are up: %d lines" % arrows)
+	if Flags.is_on("ship_bay.no_signs"):
+		check(arrows == 0, "no direction boards or fingerposts (beenster, 0.3.19): %d lines" % arrows)
+	else:
+		check(arrows == 16, "the halls' boards and the courtyard's fingerpost are up: %d lines" % arrows)
 	var ship_bay: Node3D = yard.get("bay")
 	check(ship_bay != null and ship_bay.get_node_or_null("Ship") != null, "the bay scene sits in the courtyard")
 	check(ship_bay.find_child("Floor", false, false) == null, "inside the yard the bay brings no floor of its own")
