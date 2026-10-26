@@ -25,6 +25,10 @@ func note_loose(slot_id: String, component: String, condition: float, body: Node
 	noted[slot_id] = body
 func forget_loose(slot_id: String) -> void:
 	noted.erase(slot_id)
+var lifted: Array = []
+func lift_off_trolley(crate_id: String) -> bool:
+	lifted.append(crate_id)
+	return true
 """
 ## A plate whose slot box is a fat AABB round the tilted plate (it used to land 0.5 m up).
 const PLATE := "plate_cockpit_wall_e1"
@@ -134,18 +138,78 @@ func run_tests() -> void:
 			b.global_position.distance_to(b_from + Vector3(2.5, 0, -1.0)) < 0.01, "the stack rides with the deck")
 	check(beam.aimed_part() != a and not beam.loose.values().has(a), "the beam can't take them off the deck")
 
-	# The crates leave the trolley (Ship and Bay's deck_part_left, or a release): the parts go.
-	trades.release_deck_part("crate_0")
+	# Part info (trades.part_info, beenster 0.3.19: "When I look at a part (anywhere in the
+	# game) I must be able to see its information on the right hand panel"): no key to hold.
+	var had_info := Flags.is_on("trades.part_info")
+	Flags.set_flag("trades.part_info", true)
+	rig.set_tool(&"tractor")
+	_look_at(rig, plate.centre())
+	var card := rig.look_hint()
+	check(str(card.get("text", "")).contains("CONDITION") and str(card.get("text", "")).contains(plate.component),
+			"looking at the loose plate, the card gives its details: %s" % str(card.get("text", "")).replace("\n", " | "))
+	_look_at(rig, b.centre())
+	card = rig.look_hint()
+	check(str(card.get("text", "")).contains("on a trolley"), "and a part on a trolley says so: %s" % str(card.get("text", "")).replace("\n", " | "))
+	# Anything in the game carrying meta "component": a crate on a shelf, say.
+	var comp := ""
+	var shared: Node = Modules.bus("shared_components")
+	if shared and shared.has_method("part_names") and not (shared.call("part_names") as PackedStringArray).is_empty():
+		comp = (shared.call("part_names") as PackedStringArray)[0]
+	var crate := StaticBody3D.new()
+	crate.set_meta("component", comp)
+	crate.set_meta("condition", 0.4)
+	var crate_col := CollisionShape3D.new()
+	crate.add_child(crate_col)
+	yard.add_child(crate)
+	rig.worker.face(rig.worker.global_position + Vector3(0.3, 20.0, 0.3))  # at the sky: no ship part under the aim
+	await frames(1)
+	card = rig.look_hint({"collider": crate_col})
+	var spec: Object = shared.call("build_spec", comp) if shared else null
+	var name := str(spec.get("display_name")) if spec and str(spec.get("display_name")) != "" else comp
+	check(comp != "" and str(card.get("title", "")) == name.to_upper().capitalize() and str(card.get("text", "")).contains("40%"),
+			"a crate with a component shows that part's details: %s / %s" % [str(card.get("title", "")), str(card.get("text", "")).replace("\n", " | ")])
+	check(rig.look_hint({"collider": null}).is_empty(), "looking at nothing shows no card")
+	crate.queue_free()
+	Flags.set_flag("trades.part_info", had_info)
+
+	# The beam takes the top one off the trolley (beenster, 0.3.19: "I need to be able to
+	# tractor a part from a trolley (any trolley)"): Ship and Bay lifts its crate off.
+	_look_at(rig, b.centre())
+	check(beam.can_lift_decks() and str(beam.actions()[0][1]).contains("trolley"), "aimed at a part on a trolley, the beam offers to lift it off")
+	rig.ship_station().press(&"tractor")
+	check(beam.held == b and (api.get("lifted") as Array) == ["crate_1"], "it takes it and Ship and Bay lifts its crate off the trolley")
+	check(not beam.on_deck.has("crate_1") and beam.loose.get(ENGINES[1]) == b and b.riding == null and trades.deck_part("crate_1") == null,
+			"it's a loose part in your beam again, no longer on the deck")
 	beam._on_deck_part_left("crate_1", "m")
+	await frames(1)
+	check(is_instance_valid(b), "Ship and Bay saying its crate left doesn't take it from your beam")
+	rig.ship_station().release()
+
+	# The crates leave the trolley (Ship and Bay's deck_part_left, or a release): the parts go.
+	beam._on_deck_part_left("crate_0", "m")
 	await frames(2)
-	check(not is_instance_valid(a) and not is_instance_valid(b) and beam.on_deck.is_empty(), "released crates take their parts")
+	check(not is_instance_valid(a) and beam.on_deck.is_empty(), "a crate leaving the trolley takes its part")
 	check(trades.deck_part("crate_0") == null, "and nothing is listed on the deck")
+	# Beamed back onto the trolley as a new crate, then released.
+	beam.to_trolley[ENGINES[1]] = "m"
+	beam._on_part_beamed("crate_2", "m", b.component, ENGINES[1])
+	check(beam.on_deck.get("crate_2") == b and not beam.loose.has(ENGINES[1]), "it can go back on a trolley as a new crate")
+	trades.release_deck_part("crate_2")
+	await frames(1)
+	check(not is_instance_valid(b) and beam.on_deck.is_empty(), "release_deck_part frees a part on a deck too")
 
 	yard.queue_free()
 	await frames(1)
 	ship_bus.reset_data()
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
+
+
+func _look_at(rig: TradesBay, at: Vector3) -> void:
+	var stand := at + Vector3(0, 0, 2.2)
+	stand.y = at.y - 1.6 if at.y > 1.6 else 0.0
+	rig.worker.global_position = stand
+	rig.worker.face(at)
 
 
 ## Waits until the part is still (or `limit` seconds).

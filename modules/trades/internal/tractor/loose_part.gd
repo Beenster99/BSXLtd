@@ -93,6 +93,7 @@ func setup(slot: MountSlot, comp: String, visual: Node3D) -> void:
 	# Graphics lights it under the pointer, and crewmates' pings find it by its id.
 	add_to_group("gfx_interactable")
 	set_meta("gfx_id", "trades.loose:" + slot.slot_id)
+	set_meta("component", comp)
 	outline = slot.mount.affine_inverse() * slot.box
 	mass = maxf(5.0, outline.size.x * outline.size.y * outline.size.z * DENSITY)
 	contact_monitor = true
@@ -362,6 +363,7 @@ func knock(speed_lost: float) -> void:
 	if speed_lost <= KNOCK_MS:
 		return
 	condition = maxf(0.0, condition - (speed_lost - KNOCK_MS) * KNOCK_PER_MS)
+	set_meta("condition", condition)
 	knocked.emit(self)
 
 

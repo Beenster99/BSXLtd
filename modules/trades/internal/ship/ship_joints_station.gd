@@ -1427,7 +1427,7 @@ func inspect_lines() -> PackedStringArray:
 		return _practice_lines(joint)
 	if _bus == null:
 		return lines
-	var loose := tractor.held if tractor.held else tractor.aimed_part()
+	var loose := tractor.held if tractor.held else tractor.aimed_part(Flags.is_on("trades.part_info"))
 	var slot_id := ""
 	if loose:
 		slot_id = loose.slot_id
@@ -1482,7 +1482,13 @@ func inspect_lines() -> PackedStringArray:
 		var where := "in your beam" if loose == tractor.held else "hovering"
 		if tractor.to_trolley.has(slot_id):
 			where = "waiting for a trolley"
+		if loose.riding:
+			where = "on a trolley"
+		elif not loose.freeze and loose != tractor.held:
+			where = "lying loose"
 		lines.append("%-9s %s" % ["NOW", where])
+		if Flags.is_on("trades.part_info"):
+			lines.append("%-9s %d%%" % ["CONDITION", roundi(loose.condition * 100.0)])
 	if joint:
 		lines.append("")
 		lines.append("%-9s %s  %s %s  %s" % ["JOINT", joint.joint_id, joint.spec, joint.kind, _state_word(joint)])
@@ -1527,6 +1533,39 @@ func _practice_lines(joint: FastenerPoint) -> PackedStringArray:
 
 ## Shared Components' build spec for a component (mass, material, name), or null. Reached
 ## untyped: Shared Components is optional here.
+## A part that isn't on this ship, by its catalogue id (trades.part_info: anything in the game
+## carrying meta "component", on its collider or a parent; "condition" 0..1, "name" and
+## "mass_kg" when it knows them): its name, then key details. Empty without a component.
+static func component_lines(node: Node) -> PackedStringArray:
+	var lines := PackedStringArray()
+	var n := node
+	while n != null and not n.has_meta("component"):
+		n = n.get_parent()
+	if n == null or str(n.get_meta("component")) == "":
+		return lines
+	var comp := str(n.get_meta("component"))
+	var spec := _build_spec(comp)
+	var title := str(n.get_meta("name", ""))
+	if title == "":
+		title = str(spec.get("display_name")) if spec and str(spec.get("display_name")) != "" else comp
+	lines.append(title.to_upper())
+	lines.append("%-9s %s" % ["PART", comp])
+	var mass := float(n.get_meta("mass_kg", 0.0))
+	if mass <= 0.0 and spec:
+		mass = float(spec.get("mass"))
+	if mass > 0.0:
+		lines.append("%-9s %s" % ["MASS", _kg(mass)])
+	if spec and str(spec.get("material")) != "":
+		lines.append("%-9s %s" % ["MATERIAL", str(spec.get("material"))])
+	if spec and str(spec.get("category")) != "":
+		lines.append("%-9s %s" % ["KIND", str(spec.get("category"))])
+	if n.has_meta("condition"):
+		lines.append("%-9s %d%%" % ["CONDITION", roundi(clampf(float(n.get_meta("condition")), 0.0, 1.0) * 100.0)])
+	if spec and spec.get("joints") is Array and not (spec.get("joints") as Array).is_empty():
+		lines.append("%-9s %d" % ["JOINTS", (spec.get("joints") as Array).size()])
+	return lines
+
+
 static func _build_spec(component: String) -> Object:
 	var shared: Node = Modules.bus("shared_components")
 	if component == "" or shared == null or not shared.has_method("build_spec"):
