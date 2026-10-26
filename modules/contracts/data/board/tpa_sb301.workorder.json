@@ -22,7 +22,7 @@
     {
       "what": "part",
       "component": {
-        "id": "TurretMotor"
+        "id": "TurretBase"
       },
       "qty": 2,
       "min_condition": 0.6
@@ -30,7 +30,7 @@
     {
       "what": "part",
       "component": {
-        "id": "Gunsight"
+        "id": "GunMount"
       },
       "qty": 1,
       "min_condition": 0.5
