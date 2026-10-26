@@ -9,7 +9,7 @@ extends Resource
 ## Shown to players.
 @export var display_name := ""
 ## Component or module ids this slot takes ("KestrelEngine", "hold_nets").
-@export var accepts: PackedStringArray = []
+@export var accepts: PackedStringArray = PackedStringArray()
 ## What the ship arrives with, "" if the slot is empty.
 @export var fitted := ""
 ## Where the part's mounting face sits, ship space; basis Z points out of the mounting face.
@@ -22,7 +22,7 @@ extends Resource
 @export var fasteners: Array[FastenerPoint] = []
 ## The paths of the slot's parts in the ship's Void Salvage file ("slot:eng_port/engine", or a
 ## hull plate BSX treats as a replaceable fitting).
-@export var parts: PackedStringArray = []
+@export var parts: PackedStringArray = PackedStringArray()
 
 
 func takes(component: String) -> bool:
