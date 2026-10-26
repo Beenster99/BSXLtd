@@ -14,8 +14,17 @@ const RPM := 11000
 var spin := 0.0
 ## How far through the head it has ground (0..1).
 var ground := 0.0
+## The disc is in the work (trades.vs_tools): its rim heats while it bites and cools after.
+var biting := false
+## How hot the disc's rim is (0..1): a dull red glow at 1.
+var heat := 0.0
+
+## Seconds of biting to heat the rim through, and to cool it again.
+const GLOW_S := 7.0
+const COOL_S := 5.0
 
 var _disc: Node3D
+var _disc_mat: StandardMaterial3D
 
 
 func _ready() -> void:
@@ -32,7 +41,9 @@ func _ready() -> void:
 	_disc = Node3D.new()
 	_disc.position = Vector3(0, 0.055, 0)
 	add_child(_disc)
-	cylinder(0.055, 0.0016, Vector3.ZERO, across, TradesLook.metal(Color(0.32, 0.3, 0.28), 0.4, 0.7), 28, _disc)
+	_disc_mat = TradesLook.metal(Color(0.32, 0.3, 0.28), 0.4, 0.7) as StandardMaterial3D
+	_disc_mat.emission = Color(1.0, 0.32, 0.06)
+	cylinder(0.055, 0.0016, Vector3.ZERO, across, _disc_mat, 28, _disc)
 	cylinder(0.012, 0.004, Vector3.ZERO, across, steel, 12, _disc)
 	box(Vector3(0.003, 0.005, 0.03), Vector3(0.002, 0.0, 0.0), TradesLook.metal(Color(0.85, 0.2, 0.1), 0.2, 0.5), Vector3.ZERO, _disc)
 	# The guard over the back half, the gear head, the orange motor body, the side handle.
@@ -51,6 +62,10 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if _disc:
 		_disc.rotation.x += delta * spin * 60.0
+	heat = clampf(heat + delta / GLOW_S if biting else heat - delta / COOL_S, 0.0, 1.0)
+	if _disc_mat:
+		_disc_mat.emission_enabled = heat > 0.02
+		_disc_mat.emission_energy_multiplier = 2.5 * heat * heat
 	super(delta)
 
 
@@ -60,11 +75,14 @@ func readout_text() -> String:
 
 func panel_rows() -> Array:
 	return [["DISC", "%d RPM" % roundi(RPM * spin) if spin > 0.01 else "-"],
-			["GROUND", "%d %%" % roundi(ground * 100.0) if ground > 0.0 else "-"]]
+			["GROUND", "%d %%" % roundi(ground * 100.0) if ground > 0.0 else "-"],
+			["DISC TEMP", "%d C" % roundi(20.0 + heat * 560.0)]]
 
 
 func panel_state() -> String:
-	return "GRINDING" if spin > 0.01 else "READY"
+	if biting or spin >= 0.999:
+		return "GRINDING"
+	return "SPINNING UP" if spin > 0.01 else "READY"
 
 
 func readout_fill() -> float:

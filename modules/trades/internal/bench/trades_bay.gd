@@ -138,7 +138,8 @@ func _ready() -> void:
 		hotbar.assign(hotbar.filter(func(t: StringName) -> bool: return not t in SLIM_DROPS))
 	if in_yard and Flags.is_on("trades.tractor"):
 		hotbar.append(&"tractor")
-	if in_yard and Flags.is_on("trades.cutter") and not Flags.is_on("trades.slim_hotbar"):
+	# trades.vs_tools brings the cutter back for rivets (beenster, 0.3.18).
+	if in_yard and Flags.is_on("trades.cutter") and (not Flags.is_on("trades.slim_hotbar") or TradesShipJoints.vs_tools()):
 		hotbar.append(&"cutter")
 	_build_worker()
 	sparks = TradesSparks.new()
@@ -362,7 +363,11 @@ func wheel(step: int) -> void:
 ## The powered tool in hand between its modes (the wrench: fasten / undo).
 func toggle_mode() -> void:
 	var t := tool_node(tool)
-	if t is TradesPowerWrench:
+	if in_yard and TradesShipJoints.vs_tools() and (t is TradesPowerWrench or t is TradesWeldTorch):
+		# trades.vs_tools: the tool picks by itself from what it's aimed at.
+		hint("No mode to switch: on a tight bolt the wrench takes it out, on a loose one it runs it in." if t is TradesPowerWrench
+				else "No mode to switch: hold on an open seam to weld it, on a weld to cut it out.")
+	elif t is TradesPowerWrench:
 		var w := t as TradesPowerWrench
 		w.undo = not w.undo
 		play(&"tick")
@@ -775,11 +780,12 @@ func pick(points: Array, pick_m: float) -> int:
 	return best
 
 
-func play(sound: StringName, pitch := 1.0) -> void:
+func play(sound: StringName, pitch := 1.0, db := 0.0) -> void:
 	var p: AudioStreamPlayer = _players.get(sound)
 	if p == null or DisplayServer.get_name() == "headless":
 		return
 	p.pitch_scale = pitch
+	p.volume_db = db
 	p.play()
 
 
@@ -960,6 +966,9 @@ func _build_audio() -> void:
 	_loops[&"drill"] = _player(TradesSounds.hum(0.5, 0.25, 180.0, 2200.0))
 	_loops[&"arc"] = _player(TradesSounds.hum(0.5, 0.35, 120.0, 6000.0))
 	_loops[&"beam"] = _player(TradesSounds.hum(0.5, 0.2, 70.0, 900.0))
+	# trades.quiet_tractor (beenster, 0.3.18: "keep our grabber but make it quieter").
+	if Flags.is_on("trades.quiet_tractor"):
+		_loops[&"beam"].volume_db = TradesTractor.QUIET_DB
 	_loops[&"impact"] = _player(TradesSounds.rattle(0.5, 0.35, 95.0, 22.0))
 	_players[&"stall"] = _player(TradesSounds.burst(0.25, 0.7, 300.0))
 	_loops[&"pressure"] = _player(TradesSounds.hum(0.5, 0.18, 60.0, 4000.0))

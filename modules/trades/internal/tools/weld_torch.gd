@@ -25,6 +25,8 @@ var unweld := false
 var cut := 0.0
 ## Heating a rivet out rather than working a seam: no shield needed (beenster, 2026-10-22).
 var on_rivet := false
+## How fast the arc is travelling along the seam (mm/s; trades.weld_skill), < 0 when not.
+var speed_mm_s := -1.0
 
 var _tip: MeshInstance3D
 var _wire: Material
@@ -90,6 +92,8 @@ func display_hidden() -> bool:
 func readout_text() -> String:
 	if lit and cutting:
 		return "%3d A\nCUT\n%3d%%" % [roundi(CUT_AMPS), roundi(cut * 100.0)]
+	if lit and speed_mm_s >= 0.0:
+		return "%3d A\nSPEED\n%3dmm/s" % [roundi(amps), roundi(speed_mm_s)]
 	if lit:
 		return "%3d A\nARC\n%3.1fmm" % [roundi(amps), arc_mm]
 	return "%3d A\n%s\nREADY" % [roundi(amps), "UNWELD" if unweld else "WIRE"]
@@ -104,6 +108,8 @@ func panel_rows() -> Array:
 		return [["MODE", "UNWELD"], ["CURRENT", "%d A" % roundi(CUT_AMPS)], ["CUT", "%d %%" % roundi(cut * 100.0)]]
 	var rows := [["MODE", "UNWELD" if unweld else "WELD"], ["CURRENT", "%d A" % roundi(amps)]]
 	rows.append(["ARC", "%.1f mm" % arc_mm if lit else "-"])
+	if lit and speed_mm_s >= 0.0:
+		rows.append(["SPEED", "%d mm/s" % roundi(speed_mm_s)])
 	return rows
 
 

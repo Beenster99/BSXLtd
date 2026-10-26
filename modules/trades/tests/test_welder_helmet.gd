@@ -23,6 +23,11 @@ func run_tests() -> void:
 	# The shield on the arc alone (test_playtest_0316 has its key).
 	var was_toggle := Flags.is_on("trades.helmet_toggle")
 	Flags.set_flag("trades.helmet_toggle", false)
+	# The welder before trades.vs_tools (test_vs_tools has point-and-hold unweld).
+	var was_vs := Flags.is_on("trades.vs_tools")
+	var was_skill := Flags.is_on("trades.weld_skill")
+	Flags.set_flag("trades.vs_tools", false)
+	Flags.set_flag("trades.weld_skill", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)
@@ -124,6 +129,8 @@ func run_tests() -> void:
 	yard.queue_free()
 	await frames(1)
 	Flags.set_flag("trades.unweld", was_unweld)
+	Flags.set_flag("trades.vs_tools", was_vs)
+	Flags.set_flag("trades.weld_skill", was_skill)
 	Flags.set_flag("trades.weld_helmet", was_helmet)
 	Flags.set_flag("trades.trace_weld", was_trace)
 	Flags.set_flag("trades.helmet_toggle", was_toggle)

@@ -32,6 +32,8 @@ extends Node3D
 ## Bay's, reached by name, so they work once it offers them.
 
 const RANGE_M := 9.0
+## trades.quiet_tractor: the beam's hum and its clunks this much quieter (dB).
+const QUIET_DB := -14.0
 const MIN_M := 1.0
 const PUSH_STEP_M := 0.25
 const TURN_STEP_DEG := 15.0
@@ -201,7 +203,7 @@ func park() -> bool:
 func _lock(part: TradesLoosePart) -> void:
 	part.anchor()
 	_send_hold(part, true, true)
-	station.bay.play(&"clunk", 0.7)
+	station.bay.play(&"clunk", 0.7, _db())
 	station.bay.hint("Locked in line in its mount. Fasten it: the first joint holds it.")
 
 
@@ -318,7 +320,7 @@ func update(delta: float) -> void:
 	var state := _bus.get_slot_state(held.slot_id)
 	if aligned and not held.seated and state == ShipBayBus.SlotState.EMPTY:
 		if _bus.try_position(held.slot_id, held.component):
-			station.bay.play(&"clunk", 0.8)
+			station.bay.play(&"clunk", 0.8, _db())
 			station.bay.hint("In line and seated. Keep holding while it's fastened, or let go to lock it.")
 	elif not aligned and held.seated and _tight(held.slot_id) == 0:
 		_bus.try_remove(held.slot_id)
@@ -351,7 +353,7 @@ func _take(part: TradesLoosePart) -> void:
 	part.take_hold()
 	_distance = clampf(station.bay.worker.aim_origin().distance_to(part.centre()), MIN_M, RANGE_M)
 	_grip = _beam_frame().affine_inverse() * part.global_transform
-	station.bay.play(&"click", 0.6)
+	station.bay.play(&"click", 0.6, _db())
 	station.bay.hint("Got it. Wheel pulls in and pushes out, hold %s and move the mouse to turn it, right click parks it." %
 			Keys.key_name(TradesBus.KEY_ROTATE))
 
@@ -624,3 +626,8 @@ func _emit(part: TradesLoosePart, holding: bool) -> void:
 	var bus := station.bay.bus()
 	if bus:
 		bus.part_beamed.emit(1, part.slot_id, part.global_transform, holding)
+
+
+## How much quieter the beam's sounds play (dB, trades.quiet_tractor).
+static func _db() -> float:
+	return QUIET_DB if Flags.is_on("trades.quiet_tractor") else 0.0
