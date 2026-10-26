@@ -51,6 +51,11 @@ const Generator := preload("res://modules/contracts/internal/offer_generator.gd"
 ## Work orders on offer when a game starts: Void Salvage crews' and local yards' jobs.
 const BOARD_DIR := "res://modules/contracts/data/board"
 const BOARD_CHANNEL := "contracts.board"
+## Ship and Bay's yard scene id (a string, so Contracts needs no Ship and Bay class): the
+## release screenshots of the board are taken there.
+const SHIPYARD_SCENE := "ship_bay.shipyard"
+## The job a release screenshot opens the docket on, "" for none.
+var _shot_pick := ""
 ## Break, scrap, refurbish and dispose jobs (plan stage S1); off, the board offers fit jobs only.
 const KINDS_FLAG := "contracts.kinds"
 ## Clients post offers each cycle and standing with them unlocks tiers (plan stage S4).
@@ -86,8 +91,9 @@ func register_module() -> void:
 	Saves.register_section("contracts", self)
 	seed_board()
 	if Flags.is_on(BOARD_CHANNEL):
-		HudSlots.register_holo_channel(BOARD_CHANNEL, "Contracts",
-				func(glass: bool) -> Control: return BoardPanel.new(self, glass), 30)
+		HudSlots.register_holo_channel(BOARD_CHANNEL, "Contracts", _board_panel, 30)
+		if not Modules.modules_ready.is_connected(_hook_shots):
+			Modules.modules_ready.connect(_hook_shots)
 	if Flags.is_on(CLIENTS_FLAG):
 		if not Modules.modules_ready.is_connected(_hook_clock):
 			Modules.modules_ready.connect(_hook_clock)
@@ -107,6 +113,8 @@ func unregister_module() -> void:
 		Modules.modules_ready.disconnect(_hook_clock)
 	if Modules.modules_ready.is_connected(_hook_net):
 		Modules.modules_ready.disconnect(_hook_net)
+	if Modules.modules_ready.is_connected(_hook_shots):
+		Modules.modules_ready.disconnect(_hook_shots)
 	Menu.unregister_settings_section(Menu.DEBUG, DEBUG_SECTION)
 	var net := _net()
 	if net:
@@ -616,6 +624,39 @@ func call_in(client_id: String, tier: int) -> String:
 			continue
 		return _post_generated(client_id, _cycle, slot, clampi(tier, 1, 3))
 	return ""
+
+
+## Release screenshots of the board, in Ship and Bay's yard (registered once every module
+## has loaded, since Ship and Bay loads after Contracts and owns the scene).
+func _hook_shots() -> void:
+	if Router.has_scene(SHIPYARD_SCENE):
+		Shots.register("contracts_board", SHIPYARD_SCENE, _shot_board, 40)
+		Shots.register("contracts_job_under_way", SHIPYARD_SCENE, _shot_under_way, 40)
+
+
+func _board_panel(glass: bool) -> Control:
+	var panel := BoardPanel.new(self, glass)
+	if _shot_pick != "":
+		panel.pick(_shot_pick)
+	return panel
+
+
+## Release screenshot: the board with a job's docket open.
+func _shot_board(_scene: Node) -> void:
+	var offers := board(VOID_SALVAGE)
+	_shot_pick = "kettle_rock.ss304" if get_job("kettle_rock.ss304") else (offers[0].job_id if not offers.is_empty() else "")
+	HudSlots.open_holo(BOARD_CHANNEL)
+
+
+## Release screenshot: a job accepted, its subject landed, under way by itself.
+func _shot_under_way(_scene: Node) -> void:
+	const ID := "tpa.sb301"
+	var job := get_job(ID)
+	if job and job.state == ContractJob.OFFERED:
+		accept(ID)
+		subject_landed(ID)
+	_shot_pick = ID
+	HudSlots.open_holo(BOARD_CHANNEL)
 
 
 ## The Debug page's section: pick a client and a tier, call the offer in.
