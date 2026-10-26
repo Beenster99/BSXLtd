@@ -101,6 +101,7 @@ flags = {
 "trades.part_landing": true,
 "trades.parts_on_decks": true,
 "trades.part_info": true,
+"trades.goods_off": true,
 "trades.no_pinning": true,
 "trades.crew_tools": true,
 "trades.unit_mounts": true,

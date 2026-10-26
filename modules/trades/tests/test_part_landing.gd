@@ -198,11 +198,117 @@ func run_tests() -> void:
 	await frames(1)
 	check(not is_instance_valid(b) and beam.on_deck.is_empty(), "release_deck_part frees a part on a deck too")
 
+	await _goods_off(rig, beam, api, deck)
+
 	yard.queue_free()
 	await frames(1)
 	ship_bus.reset_data()
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
+
+
+## Stock Ship and Bay draws on a trolley (trades.goods_off): the beam takes it off as a loose
+## part, looking as it was drawn, and Ship and Bay lifts its crate off; a stack waits until
+## Ship and Bay can take one off it.
+func _goods_off(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) -> void:
+	var had := Flags.is_on("trades.goods_off")
+	Flags.set_flag("trades.goods_off", true)
+	var comp := str((Modules.bus("ship_bay") as ShipBayBus).storage_items().keys()[0])
+	var cargo := Node3D.new()
+	cargo.name = "Cargo"
+	cargo.position = Vector3(0, 0.06, 0)
+	deck.add_child(cargo)
+	var size := Vector3(0.6, 0.4, 0.5)
+	var one := _item(cargo, comp, size, Vector3(-0.6, 0, 0))
+	_look_box(cargo, AABB(one.position - Vector3(size.x * 0.5, 0, size.z * 0.5), size),
+			{"component": comp, "condition": 0.7, "crate_id": "goods_1"})
+	var low := _item(cargo, comp, size, Vector3(0.6, 0, 0))
+	_item(cargo, comp, size, Vector3(0.6, size.y, 0))
+	_look_box(cargo, AABB(low.position - Vector3(size.x * 0.5, 0, size.z * 0.5), size * Vector3(1, 2, 1)),
+			{"component": comp, "condition": 1.0, "crate_id": "goods_2"})
+	await frames(2)
+
+	_look_at(rig, one.global_position + Vector3.UP * 0.2)
+	await frames(1)
+	check(beam.aimed_goods() != null and str(beam.actions()[0][1]).contains("trolley") and beam.aim_title().contains("on a trolley"),
+			"aimed at goods on a trolley, the beam offers to lift them off (%s)" % beam.aim_title())
+	rig.ship_station().press(&"tractor")
+	var got := beam.held
+	check(got != null and TradesTractor.is_goods(got) and got.component == comp and (api.get("lifted") as Array).has("goods_1"),
+			"it takes them, and Ship and Bay lifts their crate off the trolley")
+	if got == null:
+		Flags.set_flag("trades.goods_off", had)
+		return
+	check(got.global_position.distance_to(one.global_position) < 0.05 and not got.find_children("*", "MeshInstance3D", true, false).is_empty(),
+			"they come off where they sat, looking as they were drawn")
+	check(is_equal_approx(got.condition, 0.7) and str(got.get_meta("component")) == comp, "in the condition they were in, with their details")
+	rig.ship_station().press(&"tractor")
+	check((api.get("lifted") as Array).count("goods_1") == 1, "the same crate isn't lifted twice")
+	rig.ship_station().release()
+	check((api.get("noted") as Dictionary).get(got.slot_id) == got, "let go, they lie loose for the clean-up to put away")
+	beam.clear()
+	check(is_instance_valid(got) and beam.loose.get(got.slot_id) == got, "the ship leaving doesn't take stock with it")
+
+	# A stack of two: Ship and Bay can't take one off it yet.
+	beam.held = null
+	_look_at(rig, low.global_position + Vector3.UP * 0.6)
+	await frames(1)
+	rig.ship_station().press(&"tractor")
+	check(beam.held == null and not (api.get("lifted") as Array).has("goods_2"), "a stack waits until one can come off it")
+	check(beam._validate_lift(2, {"kind": "goods", "crate_id": "nope"}) is String, "the host turns down goods it can't find")
+	# Ship and Bay takes one item off a stack (lift_off_trolley(crate_id, qty)): one at a time.
+	var two: Object = _make(FAKE_API.replace("func lift_off_trolley(crate_id: String) -> bool:\n\tlifted.append(crate_id)",
+			"func lift_off_trolley(crate_id: String, qty := 0) -> bool:\n\tlifted.append([crate_id, qty])"), RefCounted.new())
+	two.set("deck", deck)
+	beam.trolley_api = two
+	rig.ship_station().press(&"tractor")
+	var first := beam.held
+	check(first != null and (two.get("lifted") as Array) == [["goods_2", 1]], "one comes off the stack (%s)" % [two.get("lifted")])
+	rig.ship_station().release()
+	if first:
+		first.global_position += Vector3(0, 0, -6)
+	await frames(2)
+	rig.ship_station().press(&"tractor")
+	var second := beam.held
+	check(second != null and second != first and first.slot_id != second.slot_id and (two.get("lifted") as Array).size() == 2,
+			"and another, each its own part (%s, %s)" % [first.slot_id if first else "", second.slot_id if second else ""])
+	if second:
+		rig.ship_station().release()
+	beam.trolley_api = api
+	cargo.queue_free()
+	Flags.set_flag("trades.goods_off", had)
+
+
+func _item(parent: Node3D, comp: String, size: Vector3, at: Vector3) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Item_" + comp
+	root.set_meta("item", comp)
+	root.set_meta("size", size)
+	root.position = at
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mi.mesh = mesh
+	mi.position.y = size.y * 0.5
+	root.add_child(mi)
+	parent.add_child(root)
+	return root
+
+
+func _look_box(parent: Node3D, box: AABB, metas: Dictionary) -> void:
+	var area := Area3D.new()
+	area.name = "Look"
+	area.monitoring = false
+	area.set_meta("look_only", true)
+	for k: String in metas:
+		area.set_meta(k, metas[k])
+	var shape := CollisionShape3D.new()
+	var b := BoxShape3D.new()
+	b.size = box.size
+	shape.shape = b
+	shape.position = box.get_center()
+	area.add_child(shape)
+	parent.add_child(area)
 
 
 func _look_at(rig: TradesBay, at: Vector3) -> void:

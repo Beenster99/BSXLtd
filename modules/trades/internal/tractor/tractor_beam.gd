@@ -87,6 +87,9 @@ func _ready() -> void:
 		# The crate a part on a deck stands for has left its trolley (trades.parts_on_decks).
 		if _bus.has_signal("deck_part_left"):
 			_bus.connect("deck_part_left", _on_deck_part_left)
+	var net := _net()
+	if net:
+		net.call("register_event", LIFT_EVENT, _apply_lift, _validate_lift)
 	_beam = TradesBeamLine.new()
 	add_child(_beam)
 	_glow = OmniLight3D.new()
@@ -95,6 +98,12 @@ func _ready() -> void:
 	_glow.light_energy = 1.2
 	_glow.visible = false
 	add_child(_glow)
+
+
+func _exit_tree() -> void:
+	var net := _net()
+	if net and net.has_method("unregister_event"):
+		net.call("unregister_event", LIFT_EVENT)
 
 
 func is_holding() -> bool:
@@ -146,8 +155,12 @@ func aimed_slot() -> String:
 
 func press() -> void:
 	var part := aimed_part(can_lift_decks())
-	if part and crate_of(part) != "" and not _lift_off_deck(part):
-		station.bay.hint("That one won't come off its trolley just now.")
+	if part and crate_of(part) != "":
+		_ask_lift({"kind": "deck", "crate_id": crate_of(part)})
+		return
+	var goods := aimed_goods() if part == null else null
+	if goods:
+		_ask_lift({"kind": "goods", "crate_id": str(goods.get_meta("crate_id"))})
 		return
 	if part == null:
 		var slot_id := aimed_slot()
@@ -267,10 +280,13 @@ func turn(step: int) -> bool:
 func aim_title() -> String:
 	var part := held if held else aimed_part(can_lift_decks())
 	if part == null:
-		return ""
+		var goods := aimed_goods()
+		return "%s, on a trolley" % _name_of(str(goods.get_meta("component"))) if goods else ""
 	var slot := _bus.get_slot(part.slot_id) if _bus else null
-	var what := slot.display_name if slot and slot.display_name != "" else part.slot_id
-	return ("In the beam: %s" if held else "%s, off the ship") % what
+	var what := slot.display_name if slot and slot.display_name != "" else _name_of(part.component) if slot == null else part.slot_id
+	if held:
+		return "In the beam: %s" % what
+	return "%s, on a trolley" % what if crate_of(part) != "" else "%s, off the ship" % what if slot else what
 
 
 ## The tips for the beam (TradesStation.actions): holding a part, or what's under the aim.
@@ -285,6 +301,8 @@ func actions() -> Array:
 	var aimed := aimed_part(can_lift_decks())
 	if aimed:
 		return [[TradesBay.HOLD_CLICK, "lift it off the trolley" if crate_of(aimed) != "" else "lift it with the beam"]]
+	if aimed_goods():
+		return [[TradesBay.HOLD_CLICK, "lift it off the trolley"]]
 	var slot_id := aimed_slot()
 	if slot_id != "" and _bus and _bus.get_slot_state(slot_id) == ShipBayBus.SlotState.POSITIONED and _tight(slot_id) == 0:
 		return [[TradesBay.HOLD_CLICK, "lift it off its mount"]]
@@ -313,9 +331,11 @@ func update(delta: float) -> void:
 		return
 	var worker := station.bay.worker
 	var target := _beam_frame() * _grip
-	var home := station.ship_xform * _bus.get_slot(held.slot_id).mount
-	var off_m := target.origin.distance_to(home.origin)
-	var off_deg := rad_to_deg(target.basis.get_rotation_quaternion().angle_to(home.basis.get_rotation_quaternion()))
+	# Goods off a trolley have no mount on the ship: the beam only carries them.
+	var slot := _bus.get_slot(held.slot_id)
+	var home := station.ship_xform * slot.mount if slot else target
+	var off_m := target.origin.distance_to(home.origin) if slot else INF
+	var off_deg := rad_to_deg(target.basis.get_rotation_quaternion().angle_to(home.basis.get_rotation_quaternion())) if slot else INF
 	aligned = false
 	if off_m < DRAW_M and off_deg < DRAW_DEG:
 		# Near its mount the beam draws it into line.
@@ -330,8 +350,10 @@ func update(delta: float) -> void:
 	held.global_transform = held.global_transform.interpolate_with(target, t)
 	if delta > 0.0:
 		_held_velocity = (held.global_position - was) / delta
-	var state := _bus.get_slot_state(held.slot_id)
-	if aligned and not held.seated and state == ShipBayBus.SlotState.EMPTY:
+	var state := _bus.get_slot_state(held.slot_id) if slot else ShipBayBus.SlotState.EMPTY
+	if slot == null:
+		pass
+	elif aligned and not held.seated and state == ShipBayBus.SlotState.EMPTY:
 		if _bus.try_position(held.slot_id, held.component):
 			station.bay.play(&"clunk", 0.8, _db())
 			station.bay.hint("In line and seated. Keep holding while it's fastened, or let go to lock it.")
@@ -515,10 +537,15 @@ func near_mount(slot_id: String) -> bool:
 
 
 func clear() -> void:
-	held = null
+	if held and not is_goods(held):
+		held = null
 	for p: TradesLoosePart in loose.values():
-		_finish(p)
-	loose.clear()
+		# Goods off a trolley are stock, not the ship's: they stay when it leaves.
+		if not is_goods(p):
+			_finish(p)
+	for id: String in loose.keys():
+		if not is_goods(loose[id]):
+			loose.erase(id)
 	to_trolley.clear()
 	_retry.clear()
 
@@ -718,15 +745,8 @@ func can_lift_decks() -> bool:
 	return Flags.is_on("trades.parts_on_decks") and _has("lift_off_trolley")
 
 
-## The beam takes a part off a trolley's deck: Ship and Bay takes its crate off the trolley
-## and out of stock, and it's a loose part again. False when it can't (no lift_off_trolley,
-## the trolley said no, or its slot has a loose part already).
-func _lift_off_deck(part: TradesLoosePart) -> bool:
-	var crate_id := crate_of(part)
-	if crate_id == "" or loose.has(part.slot_id) or not can_lift_decks():
-		return false
-	if not bool(_api().call("lift_off_trolley", crate_id)):
-		return false
+## The beam takes a part off a trolley's deck: it's a loose part again (on every peer).
+func _deck_to_loose(part: TradesLoosePart, crate_id: String) -> void:
 	on_deck.erase(crate_id)
 	_deck_of.erase(crate_id)
 	_deck_tries.erase(crate_id)
@@ -740,7 +760,214 @@ func _lift_off_deck(part: TradesLoosePart) -> bool:
 	var bus := station.bay.bus()
 	if bus:
 		bus.note_deck_part(crate_id, null, null)
-	return true
+
+
+# --- Off any trolley (beenster, 0.3.19: "I need to be able to tractor a part from a trolley
+# (any trolley)") ---------------------------------------------------------------------------
+
+## The crew hear a part or goods come off a trolley into someone's beam. payload {kind
+## ("deck": a part lying on a deck as itself; "goods": stock Ship and Bay draws on a trolley),
+## crate_id, peer, and for goods component, condition, xform (where the item sits), box (its
+## outline)}. Every peer makes the loose part; the host has Ship and Bay lift the crate off
+## (lift_off_trolley), after, so each peer still has the goods drawn to copy their look.
+const LIFT_EVENT := "trades.lift"
+## Goods off a trolley are loose parts with this in front of their crate's id for a slot id.
+const GOODS_PREFIX := "stock:"
+## Host: crates already on their way into a beam (two players at once).
+var _lifting: Dictionary = {}
+## Host: items taken one at a time off stacks so far.
+var _goods_n := 0
+
+
+static func is_goods(part: TradesLoosePart) -> bool:
+	return part != null and part.slot_id.begins_with(GOODS_PREFIX)
+
+
+## Stock drawn on trolleys can be beamed off as well as parts on decks.
+func can_lift_goods() -> bool:
+	return Flags.is_on("trades.goods_off") and _has("lift_off_trolley")
+
+
+## The goods on a trolley under the aim within range (their look box: an Area3D with meta
+## look_only, crate_id and component), or null.
+func aimed_goods() -> Area3D:
+	if not can_lift_goods() or not is_inside_tree():
+		return null
+	var worker := station.bay.worker
+	var from := worker.aim_origin()
+	var q := PhysicsRayQueryParameters3D.create(from, from + worker.aim_dir() * RANGE_M)
+	q.collide_with_areas = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	var area := hit.get("collider") as Area3D
+	return area if _on_a_trolley(area) else null
+
+
+## A look box of goods riding a trolley's deck.
+static func _on_a_trolley(area: Area3D) -> bool:
+	if area == null or not area.has_meta("look_only") or str(area.get_meta("crate_id", "")) == "" \
+			or str(area.get_meta("component", "")) == "":
+		return false
+	var n := area.get_parent()
+	while n:
+		if n is AnimatableBody3D and n.name == &"Deck":
+			return true
+		n = n.get_parent()
+	return false
+
+
+## This machine's look box for the goods in `crate_id` on a trolley, or null.
+func _goods_area(crate_id: String) -> Area3D:
+	var yard := station.bay.get_parent() if station and station.bay else null
+	if yard == null:
+		return null
+	# Several look boxes under one parent don't all keep the name "Look": go by their metas.
+	for a: Node in yard.find_children("*", "Area3D", true, false):
+		if str(a.get_meta("crate_id", "")) == crate_id and _on_a_trolley(a as Area3D):
+			return a as Area3D
+	return null
+
+
+## The items drawn inside a look box (Ship and Bay's goods: Node3D roots with meta "item" and
+## "size", their origin on the middle of their underside), lowest first.
+static func _items_in(area: Area3D) -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	var shape := area.get_child(0) as CollisionShape3D if area.get_child_count() > 0 else null
+	var box_shape := shape.shape as BoxShape3D if shape else null
+	if box_shape == null or area.get_parent() == null:
+		return out
+	var box := AABB(shape.position - box_shape.size * 0.5, box_shape.size).grow(0.02)
+	for n: Node in area.get_parent().get_children():
+		if n is Node3D and n.has_meta("item") and box.has_point((n as Node3D).position + Vector3.UP * 0.01):
+			out.append(n as Node3D)
+	out.sort_custom(func(a: Node3D, b: Node3D) -> bool: return a.position.y < b.position.y)
+	return out
+
+
+## Ship and Bay can take one item off a stack (lift_off_trolley(crate_id, qty)).
+func _lifts_one() -> bool:
+	var api := _api()
+	return api != null and api.has_method("lift_off_trolley") and api.get_method_argument_count("lift_off_trolley") >= 2
+
+
+## Whether the lift can go ahead on this machine: the payload filled in, or why not.
+func _check_lift(payload: Dictionary) -> Variant:
+	var crate_id := str(payload.get("crate_id", ""))
+	if crate_id == "" or _lifting.has(crate_id) or loose.has(GOODS_PREFIX + crate_id):
+		return "That one is already coming off its trolley."
+	if str(payload.get("kind", "")) == "deck":
+		var part: TradesLoosePart = on_deck.get(crate_id)
+		if part == null or not can_lift_decks():
+			return "That one won't come off its trolley just now."
+		if loose.has(part.slot_id):
+			return "Its twin is already off the ship: put that one back first."
+		return {"kind": "deck", "crate_id": crate_id}
+	var area := _goods_area(crate_id) if can_lift_goods() else null
+	var items := _items_in(area) if area else ([] as Array[Node3D])
+	if items.is_empty():
+		return "That one won't come off its trolley just now."
+	if items.size() > 1 and not _lifts_one():
+		return "That's a stack of %d: the beam can't take one off it yet." % items.size()
+	var top := items[items.size() - 1]
+	var size: Vector3 = top.get_meta("size")
+	return {"kind": "goods", "crate_id": crate_id, "component": str(area.get_meta("component")),
+			"condition": float(area.get_meta("condition", 1.0)), "xform": top.global_transform,
+			"box": AABB(Vector3(-size.x * 0.5, 0.0, -size.z * 0.5), size), "count": items.size()}
+
+
+## Asks for the lift: through Multiplayer when it's loaded (the host checks and tells
+## everyone), else here and now.
+func _ask_lift(payload: Dictionary) -> void:
+	var ok: Variant = _check_lift(payload)
+	if ok is String:
+		station.bay.hint(ok)
+		return
+	var net := _net()
+	if net:
+		net.call("request", LIFT_EVENT, payload)
+		return
+	var out: Variant = _validate_lift(0, payload)
+	if out is Dictionary:
+		_apply_lift(out)
+
+
+## Host: checks it on the host's yard, fills in where and what it is, and keeps a second
+## player's beam off the same crate.
+func _validate_lift(sender: int, payload: Dictionary) -> Variant:
+	var out: Variant = _check_lift(payload)
+	if out is Dictionary:
+		_lifting[str(payload["crate_id"])] = true
+		(out as Dictionary)["peer"] = sender
+		# One off a stack: the crate stays on its trolley, so each item gets its own id.
+		if int((out as Dictionary).get("count", 1)) > 1:
+			_goods_n += 1
+			(out as Dictionary)["id"] = "%s%s#%d" % [GOODS_PREFIX, payload["crate_id"], _goods_n]
+	return out
+
+
+func _apply_lift(payload: Dictionary) -> void:
+	var crate_id := str(payload.get("crate_id", ""))
+	var part: TradesLoosePart
+	if str(payload.get("kind", "")) == "deck":
+		part = on_deck.get(crate_id)
+		if part:
+			_deck_to_loose(part, crate_id)
+	else:
+		part = _make_goods(payload)
+	if _is_host():
+		_lifting.erase(crate_id)
+		if _has("lift_off_trolley"):
+			if int(payload.get("count", 1)) > 1 and _lifts_one():
+				_api().call("lift_off_trolley", crate_id, 1)
+			else:
+				_api().call("lift_off_trolley", crate_id)
+	if part and int(payload.get("peer", 0)) == _local_peer() and station.bay.tool == &"tractor":
+		_take(part)
+		station.bay.hint("Lifted it off the trolley.")
+
+
+## Goods off a trolley as a loose part, looking as Ship and Bay drew them (a copy of the item
+## drawn there, when this machine still has it) or a plain box.
+func _make_goods(payload: Dictionary) -> TradesLoosePart:
+	var id := str(payload.get("id", GOODS_PREFIX + str(payload["crate_id"])))
+	if loose.has(id):
+		return loose[id]
+	var visual: Node3D
+	var area := _goods_area(str(payload["crate_id"]))
+	var items := _items_in(area) if area else ([] as Array[Node3D])
+	if not items.is_empty():
+		visual = items[items.size() - 1].duplicate() as Node3D
+		visual.transform = Transform3D.IDENTITY
+	var part := TradesLoosePart.new()
+	part.top_level = true
+	add_child(part)
+	part.setup_goods(id, str(payload["component"]), payload["box"], visual, float(payload.get("condition", 1.0)))
+	part.global_transform = payload["xform"]
+	part.knocked.connect(_note_loose)
+	loose[id] = part
+	var net := _net()
+	if net:
+		net.call("register_mover", unit_id(id), part)
+	return part
+
+
+func _is_host() -> bool:
+	var net := _net()
+	return net == null or not net.has_method("is_host") or bool(net.call("is_host"))
+
+
+func _local_peer() -> int:
+	var net := _net()
+	return int(net.call("local_peer_id")) if net and net.has_method("local_peer_id") else 0
+
+
+## A storage item's name ("Ion thruster"), from Ship and Bay's list.
+static var _names: Dictionary = {}
+func _name_of(comp: String) -> String:
+	if _names.is_empty() and _bus:
+		var items := _bus.storage_items()
+		for id: String in items:
+			_names[id] = str((items[id] as Dictionary).get("name", id))
+	return str(_names.get(comp, comp))
 
 
 ## This machine runs the part's motion (no Multiplayer, or the mover is ours).
