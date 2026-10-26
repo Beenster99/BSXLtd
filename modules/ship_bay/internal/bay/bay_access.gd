@@ -106,11 +106,20 @@ var _key_way := 0   # the lift's way while Up or Down is held (1, -1, 0)
 var ship: Node3D
 var _arms: Array[MeshInstance3D] = []
 var _gate: CollisionShape3D
+## The gangway on the platform's work face (with a reach_over), its collision, and the
+## height it unfolds at.
+var gangway: Node3D
+var _gangway_shape: CollisionShape3D
+var _reach_over := 0.0
+var _bridge_from := 0.0
 var _gate_bar: MeshInstance3D
 var _cable: Array[MeshInstance3D] = []
 var _switch_lamp: MeshInstance3D
 var _socket := Vector3.ZERO          # the ship's power socket, bay space
 var _plug_body: StaticBody3D
+## Where the plug sits on the hull, in the ship's space: it rides along when the ship's cradle
+## is driven away (and pops off once out of the cable's reach).
+var _plug_on_ship := Transform3D()
 var _plug_shape: CollisionShape3D
 var _hums: Dictionary = {}       # vehicle -> AudioStreamPlayer3D
 var _net: Node
@@ -125,8 +134,14 @@ var _tread: Material
 
 
 ## Builds round a ship whose side door sill and power socket are given in ship space.
-func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root: Node3D = null) -> void:
+## `reach_over` (metres): the lift starts that much further out from the sill, past the
+## transport cradle's side beam (ship_bay.bay_cradle), and its platform carries a gangway that
+## long on its work face, out over the beam to the sill once the platform is above
+## `bridge_from` (it folds back in below it).
+func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root: Node3D = null, reach_over := 0.0, bridge_from := 0.0) -> void:
 	deck = cradle_height
+	_reach_over = reach_over
+	_bridge_from = bridge_from
 	ship = ship_root
 	_yellow = ShipSurface.of(ShipKit.paint(Color(0.95, 0.75, 0.1), 0.15, 0.5, "hazard_paint"))
 	_steel = ShipSurface.of(ShipKit.paint(Color(0.55, 0.57, 0.6), 0.85, 0.3, "chrome"))
@@ -143,7 +158,7 @@ func build(cradle_height: float, door_sill: Vector3, socket: Vector3, ship_root:
 	stops.sort()
 	# The lift stands at the side door, its open face to the hull (the door is on -X, so the
 	# lift's +X faces +X: it stands outboard of the sill).
-	_build_lift(Transform3D(Basis(), Vector3(sill.x - 0.03 - W * 0.5, 0, sill.z)))
+	_build_lift(Transform3D(Basis(), Vector3(sill.x - 0.03 - reach_over - W * 0.5, 0, sill.z)))
 	_build_power_unit(socket + Vector3(0, deck, 0))
 	for i in RIG_PARKING.size():
 		var rig: Node3D = Rig.new()
@@ -265,6 +280,18 @@ func _build_lift(at: Transform3D) -> void:
 		# Posts a hair thinner than the rails, so their faces don't share a plane.
 		_part(PartShapes.box(Vector3(0.036, RAIL_H, 0.036)), Transform3D(Basis(), Vector3(c.x * W * 0.5, RAIL_H * 0.5, c.y * L * 0.5)), _yellow, platform)
 	_gate_bar = _part(PartShapes.box(Vector3(W, 0.04, 0.04)), Transform3D(Basis(), Vector3(0, RAIL_H, L * 0.5)), _yellow, platform)
+	if _reach_over > 0.0:
+		# The gangway: a grating plank with toe boards, out from the open +X face.
+		gangway = Node3D.new()
+		gangway.name = "Gangway"
+		platform.add_child(gangway)
+		var gl := _reach_over + 0.02
+		var gw := 1.0
+		_part(WreckParts.grating(gl, gw), Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(W * 0.5 + gl * 0.5, -0.02, 0)), _tread, gangway)
+		_part(PartShapes.box(Vector3(gl, 0.08, gw + 0.04)), Transform3D(Basis(), Vector3(W * 0.5 + gl * 0.5, -0.06, 0)), _yellow, gangway)
+		for side: float in [-1.0, 1.0]:
+			_part(PartShapes.box(Vector3(gl, 0.1, 0.03)), Transform3D(Basis(), Vector3(W * 0.5 + gl * 0.5, 0.05, side * (gw * 0.5 + 0.015))), _yellow, gangway)
+		_gangway_shape = _collide(Vector3(gl, 0.1, gw), Transform3D(Basis(), Vector3(W * 0.5 + gl * 0.5, -0.05, 0)), platform)
 	_gate = _collide(Vector3(W, RAIL_H, 0.04), Transform3D(Basis(), Vector3(0, RAIL_H * 0.5, L * 0.5)), platform)
 	# The platform's screen hangs inside the outboard rail, facing in at whoever stands on it.
 	_part(PartShapes.box(Vector3(0.04, 0.2, 0.03)), Transform3D(Basis(), Vector3(-W * 0.5 + 0.03, RAIL_H - 0.1, -L * 0.25)), _dark, platform)
@@ -340,6 +367,10 @@ func _set_platform(y: float) -> void:
 	var raised := y > stops[0] + 0.2
 	_gate.disabled = not raised
 	_gate_bar.visible = raised
+	if gangway:
+		var out := y >= _bridge_from
+		gangway.visible = out
+		_gangway_shape.disabled = not out
 	var bottom := BASE_TOP + 0.02
 	var h := maxf(y - 0.14 - bottom, 0.01)
 	var stage_h := h / float(STAGES)
@@ -416,7 +447,7 @@ func _push_step(which: String, delta: float) -> bool:
 	var basis := from.basis.rotated(Vector3.UP, turn)
 	for tries: Array in [[step, basis], [step, from.basis], [Vector3(step.x, 0, 0), from.basis], [Vector3(0, 0, step.z), from.basis]]:
 		var to := Transform3D(tries[1], from.origin + (tries[0] as Vector3))
-		if _clear(bodies, from, to):
+		if _clear(bodies, from, to, which.begins_with("rig")):
 			root.global_transform = to
 			_cable_dirty()
 			return true
@@ -469,7 +500,7 @@ func drive(which: String, forward: float, turn: float, side := 0.0) -> bool:
 	var from := root.global_transform
 	var basis := from.basis.rotated(Vector3.UP, turn)
 	var to := Transform3D(basis, from.origin - basis.z * forward + basis.x * side)
-	if not _clear(bodies, from, to):
+	if not _clear(bodies, from, to, which.begins_with("rig")):
 		return false
 	root.global_transform = to
 	_cable_dirty()
@@ -477,11 +508,17 @@ func drive(which: String, forward: float, turn: float, side := 0.0) -> bool:
 
 
 ## Whether `bodies` (each riding on a root at `from`) could move with the root to `to`
-## without running into anything but each other and people.
-func _clear(bodies: Array, from: Transform3D, to: Transform3D) -> bool:
+## without running into anything but each other and people. A scaffold rig (`straddle`)
+## rolls in over the ship's cradle and its pedestals (its base runs under the side beams),
+## so it still meets the hull.
+func _clear(bodies: Array, from: Transform3D, to: Transform3D, straddle := false) -> bool:
 	var own: Array[RID] = []
 	for b: CollisionObject3D in bodies:
 		own.append(b.get_rid())
+	if straddle:
+		for n: Variant in [get_parent().get("cradle"), get_parent().get_node_or_null("Pedestals")]:
+			if n is CollisionObject3D:
+				own.append((n as CollisionObject3D).get_rid())
 	for b: CollisionObject3D in bodies:
 		var rel := from.affine_inverse() * b.global_transform
 		var target := to * rel
@@ -708,6 +745,7 @@ func use_plug() -> void:
 		Sfx.play("click", plug)
 	# In hand it is no obstacle (nor something your own F lands on).
 	_plug_shape.disabled = plug_state == "hand"
+	_note_on_ship()
 	_update_power()
 	_send_plug()
 
@@ -746,6 +784,7 @@ func clip_plug(point: Vector3, normal: Vector3) -> void:
 	var x := up.cross(n).normalized()
 	plug.global_transform = Transform3D(Basis(x, n.cross(x), n), point + n * 0.006 + n * 0.086)
 	plug_state = "hull"
+	_note_on_ship()
 	_plug_shape.disabled = false
 	Sfx.play("clunk", plug)
 	_cable_dirty()
@@ -772,14 +811,37 @@ func _update_plug() -> void:
 					plug.global_transform = Transform3D(b, cam.global_position - b.z * 0.55 - b.y * 0.28 + b.x * 0.18)
 					_cable_dirty()
 			"hull":
+				_follow_ship()
 				if plug.global_position.distance_to(unit_body.to_global(OUTLET)) > cable_length + 0.2:
 					# Out of reach: it pops off and reels in.
 					plug_state = "hook"
 					_place_plug_on_hook()
 					Sfx.play("thud", plug)
+					_note_on_ship()
 					_update_power()
 					_send_plug()
+	elif plug_state == "hull":
+		_follow_ship()
 	_draw_cable()
+
+
+## Keeps the plug where it was clipped on the hull, as the ship moves.
+func _follow_ship() -> void:
+	if ship == null or not ship.is_inside_tree():
+		return
+	var at := ship.global_transform * _plug_on_ship
+	if not at.is_equal_approx(plug.global_transform):
+		plug.global_transform = at
+		_cable_dirty()
+
+
+func _note_on_ship() -> void:
+	if ship and ship.is_inside_tree():
+		_plug_on_ship = ship.global_transform.affine_inverse() * plug.global_transform
+	if plug_state == "hull":
+		_plug_body.add_to_group("ship_bay_rides")
+	elif _plug_body.is_in_group("ship_bay_rides"):
+		_plug_body.remove_from_group("ship_bay_rides")
 
 
 var _cable_from := Vector3.INF
@@ -855,6 +917,7 @@ func _on_plug(payload: Dictionary) -> void:
 			plug_state = "hook"
 			_place_plug_on_hook()
 	_plug_shape.disabled = plug_state == "held"
+	_note_on_ship()
 	_cable_dirty()
 	_update_power()
 

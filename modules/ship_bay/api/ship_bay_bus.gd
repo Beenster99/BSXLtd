@@ -87,6 +87,9 @@ signal rig_test_shown(rig_id: String, result: Dictionary)
 ## Business: goods sold to another company (dispatch_stock) left the yard on the buyer's
 ## truck. Every peer hears it.
 signal stock_dispatched(sale_id: String)
+## The hulls contracts brought in, each on its transport cradle, changed (ShipBayBus.hulls).
+## Every peer hears it.
+signal hulls_changed
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -121,6 +124,8 @@ const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_
 const StorageStock := preload("res://modules/ship_bay/internal/storage/storage_stock.gd")
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 const CrusherPlant := preload("res://modules/ship_bay/internal/yard/crusher_plant.gd")
+const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
+const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 
 ## The ship in the bay, or null.
 var ship: ShipDefinition
@@ -145,6 +150,11 @@ var _lifted: Dictionary = {}
 ## Goods sold to another company on their way out: sale id -> {item, qty, condition, buyer,
 ## crate (once picked), state ("picking", "ready": waiting at the truck door)}.
 var sales: Dictionary = {}
+## Hulls and wrecks contracts brought in (ship_bay.hulls_on_cradles): job id -> {design, seed,
+## events, name, type ("ship", "wreck"), mass_kg, cradle (the transport cradle's node name)}.
+var hulls: Dictionary = {}
+## Contract hulls with no free cradle that fits yet: [job id, subject], first come first.
+var hull_queue: Array = []
 ## Slot id -> the clean-up's route for a part a trolley has been sent for.
 var _clean_routes: Dictionary = {}
 ## True from CLEAN UP until every loose part has had a trolley sent for it.
@@ -285,6 +295,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.dispatch", _apply_dispatch, _check_dispatch)
 	_net.call("register_event", "ship_bay.sale_ready", _apply_sale_ready, _pass)
 	_net.call("register_event", "ship_bay.dispatched", _apply_dispatched, _host_only)
+	_net.call("register_event", "ship_bay.hull", _apply_hull, _host_only)
 	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
 	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
 	_net.call("register_event", "ship_bay.line", _apply_line, _check_line)
@@ -308,6 +319,8 @@ func _hook_contracts() -> void:
 		return
 	_contracts = contracts
 	contracts.connect("subject_due", _on_subject_due)
+	if contracts.has_signal("job_closed"):
+		contracts.connect("job_closed", _on_job_closed)
 	if not delivery_landed.is_connected(_on_subject_landed):
 		delivery_landed.connect(_on_subject_landed)
 
@@ -315,6 +328,9 @@ func _hook_contracts() -> void:
 ## A job's subject is due: {type: "part", component: {id, material}, condition, mass_kg}.
 ## The host sets it down in Deliveries (other players' calls are ignored, as deliveries are).
 func _on_subject_due(job_id: String, subject: Dictionary) -> void:
+	if ["ship", "wreck"].has(str(subject.get("type", ""))):
+		_hull_due(job_id, subject)
+		return
 	if str(subject.get("type", "")) != "part":
 		return
 	var component: Dictionary = subject.get("component", {})
@@ -339,6 +355,8 @@ func unregister_module() -> void:
 	Menu.unregister_settings_section(Menu.DEBUG, DEBUG_SECTION)
 	if _contracts and _contracts.is_connected("subject_due", _on_subject_due):
 		_contracts.disconnect("subject_due", _on_subject_due)
+	if _contracts and _contracts.has_signal("job_closed") and _contracts.is_connected("job_closed", _on_job_closed):
+		_contracts.disconnect("job_closed", _on_job_closed)
 	_contracts = null
 	for k: String in ["ship_bay.raise", "ship_bay.lower", "ship_bay.call_trolley", "ship_bay.dolly_ahead", "ship_bay.dolly_back",
 			"ship_bay.dolly_left", "ship_bay.dolly_right", "ship_bay.dolly_up", "ship_bay.dolly_down", "ship_bay.dolly_mode"]:
@@ -346,7 +364,7 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.lift_off", "ship_bay.dispatch", "ship_bay.sale_ready", "ship_bay.dispatched", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
+				"ship_bay.collect", "ship_bay.lift_off", "ship_bay.dispatch", "ship_bay.sale_ready", "ship_bay.dispatched", "ship_bay.hull", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
 				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
@@ -388,6 +406,9 @@ func ship_transform(yard: Node3D) -> Transform3D:
 	var ship_node := bay_node.get("ship_root") as Node3D if bay_node else null
 	if ship_node == null:
 		return Transform3D.IDENTITY
+	if ship_node.is_inside_tree() and yard.is_inside_tree():
+		# The ship may ride a transport cradle (ship_bay.bay_cradle), wherever it has been driven.
+		return yard.global_transform.affine_inverse() * ship_node.global_transform
 	return bay_node.transform * ship_node.transform
 
 
@@ -635,7 +656,8 @@ func set_ship_powered(on: bool) -> void:
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
 	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true),
-			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared, "rigs": rigs.duplicate(true), "sales": sales.duplicate(true)}
+			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared, "rigs": rigs.duplicate(true), "sales": sales.duplicate(true),
+			"hulls": hulls.duplicate(true), "hull_queue": hull_queue.duplicate(true)}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -673,6 +695,9 @@ func restore(state: Dictionary) -> void:
 	yard_ships_changed.emit(yard_ships)
 	bay_cleared = bool(state.get("bay_cleared", false))
 	sales = (state.get("sales", {}) as Dictionary).duplicate(true)
+	hulls = (state.get("hulls", {}) as Dictionary).duplicate(true)
+	hull_queue = (state.get("hull_queue", []) as Array).duplicate(true)
+	hulls_changed.emit()
 	rigs = {}
 	for id: String in (state.get("rigs", {}) as Dictionary):
 		if RIGS.has(id):
@@ -993,8 +1018,10 @@ func collect_crate(crate_id: String) -> void:
 ## carrying it. It leaves that trolley and the stock on every peer (stock_changed follows),
 ## and the trolley gets on with its next job. No deck_part_left is sent for it: Tools keeps
 ## its body, a loose part again (note_loose). False when the crate isn't on a trolley.
-func lift_off_trolley(crate_id: String) -> bool:
-	var payload := {"crate_id": crate_id}
+## `qty` > 0 takes only that many items off a stack of the same item and leaves the rest on
+## the trolley (the crate stays, one fewer); 0, or all of them, takes the whole crate.
+func lift_off_trolley(crate_id: String, qty := 0) -> bool:
+	var payload := {"crate_id": crate_id, "qty": qty}
 	if not _check_lift_off(0, payload) is Dictionary:
 		return false
 	if _net:
@@ -1007,6 +1034,106 @@ func lift_off_trolley(crate_id: String) -> bool:
 ## Whether this crate left its trolley by lift_off_trolley.
 func lifted_off(crate_id: String) -> bool:
 	return _lifted.has(crate_id)
+
+
+# --- Contract hulls on cradles --------------------------------------------------------------
+
+## The transport cradles a contract's hull can be delivered onto, smallest first: [node name,
+## size]. (The apron's: the pad's, the holding lane's and the docks'.)
+static func hull_cradles() -> Array:
+	var out: Array = [["PadCradle", "s"]]
+	for i in Apron.HOLDING_SIZES.size():
+		out.append(["HoldingCradle%d" % (i + 1), Apron.HOLDING_SIZES[i]])
+	for id: String in Apron.DOCK_CRADLES:
+		out.append(["DockCradle" + id, "l"])
+	var rank := {"s": 0, "m": 1, "l": 2}
+	out.sort_custom(func(a: Array, b: Array) -> bool: return int(rank[a[1]]) < int(rank[b[1]]))
+	return out
+
+
+## The cradle size a hull of `mass_kg` and `length_m` needs: "s" (to 40 t and 14 m), "m" (to
+## 400 t and 30 m) or "l".
+static func cradle_size_for(mass_kg: float, length_m: float) -> String:
+	if mass_kg <= 40000.0 and length_m <= TransportCradle.SIZES["s"].length + 1.0:
+		return "s"
+	if mass_kg <= 400000.0 and length_m <= TransportCradle.SIZES["m"].length + 2.0:
+		return "m"
+	return "l"
+
+
+## The free cradle that best fits this hull, or "" when every one that fits is taken.
+func free_cradle_for(mass_kg: float, length_m: float) -> String:
+	var need := cradle_size_for(mass_kg, length_m)
+	var rank := {"s": 0, "m": 1, "l": 2}
+	var taken := {}
+	for h: Dictionary in hulls.values():
+		taken[str(h.get("cradle", ""))] = true
+	for c: Array in hull_cradles():
+		if int(rank[c[1]]) >= int(rank[need]) and not taken.has(str(c[0])):
+			return str(c[0])
+	return ""
+
+
+## A contract's whole ship or wreck is due (the host): onto a free cradle that fits it, and
+## Contracts hears it is in. With no cradle free it waits for one (a job closing frees its
+## cradle); with the apron or this flag off it is in at once, with nothing to show.
+func _hull_due(job_id: String, subject: Dictionary) -> void:
+	if _net != null and not bool(_net.call("is_host")):
+		return
+	if not Flags.is_on("ship_bay.hulls_on_cradles") or not Flags.is_on("ship_bay.apron"):
+		_landed(job_id)
+		return
+	var cradle := free_cradle_for(float(subject.get("mass_kg", 0.0)), hull_length(subject))
+	if cradle == "":
+		hull_queue.append([job_id, subject.duplicate(true)])
+		return
+	_send_hull({"job": job_id, "hull": {"design": str(subject.get("design", "")), "seed": int(subject.get("seed", 0)),
+			"events": subject.get("events", ""), "name": str(subject.get("name", "")), "type": str(subject.get("type", "wreck")),
+			"mass_kg": float(subject.get("mass_kg", 0.0)), "cradle": cradle}})
+	_landed(job_id)
+
+
+## A hull's length (z) from its design file's bounds, metres; 0 when it has none.
+static func hull_length(subject: Dictionary) -> float:
+	var f := VsShipImport.design_source(str(subject.get("design", "")))
+	var b: Dictionary = f.get("derived", {}).get("bounds", {})
+	var size: Array = b.get("size", [0, 0, 0])
+	return float(size[2]) if size.size() > 2 else 0.0
+
+
+func _landed(job_id: String) -> void:
+	if _contracts and _contracts.has_method("subject_landed"):
+		_contracts.call("subject_landed", job_id)
+
+
+## A job is over: its hull leaves its cradle, and the next one waiting takes a cradle.
+func _on_job_closed(job_id: String) -> void:
+	if _net != null and not bool(_net.call("is_host")):
+		return
+	hull_queue = hull_queue.filter(func(q: Array) -> bool: return str(q[0]) != job_id)
+	if hulls.has(job_id):
+		_send_hull({"job": job_id, "hull": {}})
+	var waiting := hull_queue.duplicate()
+	hull_queue.clear()
+	for q: Array in waiting:
+		_hull_due(str(q[0]), q[1])
+
+
+func _send_hull(payload: Dictionary) -> void:
+	if _net:
+		_net.call("request", "ship_bay.hull", payload)
+	else:
+		_apply_hull(payload)
+
+
+func _apply_hull(payload: Dictionary) -> void:
+	var job := str(payload.get("job", ""))
+	var hull: Dictionary = payload.get("hull", {})
+	if hull.is_empty():
+		hulls.erase(job)
+	else:
+		hulls[job] = hull.duplicate(true)
+	hulls_changed.emit()
 
 
 # --- Selling stock to other companies (Business) --------------------------------------------
@@ -2043,12 +2170,21 @@ func _apply_collect(payload: Dictionary) -> void:
 
 func _check_lift_off(_sender: int, payload: Dictionary) -> Variant:
 	var c: Dictionary = _stock.crates.get(str(payload.get("crate_id", "")), {})
+	if int(payload.get("qty", 0)) < 0:
+		return "bad count"
 	return payload if TROLLEYS.has(str(c.get("carrier", ""))) else "not on a trolley"
 
 
 func _apply_lift_off(payload: Dictionary) -> void:
 	var id := str(payload["crate_id"])
-	if _stock.crates.get(id, {}).is_empty():
+	var c: Dictionary = _stock.crates.get(id, {})
+	if c.is_empty():
+		return
+	var qty := int(payload.get("qty", 0))
+	if qty > 0 and qty < int(c.get("qty", 1)):
+		# Some of a stack: the rest stays on the trolley.
+		c["qty"] = int(c["qty"]) - qty
+		stock_changed.emit()
 		return
 	_lifted[id] = true
 	_stock.collect(id)

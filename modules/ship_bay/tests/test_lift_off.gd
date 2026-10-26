@@ -56,6 +56,14 @@ func run_tests() -> void:
 	var on_left := func(cid: String, _tid: String) -> void: left.append(cid)
 	bus.deck_part_left.connect(on_left)
 	check(not bus.lift_off_trolley("no-such-crate"), "a crate that isn't on a trolley can't be lifted off")
+	# A stack of the same item: one comes off, the rest stays aboard.
+	var stock: Variant = bus.get("_stock")
+	stock.crates[crate]["qty"] = 3
+	check(bus.lift_off_trolley(crate, 1), "one item of a stack can be lifted off")
+	await frames(2)
+	var rest: Dictionary = bus.delivered_crates().get(crate, {})
+	check(int(rest.get("qty", 0)) == 2 and str(rest.get("carrier", "")) == carrier and not bus.lifted_off(crate),
+			"the rest of the stack stays on the trolley: %s" % [rest])
 	check(bus.lift_off_trolley(crate), "a player's beam lifts the crate off")
 	await frames(2)
 	check(bus.crate_info(crate).is_empty() and not bus.trolley_load(carrier).has(crate) and bus.lifted_off(crate),
