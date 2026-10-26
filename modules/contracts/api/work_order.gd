@@ -39,7 +39,7 @@ const WANT_TYPES: PackedStringArray = ["part", "material", "condition", "gone"]
 ## Who keeps whatever `wants` does not name: "bsx" or "client".
 @export var keeps := "bsx"
 ## Hazards the subject carries: "fuel", "coolant", "power", "weapons", "pressure".
-@export var hazards: PackedStringArray = []
+@export var hazards: PackedStringArray = PackedStringArray()
 ## {company, display_name, game ("void_salvage" or "bsx_generated")}.
 @export var client: Dictionary = {}
 ## "<company>/<design>", for example "rook_salvage/kestrel".
