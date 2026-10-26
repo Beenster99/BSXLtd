@@ -11,7 +11,7 @@ extends Resource
 ## XP for a joint of quality 1.0.
 @export var xp_per_joint := 10
 ## Total XP needed for each level: [100, 250] means level 1 at 100 XP, level 2 at 250.
-@export var xp_per_level: PackedInt32Array = []
+@export var xp_per_level: PackedInt32Array = PackedInt32Array()
 @export var perks: Array[ProgressionPerk] = []
 
 

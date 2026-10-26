@@ -12,7 +12,7 @@ enum Kind { TOOL, YARD }
 ## The tool or yard feature it improves ("torque_wrench", "bay_crane").
 @export var target_id: StringName = &""
 ## Upgrade ids that must be owned first.
-@export var requires: PackedStringArray = []
+@export var requires: PackedStringArray = PackedStringArray()
 @export var price_ref: StringName = &""
 @export var effect_key: StringName = &""
 @export var value := 0.0
