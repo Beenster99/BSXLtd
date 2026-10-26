@@ -47,7 +47,7 @@ func _test_without_business() -> void:
 
 	check(not bus.advance(ID, ContractJob.IN_BAY), "can't skip ahead to in_bay")
 	check(bus.advance(ID, ContractJob.PARTS_READY), "offered straight to parts_ready while Business is off")
-	check(bus.advance(ID, ContractJob.IN_BAY) and bus.advance(ID, ContractJob.IN_PROGRESS), "into the bay and working")
+	check(bus.get_job(ID).state == ContractJob.IN_PROGRESS, "into the bay and working by itself")
 	bus.set_change_status(ID, "c1", ChangeItem.STRIPPED)
 	bus.record_removal(ID, "c1", 0.75, "returned")
 	bus.set_change_status(ID, "c1", ChangeItem.INSTALLED)
