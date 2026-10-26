@@ -8,7 +8,7 @@ extends Resource
 @export var version := "0.0.0"
 ## Module ids this module may use (through their api/ folders only). Every module may use
 ## core/api and ui/api without listing them.
-@export var depends_on: PackedStringArray = []
+@export var depends_on: PackedStringArray = PackedStringArray()
 ## Flag that switches the module on; usually the id.
 @export var flag := ""
 ## Script under api/ that Modules instances as the module's bus node (signals plus a

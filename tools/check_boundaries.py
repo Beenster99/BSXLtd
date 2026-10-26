@@ -121,11 +121,30 @@ def check(root: Path) -> list:
     return problems
 
 
+# Godot's export (text .tres to binary) empties an exported Packed*Array whose script default
+# is written as an array literal ("= []", "= ["new"]"), so release builds lose those values.
+# Write the default as PackedStringArray() / PackedStringArray(["new"]) instead.
+PACKED_LITERAL_RE = re.compile(r"^\s*@export(?:_\w+)?(?:\(.*?\))?\s+var\s+\w+\s*:\s*Packed\w+Array\s*=\s*\[")
+
+
+def packed_literals(root: Path) -> list[str]:
+    found = []
+    for f in sorted((root / "modules").rglob("*.gd")):
+        for lineno, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if PACKED_LITERAL_RE.match(line):
+                found.append(f"{f.relative_to(root)}:{lineno}: exported Packed*Array default written as [...] "
+                             "is emptied in release builds; use PackedXArray(...)")
+    return found
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent)
     problems = check(root) + name_clashes(root)
     for p in problems:
         print(p)
+    # Warnings for now, while each module fixes its own; becomes a problem once they're gone.
+    for w in packed_literals(root):
+        print("WARNING: " + w)
     if problems:
         print(f"{len(problems)} module boundary problem(s).")
         return 1
