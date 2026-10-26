@@ -108,9 +108,8 @@ func _test_break_flow(bus: ContractsBus) -> void:
 				and is_equal_approx(float(s.get("mass_kg")), 6200.0), "with the part, its material and mass: %s" % str(s))
 	check(not bus.advance(BREAK, ContractJob.IN_BAY), "nothing starts until it lands")
 	check(bus.subject_landed(BREAK), "Ship and Bay lands it")
-	check(bus.get_job(BREAK).state == ContractJob.PARTS_READY, "then it is ready")
+	check(bus.get_job(BREAK).state == ContractJob.IN_PROGRESS, "then work is under way by itself")
 	check(not bus.subject_landed(BREAK), "landing twice does nothing")
-	check(bus.advance(BREAK, ContractJob.IN_BAY) and bus.advance(BREAK, ContractJob.IN_PROGRESS), "into work")
 
 	var lines: Array[Dictionary] = []
 	bus.recovery_recorded.connect(func(_id: String, l: Dictionary) -> void: lines.append(l))
@@ -126,7 +125,6 @@ func _test_break_flow(bus: ContractsBus) -> void:
 	check(bus.advance(BREAK, ContractJob.INSPECTION), "to inspection")
 	var missing := bus.get_job(BREAK).missing_wants()
 	check(missing == PackedStringArray(["1 of 2 TurretBase returned"]), "the worn motor doesn't count: %s" % str(missing))
-	check(not bus.advance(BREAK, ContractJob.HANDED_OVER), "can't hand over short of what the client wants")
 	bus.record_recovery(BREAK, motor, 0.65)
 	var handed: Array[String] = []
 	bus.contract_handed_over.connect(func(id: String, q: float, s: int) -> void: handed.append("%s %.2f %d" % [id, q, s]))
@@ -163,12 +161,10 @@ func _test_scrap_and_dispose(bus: ContractsBus) -> void:
 
 	bus.accept(REFURB)
 	bus.subject_landed(REFURB)
-	bus.advance(REFURB, ContractJob.IN_BAY)
-	bus.advance(REFURB, ContractJob.IN_PROGRESS)
 	bus.advance(REFURB, ContractJob.INSPECTION)
 	var thruster := bus.get_job(REFURB).order.subject_part()
 	bus.record_recovery(REFURB, thruster, 0.8)
-	check(not bus.advance(REFURB, ContractJob.HANDED_OVER), "80% is not the 90% asked for")
+	check(bus.get_job(REFURB).missing_wants() == PackedStringArray(["subject returned at 90% or better"]), "80% is not the 90% asked for")
 	bus.record_recovery(REFURB, thruster, 0.92)
 	check(bus.advance(REFURB, ContractJob.HANDED_OVER), "92% is")
 

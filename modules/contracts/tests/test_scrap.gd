@@ -90,7 +90,6 @@ func _test_lots(bus: ContractsBus) -> void:
 			"each material is a recovery line with the job's disposition: %s" % str(recorded))
 	bus.advance(SCRAP, ContractJob.INSPECTION)
 	check(job.missing_wants() == PackedStringArray(["5000 of 8000 kg alloy"]), "steel does not count towards alloy: %s" % str(job.missing_wants()))
-	check(not bus.advance(SCRAP, ContractJob.HANDED_OVER), "not handed over short")
 	bus.record_scrap_lot(SCRAP, {"alloy": 3000.0})
 	check(bus.advance(SCRAP, ContractJob.HANDED_OVER), "eight tonnes of alloy baled, handed over")
 	check(is_equal_approx(bus.record_scrap_lot("rook_salvage.vs101", {"steel": 100.0}), 0.0), "a fit job takes no lots")

@@ -37,6 +37,8 @@ signal recovery_recorded(job_id: String, line: Dictionary)
 signal standing_changed(client_id: String, points: int, level: int)
 signal offer_expired(job_id: String)
 signal cycle_advanced(cycle: int)
+## The whole board came in from the host (a join, or any change there): panels redraw.
+signal board_changed
 
 const SAVE_VERSION := 1
 const NO_DUE_DAY := 1_000_000
@@ -93,8 +95,9 @@ func register_module() -> void:
 			advance_cycle(1)
 	if Flags.is_on(DEBUG_FLAG) and Flags.is_on(CLIENTS_FLAG):
 		Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Contracts", _debug_section, 30)
-		if not Modules.modules_ready.is_connected(_hook_net):
-			Modules.modules_ready.connect(_hook_net)
+	if not Modules.modules_ready.is_connected(_hook_net):
+		Modules.modules_ready.connect(_hook_net)
+	set_process(true)
 
 
 func unregister_module() -> void:
@@ -107,7 +110,9 @@ func unregister_module() -> void:
 	Menu.unregister_settings_section(Menu.DEBUG, DEBUG_SECTION)
 	var net := _net()
 	if net:
-		net.call("unregister_event", DEBUG_EVENT)
+		for e in [DEBUG_EVENT, ACTION_EVENT, SYNC_EVENT]:
+			net.call("unregister_event", e)
+		net.call("unregister_snapshot_provider", NET_SECTION)
 
 
 ## Business runs the day clock when it is on; its day_closed is the board's cycle. Found
@@ -120,6 +125,8 @@ func _hook_clock() -> void:
 		business.connect("day_closed", _on_day_closed)
 	if business.has_method("labour_price"):
 		set_pricer(func(kind: String, size: String, t: float) -> int: return int(business.call("labour_price", kind, size, t)))
+	if business.has_signal("delivery_arrived") and not business.is_connected("delivery_arrived", _on_delivery_arrived):
+		business.connect("delivery_arrived", _on_delivery_arrived)
 	if not _part_list.is_valid() and business.has_method("get_catalogue"):
 		var catalogue: Variant = business.call("get_catalogue")
 		if catalogue != null and catalogue.has_method("has_part"):
@@ -128,6 +135,15 @@ func _hook_clock() -> void:
 
 func _on_day_closed(day: int) -> void:
 	advance_cycle(day + 1)
+
+
+## Business: a parts order arrived. The fit job it was for has its parts and work starts.
+func _on_delivery_arrived(order: Object, _damaged: Array) -> void:
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
+	var job := get_job(String(order.get("contract_id")))
+	if job != null and job.state == ContractJob.ACCEPTED:
+		advance(job.job_id, ContractJob.PARTS_READY)
 
 
 ## Callable(kind, size, t) -> int: what a generated offer pays. Business wires its labour
@@ -258,6 +274,13 @@ func job_ids() -> PackedStringArray:
 
 
 func set_active_job(job_id: String) -> void:
+	if _online_client():
+		_net().call("request", ACTION_EVENT, {"op": "activate", "job": job_id})
+		return
+	_set_active(job_id)
+
+
+func _set_active(job_id: String) -> void:
 	if job_id != "" and not _jobs.has(job_id):
 		return
 	if job_id == _active:
@@ -353,14 +376,31 @@ func seed_board() -> void:
 ## is none. A non-fit job's subject sets off at once: the job goes to arriving and
 ## subject_due tells Ship and Bay what to land.
 func accept(job_id: String) -> bool:
+	if _online_client():
+		if get_job(job_id) == null or get_job(job_id).state != ContractJob.OFFERED:
+			return false
+		_net().call("request", ACTION_EVENT, {"op": "accept", "job": job_id})
+		return true
 	if not advance(job_id, ContractJob.ACCEPTED):
 		return false
 	if get_active_job() == null:
-		set_active_job(job_id)
+		_set_active(job_id)
 	var job := get_job(job_id)
-	if not job.order.is_fit() and advance(job_id, ContractJob.ARRIVING):
-		subject_due.emit(job_id, subject_of(job))
+	if not job.order.is_fit():
+		if advance(job_id, ContractJob.ARRIVING):
+			subject_due.emit(job_id, subject_of(job))
+	elif not needs_parts(job) or not Modules.is_loaded("business"):
+		# Nothing to order: the ship is the yard's to work on as soon as it is in.
+		advance(job_id, ContractJob.PARTS_READY)
 	return true
+
+
+## Whether BSX has parts to order before a fit job can start (a manifest line it supplies).
+func needs_parts(job: ContractJob) -> bool:
+	for m: ManifestLine in job.order.manifest:
+		if m.supplied_by == "bsx":
+			return true
+	return false
 
 
 ## The subject as Ship and Bay lands it (see subject_due).
@@ -438,6 +478,14 @@ const DEBUG_FLAG := "contracts.debug"
 const DEBUG_SECTION := "contracts_debug"
 ## The host-applied event a call-in goes through in multiplayer.
 const DEBUG_EVENT := "contracts.call_in"
+## Multiplayer: a player's board action (accept, make active), validated by the host.
+const ACTION_EVENT := "contracts.action"
+## The host's whole board, sent whenever it changes (SYNC_INTERVAL s apart at most).
+const SYNC_EVENT := "contracts.sync"
+const SYNC_INTERVAL := 0.5
+const NET_SECTION := "contracts"
+var _sync_hash := 0
+var _sync_clock := 0.0
 ## Called-in offers take slots from here up, clear of the cycle's own (slot 0).
 const CALL_IN_SLOT := 100
 ## Tiers a client posts at: tier 1 for New and Known, up to tier 3 for Preferred.
@@ -450,8 +498,84 @@ func _net() -> Node:
 
 func _hook_net() -> void:
 	var net := _net()
-	if net and net.has_method("register_event"):
+	if net == null or not net.has_method("register_event"):
+		return
+	if Flags.is_on(DEBUG_FLAG) and Flags.is_on(CLIENTS_FLAG):
 		net.call("register_event", DEBUG_EVENT, _apply_call_in, _validate_call_in)
+	net.call("register_event", ACTION_EVENT, _apply_action, _validate_action)
+	net.call("register_event", SYNC_EVENT, _apply_sync)
+	if net.has_method("register_snapshot_provider"):
+		net.call("register_snapshot_provider", NET_SECTION, self)
+
+
+## True on a player's machine in an online game that another machine hosts: the board is
+## the host's, so actions go up as requests and the board comes down as a whole.
+func _online_client() -> bool:
+	var net := _net()
+	return net != null and net.has_method("is_online") and bool(net.call("is_online")) and not bool(net.call("is_host"))
+
+
+func _online_host() -> bool:
+	var net := _net()
+	return net != null and net.has_method("is_online") and bool(net.call("is_online")) and bool(net.call("is_host"))
+
+
+## The host sends the board to everyone whenever it changes, however it changed (a cycle,
+## a delivery, a survey, a player's action), so every player sees the same jobs.
+func _process(delta: float) -> void:
+	_sync_clock += delta
+	if _sync_clock < SYNC_INTERVAL:
+		return
+	_sync_clock = 0.0
+	if not _online_host():
+		return
+	var data := save_data()
+	var h := hash(data)
+	if h == _sync_hash:
+		return
+	_sync_hash = h
+	_net().call("host_emit", SYNC_EVENT, {"data": data})
+
+
+func _apply_sync(p: Dictionary) -> void:
+	if not _online_client() or not p.get("data") is Dictionary:
+		return
+	load_data(p.data, SAVE_VERSION)
+	board_changed.emit()
+
+
+## Late joiners get the host's board.
+func get_net_snapshot() -> Dictionary:
+	return {"data": save_data()}
+
+
+func apply_net_snapshot(data: Dictionary) -> void:
+	if data.get("data") is Dictionary:
+		load_data(data.data, SAVE_VERSION)
+		board_changed.emit()
+
+
+func _validate_action(_sender: int, p: Dictionary) -> Variant:
+	var op := str(p.get("op", ""))
+	var job := get_job(str(p.get("job", "")))
+	if job == null:
+		return "no such job"
+	match op:
+		"accept":
+			return p if job.state == ContractJob.OFFERED else "that job is no longer on offer"
+		"activate":
+			return p if job.state != ContractJob.OFFERED else "accept the job first"
+	return "unknown board action"
+
+
+func _apply_action(p: Dictionary) -> void:
+	if _online_client():
+		return
+	match str(p.get("op", "")):
+		"accept":
+			accept(str(p.get("job", "")))
+		"activate":
+			_set_active(str(p.get("job", "")))
 
 
 ## Asks for an offer from a client at a tier (1 to 3), whatever BSX's standing with them:
@@ -564,8 +688,6 @@ func advance(job_id: String, to_state: String, by_client := false) -> bool:
 			and not Modules.is_loaded("business")
 	if not skip_business and not ContractJob.can_move(from_state, to_state):
 		return false
-	if to_state == ContractJob.HANDED_OVER and not job.missing_wants().is_empty():
-		return false
 	job.state = to_state
 	if to_state == ContractJob.IN_PROGRESS and from_state == ContractJob.INSPECTION:
 		# Rework: whatever failed inspection is back to installed for another go.
@@ -574,6 +696,12 @@ func advance(job_id: String, to_state: String, by_client := false) -> bool:
 				set_change_status(job_id, id, ChangeItem.INSTALLED)
 	job_state_changed.emit(job_id, from_state, to_state)
 	_emit_milestone(job, to_state, by_client, from_state != ContractJob.OFFERED)
+	if to_state == ContractJob.PARTS_READY:
+		# The subject (or the parts) are in the yard: the job is in the bay and under way,
+		# so the crew can work it and call the final survey when they are done.
+		advance(job_id, ContractJob.IN_BAY)
+	elif to_state == ContractJob.IN_BAY:
+		advance(job_id, ContractJob.IN_PROGRESS)
 	return true
 
 
@@ -588,7 +716,14 @@ func _emit_milestone(job: ContractJob, to_state: String, by_client: bool, from_s
 			var c := job.order.commercial
 			contract_accepted.emit(job.job_id, int(c.get("price", 0)), int(c.get("due_day", NO_DUE_DAY)))
 		ContractJob.HANDED_OVER:
-			var quality := job.mean_quality() if job.order.is_fit() else job.returned_condition()
+			# What the client wanted and never got back is a snag each and cuts the quality
+			# the pay follows; the job still closes, so a crew can always finish a contract.
+			var missing := job.missing_wants()
+			var quality := job.mean_quality()
+			if not job.order.is_fit():
+				var wanted := maxi(job.order.wants.size(), 1)
+				quality = job.returned_condition() * float(wanted - missing.size()) / float(wanted)
+			job.open_snags += missing.size()
 			contract_handed_over.emit(job.job_id, quality, job.open_snags)
 			add_standing(String(job.order.client.get("company", "")),
 					maxi(ContractClients.HANDOVER_MIN, int(roundf(ContractClients.HANDOVER_POINTS * quality))))
@@ -779,7 +914,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 		else:
 			push_warning("Contracts: dropped saved job %s: %s" % [id, "; ".join(errors)])
 	_active = ""
-	set_active_job(String(data.get("active", "")))
+	_set_active(String(data.get("active", "")))
 	_standing = {}
 	for id: String in data.get("standing", {}):
 		_standing[id] = int(data["standing"][id])

@@ -25,6 +25,7 @@ func _init(p_bus: ContractsBus, p_glass := true) -> void:
 	bus.contract_imported.connect(func(_id: String) -> void: refresh())
 	bus.job_state_changed.connect(func(_id: String, _a: String, _b: String) -> void: refresh())
 	bus.active_job_changed.connect(func(_id: String) -> void: refresh())
+	bus.board_changed.connect(refresh)
 	refresh()
 
 

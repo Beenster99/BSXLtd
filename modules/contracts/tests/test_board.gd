@@ -41,7 +41,7 @@ func run_tests() -> void:
 	bus.contract_accepted.connect(func(id: String, v: int, d: int) -> void: accepted.append("%s %d %d" % [id, v, d]))
 	if accept:
 		accept.pressed.emit()
-	check(bus.get_job("ashfall_crew.vs102").state == ContractJob.ACCEPTED, "ACCEPT JOB accepts")
+	check(bus.get_job("ashfall_crew.vs102").state == ContractJob.IN_PROGRESS, "ACCEPT JOB accepts, and with Business off work starts at once")
 	check(accepted == ["ashfall_crew.vs102 9800 5"], "contract_accepted for Business: %s" % str(accepted))
 	check(bus.get_active_job() != null and bus.get_active_job().job_id == "ashfall_crew.vs102", "first job taken becomes active")
 	check(panel.jobs().size() == 3, "it leaves the offers")
