@@ -1,17 +1,16 @@
 extends Control
 ## What the hall TVs show when nobody is using them: the yard terminal's channels as a
-## broadcast in big type, readable across a hall. ORDERS shows today's best buys, GOODS IN
-## what is on its way, ACCOUNTS the money. Channels change on their own; a bar along the
+## broadcast in big type, readable across a hall. ORDERS shows today's best buys, ACCOUNTS
+## the money. Channels change on their own; a bar along the
 ## bottom shows when. The full terminal (terminal_screen.gd) opens when a player walks up.
 
 const Look := preload("res://modules/business/internal/ui/terminal_look.gd")
-const CHANNELS: PackedStringArray = ["orders", "goods", "accounts"]
-const TITLES := {"orders": "BEST BUYS TODAY", "goods": "GOODS IN", "accounts": "ACCOUNTS"}
-const TABS := {"orders": "BUY/SELL", "goods": "GOODS IN", "accounts": "ACCOUNTS"}
+const CHANNELS: PackedStringArray = ["orders", "accounts"]
+const TITLES := {"orders": "BEST BUYS TODAY", "accounts": "ACCOUNTS"}
+const TABS := {"orders": "BUY/SELL", "accounts": "ACCOUNTS"}
 ## How long each channel stays up (seconds).
 const CYCLE_SECONDS := 9.0
 const BUYS := 6
-const ARRIVALS := 5
 const LEDGER_LINES := 5
 
 var bus: BusinessBus
@@ -81,8 +80,6 @@ func refresh() -> void:
 	match channel:
 		"orders":
 			_body.add_child(_orders())
-		"goods":
-			_body.add_child(_goods())
 		_:
 			_body.add_child(_accounts())
 
@@ -215,32 +212,6 @@ func _orders() -> Control:
 		row.add_child(_cell("-%d%%" % off if off > 0 else "", 90, Look.GOOD, "mono_bold", 26))
 		row.add_child(_cell("CR " + Look.money(l.unit_price), 190, Look.ORANGE, "mono_bold", 32))
 		list.add_child(row.get_parent())
-	return list
-
-
-func _goods() -> Control:
-	var list := VBoxContainer.new()
-	list.add_theme_constant_override("separation", 8)
-	var open := bus.get_orders(PartsOrder.State.PLACED)
-	if open.is_empty():
-		list.add_child(_big_note("Nothing on order.", "New games start with an empty store: order parts at any screen."))
-		return list
-	list.add_child(Look.label("ARRIVING IN THE DELIVERIES HALL", "display_medium", 24, Look.DIM))
-	for o: PartsOrder in open.slice(0, ARRIVALS):
-		var row := _plate_row()
-		var names := PackedStringArray()
-		for line in o.lines:
-			names.append("%d× %s" % [line.qty, bus.part_name(line.part)])
-		var what := Look.label(", ".join(names), "display_bold", 30, Look.TEXT)
-		what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		what.clip_text = true
-		row.add_child(what)
-		var prefix := "LATE  " if o.delayed else ""
-		row.add_child(_count_down(_cell(prefix + bus.arrival_text(o.eta_minute), 300,
-				Look.BAD if o.delayed else Look.ORANGE, "mono_bold", 30), o.eta_minute, prefix))
-		list.add_child(row.get_parent())
-	if open.size() > ARRIVALS:
-		list.add_child(Look.label("+ %d more on order" % (open.size() - ARRIVALS), "display_medium", 24, Look.DIM))
 	return list
 
 

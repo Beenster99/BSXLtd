@@ -243,11 +243,9 @@ func _update_pointer() -> void:
 	var hit := aim()
 	var was := aimed
 	aimed = hit[0]
-	# Tools leave the click alone while it's on a TV.
-	if aimed >= 0 and was < 0:
-		HudSlots.claim_pointer(POINTER_ID)
-	elif aimed < 0 and was >= 0:
-		HudSlots.release_pointer(POINTER_ID)
+	# The pointer is never claimed while a TV is only aimed at: a claim stops the walker
+	# looking round, so the pointer (which follows the view) would freeze on the spot. Clicks
+	# on the TV are taken in _input before tools see them.
 	if aimed >= 0:
 		var moved: bool = aimed != was or (hit[1] as Vector2).distance_to(aimed_px) > 0.5
 		aimed_px = hit[1]
@@ -377,6 +375,8 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 
 	var vp := SubViewport.new()
 	vp.name = "Viewport"
+	# Tooltips and drop-downs open inside the TV, never as windows of their own.
+	vp.gui_embed_subwindows = true
 	vp.size = SCREEN_PX
 	vp.disable_3d = true
 	vp.transparent_bg = false
