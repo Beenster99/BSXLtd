@@ -3,8 +3,9 @@ extends Node3D
 ## A screen in the world that you use by looking at it: any Control shown on a lit panel
 ## (a SubViewport on a quad, in a slim gloss bezel). Aim the view's centre at it within
 ## `reach` (or the free mouse, when the mouse is free) and an orange pointer follows on the
-## screen; left click presses what's under it. While it's aimed the screen claims the pointer
-## (HudSlots.claim_pointer), so tools and benches don't fire on the same click.
+## screen; left click presses what's under it. It takes the clicks it gets in _input, so tools
+## and benches (_unhandled_input) don't fire on the same click. It doesn't claim the pointer:
+## a claim stops the view turning, and the pointer follows the view.
 ##   var tv := TouchScreen.new(HoloTerminal.new(false, "HALL TERMINAL"), Vector2i(1280, 720), Vector2(2.4, 1.35))
 ##   add_child(tv)   # the screen faces +Z
 ## For buttons on machines, a mini LED panel of touch buttons; left click toggles a toggle:
@@ -186,10 +187,7 @@ func _set_aimed(on: bool) -> void:
 	if on == _aimed:
 		return
 	_aimed = on
-	if on:
-		HudSlots.claim_pointer(_claim_id())
-	else:
-		HudSlots.release_pointer(_claim_id())
+	if not on:
 		_held = 0
 		if viewport.is_inside_tree():  # the pointer leaves, so nothing stays lit as hovered
 			var away := InputEventMouseMotion.new()
