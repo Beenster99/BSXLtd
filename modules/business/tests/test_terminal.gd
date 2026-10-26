@@ -178,7 +178,15 @@ func run_tests() -> void:
 		front.call("_input", click)
 		await frames(2)
 		check(bus.wrist_basket.size() == 1, "clicking + with the pointer adds to the order: %s" % str(bus.wrist_basket))
-		check(HudSlots.pointer_claimed(), "tools leave the click alone while a TV is aimed at")
+		# beenster, 0.3.19: the pointer froze on a TV. Aiming mustn't claim the mouse (a claim
+		# stops the walker looking round, and the pointer follows the view).
+		check(not HudSlots.pointer_claimed(), "aiming at a TV leaves looking round free")
+		var was_at: Vector2 = front.get("aimed_px")
+		aim_at.call(px * Vector2(0.25, 0.3))
+		await frames(2)
+		var pointer := tv0.get_node("Viewport/Pointer") as Control
+		check(front.get("aimed") == 0 and was_at.distance_to(front.get("aimed_px")) > 50.0 and pointer.position.distance_to(px * Vector2(0.25, 0.3)) < 4.0,
+				"so the pointer moves across the TV with the view: %s" % str(pointer.position))
 		var full: Control = front.call("open_full", 0)
 		check(full is HoloTerminal and full.get("channel") == "business.orders" and bus.wrist_basket.size() == 1 and not front.call("is_awake", 0),
 				"F takes it full screen with the order")
@@ -193,8 +201,8 @@ func run_tests() -> void:
 	check(front.get("overlay") != null and term != null, "the terminal opens full size")
 	await frames(2)
 	var tabs := term.find_children("*", "Button", true, false).map(func(b): return b.text)
-	check(tabs.any(func(x): return "GOODS IN" in str(x).to_upper()) and tabs.any(func(x): return "ACCOUNTS" in str(x).to_upper()),
-			"every wrist channel is a tab, goods in too: %s" % str(tabs))
+	check(tabs.any(func(x): return "ACCOUNTS" in str(x).to_upper()) and not tabs.any(func(x): return "GOODS IN" in str(x).to_upper()),
+			"every wrist channel is a tab, and goods in is gone: %s" % str(tabs))
 	var screen: Control = term.find_child("Channel", true, false)
 	var picks := bus.get_listings().filter(func(l): return not l.id.begins_with("S-") and l.unit_price < 2000 and l.available >= 3)
 	screen.call("add_to_basket", picks[0].id, 1)

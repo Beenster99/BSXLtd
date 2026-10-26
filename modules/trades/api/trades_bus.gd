@@ -21,6 +21,12 @@ signal part_beamed(peer_id: int, slot_id: String, xform: Transform3D, holding: b
 signal unit_joint_changed(rig_id: String, joint_id: String, made: bool, quality: float)
 ## The unit on a rig changed: its state as unit_state() gives it ({} once it's off the rig).
 signal unit_changed(rig_id: String, state: Dictionary)
+## trades.parts_on_decks: a part beamed onto a trolley (Ship and Bay's part_beamed, its crate
+## `crate_id`) has landed and come to rest on that trolley's `deck`, as itself: the loose part
+## `body` stays, stacks with the others and rides with the deck. Ship and Bay draws no crate for
+## it, and its deck_part_left(crate_id, trolley_id) when the crate leaves the trolley sends the
+## body away.
+signal part_on_deck(crate_id: String, body: Node3D, deck: Node3D)
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
@@ -56,6 +62,7 @@ var _sites: Dictionary = {}
 var _results: Dictionary = {}
 var _modifiers: Dictionary = {}  # str(player_id) -> {effect_key: value}
 var _units: Dictionary = {}  # rig_id -> unit_state()
+var _deck_parts: Dictionary = {}  # crate_id -> the loose part on a trolley's deck
 
 
 func register_module() -> void:
@@ -102,6 +109,42 @@ func _on_shipyard_ready(yard: Node3D) -> void:
 	rig.name = YARD_RIG
 	rig.add_to_group(YARD_GUEST_GROUP)
 	yard.add_child(rig)
+
+
+## The part itself on a trolley's deck for this crate (trades.parts_on_decks), or null: then
+## there is no body (it never landed, or the yard was rebuilt) and the crate is drawn as before.
+func deck_part(crate_id: String) -> Node3D:
+	var body: Node3D = _deck_parts.get(crate_id)
+	if body and not is_instance_valid(body):
+		_deck_parts.erase(crate_id)
+		return null
+	return body
+
+
+## The crate has left its trolley: the part on the deck goes (Ship and Bay's deck_part_left does
+## this; for anyone else, and tests).
+func release_deck_part(crate_id: String) -> void:
+	var body := deck_part(crate_id)
+	_deck_parts.erase(crate_id)
+	_landed.erase(crate_id)
+	if body:
+		body.queue_free()
+
+
+## Tools' own: a beamed part is going onto its trolley's deck (deck null), at rest on it, or
+## gone (body null).
+var _landed: Dictionary = {}  # crate_id -> true once part_on_deck went out
+
+
+func note_deck_part(crate_id: String, body: Node3D, deck: Node3D) -> void:
+	if body == null:
+		_deck_parts.erase(crate_id)
+		_landed.erase(crate_id)
+		return
+	_deck_parts[crate_id] = body
+	if deck and not _landed.has(crate_id):
+		_landed[crate_id] = true
+		part_on_deck.emit(crate_id, body, deck)
 
 
 func register_site(site: JointSite) -> void:

@@ -51,7 +51,7 @@ func _test_reading() -> void:
 			"and says both: %s" % str(reader.errors))
 	var good := base.duplicate()
 	good["kind"] = "scrap"
-	good["subject"] = {"type": "part", "component": {"id": "HullPlating", "material": "alloy"}, "condition": 0.2, "mass_kg": 500}
+	good["subject"] = {"type": "part", "component": {"id": "HullPlate", "material": "alloy"}, "condition": 0.2, "mass_kg": 500}
 	good["wants"] = [{"what": "material", "material": "alloy", "kg": 300}]
 	var o := reader.read(good)
 	check(o != null, "a scrap order with a part subject and a material want reads: %s" % str(reader.errors))
@@ -74,7 +74,7 @@ func _test_board(bus: ContractsBus) -> void:
 	check(local.size() == 4, "four local offers: %d" % local.size())
 	check(bus.get_job(BREAK) != null and bus.get_job(BREAK).order.kind == WorkOrder.BREAK, "the turret break job is on offer")
 	check(BoardPanel.job_title(bus.get_job(BREAK)) == "Break a naval turret", "title: %s" % BoardPanel.job_title(bus.get_job(BREAK)))
-	check(BoardPanel.job_title(bus.get_job(SCRAP)) == "Scrap hull plating", "scrap title: %s" % BoardPanel.job_title(bus.get_job(SCRAP)))
+	check(BoardPanel.job_title(bus.get_job(SCRAP)) == "Scrap hull plate", "scrap title: %s" % BoardPanel.job_title(bus.get_job(SCRAP)))
 	check(BoardPanel.job_title(bus.get_job(REFURB)) == "Refurbish a main thruster", "refurbish title")
 	check(BoardPanel.job_title(bus.get_job(DISPOSE)) == "Dispose of a fuel tank", "dispose title")
 	check(BoardPanel.subject_name(bus.get_job(BREAK).order) == "Bench", "a part job happens at the bench")
@@ -87,7 +87,7 @@ func _test_board(bus: ContractsBus) -> void:
 	var texts := PackedStringArray()
 	for l in panel.find_children("*", "Label", true, false):
 		texts.append((l as Label).text)
-	check("2 × Turret motor back, 60% or better" in texts, "docket lists what the client wants: %s" % str(texts))
+	check("2 × Turret base back, 60% or better" in texts, "docket lists what the client wants: %s" % str(texts))
 	check("BSX keeps the rest" in texts, "and who keeps the rest")
 	check(texts.has("WEAPONS") and texts.has("POWER"), "and the hazards")
 	panel.queue_free()
@@ -115,17 +115,17 @@ func _test_break_flow(bus: ContractsBus) -> void:
 	var lines: Array[Dictionary] = []
 	bus.recovery_recorded.connect(func(_id: String, l: Dictionary) -> void: lines.append(l))
 	var motor := ComponentRef.new()
-	motor.id = "TurretMotor"
+	motor.id = "TurretBase"
 	check(bus.record_recovery(BREAK, motor, 0.7), "a motor comes out")
 	check(bus.record_recovery(BREAK, motor, 0.4), "a worn one too")
 	var sight := ComponentRef.new()
-	sight.id = "Gunsight"
+	sight.id = "GunMount"
 	bus.record_recovery(BREAK, sight, 0.8)
 	bus.record_scrap(BREAK, "steel", 4100.0)
 	check(lines.size() == 4, "every recovery is announced")
 	check(bus.advance(BREAK, ContractJob.INSPECTION), "to inspection")
 	var missing := bus.get_job(BREAK).missing_wants()
-	check(missing == PackedStringArray(["1 of 2 TurretMotor returned"]), "the worn motor doesn't count: %s" % str(missing))
+	check(missing == PackedStringArray(["1 of 2 TurretBase returned"]), "the worn motor doesn't count: %s" % str(missing))
 	check(not bus.advance(BREAK, ContractJob.HANDED_OVER), "can't hand over short of what the client wants")
 	bus.record_recovery(BREAK, motor, 0.65)
 	var handed: Array[String] = []

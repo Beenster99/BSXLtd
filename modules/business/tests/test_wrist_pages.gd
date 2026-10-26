@@ -95,24 +95,8 @@ func run_tests() -> void:
 			"the Deliveries docket has on order and delivered chips")
 	orders.queue_free()
 
-	# Goods in: the store grouped by category, with chips and a search.
-	bus.add_stock("raw_steel", 420)
-	var goods := Wrist.new(bus, "goods", true)
-	goods.size = Vector2(860, 420)
-	add_child(goods)
-	await frames(2)
-	var store: VBoxContainer = goods.get("_store")
-	check(store.get_children().any(func(c: Node) -> bool: return c.name == "Heading_materials"), "raw materials under their own heading")
-	check(store.find_children("*", "Label", true, false).any(func(l: Label) -> bool: return l.text == "420 KG"), "kilos read as kilos")
-	goods.store_category = "materials"
-	goods.call("_refresh_goods")
-	check(store.get_children().filter(func(c: Node) -> bool: return c.name.begins_with("Heading_")).size() == 1, "a store category filters it")
-	goods.store_category = ""
-	goods.store_query = "zzz"
-	goods.call("_refresh_goods")
-	await frames(1)
-	check(store.find_children("*", "Label", true, false).any(func(l: Label) -> bool: return l.text == "Nothing matches."), "and the search")
-	goods.queue_free()
+	# Goods in is gone (beenster, 0.3.19): no wrist channel for it.
+	check(not BusinessBus.SCREEN_CHANNELS.has("business.goods"), "no Goods in page on the wrist")
 
 	# Accounts: money by kind over a period, and a graph.
 	bus.reset()

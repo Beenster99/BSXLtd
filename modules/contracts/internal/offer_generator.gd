@@ -19,6 +19,9 @@ var pricer: Callable
 ## baling kilograms of a material (scrap jobs pay by the tonne, plan stage S5); unset,
 ## SCRAP_PER_TONNE scaled by the material's price applies. Business tunes it.
 var scrap_pricer: Callable
+## Callable(id) -> bool: is this a real part (on the yard's parts list)? Unset, the tables
+## above are trusted; set, no offer ever asks for a part the callable refuses.
+var part_exists: Callable
 ## The processing fee for a tonne of mild steel, CR (dearer materials scale by their price).
 ## Below the broker's own price for the metal, so a client who keeps the metal pays BSX less
 ## than BSX would make keeping it.
@@ -38,11 +41,10 @@ const WRECK_EVENTS: Dictionary = {
 ## Fittings a break job asks back from a wreck, by part name in the ship file.
 ## Imported Void Salvage hulls carry the snake_case ones; BSX's generated ships also carry
 ## the CamelCase machinery and trade gear Shared Components fits them with.
-const WANTED_FITTINGS: PackedStringArray = ["galley", "bunks", "console", "map_screen", "monitor", "control_panel",
-		"breaker_panel", "reactor_cabinet", "bowsers", "hose_rack", "locker", "seat", "suit_stand",
-		"IonThruster", "TurbineEngine", "HydrogenEngine", "OvalEngine", "EngineBell", "Generator", "MachineUnit",
-		"SwitchCabinet", "BatteryRack", "DrillHead", "LandingClamp", "Searchlight", "Antenna", "SolarPanel", "Container",
-		"Turret", "RadarDish", "CraneBoom"]
+## Fittings a break job may ask for out of a wreck: every one is on Business's parts list
+## (the market catalogue), so the yard can always stock, value and sell what it strips.
+const WANTED_FITTINGS: PackedStringArray = ["IonThruster", "TurbineEngine", "HydrogenEngine", "Generator",
+		"BatteryRack", "LandingClamp", "Searchlight", "Antenna", "SolarPanel", "Container", "Turret"]
 ## Fittings whose presence on the subject is a hazard for the crew.
 const HAZARD_FITTINGS: Dictionary = {"reactor_cabinet": "power", "breaker_panel": "power", "bowsers": "fuel",
 		"Generator": "power", "jump_tank": "fuel", "RoofTank": "fuel", "Turret": "weapons"}
@@ -64,9 +66,13 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 	# BSX's own clients at tier two and up send whole ships and wrecks BSX makes itself.
 	if wrecks and String(client.get("game", "")) == "bsx_generated" and tier >= 2 and rng.randf() < 0.6:
 		return _whole_ship(client_id, client, cycle, slot, tier, kind, rng)
-	var part_id := String(parts[rng.randi_range(0, parts.size() - 1)])
+	var real: Array = parts.filter(func(id: String) -> bool: return listed(id))
+	if real.is_empty():
+		return {}
+	var part_id := String(real[rng.randi_range(0, real.size() - 1)])
 	var part: Dictionary = ContractClients.PARTS.get(part_id, {})
-	if kind == WorkOrder.BREAK and (part.get("yields", []) as Array).is_empty():
+	var yields: Array = (part.get("yields", []) as Array).filter(func(id: String) -> bool: return listed(id))
+	if kind == WorkOrder.BREAK and yields.is_empty():
 		kind = WorkOrder.SCRAP
 	var mass_range: Array = part.get("mass", [1000, 3000])
 	# Higher tiers send the bigger, better pieces and pay further up the band.
@@ -80,7 +86,6 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 	var wants: Array = []
 	match kind:
 		WorkOrder.BREAK:
-			var yields: Array = (part.get("yields", []) as Array).duplicate()
 			var n := mini(yields.size(), 1 + rng.randi_range(0, tier))
 			for i in n:
 				var y := String(yields[rng.randi_range(0, yields.size() - 1)])
@@ -110,6 +115,11 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier},
 		"commercial": commercial(kind, "small", t, wants, cycle + DUE_IN[clampi(tier, 1, 3)]),
 	}
+
+
+## True when id is a real part: on the parts list when one is wired, else in our own tables.
+func listed(id: String) -> bool:
+	return not part_exists.is_valid() or bool(part_exists.call(id))
 
 
 ## An offer's terms: labour by kind and size, plus, for a scrap job, the processing fee by
@@ -175,7 +185,7 @@ func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, t
 		WorkOrder.BREAK:
 			var pool: Array = []
 			for name: String in holds:
-				if name in WANTED_FITTINGS and not name in pool:
+				if name in WANTED_FITTINGS and listed(name) and not name in pool:
 					pool.append(name)
 			var n := mini(pool.size(), 1 + rng.randi_range(0, tier))
 			for i in n:

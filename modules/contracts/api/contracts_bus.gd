@@ -70,6 +70,8 @@ var _active := ""
 ## work order's overrides alone. Wired to Shared Components once that module is a dependency.
 var _component_exists: Callable
 var _library_spec: Callable
+## Callable(id) -> bool: is this a part the yard can buy and stock (Business's catalogue)?
+var _part_list: Callable
 ## client id -> standing points (S4).
 var _standing: Dictionary = {}
 ## The board's cycle: the game day when Business runs the clock (day_closed), else a count
@@ -118,6 +120,10 @@ func _hook_clock() -> void:
 		business.connect("day_closed", _on_day_closed)
 	if business.has_method("labour_price"):
 		set_pricer(func(kind: String, size: String, t: float) -> int: return int(business.call("labour_price", kind, size, t)))
+	if not _part_list.is_valid() and business.has_method("get_catalogue"):
+		var catalogue: Variant = business.call("get_catalogue")
+		if catalogue != null and catalogue.has_method("has_part"):
+			set_part_list(func(id: String) -> bool: return bool(catalogue.call("has_part", id)))
 
 
 func _on_day_closed(day: int) -> void:
@@ -141,6 +147,61 @@ func set_scrap_pricer(pricer: Callable) -> void:
 func set_component_library(exists: Callable, library_spec: Callable = Callable()) -> void:
 	_component_exists = exists
 	_library_spec = library_spec
+
+
+## Callable(id) -> bool: the yard's parts list, what Business can buy and stock. Business's
+## market catalogue is wired in once every module has loaded; tests pass their own. Once
+## set, no offer asks for a part off the list: the generator skips such parts and every
+## offer already on the board that names one is withdrawn.
+func set_part_list(exists: Callable) -> void:
+	_part_list = exists
+	_generator.part_exists = exists
+	_prune_unlisted()
+
+
+## The first part the order wants BSX to find, fit or return that is off the parts list,
+## or "" (also when no list is wired).
+func unlisted_part(order: WorkOrder) -> String:
+	if order == null or not _part_list.is_valid():
+		return ""
+	for c: ChangeItem in order.changes:
+		if c.install != null and c.install.id != "" and not _part_list.call(c.install.id):
+			return c.install.id
+	for m: ManifestLine in order.manifest:
+		if m.supplied_by == "bsx" and m.component != null and not _part_list.call(m.component.id):
+			return m.component.id
+	for w: Dictionary in order.wants:
+		if String(w.get("what", "")) != "part":
+			continue
+		var ref: Variant = w.get("component")
+		var id := ""
+		if ref is ComponentRef:
+			id = (ref as ComponentRef).id
+		elif ref is Dictionary:
+			id = String((ref as Dictionary).get("id", ""))
+		if id != "" and not _part_list.call(id):
+			return id
+	return ""
+
+
+## Withdraws every offer that asks for a part off the parts list (a board file naming a
+## part the yard can't buy, an offer generated before the list was wired). Host only.
+func _prune_unlisted() -> void:
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
+	var gone := PackedStringArray()
+	for id: String in _jobs.keys():
+		var job: ContractJob = _jobs[id]
+		if job.state != ContractJob.OFFERED:
+			continue
+		var missing := unlisted_part(job.order)
+		if missing == "":
+			continue
+		gone.append("%s (%s)" % [id, missing])
+		_jobs.erase(id)
+		offer_expired.emit(id)
+	if not gone.is_empty():
+		print("Contracts: withdrew offers naming parts off the parts list: %s." % ", ".join(gone))
 
 
 # Import
@@ -278,9 +339,14 @@ func seed_board() -> void:
 		if parsed is Dictionary and String(parsed.get("kind", WorkOrder.FIT)) != WorkOrder.FIT \
 				and not Flags.is_on(KINDS_FLAG):
 			continue
+		# A bundled job that wants a part off the parts list (a ship module nobody can buy
+		# yet) stays off the board until the list carries it.
+		if parsed is Dictionary and _part_list.is_valid() and unlisted_part(Reader.new().read(parsed)) != "":
+			continue
 		var result := import_text(text)
 		if not result.ok():
 			push_warning("Contracts: board offer %s: %s" % [file, "; ".join(result.errors)])
+	_prune_unlisted()
 
 
 ## The board's ACCEPT JOB: takes an offered job on, and makes it the active job if there
@@ -352,6 +418,7 @@ func advance_cycle(to_cycle := -1) -> void:
 			if not Generator.posts(client_id, _cycle) or _open_offers(client_id) >= OFFERS_PER_CLIENT:
 				continue
 			_post_generated(client_id, _cycle, 0)
+	_prune_unlisted()
 	cycle_advanced.emit(_cycle)
 
 

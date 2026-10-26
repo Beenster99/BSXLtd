@@ -32,6 +32,9 @@ func run_tests() -> void:
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var had_flag := Flags.is_on("trades.tractor")
 	Flags.set_flag("trades.tractor", true)
+	# The crate path: with trades.parts_on_decks the part stays as itself (test_part_landing).
+	var had_decks := Flags.is_on("trades.parts_on_decks")
+	Flags.set_flag("trades.parts_on_decks", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _make(FAKE_YARD, Node3D.new()) as Node3D
 	var walker := CharacterBody3D.new()
@@ -89,6 +92,7 @@ func run_tests() -> void:
 	await frames(1)
 	ship_bus.load_ship("vs_kestrel")
 	Flags.set_flag("trades.tractor", had_flag)
+	Flags.set_flag("trades.parts_on_decks", had_decks)
 
 
 func _run(station: TradesShipJoints, n: int) -> void:

@@ -562,7 +562,7 @@ func _test_touch_screen() -> void:
 			"a TV's terminal has the tabs but no CLOSE")
 	check(tv.is_aimed() and TouchScreen.current() == tv, "looking at a screen within reach aims at it")
 	check(tv.pointer.visible and tv.pointer_px.distance_to(Vector2(640, 360)) < 2.0, "the pointer sits where the view meets it")
-	check(HudSlots.pointer_claimed() and not HudSlots.pointer_claimed(tv._claim_id()), "an aimed screen claims the pointer")
+	check(not HudSlots.pointer_claimed(), "an aimed screen leaves the pointer unclaimed, so the view still turns")
 	cam.rotation.y = deg_to_rad(90)
 	await frames(3)
 	check(not tv.is_aimed() and not tv.pointer.visible and not HudSlots.pointer_claimed(), "looking away lets it go")

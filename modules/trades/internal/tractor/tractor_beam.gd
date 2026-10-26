@@ -84,6 +84,9 @@ func _ready() -> void:
 			_bus.connect("part_beamed", _on_part_beamed)
 		if _bus.has_signal("clean_up_claimed"):
 			_bus.connect("clean_up_claimed", _on_clean_up_claimed)
+		# The crate a part on a deck stands for has left its trolley (trades.parts_on_decks).
+		if _bus.has_signal("deck_part_left"):
+			_bus.connect("deck_part_left", _on_deck_part_left)
 	_beam = TradesBeamLine.new()
 	add_child(_beam)
 	_glow = OmniLight3D.new()
@@ -98,12 +101,18 @@ func is_holding() -> bool:
 	return held != null
 
 
-## The loose part under the aim within range, or null.
-func aimed_part() -> TradesLoosePart:
+## The loose part under the aim within range, or null; with `decks`, parts on trolley decks
+## too (trades.parts_on_decks).
+func aimed_part(decks := false) -> TradesLoosePart:
 	var worker := station.bay.worker
 	var best: TradesLoosePart
 	var best_d := RANGE_M
-	for p: TradesLoosePart in loose.values():
+	var parts: Array = loose.values()
+	if decks:
+		parts.append_array(on_deck.values())
+	for p: TradesLoosePart in parts:
+		if not is_instance_valid(p):
+			continue
 		var at: Variant = p.hit(worker.aim_origin(), worker.aim_dir())
 		if at != null:
 			var d := (at as Vector3).distance_to(worker.aim_origin())
@@ -136,7 +145,10 @@ func aimed_slot() -> String:
 # --- Input from the station ---------------------------------------------------------------
 
 func press() -> void:
-	var part := aimed_part()
+	var part := aimed_part(can_lift_decks())
+	if part and crate_of(part) != "" and not _lift_off_deck(part):
+		station.bay.hint("That one won't come off its trolley just now.")
+		return
 	if part == null:
 		var slot_id := aimed_slot()
 		if slot_id == "":
@@ -253,7 +265,7 @@ func turn(step: int) -> bool:
 
 ## The part in the beam or under its aim, for the tips' heading ("" for none).
 func aim_title() -> String:
-	var part := held if held else aimed_part()
+	var part := held if held else aimed_part(can_lift_decks())
 	if part == null:
 		return ""
 	var slot := _bus.get_slot(part.slot_id) if _bus else null
@@ -270,8 +282,9 @@ func actions() -> Array:
 				["Hold %s, move the mouse" % rotate, "turn it any way"],
 				["%s / %s" % [Keys.key_name(TradesBus.KEY_TURN_LEFT), Keys.key_name(TradesBus.KEY_TURN_RIGHT)], "turn it a step"],
 				[TradesBay.RIGHT_CLICK, "park it in the air"]]
-	if aimed_part():
-		return [[TradesBay.HOLD_CLICK, "lift it with the beam"]]
+	var aimed := aimed_part(can_lift_decks())
+	if aimed:
+		return [[TradesBay.HOLD_CLICK, "lift it off the trolley" if crate_of(aimed) != "" else "lift it with the beam"]]
 	var slot_id := aimed_slot()
 	if slot_id != "" and _bus and _bus.get_slot_state(slot_id) == ShipBayBus.SlotState.POSITIONED and _tight(slot_id) == 0:
 		return [[TradesBay.HOLD_CLICK, "lift it off its mount"]]
@@ -547,8 +560,9 @@ func _cancel_trolley(slot_id: String) -> void:
 		_api().call("cancel_beam", slot_id)
 
 
-## The part is on its trolley's deck as a crate: the copy goes.
-func _on_part_beamed(_crate_id: String, trolley_id: String, _component: String, slot_id := "") -> void:
+## The part is on its trolley's deck as a crate: the copy goes (with trades.parts_on_decks it
+## stays, and lands on the deck as itself).
+func _on_part_beamed(crate_id: String, trolley_id: String, _component: String, slot_id := "") -> void:
 	if slot_id == "":
 		for s: String in to_trolley:
 			if to_trolley[s] == trolley_id:
@@ -557,7 +571,182 @@ func _on_part_beamed(_crate_id: String, trolley_id: String, _component: String, 
 	if part == null or part == held or not to_trolley.has(slot_id):
 		return
 	to_trolley.erase(slot_id)
+	if Flags.is_on("trades.parts_on_decks") and _put_on_deck(part, crate_id, trolley_id):
+		return
 	_finish(part)
+
+
+# --- Parts on trolley decks (trades.parts_on_decks) ---------------------------------------------
+
+## crate_id -> the part on a trolley's deck: no longer loose (the beam can't take it, the
+## clean-up doesn't list it), it is the trolley's crate as itself.
+var on_deck: Dictionary = {}
+## crate_id -> the trolley it belongs on; and how many times it has been put back on.
+var _deck_of: Dictionary = {}
+var _deck_tries: Dictionary = {}
+## Dropped this far over the top of what's on the deck (m), clear of it.
+const DECK_DROP_M := 0.12
+## Put back on this many times if it rolls off, then set down on the deck where it is.
+const DECK_TRIES := 3
+
+
+func _put_on_deck(part: TradesLoosePart, crate_id: String, trolley_id: String) -> bool:
+	if not (_has("trolley_deck_position") and _api().call("trolley_deck_position", trolley_id) is Vector3):
+		return false
+	_end_hold(part)
+	_cancel_trolley(part.slot_id)
+	_forget_loose(part.slot_id)
+	loose.erase(part.slot_id)
+	on_deck[crate_id] = part
+	_deck_of[crate_id] = trolley_id
+	_deck_tries[crate_id] = 0
+	part.name = "Deck_" + crate_id.validate_node_name()
+	var net := _net()
+	if net:
+		net.call("unregister_mover", unit_id(part.slot_id))
+		net.call("register_mover", deck_unit_id(crate_id), part)
+	if not part.settled.is_connected(_on_deck_settled):
+		part.settled.connect(_on_deck_settled)
+		part.tree_exiting.connect(_off_deck.bind(part))
+	_drop_on_deck(part, crate_id)
+	# Ship and Bay draws no crate for it from now on (part_on_deck follows once it's at rest).
+	var bus := station.bay.bus()
+	if bus:
+		bus.note_deck_part(crate_id, part, null)
+	return true
+
+
+## Ship and Bay's deck_part_left: the crate left its trolley (stored, set down at a line or the
+## crusher, onto a lift, or gone), so the part on the deck goes; Ship and Bay draws the goods.
+func _on_deck_part_left(crate_id: String, _trolley_id := "") -> void:
+	var part: TradesLoosePart = on_deck.get(crate_id)
+	if part:
+		part.queue_free()
+
+
+static func deck_unit_id(crate_id: String) -> String:
+	return "deck:" + crate_id
+
+
+## Drops it just over the top of whatever is on its trolley's deck, over the deck's middle.
+func _drop_on_deck(part: TradesLoosePart, crate_id: String) -> void:
+	var deck: Variant = _api().call("trolley_deck_position", _deck_of[crate_id])
+	if not deck is Vector3:
+		part.drop()
+		return
+	var top := _stack_top(deck as Vector3, part)
+	# Turned as it was; it lands and lies as it falls.
+	var turn := part.global_transform.basis
+	var mid := turn * part.outline.get_center()
+	part.global_transform = Transform3D(turn, Vector3((deck as Vector3).x - mid.x, top + part.depth_below() + DECK_DROP_M,
+			(deck as Vector3).z - mid.z))
+	if _drives(crate_id):
+		part.drop()
+		part.wait_to_settle()
+	else:
+		part.anchor()
+
+
+## The highest thing on the deck's column at `at` (the deck's top, or parts on it).
+func _stack_top(at: Vector3, except: TradesLoosePart) -> float:
+	var space := get_world_3d().direct_space_state if is_inside_tree() else null
+	if space == null:
+		return at.y
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 6.0, at - Vector3.UP * 0.2)
+	q.exclude = [except.get_rid()]
+	var hit := space.intersect_ray(q)
+	return maxf(at.y, (hit.position as Vector3).y) if not hit.is_empty() else at.y
+
+
+## It came to rest: on its deck, it rides there; anywhere else, back on (a few tries).
+func _on_deck_settled(part: TradesLoosePart, deck: Node3D) -> void:
+	var crate_id := crate_of(part)
+	if crate_id == "":
+		return
+	if deck == null and int(_deck_tries.get(crate_id, 0)) < DECK_TRIES:
+		_deck_tries[crate_id] = int(_deck_tries[crate_id]) + 1
+		_drop_on_deck(part, crate_id)
+		return
+	if deck == null:
+		deck = _deck_body(crate_id)
+		if deck == null:
+			return
+	part.ride(deck)
+	var bus := station.bay.bus()
+	if bus:
+		bus.note_deck_part(crate_id, part, deck)
+
+
+## The trolley's deck body itself, found under its deck position (null for none).
+func _deck_body(crate_id: String) -> Node3D:
+	var at: Variant = _api().call("trolley_deck_position", _deck_of.get(crate_id, ""))
+	var space := get_world_3d().direct_space_state if is_inside_tree() else null
+	if not at is Vector3 or space == null:
+		return null
+	var q := PhysicsRayQueryParameters3D.create((at as Vector3) + Vector3.UP * 0.05, (at as Vector3) - Vector3.UP * 0.3)
+	var hit := space.intersect_ray(q)
+	var body: Object = hit.get("collider")
+	return body as Node3D if body is AnimatableBody3D and (body as Node).name == &"Deck" else null
+
+
+## The crate a part on a deck stands for ("" when it isn't on one).
+func crate_of(part: TradesLoosePart) -> String:
+	for id: String in on_deck:
+		if on_deck[id] == part:
+			return id
+	return ""
+
+
+func _off_deck(part: TradesLoosePart) -> void:
+	var crate_id := crate_of(part)
+	if crate_id == "":
+		return
+	on_deck.erase(crate_id)
+	_deck_of.erase(crate_id)
+	_deck_tries.erase(crate_id)
+	var net := _net()
+	if net:
+		net.call("unregister_mover", deck_unit_id(crate_id))
+	var bus := station.bay.bus() if station and station.bay else null
+	if bus:
+		bus.note_deck_part(crate_id, null, null)
+
+
+## Ship and Bay can take a crate off its trolley for the beam (0.3.19: "I need to be able to
+## tractor a part from a trolley").
+func can_lift_decks() -> bool:
+	return Flags.is_on("trades.parts_on_decks") and _has("lift_off_trolley")
+
+
+## The beam takes a part off a trolley's deck: Ship and Bay takes its crate off the trolley
+## and out of stock, and it's a loose part again. False when it can't (no lift_off_trolley,
+## the trolley said no, or its slot has a loose part already).
+func _lift_off_deck(part: TradesLoosePart) -> bool:
+	var crate_id := crate_of(part)
+	if crate_id == "" or loose.has(part.slot_id) or not can_lift_decks():
+		return false
+	if not bool(_api().call("lift_off_trolley", crate_id)):
+		return false
+	on_deck.erase(crate_id)
+	_deck_of.erase(crate_id)
+	_deck_tries.erase(crate_id)
+	part.riding = null
+	part.name = "Loose_" + part.slot_id
+	loose[part.slot_id] = part
+	var net := _net()
+	if net:
+		net.call("unregister_mover", deck_unit_id(crate_id))
+		net.call("register_mover", unit_id(part.slot_id), part)
+	var bus := station.bay.bus()
+	if bus:
+		bus.note_deck_part(crate_id, null, null)
+	return true
+
+
+## This machine runs the part's motion (no Multiplayer, or the mover is ours).
+func _drives(crate_id: String) -> bool:
+	var net := _net()
+	return net == null or not net.has_method("drives") or bool(net.call("drives", deck_unit_id(crate_id)))
 
 
 # --- Clean-up (Ship and Bay's flag ship_bay.clean_up) -------------------------------------------

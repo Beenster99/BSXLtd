@@ -5,7 +5,6 @@ extends HBoxContainer
 ##               the purchase order with bulk prices, and the deliveries: what's on order
 ##               and what has come. Sell: everything in stock with what each company offers
 ##               for it today, sold to the best offer; and today's sales
-##   "goods":    what's on order and when it lands, and the store by category (search, chips)
 ##   "accounts": cash and reputation, money in and out by kind over a day, week or month,
 ##               a day-by-day graph and the ledger
 ## Rows use a compact size (COMPACT) so more fits on a screen.
@@ -35,11 +34,14 @@ var limit := MAX_ROWS
 var mode := "buy"
 ## Buy side: the cost estimator is out in place of the purchase order (+ adds to it).
 var estimating := false
+## Buy side: the listing whose terms (deal, bulk prices, standing) show over the purchase
+## order, picked by clicking its line; "" for none.
+var picked := ""
+## Sell side: the stock line ("<part>|<condition>") whose buyers show over the sales; "" for
+## none.
+var picked_stock := ""
 ## Orders page: "on order" or "delivered".
 var deliveries := "on order"
-## Goods in: the store's category and search.
-var store_category := ""
-var store_query := ""
 ## Accounts: a key of PERIODS.
 var period := "week"
 
@@ -49,8 +51,6 @@ var _mode_chips: Control
 var _columns: Control
 var _list: VBoxContainer
 var _side: VBoxContainer
-var _store: VBoxContainer
-var _store_chips: Control
 var _message := ""
 var _message_good := true
 var _dirty := false
@@ -136,18 +136,6 @@ func _build() -> void:
 		main.add_child(top)
 		_columns = VBoxContainer.new()
 		main.add_child(_columns)
-	elif page == "goods":
-		main.add_child(T.columns([["ON ORDER", 0], ["LANDS", 112]]))
-		var find := T.search("Search the store", func(t: String) -> void:
-			store_query = t.strip_edges().to_lower()
-			_refresh_goods(), glass)
-		find.name = "StoreSearch"
-		_side.add_child(find)
-		_store_chips = VBoxContainer.new()
-		_side.add_child(_store_chips)
-		_side.add_child(T.columns([["IN STORE", 0], ["COND.", 92], ["QTY", 90]]))
-		_store = T.list()
-		_side.add_child(_store.get_parent())
 	else:
 		_side.size_flags_stretch_ratio = 1.6
 		main.size_flags_stretch_ratio = 1.0
@@ -175,8 +163,6 @@ func refresh() -> void:
 				_refresh_estimate()
 			else:
 				_refresh_side()
-	elif page == "goods":
-		_refresh_goods()
 	else:
 		_refresh_accounts()
 
@@ -397,19 +383,100 @@ func _listing_row(l: MarketListing, alt: bool) -> Control:
 		add.disabled = int(basket.get(l.id, 0)) >= l.available
 		add.pressed.connect(add_to_basket.bind(l.id, 1))
 	var cond := PartCondition.label(l.condition)
-	var sub := "%s  ·  %s" % [s.display_name if s else l.supplier_id, bus.listing_category(l)]
 	var deal := l.deal_off()
-	if deal > 0:
-		sub += "  ·  DEAL %d%% OFF, WAS %s" % [deal, T.money(l.list_price)]
-	elif s and not l.id.begins_with("S-") and l.available >= 5 and s.bulk_text() != "":
-		sub += "  ·  BULK " + s.bulk_text()
-	return compact(T.row([
-		T.cell_text(bus.part_name(l.part), sub),
+	var row := compact(T.row([
+		T.cell_text(bus.part_name(l.part), _terms_line(l)),
 		_width(T.tag(cond, _condition_colour(l.condition)), 92),
 		T.cell(str(l.available) if l.available < 999 else "∞", 52),
 		T.cell(T.money(l.unit_price), 96, T.GOOD if deal > 0 else T.TEXT, "mono_bold"),
 		_width(_centred(add), 46),
-	], alt, glass))
+	], alt or l.id == picked, glass))
+	row.name = "Listing_" + l.id.validate_node_name()
+	_click_to(row, pick_listing.bind(l.id))
+	return row
+
+
+## A line's small print: its supplier and category, today's deal, the bulk prices its stock
+## can reach and the company's own discount there.
+func _terms_line(l: MarketListing) -> String:
+	var s := bus.supplier(l.supplier_id)
+	var out := PackedStringArray([s.display_name if s else l.supplier_id, bus.listing_category(l)])
+	var deal := l.deal_off()
+	if deal > 0:
+		out.append("DEAL %d%% OFF TODAY, WAS %s" % [deal, T.money(l.list_price)])
+	var tiers := PackedStringArray()
+	for t: Vector2i in bulk_tiers(l):
+		tiers.append("%d+ %d%%" % [t.x, t.y])
+	if not tiers.is_empty():
+		out.append("BULK " + "  ".join(tiers))
+	var mine := int(bus.standing_with(l.supplier_id).off)
+	if mine > 0:
+		out.append("YOU GET %d%% OFF" % mine)
+	return "  ·  ".join(out)
+
+
+## The bulk prices a listing's stock can reach: (quantity, percent off) by quantity.
+func bulk_tiers(l: MarketListing) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var s := bus.supplier(l.supplier_id)
+	if s == null or l.id.begins_with("S-"):
+		return out
+	var keys := s.bulk_percent.keys()
+	keys.sort()
+	for n: Variant in keys:
+		if int(n) <= l.available:
+			out.append(Vector2i(int(n), int(s.bulk_percent[n])))
+	return out
+
+
+## Shows a listing's terms over the purchase order (again: hides them).
+func pick_listing(listing_id: String) -> void:
+	picked = "" if picked == listing_id else listing_id
+	refresh()
+
+
+## Calls `then` when a row is clicked (its buttons keep their own clicks).
+func _click_to(row: Control, then: Callable) -> void:
+	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.gui_input.connect(func(e: InputEvent) -> void:
+		var b := e as InputEventMouseButton
+		if b and b.pressed and b.button_index == MOUSE_BUTTON_LEFT:
+			then.call())
+
+
+## The terms of the picked listing: today's deal, what each bulk quantity costs, the
+## company's standing with the supplier and when it arrives. In Deals with nothing picked,
+## how deals work.
+func _terms_docket() -> Control:
+	var l := bus.get_listing(picked) if picked != "" else null
+	var d := T.docket("The deal" if l and l.deal_off() > 0 else "Terms", "BSX/TERMS", glass)
+	d.panel.name = "Terms"
+	var body := d.body as VBoxContainer
+	if l == null:
+		var how := T.label("Deals are today's price cuts: each supplier marks a few lines down until the market changes tomorrow. Bulk prices come off the deal price as well. Click a part to see its terms.", "body", 15, _ink())
+		how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		body.add_child(how)
+		return d.panel
+	var s := bus.supplier(l.supplier_id)
+	var head := T.label("%s  ·  %s" % [bus.part_name(l.part), PartCondition.label(l.condition)], "body_medium", 17, _ink())
+	head.clip_text = true
+	body.add_child(head)
+	body.add_child(T.label(s.display_name if s else l.supplier_id, "display_medium", 14, _ink_dim()))
+	if l.deal_off() > 0:
+		body.add_child(_sum("TODAY ONLY", "%d%% OFF" % l.deal_off()))
+		body.add_child(_sum("WAS", "%s CR" % T.money(l.list_price)))
+	var mine := bus.standing_with(l.supplier_id)
+	var tiers := bulk_tiers(l)
+	body.add_child(_sum("BUY 1%s" % ("" if tiers.is_empty() else " TO %d" % (tiers[0].x - 1)), "%s CR EACH" % T.money(bus.listing_cost(l, 1))))
+	for t in tiers:
+		body.add_child(_sum("BUY %d OR MORE" % t.x, "%s CR EACH  (−%d%%)" % [T.money(roundi(bus.listing_cost(l, t.x) / float(t.x))), t.y + int(mine.off)]))
+	if s and not l.id.begins_with("S-") and tiers.size() < s.bulk_percent.size():
+		var short := T.label("Only %d left, so the bigger bulk prices can't be reached." % l.available, "body", 14, _ink_dim())
+		short.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		body.add_child(short)
+	body.add_child(_sum("YOU ARE", "%s%s" % [str(mine.name).to_upper(), "  (−%d%%)" % mine.off if int(mine.off) > 0 else ""]))
+	body.add_child(_sum("ARRIVES IN", "ABOUT %d S" % l.lead_seconds))
+	return d.panel
 
 
 func _heading(cat: String, count: int) -> Control:
@@ -486,6 +553,10 @@ func _ink_dim() -> Color:
 
 func _refresh_side() -> void:
 	_clear(_side)
+	if picked != "" and bus.get_listing(picked) == null:
+		picked = ""
+	if picked != "" or category == "deals":
+		_side.add_child(_terms_docket())
 	var po := T.docket("Purchase order", "BSX/PO", glass)
 	var body := po.body as VBoxContainer
 	var lines := basket_as_lines()
@@ -632,10 +703,16 @@ func stock_lines(cat: String) -> Array[Dictionary]:
 			continue
 		if query != "" and not ("%s %s" % [bus.part_name(part), _category_of(part)]).to_lower().contains(query):
 			continue
-		for c: String in detail[part]:
+		# Only what is on a shelf: parts still on their way in aren't stock yet.
+		var shelved := bus.shelved_count(part)
+		for c: String in PartCondition.ALL:
+			var qty := mini(int(detail[part].get(c, 0)), shelved)
+			if qty <= 0:
+				continue
+			shelved -= qty
 			var offers := bus.get_offers(part, c)
-			if int(detail[part][c]) > 0 and not offers.is_empty():
-				out.append({"part": part, "condition": c, "qty": int(detail[part][c]), "offers": offers})
+			if not offers.is_empty():
+				out.append({"part": part, "condition": c, "qty": qty, "offers": offers})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var ca := _category_of(a.part)
 		var cb := _category_of(b.part)
@@ -667,7 +744,7 @@ func _refresh_sell() -> void:
 			_refresh_sell())
 		_list.add_child(_centred(more))
 	if lines.is_empty():
-		_list.add_child(T.label("Nothing matches." if query != "" else "Nothing in stock that anyone buys. Parts you buy, strip or keep from jobs show here.", "body", 18, T.DIM))
+		_list.add_child(T.label("Nothing matches." if query != "" else "Nothing on the shelves that anyone buys. Parts show here once they are put away on a shelf.", "body", 18, T.DIM))
 	scroll.set_deferred("scroll_vertical", keep)
 
 
@@ -694,13 +771,86 @@ func _stock_row(line: Dictionary, alt: bool) -> Control:
 	var names := T.cell_text(bus.part_name(line.part), "  ·  ".join(others))
 	for l: Label in names.get_children():
 		l.clip_text = true
-	return compact(T.row([
+	var picked_key := "%s|%s" % [line.part, line.condition]
+	var row := compact(T.row([
 		names,
 		_width(T.tag(PartCondition.label(line.condition), _condition_colour(line.condition)), 92),
 		T.cell(str(line.qty), 52),
 		T.cell(T.money(best.unit_price), 96, T.GOOD, "mono_bold"),
 		_width(_centred(buttons), 126),
-	], alt, glass))
+	], alt or picked_key == picked_stock, glass))
+	row.name = "Stock_" + key.validate_node_name()
+	_click_to(row, pick_stock.bind(picked_key))
+	return row
+
+
+## Shows a stock line's buyers over the sales (again: hides them).
+func pick_stock(stock_key: String) -> void:
+	picked_stock = "" if picked_stock == stock_key else stock_key
+	refresh()
+
+
+## Every company's offer for the picked stock line, best first, with the company's standing
+## there and what selling to it does for that: pick the buyer, not just the best price.
+func _buyers_docket() -> Control:
+	var bits := picked_stock.split("|")
+	var line: Dictionary = {}
+	for l in stock_lines(""):
+		if l.part == bits[0] and l.condition == bits[1]:
+			line = l
+	if line.is_empty():
+		picked_stock = ""
+		return null
+	var d := T.docket("Buyers", "BSX/OFFERS", glass)
+	d.panel.name = "Buyers"
+	var body := d.body as VBoxContainer
+	var head := T.label("%s  ·  %s  ·  %d on the shelf" % [bus.part_name(line.part), PartCondition.label(line.condition), line.qty], "body_medium", 16, _ink())
+	head.clip_text = true
+	body.add_child(head)
+	var best := int(line.offers[0].unit_price)
+	for o: Dictionary in line.offers:
+		body.add_child(_buyer_row(line, o, best))
+	var note := T.label("Selling builds your standing with a company: Known, then Regular, then Partner, each taking a little more off what you buy from it.", "body", 13, _ink_dim())
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(note)
+	return d.panel
+
+
+func _buyer_row(line: Dictionary, o: Dictionary, best: int) -> Control:
+	var s := bus.supplier(o.supplier_id)
+	var st := bus.standing_with(o.supplier_id)
+	var col := VBoxContainer.new()
+	col.name = "Buyer_" + str(o.supplier_id).validate_node_name()
+	col.add_theme_constant_override("separation", 0)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 4)
+	var who := T.label(s.display_name if s else o.supplier_id, "body_medium", 16, _ink())
+	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	who.clip_text = true
+	top.add_child(who)
+	var less := best - int(o.unit_price)
+	top.add_child(T.cell(T.money(o.unit_price), 70, T.GOOD if less == 0 else _ink(), "mono_bold"))
+	var key := ("%s_%s_%s" % [o.supplier_id, line.part, line.condition]).validate_node_name()
+	var one := T.button("SELL 1", true, 13, false, glass)
+	one.name = "SellTo_" + key
+	one.custom_minimum_size = Vector2(54, 22)
+	one.pressed.connect(sell.bind(o.supplier_id, line.part, line.condition, 1))
+	top.add_child(one)
+	var all := T.button("ALL", false, 13, false, glass)
+	all.name = "SellAllTo_" + key
+	all.custom_minimum_size = Vector2(40, 22)
+	all.pressed.connect(sell.bind(o.supplier_id, line.part, line.condition, int(line.qty)))
+	top.add_child(all)
+	col.add_child(top)
+	var sub := PackedStringArray([str(st.name).to_upper() + (" (%d%% OFF BUYING)" % st.off if int(st.off) > 0 else "")])
+	if less > 0:
+		sub.append("%s LESS EACH THAN THE BEST" % T.money(less))
+	if str(st.next_name) != "":
+		sub.append("%s CR MORE SOLD TO BE %s" % [T.money(int(st.next_at) - int(st.sold)), str(st.next_name).to_upper()])
+	var small := T.label("  ·  ".join(sub), "display_medium", 12, _ink_dim())
+	small.clip_text = true
+	col.add_child(small)
+	return col
 
 
 ## Sells from stock to a company at today's offer; the result shows on the Sales docket.
@@ -720,6 +870,10 @@ func sell(supplier_id: String, part: String, condition: String, qty: int) -> Bus
 ## The side in Sell: today's sales (from the ledger) and the last message.
 func _refresh_sales() -> void:
 	_clear(_side)
+	if picked_stock != "":
+		var buyers := _buyers_docket()
+		if buyers:
+			_side.add_child(buyers)
 	var d := T.docket("Sales today", "BSX/SALES", glass)
 	d.panel.name = "Sales"
 	d.panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -739,7 +893,7 @@ func _refresh_sales() -> void:
 		row.add_child(T.cell(T.money(e.amount), 76, _ink()))
 		list.add_child(row)
 	if total == 0:
-		list.add_child(T.label("Nothing sold today. SELL 1 or ALL sells to the best offer.", "body", 16, _ink_dim()))
+		list.add_child(T.label("Nothing sold today. SELL 1 or ALL sells to the best offer; click a line to pick the buyer.", "body", 16, _ink_dim()))
 	var sum := HBoxContainer.new()
 	var tl := T.label("TAKEN", "display_bold", 24, _ink())
 	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -999,58 +1153,6 @@ func _estimate_line(l: MarketListing, qty: int, best: Dictionary) -> Control:
 
 
 # --- ACCOUNTS -------------------------------------------------------------------------------
-
-# --- GOODS IN -------------------------------------------------------------------------------
-
-func _refresh_goods() -> void:
-	_clear(_list)
-	var open := bus.get_orders(PartsOrder.State.PLACED)
-	if open.is_empty():
-		_list.add_child(T.label("Nothing on order.", "body", 18, T.DIM))
-	for o in open:
-		_list.add_child(_order_row(o))
-	_clear(_store)
-	var stock := bus.get_stock_detail()
-	var by_cat := {}
-	for part: String in stock:
-		var cat := _category_of(part)
-		by_cat[cat] = int(by_cat.get(cat, 0)) + 1
-	var cats := PackedStringArray(by_cat.keys())
-	cats.sort()
-	if store_category != "" and not store_category in cats:
-		store_category = ""
-	_clear(_store_chips)
-	if cats.size() > 1:
-		_store_chips.add_child(T.chips(cats, store_category, func(n: String) -> void:
-			store_category = n
-			_refresh_goods(), glass))
-	var parts := stock.keys().filter(func(p: String) -> bool:
-		return (store_category == "" or _category_of(p) == store_category) \
-				and (store_query == "" or ("%s %s" % [bus.part_name(p), _category_of(p)]).to_lower().contains(store_query)))
-	parts.sort_custom(func(a: String, b: String) -> bool:
-		var ca := _category_of(a)
-		var cb := _category_of(b)
-		return ca < cb if ca != cb else bus.part_name(a) < bus.part_name(b))
-	if parts.is_empty():
-		_store.add_child(T.label("The store is empty." if stock.is_empty() else "Nothing matches.", "body", 18, T.DIM))
-	var n := 0
-	var last := ""
-	for part: String in parts:
-		var cat := _category_of(part)
-		if cat != last:
-			_store.add_child(_heading(cat, parts.filter(func(p: String) -> bool: return _category_of(p) == cat).size()))
-			last = cat
-		for c: String in PartCondition.ALL:
-			if stock[part].has(c):
-				var name_l := T.label(bus.part_name(part), "body_medium", 16, T.TEXT)
-				name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				name_l.clip_text = true
-				var qty := int(stock[part][c])
-				var count := ("%s KG" % T.money(qty)) if part.begins_with(BusinessBus.RAW_PREFIX) else "×%d" % qty
-				_store.add_child(compact(T.row([name_l, _width(T.tag(c, _condition_colour(c), 12), 92),
-						T.cell(count, 90, T.TEXT, "mono_bold")], n % 2 == 1, glass)))
-				n += 1
-
 
 func _refresh_accounts() -> void:
 	var figures := get_child(0) as VBoxContainer
