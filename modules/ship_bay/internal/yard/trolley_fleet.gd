@@ -127,6 +127,9 @@ var beams: CargoBeam
 ## (crate_stored says where).
 var _where: Dictionary = {}
 var _left: Dictionary = {}
+## Parts beamed off the ship that lie on a trolley's deck as Tools' own bodies (with
+## trades.parts_on_decks on), so no crate is drawn for them: crate id -> trolley id.
+var _deck_parts: Dictionary = {}
 ## Location id -> how many goods are still in the air on their way onto it (the shipyard
 ## draws the shelf without them till they land).
 var arriving: Dictionary = {}
@@ -879,7 +882,10 @@ func _go_under(t: Trolley, from: Vector3) -> bool:
 	return false
 
 
-func _on_beamed(crate_id: String, trolley_id: String, _component: String, _slot_id: String) -> void:
+func _on_beamed(crate_id: String, trolley_id: String, _component: String, slot_id: String) -> void:
+	if slot_id != "" and trolleys.has(trolley_id) and Flags.is_on("trades.parts_on_decks"):
+		_deck_parts[crate_id] = trolley_id
+		_show_cargo()
 	if not trolleys.has(trolley_id) or not _drives(trolley_id):
 		return
 	_bus.command_trolley(trolley_id, "deck", {"height": Trolley.DECK_MIN})
@@ -1389,6 +1395,14 @@ func _refresh_cargo() -> void:
 		var carrier := str(c.get("carrier", ""))
 		now[cid] = {"t": carrier} if trolleys.has(carrier) else {"at": _bus.crate_position(cid)}
 		now[cid].merge({"item": str(c.get("item", "")), "qty": int(c.get("qty", 1)), "condition": float(c.get("condition", 1.0))})
+	# A beamed part that left its trolley: Tools lets its body on the deck go, and from here
+	# on it is drawn like any crate (beamed across from the deck below).
+	for cid: String in _deck_parts.keys():
+		var is_now: Dictionary = now.get(cid, {})
+		if str(is_now.get("t", "")) != str(_deck_parts[cid]):
+			var from_id := str(_deck_parts[cid])
+			_deck_parts.erase(cid)
+			_bus.deck_part_left.emit(cid, from_id)
 	for cid: String in _where:
 		var was: Dictionary = _where[cid]
 		var is_now: Dictionary = now.get(cid, {})
@@ -1416,6 +1430,8 @@ func _show_cargo() -> void:
 		var t: Trolley = trolleys[id]
 		var load := PackedStringArray()
 		for cid in _bus.trolley_load(id):
+			if _deck_parts.has(cid):
+				continue
 			var f := beams.flight("crate:" + cid)
 			if f.is_empty() or f["to"] != t.deck:
 				load.append(cid)

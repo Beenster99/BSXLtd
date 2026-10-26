@@ -56,6 +56,21 @@ func run_tests() -> void:
 	check(text.contains("LOOSE PARTS 3") and text.contains("STORES 1") and text.contains("REFURB 1") and text.contains("CRUSHER 1"),
 			"the wrist counts them by where they'll go: %s" % text.left(120))
 
+	# With Tools' bodies lying on the decks (trades.parts_on_decks), no crate is drawn for a
+	# beamed part, and the bus says when each leaves its trolley so Tools lets the body go.
+	var decks_was := Flags.is_on("trades.parts_on_decks")
+	Flags.set_flag("trades.parts_on_decks", true)
+	var beamed := []
+	var left := []
+	var drawn := []
+	var on_beamed := func(cid: String, tid: String, _c: String, _s: String) -> void:
+		beamed.append(cid)
+		var t: Node = (fleet.get("trolleys") as Dictionary)[tid]
+		if not (t.get("cargo") as Dictionary).is_empty() and str((t.get("cargo") as Dictionary).get("key", "")).contains(cid):
+			drawn.append(cid)
+	var on_left := func(cid: String, _tid: String) -> void: left.append(cid)
+	bus.part_beamed.connect(on_beamed, CONNECT_DEFERRED)
+	bus.deck_part_left.connect(on_left)
 	var claimed := []
 	var on_claim := func(slot: String, trolley: String) -> void: claimed.append([slot, trolley])
 	bus.clean_up_claimed.connect(on_claim)
@@ -73,6 +88,11 @@ func run_tests() -> void:
 	check(fed.size() == 1 and str(fed.values()[0].item) == "Gyroscope", "the worn gyroscope is in a line's intake bay: %s" % [fed])
 	check(_at_crusher(bus), "the scrap pump went out to the crusher (on its pad or in it): %s %s" % [pad, bus.line_state().crusher])
 	check(bus.loose_parts().is_empty() and not bus.cleaning, "the yard is clean")
+	check(beamed.size() == 3 and drawn.is_empty(), "no crate is drawn on a deck for a beamed part: %s drawn of %s" % [drawn, beamed])
+	check(beamed.all(func(c: String) -> bool: return left.has(c)), "each beamed part's leaving its trolley is announced: %s of %s" % [left, beamed])
+	bus.part_beamed.disconnect(on_beamed)
+	bus.deck_part_left.disconnect(on_left)
+	Flags.set_flag("trades.parts_on_decks", decks_was)
 	var bay := ""
 	for id: String in fed:
 		bay = str(fed[id].get("line_id", ""))
