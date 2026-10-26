@@ -36,6 +36,9 @@ fi
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 OUT="release/v$VERSION"
 rm -rf "$OUT" release/export
+# Godot reuses resources it converted for an earlier export even after their scripts
+# change, so a stale copy can hide a fix: always export from scratch.
+rm -rf .godot/exported
 mkdir -p "$OUT/screenshots"
 
 # 2. Apply flags and stamp the build (put back afterwards so a local tree stays clean) ------
