@@ -31,7 +31,7 @@ extends Resource
 @export var marginal_score := 50
 ## Parts that let a tier 3 add-on run without overheating. Empty: no overheat check (U1 has
 ## no heat exchanger; U2 adds it).
-@export var coolers: PackedStringArray = []
+@export var coolers: PackedStringArray = PackedStringArray()
 ## How much of the rated gain the unit reaches: floor + slope * (mean joint score / 100).
 ## 100 -> 1.05 (beats the rating), 90 -> 1.0, 70 -> 0.92, 50 -> 0.83.
 @export var efficiency_floor := 0.6
