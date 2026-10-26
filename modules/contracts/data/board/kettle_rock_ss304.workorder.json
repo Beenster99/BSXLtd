@@ -12,7 +12,7 @@
   "subject": {
     "type": "part",
     "component": {
-      "id": "HullPlating",
+      "id": "HullPlate",
       "material": "alloy"
     },
     "condition": 0.2,

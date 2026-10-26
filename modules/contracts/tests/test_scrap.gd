@@ -35,7 +35,7 @@ func _test_pricing() -> void:
 	var c := g.commercial(WorkOrder.SCRAP, "small", 0.0, [{"what": "material", "material": "steel", "kg": 5000.0}], 9)
 	check(int(c["price"]) == g.price_for(WorkOrder.SCRAP, "small", 0.0) + 2000 and is_equal_approx(float(c["tonnes"]), 5.0) and int(c["per_tonne"]) == 400,
 			"a scrap job pays labour plus the fee by the tonne: %s" % str(c))
-	var b := g.commercial(WorkOrder.BREAK, "small", 0.0, [{"what": "part", "component": {"id": "Gyro"}, "qty": 1}], 9)
+	var b := g.commercial(WorkOrder.BREAK, "small", 0.0, [{"what": "part", "component": {"id": "Gyroscope"}, "qty": 1}], 9)
 	check(not b.has("tonnes") and int(b["price"]) == g.price_for(WorkOrder.BREAK, "small", 0.0), "a break job pays labour only")
 	g.scrap_pricer = func(material: String, kg: float) -> int: return int(kg) * (3 if material == "steel" else 1)
 	check(g.scrap_fee("steel", 1000.0) == 3000, "Business's own rate wins once wired in")
