@@ -89,6 +89,26 @@ for platform in $PLATFORMS; do
 	echo "-> $zip"
 done
 
+# 5b. Check the packaged data ------------------------------------------------------------------
+# Export can drop data a resource holds (0.3.18 lost every Packed*Array left at its `= []`
+# default), so compare the arrays the source tree and the Windows build load.
+if [[ " $PLATFORMS " == *" windows "* ]]; then
+	step "Checking the packaged data"
+	PROBE="$ROOT/tools/build/pack_probe.gd"
+	"$GODOT" --headless --path . -s "$PROBE" -- "--out=$ROOT/release/probe_source.json" | grep pack_probe
+	"$GODOT" --headless --main-pack release/export/windows/BSXLtd.exe -s "$PROBE" \
+		-- "--out=$ROOT/release/probe_pack.json" | grep pack_probe
+	python3 - release/probe_source.json release/probe_pack.json <<'PY' || die "the packaged build lost data (above)"
+import json, sys
+src, pack = (json.load(open(p)) for p in sys.argv[1:])
+bad = [k for k, n in src.items() if pack.get(k) != n]
+for k in bad:
+	print(f"  {k}: {src[k]} in the project, {pack.get(k, 'absent')} in the build")
+print(f"{len(src)} entries checked, {len(bad)} differ")
+sys.exit(1 if bad else 0)
+PY
+fi
+
 # 6. Screenshots -----------------------------------------------------------------------------
 if [ "${SKIP_SHOTS:-0}" = "1" ]; then
 	echo "Skipping screenshots (SKIP_SHOTS=1)."
