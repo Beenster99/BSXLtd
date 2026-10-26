@@ -387,7 +387,7 @@ static func stack_lots(lots: Array, area: Vector2, max_height := 2.4, gap := 0.0
 			basis = Basis(Vector3.UP, PI * 0.5)
 			s = Vector3(s.z, s.y, s.x)
 		var across := maxi(1, floori((area.x + 0.04) / (s.x + 0.04)))
-		var layers := maxi(1, floori((max_height + 0.001) / (s.y + 0.02)))
+		var layers := maxi(1, floori((max_height + 0.001) / (s.y + 0.005)))
 		var left := area.y * 0.5 - z
 		var rows := ceili(float(count) / (across * layers))
 		var room := maxi(1, floori((left + gap) / (s.z + gap)))
@@ -402,7 +402,7 @@ static func stack_lots(lots: Array, area: Vector2, max_height := 2.4, gap := 0.0
 					if placed >= count:
 						break
 					out.append([item, lot.get("look", Look.NEW), Transform3D(basis,
-							Vector3(x0 + i * (s.x + 0.04), layer * (s.y + 0.02), z + s.z * 0.5 + j * (s.z + gap)))])
+							Vector3(x0 + i * (s.x + 0.04), layer * (s.y + 0.005), z + s.z * 0.5 + j * (s.z + gap)))])
 					placed += 1
 		z = minf(z + rows * (s.z + gap), area.y * 0.5 - 0.2)
 	return out

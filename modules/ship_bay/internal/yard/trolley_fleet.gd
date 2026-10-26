@@ -34,6 +34,12 @@ const CargoBeam := preload("res://modules/ship_bay/internal/yard/cargo_beam.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 ## While a clean-up has parts no trolley was free for, how often it asks again, seconds.
 const CLEAN_UP_RETRY := 1.5
+## Organise scrap (ship_bay.organise_scrap): how often an organising trolley that is free
+## looks for a loose part, seconds, and how far inside the courtyard's walls it roams while
+## there are none, metres (the courtyard's half extents, yard space).
+const ORGANISE_EVERY := 1.0
+const COURTYARD := Vector2(28.0, 24.0)
+const ROAM_MARGIN := 4.0
 ## The yard's own hover trolleys: fallen parts and stock to workers, never deliveries.
 const YARD_TROLLEYS := ["s", "m", "l"]
 
@@ -148,6 +154,7 @@ var _deck_parts: Dictionary = {}
 ## draws the shelf without them till they land).
 var arriving: Dictionary = {}
 var _clean_clock := 0.0
+var _organise_clock := 0.0
 var _goods_in_clock := 0.0
 
 
@@ -187,6 +194,9 @@ func _ready() -> void:
 		_bus.crate_stored.connect(_beam_into_stores)
 		_bus.stock_picked.connect(_beam_off_shelf)
 		_bus.stock_changed.connect(_refresh_cargo)
+		_bus.organising_changed.connect(_on_organising)
+		for id: String in YARD_TROLLEYS:
+			_on_organising(id, _bus.is_organising(id))
 		_refresh_cargo()
 		# A trolley that was carrying a delivered crate when the game was saved finishes the job.
 		for id: String in trolleys:
@@ -212,7 +222,7 @@ func _exit_tree() -> void:
 			_bus.fleet = null
 		for pair: Array in [[_bus.part_beamed, _on_beamed], [_bus.trolley_command, _on_command], [_bus.crate_carried, _on_carried],
 				[_bus.crate_stored, _on_stored], [_bus.stock_changed, _refresh_cargo],
-				[_bus.crate_stored, _beam_into_stores], [_bus.stock_picked, _beam_off_shelf]]:
+				[_bus.crate_stored, _beam_into_stores], [_bus.stock_picked, _beam_off_shelf], [_bus.organising_changed, _on_organising]]:
 			if (pair[0] as Signal).is_connected(pair[1]):
 				(pair[0] as Signal).disconnect(pair[1])
 	if _net:
@@ -240,6 +250,10 @@ func _physics_process(delta: float) -> void:
 		if _clean_clock <= 0.0:
 			_clean_clock = CLEAN_UP_RETRY
 			_bus.clean_up()
+	_organise_clock -= delta
+	if _organise_clock <= 0.0:
+		_organise_clock = ORGANISE_EVERY
+		_organise()
 	_goods_in_clock -= delta
 	if _goods_in_clock <= 0.0:
 		_goods_in_clock = GOODS_IN_EVERY
@@ -316,6 +330,7 @@ func call_to_me(id: String) -> void:
 ## FOLLOW ME: the trolley follows this player at a safe distance until told to stop (the
 ## button again, STOP FOLLOWING, or any other job for it).
 func toggle_follow(id: String) -> void:
+	_stop_organising(id)
 	if following == id:
 		stop_following()
 		if _bus:
@@ -393,6 +408,9 @@ func _on_screen_action(action: String, id: String) -> void:
 		"tidy":
 			if _bus:
 				_bus.tidy_up()
+		"organise":
+			if _bus:
+				_bus.set_organising(id, not _bus.is_organising(id))
 
 
 ## Takes a trolley on remote control, or lets it go again. On remote its camera shows in a
@@ -412,6 +430,7 @@ func toggle_remote(id: String) -> void:
 		toggle_remote(remote_id)
 	if following == id:
 		stop_following()
+	_stop_organising(id)
 	remote_id = id
 	if _bus:
 		_bus.command_trolley(id, "stop")
@@ -640,6 +659,10 @@ func _run_job(id: String, t: Trolley) -> void:
 			if _arrived(t):
 				jobs[id] = {}
 				t.show_status("PARKED")
+		"roam":
+			if _arrived(t):
+				jobs[id] = {}
+				t.show_status("ORGANISING SCRAP")
 		"put_away":
 			_put_away(id, t, job)
 		"fetch":
@@ -1034,7 +1057,7 @@ func free_for_beam(goods_kind: String, from: Vector3, taken: Array = []) -> Stri
 			continue
 		var claimed := taken.count(id)
 		var job := str((jobs[id] as Dictionary).get("do", ""))
-		if claimed == 0 and (not ["", "park", "come"].has(job) or _bus.trolley_cargo(id) != ""):
+		if claimed == 0 and (not ["", "park", "come", "roam"].has(job) or _bus.trolley_cargo(id) != ""):
 			continue
 		if _bus.trolley_goods(id) + claimed >= _bus.trolley_capacity(id):
 			continue
@@ -1735,8 +1758,82 @@ func beaming(id: String) -> bool:
 
 ## Parks one trolley.
 func park(id: String) -> void:
+	_stop_organising(id)
 	if _bus:
 		_bus.command_trolley(id, "park")
+
+
+# --- Organise scrap -----------------------------------------------------------------------------
+
+## The trolley's screen button shows whether it is organising.
+func _on_organising(id: String, on: bool) -> void:
+	var t: Trolley = trolleys.get(id)
+	if t == null:
+		return
+	if t.screen and t.screen.has_method("set_button"):
+		t.screen.call("set_button", "organise", "ORGANISING SCRAP" if on else "ORGANISE SCRAP", on)
+	if on and _drives(id) and ["", "park"].has(str((jobs[id] as Dictionary).get("do", ""))):
+		t.show_status("ORGANISING SCRAP")
+
+
+func _stop_organising(id: String) -> void:
+	if _bus and _bus.is_organising(id):
+		_bus.set_organising(id, false)
+
+
+## Every organising trolley this peer drives that is free (roaming, parked or idle, its deck
+## empty) goes for the nearest loose part it can carry; with none about, it roams the
+## courtyard to another spot.
+func _organise() -> void:
+	if _bus == null or not Flags.is_on("ship_bay.organise_scrap"):
+		return
+	var parts: Array[Dictionary] = []
+	var looked := false
+	for id: String in YARD_TROLLEYS:
+		if not _bus.is_organising(id) or not _drives(id) or id == remote_id or id == following:
+			continue
+		var t: Trolley = trolleys[id]
+		var job := str((jobs[id] as Dictionary).get("do", ""))
+		if not ["", "park", "roam"].has(job) or _bus.trolley_cargo(id) != "" or not (_queue.get(id, []) as Array).is_empty():
+			continue
+		if not looked:
+			parts = _bus.loose_parts()
+			looked = true
+		var best: Dictionary = {}
+		var best_d := INF
+		for p: Dictionary in parts:
+			if str(p.trolley) != "":
+				continue
+			var mass := float(_bus.storage_items().get(str(p.component), {}).get("mass", 0.0))
+			if not t.carries(Layout.kind_for(mass, str(p.component))):
+				continue
+			var d := t.global_position.distance_to(p.at)
+			if d < best_d:
+				best = p
+				best_d = d
+		if not best.is_empty() and _bus.organise_part(id, best):
+			best["trolley"] = id
+			continue
+		if job != "roam" or _arrived(t):
+			_roam(id, t)
+
+
+## Drives to a free spot somewhere in the courtyard.
+func _roam(id: String, t: Trolley) -> void:
+	if nav == null:
+		build_nav()
+	var half := COURTYARD - Vector2(ROAM_MARGIN, ROAM_MARGIN)
+	for i in 12:
+		var local := Vector3(randf_range(-half.x, half.x), 0.0, randf_range(-half.y, half.y))
+		var at := yard.to_global(local) if yard else local
+		if at.distance_to(t.global_position) < 6.0 or not nav.is_free(at, t.clearance()):
+			continue
+		_release(id)
+		jobs[id] = {"do": "roam"}
+		if _go(t, at, NAN):
+			t.show_status("ORGANISING SCRAP")
+			return
+	jobs[id] = {}
 
 
 func park_all() -> void:

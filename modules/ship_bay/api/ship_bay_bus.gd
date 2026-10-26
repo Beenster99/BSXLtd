@@ -90,6 +90,10 @@ signal stock_dispatched(sale_id: String)
 ## The hulls contracts brought in, each on its transport cradle, changed (ShipBayBus.hulls).
 ## Every peer hears it.
 signal hulls_changed
+## A joint on the ship in the bay was made or taken out (here or by another player).
+signal joint_changed(joint_id: String, made: bool)
+## A yard trolley's organise scrap mode went on or off (every peer).
+signal organising_changed(trolley_id: String, on: bool)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -159,6 +163,9 @@ var hull_queue: Array = []
 var _clean_routes: Dictionary = {}
 ## True from CLEAN UP until every loose part has had a trolley sent for it.
 var cleaning := false
+## Yard trolleys in organise scrap mode (trolley id -> true): each roams the courtyard and
+## takes every loose part it can carry where its condition says (clean_up_route).
+var organising: Dictionary = {}
 ## Where the transporters and cradles stand: {transporters: {kind: {xform, deck, mode}},
 ## cradles: {name: {xform, pins, on}}}. Kept by the yard's Transporters; saved and sent to
 ## players who join.
@@ -296,6 +303,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.sale_ready", _apply_sale_ready, _pass)
 	_net.call("register_event", "ship_bay.dispatched", _apply_dispatched, _host_only)
 	_net.call("register_event", "ship_bay.hull", _apply_hull, _host_only)
+	_net.call("register_event", "ship_bay.organise", _apply_organise, _check_organise)
 	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
 	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
 	_net.call("register_event", "ship_bay.line", _apply_line, _check_line)
@@ -364,7 +372,7 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.lift_off", "ship_bay.dispatch", "ship_bay.sale_ready", "ship_bay.dispatched", "ship_bay.hull", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
+				"ship_bay.collect", "ship_bay.lift_off", "ship_bay.dispatch", "ship_bay.sale_ready", "ship_bay.dispatched", "ship_bay.hull", "ship_bay.organise", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
 				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
@@ -567,6 +575,7 @@ func note_joint_made(joint_id: String, quality: float) -> bool:
 	var ok := _tracker != null and _tracker.joint_made(joint_id, quality)
 	if ok:
 		_share("ship_bay.joint", {"joint": joint_id, "made": true, "quality": quality})
+		joint_changed.emit(joint_id, true)
 	return ok
 
 
@@ -577,6 +586,7 @@ func note_joint_removed(joint_id: String) -> bool:
 	var ok := _tracker != null and _tracker.joint_removed(joint_id)
 	if ok:
 		_share("ship_bay.joint", {"joint": joint_id, "made": false})
+		joint_changed.emit(joint_id, false)
 	return ok
 
 
@@ -607,9 +617,10 @@ func _apply_joint(payload: Dictionary) -> void:
 	if _tracker == null:
 		return
 	if bool(payload.get("made", false)):
-		_tracker.joint_made(str(payload.get("joint", "")), float(payload.get("quality", 1.0)))
-	else:
-		_tracker.joint_removed(str(payload.get("joint", "")))
+		if _tracker.joint_made(joint, float(payload.get("quality", 1.0))):
+			joint_changed.emit(joint, true)
+	elif _tracker.joint_removed(joint):
+		joint_changed.emit(joint, false)
 
 
 func _apply_slot_move(payload: Dictionary) -> void:
@@ -657,7 +668,7 @@ func set_ship_powered(on: bool) -> void:
 func snapshot() -> Dictionary:
 	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true),
 			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared, "rigs": rigs.duplicate(true), "sales": sales.duplicate(true),
-			"hulls": hulls.duplicate(true), "hull_queue": hull_queue.duplicate(true)}
+			"hulls": hulls.duplicate(true), "hull_queue": hull_queue.duplicate(true), "organising": organising.keys()}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -698,6 +709,12 @@ func restore(state: Dictionary) -> void:
 	hulls = (state.get("hulls", {}) as Dictionary).duplicate(true)
 	hull_queue = (state.get("hull_queue", []) as Array).duplicate(true)
 	hulls_changed.emit()
+	var was_organising := organising.keys()
+	organising = {}
+	for id: Variant in state.get("organising", []):
+		organising[str(id)] = true
+	for id: Variant in was_organising + organising.keys():
+		organising_changed.emit(str(id), organising.has(str(id)))
 	rigs = {}
 	for id: String in (state.get("rigs", {}) as Dictionary):
 		if RIGS.has(id):
@@ -880,9 +897,9 @@ func beam_to_trolley(slot_id: String, component: String, condition: float, from:
 	return _send_for_part(slot_id, component, condition, from, "store")
 
 
-func _send_for_part(slot_id: String, component: String, condition: float, from: Vector3, route: String) -> String:
+func _send_for_part(slot_id: String, component: String, condition: float, from: Vector3, route: String, trolley := "") -> String:
 	var mass := float(StorageLayout.items().get(component, {}).get("mass", 0.0))
-	var id := str(fleet.call("free_for_beam", StorageLayout.kind_for(mass, component), from, _beam_claims.values()))
+	var id := trolley if trolley != "" else str(fleet.call("free_for_beam", StorageLayout.kind_for(mass, component), from, _beam_claims.values()))
 	if id == "":
 		return ""
 	_beam_claims[slot_id] = id
@@ -977,6 +994,50 @@ func clean_up() -> int:
 ## parts end up refurbished in the stores, or as ingots in the crusher house.
 func tidy_up() -> int:
 	return clean_up()
+
+
+## ORGANISE SCRAP on a yard trolley's screen (ship_bay.organise_scrap): turns its organise
+## mode on or off for everyone. While on, the trolley's driver sends it for loose parts.
+func set_organising(trolley_id: String, on: bool) -> void:
+	var payload := {"trolley": trolley_id, "on": on}
+	if _net:
+		_net.call("request", "ship_bay.organise", payload)
+	elif _check_organise(0, payload) is Dictionary:
+		_apply_organise(payload)
+
+
+func is_organising(trolley_id: String) -> bool:
+	return organising.has(trolley_id)
+
+
+func _check_organise(_sender: int, payload: Dictionary) -> Variant:
+	return payload if TROLLEYS.has(str(payload.get("trolley", ""))) else "no such trolley"
+
+
+func _apply_organise(payload: Dictionary) -> void:
+	var id := str(payload["trolley"])
+	var on := bool(payload.get("on", false))
+	if on == organising.has(id):
+		return
+	if on:
+		organising[id] = true
+	else:
+		organising.erase(id)
+	organising_changed.emit(id, on)
+
+
+## An organising trolley's driver: sends `trolley_id` for this loose part (one of
+## loose_parts()), to where its condition says. True if it went.
+func organise_part(trolley_id: String, part: Dictionary) -> bool:
+	if fleet == null or not is_instance_valid(fleet) or str(part.get("trolley", "")) != "":
+		return false
+	var slot := str(part.get("slot", ""))
+	if _send_for_part(slot, str(part.get("component", "")), float(part.get("condition", 1.0)), part.get("at", Vector3.ZERO),
+			str(part.get("route", "store")), trolley_id) == "":
+		return false
+	_clean_routes[slot] = str(part.get("route", "store"))
+	clean_up_claimed.emit(slot, trolley_id)
+	return true
 
 
 ## Calls off the trolley sent for a part (the player took it with their own beam): it parks.

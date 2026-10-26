@@ -57,6 +57,7 @@ func _ready() -> void:
 	_bus.slot_state_changed.connect(_on_slot_changed)
 	_bus.ship_power_changed.connect(_on_power)
 	_bus.component_installed.connect(func(_s: String, _c: String) -> void: _refresh_markers())
+	_bus.joint_changed.connect(_on_joint_changed)
 	_bus.marker_focus_changed.connect(_on_marker_focus)
 	_show_ship(_bus.ship)
 
@@ -71,6 +72,8 @@ func _exit_tree() -> void:
 		_bus.ship_power_changed.disconnect(_on_power)
 	if _bus and _bus.marker_focus_changed.is_connected(_on_marker_focus):
 		_bus.marker_focus_changed.disconnect(_on_marker_focus)
+	if _bus and _bus.joint_changed.is_connected(_on_joint_changed):
+		_bus.joint_changed.disconnect(_on_joint_changed)
 
 
 ## Three ship cradles, each an I-beam base on the floor with two posts, a head beam under
@@ -395,8 +398,25 @@ func _refresh_markers() -> void:
 		var m: MeshInstance3D = markers[id]
 		var slot_state := _bus.get_slot_state(FastenerPoint.slot_of(id))
 		m.visible = slot_state != ShipBayBus.SlotState.EMPTY
-		m.material_override = _tight_mat if _bus.is_joint_tight(id) else _loose_mat
+		_show_joint(id)
 	_on_marker_focus(_bus.marker_focus_at, _bus.marker_focus_radius)
+
+
+## A joint made or taken out: its marker shows it at once (the slot's state may not change).
+func _on_joint_changed(joint_id: String, _made: bool) -> void:
+	if markers.has(joint_id):
+		_show_joint(joint_id)
+
+
+## The ring (or weld strip) is lit by the joint's state; the head (or bead) on it shows only
+## while the joint is made, so an undone bolt, a cut-out rivet or a ground-off weld leaves
+## just its lit ring where it was (beenster, 0.3.20).
+func _show_joint(joint_id: String) -> void:
+	var m: MeshInstance3D = markers[joint_id]
+	var tight := _bus.is_joint_tight(joint_id)
+	m.material_override = _tight_mat if tight else _loose_mat
+	for head: Node in m.get_children():
+		(head as Node3D).visible = tight
 
 
 ## Only the rings near the focus point show (ShipBayBus.set_marker_focus); the heads always
