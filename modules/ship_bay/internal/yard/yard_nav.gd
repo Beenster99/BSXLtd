@@ -30,7 +30,7 @@ func build(root: Node, skip: Array = []) -> void:
 	blocked.resize(size.x * size.y)
 	blocked.fill(0)
 	for body: Node in root.find_children("*", "CollisionObject3D", true, false):
-		if body is CharacterBody3D or body is RigidBody3D or skip.has(body):
+		if body is CharacterBody3D or body is RigidBody3D or skip.has(body) or body.has_meta("look_only"):
 			continue
 		var co := body as CollisionObject3D
 		if co.collision_layer == 0:

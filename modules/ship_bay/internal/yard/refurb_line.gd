@@ -32,6 +32,7 @@ const T := preload("res://modules/ui/api/terminal_kit.gd")
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 const LineParts := preload("res://modules/ship_bay/internal/yard/line_parts.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
+const BeamLine := preload("res://modules/ship_bay/internal/yard/trolley_beam_line.gd")
 
 ## The lines: id -> centre line (x, yard space). Their trolleys have the same ids.
 const LINES := {"a": 35.0, "b": 45.0}
@@ -54,6 +55,11 @@ const BAY_Z := Vector2(-23.6, -18.0)
 const BAY_HALF := 4.9
 ## The bay's drop-off zones (x from the line, at IN_Z): three for parts in, one for scrap out.
 const IN_X: Array[float] = [-3.4, -1.1, 1.2]
+## The one drop area's places: columns (x from the line) and rows (z either side of IN_Z),
+## and the area itself (x from the line, width, depth).
+const AREA_X: Array[float] = [-3.5, -1.25, 1.0]
+const AREA_ROW := 1.3
+const AREA := Vector3(-1.25, 6.9, 5.0)
 const SCRAP_X := 3.5
 const IN_Z := -20.8
 ## The machines' names on their plates and screens.
@@ -93,6 +99,8 @@ var _lamp_done: Material
 ## The lot drawn on each machine, and the ones travelling between them.
 var _lot_nodes: Dictionary = {}
 var _movers: Array[Node3D] = []
+## Tractor beams drawing lots in: [beam, mover, from (yard space)].
+var _beams: Array = []
 ## The bay's waiting crates as drawn (crate id -> node).
 var _crate_nodes: Dictionary = {}
 var _crates_root: Node3D
@@ -113,6 +121,13 @@ static func station_at(line: String, s: String) -> Vector3:
 ## The intake bay's drop-off zones for parts coming in (floor points, yard space).
 static func in_spots(line: String) -> Array[Vector3]:
 	var out: Array[Vector3] = []
+	# One drop area (ship_bay.open_feed_areas, beenster 0.3.19): two rows of three places
+	# over the bay west of the scrap zone, so a trolley leaves all its parts and goes.
+	if Flags.is_on("ship_bay.open_feed_areas"):
+		for z: float in [IN_Z - AREA_ROW, IN_Z + AREA_ROW]:
+			for x: float in AREA_X:
+				out.append(Vector3(float(LINES[line]) + x, 0, z))
+		return out
 	for x: float in IN_X:
 		out.append(Vector3(float(LINES[line]) + x, 0, IN_Z))
 	return out
@@ -274,7 +289,13 @@ func _on_line_changed() -> void:
 		if not _bus.line_crates().has(id) and str(_crate_nodes[id].get_meta("line", "")) == "in":
 			if str((st.get("survey", {}) as Dictionary).get("state", "")) == "waiting" and (old.get("survey", {}) as Dictionary).is_empty():
 				var from: Vector3 = (_crate_nodes[id] as Node3D).position
-				_travel([from, from + Vector3(0, BED_Y, 0), _rest("survey") + Vector3(0, 0, -LENGTH * SCALE.z * 0.5), _rest("survey")], st["survey"].lot)
+				if Flags.is_on("ship_bay.open_feed_areas"):
+					# Beamed up out of the drop area and in over the survey's front.
+					var mouth := _rest("survey") + Vector3(0, 0, -LENGTH * SCALE.z * 0.5)
+					_travel([from, from + Vector3(0, BED_Y + 1.2, 0), mouth + Vector3(0, 0.8, 0), _rest("survey")], st["survey"].lot,
+							mouth + Vector3(0, BED_Y + 1.6, 0))
+				else:
+					_travel([from, from + Vector3(0, BED_Y, 0), _rest("survey") + Vector3(0, 0, -LENGTH * SCALE.z * 0.5), _rest("survey")], st["survey"].lot)
 	var survey_was: Dictionary = old.get("survey", {})
 	if str(survey_was.get("state", "")) == "done" and (st.get("survey", {}) as Dictionary).is_empty() and str(survey_was.lot.get("route", "")) == "grind":
 		# Scrap rides back off the front of the survey onto the red scrap zone.
@@ -309,6 +330,9 @@ static func _lot_key(lot: Dictionary) -> String:
 
 
 func _process(delta: float) -> void:
+	for b: Array in _beams:
+		if is_instance_valid(b[1]):
+			(b[0] as Node).call("draw", b[2], (b[1] as Node3D).global_position + Vector3(0, 0.3, 0), delta)
 	for s: String in running.keys():
 		running[s] = maxf(float(running[s]) - delta, 0.0)
 		_animate(s, 1.0 - float(running[s]) / maxf(run_time, 0.01))
@@ -500,7 +524,10 @@ func _dress_lot(node: Node3D, lot: Dictionary) -> void:
 	node.add_child(body)
 	# The part itself, as it is: rusty or worn, then bare, then in its own paint again.
 	var looks := {"rust": ItemLook.Look.RUST, "worn": ItemLook.Look.WORN, "bare": ItemLook.Look.BARE, "coat": ItemLook.Look.NEW}
-	body.add_child(ItemLook.make(str(lot.item), looks[_look(lot)], float(lot.mass)))
+	var item := ItemLook.make(str(lot.item), looks[_look(lot)], float(lot.mass))
+	body.add_child(item)
+	var s: Vector3 = item.get_meta("size")
+	ItemLook.look_box(body, AABB(Vector3(-s.x * 0.5, 0.0, -s.z * 0.5), s), {"component": str(lot.item), "condition": float(lot.get("condition", 1.0))})
 
 
 static func _look(lot: Dictionary) -> String:
@@ -527,7 +554,7 @@ func _rest(s: String) -> Vector3:
 
 ## A lot riding the conveyor along `points` (a copy of it; the machine draws its own once
 ## it arrives).
-func _travel(points: Array, lot: Dictionary) -> void:
+func _travel(points: Array, lot: Dictionary, beam_from := Vector3.INF) -> void:
 	var mover := Node3D.new()
 	mover.name = "Moving"
 	add_child(mover)
@@ -541,8 +568,17 @@ func _travel(points: Array, lot: Dictionary) -> void:
 	for i in range(1, points.size()):
 		var leg := (points[i] as Vector3).distance_to(points[i - 1])
 		tw.tween_property(mover, "position", points[i], travel_time * leg / maxf(total, 0.01))
+	# Drawn in by the machine's tractor beam (one drop area: the survey picks the parts out).
+	var beam: Node3D = null
+	if beam_from != Vector3.INF:
+		beam = BeamLine.new()
+		add_child(beam)
+		_beams.append([beam, mover, beam_from])
 	tw.tween_callback(func() -> void:
 		_movers.erase(mover)
+		if beam:
+			_beams = _beams.filter(func(b: Array) -> bool: return b[0] != beam)
+			beam.queue_free()
 		mover.queue_free()
 		_show_all()
 		_draw_crates())
@@ -957,8 +993,11 @@ func _build_intake() -> void:
 		# A bollard at each front corner.
 		_part(PartShapes.prism(10, 0.12, 1.0).mesh, Vector3(x + k * (BAY_HALF + 0.25), 0.5, BAY_Z.y + 0.2), _mats["yellow"], root)
 	var spots := in_spots(line_id)
-	for i in spots.size():
-		_drop_zone(spots[i], Vector2(2.0, 2.1), _mats["zone"], _mats["yellow"], "DROP %d" % (i + 1), Color(0.95, 0.75, 0.1), root)
+	if Flags.is_on("ship_bay.open_feed_areas"):
+		_drop_zone(Vector3(x + AREA.x, 0, IN_Z), Vector2(AREA.y, AREA.z), _mats["zone"], _mats["yellow"], "DROP AREA", Color(0.95, 0.75, 0.1), root)
+	else:
+		for i in spots.size():
+			_drop_zone(spots[i], Vector2(2.0, 2.1), _mats["zone"], _mats["yellow"], "DROP %d" % (i + 1), Color(0.95, 0.75, 0.1), root)
 	_drop_zone(scrap_spot(line_id), Vector2(2.0, 2.1), _mats["zone_red"], _mats["red"], "SCRAP", Color(0.95, 0.4, 0.3), root)
 	var words := _plate("LINE %s INTAKE" % line_id.to_upper(), Color(0.95, 0.75, 0.1))
 	words.font_size = 120

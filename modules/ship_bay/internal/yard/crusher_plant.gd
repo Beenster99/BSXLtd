@@ -20,6 +20,7 @@ const Touch := preload("res://modules/ship_bay/internal/kit/touch_screen.gd")
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const LineParts := preload("res://modules/ship_bay/internal/yard/line_parts.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
+const BeamLine := preload("res://modules/ship_bay/internal/yard/trolley_beam_line.gd")
 
 ## The crusher house's shed (x, z footprint) and eaves height, metres: against Pre-assembly's
 ## east wall (whose own wall is the shed's west side, with its door through), the shed's
@@ -34,6 +35,17 @@ const BAY := Rect2(54.0, -3.0, 32.0, 23.0)
 const O := Vector3(54.0, 0, -3.0)
 ## Where trolleys set down lots for the crusher (floor points, yard space).
 const FEED_SPOTS: Array[Vector3] = [O + Vector3(3.2, 0, 3.6), O + Vector3(3.2, 0, 7.0), O + Vector3(3.2, 0, 10.4)]
+## With ship_bay.open_feed_areas the pad is one drop area along the bay's west side, where
+## trolleys leave as many lots as fit (beenster, 0.3.19) and the loader beams them in one by
+## one: its places, south to north, and the area (x, z, width, depth).
+const AREA_SPOTS: Array[Vector3] = [O + Vector3(3.2, 0, 1.6), O + Vector3(3.2, 0, 4.0), O + Vector3(3.2, 0, 6.4),
+		O + Vector3(3.2, 0, 8.8), O + Vector3(3.2, 0, 11.2)]
+const FEED_AREA := Rect2(O.x + 1.9, O.z + 0.3, 2.6, 12.2)
+
+
+## Where trolleys set lots down for the crusher (floor points, yard space).
+static func feed_spots() -> Array[Vector3]:
+	return AREA_SPOTS if Flags.is_on("ship_bay.open_feed_areas") else FEED_SPOTS
 ## The crusher's centre on the floor; lots travel +X into it.
 const CRUSHER := O + Vector3(16.2, 0, 7.0)
 ## The crusher is the hall grinder's design drawn this many times bigger.
@@ -67,6 +79,9 @@ const PALLETS := 10
 var screen: Node3D
 var running := 0.0
 var _bus: ShipBayBus
+## The loader's tractor beam and where it shines from while it draws a lot in (INF: off).
+var _beam: Node3D
+var _beam_from := Vector3.INF
 var _state: Dictionary = {}
 var _mats: Dictionary = {}
 var _housing: Node3D
@@ -158,6 +173,11 @@ func _on_line_changed() -> void:
 
 
 func _process(delta: float) -> void:
+	if _beam:
+		if _beam_from != Vector3.INF and is_instance_valid(_mover):
+			_beam.call("draw", _beam_from, _mover.global_position + Vector3(0, 0.3, 0), delta)
+		else:
+			_beam.visible = false
 	if running > 0.0:
 		running = maxf(running - delta, 0.0)
 		_animate(1.0 - running / maxf(crush_time, 0.01))
@@ -248,7 +268,10 @@ func _dress(node: Node3D, lot: Dictionary) -> void:
 	node.set_meta("key", key)
 	for c in node.get_children():
 		c.free()
-	node.add_child(ItemLook.make(str(lot.get("item", "")), ItemLook.Look.RUST, float(lot.get("mass", 0.0))))
+	var item := ItemLook.make(str(lot.get("item", "")), ItemLook.Look.RUST, float(lot.get("mass", 0.0)))
+	node.add_child(item)
+	var s: Vector3 = item.get_meta("size")
+	ItemLook.look_box(node, AABB(Vector3(-s.x * 0.5, 0.0, -s.z * 0.5), s), {"component": str(lot.get("item", "")), "condition": float(lot.get("condition", 0.0))})
 
 
 ## Where a lot drops into the crusher's nip (yard space).
@@ -260,7 +283,7 @@ func _nip() -> Vector3:
 func _feed_in(lot: Dictionary, from: Array) -> void:
 	if lot.is_empty():
 		return
-	var start := Vector3(from[0], 0.15, from[2]) if from.size() == 3 else FEED_SPOTS[0] + Vector3(0, 0.15, 0)
+	var start := Vector3(from[0], 0.15, from[2]) if from.size() == 3 else feed_spots()[0] + Vector3(0, 0.15, 0)
 	if is_instance_valid(_mover):
 		_mover.queue_free()
 	_mover = Node3D.new()
@@ -269,7 +292,17 @@ func _feed_in(lot: Dictionary, from: Array) -> void:
 	_dress(_mover, lot)
 	_mover.position = start
 	var tw := create_tween()
-	tw.tween_property(_mover, "position", RAMP_FOOT, feed_time * 0.25)
+	if Flags.is_on("ship_bay.open_feed_areas"):
+		# The loader's tractor beam lifts the lot out of the drop area onto the ramp's foot.
+		_beam_from = RAMP_FOOT + Vector3(0, 2.2, 0)
+		if _beam == null:
+			_beam = BeamLine.new()
+			add_child(_beam)
+		tw.tween_property(_mover, "position", start + Vector3(0, 1.2, 0), feed_time * 0.1)
+		tw.tween_property(_mover, "position", RAMP_FOOT, feed_time * 0.2)
+		tw.tween_callback(func() -> void: _beam_from = Vector3.INF)
+	else:
+		tw.tween_property(_mover, "position", RAMP_FOOT, feed_time * 0.25)
 	tw.tween_property(_mover, "position", RAMP_TOP, feed_time * 0.55)
 	tw.tween_property(_mover, "position", _nip(), feed_time * 0.2)
 	tw.tween_callback(func() -> void:
@@ -389,8 +422,11 @@ func _build_pad() -> void:
 		_part(PartShapes.box(Vector3(BAY.size.x, 0.01, 0.2)).mesh, Vector3(BAY.get_center().x, 0.006, z), _mats["yellow"], root)
 	for x: float in [BAY.position.x, BAY.end.x]:
 		_part(PartShapes.box(Vector3(0.2, 0.01, BAY.size.y)).mesh, Vector3(x, 0.0068, BAY.get_center().y), _mats["yellow"], root)
-	for i in FEED_SPOTS.size():
-		_drop_zone(FEED_SPOTS[i], Vector2(2.2, 2.4), _mats["zone_red"], _mats["red"], "FEED %d" % (i + 1), Color(0.95, 0.4, 0.3), root)
+	if Flags.is_on("ship_bay.open_feed_areas"):
+		_drop_zone(Vector3(FEED_AREA.get_center().x, 0, FEED_AREA.get_center().y), FEED_AREA.size, _mats["zone_red"], _mats["red"], "DROP AREA", Color(0.95, 0.4, 0.3), root)
+	else:
+		for i in FEED_SPOTS.size():
+			_drop_zone(FEED_SPOTS[i], Vector2(2.2, 2.4), _mats["zone_red"], _mats["red"], "FEED %d" % (i + 1), Color(0.95, 0.4, 0.3), root)
 	var words := _plate("CRUSHER FEED", Color(0.95, 0.75, 0.1))
 	words.font_size = 96
 	words.position = Vector3(FEED_SPOTS[0].x - 1.9, 0.02, FEED_SPOTS[1].z)

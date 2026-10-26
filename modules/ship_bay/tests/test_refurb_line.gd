@@ -49,7 +49,9 @@ func run_tests() -> void:
 	var fleet: Node = yard.get("trolleys")
 	var nav: Object = fleet.get("nav")
 	var parked: Vector3 = fleet.get("PARKING")["l"][0]
-	var goals: Array = RefurbLineScript.in_spots("a") + RefurbLineScript.in_spots("b") + [RefurbLineScript.scrap_spot("b")] + Crusher.FEED_SPOTS
+	check(RefurbLineScript.in_spots("a").size() == 6 and Crusher.feed_spots().size() == 5,
+			"each line's intake and the crusher's pad are one drop area with room for several parts")
+	var goals: Array = RefurbLineScript.in_spots("a") + RefurbLineScript.in_spots("b") + [RefurbLineScript.scrap_spot("b")] + Crusher.feed_spots()
 	for goal: Vector3 in goals:
 		var path: PackedVector3Array = nav.call("route", parked, goal, 1.3)
 		check(not path.is_empty() and path[path.size() - 1].distance_to(goal) < 1.0, "the large trolley has a way to %s: %s" % [goal, path[path.size() - 1] if not path.is_empty() else "none"])
@@ -152,7 +154,7 @@ func run_tests() -> void:
 	fleet.set("jobs", {"s": {}, "m": {}, "l": {}, "p": {}, "h": {}, "a": {}, "b": {}, "p2": {}, "p3": {}, "p4": {}, "p5": {}, "p6": {}, "p7": {}})
 	bus.carry_crate(scrap, "l")
 	bus.line_request("feed", {"crate": scrap, "line": "crusher"})
-	check(str(bus.crate_info(scrap).get("line", "")) == "crush" and bus.crate_position(scrap).distance_to(Crusher.FEED_SPOTS[0]) < 0.01,
+	check(str(bus.crate_info(scrap).get("line", "")) == "crush" and bus.crate_position(scrap).distance_to(Crusher.feed_spots()[0]) < 0.01,
 			"set down on the crusher's feed pad")
 	var crusher: Node3D = yard.get("crusher")
 	crusher.set("crush_time", 1.0)

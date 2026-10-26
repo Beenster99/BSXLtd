@@ -53,6 +53,26 @@ static func make(item: String, look := Look.NEW, mass := -1.0) -> Node3D:
 	return root
 
 
+## A box the look ray (and Tools' beam) finds goods by: an Area3D over `box` (parent space)
+## carrying `metas` ("component", "condition", "crate_id", ...). It is felt by nothing and
+## the yard's route planning leaves it out (meta "look_only").
+static func look_box(parent: Node3D, box: AABB, metas: Dictionary) -> Area3D:
+	var area := Area3D.new()
+	area.name = "Look"
+	area.monitoring = false
+	area.set_meta("look_only", true)
+	for k: String in metas:
+		area.set_meta(k, metas[k])
+	var shape := CollisionShape3D.new()
+	var b := BoxShape3D.new()
+	b.size = Vector3(maxf(box.size.x, 0.05), maxf(box.size.y, 0.05), maxf(box.size.z, 0.05))
+	shape.shape = b
+	shape.position = box.get_center()
+	area.add_child(shape)
+	parent.add_child(area)
+	return area
+
+
 ## The meshes and transforms (item space) that draw `item`, for MultiMesh batching:
 ## [[mesh, material, transform]].
 static func pieces(item: String, look := Look.NEW, mass := -1.0) -> Array:

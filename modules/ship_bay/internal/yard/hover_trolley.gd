@@ -206,12 +206,33 @@ func set_cargo(c: Dictionary) -> void:
 	_cargo_mesh.position = Vector3(0, 0.06, 0)
 	deck.add_child(_cargo_mesh)
 	var lots: Array = []
-	for lot: Dictionary in cargo.get("lots", [cargo]):
+	var given: Array = cargo.get("lots", [cargo])
+	for lot: Dictionary in given:
 		lots.append({"item": lot.get("item", ""), "count": lot.get("count", 1), "look": ItemLook.look_for(float(lot.get("condition", 1.0)))})
+	# Each lot gets a look box round its goods, so the look card and Tools' beam find it.
+	var lot_i := 0
+	var left := maxi(1, int(lots[0]["count"])) if not lots.is_empty() else 0
+	var boxes: Array = []
+	boxes.resize(lots.size())
 	for placed: Array in ItemLook.stack_lots(lots, Vector2(d.x - 0.12, d.y - 0.12), 2.4):
+		while left <= 0 and lot_i < lots.size() - 1:
+			lot_i += 1
+			left = maxi(1, int(lots[lot_i]["count"]))
 		var n := ItemLook.make(str(placed[0]), placed[1])
 		n.transform = placed[2]
 		_cargo_mesh.add_child(n)
+		var s: Vector3 = n.get_meta("size")
+		var b: AABB = (placed[2] as Transform3D) * AABB(Vector3(-s.x * 0.5, 0.0, -s.z * 0.5), s)
+		boxes[lot_i] = b if boxes[lot_i] == null else (boxes[lot_i] as AABB).merge(b)
+		left -= 1
+	for i in lots.size():
+		if boxes[i] == null:
+			continue
+		var lot: Dictionary = given[i]
+		var metas := {"component": str(lot.get("item", "")), "condition": float(lot.get("condition", 1.0))}
+		if str(lot.get("crate_id", "")) != "":
+			metas["crate_id"] = str(lot["crate_id"])
+		ItemLook.look_box(_cargo_mesh, boxes[i], metas)
 
 
 ## Moves it for one physics step: remote input or the path, slowing for `obstacles`

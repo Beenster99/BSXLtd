@@ -84,6 +84,9 @@ signal rig_changed(rig_id: String, state: Dictionary)
 signal rig_test_requested(rig_id: String, unit_id: String)
 ## A rig's test result arrived (rig_show_test), on every player; the rig plays its sweep.
 signal rig_test_shown(rig_id: String, result: Dictionary)
+## Business: goods sold to another company (dispatch_stock) left the yard on the buyer's
+## truck. Every peer hears it.
+signal stock_dispatched(sale_id: String)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -136,6 +139,12 @@ var _beam_claims: Dictionary = {}
 ## Slot id -> {component, condition, body (the part's Node3D)}: parts off the ship lying
 ## loose in the yard (Tools tells us, note_loose), for a trolley clean-up to sort.
 var _loose: Dictionary = {}
+## Crates a player's beam took off a trolley (lift_off_trolley): the fleet doesn't send
+## deck_part_left for them.
+var _lifted: Dictionary = {}
+## Goods sold to another company on their way out: sale id -> {item, qty, condition, buyer,
+## crate (once picked), state ("picking", "ready": waiting at the truck door)}.
+var sales: Dictionary = {}
 ## Slot id -> the clean-up's route for a part a trolley has been sent for.
 var _clean_routes: Dictionary = {}
 ## True from CLEAN UP until every loose part has had a trolley sent for it.
@@ -272,6 +281,10 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.pick", _apply_pick, _check_pick)
 	_net.call("register_event", "ship_bay.hand", _apply_hand, _check_hand)
 	_net.call("register_event", "ship_bay.collect", _apply_collect, _check_collect)
+	_net.call("register_event", "ship_bay.lift_off", _apply_lift_off, _check_lift_off)
+	_net.call("register_event", "ship_bay.dispatch", _apply_dispatch, _check_dispatch)
+	_net.call("register_event", "ship_bay.sale_ready", _apply_sale_ready, _pass)
+	_net.call("register_event", "ship_bay.dispatched", _apply_dispatched, _host_only)
 	_net.call("register_event", "ship_bay.kit", _apply_kit, _check_kit)
 	_net.call("register_event", "ship_bay.beamed", _apply_beamed, _check_beamed)
 	_net.call("register_event", "ship_bay.line", _apply_line, _check_line)
@@ -333,7 +346,7 @@ func unregister_module() -> void:
 	if _net:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
-				"ship_bay.collect", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
+				"ship_bay.collect", "ship_bay.lift_off", "ship_bay.dispatch", "ship_bay.sale_ready", "ship_bay.dispatched", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
 				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
@@ -622,7 +635,7 @@ func set_ship_powered(on: bool) -> void:
 ## Everything needed to put the bay back as it is: saves and late-joining players.
 func snapshot() -> Dictionary:
 	var out := {"storage": _stock.to_dict(), "line": line_state(), "transport": transport_state.duplicate(true),
-			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared, "rigs": rigs.duplicate(true)}
+			"yard_ships": Array(yard_ships), "bay_cleared": bay_cleared, "rigs": rigs.duplicate(true), "sales": sales.duplicate(true)}
 	if ship:
 		out.merge({"ship_id": ship.ship_id, "slots": _tracker.snapshot(), "powered": ship_powered})
 	return out
@@ -659,6 +672,7 @@ func restore(state: Dictionary) -> void:
 	yard_ships = PackedStringArray(state.get("yard_ships", []))
 	yard_ships_changed.emit(yard_ships)
 	bay_cleared = bool(state.get("bay_cleared", false))
+	sales = (state.get("sales", {}) as Dictionary).duplicate(true)
 	rigs = {}
 	for id: String in (state.get("rigs", {}) as Dictionary):
 		if RIGS.has(id):
@@ -812,8 +826,8 @@ func fetch_stock(item_id: String, qty := 1, to := Vector3.ZERO) -> void:
 
 ## The picking lift (or the large trolley, for bulk goods) takes `qty` off a location into a
 ## crate for `to` (its driver asks once it is at the shelf); stock_picked follows.
-func pick_stock(location_id: String, qty: int, to: Vector3, trolley_id := "p") -> void:
-	var payload := {"location": location_id, "qty": qty, "to": to, "trolley": trolley_id}
+func pick_stock(location_id: String, qty: int, to: Vector3, trolley_id := "p", sale := "") -> void:
+	var payload := {"location": location_id, "qty": qty, "to": to, "trolley": trolley_id, "sale": sale}
 	if _net:
 		_net.call("request", "ship_bay.pick", payload)
 	elif _check_pick(0, payload) is Dictionary:
@@ -973,6 +987,126 @@ func collect_crate(crate_id: String) -> void:
 		_net.call("request", "ship_bay.collect", payload)
 	elif _check_collect(0, payload) is Dictionary:
 		_apply_collect(payload)
+
+
+## Tools: a player's beam takes a crate (a part on a deck, or stock goods) off the trolley
+## carrying it. It leaves that trolley and the stock on every peer (stock_changed follows),
+## and the trolley gets on with its next job. No deck_part_left is sent for it: Tools keeps
+## its body, a loose part again (note_loose). False when the crate isn't on a trolley.
+func lift_off_trolley(crate_id: String) -> bool:
+	var payload := {"crate_id": crate_id}
+	if not _check_lift_off(0, payload) is Dictionary:
+		return false
+	if _net:
+		_net.call("request", "ship_bay.lift_off", payload)
+	else:
+		_apply_lift_off(payload)
+	return true
+
+
+## Whether this crate left its trolley by lift_off_trolley.
+func lifted_off(crate_id: String) -> bool:
+	return _lifted.has(crate_id)
+
+
+# --- Selling stock to other companies (Business) --------------------------------------------
+
+## Where sold goods wait for the buyer's truck: inside the south truck door of Deliveries.
+const SALE_SPOT := Vector3(-47.5, 0.0, -8.0)
+
+
+## Business: goods sold to another company leave the stores. The picking lift (the heavy
+## lift for bulk goods) takes `qty` of `item_id` off the shelves (stock_changed follows; the
+## place with goods nearest `condition` first), a trolley takes them to the south truck
+## door, and a truck in `buyer`'s name backs up, loads them and drives off: then
+## stock_dispatched(sale_id) on every peer. False when the stores haven't that many, or the
+## sale is already under way.
+func dispatch_stock(sale_id: String, item_id: String, condition: float, qty: int, buyer := "") -> bool:
+	var payload := {"sale": sale_id, "item": item_id, "condition": clampf(condition, 0.0, 1.0), "qty": qty, "buyer": buyer}
+	if not _check_dispatch(0, payload) is Dictionary:
+		return false
+	if _net:
+		_net.call("request", "ship_bay.dispatch", payload)
+	else:
+		_apply_dispatch(payload)
+	return true
+
+
+func _check_dispatch(_sender: int, payload: Dictionary) -> Variant:
+	var sale := str(payload.get("sale", ""))
+	if sale == "" or sales.has(sale):
+		return "no sale, or it is under way"
+	if int(payload.get("qty", 0)) <= 0 or stock_count(str(payload.get("item", ""))) < int(payload.get("qty", 0)):
+		return "not that much in the stores"
+	return payload
+
+
+func _apply_dispatch(payload: Dictionary) -> void:
+	var sale := str(payload["sale"])
+	sales[sale] = {"item": str(payload["item"]), "qty": int(payload["qty"]), "condition": float(payload["condition"]),
+			"buyer": str(payload.get("buyer", "")), "crate": "", "state": "picking"}
+	if _net == null or bool(_net.call("is_host")):
+		_fetch_for_sale(sale)
+
+
+## The host sends the lift for a sale's goods; with no yard up the goods just go.
+func _fetch_for_sale(sale: String) -> void:
+	var s: Dictionary = sales[sale]
+	if fleet == null or not is_instance_valid(fleet):
+		take_stock(str(s["item"]), int(s["qty"]))
+		finish_sale(sale)
+		return
+	command_trolley("p", "fetch", {"item": s["item"], "qty": s["qty"], "to": SALE_SPOT, "sale": sale, "condition": s["condition"]})
+
+
+## The yard came up (a load, a join): the host picks up sales left part done.
+func resume_sales() -> void:
+	if _net != null and not bool(_net.call("is_host")):
+		return
+	for sale: String in sales.keys():
+		var s: Dictionary = sales[sale]
+		if str(s.get("crate", "")) != "" and not _stock.crates.has(str(s["crate"])):
+			finish_sale(sale)   # gone already
+		elif str(s.get("crate", "")) == "":
+			_fetch_for_sale(sale)
+		elif str(s.get("state", "")) != "ready":
+			sale_ready(sale)
+
+
+## The trolley bringing a sale's goods is at the truck door (its driver says).
+func sale_ready(sale: String) -> void:
+	var payload := {"sale": sale}
+	if _net:
+		_net.call("request", "ship_bay.sale_ready", payload)
+	else:
+		_apply_sale_ready(payload)
+
+
+func _apply_sale_ready(payload: Dictionary) -> void:
+	var s: Dictionary = sales.get(str(payload.get("sale", "")), {})
+	if not s.is_empty():
+		s["state"] = "ready"
+		if not Flags.is_on("ship_bay.trucks") or fleet == null or not is_instance_valid(fleet):
+			# No trucks: the goods go at once.
+			if _net == null or bool(_net.call("is_host")):
+				if str(s.get("crate", "")) != "":
+					collect_crate(str(s["crate"]))
+				finish_sale(str(payload["sale"]))
+
+
+## The host's truck drove off with a sale's goods (or there was no truck): every peer hears.
+func finish_sale(sale: String) -> void:
+	var payload := {"sale": sale}
+	if _net:
+		_net.call("request", "ship_bay.dispatched", payload)
+	else:
+		_apply_dispatched(payload)
+
+
+func _apply_dispatched(payload: Dictionary) -> void:
+	var sale := str(payload.get("sale", ""))
+	if sales.erase(sale):
+		stock_dispatched.emit(sale)
 
 
 ## Changes a scaffold rig round the bay: {rig: index, bays: 1..4, lifts: 1..4, ends: 0..3}.
@@ -1297,7 +1431,7 @@ func _line_spot_taken(kind: String, line: String, spot: int) -> bool:
 static func _line_spot_at(kind: String, line: String, spot: int) -> Vector3:
 	match kind:
 		"crush":
-			return CrusherPlant.FEED_SPOTS[spot]
+			return CrusherPlant.feed_spots()[spot]
 		"scrap":
 			return RefurbLine.scrap_spot(line)
 	return RefurbLine.in_spots(line)[spot]
@@ -1377,7 +1511,7 @@ func _check_line(sender: int, payload: Dictionary) -> Variant:
 			if c.is_empty() or str(c.get("carrier", "")) == "":
 				return "no part on a trolley"
 			var kind := "crush" if l == "crusher" else "in"
-			var count := CrusherPlant.FEED_SPOTS.size() if l == "crusher" else RefurbLine.IN_X.size()
+			var count := CrusherPlant.feed_spots().size() if l == "crusher" else RefurbLine.in_spots(l).size()
 			var spot := int(payload.get("spot", -1))
 			if spot < 0:
 				spot = _free_line_spot(kind, l, count)
@@ -1870,6 +2004,11 @@ func _apply_pick(payload: Dictionary) -> void:
 	var by := str(payload.get("trolley", "p"))
 	var id := _stock.pick(str(payload["location"]), int(payload.get("qty", 1)), by, to if to is Vector3 else Vector3.ZERO)
 	if id != "":
+		var sale := str(payload.get("sale", ""))
+		if sales.has(sale):
+			_stock.crates[id]["sale"] = sale
+			_stock.crates[id]["grade"] = "sold"
+			sales[sale]["crate"] = id
 		stock_changed.emit()
 		stock_picked.emit(id, str(payload["location"]))
 		crate_carried.emit(id, by)
@@ -1900,6 +2039,22 @@ func _apply_collect(payload: Dictionary) -> void:
 	if not c.is_empty():
 		stock_changed.emit()
 		crate_collected.emit(str(payload["crate_id"]), str(c["item"]), int(c["qty"]))
+
+
+func _check_lift_off(_sender: int, payload: Dictionary) -> Variant:
+	var c: Dictionary = _stock.crates.get(str(payload.get("crate_id", "")), {})
+	return payload if TROLLEYS.has(str(c.get("carrier", ""))) else "not on a trolley"
+
+
+func _apply_lift_off(payload: Dictionary) -> void:
+	var id := str(payload["crate_id"])
+	if _stock.crates.get(id, {}).is_empty():
+		return
+	_lifted[id] = true
+	_stock.collect(id)
+	if fleet and is_instance_valid(fleet):
+		fleet.call("crate_lifted", id)
+	stock_changed.emit()
 
 
 func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
