@@ -203,7 +203,7 @@ func set_cargo(c: Dictionary) -> void:
 	var d: Vector2 = spec["deck"]
 	_cargo_mesh = Node3D.new()
 	_cargo_mesh.name = "Cargo"
-	_cargo_mesh.position = Vector3(0, 0.06, 0)
+	_cargo_mesh.position = Vector3(0, 0.002, 0)   # sitting on the grating
 	deck.add_child(_cargo_mesh)
 	var lots: Array = []
 	var given: Array = cargo.get("lots", [cargo])
@@ -420,6 +420,10 @@ func _build() -> void:
 	# The yard trolleys tidy the yard: every loose part off a ship to refurb, which sorts it.
 	if kind in YARD and Flags.is_on("ship_bay.tidy_to_refurb"):
 		screen.call("add_button", "tidy", "TIDY UP TO REFURB", func() -> void: screen_action.emit("tidy"))
+	# Organise scrap: it roams the courtyard and takes every loose part where its condition
+	# says (beenster, 0.3.20).
+	if kind in YARD and Flags.is_on("ship_bay.organise_scrap"):
+		screen.call("add_button", "organise", "ORGANISE SCRAP", func() -> void: screen_action.emit("organise"))
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(d.x, CHASSIS_TOP - HOVER + 0.5, d.y)

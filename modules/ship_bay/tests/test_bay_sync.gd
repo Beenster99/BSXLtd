@@ -49,7 +49,10 @@ func run_tests() -> void:
 	var markers: Dictionary = bay.get("markers")
 	await frames(1)
 	check((markers[f.joint_id] as MeshInstance3D).material_override == bay.get("_loose_mat"), "its ring follows it here")
+	var head := (markers[f.joint_id] as Node).get_child(0) as Node3D
+	check(not head.visible, "and its bolt head is gone from the ring")
 	bus.call("_apply_joint", {"joint": f.joint_id, "made": true, "quality": 0.9, "by": OTHER})
+	check(head.visible, "made again, its head is back")
 	check(bus.is_joint_tight(f.joint_id) and is_equal_approx(bus.joint_quality(f.joint_id), 0.9), "made again, with their quality")
 	# A part they lift out and set back.
 	for g: FastenerPoint in bus.get_fasteners("radar"):
