@@ -69,7 +69,7 @@ static func scan(root: Node) -> Array[Dictionary]:
 
 ## One line per pair, for logs and test failures.
 static func describe(hits: Array[Dictionary], most := 20) -> String:
-	var lines: PackedStringArray = []
+	var lines: PackedStringArray = PackedStringArray()
 	for i in mini(most, hits.size()):
 		var h := hits[i]
 		lines.append("%.3f m² at %s: %s / %s" % [h.area, str((h.at as Vector3).snapped(Vector3.ONE * 0.01)), h.a, h.b])
