@@ -11,4 +11,4 @@ const SUPPLIERS: PackedStringArray = ["client", "bsx"]
 ## "client" (the client sends it) or "bsx" (BSX orders it).
 @export var supplied_by := "bsx"
 ## Which of SOURCES the client accepts.
-@export var allowed_sources: PackedStringArray = ["new"]
+@export var allowed_sources: PackedStringArray = PackedStringArray(["new"])
