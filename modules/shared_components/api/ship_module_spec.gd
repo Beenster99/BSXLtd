@@ -16,7 +16,7 @@ extends Resource
 ## "handling", "sensors", "towing", "fuel" or "processing".
 @export var category := ""
 ## Ship classes that take it: "S" Kestrel, "M" Manta, "L" Hauler, "XL" Yard ship.
-@export var fits: PackedStringArray = []
+@export var fits: PackedStringArray = PackedStringArray()
 ## Where it is fitted: "hold", "roof", "hull" or "engineering".
 @export var mount := ""
 ## The ship figure it changes ("attractor_cap", "hold_capacity", "contact_range",
@@ -28,6 +28,6 @@ extends Resource
 @export var requires := ""
 ## Void Salvage part names (PartCatalog) it is built from, once those parts exist; empty
 ## until then.
-@export var parts: PackedStringArray = []
+@export var parts: PackedStringArray = PackedStringArray()
 ## Crew hours to fit it in the bay, before skills.
 @export var hours := 1.0
