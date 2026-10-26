@@ -72,14 +72,16 @@ func run_tests() -> void:
 	_run(station, 90)
 	check(beam.beam_bend() < 0.005, "and it settles straight (%.3f m)" % beam.beam_bend())
 	var before := part.global_position.distance_to(rig.worker.aim_origin())
-	station.turn_held(1, false)
-	station.turn_held(1, false)
+	# Wheel up (-1) pushes it away (trades.wheel_away, beenster 0.3.20).
+	var away := -1 if Flags.is_on("trades.wheel_away") else 1
+	station.turn_held(away, false)
+	station.turn_held(away, false)
 	_run(station, 30)
 	check(part.global_position.distance_to(rig.worker.aim_origin()) > before + 0.15, "the wheel pushes it out")
 	# The wheel itself, button up (beenster, 0.3.14): it pulls the part in, not a tool change.
 	var out := part.global_position.distance_to(rig.worker.aim_origin())
-	rig.wheel(-1)
-	rig.wheel(-1)
+	rig.wheel(-away)
+	rig.wheel(-away)
 	_run(station, 30)
 	check(rig.tool == &"tractor" and part.global_position.distance_to(rig.worker.aim_origin()) < out - 0.15,
 			"the mouse wheel pulls it back in while the beam holds it")
