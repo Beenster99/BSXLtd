@@ -312,6 +312,7 @@ func _ready() -> void:
 		_bus.stock_changed.connect(_refresh_stores)
 		_refresh_stores()
 		_bus.shipyard_ready.emit(self)
+		_bus.resume_sales()
 	_on_sky_time(_sky.hour, AlienSky.daylight_at(_sky.hour))
 	Settings.changed.connect(_on_setting)
 	var start: String = Router.args.get("view", "")
@@ -1802,6 +1803,9 @@ func _refresh_stores() -> void:
 			var room: Vector3 = l["size"]
 			_goods_items(batches, str(have["item"]), int(have["qty"]), float(have.get("condition", 1.0)),
 					Vector2(room.x, room.z), room.y - 0.25, l["at"], l["kind"] == "pallet")
+		var room_box: Vector3 = l["size"]
+		ItemLook.look_box(_stores, AABB(l["at"] - Vector3(room_box.x * 0.5, 0.0, room_box.z * 0.5), room_box),
+				{"component": str(have["item"]), "condition": float(have.get("condition", 1.0)), "location": loc})
 		var tag := _tag("%s  x%d" % [item.get("name", have["item"]), int(have["qty"])],
 				l["at"] + Vector3(float(l["face"].x) * (float(l["size"].x) * 0.5 + 0.06), 0.55 if l["kind"] != "bulk" else 1.4, 0), 0.06, l["face"], _stores)
 	var crates := _bus.delivered_crates()
@@ -1817,6 +1821,9 @@ func _refresh_stores() -> void:
 		var h := _goods_box(batches, "pallet", float(c["mass"]) * int(c["qty"]), cat, at) if kind == "bin" \
 				else _goods_items(batches, str(c["item"]), int(c["qty"]), float(c.get("condition", 1.0)),
 						Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4), 2.4, at, kind == "pallet")
+		var foot := Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4)
+		ItemLook.look_box(_stores, AABB(at - Vector3(foot.x * 0.5, 0.0, foot.y * 0.5), Vector3(foot.x, maxf(h, 0.2), foot.y)),
+				{"component": str(c["item"]), "condition": float(c.get("condition", 1.0)), "crate_id": id})
 		var dest := _bus.place_for(str(c["item"]))
 		var tag := _tag("%s  x%d\n%s  ->  %s" % [c["name"], int(c["qty"]), str(c["grade"]).to_upper(), dest if dest != "" else "NO SPACE"],
 				at + Vector3(0, h + 0.25, 0), 0.09, Vector3(0, 0, 1), _stores)

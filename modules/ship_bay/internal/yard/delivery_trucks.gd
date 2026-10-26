@@ -56,6 +56,8 @@ var waiting: Dictionary = {}
 var runs: Array = []
 ## Orders whose trucks haven't set off yet (both docks busy): [order id, crate ids].
 var _queue: Array = []
+## Sales a truck has been sent (or queued) for, on this peer: sale id -> true.
+var _sale_runs: Dictionary = {}
 var _bus: ShipBayBus
 var _mats: Dictionary = {}
 var _boxes: Dictionary = {}
@@ -70,6 +72,16 @@ func _ready() -> void:
 ## True while crate `crate_id` is still on its way on a truck.
 func is_arriving(crate_id: String) -> bool:
 	return waiting.has(crate_id)
+
+
+## The truck that comes for goods sold to `buyer` (another company): in its name, in
+## colours of its own.
+static func buyer_brand(buyer: String) -> Dictionary:
+	var h := absi(hash(buyer))
+	var logos := ["ring", "chevron", "star", "wedge", "arc"]
+	return {"name": (buyer if buyer != "" else "COLLECTION").to_upper(), "tag": "COLLECTING",
+			"body": Color.from_hsv(float(h % 360) / 360.0, 0.25, 0.85), "band": Color.from_hsv(float((h / 360) % 360) / 360.0, 0.75, 0.7),
+			"logo": logos[h % logos.size()]}
 
 
 ## The brand of the truck bringing order `order_id` (the same on every peer).
@@ -103,7 +115,51 @@ func _start_queued() -> void:
 		if dock < 0:
 			return
 		var next: Array = _queue.pop_front()
-		_send(str(next[0]), next[1], dock)
+		if next.size() > 2:
+			_send_for_sale(str(next[2]), dock)
+		else:
+			_send(str(next[0]), next[1], dock)
+
+
+## Goods sold (ShipBayBus.dispatch_stock): a truck in the buyer's name for each new sale.
+func _watch_sales() -> void:
+	if _bus == null or not Flags.is_on("ship_bay.trucks"):
+		return
+	for sale: String in _bus.sales:
+		if not _sale_runs.has(sale):
+			_sale_runs[sale] = true
+			_queue.append(["sale", PackedStringArray(), sale])
+	for sale: String in _sale_runs.keys():
+		if not _bus.sales.has(sale) and not runs.any(func(r: Dictionary) -> bool: return str(r.get("sale", "")) == sale):
+			_sale_runs.erase(sale)
+			_queue = _queue.filter(func(q: Array) -> bool: return q.size() < 3 or str(q[2]) != sale)
+
+
+## Sends a truck to collect a sale's goods: in, back onto the door, open up, wait for the
+## trolley to bring them, beam them aboard, and away (stock_dispatched once the host's goes).
+func _send_for_sale(sale: String, dock: int) -> void:
+	var z := DOCKS[dock]
+	var body := _build_truck(buyer_brand(str((_bus.sales.get(sale, {}) as Dictionary).get("buyer", ""))))
+	body.global_transform = Transform3D(Basis(Vector3.UP, -PI * 0.5), ROAD_START)
+	var park := _dock_xform(z).origin
+	var plan: Array = [
+		{"go": ROAD_TURN, "speed": road_speed},
+		{"go": Vector3(SWING_X, 0, z + 9.0), "speed": road_speed * 0.6},
+		{"go": Vector3(SWING_X, 0, z), "speed": 5.0, "stop": true},
+		{"spin": PI * 0.5},
+		{"back": park},
+		{"doors": 1.0},
+		{"await": sale},
+		{"load": sale},
+		{"wait": dwell * 0.5},
+		{"doors": 0.0},
+		{"go": Vector3(SWING_X - 10.0, 0, z), "speed": 5.0},
+		{"go": Vector3(-104.0, 0, 24.0), "speed": 6.0},
+		{"go": ROAD_START, "speed": road_speed},
+		{"leave": true},
+	]
+	runs.append({"body": body, "order": "sale:" + sale, "sale": sale, "dock": dock, "plan": plan, "step": 0, "v": road_speed, "t": 0.0,
+			"doors": 0.0, "crates": PackedStringArray(), "age": 0.0})
 
 
 func _free_dock() -> int:
@@ -147,6 +203,7 @@ func _dock_xform(z: float) -> Transform3D:
 
 func _physics_process(delta: float) -> void:
 	var dt := delta * time_scale
+	_watch_sales()
 	for run: Dictionary in runs.duplicate():
 		run["age"] = float(run.get("age", 0.0)) + dt
 		if float(run["age"]) > give_up_after:
@@ -205,10 +262,30 @@ func _step(run: Dictionary, dt: float) -> void:
 		run["t"] = float(run["t"]) + dt
 		if float(run["t"]) >= float(s["wait"]):
 			_next(run)
+	elif s.has("await"):
+		# Waiting at the door for the trolley with the goods.
+		var sale: Dictionary = _bus.sales.get(str(s["await"]), {}) if _bus else {}
+		if sale.is_empty() or str(sale.get("state", "")) == "ready":
+			_next(run)
+	elif s.has("load"):
+		var sale_id := str(s["load"])
+		var sale: Dictionary = _bus.sales.get(sale_id, {}) if _bus else {}
+		var crate := str(sale.get("crate", ""))
+		if not run.has("loading") and crate != "" and _bus.fleet:
+			run["loading"] = true
+			# Beamed across from the trolley into the truck's open back.
+			_bus.fleet.call("beam_out", crate, body.global_transform * Vector3(0, FLOAT + 1.6, LENGTH * 0.5 - 1.5))
+			if _is_host():
+				_bus.collect_crate(crate)
+		run["t"] = float(run["t"]) + dt
+		if (crate == "" or _bus.crate_info(crate).is_empty()) and float(run["t"]) > 1.5:
+			_next(run)
 	elif s.has("leave"):
 		_unload(run)
 		runs.erase(run)
 		body.queue_free()
+		if run.has("sale") and _bus and _is_host():
+			_bus.finish_sale(str(run["sale"]))
 
 
 func _next(run: Dictionary) -> void:
@@ -222,6 +299,11 @@ func _next(run: Dictionary) -> void:
 static func _turn_toward(from: float, to: float, step: float) -> float:
 	var d := wrapf(to - from, -PI, PI)
 	return from + clampf(d, -step, step)
+
+
+func _is_host() -> bool:
+	var net := Modules.bus("multiplayer")
+	return net == null or not net.has_method("is_host") or bool(net.call("is_host"))
 
 
 ## The truck has set its crates down: they show on the goods-in floor and may be put away.

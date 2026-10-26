@@ -268,7 +268,10 @@ func _dress(node: Node3D, lot: Dictionary) -> void:
 	node.set_meta("key", key)
 	for c in node.get_children():
 		c.free()
-	node.add_child(ItemLook.make(str(lot.get("item", "")), ItemLook.Look.RUST, float(lot.get("mass", 0.0))))
+	var item := ItemLook.make(str(lot.get("item", "")), ItemLook.Look.RUST, float(lot.get("mass", 0.0)))
+	node.add_child(item)
+	var s: Vector3 = item.get_meta("size")
+	ItemLook.look_box(node, AABB(Vector3(-s.x * 0.5, 0.0, -s.z * 0.5), s), {"component": str(lot.get("item", "")), "condition": float(lot.get("condition", 0.0))})
 
 
 ## Where a lot drops into the crusher's nip (yard space).

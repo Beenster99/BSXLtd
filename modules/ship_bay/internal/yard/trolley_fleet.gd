@@ -594,7 +594,8 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 			t.show_status("PARKING")
 		"fetch":
 			jobs[id] = {"do": "fetch", "phase": "find", "item": str(args.get("item", "")),
-					"qty": int(args.get("qty", 1)), "to": args.get("to", Vector3.ZERO)}
+					"qty": int(args.get("qty", 1)), "to": args.get("to", Vector3.ZERO), "sale": str(args.get("sale", "")),
+					"condition": float(args.get("condition", -1.0))}
 			t.show_status("FETCHING")
 		"beam":
 			var from: Vector3 = args.get("from", t.global_position)
@@ -689,7 +690,15 @@ func _fetch(id: String, t: Trolley, job: Dictionary) -> void:
 	match str(job.get("phase", "")):
 		"find":
 			var place := ""
-			for loc in _bus.find_stock(str(job["item"])):
+			var want := float(job.get("condition", -1.0))
+			var found := _bus.find_stock(str(job["item"]))
+			if want >= 0.0:
+				# A sale: the goods nearest the condition sold first.
+				var by_cond := Array(found)
+				by_cond.sort_custom(func(a: String, b: String) -> bool:
+					return absf(float(_bus.stock_at(a).get("condition", 1.0)) - want) < absf(float(_bus.stock_at(b).get("condition", 1.0)) - want))
+				found = PackedStringArray(by_cond)
+			for loc in found:
 				if place == "" or int(_bus.stock_at(loc).get("qty", 0)) >= int(job["qty"]):
 					place = loc
 					if int(_bus.stock_at(loc).get("qty", 0)) >= int(job["qty"]):
@@ -727,7 +736,7 @@ func _fetch(id: String, t: Trolley, job: Dictionary) -> void:
 		"reaching":
 			if t.fork_ready():
 				job["phase"] = "picking"
-				_bus.pick_stock(str(job["place"]), int(job["qty"]), job["to"], id)
+				_bus.pick_stock(str(job["place"]), int(job["qty"]), job["to"], id, str(job.get("sale", "")))
 		"picking":
 			var held := _bus.trolley_cargo(id)
 			if held != "" and beaming(id):
@@ -771,6 +780,7 @@ func _fetch(id: String, t: Trolley, job: Dictionary) -> void:
 			if _arrived(t):
 				jobs[id] = {}
 				t.show_status("HERE")
+				_at_sale(id)
 
 
 ## A trolley taking a picked crate from the lift to someone.
@@ -789,6 +799,15 @@ func _deliver(id: String, t: Trolley, job: Dictionary) -> void:
 			if _arrived(t):
 				jobs[id] = {}
 				t.show_status("HERE")
+				_at_sale(id)
+
+
+## Brought sold goods to the truck door: the buyer's truck may load them.
+func _at_sale(id: String) -> void:
+	var sale := str(_bus.crate_info(_bus.trolley_cargo(id)).get("sale", ""))
+	if sale != "":
+		trolleys[id].show_status("FOR COLLECTION")
+		_bus.sale_ready(sale)
 
 
 ## Where trolley `id` is headed, for the Machines screen: a stores place ("C2-03-1-2"), a
@@ -1534,6 +1553,22 @@ func _fail(id: String, t: Trolley, why: String) -> void:
 		jobs[id] = {"do": "put_away", "phase": "retry", "wait": RETRY_AFTER}
 
 
+## A player's beam took this crate off its trolley (ShipBayBus.lift_off_trolley): a job
+## that was taking it somewhere drops it, lowers the deck and looks for what is next.
+func crate_lifted(crate_id: String) -> void:
+	_reserved_crates.erase(crate_id)
+	for id: String in jobs:
+		var job: Dictionary = jobs[id]
+		if str(job.get("crate", "")) != crate_id:
+			continue
+		_release(id)
+		var t: Trolley = trolleys[id]
+		t.path = PackedVector3Array()
+		if _drives(id):
+			_bus.command_trolley(id, "deck", {"height": Trolley.DECK_MIN})
+		jobs[id] = {"do": "put_away", "phase": "lowering"}
+
+
 func _release(id: String) -> void:
 	for d: Dictionary in [_reserved_places, _reserved_crates]:
 		for k: String in d.keys():
@@ -1560,7 +1595,8 @@ func _refresh_cargo() -> void:
 		if str(is_now.get("t", "")) != str(_deck_parts[cid]):
 			var from_id := str(_deck_parts[cid])
 			_deck_parts.erase(cid)
-			_bus.deck_part_left.emit(cid, from_id)
+			if not _bus.lifted_off(cid):
+				_bus.deck_part_left.emit(cid, from_id)
 	for cid: String in _where:
 		var was: Dictionary = _where[cid]
 		var is_now: Dictionary = now.get(cid, {})
@@ -1605,13 +1641,21 @@ func _show_cargo() -> void:
 		var first := _bus.crate_info(load[0])
 		for cid in load:
 			var c := _bus.crate_info(cid)
-			lots.append({"item": str(c.get("item", "")), "count": int(c.get("qty", 1)), "condition": float(c.get("condition", 1.0))})
+			lots.append({"item": str(c.get("item", "")), "count": int(c.get("qty", 1)), "condition": float(c.get("condition", 1.0)), "crate_id": cid})
 			mass += float(c.get("mass", 0.0)) * int(c.get("qty", 1))
 		var name := "%s x%d" % [first.get("name", ""), int(first.get("qty", 1))]
 		if load.size() > 1:
 			name += "  +%d MORE" % (load.size() - 1)
 		t.set_cargo({"key": key, "crate_id": load[0], "kind": Layout.kind_for(float(first.get("mass", 0.0)), str(first.get("item", ""))), "mass": mass,
 				"name": name, "lots": lots})
+
+
+## Beams a carried crate's goods off its trolley to `to` (yard space): sold goods into the
+## buyer's truck. The crate itself goes from the bus (collect_crate).
+func beam_out(crate_id: String, to: Vector3) -> void:
+	var t: Trolley = trolleys.get(str(_bus.crate_info(crate_id).get("carrier", "")))
+	if t:
+		_beam_crate(crate_id, t.deck, to, t, [])
 
 
 ## Beams a crate's goods from `from` to `to` (a point, or a trolley: onto its deck), the

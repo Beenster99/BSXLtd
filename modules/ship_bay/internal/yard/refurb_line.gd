@@ -524,7 +524,10 @@ func _dress_lot(node: Node3D, lot: Dictionary) -> void:
 	node.add_child(body)
 	# The part itself, as it is: rusty or worn, then bare, then in its own paint again.
 	var looks := {"rust": ItemLook.Look.RUST, "worn": ItemLook.Look.WORN, "bare": ItemLook.Look.BARE, "coat": ItemLook.Look.NEW}
-	body.add_child(ItemLook.make(str(lot.item), looks[_look(lot)], float(lot.mass)))
+	var item := ItemLook.make(str(lot.item), looks[_look(lot)], float(lot.mass))
+	body.add_child(item)
+	var s: Vector3 = item.get_meta("size")
+	ItemLook.look_box(body, AABB(Vector3(-s.x * 0.5, 0.0, -s.z * 0.5), s), {"component": str(lot.item), "condition": float(lot.get("condition", 1.0))})
 
 
 static func _look(lot: Dictionary) -> String:
