@@ -1547,14 +1547,18 @@ static func component_lines(node: Node) -> PackedStringArray:
 		return lines
 	var comp := str(n.get_meta("component"))
 	var spec := _build_spec(comp)
+	var stored := _storage_item(comp)
 	var title := str(n.get_meta("name", ""))
 	if title == "":
-		title = str(spec.get("display_name")) if spec and str(spec.get("display_name")) != "" else comp
+		title = str(spec.get("display_name")) if spec and str(spec.get("display_name")) != "" \
+				else str(stored.get("name", comp))
 	lines.append(title.to_upper())
 	lines.append("%-9s %s" % ["PART", comp])
 	var mass := float(n.get_meta("mass_kg", 0.0))
 	if mass <= 0.0 and spec:
 		mass = float(spec.get("mass"))
+	if mass <= 0.0:
+		mass = float(stored.get("mass", 0.0))
 	if mass > 0.0:
 		lines.append("%-9s %s" % ["MASS", _kg(mass)])
 	if spec and str(spec.get("material")) != "":
@@ -1566,6 +1570,17 @@ static func component_lines(node: Node) -> PackedStringArray:
 	if spec and spec.get("joints") is Array and not (spec.get("joints") as Array).is_empty():
 		lines.append("%-9s %d" % ["JOINTS", (spec.get("joints") as Array).size()])
 	return lines
+
+
+## Ship and Bay's stores entry for an item ({name, mass, ...}; {} for none), for goods the
+## shared catalogue doesn't describe (a bowser tank on a trolley). Read once, then kept.
+static var _stored: Dictionary = {}
+static func _storage_item(component: String) -> Dictionary:
+	if _stored.is_empty():
+		var bay_bus := Modules.bus("ship_bay") as ShipBayBus
+		if bay_bus:
+			_stored = bay_bus.storage_items()
+	return _stored.get(component, {})
 
 
 static func _build_spec(component: String) -> Object:
