@@ -127,7 +127,7 @@ const LOOK_HINT_ID := "trades.tool"
 
 
 func _ready() -> void:
-	HudSlots.register_look_hint(LOOK_HINT_ID, func(_hit: Dictionary) -> Dictionary: return look_hint(), 10)
+	HudSlots.register_look_hint(LOOK_HINT_ID, func(hit: Dictionary) -> Dictionary: return look_hint(hit), 10)
 	if not in_yard:
 		_build_room()
 		_build_bench()
@@ -638,18 +638,61 @@ func tool_key(id: StringName) -> String:
 
 ## What the hint card shows for the tool in hand on what you're looking at (UI's look hint,
 ## HudSlots.register_look_hint): {title, keys}, or {} while there's nothing to do.
-func look_hint() -> Dictionary:
+func look_hint(hit := {}) -> Dictionary:
 	if _focus == null or not _hud.visible:
 		return {}
 	var keys := _focus.actions(tool)
-	if keys.is_empty():
+	var info := part_info(hit)
+	if keys.is_empty() and (info.is_empty() or (_own_hint(hit) and not _hit_is_part(hit))):
+		# Nothing to do here, or it has its own card (a door button on the ship, a machine).
 		return {}
-	if Flags.is_on("trades.inspect") and InputMap.has_action(TradesBus.KEY_INSPECT) and not _focus.inspect_lines().is_empty():
+	if Flags.is_on("trades.inspect") and not Flags.is_on("trades.part_info") and InputMap.has_action(TradesBus.KEY_INSPECT) \
+			and not _focus.inspect_lines().is_empty():
 		keys.append([TradesBus.KEY_INSPECT, "part details (hold)"])
-	var title := _focus.aim_title(tool)
+	var title := _focus.aim_title(tool) if not keys.is_empty() else ""
 	# The spec of what you're looking at, tool in hand (beenster, 2026-10-22).
 	var spec := _focus.aim_spec(tool) if Flags.is_on("trades.hover_specs") else ""
-	return {"title": title if title != "" else _focus.title, "text": spec, "keys": keys}
+	if title == "" and not info.is_empty():
+		title = info[0].capitalize()
+		info.remove_at(0)
+	var text := spec
+	if not info.is_empty():
+		text += ("\n\n" if text != "" else "") + "\n".join(info)
+	return {"title": title if title != "" else _focus.title, "text": text, "keys": keys}
+
+
+## trades.part_info (beenster, 0.3.19: "When I look at a part (anywhere in the game) I must be
+## able to see its information on the right hand panel"): the details of the part under the
+## aim, always on the look card, not only while the inspect key is held: a part on the ship,
+## loose or on a trolley (TradesShipJoints.inspect_lines), else anything carrying meta
+## "component" (TradesShipJoints.component_lines). Empty for none.
+func part_info(hit: Dictionary) -> PackedStringArray:
+	if not Flags.is_on("trades.part_info") or _focus == null:
+		return PackedStringArray()
+	var lines := _focus.inspect_lines()
+	if lines.is_empty() and hit.get("collider") is Node:
+		lines = TradesShipJoints.component_lines(hit.get("collider") as Node)
+	return lines
+
+
+## The thing under the view has its own look card (a method or meta "look_hint").
+static func _own_hint(hit: Dictionary) -> bool:
+	var n := hit.get("collider") as Node
+	while n != null:
+		if n.has_method("look_hint") or n.has_meta("look_hint"):
+			return true
+		n = n.get_parent()
+	return false
+
+
+## The thing under the view is a part (meta "component"), so its details win over its card.
+static func _hit_is_part(hit: Dictionary) -> bool:
+	var n := hit.get("collider") as Node
+	while n != null:
+		if n.has_meta("component"):
+			return true
+		n = n.get_parent()
+	return false
 
 
 ## What you can do now with the tool in your hand on what you're looking at, with its keys
