@@ -10,7 +10,7 @@ extends Resource
 @export var parts: Dictionary = {}
 ## Market catalogue categories it deals in ("engines", "hull", ...); its daily listings
 ## are drawn from these.
-@export var categories: PackedStringArray = []
+@export var categories: PackedStringArray = PackedStringArray()
 ## Conditions it sells, with the weight of each in its daily listings.
 @export var conditions: Dictionary = {"new": 1.0}
 ## How many market listings it puts up each day.

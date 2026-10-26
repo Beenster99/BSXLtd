@@ -142,21 +142,12 @@ func _init() -> void:
 
 func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, self)
-	_listen_to_contracts()
-	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
-	if yard_bus and Flags.is_on("business.market") and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
-		yard_bus.shipyard_ready.connect(_on_shipyard_ready)
 	delivery_arrived.connect(_on_delivery_arrived)
-	# Ship and Bay's wrist Stock prices what's held at Void Salvage's value for a new part.
-	if yard_bus and yard_bus.has_method("set_part_values"):
-		yard_bus.call("set_part_values", func(item_id: String) -> int: return get_catalogue().value_of(item_id))
-	# The recycler's raw materials come into stock by the kilo.
-	if yard_bus and yard_bus.has_signal("scrap_recycled") and not yard_bus.is_connected("scrap_recycled", _on_scrap_recycled):
-		yard_bus.connect("scrap_recycled", _on_scrap_recycled)
-	if Flags.is_on("business.market") and Router.has_scene(ShipBayBus.SHIPYARD_SCENE):
-		Shots.register("business_terminal", ShipBayBus.SHIPYARD_SCENE, _shot_terminal, 40)
-		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
-		Shots.register("business_goods_in", ShipBayBus.SHIPYARD_SCENE, _shot_goods, 40)
+	_hook_up_modules()
+	# Modules load in their depends_on order, but that order isn't guaranteed (a packaged build
+	# once lost every manifest's depends_on), so hook up again once every module is in.
+	if not Modules.modules_ready.is_connected(_hook_up_modules):
+		Modules.modules_ready.connect(_hook_up_modules)
 	_offer_screen_channels()
 	if Flags.is_on("business.debug"):
 		Settings.register(SETTINGS_SECTION, {INSTANT_KEY: false})
@@ -172,7 +163,27 @@ func register_module() -> void:
 		Modules.modules_ready.connect(_offer_wallets, CONNECT_ONE_SHOT)
 
 
+## Contracts' and Ship and Bay's signals and hooks. Safe to run more than once.
+func _hook_up_modules() -> void:
+	_listen_to_contracts()
+	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	if yard_bus and Flags.is_on("business.market") and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
+		yard_bus.shipyard_ready.connect(_on_shipyard_ready)
+	# Ship and Bay's wrist Stock prices what's held at Void Salvage's value for a new part.
+	if yard_bus and yard_bus.has_method("set_part_values"):
+		yard_bus.call("set_part_values", func(item_id: String) -> int: return get_catalogue().value_of(item_id))
+	# The recycler's raw materials come into stock by the kilo.
+	if yard_bus and yard_bus.has_signal("scrap_recycled") and not yard_bus.is_connected("scrap_recycled", _on_scrap_recycled):
+		yard_bus.connect("scrap_recycled", _on_scrap_recycled)
+	if Flags.is_on("business.market") and Router.has_scene(ShipBayBus.SHIPYARD_SCENE):
+		Shots.register("business_terminal", ShipBayBus.SHIPYARD_SCENE, _shot_terminal, 40)
+		Shots.register("business_wall_monitor", ShipBayBus.SHIPYARD_SCENE, _shot_monitor, 40)
+		Shots.register("business_goods_in", ShipBayBus.SHIPYARD_SCENE, _shot_goods, 40)
+
+
 func unregister_module() -> void:
+	if Modules.modules_ready.is_connected(_hook_up_modules):
+		Modules.modules_ready.disconnect(_hook_up_modules)
 	var yard_bus := Modules.bus("ship_bay")
 	if yard_bus and yard_bus.has_signal("scrap_recycled") and yard_bus.is_connected("scrap_recycled", _on_scrap_recycled):
 		yard_bus.disconnect("scrap_recycled", _on_scrap_recycled)
