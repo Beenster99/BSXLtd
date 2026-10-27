@@ -27,7 +27,7 @@ const TOOLS: Array[StringName] = [&"hands", &"torque_wrench", &"drill", &"rivet_
 const TOOL_LABELS := {
 	&"hands": "Hands", &"torque_wrench": "Torque wrench", &"drill": "Drill",
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
-	&"cutter": "Cutter",
+	&"cutter": "Cutter", &"template": "Scribe",
 }
 ## The tools trades.slim_hotbar leaves off the yard's hotbar.
 const SLIM_DROPS: Array[StringName] = [&"drill", &"wire_tool", &"cutter"]
@@ -79,6 +79,9 @@ var turn_snap := false
 var stations: Array[TradesStation] = []
 ## The tool meshes by id (no entry for hands).
 var tool_nodes: Dictionary = {}
+## trades.cutting_bed (in the yard): the plate tracer and the cutting bed, or null.
+var tracer: TradesPlateTracer
+var cutting_bed: TradesCuttingBed
 
 var _focus: TradesStation
 var _pressed: TradesStation
@@ -141,6 +144,9 @@ func _ready() -> void:
 	# trades.vs_tools brings the cutter back for rivets (beenster, 0.3.18).
 	if in_yard and Flags.is_on("trades.cutter") and (not Flags.is_on("trades.slim_hotbar") or TradesShipJoints.vs_tools()):
 		hotbar.append(&"cutter")
+	# trades.cutting_bed: the template scribe traces plates at the ship for the cutting bed.
+	if in_yard and TradesCuttingBed.enabled():
+		hotbar.append(&"template")
 	_build_worker()
 	sparks = TradesSparks.new()
 	sparks.name = "Sparks"
@@ -201,6 +207,8 @@ func _enter_yard() -> void:
 		s.rigs[RIG_SPOT] = yard.global_transform * yard_bus.shipyard_spot(RIG_SPOT)
 		yard_bus.connect("rig_changed", _on_rig_changed)
 		s.refresh_points()
+	if TradesCuttingBed.enabled() and yard and yard_bus and yard_bus.has_method("cutting_bed_spot"):
+		build_cutting_bed(yard.global_transform * (yard_bus.call("cutting_bed_spot") as Transform3D))
 	_focus = s
 	if yard_bus:
 		yard_bus.set_walker_active(yard, false)
@@ -221,6 +229,23 @@ func _enter_yard() -> void:
 	hint(s.start_hint())
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## trades.cutting_bed: the plasma cutting bed in Ship and Bay's plate hall, and the tracer that
+## makes its templates at the ship.
+func build_cutting_bed(at: Transform3D) -> void:
+	var net := _net()
+	tracer = TradesPlateTracer.new()
+	tracer.name = "PlateTracer"
+	tracer.bay = self
+	add_child(tracer)
+	tracer.build(net)
+	cutting_bed = TradesCuttingBed.new()
+	cutting_bed.name = "CuttingBed"
+	cutting_bed.bay = self
+	add_child(cutting_bed)
+	cutting_bed.global_transform = at
+	cutting_bed.build(net)
 
 
 ## A unit went on or came off an upgrade rig (Ship and Bay's rig_changed).
@@ -488,6 +513,9 @@ func _on_mouse_button(event: InputEventMouseButton) -> void:
 		return
 	match event.button_index:
 		MOUSE_BUTTON_LEFT:
+			if tool == &"template" and tracer:
+				tracer.set_tracing(event.pressed)
+				return
 			if event.pressed:
 				_pressed = _focus
 				_focus.press(tool)
@@ -514,6 +542,11 @@ func _process(delta: float) -> void:
 		# The yard's still views (its screenshots) borrow the screen: no HUD over them.
 		_hud.visible = get_viewport().get_camera_3d() == worker.camera
 	_update_focus()
+	if tracer:
+		var scribe := tool_node(&"template") as TradesTemplateScribe
+		if scribe:
+			scribe.progress = tracer.progress()
+			scribe.plate = tracer.plate_name
 	_placed.clear()
 	for s in stations:
 		s.update(delta)
@@ -992,6 +1025,7 @@ func _build_tools() -> void:
 	var scripts := {
 		&"torque_wrench": TradesPowerWrench if TradesShipJoints.powered() else TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetGun if in_yard and Flags.is_on("trades.power_riveter") else TradesRivetSqueezer,
 		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool, &"cutter": TradesCutter,
+		&"template": TradesTemplateScribe,
 	}
 	for id: StringName in scripts:
 		var t: TradesTool = (scripts[id] as GDScript).new()

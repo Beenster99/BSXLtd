@@ -1,0 +1,214 @@
+class_name TradesCutterPanel
+extends Control
+## The cutting bed's console screen (on a TouchScreen at the machine's front corner): the
+## templates it holds down the left, the bed drawn on the right with the plate on it and the
+## picked template laid where it will be cut, the plate's and the cut's figures, and ROTATE,
+## CUT and DELETE (a traced template). Look at it and click, like every screen in the yard.
+
+const BG := Color(0.04, 0.06, 0.07)
+const INK := Color(0.78, 0.95, 0.9)
+const DIM := Color(0.4, 0.55, 0.52)
+const AMBER := Color(1.0, 0.68, 0.15)
+const RED := Color(1.0, 0.35, 0.3)
+const GREEN := Color(0.35, 1.0, 0.55)
+
+var bed: Node  # TradesCuttingBed
+var _list: VBoxContainer
+var _preview: Control
+var _info: Label
+var _status: Label
+var _cut: Button
+var _delete: Button
+var _rotate: Button
+
+
+func _ready() -> void:
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+	var bg := ColorRect.new()
+	bg.color = BG
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(bg)
+	var root := VBoxContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = 24
+	root.offset_top = 18
+	root.offset_right = -24
+	root.offset_bottom = -18
+	root.add_theme_constant_override("separation", 12)
+	add_child(root)
+	var head := _label("BSX  ·  CNC CUTTING TABLE   PLASMA / WATER JET", 30, AMBER)
+	root.add_child(head)
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 18)
+	root.add_child(body)
+	var left := VBoxContainer.new()
+	left.custom_minimum_size = Vector2(390, 0)
+	body.add_child(left)
+	left.add_child(_label("TEMPLATES", 22, DIM))
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(scroll)
+	_list = VBoxContainer.new()
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_list)
+	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(right)
+	_preview = Control.new()
+	_preview.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_preview.draw.connect(_draw_preview)
+	right.add_child(_preview)
+	_info = _label("", 21, INK)
+	right.add_child(_info)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 14)
+	right.add_child(buttons)
+	_rotate = _button("ROTATE 90°", func() -> void: bed.call("rotate_quarter"))
+	buttons.add_child(_rotate)
+	_delete = _button("DELETE", _delete_picked)
+	buttons.add_child(_delete)
+	_cut = _button("CUT", _press_cut)
+	_cut.custom_minimum_size = Vector2(220, 64)
+	buttons.add_child(_cut)
+	_status = _label("", 24, GREEN)
+	root.add_child(_status)
+	refresh()
+
+
+## Everything again from the bed and the templates.
+func refresh() -> void:
+	if _list == null or bed == null:
+		return
+	for c in _list.get_children():
+		c.queue_free()
+	var bus := Modules.bus("trades")
+	var templates: Array = bus.call("templates") if bus and bus.has_method("templates") else []
+	for t: Dictionary in templates:
+		var id := str(t.id)
+		var size: Vector2 = t.size
+		var b := _button("%s%s\n%d x %d mm" % ["✎ " if t.kind == "traced" else "", str(t.name), roundi(size.x * 1000.0), roundi(size.y * 1000.0)],
+				func() -> void: bed.call("pick", id))
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.custom_minimum_size = Vector2(360, 66)
+		b.add_theme_font_size_override("font_size", 19)
+		if id == str(bed.get("picked")):
+			b.add_theme_color_override("font_color", AMBER)
+			b.add_theme_color_override("font_hover_color", AMBER)
+		_list.add_child(b)
+	var plate: Dictionary = bed.get("plate")
+	var job: Dictionary = bed.get("job")
+	var picked := str(bed.get("picked"))
+	var t: Dictionary = bed.call("template", picked)
+	var lines := PackedStringArray()
+	if plate.is_empty():
+		lines.append("PLATE   none: beam a stock plate onto the bed")
+	else:
+		var s: Vector2 = plate.size
+		lines.append("PLATE   %s  %d x %d x %d mm" % [str(plate.material).to_upper(), roundi(s.x * 1000.0), roundi(s.y * 1000.0), roundi(float(plate.thickness) * 1000.0)])
+		lines.append("HEAD    %s" % ("WATER JET (glass)" if bed.call("is_glass") else "PLASMA"))
+	if not t.is_empty():
+		var area := TradesPlateShapes.area_of(t)
+		lines.append("CUT     %s, %.2f m², %.1f m of kerf" % [str(t.name), area, TradesPlateShapes.perimeter_of(t.outline)])
+		if not plate.is_empty():
+			var feed: float = bed.call("_feed")
+			lines.append("FEED    %d mm/min,  about %d s" % [roundi(feed * 60000.0), ceili(_kerf_m(t) / feed)])
+	_info.text = "\n".join(lines)
+	var why: String = bed.call("refusal", picked)
+	if not job.is_empty():
+		var steps: Array = job.program
+		_status.text = "CUTTING  %d%%" % roundi(100.0 * int(job.step) / maxf(steps.size(), 1))
+		_status.add_theme_color_override("font_color", AMBER)
+	elif why == "":
+		_status.text = "READY  ·  press CUT"
+		_status.add_theme_color_override("font_color", GREEN)
+	else:
+		var made: PackedStringArray = bed.get("made")
+		_status.text = ("DONE  ·  the piece and the offcut are on the bed.  " if not made.is_empty() and plate.is_empty() else "") + why.to_upper()
+		_status.add_theme_color_override("font_color", RED if why != "No plate on the bed" else DIM)
+	_cut.disabled = why != ""
+	_delete.disabled = t.is_empty() or str(t.kind) != "traced" or not job.is_empty()
+	_rotate.disabled = not job.is_empty()
+	_preview.queue_redraw()
+
+
+func _process(_delta: float) -> void:
+	if bed and not (bed.get("job") as Dictionary).is_empty() and Engine.get_process_frames() % 10 == 0:
+		refresh()
+
+
+func _kerf_m(t: Dictionary) -> float:
+	var m := TradesPlateShapes.perimeter_of(t.outline)
+	for h: PackedVector2Array in t.get("holes", []):
+		m += TradesPlateShapes.perimeter_of(h)
+	return m
+
+
+func _press_cut() -> void:
+	var why: String = bed.call("cut")
+	if why != "":
+		_status.text = why.to_upper()
+
+
+func _delete_picked() -> void:
+	var bus := Modules.bus("trades")
+	if bus and bus.has_method("remove_template"):
+		bus.call("remove_template", str(bed.get("picked")))
+	bed.call("pick", "")
+
+
+## The bed from above: its slats, the plate, and the template where it will be cut (the cut
+## so far in amber while it runs).
+func _draw_preview() -> void:
+	var r := Rect2(Vector2.ZERO, _preview.size)
+	_preview.draw_rect(r, Color(0.02, 0.03, 0.035))
+	var half: Vector2 = TradesCuttingBed.HALF
+	var scale := minf((r.size.x - 20.0) / (half.x * 2.0), (r.size.y - 20.0) / (half.y * 2.0))
+	var mid := r.get_center()
+	var to := func(p: Vector2) -> Vector2: return mid + p * scale
+	var x := -half.x
+	while x <= half.x:
+		_preview.draw_line(to.call(Vector2(x, -half.y)), to.call(Vector2(x, half.y)), Color(0.15, 0.18, 0.2), 2.0)
+		x += 0.16
+	var plate: Dictionary = bed.get("plate")
+	if not plate.is_empty():
+		var s: Vector2 = plate.size
+		_preview.draw_rect(Rect2(to.call(-s * 0.5), s * scale), Color(0.35, 0.38, 0.4, 0.8))
+	var t: Dictionary = bed.call("template", str(bed.get("picked")))
+	var job: Dictionary = bed.get("job")
+	if not job.is_empty():
+		t = job.shape
+	elif not t.is_empty():
+		t = TradesPlateShapes.make_turned(t, float(bed.get("turn")))
+		if not plate.is_empty():
+			var extra := TradesPlateShapes.fit_turn(t, plate.size)
+			if extra > 0.0:
+				t = TradesPlateShapes.make_turned(t, extra)
+	if t.is_empty():
+		return
+	for loop: PackedVector2Array in TradesPlateShapes.cut_path(t, 0.0):
+		var pts := PackedVector2Array()
+		for p in loop:
+			pts.append(to.call(p))
+		_preview.draw_polyline(pts, AMBER if not job.is_empty() else INK, 3.0, true)
+	if not job.is_empty():
+		var head: Vector2 = bed.get("head")
+		_preview.draw_circle(to.call(head), 7.0, Color(0.6, 0.85, 1.0))
+
+
+func _label(text: String, size: int, colour: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", colour)
+	return l
+
+
+func _button(text: String, pressed: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(170, 64)
+	b.add_theme_font_size_override("font_size", 22)
+	b.pressed.connect(pressed)
+	return b

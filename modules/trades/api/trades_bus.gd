@@ -27,6 +27,8 @@ signal unit_changed(rig_id: String, state: Dictionary)
 ## it, and its deck_part_left(crate_id, trolley_id) when the crate leaves the trolley sends the
 ## body away.
 signal part_on_deck(crate_id: String, body: Node3D, deck: Node3D)
+## trades.cutting_bed: a plate template was traced at the ship or deleted; templates() has them.
+signal templates_changed
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
@@ -57,12 +59,16 @@ const KEY_GROUP := "Tools"
 ## The wrist screen's Specs channel: torque windows and rivet heights (its flag too).
 const SPECS_CHANNEL := "trades.specs"
 const HOTBAR_KEYS := 9
+## Saves section version for the traced templates.
+const SAVE_VERSION := 1
 
 var _sites: Dictionary = {}
 var _results: Dictionary = {}
 var _modifiers: Dictionary = {}  # str(player_id) -> {effect_key: value}
 var _units: Dictionary = {}  # rig_id -> unit_state()
 var _deck_parts: Dictionary = {}  # crate_id -> the loose part on a trolley's deck
+var _traced: Array[Dictionary] = []  # trades.cutting_bed: templates traced off plates
+var _next_template := 1
 
 
 func register_module() -> void:
@@ -82,6 +88,8 @@ func register_module() -> void:
 				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
 	if TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t)):
 		Router.register_scene(WORKBENCH, BENCH_SCENE)
+	if Flags.is_on("trades.cutting_bed"):
+		Saves.register_section("trades", self)
 	if Flags.is_on("trades.shipyard"):
 		var yard_bus := Modules.bus("ship_bay") as ShipBayBus
 		if yard_bus and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
@@ -145,6 +153,83 @@ func note_deck_part(crate_id: String, body: Node3D, deck: Node3D) -> void:
 	if deck and not _landed.has(crate_id):
 		_landed[crate_id] = true
 		part_on_deck.emit(crate_id, body, deck)
+
+
+## trades.cutting_bed: the plate templates the cutting bed holds, its own library first, then the
+## ones traced at the ship (Dictionaries: id, name, outline (PackedVector2Array m, centred), holes,
+## size (Vector2 m), kind "library" or "traced", source (the plate slot traced)).
+func templates() -> Array[Dictionary]:
+	var out := TradesPlateShapes.library()
+	for t in _traced:
+		out.append(t)
+	return out
+
+
+## The id the next traced template gets: "T-001", "T-002"...
+func next_template_id() -> String:
+	return "T-%03d" % _next_template
+
+
+## Keeps a traced template (the tracer's event on every machine); returns it as kept.
+func add_template(t: Dictionary) -> Dictionary:
+	var kept := t.duplicate(true)
+	_traced = _traced.filter(func(o: Dictionary) -> bool: return o.id != kept.id)
+	_traced.append(kept)
+	var n := str(kept.id).trim_prefix("T-").to_int()
+	_next_template = maxi(_next_template, n + 1)
+	templates_changed.emit()
+	return kept
+
+
+## Deletes a traced template (the library's stay).
+func remove_template(id: String) -> void:
+	var before := _traced.size()
+	_traced = _traced.filter(func(o: Dictionary) -> bool: return o.id != id)
+	if _traced.size() != before:
+		templates_changed.emit()
+
+
+func save_version() -> int:
+	return SAVE_VERSION
+
+
+func save_data() -> Dictionary:
+	var rows: Array = []
+	for t in _traced:
+		rows.append({"id": t.id, "name": t.name, "source": t.get("source", ""), "outline": _points_out(t.outline)})
+	return {"templates": rows, "next": _next_template}
+
+
+func load_data(data: Dictionary, _from_version: int) -> void:
+	_traced.clear()
+	for row: Dictionary in data.get("templates", []):
+		_traced.append(TradesPlateShapes.finish({"id": str(row.get("id", "")), "name": str(row.get("name", "Plate")),
+				"outline": _points_in(row.get("outline", [])), "holes": [], "kind": "traced", "source": str(row.get("source", ""))}))
+	_next_template = int(data.get("next", 1))
+	for t in _traced:
+		_next_template = maxi(_next_template, str(t.id).trim_prefix("T-").to_int() + 1)
+	templates_changed.emit()
+
+
+func reset_data() -> void:
+	load_data({}, SAVE_VERSION)
+
+
+static func _points_out(points: PackedVector2Array) -> Array:
+	var out: Array = []
+	for p in points:
+		out.append([snappedf(p.x, 0.0001), snappedf(p.y, 0.0001)])
+	return out
+
+
+static func _points_in(rows: Variant) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if rows is PackedVector2Array:
+		return rows
+	for r: Variant in rows:
+		if r is Array and (r as Array).size() >= 2:
+			out.append(Vector2(float(r[0]), float(r[1])))
+	return out
 
 
 func register_site(site: JointSite) -> void:
