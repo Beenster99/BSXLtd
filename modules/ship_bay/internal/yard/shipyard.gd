@@ -57,7 +57,7 @@ const ROOMS := {
 	"stock": {"name": "Stock", "box": AABB(Vector3(-50, 0, -46), Vector3(50, 12, 22))},
 	"prep": {"name": "Store 2", "box": AABB(Vector3(0, 0, -46), Vector3(50, 12, 22))},
 	"preassembly": {"name": "Pre-assembly", "box": AABB(Vector3(28, 0, -24), Vector3(22, 12, 48))},
-	"plates": {"name": "Plate hall", "box": AABB(Vector3(-84, 0, -46), Vector3(34, 12, 26))},
+	"plates": {"name": "Plate hall", "box": AABB(Vector3(-104, 0, -46), Vector3(54, 12, 26))},
 	"bay": {"name": "The bay", "box": AABB(Vector3(-28, 0, -24), Vector3(56, 30, 48))},
 }
 ## The doorways between the rooms: [room, room, the doorway's middle on the floor (yard x, z)].
@@ -1329,7 +1329,9 @@ func _build_stock() -> void:
 			cats = PackedStringArray()
 			for id: String in StorageLayout.rack_ids():
 				if id.begins_with(aisle):
-					cats.append(str(StorageLayout.rack(id)["name"]).to_upper())
+					var name := str(StorageLayout.rack(id)["name"]).to_upper()
+					if not cats.has(name):
+						cats.append(name)
 		if not cats.is_empty():
 			_sign(" · ".join(cats), Vector3(x, 10.55, StorageLayout.RACK_Z0 + 0.2), 0.0, 0.2, false)
 	for z: float in [StorageLayout.TRANSFER_Z - 1.4, StorageLayout.TRANSFER_Z + 1.4]:
@@ -1386,7 +1388,7 @@ func _storage_rack(rack: String) -> void:
 		if str(r["store"]) == "plate":
 			var first: Dictionary = layout["locations"].get("%s-%02d-1-1" % [rack, bay], {})
 			var p := StockPlates.item(str(first.get("home", "")))
-			_tag("%s-%02d  %s  %s x %s" % [rack, bay, str(r["material"]).to_upper(), p.get("length_mm", "?"), p.get("width_mm", "?")],
+			_tag("%s-%02d  %s  %s x %s" % [rack, bay, str(r["name"] if r.get("long", false) else r["material"]).to_upper(), p.get("length_mm", "?"), p.get("width_mm", "?")],
 					Vector3(x + face * (depth * 0.5 + 0.05), tall - 0.35, z), 0.13, Vector3(face, 0, 0))
 			continue
 		var title := "%s-%02d  %s" % [rack, bay, str(L.CATEGORIES.get(cat, cat)).to_upper() if cat != "" else
@@ -1479,11 +1481,12 @@ func _build_plate_hall() -> void:
 	var fixture := _lib("light_strip/bay", func() -> PartShapes.PartShape:
 			return WreckParts.light_strip(2.4, 0.36, 0.1, LAMP))
 	# A board over each rack's open end naming its material (one rack a material).
-	for pr: Array in StorageLayout.PLATE_RACKS:
+	for pr: Array in StorageLayout.PLATE_RACKS + StorageLayout.LONG_RACKS:
 		var rack := StorageLayout.rack(pr[0])
 		var board := _sign(str(rack["name"]).to_upper(), Vector3(float(rack["x"]), float(rack["height"]) + 0.7, z0 + 0.15), 0.0, 0.32)
 		board.name = "PlateSign_" + str(pr[0])
-	for p: Vector3 in [Vector3(-79.6, 0, -40.0), Vector3(-79.6, 0, -30.0), Vector3(-71.4, 0, -40.0), Vector3(-56.2, 0, -40.0), Vector3(-56.2, 0, -30.0),
+	for p: Vector3 in [Vector3(-98.1, 0, -40.0), Vector3(-98.1, 0, -30.0), Vector3(-87.2, 0, -40.0), Vector3(-87.2, 0, -30.0), Vector3(-92.0, 0, -23.0),
+			Vector3(-79.6, 0, -40.0), Vector3(-79.6, 0, -30.0), Vector3(-71.4, 0, -40.0), Vector3(-56.2, 0, -40.0), Vector3(-56.2, 0, -30.0),
 			Vector3(bed.origin.x, 0, bed.origin.z - 4.5), Vector3(bed.origin.x, 0, bed.origin.z + 4.5), Vector3(-67.0, 0, -23.0)]:
 		_put(fixture, Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, PI), Vector3(p.x, H - 2.3, p.z)), _parts, false)
 		var lamp := OmniLight3D.new()
