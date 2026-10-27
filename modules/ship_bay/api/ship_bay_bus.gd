@@ -1581,8 +1581,13 @@ static func is_sheet(item: String) -> bool:
 const SHEET_WORDS: PackedStringArray = ["Plate", "Panel", "Pane", "Sheet", "Wall", "Skin", "Glass"]
 
 
-## The dust `qty` of a part crushes down into: material id -> kg.
-static func scrap_materials(item_id: String, qty: int) -> Dictionary:
+## The dust `qty` of a part crushes down into: material id -> kg. Stock plates, pieces cut
+## from them and sheet parts give back their own material (StockPlates.crush_materials, for
+## the part's own `mass` each, kg, and `material`); everything else its category's mix.
+static func scrap_materials(item_id: String, qty: int, mass := 0.0, material := "") -> Dictionary:
+	var own := StockPlates.crush_materials(item_id, qty, mass, material)
+	if not own.is_empty():
+		return own
 	var d: Dictionary = StorageLayout.items().get(item_id, {})
 	var kg := float(d.get("mass", 0.0)) * qty * RECOVERY
 	var out := {}
@@ -1920,7 +1925,7 @@ func _apply_line(payload: Dictionary) -> void:
 func _crushed(crusher: Dictionary) -> void:
 	var lot: Dictionary = crusher.get("lot", {})
 	var dust: Dictionary = crusher["dust"]
-	var mats := scrap_materials(str(lot.get("item", "")), int(lot.get("qty", 0)))
+	var mats := scrap_materials(str(lot.get("item", "")), int(lot.get("qty", 0)), float(lot.get("mass", 0.0)), str(lot.get("material", "")))
 	for m: String in mats:
 		dust[m] = snappedf(float(dust.get(m, 0.0)) + float(mats[m]), 0.1)
 	var cast := {}

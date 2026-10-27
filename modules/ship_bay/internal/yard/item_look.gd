@@ -45,7 +45,7 @@ static func make(item: String, look := Look.NEW, mass := -1.0) -> Node3D:
 	var box: AABB = e["aabb"]
 	var xf := Transform3D(e["basis"], -Vector3(box.get_center().x, box.position.y, box.get_center().z))
 	var shape: PartShapes.PartShape = e["shape"]
-	_mesh(root, shape.mesh, xf, _body_paint(look))
+	_mesh(root, shape.mesh, xf, _paint_for(item, look))
 	if shape.glass:
 		_mesh(root, shape.glass, xf, Glazing.material(shape.glass_kind))
 	if shape.glow and look != Look.RUST:
@@ -80,12 +80,22 @@ static func pieces(item: String, look := Look.NEW, mass := -1.0) -> Array:
 	var box: AABB = e["aabb"]
 	var xf := Transform3D(e["basis"], -Vector3(box.get_center().x, box.position.y, box.get_center().z))
 	var shape: PartShapes.PartShape = e["shape"]
-	var out: Array = [[shape.mesh, _body_paint(look), xf]]
+	var out: Array = [[shape.mesh, _paint_for(item, look), xf]]
 	if shape.glass:
 		out.append([shape.glass, Glazing.material(shape.glass_kind), xf])
 	if shape.glow and look != Look.RUST:
 		out.append([shape.glow, _glow(shape.glow_color), xf])
 	return out
+
+
+## The goods' paint: a stock plate its own metal or glass (StockPlates.paint), anything
+## else the body paint for its look.
+static func _paint_for(item: String, look: int) -> Material:
+	if StockPlates.is_plate(item):
+		if not _paints.has("plate:" + item):
+			_paints["plate:" + item] = StockPlates.paint(item)
+		return _paints["plate:" + item]
+	return _body_paint(look)
 
 
 static func _mesh(root: Node3D, mesh: Mesh, xf: Transform3D, mat: Material) -> void:
@@ -117,6 +127,9 @@ static func _entry(item: String, mass: float) -> Dictionary:
 
 ## The parts library's own builder for a catalogue item: [shape, basis] or [] for none.
 static func _build(item: String) -> Array:
+	if StockPlates.is_plate(item):
+		# A stock plate lying flat, its length along Z (down a rack's bay).
+		return [StockPlates.make_shape(item), Basis(Vector3.UP, PI * 0.5)]
 	match item:
 		# Electronics
 		"Antenna": return [WreckParts.antenna(1.4, 0.7)]

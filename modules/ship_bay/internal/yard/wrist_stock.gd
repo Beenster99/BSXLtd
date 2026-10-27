@@ -188,6 +188,8 @@ static func where_text(loc: Dictionary) -> String:
 		what = "Large rack"
 	elif str(loc.get("store", "")) == "heavy":
 		what = "Heavy rack"
+	elif str(loc.get("store", "")) == "plate":
+		what = "Plate rack"
 	return "%s %s · bay %d · level %d" % [what, loc.get("rack", ""), int(loc.get("bay", 0)), int(loc.get("level", 0))]
 
 

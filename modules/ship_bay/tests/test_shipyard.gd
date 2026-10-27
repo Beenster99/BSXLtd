@@ -12,7 +12,7 @@ const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 func run_tests() -> void:
 	var bay := Modules.bus("ship_bay") as ShipBayBus
 	var rooms := bay.shipyard_rooms()
-	check(rooms.keys() == ["deliveries", "stock", "prep", "preassembly", "bay"], "rooms in work order: %s" % [rooms.keys()])
+	check(rooms.keys() == ["deliveries", "stock", "prep", "preassembly", "plates", "bay"], "rooms in work order: %s" % [rooms.keys()])
 	var ids: Array = rooms.keys()
 	for i in ids.size():
 		for j in range(i + 1, ids.size()):
@@ -31,7 +31,7 @@ func run_tests() -> void:
 		for id: String in rooms:
 			if id != d[0]:
 				check(said.contains((rooms[id].name as String).to_upper()), "%s's sign shows the way to %s: %s" % [d[0], id, said])
-	check(Yard.direction_lines("deliveries", Vector3(-39, 10, 0), 0.0) == PackedStringArray(["↑  STOCK", "STORE 2  ·  PRE-ASSEMBLY  ·  THE BAY  →"]),
+	check(Yard.direction_lines("deliveries", Vector3(-39, 10, 0), 0.0) == PackedStringArray(["↑  STOCK  ·  PLATE HALL", "STORE 2  ·  PRE-ASSEMBLY  ·  THE BAY  →"]),
 			"deliveries, facing the stock end: stock ahead, the rest through the bay on the right: %s" % [Yard.direction_lines("deliveries", Vector3(-39, 10, 0), 0.0)])
 	check(Yard.room_at(Vector3(40, 1, 0)) == "preassembly", "east wing is pre-assembly")
 	check(Yard.room_at(Vector3(0, 1, 60)) == "", "the apron is outside")
@@ -55,7 +55,7 @@ func run_tests() -> void:
 			return Yard.room_at(into) != "" and f.origin.y > 0.0 and f.origin.y < 1.0)
 	check(fires.size() > 20 and inside.size() == fires.size(), "the fire points face into the rooms: %d of %d" % [inside.size(), fires.size()])
 	var bed := bay.cutting_bed_spot()
-	check(is_zero_approx(bed.origin.y) and Yard.room_at(bed.origin + Vector3(0, 1, 0)) == "", "the cutting bed's spot is on the floor west of the halls: %s" % bed.origin)
+	check(is_zero_approx(bed.origin.y) and Yard.room_at(bed.origin + Vector3(0, 1, 0)) == "plates", "the cutting bed's spot is on the plate hall's floor: %s" % bed.origin)
 	for spot: String in ["bench_preassembly", "bench_prep"]:
 		var box := PhysicsShapeQueryParameters3D.new()
 		var shape := BoxShape3D.new()
@@ -157,7 +157,7 @@ func run_tests() -> void:
 	var counts := {}
 	for k: String in kinds.values():
 		counts[k] = int(counts.get(k, 0)) + 1
-	check(counts == {"concrete": 1, "ground": 1, "epoxy": 4, "asphalt": 2},
+	check(counts == {"concrete": 1, "ground": 1, "epoxy": 5, "asphalt": 2},
 			"the ground paints are tagged for Graphics' surfaces: %s" % [counts])
 	_check_apron(yard)
 	yard.queue_free()
