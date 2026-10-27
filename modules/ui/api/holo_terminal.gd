@@ -76,6 +76,8 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if HudSlots.holo_channels_changed.is_connected(_on_channels_changed):
 		HudSlots.holo_channels_changed.disconnect(_on_channels_changed)
+	if get_tree().node_added.is_connected(_on_node_added):
+		get_tree().node_added.disconnect(_on_node_added)
 
 
 func _process(delta: float) -> void:
@@ -109,6 +111,8 @@ func show_channel(id: String) -> void:
 	_content_node.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_content_node.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(_content_node)
+	if glass:
+		_glassify(_content_node)
 	# After this click is done: the tab pressed is still handling its mouse release, and a
 	# freed button lets the release fall through to the game, which takes the mouse.
 	fill_tabs.call_deferred()
@@ -138,6 +142,8 @@ func fill_tabs() -> void:
 			if c.id != channel:
 				show_channel(c.id)
 				Sfx.play("holo_switch", null, -16.0))
+		if glass and c.id != channel:
+			b.add_theme_color_override("font_color", T.GLASS_DIM)
 		tabs.add_child(b)
 	if closable:
 		var spacer := Control.new()
@@ -299,3 +305,21 @@ func _build() -> void:
 func set_hint(text: String) -> void:
 	hint_text = text
 	(col.find_child("Hint", true, false) as Label).text = text
+
+
+## Glass text (TerminalKit.glass_text) for a channel's screen and anything it adds later.
+func _glassify(node: Node) -> void:
+	if node is Control:
+		T.glass_text(node as Control)
+	for c in node.get_children():
+		_glassify(c)
+
+
+func _enter_tree() -> void:
+	if glass and not get_tree().node_added.is_connected(_on_node_added):
+		get_tree().node_added.connect(_on_node_added)
+
+
+func _on_node_added(node: Node) -> void:
+	if node is Control and content and content.is_ancestor_of(node):
+		T.glass_text(node as Control)

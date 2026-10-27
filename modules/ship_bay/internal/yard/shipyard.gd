@@ -107,6 +107,9 @@ const SPOTS := {
 	# deck height (EmitterRig.DECK_H), +X (the coil, then the test mass rail) to the south,
 	# its worker to the west.
 	"rig_emitter": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(31.3, 0.95, 14.6)),
+	# The plasma cutting bed (Tools' machine) in the middle of the plate hall west of
+	# Deliveries, its long side along z, the operator's screen side to the north.
+	"cutting_bed": Transform3D(Basis.IDENTITY, Vector3(-67.0, 0, -32.0)),
 }
 ## Camera views for screenshots and a quick look round: id -> [eye, target].
 const VIEWS := {
@@ -183,6 +186,9 @@ var lines: Dictionary = {}
 var line: Node3D
 ## The crusher bay outside Pre-assembly's south door (crusher_plant.gd).
 var crusher: Node3D
+## Where the extinguishers hang at the fire points (ShipBayBus.fire_points): yard space, the
+## origin at a bottle's foot on the wall, -Z out of the wall into the room.
+var fire_points: Array[Transform3D] = []
 ## False while another module has control (ShipBayBus.set_walker_active).
 var walker_active := true
 var _walker_layers := Vector2i(1, 1)
@@ -311,6 +317,7 @@ func _ready() -> void:
 	if _bus:
 		_bus.stock_changed.connect(_refresh_stores)
 		_refresh_stores()
+		_bus._yard = self
 		_bus.shipyard_ready.emit(self)
 		_bus.resume_sales()
 	_on_sky_time(_sky.hour, AlienSky.daylight_at(_sky.hour))
@@ -743,7 +750,7 @@ func _hall_joints(area: Rect2, y: float) -> void:
 
 ## Services along the inside of every outside and courtyard wall: a cable tray under the
 ## eaves with drops down the columns, and a fire point (extinguishers under a lit sign)
-## every other bay where the wall is clear.
+## every other bay where the wall is clear. Each extinguisher's place goes in fire_points.
 func _build_services() -> void:
 	var tray_mat := _galv
 	var red := _paint(Color(0.78, 0.1, 0.06), 0.2, 0.4, "gloss_paint")
@@ -791,8 +798,11 @@ func _build_services() -> void:
 				var face := w_in * (T * 0.5 + 0.03)
 				if n % 2 == 1:
 					_put(board, Transform3D(basis, _wall_point(axis, at, u, 1.05, face)), red, false)
+					var out := Vector3(0, 0, w_in) if axis == "x" else Vector3(w_in, 0, 0)
 					for k: float in [-0.15, 0.15]:
-						_put(ext, Transform3D(Basis(), _wall_point(axis, at, u + k, 0.75, w_in * (T * 0.5 + 0.13))), red, false)
+						fire_points.append(Transform3D(Basis.looking_at(out), _wall_point(axis, at, u + k, 0.475, w_in * (T * 0.5 + 0.13))))
+						if not Flags.is_on("trades.extinguishers"):   # Tools hangs real ones there
+							_put(ext, Transform3D(Basis(), _wall_point(axis, at, u + k, 0.75, w_in * (T * 0.5 + 0.13))), red, false)
 					_put(lit, Transform3D(basis, _wall_point(axis, at, u, 1.75, face)), sign_mat, false)
 				else:
 					_put(drop, Transform3D(basis, _wall_point(axis, at, u, 5.0, w_in * (T * 0.5 + 0.2))), tray_mat, false)

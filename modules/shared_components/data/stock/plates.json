@@ -1,0 +1,26 @@
+{
+  "format": "bsx-stock-plates",
+  "version": 1,
+  "notes": [
+    "BSX-only stock: flat metal and glass plates bought from suppliers by size and thickness, stored on the plate hall's shelves and cut to shape on the plasma bed. Void Salvage has no such parts; nothing here goes into a ship file.",
+    "An item id is <Kind>_<length>x<width>_<thickness>: SteelPlate_2500x1250_5 is a 2.5 m x 1.25 m steel plate 5 mm thick (millimetres, length first).",
+    "Mass comes from the material's density in Void Salvage's Materials table. Value is credits a kilogram x the material's price factor; Business sets the selling prices.",
+    "Crushing a plate (or a sheet part off a wreck) gives its own material back at the crusher's recovery share."
+  ],
+  "kinds": {
+    "SteelPlate": {"display_name": "Steel plate", "family": "metal", "material": "steel"},
+    "AlloyPlate": {"display_name": "Alloy plate", "family": "metal", "material": "alloy"},
+    "TitaniumPlate": {"display_name": "Titanium plate", "family": "metal", "material": "titanium"},
+    "GlassPlate": {"display_name": "Glass plate", "family": "glass", "material": "glass"},
+    "CrystalPlate": {"display_name": "Crystal glass plate", "family": "glass", "material": "crystal"}
+  },
+  "families": {
+    "metal": {"category": "stock_metal", "sizes": [[1000, 1000], [2000, 1000], [2500, 1250], [3000, 1500]], "thicknesses": [2, 3, 5, 8, 12], "credits_per_kg": 2.0},
+    "glass": {"category": "stock_glass", "sizes": [[1000, 1000], [2000, 1000], [2500, 1250], [3000, 1500]], "thicknesses": [6, 10, 15, 20], "credits_per_kg": 3.0}
+  },
+  "sheet_parts": {
+    "notes": "Void Salvage parts that are flat sheet: crushed, they give back their own material (the part's, else this default) rather than the crusher's category mix.",
+    "metal": ["HullPlate", "InnerPanel", "WallPanel", "CeilingPanel", "DeckPlate", "CapPlate", "HullPlateBent"],
+    "glass": ["WindowPane"]
+  }
+}
