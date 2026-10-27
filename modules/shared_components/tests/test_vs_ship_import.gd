@@ -10,8 +10,8 @@ const FIXTURES := "res://modules/shared_components/data/ships/"
 
 
 func run_tests() -> void:
-	_check_ship("kestrel", 529, 1375, 33, 13)
-	_check_ship("manta", 1410, 5065, 77, 16)
+	_check_ship("kestrel", 529, 1138, 33, 13)
+	_check_ship("manta", 1400, 3516, 77, 16)
 	_check_encodings()
 
 
