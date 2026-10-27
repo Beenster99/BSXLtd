@@ -15,8 +15,8 @@
     "CrystalPlate": {"display_name": "Crystal glass plate", "family": "glass", "material": "crystal"}
   },
   "families": {
-    "metal": {"category": "stock_metal", "sizes": [[1000, 1000], [2000, 1000], [2500, 1250], [3000, 1500]], "thicknesses": [2, 3, 5, 8, 12], "credits_per_kg": 2.0},
-    "glass": {"category": "stock_glass", "sizes": [[1000, 1000], [2000, 1000], [2500, 1250], [3000, 1500]], "thicknesses": [6, 10, 15, 20], "credits_per_kg": 3.0}
+    "metal": {"category": "stock_metal", "sizes": [[1000, 1000], [2000, 1000], [2500, 1250], [3000, 1500], [6000, 3000], [12000, 3000]], "thicknesses": [2, 3, 5, 8, 12], "credits_per_kg": 2.0},
+    "glass": {"category": "stock_glass", "sizes": [[1000, 1000], [2000, 1000], [2500, 1250], [3000, 1500], [6000, 3000], [12000, 3000]], "thicknesses": [6, 10, 15, 20], "credits_per_kg": 3.0}
   },
   "sheet_parts": {
     "notes": "Void Salvage parts that are flat sheet: crushed, they give back their own material (the part's, else this default) rather than the crusher's category mix.",
