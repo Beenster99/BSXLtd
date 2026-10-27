@@ -156,7 +156,7 @@ func _check_wreck(bus: ShipBayBus, bay: Node3D, word: String) -> void:
 	check(north > -23.0 and _on_pedestals(bay, c),
 			"the %s cradle on its pedestals, clear of the north wall (%.1f m)" % [spec.name, north])
 	var ship_root: Node3D = bay.get("ship_root")
-	var nose := ship_root.global_position.z - (bay as Node3D).global_position.z + bus.ship.bounds.position.z
+	var nose := ship_root.global_position.z - (bay as Node3D).global_position.z + box.position.z
 	check(nose > -23.0, "its nose clear of the courtyard's north wall (%.1f m)" % nose)
 
 
