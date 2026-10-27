@@ -22,10 +22,10 @@ extends RefCounted
 ##
 ## The plate hall (x -84..-50, z -46..-20, beenster 0.3.23), west of Stock through a door off
 ## its transfer aisle, keeps the stock plates BSX buys (StockPlates, Shared Components) on
-## four plate racks round the plasma cutting bed: P1 and P2 either side of aisle P for metal,
-## R1 and R2 either side of aisle R for glass, seven shallow levels a bay, each level the home
-## of one plate size and thickness, the thick ones low. The heavy lift works them. Nothing
-## but plates goes on them.
+## five open plate racks round the plasma cutting bed, one rack a material (beenster 0.3.24):
+## steel on P1 and alloy on P2 either side of aisle P, titanium on Q1 by aisle Q, glass on R1
+## and crystal on R2 either side of aisle R. A bay holds one plate size, a level one
+## thickness, the thick ones low. The heavy lift works them. Nothing but plates goes on them.
 ##
 ## Store 2 (the old Material prep hall, x 0..50, beenster 0.3.15) is all shelves too, laid out
 ## the same way off the same transfer aisle and cross aisle: small racks in aisles D and E
@@ -68,12 +68,13 @@ const SMALL_AISLES := {"A": [-19.1, "stock"], "B": [-13.7, "stock"], "C": [-8.3,
 ## many places each bay has a level.
 const LARGE := {"depth": 2.6, "bay": 5.4, "bays": 2, "beams": [0.15, 2.85, 5.55], "height": 8.2, "aisle": 4.0}
 const HEAVY := {"depth": 3.4, "bay": 6.2, "bays": 2, "beams": [0.15, 4.6, 7.3], "height": 9.5, "aisle": 4.4}
-## The plate racks: 1.8 m deep, five 3.2 m bays (a 3 x 1.5 m plate lies flat in one), seven
-## levels 0.7 m apart; one place a level.
-const PLATE := {"depth": 1.8, "bay": 3.2, "bays": 5, "beams": [0.15, 0.85, 1.55, 2.25, 2.95, 3.65, 4.35], "height": 5.4, "aisle": 4.4}
+## The plate racks: 1.8 m deep open shelving, four 3.2 m bays (one a plate size; a 3 x 1.5 m
+## plate lies flat in one), five levels 0.9 m apart (one a thickness); one place a level.
+const PLATE := {"depth": 1.8, "bay": 3.2, "bays": 4, "beams": [0.15, 1.05, 1.95, 2.85, 3.75], "height": 4.7, "aisle": 4.4}
+## [rack, west face x, front, the StockPlates kind it holds].
 const PLATE_RACKS := [
-	["P1", -83.5, 1.0, "metal"], ["P2", -77.3, -1.0, "metal"],
-	["R1", -60.4, 1.0, "glass"], ["R2", -54.2, -1.0, "glass"],
+	["P1", -83.5, 1.0, "SteelPlate"], ["P2", -77.3, -1.0, "AlloyPlate"], ["Q1", -75.4, 1.0, "TitaniumPlate"],
+	["R1", -60.4, 1.0, "GlassPlate"], ["R2", -54.2, -1.0, "CrystalPlate"],
 ]
 ## The plate hall's floor (x, z, width, depth), metres.
 const PLATE_HALL := Rect2(-84.0, -46.0, 34.0, 26.0)
@@ -134,6 +135,12 @@ static func fits(size: Vector3, room: Vector3) -> bool:
 	return a <= minf(room.x, room.z) + 0.001 and b <= maxf(room.x, room.z) + 0.001 and size.y <= room.y + 0.001
 
 
+## The room in a bin, a small rack's place for light parts (a part too long for one goes on a
+## pallet place, or the large racks).
+static func bin_room() -> Vector3:
+	return Vector3(RACK_DEPTH - 0.1, LEVEL_PITCH - 0.25, BAY_LENGTH / BINS - 0.15)
+
+
 ## The room in a small rack's pallet place.
 static func pallet_room() -> Vector3:
 	return Vector3(RACK_DEPTH - 0.1, LEVEL_PITCH - 0.25, BAY_LENGTH / POSITIONS - 0.15)
@@ -144,9 +151,9 @@ static func pallet_room() -> Vector3:
 static func kind_for(mass: float, item := "") -> String:
 	if item != "" and StockPlates.is_plate(item):
 		return "bulk"   # flat and wide: the heavy lift and the plate racks
-	if mass < BIN_MAX:
-		return "bin"
 	var size := size_of(item) if item != "" else Vector3.ZERO
+	if mass < BIN_MAX and (size == Vector3.ZERO or fits(size, bin_room())):
+		return "bin"
 	if size == Vector3.ZERO:
 		return "pallet" if mass <= PALLET_MAX else "bulk"
 	return "pallet" if fits(size, pallet_room()) else "bulk"
@@ -159,7 +166,7 @@ static func kind_of(item: String) -> String:
 
 ## The rack ids west to east.
 static func rack_ids() -> PackedStringArray:
-	return PackedStringArray(["P1", "P2", "R1", "R2", "H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
+	return PackedStringArray(["P1", "P2", "Q1", "R1", "R2", "H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
 			"D1", "D2", "E1", "E2", "Y1", "Y2", "Z1", "Z2", "J1", "J2"])
 
 
@@ -235,9 +242,12 @@ static func _racks() -> Dictionary:
 		var per: Array = []
 		per.resize(int(PLATE["bays"]))
 		per.fill(1)
+		var kind := StockPlates.kind(r[3])
 		racks[r[0]] = {"id": r[0], "store": "plate", "x": float(r[1]) + float(PLATE["depth"]) * 0.5, "face": r[2],
 				"depth": PLATE["depth"], "bay": PLATE["bay"], "bays": PLATE["bays"], "beams": PLATE["beams"],
-				"height": PLATE["height"], "aisle": PLATE["aisle"], "per": per, "family": r[3]}
+				"height": PLATE["height"], "aisle": PLATE["aisle"], "per": per, "plate_kind": r[3],
+				"family": str(kind.get("family", "")), "material": str(kind.get("material", "")),
+				"name": str(kind.get("display_name", r[3]))}
 	return racks
 
 
@@ -266,7 +276,7 @@ static func _build() -> Dictionary:
 		var r: Dictionary = racks[rb[0]]
 		var bay: int = rb[1]
 		var per := BINS if bins else POSITIONS
-		var room := Vector3(RACK_DEPTH - 0.1, LEVEL_PITCH - 0.25, BAY_LENGTH / per - 0.15)
+		var room := bin_room() if bins else pallet_room()
 		for level in range(1, LEVELS + 1):
 			for pos in range(1, per + 1):
 				var id := "%s-%02d-%d-%d" % [r["id"], bay, level, pos]
@@ -359,29 +369,24 @@ static func _build() -> Dictionary:
 				best = c
 		b["category"] = best if b["kind"] == "pallet" else "small parts"
 
-	# Plates: each family along its racks, bay by bay, a size's thicknesses up a bay from the
-	# thickest at the bottom.
-	for fam: String in ["metal", "glass"]:
-		var places: Array = []
-		for r: Array in PLATE_RACKS:
-			if r[3] != fam:
-				continue
-			for bay in range(1, int(PLATE["bays"]) + 1):
-				for level in range(1, (PLATE["beams"] as Array).size() + 1):
-					places.append("%s-%02d-%d-1" % [r[0], bay, level])
-		var ids := Array(StockPlates.item_ids(fam))
-		var runs := {}
-		for pid: String in ids:
-			var key := pid.left(pid.rfind("_"))
-			if not runs.has(key):
-				runs[key] = []
-			(runs[key] as Array).push_front(pid)   # thickest first
-		var i := 0
-		for key: String in runs:
-			for pid: String in runs[key]:
-				if i < places.size():
-					_home(locations, homes, places[i], pid, items)
-				i += 1
+	# Plates: a rack a kind, a bay a size (smallest first), up a bay from the thickest at the
+	# bottom.
+	for r: Array in PLATE_RACKS:
+		var sizes := {}
+		for pid: String in StockPlates.item_ids("", r[3]):
+			var p: Dictionary = StockPlates.item(pid)
+			var key := Vector2i(int(p["length_mm"]), int(p["width_mm"]))
+			if not sizes.has(key):
+				sizes[key] = []
+			(sizes[key] as Array).append(pid)
+		var keys := sizes.keys()
+		keys.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x * a.y < b.x * b.y)
+		for bay in mini(keys.size(), int(PLATE["bays"])):
+			var run: Array = sizes[keys[bay]]
+			run.sort_custom(func(a: String, b: String) -> bool:
+					return int(StockPlates.item(a)["thickness_mm"]) > int(StockPlates.item(b)["thickness_mm"]))
+			for level in mini(run.size(), (PLATE["beams"] as Array).size()):
+				_home(locations, homes, "%s-%02d-%d-1" % [r[0], bay + 1, level + 1], run[level], items)
 	var aisles := {}
 	for id: String in rack_ids():
 		if id.ends_with("1"):

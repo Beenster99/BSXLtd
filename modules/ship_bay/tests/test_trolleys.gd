@@ -356,10 +356,18 @@ func run_tests() -> void:
 		wrist.call("refresh")
 		check((wrist.call("shown") as Array).size() == 1, "the search narrows it to the thrusters")
 		wrist.call("select", bus.home_location("IonThruster"))
+		var most := int(bus.stock_at(bus.home_location("IonThruster")).get("qty", 0))
+		for action: String in ["more", "less", "more", "more", "more", "more"]:
+			wrist.call("press", action)
+		await frames(2)
+		var want := mini(5, most)
+		var bring := wrist.find_child("Bring", true, false) as Button
+		check(bring != null and bring.text == "BRING %d TO ME" % want, "- and + pick how many to bring, up to what a shelf holds: %s" % (bring.text if bring else "none"))
 		wrist.call("press", "bring")
 		await get_tree().physics_frame
-		check(str(fleet.get("jobs")["p"].get("do", "")) == "fetch" and str(fleet.get("jobs")["p"].get("item", "")) == "IonThruster",
-				"BRING ONE TO ME sends the picking lift for it: %s" % [fleet.get("jobs")["p"]])
+		check(str(fleet.get("jobs")["p"].get("do", "")) == "fetch" and str(fleet.get("jobs")["p"].get("item", "")) == "IonThruster"
+				and int(fleet.get("jobs")["p"].get("qty", 0)) == want,
+				"BRING %d TO ME sends the picking lift for that many: %s" % [want, fleet.get("jobs")["p"]])
 		wrist.queue_free()
 	var machines_ch := HudSlots.holo_channel("ship_bay.machines")
 	check(not machines_ch.is_empty(), "and a Machines channel")

@@ -1,8 +1,9 @@
 extends ModuleTest
-## Ship and Bay: the plate hall (beenster, 0.3.23). West of Stock, through a door off its
-## transfer aisle: four plate racks round the plasma cutting bed's place, metal plates on P1
-## and P2, glass on R1 and R2, a home for every stock plate (Shared Components' StockPlates)
-## and nothing else on them. Delivered plates go there on the heavy lift; crushed plates and
+## Ship and Bay: the plate hall (beenster, 0.3.23 and 0.3.24). West of Stock, through a door
+## off its transfer aisle: five open plate racks round the plasma cutting bed's place, one a
+## material (steel P1, alloy P2, titanium Q1, glass R1, crystal R2), a bay a size and a level
+## a thickness, a home for every stock plate (Shared Components' StockPlates) and nothing
+## else on them. Delivered plates go there on the heavy lift; crushed plates and
 ## sheet parts give back their own material.
 ##   tools/run_tests.sh ship_bay
 
@@ -23,16 +24,29 @@ func run_tests() -> void:
 		if loc.is_empty():
 			unhomed.append(pid)
 			continue
-		var fam := str(StockPlates.item(pid)["family"])
+		var kind := str(StockPlates.item(pid)["kind"])
 		var rack := str(loc["rack"])
-		if str(loc["store"]) != "plate" or str(Layout.rack(rack)["family"]) != fam or not Layout.fits(Layout.size_of(pid), loc["size"]):
+		if str(loc["store"]) != "plate" or str(Layout.rack(rack)["plate_kind"]) != kind or not Layout.fits(Layout.size_of(pid), loc["size"]):
 			misplaced.append(pid)
 	check(unhomed.is_empty() and StockPlates.item_ids().size() > 80, "every stock plate has a home: %d, none missing %s" % [StockPlates.item_ids().size(), unhomed])
-	check(misplaced.is_empty(), "on a plate rack of its family, with room for it: %s" % [misplaced])
+	check(misplaced.is_empty(), "on its own material's rack, with room for it: %s" % [misplaced])
+	var materials := {}
+	var bays_ok := true
+	for pid: String in StockPlates.item_ids():
+		var loc: Dictionary = locations[homes[pid]]
+		var p := StockPlates.item(pid)
+		materials[str(loc["rack"])] = (materials.get(str(loc["rack"]), {}) as Dictionary).merged({str(p["material"]): true})
+		for other: String in StockPlates.item_ids("", str(p["kind"])):
+			var same_size := other.left(other.rfind("_")) == pid.left(pid.rfind("_"))
+			if same_size != (int(locations[homes[other]]["bay"]) == int(loc["bay"])):
+				bays_ok = false
+	check(materials.size() == 5 and materials.values().all(func(m: Dictionary) -> bool: return m.size() == 1),
+			"one rack a material: %s" % [materials])
+	check(bays_ok, "a bay holds one size, every thickness of it")
 	var steel := homes["SteelPlate_3000x1500_12"] as String
 	var thin := homes["SteelPlate_3000x1500_2"] as String
 	check(int(locations[steel]["level"]) < int(locations[thin]["level"]), "the thick ones low: %s under %s" % [steel, thin])
-	check(Layout.lift_for_rack("P1") == "h" and Layout.hall_of("R2") == "plates" and Layout.hall_of("H1") == "stock",
+	check(Layout.lift_for_rack("Q1") == "h" and Layout.hall_of("R2") == "plates" and Layout.hall_of("Q1") == "plates" and Layout.hall_of("H1") == "stock",
 			"the heavy lift works the plate racks in the plate hall")
 	check(Layout.kind_of("GlassPlate_2000x1000_10") == "bulk" and Layout.items().has("TitaniumPlate_1000x1000_5"), "plates are in the catalogue, as bulk goods")
 	check(bus.place_for("SteelPlate_2500x1250_5") == homes["SteelPlate_2500x1250_5"], "a delivered plate goes to its home")

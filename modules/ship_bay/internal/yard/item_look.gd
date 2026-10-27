@@ -245,7 +245,73 @@ static func _build(item: String) -> Array:
 		"NavalTurret": return [WreckParts.naval_turret(2.4, 3.6)]
 		"RailMuzzle": return [WreckParts.rail_muzzle(1.4, 1.2)]
 		"Turret": return [WreckParts.dome_turret()]
+		# Lights
+		"BellyLight", "DoorLight", "RoofLight": return [WreckParts.stud_lights(2)]
+		"CeilingLamp": return [WreckParts.light_strip(0.6)]
+		# Fasteners: the bolt or rivet itself.
+		"M10": return [_bolt(0.005, 0.05)]
+		"M12": return [_bolt(0.006, 0.06)]
+		"RIVET_4": return [_rivet(0.002, 0.012)]
+		# Ship modules (beenster 0.3.24: delivered goods look like the part, never a box).
+		"attractor_coil_1", "attractor_coil_2": return [_coil_unit(UpgradeRules.unit_size("attractor_coil", int(item.right(1))))]
+		"bowser_tank": return [WreckParts.banded_tank(0.6, 1.8), LAY]
+		"hold_net": return [_net_roll(0.32, 1.8)]
+		"long_range_radar": return [WreckParts.antenna(1.6, 1.2)]
+		"refinery": return [WreckParts.reactor_core(Vector3(1.6, 2.0, 1.2))]
+		"smelter": return [WreckParts.machine_unit(Vector3(1.6, 1.8, 1.4))]
+		"scrap_grinder": return [WreckParts.grinder_head(0.6, 0.6)]
+		"survey_array": return [WreckParts.detector_head(0.5, 1.0)]
+		"tow_winch": return [_cable_drum(0.55)]
 	return []
+
+
+## A hex-headed bolt of shank `radius` and `length` (m), standing on its head.
+static func _bolt(radius: float, length: float) -> PartShapes.PartShape:
+	var head := radius * 0.8
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = LineParts.merged([[PartShapes.prism(6, radius * 1.75, head).mesh, Transform3D(Basis.IDENTITY, Vector3(0, head * 0.5, 0))],
+			[PartShapes.prism(10, radius, length).mesh, Transform3D(Basis.IDENTITY, Vector3(0, head + length * 0.5, 0))]])
+	shape.volume = PI * radius * radius * length
+	return shape
+
+
+## A rivet of shank `radius` and `length` (m): a round head and its shank.
+static func _rivet(radius: float, length: float) -> PartShapes.PartShape:
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = LineParts.merged([[PartShapes.frustum(radius * 2.0, radius * 1.2, radius * 1.2, 12).mesh, Transform3D(Basis.IDENTITY, Vector3(0, radius * 0.6, 0))],
+			[PartShapes.prism(10, radius, length).mesh, Transform3D(Basis.IDENTITY, Vector3(0, radius * 1.2 + length * 0.5, 0))]])
+	shape.volume = PI * radius * radius * length
+	return shape
+
+
+## A ship module's sealed housing as Shared Components builds it (UpgradeUnits): a tray of
+## `size` under its bolted cover, the lit strip along the cover's front edge.
+static func _coil_unit(size: Vector3) -> PartShapes.PartShape:
+	size = size if size != Vector3.ZERO else Vector3(1.6, 0.6, 0.8)
+	var shape := PartShapes.chamfer_box(size, 0.01)
+	var pieces: Array = []
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			pieces.append([PartShapes.prism(6, 0.012, 0.01).mesh, Transform3D(Basis.IDENTITY, Vector3(sx * (size.x * 0.5 - 0.03), size.y * 0.5 + 0.005, sz * (size.z * 0.5 - 0.03)))])
+	pieces.append([shape.mesh, Transform3D()])
+	shape.mesh = LineParts.merged(pieces)
+	shape.glow = LineParts.merged([[PartShapes.box(Vector3(size.x * 0.5, 0.004, 0.03)).mesh,
+			Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5 + 0.002, -size.z * 0.5 + 0.06))]])
+	shape.glow_color = Color(0.45, 0.8, 1.0)
+	return shape
+
+
+## Cargo netting rolled up and strapped: a roll of `radius` and `length` along X, three
+## straps round it.
+static func _net_roll(radius: float, length: float) -> PartShapes.PartShape:
+	var axis := Basis(Vector3.FORWARD, PI * 0.5)
+	var pieces: Array = [[PartShapes.prism(14, radius, length).mesh, Transform3D(axis, Vector3(0, radius, 0))]]
+	for k: float in [-0.35, 0.0, 0.35]:
+		pieces.append([PartShapes.prism(14, radius * 1.04, 0.05).mesh, Transform3D(axis, Vector3(k * length, radius, 0))])
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = LineParts.merged(pieces)
+	shape.volume = PI * radius * radius * length
+	return shape
 
 
 ## The ship's raw build material as it comes from the supplier, sized from its mass: hull

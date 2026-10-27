@@ -28,15 +28,6 @@ const Transporters := preload("res://modules/ship_bay/internal/yard/transporters
 const DeliveryTrucks := preload("res://modules/ship_bay/internal/yard/delivery_trucks.gd")
 const EmitterRig := preload("res://modules/ship_bay/internal/yard/emitter_rig.gd")
 const YardShips := preload("res://modules/ship_bay/internal/yard/yard_ships.gd")
-## Crate tints by category for goods in the stores.
-const CATEGORY_TINT := {
-	"engines": Color(0.85, 0.45, 0.2), "electronics": Color(0.3, 0.5, 0.75), "machinery": Color(0.55, 0.55, 0.3),
-	"fluids": Color(0.25, 0.6, 0.55), "weapons": Color(0.45, 0.42, 0.4), "cargo": Color(0.6, 0.48, 0.32),
-	"hull": Color(0.7, 0.71, 0.72), "frame": Color(0.5, 0.52, 0.56), "wiring": Color(0.75, 0.55, 0.25),
-	"piping": Color(0.6, 0.62, 0.6), "glass": Color(0.55, 0.7, 0.75), "fittings": Color(0.65, 0.6, 0.55),
-	"modules": Color(0.95, 0.55, 0.15), "fasteners": Color(0.3, 0.33, 0.38),
-}
-
 ## Wall height of the wings (inside, floor to roof), metres.
 const H := 12.0
 ## Wall thickness, metres.
@@ -229,7 +220,6 @@ var _parts: Material   # white: a library part shows its own zones and colours
 var _goods: Array[Material] = []   # crate tints
 var _labels: Node3D                 # location labels and tags
 var _stores: Node3D                 # goods on the shelves and delivered crates, redrawn
-var _stores_paint: Dictionary = {}  # category -> crate material
 var _bus: ShipBayBus
 ## The hover trolleys and their console (TrolleyFleet).
 var trolleys: Node3D
@@ -1336,7 +1326,10 @@ func _build_stock() -> void:
 		elif str(r["store"]) == "heavy":
 			cats = PackedStringArray(["HEAVY MACHINES"])
 		elif str(r["store"]) == "plate":
-			cats = PackedStringArray(["METAL PLATE" if str(r["family"]) == "metal" else "GLASS PLATE"])
+			cats = PackedStringArray()
+			for id: String in StorageLayout.rack_ids():
+				if id.begins_with(aisle):
+					cats.append(str(StorageLayout.rack(id)["name"]).to_upper())
 		if not cats.is_empty():
 			_sign(" · ".join(cats), Vector3(x, 10.55, StorageLayout.RACK_Z0 + 0.2), 0.0, 0.2, false)
 	for z: float in [StorageLayout.TRANSFER_Z - 1.4, StorageLayout.TRANSFER_Z + 1.4]:
@@ -1390,6 +1383,12 @@ func _storage_rack(rack: String) -> void:
 			if b["rack"] == rack and b["bay"] == bay:
 				info = b
 		var cat := str(info.get("category", ""))
+		if str(r["store"]) == "plate":
+			var first: Dictionary = layout["locations"].get("%s-%02d-1-1" % [rack, bay], {})
+			var p := StockPlates.item(str(first.get("home", "")))
+			_tag("%s-%02d  %s  %s x %s" % [rack, bay, str(r["material"]).to_upper(), p.get("length_mm", "?"), p.get("width_mm", "?")],
+					Vector3(x + face * (depth * 0.5 + 0.05), tall - 0.35, z), 0.13, Vector3(face, 0, 0))
+			continue
 		var title := "%s-%02d  %s" % [rack, bay, str(L.CATEGORIES.get(cat, cat)).to_upper() if cat != "" else
 				("LARGE PARTS" if str(r["store"]) == "large" else ("HEAVY" if heavy else "SPARE"))]
 		_tag(title, Vector3(x + face * (depth * 0.5 + 0.05), tall - 0.35, z), 0.11 if not heavy else 0.16, Vector3(face, 0, 0))
@@ -1479,7 +1478,12 @@ func _build_plate_hall() -> void:
 	# High-bay lamps over the aisles and the bed.
 	var fixture := _lib("light_strip/bay", func() -> PartShapes.PartShape:
 			return WreckParts.light_strip(2.4, 0.36, 0.1, LAMP))
-	for p: Vector3 in [Vector3(-79.6, 0, -40.0), Vector3(-79.6, 0, -30.0), Vector3(-56.2, 0, -40.0), Vector3(-56.2, 0, -30.0),
+	# A board over each rack's open end naming its material (one rack a material).
+	for pr: Array in StorageLayout.PLATE_RACKS:
+		var rack := StorageLayout.rack(pr[0])
+		var board := _sign(str(rack["name"]).to_upper(), Vector3(float(rack["x"]), float(rack["height"]) + 0.7, z0 + 0.15), 0.0, 0.32)
+		board.name = "PlateSign_" + str(pr[0])
+	for p: Vector3 in [Vector3(-79.6, 0, -40.0), Vector3(-79.6, 0, -30.0), Vector3(-71.4, 0, -40.0), Vector3(-56.2, 0, -40.0), Vector3(-56.2, 0, -30.0),
 			Vector3(bed.origin.x, 0, bed.origin.z - 3.0), Vector3(bed.origin.x, 0, bed.origin.z + 3.0), Vector3(-67.0, 0, -23.0)]:
 		_put(fixture, Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, PI), Vector3(p.x, H - 2.3, p.z)), _parts, false)
 		var lamp := OmniLight3D.new()
@@ -1863,12 +1867,10 @@ func _refresh_stores() -> void:
 				continue
 		var l: Dictionary = locations[loc]
 		var item: Dictionary = StorageLayout.items().get(have["item"], {})
-		if l["kind"] == "bin":
-			_goods_box(batches, l["kind"], float(item.get("mass", 0.0)), str(item.get("category", "")), l["at"])
-		else:
-			var room: Vector3 = l["size"]
-			_goods_items(batches, str(have["item"]), int(have["qty"]), float(have.get("condition", 1.0)),
-					Vector2(room.x, room.z), room.y - 0.25, l["at"], l["kind"] == "pallet")
+		# Every part as itself (beenster 0.3.24: no crates or boxes), small ones loose in their bin.
+		var room: Vector3 = l["size"]
+		_goods_items(batches, str(have["item"]), int(have["qty"]), float(have.get("condition", 1.0)),
+				Vector2(room.x, room.z), room.y - 0.25, l["at"], l["kind"] == "pallet")
 		var room_box: Vector3 = l["size"]
 		ItemLook.look_box(_stores, AABB(l["at"] - Vector3(room_box.x * 0.5, 0.0, room_box.z * 0.5), room_box),
 				{"component": str(have["item"]), "condition": float(have.get("condition", 1.0)), "location": loc})
@@ -1883,10 +1885,8 @@ func _refresh_stores() -> void:
 			continue   # still on its delivery truck
 		var at := _bus.crate_position(id)
 		var kind := StorageLayout.kind_for(float(c["mass"]), str(c["item"]))
-		var cat := str(StorageLayout.items().get(c["item"], {}).get("category", ""))
-		var h := _goods_box(batches, "pallet", float(c["mass"]) * int(c["qty"]), cat, at) if kind == "bin" \
-				else _goods_items(batches, str(c["item"]), int(c["qty"]), float(c.get("condition", 1.0)),
-						Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4), 2.4, at, kind == "pallet")
+		var h := _goods_items(batches, str(c["item"]), int(c["qty"]), float(c.get("condition", 1.0)),
+				Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4), 2.4, at, kind != "bulk")
 		var foot := Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4)
 		ItemLook.look_box(_stores, AABB(at - Vector3(foot.x * 0.5, 0.0, foot.y * 0.5), Vector3(foot.x, maxf(h, 0.2), foot.y)),
 				{"component": str(c["item"]), "condition": float(c.get("condition", 1.0)), "crate_id": id})
@@ -1898,29 +1898,6 @@ func _refresh_stores() -> void:
 	for batch: Dictionary in batches.values():
 		var mesh: Mesh = batch["mesh"] if batch.has("mesh") else (_shapes[batch.key] as PartShapes.PartShape).mesh
 		_multimesh(_stores, mesh, batch.xforms, batch.mat)
-
-
-## Adds the look of goods of one kind to `batches`: a tote (bin), a crate on a pallet, or a
-## big crate (bulk), sized by mass (kg), tinted by category. Returns its height (m).
-func _goods_box(batches: Dictionary, kind: String, mass: float, category: String, at: Vector3) -> float:
-	if not _stores_paint.has(category):
-		_stores_paint[category] = _paint(CATEGORY_TINT.get(category, Color(0.6, 0.6, 0.6)), 0.15, 0.6)
-	var mat: Material = _stores_paint[category]
-	var size: Vector3
-	var lift := 0.0
-	match kind:
-		"bin":
-			size = Vector3(0.6, 0.32, 0.9)
-		"bulk":
-			size = Vector3(3.6, clampf(1.0 + mass / 15000.0, 1.0, 2.6), 2.2)
-		_:
-			size = Vector3(1.0, clampf(0.35 + mass / 2500.0, 0.35, 1.35), 1.2)
-			lift = 0.144
-			_goods_add(batches, _box(Vector3(1.0, 0.14, 1.2)), _wood, Transform3D(Basis.IDENTITY, at + Vector3(0, 0.07, 0)))
-	var key := _lib("crate/stores/%.2f/%.2f/%.2f" % [size.x, size.y, size.z], func() -> PartShapes.PartShape:
-			return WreckParts.cargo_crate(size))
-	_goods_add(batches, key, mat, Transform3D(Basis.IDENTITY, at + Vector3(0, lift + size.y * 0.5, 0)))
-	return lift + size.y
 
 
 ## Adds goods as they are (ItemLook), `qty` of `item` stacked over `area` (x, z) up to

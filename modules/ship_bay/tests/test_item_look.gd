@@ -18,6 +18,17 @@ func run_tests() -> void:
 			stand_ins += 1
 	check(odd.is_empty(), "every item has a size between nothing and 6 m: %s" % [odd])
 	check(stand_ins < Layout.items().size() / 2, "most items are built as themselves (%d stand-ins of %d)" % [stand_ins, Layout.items().size()])
+	var boxed: Array = []
+	for id: String in Layout.items():
+		var cat := str(Layout.items()[id].get("category", ""))
+		if (["fasteners", "modules", "fittings"].has(cat)) and ItemLook._build(id).is_empty():
+			boxed.append(id)
+	check(boxed.is_empty(), "bolts, rivets, lamps and ship modules look like themselves, not a box: %s" % [boxed])
+	var long_bins: Array = []
+	for id: String in Layout.items():
+		if Layout.kind_of(id) == "bin" and not Layout.fits(Layout.size_of(id), Layout.bin_room()):
+			long_bins.append(id)
+	check(long_bins.is_empty(), "every part in a bin fits it as itself: %s" % [long_bins])
 	var n := ItemLook.make("BatteryRack")
 	check(n.get_child_count() >= 1 and (n.get_child(0) as MeshInstance3D).mesh != null, "a battery rack is drawn as a mesh")
 	var box := (n.get_child(0) as MeshInstance3D).get_aabb()

@@ -3,7 +3,8 @@ extends HBoxContainer
 ## stores hold (figures, a search, category chips, then the lines under a heading per
 ## catalogue category, each folding shut with a click; a line per part and grade with its
 ## places, condition, quantity and value, in a smaller font so the screen holds many) and a
-## docket for the picked line, whose BRING ONE TO ME sends the picking lift for it. Crates
+## docket for the picked line, whose BRING 3 TO ME sends the picking lift for as many as you
+## pick with its - and + (beenster 0.3.24). Crates
 ## still waiting in Deliveries are listed first, under Goods in.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
@@ -33,6 +34,8 @@ var _chips: Control
 var _list: VBoxContainer
 var _side: VBoxContainer
 var _message := ""
+## How many of the picked line BRING fetches (1 up to the most one place holds).
+var bring_qty := 1
 var _dirty := false
 
 
@@ -392,6 +395,8 @@ static func compact(c: Control) -> Control:
 
 ## Picks a line by its key, or the line that holds a location ("B1-2-3").
 func select(key: String) -> void:
+	if key != selected:
+		bring_qty = 1
 	selected = key
 	for l in lines():
 		for p: Dictionary in l.places:
@@ -453,10 +458,27 @@ func _refresh_side() -> void:
 		b.pressed.connect(press.bind("put_away"))
 		d.body.add_child(b)
 	else:
-		var b := T.button("BRING ONE TO ME", true, 20, false, glass)
+		bring_qty = clampi(bring_qty, 1, maxi(_most_in_one(line), 1))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		for pair: Array in [["-", "less"], ["+", "more"]]:
+			var step := T.button(pair[0], false, 20, false, glass)
+			step.name = "Bring_" + pair[1]
+			step.custom_minimum_size.x = 44
+			step.pressed.connect(press.bind(pair[1]))
+			row.add_child(step)
+			if pair[1] == "less":
+				var n := T.label(str(bring_qty), "body_medium", 20, T.TEXT)
+				n.name = "BringQty"
+				n.custom_minimum_size.x = 44
+				n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				row.add_child(n)
+		var b := T.button("BRING %d TO ME" % bring_qty, true, 20, false, glass)
 		b.name = "Bring"
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.pressed.connect(press.bind("bring"))
-		d.body.add_child(b)
+		row.add_child(b)
+		d.body.add_child(row)
 	if _message != "":
 		var m := T.label(_message, "body", 16, T.GOOD)
 		m.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -464,7 +486,16 @@ func _refresh_side() -> void:
 	_side.add_child(d.panel)
 
 
-## The docket's buttons, by name (tests call it): "bring", "bring_next", "put_away".
+## The most of a line one place holds: the picking lift brings from one place a trip.
+static func _most_in_one(line: Dictionary) -> int:
+	var most := 0
+	for p: Dictionary in line.get("places", []):
+		most = maxi(most, int(p.get("qty", 0)))
+	return most
+
+
+## The docket's buttons, by name (tests call it): "less", "more", "bring", "bring_next",
+## "put_away".
 func press(action: String) -> void:
 	var line := {}
 	for l in lines():
@@ -474,8 +505,12 @@ func press(action: String) -> void:
 		"bring":
 			if line.is_empty() or fleet == null:
 				return
-			bus.fetch_stock(str(line.item), 1, fleet.call("player_position"))
-			_message = "The picking lift is bringing one %s to you." % str(line.name).to_lower()
+			var n := clampi(bring_qty, 1, maxi(_most_in_one(line), 1))
+			bus.fetch_stock(str(line.item), n, fleet.call("player_position"))
+			_message = "The picking lift is bringing %d %s to you." % [n, str(line.name).to_lower()]
+			Sfx.play("click")
+		"less", "more":
+			bring_qty = clampi(bring_qty + (1 if action == "more" else -1), 1, maxi(_most_in_one(line), 1))
 			Sfx.play("click")
 		"bring_next":
 			if fleet and bool(fleet.call("fetch_for_ship")):
