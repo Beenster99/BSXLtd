@@ -1,16 +1,16 @@
 class_name TradesTemplateScribe
 extends TradesTool
 ## The template scribe: a steel holder with a stick of white soapstone chalk at its tip and a
-## tape reel on its side that counts the line out, held like a pen (TradesPlateTracer does the
-## tracing). Its screen shows how far round the plate the line has gone.
+## tape reel on its side that counts the line out, held like a pen (TradesPlateTracer finds
+## and saves the plate). Its screen names the plate you point at and whether it is saved.
 ##
 ## Its own space: the chalk's tip at the origin, the holder back along +Y.
 
 const GRIP := Vector3(0, 0.08, 0.0)
 
-## How far round the plate (0..1) and which plate, for the screen.
-var progress := 0.0
+## The plate pointed at and the config it is saved as ("" for none), for the screen.
 var plate := ""
+var saved := ""
 
 
 func _ready() -> void:
@@ -34,5 +34,5 @@ func _ready() -> void:
 
 func readout_text() -> String:
 	if plate == "":
-		return "TRACE\nA PLATE"
-	return "%s\n%d%%" % [plate.left(10).to_upper(), roundi(progress * 100.0)]
+		return "POINT AT\nA PLATE"
+	return "%s\n%s" % [plate.left(10).to_upper(), "SAVED " + saved if saved != "" else "CLICK: SAVE"]

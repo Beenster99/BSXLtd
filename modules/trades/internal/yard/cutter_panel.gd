@@ -1,9 +1,10 @@
 class_name TradesCutterPanel
 extends Control
-## The cutting bed's console screen (on a TouchScreen at the machine's front corner): the
-## templates it holds down the left, the bed drawn on the right with the plate on it and the
-## picked template laid where it will be cut, the plate's and the cut's figures, and ROTATE,
-## CUT and DELETE (a traced template). Look at it and click, like every screen in the yard.
+## The cutting bed's console screen (on a TouchScreen at the machine's front corner): down the
+## left your saved configs (plates saved off a ship with the scribe) with their sizes, then the
+## bed's own stored sizes; on the right the bed drawn with the plate on it and the picked
+## config laid where it will be cut, the plate's and the cut's figures, and ROTATE, DELETE (a
+## saved config) and START. Look at it and click, like every screen in the yard.
 
 const BG := Color(0.04, 0.06, 0.07)
 const INK := Color(0.78, 0.95, 0.9)
@@ -45,7 +46,6 @@ func _ready() -> void:
 	var left := VBoxContainer.new()
 	left.custom_minimum_size = Vector2(390, 0)
 	body.add_child(left)
-	left.add_child(_label("TEMPLATES", 22, DIM))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -69,7 +69,7 @@ func _ready() -> void:
 	buttons.add_child(_rotate)
 	_delete = _button("DELETE", _delete_picked)
 	buttons.add_child(_delete)
-	_cut = _button("CUT", _press_cut)
+	_cut = _button("START", _press_cut)
 	_cut.custom_minimum_size = Vector2(220, 64)
 	buttons.add_child(_cut)
 	_status = _label("", 24, GREEN)
@@ -82,21 +82,22 @@ func refresh() -> void:
 	if _list == null or bed == null:
 		return
 	for c in _list.get_children():
+		# Out now, so the new buttons keep their names.
+		_list.remove_child(c)
 		c.queue_free()
 	var bus := Modules.bus("trades")
 	var templates: Array = bus.call("templates") if bus and bus.has_method("templates") else []
+	var saved := templates.filter(func(t: Dictionary) -> bool: return str(t.kind) == "traced")
+	_list.add_child(_label("YOUR SAVED CONFIGS", 22, AMBER))
+	if saved.is_empty():
+		var none := _label("None yet. Point the scribe at a plate\nof a ship and click to save one.", 18, DIM)
+		_list.add_child(none)
+	for t: Dictionary in saved:
+		_list.add_child(_config_button(t))
+	_list.add_child(_label("STORED SIZES", 22, DIM))
 	for t: Dictionary in templates:
-		var id := str(t.id)
-		var size: Vector2 = t.size
-		var b := _button("%s%s\n%d x %d mm" % ["✎ " if t.kind == "traced" else "", str(t.name), roundi(size.x * 1000.0), roundi(size.y * 1000.0)],
-				func() -> void: bed.call("pick", id))
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.custom_minimum_size = Vector2(360, 66)
-		b.add_theme_font_size_override("font_size", 19)
-		if id == str(bed.get("picked")):
-			b.add_theme_color_override("font_color", AMBER)
-			b.add_theme_color_override("font_hover_color", AMBER)
-		_list.add_child(b)
+		if str(t.kind) != "traced":
+			_list.add_child(_config_button(t))
 	var plate: Dictionary = bed.get("plate")
 	var job: Dictionary = bed.get("job")
 	var picked := str(bed.get("picked"))
@@ -121,7 +122,7 @@ func refresh() -> void:
 		_status.text = "CUTTING  %d%%" % roundi(100.0 * int(job.step) / maxf(steps.size(), 1))
 		_status.add_theme_color_override("font_color", AMBER)
 	elif why == "":
-		_status.text = "READY  ·  press CUT"
+		_status.text = "READY  ·  press START"
 		_status.add_theme_color_override("font_color", GREEN)
 	else:
 		var made: PackedStringArray = bed.get("made")
@@ -136,6 +137,22 @@ func refresh() -> void:
 func _process(_delta: float) -> void:
 	if bed and not (bed.get("job") as Dictionary).is_empty() and Engine.get_process_frames() % 10 == 0:
 		refresh()
+
+
+## A config in the list: its name, its size and (a saved one) its number.
+func _config_button(t: Dictionary) -> Button:
+	var id := str(t.id)
+	var size: Vector2 = t.size
+	var b := _button("%s%s\n%d x %d mm" % ["%s  " % id if t.kind == "traced" else "", str(t.name), roundi(size.x * 1000.0), roundi(size.y * 1000.0)],
+			func() -> void: bed.call("pick", id))
+	b.name = "Config_" + id.validate_node_name()
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(360, 66)
+	b.add_theme_font_size_override("font_size", 19)
+	if id == str(bed.get("picked")):
+		b.add_theme_color_override("font_color", AMBER)
+		b.add_theme_color_override("font_hover_color", AMBER)
+	return b
 
 
 func _kerf_m(t: Dictionary) -> float:
