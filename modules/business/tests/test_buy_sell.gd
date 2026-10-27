@@ -23,6 +23,7 @@ func run_tests() -> void:
 	_test_deals()
 	_test_bulk()
 	_test_selling()
+	_test_plates()
 	await _test_page()
 	bus.reset()
 	Flags.use(saved)
@@ -142,6 +143,37 @@ func _test_standing(buyer: String) -> void:
 	check(st.name == "Regular" and st.off == 4 and st.next_name == "Partner", "20,000 sold: a Regular, 4%% off: %s" % str(st))
 	if l:
 		check(bus.listing_cost(l, 1) < before and bus.listing_cost(l, 1) == roundi(l.unit_price * 0.96), "which comes off buying there: %d < %d" % [bus.listing_cost(l, 1), before])
+
+
+## Shared Components' stock plates are on the market: metal and glass, every size and
+## thickness, from more than one supplier, and they can be bought.
+func _test_plates() -> void:
+	var cat := bus.get_catalogue()
+	check(cat.has_part("SteelPlate_2500x1250_5") and cat.category_of("SteelPlate_2500x1250_5") == "metal plates",
+			"stock plates are in the market's catalogue as metal plates")
+	check(cat.part_names("glass plates").size() == StockPlates.item_ids("glass").size() and cat.part_names("glass plates").size() > 0,
+			"glass plates too")
+	var ids := {}
+	var sellers := {}
+	for l in bus.get_listings("metal plates") + bus.get_listings("glass plates"):
+		ids[l.part] = true
+		sellers[l.supplier_id] = true
+	check(ids.size() == StockPlates.items().size(), "every plate size and thickness is on sale: %d of %d" % [ids.size(), StockPlates.items().size()])
+	check(sellers.size() >= 2, "from more than one supplier: %s" % str(sellers.keys()))
+	var steel := bus.get_listings("metal plates").filter(func(l: MarketListing) -> bool: return l.part.begins_with("SteelPlate_"))
+	var thick := {}
+	for l: MarketListing in steel:
+		thick[StockPlates.item(l.part).get("thickness_mm", 0)] = true
+	check(thick.size() >= 4, "steel in several thicknesses: %s" % str(thick.keys()))
+	var plate: MarketListing = null
+	for l: MarketListing in steel:
+		if l.condition == PartCondition.NEW and l.available >= 2:
+			plate = l
+			break
+	check(plate != null and plate.unit_price > 0, "a new steel plate with a price")
+	if plate:
+		var r := bus.place_market_order([{"listing_id": plate.id, "qty": 2}])
+		check(r.is_ok() and r.order_ids.size() == 1, "two plates bought: %s" % r.message)
 
 
 func _test_page() -> void:
