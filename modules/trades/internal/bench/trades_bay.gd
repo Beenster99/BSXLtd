@@ -79,7 +79,8 @@ var turn_snap := false
 var stations: Array[TradesStation] = []
 ## The tool meshes by id (no entry for hands).
 var tool_nodes: Dictionary = {}
-## trades.cutting_bed (in the yard): the plate tracer and the cutting bed, or null.
+## trades.cutting_bed (in the yard): the plate tracer (the scribe's configs) and the cutting
+## bed, or null.
 var tracer: TradesPlateTracer
 var cutting_bed: TradesCuttingBed
 
@@ -210,7 +211,8 @@ func _enter_yard() -> void:
 		yard_bus.connect("rig_changed", _on_rig_changed)
 		s.refresh_points()
 	if TradesCuttingBed.enabled() and yard and yard_bus and yard_bus.has_method("cutting_bed_spot"):
-		build_cutting_bed(yard.global_transform * (yard_bus.call("cutting_bed_spot") as Transform3D))
+		build_cutting_bed(yard.global_transform * TradesCuttingBed.lay_along(yard_bus.call("cutting_bed_spot") as Transform3D,
+				ShipBayBus.CUTTING_BED_ROOM))
 	_focus = s
 	if yard_bus:
 		yard_bus.set_walker_active(yard, false)
@@ -562,8 +564,8 @@ func _process(delta: float) -> void:
 	if tracer:
 		var scribe := tool_node(&"template") as TradesTemplateScribe
 		if scribe:
-			scribe.progress = tracer.progress()
 			scribe.plate = tracer.plate_name
+			scribe.saved = tracer.saved_as((tracer.aimed.slot as MountSlot).slot_id) if not tracer.aimed.is_empty() else ""
 	_placed.clear()
 	for s in stations:
 		s.update(delta)

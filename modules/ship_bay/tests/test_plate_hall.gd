@@ -26,17 +26,23 @@ func run_tests() -> void:
 			continue
 		var kind := str(StockPlates.item(pid)["kind"])
 		var rack := str(loc["rack"])
-		if str(loc["store"]) != "plate" or str(Layout.rack(rack)["plate_kind"]) != kind or not Layout.fits(Layout.size_of(pid), loc["size"]):
+		var long := int(StockPlates.item(pid)["length_mm"]) >= 6000
+		if str(loc["store"]) != "plate" or bool(Layout.rack(rack).get("long", false)) != long \
+				or (not long and str(Layout.rack(rack)["plate_kind"]) != kind) or not Layout.fits(Layout.size_of(pid), loc["size"]):
 			misplaced.append(pid)
 	check(unhomed.is_empty() and StockPlates.item_ids().size() > 80, "every stock plate has a home: %d, none missing %s" % [StockPlates.item_ids().size(), unhomed])
-	check(misplaced.is_empty(), "on its own material's rack, with room for it: %s" % [misplaced])
+	check(misplaced.is_empty(), "on its own material's rack (6 and 12 m plates on the long racks), with room for it: %s" % [misplaced])
 	var materials := {}
 	var bays_ok := true
 	for pid: String in StockPlates.item_ids():
 		var loc: Dictionary = locations[homes[pid]]
 		var p := StockPlates.item(pid)
+		if int(p["length_mm"]) >= 6000:
+			continue
 		materials[str(loc["rack"])] = (materials.get(str(loc["rack"]), {}) as Dictionary).merged({str(p["material"]): true})
 		for other: String in StockPlates.item_ids("", str(p["kind"])):
+			if int(StockPlates.item(other)["length_mm"]) >= 6000:
+				continue
 			var same_size := other.left(other.rfind("_")) == pid.left(pid.rfind("_"))
 			if same_size != (int(locations[homes[other]]["bay"]) == int(loc["bay"])):
 				bays_ok = false
@@ -58,6 +64,12 @@ func run_tests() -> void:
 		if at != "" and str(locations[at]["store"]) == "plate":
 			strays.append(item)
 	check(strays.is_empty(), "nothing but plates goes on the plate racks: %s" % [strays])
+	var bed_at := bus.cutting_bed_spot().origin
+	var half := ShipBayBus.CUTTING_BED_ROOM * 0.5
+	var q_edge := Layout.aisle_x("Q") + Layout.aisle_width("Q") * 0.5
+	var r_back := Layout.rack_x("R1") - float(Layout.rack("R1")["depth"]) * 0.5
+	check(bed_at.x - half.x >= q_edge and bed_at.x + half.x <= r_back and bed_at.z + half.z <= Layout.RACK_Z0 + 1.0,
+			"the cutting bed's room stays out of aisle Q, off R1 and clear of the way in: x %.2f..%.2f between %.2f and %.2f" % [bed_at.x - half.x, bed_at.x + half.x, q_edge, r_back])
 	check(Yard.room_at(Vector3(-67, 1, -33)) == "plates" and Yard.room_at(bus.cutting_bed_spot().origin + Vector3.UP) == "plates",
 			"the plate hall is a room, the cutting bed's spot in it")
 	var crushed := ShipBayBus.scrap_materials("TitaniumPlate_2000x1000_8", 2)
@@ -78,7 +90,7 @@ func run_tests() -> void:
 	check(door.is_empty() or not yard.call("is_own_body", door.collider), "Stock's door into the plate hall is open: %s" % door.get("position", ""))
 	var high := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-46, 9.5, Yard.PLATE_DOOR.x), Vector3(-54, 9.5, Yard.PLATE_DOOR.x)))
 	check(high.is_empty(), "tall enough for the heavy lift's mast: %s" % high.get("position", ""))
-	for ray: Array in [[Vector3(-80, 1, -33), Vector3(-90, 1, -33), "west"], [Vector3(-67, 1, -40), Vector3(-67, 1, -50), "north"],
+	for ray: Array in [[Vector3(-102, 1, -24), Vector3(-110, 1, -24), "west"], [Vector3(-67, 1, -40), Vector3(-67, 1, -50), "north"],
 			[Vector3(-67, 1, -23), Vector3(-67, 1, -17), "south"]]:
 		check(not space.intersect_ray(PhysicsRayQueryParameters3D.create(ray[0], ray[1])).is_empty(), "the plate hall has its %s wall" % ray[2])
 	var bed := PhysicsShapeQueryParameters3D.new()
@@ -97,7 +109,7 @@ func run_tests() -> void:
 		t.set("turn_rate", 8.0)
 		t.set("lift_speed", 6.0)
 	var lines: Array = []
-	for pid: String in ["SteelPlate_2500x1250_5", "GlassPlate_1000x1000_6"]:
+	for pid: String in ["SteelPlate_2500x1250_5", "GlassPlate_1000x1000_6", "SteelPlate_12000x3000_8"]:
 		lines.append({"item_id": pid, "qty": 4, "condition": 1.0, "name": StockPlates.item(pid)["name"], "grade": "new",
 				"mass": StockPlates.item(pid)["mass"]})
 	bus.receive_delivery("PO-PLATES", lines)
@@ -105,7 +117,7 @@ func run_tests() -> void:
 		await get_tree().physics_frame
 		if bus.delivered_crates().is_empty():
 			break
-	for pid: String in ["SteelPlate_2500x1250_5", "GlassPlate_1000x1000_6"]:
+	for pid: String in ["SteelPlate_2500x1250_5", "GlassPlate_1000x1000_6", "SteelPlate_12000x3000_8"]:
 		check(bus.stock_count(pid) == 4 and Array(bus.find_stock(pid)) == [homes[pid]], "four %s on %s: %s" % [pid, homes[pid], bus.find_stock(pid)])
 	check(bus.delivered_crates().is_empty(), "nothing left on the floor: %s" % [bus.delivered_crates().keys()])
 	yard.queue_free()
