@@ -426,7 +426,7 @@ func cutting_bed_spot() -> Transform3D:
 	return Shipyard.SPOTS["cutting_bed"]
 
 
-const CUTTING_BED_ROOM := Vector3(4.5, 3.5, 8.0)
+const CUTTING_BED_ROOM := Vector3(8.4, 4.5, 14.0)
 
 
 ## Hands the shipyard's walker over (on = false: it stops where it is, leaves the mouse and
