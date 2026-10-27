@@ -11,8 +11,8 @@ func run_tests() -> void:
 	check(StockPlates.kinds().size() == 5, "five kinds: %s" % [StockPlates.kinds()])
 	var metal := StockPlates.item_ids("metal")
 	var glass := StockPlates.item_ids("glass")
-	check(metal.size() == 3 * 4 * 5, "metal: 3 kinds x 4 sizes x 5 thicknesses (%d)" % metal.size())
-	check(glass.size() == 2 * 4 * 4, "glass: 2 kinds x 4 sizes x 4 thicknesses (%d)" % glass.size())
+	check(metal.size() == 3 * 6 * 5, "metal: 3 kinds x 6 sizes x 5 thicknesses (%d)" % metal.size())
+	check(glass.size() == 2 * 6 * 4, "glass: 2 kinds x 6 sizes x 4 thicknesses (%d)" % glass.size())
 	check(StockPlates.items().size() == metal.size() + glass.size(), "every plate is metal or glass")
 	# Ids and lookup.
 	var id := StockPlates.item_id("SteelPlate", 2500, 1250, 5)

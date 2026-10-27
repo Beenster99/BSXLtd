@@ -25,7 +25,10 @@ extends RefCounted
 ## five open plate racks round the plasma cutting bed, one rack a material (beenster 0.3.24):
 ## steel on P1 and alloy on P2 either side of aisle P, titanium on Q1 by aisle Q, glass on R1
 ## and crystal on R2 either side of aisle R. A bay holds one plate size, a level one
-## thickness, the thick ones low. The heavy lift works them. Nothing but plates goes on them.
+## thickness, the thick ones low. The 6 and 12 m plates for the big cutting bed lie on three
+## long racks in the hall's west end: 12 m plates on L1 and L2 either side of aisle L, 6 m
+## ones two to a level on M1 by aisle M, a material at a time. The heavy lift works them.
+## Nothing but plates goes on them.
 ##
 ## Store 2 (the old Material prep hall, x 0..50, beenster 0.3.15) is all shelves too, laid out
 ## the same way off the same transfer aisle and cross aisle: small racks in aisles D and E
@@ -76,8 +79,13 @@ const PLATE_RACKS := [
 	["P1", -83.5, 1.0, "SteelPlate"], ["P2", -77.3, -1.0, "AlloyPlate"], ["Q1", -75.4, 1.0, "TitaniumPlate"],
 	["R1", -60.4, 1.0, "GlassPlate"], ["R2", -54.2, -1.0, "CrystalPlate"],
 ]
+## The long plate racks: 3.2 m deep open shelving, one 12.4 m bay, twelve levels 0.42 m
+## apart; [rack, west face x, front, places a level].
+const LONG := {"depth": 3.2, "bay": 12.4, "bays": 1, "height": 5.2, "aisle": 4.4,
+		"beams": [0.15, 0.57, 0.99, 1.41, 1.83, 2.25, 2.67, 3.09, 3.51, 3.93, 4.35, 4.77]}
+const LONG_RACKS := [["L1", -103.5, 1.0, 1], ["L2", -95.9, -1.0, 1], ["M1", -92.6, 1.0, 2]]
 ## The plate hall's floor (x, z, width, depth), metres.
-const PLATE_HALL := Rect2(-84.0, -46.0, 34.0, 26.0)
+const PLATE_HALL := Rect2(-104.0, -46.0, 54.0, 26.0)
 const BIG_RACKS := [
 	["H1", -49.6, 1.0, "heavy", [1, 1]], ["H2", -41.8, -1.0, "heavy", [1, 1]],
 	["W1", -38.1, 1.0, "large", [2, 2]], ["W2", -31.5, -1.0, "large", [2, 1]],
@@ -166,7 +174,7 @@ static func kind_of(item: String) -> String:
 
 ## The rack ids west to east.
 static func rack_ids() -> PackedStringArray:
-	return PackedStringArray(["P1", "P2", "Q1", "R1", "R2", "H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
+	return PackedStringArray(["L1", "L2", "M1", "P1", "P2", "Q1", "R1", "R2", "H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
 			"D1", "D2", "E1", "E2", "Y1", "Y2", "Z1", "Z2", "J1", "J2"])
 
 
@@ -248,6 +256,11 @@ static func _racks() -> Dictionary:
 				"height": PLATE["height"], "aisle": PLATE["aisle"], "per": per, "plate_kind": r[3],
 				"family": str(kind.get("family", "")), "material": str(kind.get("material", "")),
 				"name": str(kind.get("display_name", r[3]))}
+	for r: Array in LONG_RACKS:
+		racks[r[0]] = {"id": r[0], "store": "plate", "x": float(r[1]) + float(LONG["depth"]) * 0.5, "face": r[2],
+				"depth": LONG["depth"], "bay": LONG["bay"], "bays": LONG["bays"], "beams": LONG["beams"],
+				"height": LONG["height"], "aisle": LONG["aisle"], "per": [r[3]], "plate_kind": "", "family": "",
+				"material": "", "name": "Long plate", "long": true}
 	return racks
 
 
@@ -387,6 +400,25 @@ static func _build() -> Dictionary:
 					return int(StockPlates.item(a)["thickness_mm"]) > int(StockPlates.item(b)["thickness_mm"]))
 			for level in mini(run.size(), (PLATE["beams"] as Array).size()):
 				_home(locations, homes, "%s-%02d-%d-1" % [r[0], bay + 1, level + 1], run[level], items)
+	# The long plates, kind by kind and thickest first: 12 m ones up L1 then L2, 6 m ones two
+	# to a level up M1.
+	for length: int in [12000, 6000]:
+		var places: Array = []
+		for r: Array in LONG_RACKS:
+			if (int(r[3]) == 1) == (length == 12000):
+				for level in range((LONG["beams"] as Array).size()):
+					for pos in int(r[3]):
+						places.append("%s-01-%d-%d" % [r[0], level + 1, pos + 1])
+		var i := 0
+		for r: Array in PLATE_RACKS:
+			var run := Array(StockPlates.item_ids("", r[3])).filter(func(pid: String) -> bool:
+					return int(StockPlates.item(pid)["length_mm"]) == length)
+			run.sort_custom(func(a: String, b: String) -> bool:
+					return int(StockPlates.item(a)["thickness_mm"]) > int(StockPlates.item(b)["thickness_mm"]))
+			for pid: String in run:
+				if i < places.size():
+					_home(locations, homes, places[i], pid, items)
+				i += 1
 	var aisles := {}
 	for id: String in rack_ids():
 		if id.ends_with("1"):
