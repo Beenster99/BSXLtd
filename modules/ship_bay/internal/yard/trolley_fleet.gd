@@ -530,7 +530,7 @@ func _deck_keys(t: Trolley, delta: float) -> void:
 
 func _ride_keys(t: Trolley, delta: float) -> void:
 	var walker := yard.get("walker") as Node3D if yard else null
-	if walker == null or not bool(yard.get("walker_active")) or t.deck == null:
+	if walker == null or not bool(yard.get("walker_active")) or t.deck == null or (_bus and not _bus.deck_keys):
 		return
 	var local := t.deck.global_transform.affine_inverse() * walker.global_position
 	var d: Vector2 = t.spec["deck"]
