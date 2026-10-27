@@ -108,6 +108,8 @@ var _arc_off_s := 10.0
 var remote_torches := {}
 ## The crew seeing and hearing each other's tools (trades.crew_tools), in the yard.
 var crew: TradesCrew
+## The yard's real fire extinguishers (trades.extinguishers).
+var extinguishers: TradesExtinguishers
 ## The tool loop sounding now ("" for none), whether or not it can be heard here.
 var _looping := &""
 ## What we last told the others about our arc, and when.
@@ -218,6 +220,14 @@ func _enter_yard() -> void:
 	worker.camera.current = true
 	set_tool(&"hands")
 	var net := _net()
+	if TradesExtinguishers.enabled() and yard and yard_bus and yard_bus.has_method("fire_points"):
+		extinguishers = TradesExtinguishers.new()
+		extinguishers.name = "Extinguishers"
+		extinguishers.bay = self
+		for t: Transform3D in TradesExtinguishers.fire_points():
+			extinguishers.spots.append(yard.global_transform * t)
+		add_child(extinguishers)
+		extinguishers.build(net)
 	if net:
 		net.call("register_event", TORCH_EVENT, _apply_torch, _validate_torch)
 		if TradesCrew.enabled():
@@ -479,7 +489,11 @@ func _on_action(action: String) -> void:
 	if action.begins_with(TradesBus.KEY_TOOL):
 		var i := int(action.trim_prefix(TradesBus.KEY_TOOL)) - 1
 		if i >= 0 and i < hotbar.size():
+			if extinguishers and extinguishers.holding():
+				extinguishers.put_down()
 			set_tool(hotbar[i])
+		return
+	if action == Keys.INTERACT and extinguishers and extinguishers.interact():
 		return
 	match action:
 		TradesBus.KEY_VIEW:
@@ -509,6 +523,9 @@ func _on_action(action: String) -> void:
 
 
 func _on_mouse_button(event: InputEventMouseButton) -> void:
+	if extinguishers and extinguishers.holding() and event.button_index == MOUSE_BUTTON_LEFT:
+		extinguishers.set_spraying(event.pressed)
+		return
 	if _focus == null:
 		return
 	match event.button_index:
