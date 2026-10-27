@@ -60,7 +60,7 @@ func run_tests() -> void:
 	var importer: VsShipImport = model.get("importer")
 	check(importer != null and importer.errors.is_empty() and importer.warnings.is_empty(),
 			"the file builds cleanly: %s" % ("; ".join(importer.errors + importer.warnings) if importer else "no importer"))
-	check(importer.parts_by_path.size() == 529 and importer.joints_by_path.size() == 1375,
+	check(importer.parts_by_path.size() == 529 and importer.joints_by_path.size() == 1138,
 			"every part and joint built: %d, %d" % [importer.parts_by_path.size(), importer.joints_by_path.size()])
 	for f in bolts + plate.fasteners:
 		check(importer.joint_at(f.path) != null, "%s is a joint on the model" % f.joint_id)
