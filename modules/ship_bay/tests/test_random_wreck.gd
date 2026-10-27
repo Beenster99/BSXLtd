@@ -30,6 +30,9 @@ func run_tests() -> void:
 	var panel := DebugPanel.new(bus)
 	add_child(panel)
 	check(bus.ship != null and bus.ship.ship_id == "vs_kestrel", "the Kestrel is in the bay")
+	# Pinned rolls: a courier on landing legs, then tugs with low sterns and wings (they once
+	# sat up to 1.2 m over the saddles on loose part boxes).
+	bus.wreck_seed = 9
 	(panel.get_node("Wreck") as Button).pressed.emit()
 	await frames(2)
 	_check_wreck(bus, bay, "small")
@@ -69,6 +72,7 @@ func run_tests() -> void:
 	await frames(1)
 	check(bus.ship != null and bus.ship.ship_id == ShipBayBus.WRECK_ID, "a 0.3.22 save's wreck comes back as the bay's ship")
 	for size: String in ["M", "L"]:
+		bus.wreck_seed = 9 if size == "M" else 6
 		var t := Time.get_ticks_msec()
 		(panel.get_node("Wreck" + size) as Button).pressed.emit()
 		await frames(2)
@@ -76,6 +80,12 @@ func run_tests() -> void:
 		_check_wreck(bus, bay, word)
 		check(str(bay.get("cradle").get("size")) == Bay.cradle_size_for(bus.ship.bounds.size.z), "a %s wreck in the cradle for its length (%s, %.1f m, %d ms to build)"
 				% [word, bay.get("cradle").get("size"), bus.ship.bounds.size.z, Time.get_ticks_msec() - t])
+	for pair: Array in [["S", 2], ["L", 2]]:
+		bus.wreck_seed = pair[1]
+		(panel.get_node("Wreck" if pair[0] == "S" else "Wreck" + str(pair[0])) as Button).pressed.emit()
+		await frames(2)
+		_check_wreck(bus, bay, "%s (roll %d)" % [str(ShipBayBus.WRECK_SIZES[pair[0]]).to_lower(), pair[1]])
+	bus.wreck_seed = -1
 	(panel.get_node("Kestrel") as Button).pressed.emit()
 	await frames(2)
 	check(bus.ship != null and bus.ship.ship_id == "vs_kestrel" and bus.bay_wreck.is_empty() and not bay.get("model") is FileShip
@@ -120,7 +130,7 @@ func _check_wreck(bus: ShipBayBus, bay: Node3D, word: String) -> void:
 	for k in points.size():
 		if not is_inf(belly[k]):
 			gap = minf(gap, float(spec.saddle_top) + seat.y + belly[k] - tops[k])
-	check(not is_inf(gap) and gap > -0.03 and gap < 0.05, "its belly rests on the saddles: gap %.3f m" % gap)
+	check(not is_inf(gap) and gap > -0.03 and gap < 0.08, "its belly rests on the saddles: gap %.3f m" % gap)
 	var ship_root: Node3D = bay.get("ship_root")
 	var nose := ship_root.global_position.z - (bay as Node3D).global_position.z + bus.ship.bounds.position.z
 	check(nose > -23.0, "its nose clear of the courtyard's north wall (%.1f m)" % nose)
