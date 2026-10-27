@@ -112,8 +112,11 @@ static func vs_tools() -> bool:
 static func weld_skill() -> bool:
 	return Flags.is_on("trades.weld_skill")
 
-## Ship space to this station's world: set from the yard on every ship_loaded.
+## Ship space to this station's world: read from the yard on every refresh, and followed while
+## the ship moves (a wreck set down on its cradle, a cradle driven). A stale one left the tools
+## aiming up to 0.7 m off a wreck's bolts and rivets (0.3.24).
 var ship_xform := Transform3D.IDENTITY
+var _follow_left := 0.0
 ## The loaded ship's joints and where each one is in the world.
 var points: Array[FastenerPoint] = []
 var points_world: PackedVector3Array = PackedVector3Array()
@@ -250,6 +253,8 @@ func build() -> void:
 ## Read the loaded ship's joints again (after a ship loads, or the ship moved), then the test
 ## stand's after them.
 func refresh_points() -> void:
+	if bay and bay.is_inside_tree():
+		ship_xform = bay.ship_transform()
 	points.clear()
 	points_world.clear()
 	if _bus and _bus.ship:
@@ -274,6 +279,17 @@ func refresh_points() -> void:
 		for rig_id: String in rigs:
 			_add_fixture(_bus.call("rig_points", rig_id), rigs[rig_id])
 	aimed = -1
+
+
+## Reads the joints again when the ship has moved under them (checked a few times a second).
+func _follow_ship(delta: float) -> void:
+	_follow_left -= delta
+	if _follow_left > 0.0 or bay == null or not bay.is_inside_tree() or _working >= 0:
+		return
+	_follow_left = 0.25
+	var now := bay.ship_transform()
+	if not now.is_equal_approx(ship_xform):
+		refresh_points()
 
 
 ## Joints given in a fixture's own space (`at`: its world transform), read in as ship space.
@@ -714,6 +730,7 @@ func motion(relative: Vector2) -> bool:
 
 
 func update(delta: float) -> void:
+	_follow_ship(delta)
 	tractor.update(delta)
 	_cool_beads(delta)
 	if wiring:

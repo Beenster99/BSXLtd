@@ -72,21 +72,23 @@ func run_tests() -> void:
 			plate_slot = s
 			break
 	check(plate_slot != null, "the Kestrel has a plate to trace: %s" % (plate_slot.slot_id if plate_slot else "none"))
+	# Playtest 0.3.24: the scribe found almost none of the Kestrel's plates (8 cm thick, slanted).
+	var plates := ship_bus.get_slots().filter(func(s: MountSlot) -> bool: return not TradesPlateTracer.plate_of(s).is_empty())
+	check(plates.size() >= 40, "most of the Kestrel's plates can be traced: %d" % plates.size())
+	var slanted := ship_bus.get_slot("plate_cockpit_wall_e1")
+	if slanted:
+		var sp := TradesPlateTracer.plate_of(slanted)
+		check(not sp.is_empty() and absf((sp.n as Vector3).y) > 0.5 and (sp.size as Vector2).x > 0.6, "a slanted plate too: %s" % [sp.get("size")])
 	if plate_slot:
 		var found := TradesPlateTracer.plate_at(plate_slot.box.get_center())
-		var ax: Vector3i = found.axes
-		var b: AABB = found.box
-		var c := b.get_center()
-		var half := Vector2(b.size[ax.x], b.size[ax.y]) * 0.5
+		var c: Vector3 = found.centre
+		var half: Vector2 = (found.size as Vector2) * 0.5
 		var outline := PackedVector2Array([Vector2(-half.x, -half.y), Vector2(half.x, -half.y), half, Vector2(-half.x, half.y)])
-		var normal := Vector3.ZERO
-		normal[ax.z] = 1.0
+		var normal: Vector3 = found.n
 		var ship := rig.ship_transform()
 		var before := bus.templates().size()
 		for p in _trace(outline, 0.0, 1.0, 0.025):
-			var at := c
-			at[ax.x] += p.x
-			at[ax.y] += p.y
+			var at := c + (found.u as Vector3) * p.x + (found.v as Vector3) * p.y
 			tracer.chalk_at(ship * at, ship.basis * normal)
 			if bus.templates().size() > before:
 				break
