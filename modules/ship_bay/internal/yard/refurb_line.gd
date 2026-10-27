@@ -463,7 +463,7 @@ func _show_survey(screen: Node3D, at: Dictionary) -> void:
 	var grind := str(lot.route) == "grind"
 	var call := "SCRAP: TO THE CRUSHER" if grind else "REFURBISH"
 	if state == "done":
-		var said := ShipBayBus.survey_route(float(lot.condition)) == str(lot.route)
+		var said := ShipBayBus.survey_route(float(lot.condition), str(lot.item)) == str(lot.route)
 		screen.call("set_body", "%s\nSURVEY: %s%s" % [head, call, "" if said else " (YOUR CALL)"], T.AMBER if grind else T.GOOD)
 	else:
 		screen.call("set_body", "%s\n%s" % [head, "SCANNING..." if state == "running" else "SCAN TO SURVEY IT"])

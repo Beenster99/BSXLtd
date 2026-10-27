@@ -9,6 +9,11 @@ extends RigidBody3D
 ## Frozen: it stands on the bay's cradle. Ship space: -Z forward, +Y up, the deck floor at
 ## y = 0.
 
+## The landing legs' part paths start with this; on a cradle they stand down between its beams.
+const LEG := "component:leg/"
+## How far apart lowest_in reads the surface, metres.
+const STEP := 0.25
+
 var importer: VsShipImport
 var file: Dictionary = {}
 ## The side door's sill and the power socket, ship space (access_points).
@@ -101,8 +106,9 @@ func slot_pieces(def: ShipDefinition) -> Dictionary:
 
 
 ## The lowest point of the ship's surface over each of `points` (ship x, z), one each, INF
-## where nothing is over one: where its belly meets the cradle's saddles.
-func belly_under(points: Array[Vector2]) -> PackedFloat64Array:
+## where nothing is over one: where its belly meets the cradle's saddles. `skip_legs` leaves
+## out the landing legs (they stand down between the cradle's beams).
+func belly_under(points: Array[Vector2], skip_legs := false) -> PackedFloat64Array:
 	var low := PackedFloat64Array()
 	low.resize(points.size())
 	low.fill(INF)
@@ -111,8 +117,9 @@ func belly_under(points: Array[Vector2]) -> PackedFloat64Array:
 	var reach := Rect2(points[0], Vector2.ZERO)
 	for p: Vector2 in points:
 		reach = reach.expand(p)
+	var legs := _leg_meshes() if skip_legs else {}
 	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
-		if mi.mesh == null or not mi.visible:
+		if mi.mesh == null or not mi.visible or legs.has(mi):
 			continue
 		var xf := _local_xform(mi)
 		var box := xf * mi.mesh.get_aabb()
@@ -138,16 +145,36 @@ func belly_under(points: Array[Vector2]) -> PackedFloat64Array:
 	return low
 
 
-## The lowest point of the ship (part boxes) over `area` (ship x, z), INF when none is.
+## The lowest point of the ship's surface over `area` (ship x, z), INF when none is: read off
+## the meshes at points STEP metres apart over it (part boxes are loose round slanted plates),
+## the landing legs left out.
 func lowest_in(area: Rect2) -> float:
+	var points: Array[Vector2] = []
+	var nx := maxi(int(ceilf(area.size.x / STEP)), 1)
+	var nz := maxi(int(ceilf(area.size.y / STEP)), 1)
+	for i in nx + 1:
+		for j in nz + 1:
+			points.append(area.position + Vector2(area.size.x * i / nx, area.size.y * j / nz))
 	var low := INF
-	for p: Dictionary in file.get("parts", []):
-		if not importer.parts_by_path.has(str(p.get("path", ""))):
-			continue
-		var b := _box(p.get("box", {}))
-		if Rect2(b.position.x, b.position.z, b.size.x, b.size.z).intersects(area):
-			low = minf(low, b.position.y)
+	for y: float in belly_under(points, true):
+		low = minf(low, y)
 	return low
+
+
+## The landing legs' meshes (set of MeshInstance3D).
+func _leg_meshes() -> Dictionary:
+	var out := {}
+	for path: String in importer.parts_by_path:
+		if not path.begins_with(LEG):
+			continue
+		var look := importer.kit.model.part_visual((importer.parts_by_path[path] as PartData).id)
+		if look == null:
+			continue
+		if look is MeshInstance3D:
+			out[look] = true
+		for mi: Node in look.find_children("*", "MeshInstance3D", true, false):
+			out[mi] = true
+	return out
 
 
 ## The height of triangle abc over the point (x, z), INF when the point isn't under it.
