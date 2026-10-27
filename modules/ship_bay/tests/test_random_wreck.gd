@@ -17,10 +17,10 @@ func run_tests() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var a := ShipBayBus.random_wreck(42)
-	check(a == ShipBayBus.random_wreck(42) and ShipGenerator.is_generated(str(a.design)), "the same roll gives the same wreck: %s" % [a])
+	check(a == ShipBayBus.random_wreck(42) and VsWreckLibrary.is_vs_wreck(str(a.design)), "the same roll gives the same Void Salvage wreck: %s" % [a])
 	check(not (a.events as Array).is_empty() and (a.events as Array).size() <= 3, "with one to three wreck events: %s" % [a.events])
-	check(str(ShipGenerator.parse_id(str(ShipBayBus.random_wreck(7, "L").design)).get("size", "")) == "L"
-			and str(ShipGenerator.parse_id(str(a.design)).get("size", "")) == "S", "rolled at the size asked for")
+	check(VsWreckLibrary.size_of(str(ShipBayBus.random_wreck(7, "L").design)) == "L"
+			and VsWreckLibrary.size_of(str(a.design)) == "S", "rolled at the size asked for")
 	var was := Flags.is_on("ship_bay.bay_cradle")
 	Flags.set_flag("ship_bay.bay_cradle", true)
 	var yard := (load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene).instantiate() as Node3D
@@ -130,7 +130,26 @@ func _check_wreck(bus: ShipBayBus, bay: Node3D, word: String) -> void:
 	for k in points.size():
 		if not is_inf(belly[k]):
 			gap = minf(gap, float(spec.saddle_top) + seat.y + belly[k] - tops[k])
-	check(not is_inf(gap) and gap > -0.03 and gap < 0.08, "its belly rests on the saddles: gap %.3f m" % gap)
+	# A ship with a keel or a pod lower than its belly (Void Salvage's Sentinel, the Nexus) sits
+	# on a cradle beam instead, its belly over the saddles.
+	var on_beam := INF
+	var flange := 0.4 if str(c.get("size")) == "s" else 0.6
+	var beams: Array = []
+	for z: float in spec.cross_z:
+		beams.append([Rect2(-float(spec.side_x), z - 0.2, float(spec.side_x) * 2.0, 0.4), float(spec.cross_h)])
+	for sx: float in [-float(spec.side_x), float(spec.side_x)]:
+		beams.append([Rect2(sx - flange * 0.5, -float(spec.length) * 0.5, flange, float(spec.length)), float(spec.side_h)])
+	for b: Array in beams:
+		var r: Rect2 = b[0]
+		var low: float = model.call("lowest_in", Rect2(r.position - Vector2(seat.x, seat.z), r.size))
+		if not is_inf(low):
+			on_beam = minf(on_beam, float(spec.saddle_top) + seat.y + low - float(b[1]))
+	# A long one whose lowest point is past the medium cradle's ends stands on that on the floor.
+	var on_floor := float(spec.saddle_top) + seat.y + bus.ship.bounds.position.y + TransportCradle.REST
+	check((not is_inf(gap) and gap > -0.03 and gap < 0.08) or (gap > 0.0 and on_beam > -0.03 and on_beam < 0.08)
+			or (gap > 0.0 and on_beam > 0.0 and on_floor > -0.03 and on_floor < 0.08),
+			"its belly rests on the saddles (gap %.3f m), a keel on a beam (%.3f m) or its lowest point on the floor (%.3f m): %s"
+			% [gap, on_beam, on_floor, str(bus.bay_wreck.get("design", ""))])
 	var ship_root: Node3D = bay.get("ship_root")
 	var nose := ship_root.global_position.z - (bay as Node3D).global_position.z + bus.ship.bounds.position.z
 	check(nose > -23.0, "its nose clear of the courtyard's north wall (%.1f m)" % nose)

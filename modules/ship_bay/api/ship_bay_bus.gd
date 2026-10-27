@@ -2064,9 +2064,10 @@ func debug_ship(action: String, design := "") -> void:
 		_apply_debug_ship(payload)
 
 
-## A random wreck for the bay: a generated ship of any family, of `size` (WRECK_SIZES), with
-## one to three of Void Salvage's wreck events at random strengths. {design, seed, events,
-## name, size}.
+## A random wreck for the bay: one of Void Salvage's own wreck designs of `size` (WRECK_SIZES,
+## by length: VsWreckLibrary), built by its wreck pipeline (beenster, 27 Oct), with one to
+## three wreck events at random strengths; a generated ship of any family while none is
+## packed. {design, seed, events, name, size}.
 static func random_wreck(seed_value := -1, size := "S") -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	if seed_value >= 0:
@@ -2085,8 +2086,13 @@ static func random_wreck(seed_value := -1, size := "S") -> Dictionary:
 		events.append([e, rng.randi_range(1, 4), rng.randi_range(1, 999999)])
 	if not WRECK_SIZES.has(size):
 		size = "S"
-	return {"design": ShipGenerator.design_id(ship_seed, size, family), "seed": rng.randi_range(1, 999999), "events": events,
-			"name": "%s %s wreck" % [WRECK_SIZES[size], family], "size": size}
+	var design := VsWreckLibrary.pick(rng, size)
+	var name := "%s %s wreck" % [WRECK_SIZES[size], family]
+	if design == "":
+		design = ShipGenerator.design_id(ship_seed, size, family)
+	else:
+		name = "%s wreck" % str(VsWreckLibrary.info(design).get("name", design))
+	return {"design": design, "seed": rng.randi_range(1, 999999), "events": events, "name": name, "size": size}
 
 
 # --- Component rigs (Component Upgrades) -----------------------------------------------
@@ -2263,7 +2269,8 @@ func _check_debug_ship(_sender: int, payload: Dictionary) -> Variant:
 		return payload if YARD_SHIP_DESIGNS.has(str(payload.get("design", ""))) else "no such ship to stand on the apron"
 	if action == "random_wreck":
 		var w: Variant = payload.get("wreck", {})
-		return payload if w is Dictionary and ShipGenerator.is_generated(str((w as Dictionary).get("design", ""))) else "no wreck rolled"
+		var d := str((w as Dictionary).get("design", "")) if w is Dictionary else ""
+		return payload if ShipGenerator.is_generated(d) or (VsWreckLibrary.is_vs_wreck(d) and not VsWreckLibrary.info(d).is_empty()) else "no wreck rolled"
 	return payload if action in ["clear_bay", "restore_bay"] else "unknown debug action"
 
 

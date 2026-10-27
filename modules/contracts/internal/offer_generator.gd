@@ -159,11 +159,14 @@ func scrap_fee(material: String, kg: float) -> int:
 ## come from what is really left on it.
 func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, tier: int, kind: String, rng: RandomNumberGenerator) -> Dictionary:
 	var seed_value := int(hash("%s/%d/%d/ship" % [client_id, cycle, slot])) & 0x7FFFFFFF
-	# The hull is one of BSX's own generated ships (S3b): the client's trade picks the family,
-	# the tier the class (small or medium at tier two, medium or large above), the seed the rest.
-	var family := ShipGenerator.family_for(String(client.get("trade", "")))
-	var sizes: Array = ["S", "M"] if tier <= 2 else ["M", "L"]
-	var design := ShipGenerator.design_id(seed_value, String(sizes[rng.randi_range(0, 1)]), family)
+	# The hull is one of Void Salvage's own wreck designs, built by its wreck pipeline (beenster,
+	# 27 Oct): the tier picks the size (small or medium at tier two, medium or large above), the
+	# seed the design and the damage. While none is packed, one of BSX's generated ships (S3b),
+	# the client's trade picking the family.
+	var hull_size := String((["S", "M"] if tier <= 2 else ["M", "L"])[rng.randi_range(0, 1)])
+	var design := VsWreckLibrary.pick(rng, hull_size)
+	if design == "":
+		design = ShipGenerator.design_id(seed_value, hull_size, ShipGenerator.family_for(String(client.get("trade", ""))))
 	var options: Array = WRECK_EVENTS.get(kind, WRECK_EVENTS["scrap"])
 	var events := String(options[rng.randi_range(0, options.size() - 1)])
 	var file := design_source(design)

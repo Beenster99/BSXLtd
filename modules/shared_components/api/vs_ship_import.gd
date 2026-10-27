@@ -93,6 +93,8 @@ static func design_file(design: String) -> String:
 static func design_source(design: String) -> Dictionary:
 	if ShipGenerator.is_generated(design):
 		return ShipGenerator.file_of(design)
+	if VsWreckLibrary.is_vs_wreck(design):
+		return VsWreckLibrary.file_of(design)
 	var path := design_file(design)
 	return read(path) if path != "" else {}
 
@@ -240,7 +242,8 @@ func joints_of(path: String) -> Array[ConnectionData]:
 
 func _build_part(p: Dictionary) -> void:
 	var path: String = p.get("path", "")
-	var shape := make_shape(p.get("shape", {}), p)
+	var shape := VsWreckLibrary.mesh_shape(file, p) if str(p.get("shape", {}).get("shape", "")) == "vs_mesh" \
+			else make_shape(p.get("shape", {}), p)
 	if shape == null:
 		warnings.append("part %s: no shape for recipe %s" % [path, str(p.get("shape", {}))])
 		return

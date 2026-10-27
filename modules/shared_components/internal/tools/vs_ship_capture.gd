@@ -6,6 +6,7 @@ extends Node
 ##   xvfb-run -a -s "-screen 0 1600x900x24" godot --path . --rendering-driver opengl3 \
 ##       res://modules/shared_components/internal/tools/vs_ship_capture.tscn \
 ##       -- --file=res://modules/shared_components/data/ships/kestrel.vsship.json --out=/abs/dir
+## `--file=vsw:lander` (or any design id) shoots that design instead.
 
 const SIZE := Vector2i(1600, 900)
 ## Hidden for the services shots: the skin, the linings, the walls' and ceilings' panels.
@@ -35,7 +36,8 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(out)
 	DisplayServer.window_set_size(SIZE)
 	get_tree().root.size = SIZE
-	var f := VsShipImport.read(path)
+	# A design id ("vsw:lander", "gen:...") or a file path.
+	var f := VsShipImport.design_source(path) if not path.begins_with("res://") and not path.begins_with("/") else VsShipImport.read(path)
 	var id: String = str(f.get("ship", {}).get("id", "ship"))
 	if damage != "":
 		f = WreckMaker.make(f, seed_value, damage)
