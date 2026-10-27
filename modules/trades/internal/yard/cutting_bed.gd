@@ -7,7 +7,8 @@ extends Node3D
 ## trades.cutting_bed; stands on Ship and Bay's ShipBayBus.cutting_bed_spot() (floor level,
 ## -Z the operator's side).
 ##
-## Like a real table: a water tray under a bed of steel slats that takes a 3 x 1.5 m sheet, two
+## Like a real table: a water tray under a bed of steel slats that takes a 12 x 6 m sheet (made
+## much bigger after 0.3.24's playtest, for the very large plates off a ship), two
 ## rails down its long sides, a gantry riding them on end trucks, a carriage across the gantry
 ## with the torch on a height lifter, a drag chain for the leads, an amber beacon, and the
 ## operator's console on a pedestal at the front corner. Plasma for metal; for glass and
@@ -28,13 +29,13 @@ const CUT_EVENT := "trades.cut"
 const LOAD_EVENT := "trades.bed_load"
 const SECTION := "trades_cutting_bed"
 ## The bed: half its working area (m, x along the rails, z across) and the slats' top.
-const HALF := Vector2(1.6, 0.8)
+const HALF := Vector2(6.0, 3.0)
 const SLAT_Y := 0.86
 ## The gantry's rails (z either side) and their top.
-const RAIL_Z := 1.08
+const RAIL_Z := HALF.y + 0.28
 const RAIL_Y := 1.0
 ## Where the head parks (bed space x, z) between jobs.
-const PARK := Vector2(-1.85, -0.85)
+const PARK := Vector2(-HALF.x - 0.25, -HALF.y - 0.05)
 ## Where the nozzle's tip sits from the gantry's middle (x) and the lifter's origin (y), m.
 const NOZZLE := Vector2(-0.28, -0.018)
 ## How high the torch rides over the plate between cuts, and the gap while cutting (m).
@@ -45,7 +46,7 @@ const DENSITY := {"steel": 7850.0, "alloy": 2700.0, "titanium": 4500.0, "glass":
 
 ## Head speeds (m/s): rapid moves, and the cutting feed for 1 mm of steel (thicker plates go
 ## slower; the water jet slower still), scaled by `feed_scale` for play.
-@export var rapid_speed := 1.4
+@export var rapid_speed := 3.0
 @export var plasma_feed := 0.2
 @export var jet_feed := 0.06
 @export var feed_scale := 1.0
@@ -155,7 +156,15 @@ static func plate_info(id: String) -> Dictionary:
 			"material": str(it.get("material", "steel")), "family": str(it.get("family", "metal"))}
 
 
-## A plate fits the bed (3 m by 1.5 m, either way round).
+## The bed set on its spot with its rails along the room's longer side (`room`: Ship and Bay's
+## CUTTING_BED_ROOM, x across and z along the spot; a bed's rails run along its own x).
+static func lay_along(spot: Transform3D, room: Variant) -> Transform3D:
+	if room is Vector3 and (room as Vector3).z > (room as Vector3).x:
+		return spot * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO)
+	return spot
+
+
+## A plate fits the bed (12 m by 6 m).
 static func fits_bed(size: Vector2) -> bool:
 	return (size.x <= HALF.x * 2.0 + 0.001 and size.y <= HALF.y * 2.0 + 0.001)
 
@@ -241,7 +250,7 @@ func refusal(template_id: String, quarter := turn) -> String:
 		return "No plate on the bed"
 	var t := template(template_id)
 	if t.is_empty():
-		return "Pick a template"
+		return "Pick a config"
 	var turned := TradesPlateShapes.make_turned(t, quarter)
 	if TradesPlateShapes.fit_turn(turned, plate.size) < 0.0:
 		return "Too big for this plate"
@@ -555,15 +564,18 @@ func _build_table() -> void:
 	var water := _mat(Color(0.05, 0.09, 0.1), 0.2, 0.05)
 	var yellow := _mat(Color(0.95, 0.72, 0.08), 0.3, 0.45)
 	# The water tray on its legs, its rim, and the water a little under the slats.
-	_box(Vector3(3.6, 0.5, 2.0), Vector3(0, 0.55, 0), frame, true)
-	for x: float in [-1.7, 1.7]:
-		for z: float in [-0.9, 0.9]:
-			_box(Vector3(0.12, 0.3, 0.12), Vector3(x, 0.15, z), frame, false)
-	_box(Vector3(3.4, 0.01, 1.8), Vector3(0, 0.79, 0), water, false)
-	for z: float in [-0.97, 0.97]:
-		_box(Vector3(3.6, 0.06, 0.06), Vector3(0, 0.83, z), frame, false)
-	for x: float in [-1.77, 1.77]:
-		_box(Vector3(0.06, 0.06, 2.0), Vector3(x, 0.83, 0), frame, false)
+	var tray := HALF * 2.0 + Vector2(0.4, 0.4)
+	_box(Vector3(tray.x, 0.5, tray.y), Vector3(0, 0.55, 0), frame, true)
+	var lx := -tray.x * 0.5 + 0.1
+	while lx <= tray.x * 0.5 - 0.09:
+		for z: float in [-tray.y * 0.5 + 0.1, tray.y * 0.5 - 0.1]:
+			_box(Vector3(0.12, 0.3, 0.12), Vector3(lx, 0.15, z), frame, false)
+		lx += (tray.x - 0.2) / ceilf((tray.x - 0.2) / 2.0)
+	_box(Vector3(tray.x - 0.2, 0.01, tray.y - 0.2), Vector3(0, 0.79, 0), water, false)
+	for z: float in [-tray.y * 0.5 + 0.03, tray.y * 0.5 - 0.03]:
+		_box(Vector3(tray.x, 0.06, 0.06), Vector3(0, 0.83, z), frame, false)
+	for x: float in [-tray.x * 0.5 + 0.03, tray.x * 0.5 - 0.03]:
+		_box(Vector3(0.06, 0.06, tray.y), Vector3(x, 0.83, 0), frame, false)
 	# The slats: upright strips across the bed, burnt along their tops.
 	var x := -HALF.x
 	while x <= HALF.x + 0.001:
@@ -579,14 +591,17 @@ func _build_table() -> void:
 	cs.position = Vector3(0, SLAT_Y - 0.01, 0)
 	top.add_child(cs)
 	add_child(top)
-	# The rails on their beams down both long sides, with end stops.
+	# The rails on their beams down both long sides, with end stops and legs every 2 m or so.
+	var rail := HALF.x * 2.0 + 1.0
 	for z: float in [-RAIL_Z, RAIL_Z]:
-		_box(Vector3(4.2, 0.16, 0.14), Vector3(0.0, RAIL_Y - 0.12, z), frame, true)
-		_box(Vector3(4.2, 0.03, 0.04), Vector3(0.0, RAIL_Y - 0.025, z), steel, false)
-		for ex: float in [-2.05, 2.05]:
+		_box(Vector3(rail, 0.16, 0.14), Vector3(0.0, RAIL_Y - 0.12, z), frame, true)
+		_box(Vector3(rail, 0.03, 0.04), Vector3(0.0, RAIL_Y - 0.025, z), steel, false)
+		for ex: float in [-rail * 0.5 + 0.05, rail * 0.5 - 0.05]:
 			_box(Vector3(0.05, 0.12, 0.12), Vector3(ex, RAIL_Y + 0.02, z), yellow, false)
-		for lx: float in [-1.9, 0.0, 1.9]:
-			_box(Vector3(0.12, RAIL_Y - 0.2, 0.12), Vector3(lx, (RAIL_Y - 0.2) * 0.5, z), frame, false)
+		var n := int(ceilf((rail - 0.4) / 2.0))
+		for k in n + 1:
+			var x2 := -rail * 0.5 + 0.2 + (rail - 0.4) * k / n
+			_box(Vector3(0.12, RAIL_Y - 0.2, 0.12), Vector3(x2, (RAIL_Y - 0.2) * 0.5, z), frame, false)
 
 
 func _build_gantry() -> void:
@@ -604,11 +619,11 @@ func _build_gantry() -> void:
 		_box(Vector3(0.36, 0.22, 0.18), Vector3(0, RAIL_Y + 0.11, z), yellow, false, _gantry)
 		_box(Vector3(0.14, 0.14, 0.14), Vector3(-0.1, RAIL_Y + 0.29, z + signf(z) * 0.06), dark, false, _gantry)
 		_box(Vector3(0.18, 0.4, 0.1), Vector3(0, RAIL_Y + 0.42, z), yellow, false, _gantry)
-	_box(Vector3(0.22, 0.24, RAIL_Z * 2.0 + 0.2), Vector3(0, RAIL_Y + 0.52, 0), yellow, false, _gantry)
+	_box(Vector3(0.3, 0.34, RAIL_Z * 2.0 + 0.2), Vector3(0, RAIL_Y + 0.52, 0), yellow, false, _gantry)
 	_box(Vector3(0.03, 0.03, RAIL_Z * 2.0), Vector3(-0.115, RAIL_Y + 0.46, 0), steel, false, _gantry)
 	# The drag chain along the bridge's top.
-	for k in 22:
-		_box(Vector3(0.08, 0.05, 0.09), Vector3(0.02, RAIL_Y + 0.67, -RAIL_Z + 0.1 * k), dark, false, _gantry)
+	for k in int(RAIL_Z * 20.0):
+		_box(Vector3(0.08, 0.05, 0.09), Vector3(0.02, RAIL_Y + 0.72, -RAIL_Z + 0.1 * k), dark, false, _gantry)
 	# The beacon on the far truck.
 	_beacon_mesh = MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
@@ -665,7 +680,7 @@ func _build_console() -> void:
 	var stand := Node3D.new()
 	stand.name = "Console"
 	# At the front corner, turned to face the operator (who stands on the -Z side).
-	stand.position = Vector3(1.4, 0, -1.65)
+	stand.position = Vector3(HALF.x - 0.2, 0, -RAIL_Z - 0.57)
 	stand.rotation.y = PI
 	add_child(stand)
 	_box(Vector3(0.25, 1.05, 0.25), Vector3(0, 0.525, 0), dark, true, stand)

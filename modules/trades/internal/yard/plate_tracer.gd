@@ -1,49 +1,42 @@
 class_name TradesPlateTracer
 extends Node3D
-## Tracing a template off a plate at the ship (beenster, 0.3.23: "The shape is destined by a
-## template which is created at the wreck or vessel in the courtyard - a player makes a
-## template by tracing the line of the plate, this is then measured by the system and a
-## template created which can be fed into the plasma cutter"). Behind trades.cutting_bed.
+## Making cutting configs off the ship's plates with the template scribe (beenster, 0.3.23,
+## and 0.3.24's playtest: "The scribe tool should highlight the plate you are pointed to and
+## provide information in the right panel, the player should be able to save the plate as a
+## config for the flatbed plasma cutter"). Behind trades.cutting_bed.
 ##
-## With the template scribe in hand (a soapstone chalk on a tape reel), hold the left mouse
-## button on a plate of the ship and run the chalk round its edge: a white chalk line follows
-## the tip. Once the line has gone round the plate's whole edge (most of it: `covered`) the
-## scribe measures it, and the template (named for the plate, numbered T-001, T-002...) goes
-## to the cutting bed's console for everyone. Let go part way and the line stays, so you can
-## carry on; start on another plate and it starts again.
+## With the scribe in hand, the plate of the ship (or a wreck) under your aim lights up: its
+## edge drawn in glowing chalk and a pale wash over it, and the right-hand panel shows its name,
+## its size, its area and whether it is saved yet. Left click saves it: it is measured into a
+## cutting config (named for the plate, numbered T-001, T-002...) that the cutting bed's screen
+## offers for everyone, kept in the save, and a chalk line is left round the plate.
 
 const EVENT := "trades.template"
 const SECTION := "trades_templates"
 ## The thinnest a plate's box is to count as a plate (m), and the least of its other sides.
 const PLATE_MAX_T := 0.07
 const PLATE_MIN_SIDE := 0.15
-## How far off a plate's plane the chalk still counts as on it (m).
+## How far off a plate's plane the aim still counts as on it (m).
 const PLANE_M := 0.25
-## How far the scribe reaches (m from the eye), how close to the edge a chalk point must be to
-## count (m), how much of the edge (0..1) makes a template, and the chalk's step (m).
-const REACH_M := 3.0
-const SNAP_M := 0.09
-const COVERED := 0.85
-const STEP_M := 0.02
+## How far the scribe reaches (m from the eye).
+const REACH_M := 6.0
+## The right-hand panel's card.
+const INFO := "trades.plate"
+const GLOW := Color(0.45, 1.0, 0.85)
 
 var bay: Node  # TradesBay
-## Tracing now (the mouse held with the scribe).
-var tracing := false
-## The plate being traced: its slot id, ship-space box and plate (plate_at: its plane); and the
-## chalk so far (plate-plane points, m from the plate's middle).
-var slot_id := ""
-var plate_box := AABB()
-var plate: Dictionary = {}
-var points := PackedVector2Array()
-## The traced plate's name, for the scribe's screen ("" before one).
+## The plate under the scribe's aim now: plate_at's dictionary, or {} for none.
+var aimed: Dictionary = {}
+## The aimed plate's name, for the scribe's screen ("" for none).
 var plate_name := ""
-## The last template made here (for the hint and tests), {} before any.
+## The last config saved here (for the hint and tests), {} before any.
 var last: Dictionary = {}
 
 var _net: Node
-var _said_at := -10000
+var _highlight: MeshInstance3D
 var _chalk: MeshInstance3D
-var _chalk_world: PackedVector3Array = PackedVector3Array()
+var _said_at := -10000
+var _shown := ""
 
 
 static func enabled() -> bool:
@@ -51,6 +44,21 @@ static func enabled() -> bool:
 
 
 func build(net: Node = null) -> void:
+	_highlight = MeshInstance3D.new()
+	_highlight.name = "Highlight"
+	_highlight.mesh = ImmediateMesh.new()
+	var hm := StandardMaterial3D.new()
+	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	hm.vertex_color_use_as_albedo = true
+	hm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Drawn over the plate whatever is in the way, so the plate you point at always shows.
+	hm.no_depth_test = true
+	hm.render_priority = 1
+	_highlight.material_override = hm
+	_highlight.top_level = true
+	_highlight.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_highlight)
 	_chalk = MeshInstance3D.new()
 	_chalk.name = "Chalk"
 	_chalk.mesh = ImmediateMesh.new()
@@ -60,6 +68,7 @@ func build(net: Node = null) -> void:
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_chalk.material_override = m
 	_chalk.top_level = true
+	_chalk.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_chalk)
 	_net = net
 	if _net:
@@ -69,14 +78,17 @@ func build(net: Node = null) -> void:
 
 
 func _exit_tree() -> void:
+	HudSlots.clear_info(INFO)
 	if _net:
 		_net.call("unregister_event", EVENT)
 		if _net.has_method("unregister_snapshot_provider"):
 			_net.call("unregister_snapshot_provider", SECTION)
 
 
+## The scribe's left click: pressed saves the plate under the aim.
 func set_tracing(on: bool) -> void:
-	tracing = on
+	if on:
+		save_aimed()
 
 
 ## The plate slot under a ship-space point: {slot, box, centre, u, v, n (ship-space plane axes:
@@ -148,80 +160,113 @@ static func plate_of(s: MountSlot) -> Dictionary:
 			"u": u, "v": v, "n": n, "size": size}
 
 
-## Where the plate's edge is: its outline in its own plane (m, centred).
-func edges() -> PackedVector2Array:
-	var s := (plate.get("size", Vector2.ZERO) as Vector2) * 0.5
-	return PackedVector2Array([Vector2(-s.x, -s.y), Vector2(s.x, -s.y), Vector2(s.x, s.y), Vector2(-s.x, s.y)])
 
 
-## How much of the plate's edge the chalk has gone round (0..1).
-func progress() -> float:
-	return TradesPlateShapes.coverage(points, edges(), SNAP_M) if slot_id != "" else 0.0
-
-
+## Each step with the scribe in hand: the plate under the aim, lit up and on the panel.
 func _physics_process(_delta: float) -> void:
-	if not tracing:
-		return
 	var w := bay.get("worker") as Node3D if bay else null
-	if w == null or not w.is_inside_tree():
+	var holding: bool = bay != null and bay.get("tool") == &"template" and w != null and w.is_inside_tree()
+	if not holding:
+		_aim({})
 		return
 	var from: Vector3 = w.call("aim_origin")
 	var dir: Vector3 = w.call("aim_dir")
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * REACH_M)
 	q.exclude = [(w as CollisionObject3D).get_rid()]
 	var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
-	if hit.is_empty():
-		_say("Nothing in reach. Hold the chalk on a plate of the ship and run it round its edge.")
+	aim_at(hit.position if not hit.is_empty() else Vector3.INF)
+
+
+## Aims the scribe at a world point (INF: at nothing): the plate there becomes `aimed`.
+func aim_at(world: Vector3) -> void:
+	if not world.is_finite():
+		_aim({})
 		return
-	chalk_at(hit.position, hit.normal)
+	var p := ship_xform().affine_inverse() * world
+	_aim(plate_at(p, str((aimed.slot as MountSlot).slot_id) if not aimed.is_empty() else ""))
 
 
-## A chalk point at a world point on a surface: on a plate, the line grows and is measured.
-func chalk_at(world: Vector3, normal: Vector3) -> void:
-	var ship: Transform3D = bay.call("ship_transform") if bay and bay.has_method("ship_transform") else Transform3D.IDENTITY
-	var p := ship.affine_inverse() * world
-	var found := plate_at(p, slot_id)
-	if found.is_empty():
-		_say("That isn't a plate. Run the chalk round the edge of a hull or wall plate.")
+func ship_xform() -> Transform3D:
+	return bay.call("ship_transform") if bay and bay.has_method("ship_transform") else Transform3D.IDENTITY
+
+
+func _aim(found: Dictionary) -> void:
+	aimed = found
+	var s: MountSlot = found.get("slot") as MountSlot
+	plate_name = "" if s == null else (s.display_name if s.display_name != "" else s.slot_id.capitalize())
+	var key := "" if s == null else s.slot_id + str(saved_as(s.slot_id))
+	if key == _shown:
+		if s:
+			_draw_highlight()
 		return
-	var s: MountSlot = found.slot
-	if s.slot_id != slot_id:
-		_restart(s.slot_id, found)
-		plate_name = s.display_name if s.display_name != "" else s.slot_id.capitalize()
-	var off := p - (plate.centre as Vector3)
-	var flat := Vector2(off.dot(plate.u), off.dot(plate.v))
-	_say("Tracing %s: %d%% of its edge. Keep the chalk on the edge all the way round."
-			% [plate_name, roundi(progress() / COVERED * 100.0)])
-	if not points.is_empty() and flat.distance_to(points[points.size() - 1]) < STEP_M:
+	_shown = key
+	(_highlight.mesh as ImmediateMesh).clear_surfaces()
+	if s == null:
+		HudSlots.clear_info(INFO)
 		return
-	points.append(flat)
-	_chalk_world.append(world + normal * 0.003)
-	_draw_chalk(normal)
-	if progress() >= COVERED:
-		_measure(s)
+	_draw_highlight()
+	HudSlots.set_info(INFO, "Plate", "\n".join(info_lines()), 9)
 
 
-func _restart(id: String, found: Dictionary) -> void:
-	slot_id = id
-	plate_box = found.box
-	plate = found
-	points = PackedVector2Array()
-	_chalk_world = PackedVector3Array()
-	(_chalk.mesh as ImmediateMesh).clear_surfaces()
+## What the right-hand panel says about the aimed plate.
+func info_lines() -> PackedStringArray:
+	var out := PackedStringArray()
+	if aimed.is_empty():
+		return out
+	var s: MountSlot = aimed.slot
+	var size: Vector2 = aimed.size
+	var big := Vector2(maxf(size.x, size.y), minf(size.x, size.y))
+	out.append(plate_name)
+	out.append("Size  %d x %d mm" % [roundi(big.x * 1000.0), roundi(big.y * 1000.0)])
+	out.append("Area  %.2f m²,  edge %.1f m" % [size.x * size.y, 2.0 * (size.x + size.y)])
+	if s.fitted != "":
+		out.append("Part  %s" % s.fitted)
+	var saved := saved_as(s.slot_id)
+	if saved != "":
+		out.append("Saved as cutting config %s" % saved)
+	else:
+		out.append("Left click: save it as a cutting config")
+	return out
 
 
-func _measure(s: MountSlot) -> void:
-	var t := TradesPlateShapes.measure(points, edges(), SNAP_M, 24, COVERED)
-	if t.is_empty():
-		return
-	_ask({"name": plate_name, "outline": t.outline, "source": s.slot_id})
-	tracing = false
-	slot_id = ""
-	plate = {}
-	plate_name = ""
-	points = PackedVector2Array()
+## The config already saved from a plate (its slot id), or "".
+func saved_as(slot_id: String) -> String:
+	var bus := Modules.bus("trades") as TradesBus
+	if bus:
+		for t: Dictionary in bus.templates():
+			if str(t.get("source", "")) == slot_id and str(t.get("kind", "")) == "traced":
+				return str(t.id)
+	return ""
+
+
+## Saves the aimed plate as a cutting config (host-checked, for everyone). Returns why not, or "".
+func save_aimed() -> String:
+	if aimed.is_empty():
+		_say("Point the scribe at a plate of the ship to save it as a cutting config.")
+		return "no plate"
+	var s: MountSlot = aimed.slot
+	var already := saved_as(s.slot_id)
+	if already != "":
+		_say("%s is already saved as cutting config %s." % [plate_name, already])
+		return "saved"
+	var half: Vector2 = (aimed.size as Vector2) * 0.5
+	if half.x < half.y:
+		half = Vector2(half.y, half.x)
+	var outline := PackedVector2Array([Vector2(-half.x, -half.y), Vector2(half.x, -half.y), half, Vector2(-half.x, half.y)])
+	_draw_chalk(aimed)
+	_ask({"name": plate_name, "outline": outline, "source": s.slot_id})
 	if bay and bay.has_method("play"):
 		bay.call("play", &"tick")
+	return ""
+
+
+## A hint, at most every half second.
+func _say(text: String) -> void:
+	var now := Time.get_ticks_msec()
+	if bay == null or not bay.has_method("hint") or now - _said_at < 500:
+		return
+	_said_at = now
+	bay.call("hint", text)
 
 
 func _ask(p: Dictionary) -> void:
@@ -237,6 +282,8 @@ func _validate(_sender: int, p: Dictionary) -> Variant:
 	var outline: Variant = p.get("outline")
 	if not outline is PackedVector2Array or (outline as PackedVector2Array).size() < 3:
 		return "no outline"
+	if saved_as(str(p.get("source", ""))) != "":
+		return "already saved"
 	var bus := Modules.bus("trades") as TradesBus
 	return {"id": bus.next_template_id() if bus else "T-000", "name": str(p.get("name", "Plate")),
 			"outline": outline, "source": str(p.get("source", ""))}
@@ -248,40 +295,71 @@ func _apply(p: Dictionary) -> void:
 		return
 	last = bus.add_template(TradesPlateShapes.finish({"id": str(p.id), "name": str(p.name), "outline": p.outline,
 			"holes": [], "kind": "traced", "source": str(p.source)}))
+	_shown = ""
 	if bay and bay.has_method("hint"):
 		var s: Vector2 = last.size
-		bay.call("hint", "Template %s measured: %s, %d x %d mm. It's on the cutting bed's console."
-				% [last.id, last.name, roundi(s.x * 1000.0), roundi(s.y * 1000.0)])
+		bay.call("hint", "Saved %s as cutting config %s, %d x %d mm. Pick it on the cutting bed's screen."
+				% [last.name, last.id, roundi(s.x * 1000.0), roundi(s.y * 1000.0)])
 
 
-## A hint while tracing, at most every half second.
-func _say(text: String) -> void:
-	var now := Time.get_ticks_msec()
-	if bay == null or not bay.has_method("hint") or now - _said_at < 500:
-		return
-	_said_at = now
-	bay.call("hint", text)
+## The plate's four corners in the world, a hair off its face (towards `out`).
+func _corners(found: Dictionary, lift: float) -> PackedVector3Array:
+	var ship := ship_xform()
+	var c: Vector3 = found.centre
+	var u: Vector3 = found.u
+	var v: Vector3 = found.v
+	var n: Vector3 = found.n
+	# Off the face the worker is on.
+	var w := bay.get("worker") as Node3D if bay else null
+	if w and w.is_inside_tree() and (ship.basis * n).dot(w.global_position - ship * c) < 0.0:
+		n = -n
+	var h: Vector2 = (found.size as Vector2) * 0.5
+	var out := PackedVector3Array()
+	for k: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		out.append(ship * (c + u * h.x * k.x + v * h.y * k.y + n * lift))
+	return out
 
 
-## A chalk ribbon along the line (2 cm wide, on the plate).
-func _draw_chalk(normal: Vector3) -> void:
-	var im := _chalk.mesh as ImmediateMesh
+## The aimed plate lit: a pale wash and a glowing edge that breathes.
+func _draw_highlight() -> void:
+	var im := _highlight.mesh as ImmediateMesh
 	im.clear_surfaces()
-	if _chalk_world.size() < 2:
-		return
+	var p := _corners(aimed, 0.05)
+	var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() / 1000.0 * 4.0)
 	im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in range(1, _chalk_world.size()):
-		var a := _chalk_world[i - 1]
-		var b := _chalk_world[i]
-		if a.distance_to(b) > 0.5:
-			continue
-		var side := (b - a).normalized().cross(normal).normalized() * 0.008
-		for v: Vector3 in [a - side, b - side, b + side, a - side, b + side, a + side]:
-			im.surface_add_vertex(v)
+	var wash := Color(GLOW.r, GLOW.g, GLOW.b, 0.12 + 0.06 * pulse)
+	for i: int in [0, 1, 2, 0, 2, 3]:
+		im.surface_set_color(wash)
+		im.surface_add_vertex(p[i])
+	var edge := Color(GLOW.r, GLOW.g, GLOW.b, 0.7 + 0.3 * pulse)
+	var n := (p[1] - p[0]).cross(p[3] - p[0]).normalized()
+	for i in 4:
+		var a := p[i]
+		var b := p[(i + 1) % 4]
+		var side := (b - a).normalized().cross(n).normalized() * 0.02
+		for q: Vector3 in [a - side, b - side, b + side, a - side, b + side, a + side]:
+			im.surface_set_color(edge)
+			im.surface_add_vertex(q)
 	im.surface_end()
 
 
-# --- Snapshot: late joiners get the traced templates ---------------------------------------
+## A chalk line left round a saved plate.
+func _draw_chalk(found: Dictionary) -> void:
+	var im := _chalk.mesh as ImmediateMesh
+	im.clear_surfaces()
+	var p := _corners(found, 0.012)
+	var n := (p[1] - p[0]).cross(p[3] - p[0]).normalized()
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in 4:
+		var a := p[i]
+		var b := p[(i + 1) % 4]
+		var side := (b - a).normalized().cross(n).normalized() * 0.008
+		for q: Vector3 in [a - side, b - side, b + side, a - side, b + side, a + side]:
+			im.surface_add_vertex(q)
+	im.surface_end()
+
+
+# --- Snapshot: late joiners get the saved configs ------------------------------------------
 
 func get_net_snapshot() -> Dictionary:
 	var bus := Modules.bus("trades") as TradesBus

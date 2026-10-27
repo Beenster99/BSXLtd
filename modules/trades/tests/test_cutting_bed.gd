@@ -64,6 +64,10 @@ func run_tests() -> void:
 	var tracer := rig.tracer
 	check(bed != null and tracer != null, "the bed and the tracer are in the yard")
 	check(bed.get_node_or_null("Console/Screen") is TouchScreen, "the console has its touch screen")
+	# Much bigger after 0.3.24's playtest, for very large plates.
+	check(TradesCuttingBed.fits_bed(Vector2(12, 6)) and not TradesCuttingBed.fits_bed(Vector2(12.5, 6)), "the bed takes plates up to 12 x 6 m")
+	var laid := TradesCuttingBed.lay_along(Transform3D.IDENTITY, Vector3(4.5, 3.5, 8.0))
+	check(absf(laid.basis.x.z) > 0.99, "its rails run along the longer side of its room")
 
 	# Tracing a plate of the Kestrel: the chalk round its edge makes T-001.
 	var plate_slot: MountSlot = null
@@ -80,31 +84,49 @@ func run_tests() -> void:
 		var sp := TradesPlateTracer.plate_of(slanted)
 		check(not sp.is_empty() and absf((sp.n as Vector3).y) > 0.5 and (sp.size as Vector2).x > 0.6, "a slanted plate too: %s" % [sp.get("size")])
 	if plate_slot:
+		# Pointed at with the scribe in hand: lit up, and its details on the right-hand panel.
 		var found := TradesPlateTracer.plate_at(plate_slot.box.get_center())
-		var c: Vector3 = found.centre
-		var half: Vector2 = (found.size as Vector2) * 0.5
-		var outline := PackedVector2Array([Vector2(-half.x, -half.y), Vector2(half.x, -half.y), half, Vector2(-half.x, half.y)])
-		var normal: Vector3 = found.n
 		var ship := rig.ship_transform()
 		var before := bus.templates().size()
-		for p in _trace(outline, 0.0, 1.0, 0.025):
-			var at := c + (found.u as Vector3) * p.x + (found.v as Vector3) * p.y
-			tracer.chalk_at(ship * at, ship.basis * normal)
-			if bus.templates().size() > before:
-				break
+		rig.set_tool(&"template")
+		tracer.aim_at(ship * (found.centre as Vector3))
+		check(not tracer.aimed.is_empty() and (tracer.aimed.slot as MountSlot) == plate_slot, "pointing at it picks the plate")
+		check((tracer.get_node("Highlight") as MeshInstance3D).mesh.get_surface_count() > 0, "the plate is lit up")
+		var card := HudSlots.infos().filter(func(c: Dictionary) -> bool: return c.id == TradesPlateTracer.INFO)
+		var big := Vector2(maxf(found.size.x, found.size.y), minf(found.size.x, found.size.y))
+		check(card.size() == 1 and str(card[0].text).contains("%d x %d mm" % [roundi(big.x * 1000.0), roundi(big.y * 1000.0)])
+				and str(card[0].text).contains("Left click"), "the right-hand panel shows its size: %s" % [card])
+		var scribe := rig.tool_node(&"template") as TradesTemplateScribe
+		rig._process(0.0)
+		check(scribe.readout_text().contains("CLICK"), "the scribe's screen names it: %s" % scribe.readout_text().replace("\n", " / "))
+		# A left click saves it as a cutting config.
+		check(tracer.save_aimed() == "", "a click saves it")
 		var made := bus.templates().filter(func(t: Dictionary) -> bool: return t.kind == "traced")
 		check(made.size() == 1 and made[0].id == "T-001" and made[0].source == plate_slot.slot_id,
-				"tracing round it makes template T-001 from %s" % plate_slot.slot_id)
+				"it is saved as config T-001 from %s" % plate_slot.slot_id)
 		if not made.is_empty():
-			check((made[0].size as Vector2).is_equal_approx(half * 2.0), "it measures the plate: %s" % made[0].size)
+			check((made[0].size as Vector2).is_equal_approx(big), "measured to the plate: %s" % made[0].size)
 		check(bus.next_template_id() == "T-002", "the next is T-002")
 		check(not (tracer.get_node("Chalk") as MeshInstance3D).mesh.get_surface_count() == 0, "a chalk line is left on it")
+		check(tracer.save_aimed() == "saved" and bus.templates().size() == before + 1, "it isn't saved twice")
+		tracer.aim_at(ship * (found.centre as Vector3))
+		check(str(HudSlots.infos().filter(func(c: Dictionary) -> bool: return c.id == TradesPlateTracer.INFO)[0].text).contains("T-001"),
+				"the panel then says it is saved")
+		tracer.aim_at(Vector3.INF)
+		check(tracer.aimed.is_empty() and HudSlots.infos().all(func(c: Dictionary) -> bool: return c.id != TradesPlateTracer.INFO),
+				"pointing away clears the panel")
+		# The cutting bed's screen offers it under your saved configs.
+		var panel := bed.panel as TradesCutterPanel
+		panel.refresh()
+		await frames(1)
+		check(panel.find_child("Config_T-001", true, false) != null and panel.get("_cut").text == "START",
+				"the bed's screen offers it, with START")
 		# Kept in the save, gone with a new game.
 		var data := bus.save_data()
 		bus.reset_data()
 		check(bus.templates().size() == before, "a new game has only the bed's own")
 		bus.load_data(JSON.parse_string(JSON.stringify(data)), bus.save_version())
-		check(bus.templates().size() == before + 1 and bus.next_template_id() == "T-002", "the traced template comes back from the save")
+		check(bus.templates().size() == before + 1 and bus.next_template_id() == "T-002", "the saved config comes back from the save")
 
 	# Cutting: a disc out of a steel sheet.
 	bed.set_plate(STEEL)
