@@ -66,6 +66,7 @@ const ROOMS := {
 	"stock": {"name": "Stock", "box": AABB(Vector3(-50, 0, -46), Vector3(50, 12, 22))},
 	"prep": {"name": "Store 2", "box": AABB(Vector3(0, 0, -46), Vector3(50, 12, 22))},
 	"preassembly": {"name": "Pre-assembly", "box": AABB(Vector3(28, 0, -24), Vector3(22, 12, 48))},
+	"plates": {"name": "Plate hall", "box": AABB(Vector3(-84, 0, -46), Vector3(34, 12, 26))},
 	"bay": {"name": "The bay", "box": AABB(Vector3(-28, 0, -24), Vector3(56, 30, 48))},
 }
 ## The doorways between the rooms: [room, room, the doorway's middle on the floor (yard x, z)].
@@ -73,8 +74,11 @@ const ROOMS := {
 const DOORWAYS := [
 	["bay", "deliveries", Vector2(-28, 0)], ["bay", "stock", Vector2(-14, -24)], ["bay", "prep", Vector2(14, -24)],
 	["bay", "preassembly", Vector2(28, 0)], ["stock", "deliveries", Vector2(-39, -24)], ["stock", "prep", Vector2(0, -35)],
-	["prep", "preassembly", Vector2(39, -24)],
+	["prep", "preassembly", Vector2(39, -24)], ["stock", "plates", Vector2(-50, PLATE_DOOR.x)],
 ]
+## The plate hall's doorway off Stock's transfer aisle, on the building's west wall: its
+## middle (z) and width, metres (tall like the bay doors, for the heavy lift's mast).
+const PLATE_DOOR := Vector2(-26.5, 5.0)
 ## The direction signs: a board on each hall's wall beside the doorway onto the courtyard,
 ## under its THE BAY sign where there's room (beenster, 23 Oct: on the walls, out of the lifts' way): [room,
 ## the wall ("x": along x at z = at, "z": along z at x = at), the doorway's middle along it and
@@ -136,6 +140,7 @@ const VIEWS := {
 	# The storage hall (StorageLayout): down aisle B, the bins in C2, the large and heavy racks.
 	"storage_aisle": [Vector3(-11.1, 1.7, -25.6), Vector3(-11.1, 3.2, -42.0)],
 	"storage_aisle_d": [Vector3(-5.7, 1.7, -25.2), Vector3(-5.7, 2.6, -42.0)],
+	"plate_hall": [Vector3(-52.5, 6.5, -21.5), Vector3(-70.0, 1.0, -36.0)],
 	"storage_bins": [Vector3(-6.4, 1.7, -27.4), Vector3(-3.65, 1.4, -32.5)],
 	"storage_bulk": [Vector3(-27.0, 6.5, -25.0), Vector3(-42.0, 1.5, -37.0)],
 	"storage_heavy": [Vector3(-44.0, 2.0, -25.4), Vector3(-44.0, 3.5, -40.0)],
@@ -267,6 +272,7 @@ func _ready() -> void:
 	_build_deliveries()
 	_build_stock()
 	_build_prep()
+	_build_plate_hall()
 	_build_preassembly()
 	_tag_rooms()
 	_build_courtyard()
@@ -609,12 +615,13 @@ func _slab_joints(area: Rect2, y: float) -> void:
 ## walls along Z at x = at. Openings are [centre, width, height]. The clad side (+1/-1) faces
 ## outside or the courtyard and gets the profiled sheet; 0 is a partition between rooms.
 func _walls() -> Array:
+	var PH := StorageLayout.PLATE_HALL
 	var x0 := -YARD.x - WING
 	var x1 := YARD.x + WING
 	var zb := -YARD.y - WING
 	return [
-		["z", x0, zb, YARD.y, [[-8.0, 6.0, 6.0], [8.0, 6.0, 6.0]], -1],   # west: truck doors
-		["x", zb, x0, x1, [], -1],                                        # north
+		["z", x0, zb, YARD.y, [[PLATE_DOOR.x, PLATE_DOOR.y, BAY_DOOR_H], [-8.0, 6.0, 6.0], [8.0, 6.0, 6.0]], -1],   # west: truck doors
+		["x", zb, PH.position.x, x1, [], -1],                             # north, the plate hall's too
 		["z", x1, zb, YARD.y, [[0.0, 1.4, 2.4]], 1],                      # east: a door
 		["x", YARD.y, x0, -YARD.x, [[-39.0, 1.4, 2.4]], 1],               # west wing's end
 		["x", YARD.y, YARD.x, x1, [[39.0, 8.0, BAY_DOOR_H]], 1],          # east wing's end
@@ -624,6 +631,8 @@ func _walls() -> Array:
 		["x", -YARD.y, x0, -YARD.x, [[-39.0, 10.0, BAY_DOOR_H]], 0],      # between the rooms
 		["z", 0.0, zb, -YARD.y, [[-35.0, 8.0, BAY_DOOR_H]], 0],
 		["x", -YARD.y, YARD.x, x1, [[39.0, 10.0, BAY_DOOR_H]], 0],
+		["z", PH.position.x, zb, PH.end.y, [], -1],                       # the plate hall: west
+		["x", PH.end.y, PH.position.x, x0, [], 1],                        # and south
 	]
 
 
@@ -1026,6 +1035,8 @@ func _build_signs() -> void:
 	_door_sign("STORE 2", "z", 0.0, -35.0, 8.0, -0.3, 1.0, -PI * 0.5)
 	_door_sign("STOCK", "z", 0.0, -35.0, 8.0, 0.3, 1.0, PI * 0.5)
 	_door_sign("PRE-\nASSEMBLY", "x", back, 39.0, 10.0, -0.3, -1.0, PI)
+	_door_sign("PLATE HALL", "z", -court - WING, PLATE_DOOR.x, PLATE_DOOR.y, 0.3, 1.0, PI * 0.5)
+	_door_sign("STOCK", "z", -court - WING, PLATE_DOOR.x, PLATE_DOOR.y, -0.3, -1.0, -PI * 0.5)
 	_door_sign("STORE 2", "x", back, 39.0, 10.0, 0.3, -1.0, 0.0)
 	_sign("GOODS IN", Vector3(-court - WING - 0.4, 7.6, 0), -PI * 0.5, 1.8)
 	for d: Array in DIRECTION_SIGNS:
@@ -1324,6 +1335,8 @@ func _build_stock() -> void:
 			cats = PackedStringArray(["LARGE PARTS"])
 		elif str(r["store"]) == "heavy":
 			cats = PackedStringArray(["HEAVY MACHINES"])
+		elif str(r["store"]) == "plate":
+			cats = PackedStringArray(["METAL PLATE" if str(r["family"]) == "metal" else "GLASS PLATE"])
 		if not cats.is_empty():
 			_sign(" · ".join(cats), Vector3(x, 10.55, StorageLayout.RACK_Z0 + 0.2), 0.0, 0.2, false)
 	for z: float in [StorageLayout.TRANSFER_Z - 1.4, StorageLayout.TRANSFER_Z + 1.4]:
@@ -1436,11 +1449,54 @@ func _build_prep() -> void:
 	_sign("STORE 2 HAND-IN", Vector3(at.x, 6.4, -24.0 + 0.4), 0.0, 0.4)
 
 
+## The plate hall (beenster, 0.3.23): its floor, roof and lamps (its walls are _walls()'),
+## lane lines down its two aisles and along the way in from Stock's door, and the plasma
+## cutting bed's place in the middle, painted out and kept clear for Tools' machine. Its
+## plate racks are StorageLayout's, built with Stock's.
+func _build_plate_hall() -> void:
+	var r := StorageLayout.PLATE_HALL
+	var line := _paint(HAZARD, 0.0, 0.7, "hazard_paint")
+	# The floor runs a little under the walls; a hair over the wings' so no faces share a plane.
+	_block(Vector3(r.get_center().x, 0.0024, r.get_center().y), Vector3(r.size.x + T, 0.04, r.size.y + T),
+			_surface(_paint(Color(0.52, 0.54, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"), false)
+	_hall_joints(r, 0.0229)
+	var roof := _paint(Color(0.32, 0.33, 0.35), 0.4, 0.7, "galvanised")
+	# (It stops short of the north wing's roof: overlapping, they flickered.)
+	var west := r.position.x - (T + 0.3) * 0.5
+	var east := r.end.x - (T + 0.6) * 0.5 - 0.05
+	_block(Vector3((west + east) * 0.5, H + 0.3, r.get_center().y), Vector3(east - west, 0.6, r.size.y + T + 0.3), roof)
+	# The way in from the door, south of the racks.
+	var z0 := StorageLayout.RACK_Z0
+	for z: float in [z0 + 0.6, r.end.y - 1.6]:
+		_block(Vector3(r.get_center().x + 0.5, 0.026, z), Vector3(r.size.x - 3.0, 0.004, 0.08), line, false)
+	# The cutting bed's place: a hazard border round the room Tools asked for.
+	var bed: Transform3D = SPOTS["cutting_bed"]
+	var room: Vector3 = ShipBayBus.CUTTING_BED_ROOM
+	for k: float in [-0.5, 0.5]:
+		_block(bed * Vector3(room.x * k, 0.026, 0), Vector3(0.12, 0.004, room.z), line, false)
+		_block(bed * Vector3(0, 0.026, room.z * k), Vector3(room.x + 0.12, 0.004, 0.12), line, false)
+	_sign("PLASMA CUTTING", Vector3(bed.origin.x, 8.4, r.position.y + T * 0.5 + 0.1), 0.0, 0.6)
+	# High-bay lamps over the aisles and the bed.
+	var fixture := _lib("light_strip/bay", func() -> PartShapes.PartShape:
+			return WreckParts.light_strip(2.4, 0.36, 0.1, LAMP))
+	for p: Vector3 in [Vector3(-79.6, 0, -40.0), Vector3(-79.6, 0, -30.0), Vector3(-56.2, 0, -40.0), Vector3(-56.2, 0, -30.0),
+			Vector3(bed.origin.x, 0, bed.origin.z - 3.0), Vector3(bed.origin.x, 0, bed.origin.z + 3.0), Vector3(-67.0, 0, -23.0)]:
+		_put(fixture, Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, PI), Vector3(p.x, H - 2.3, p.z)), _parts, false)
+		var lamp := OmniLight3D.new()
+		lamp.position = Vector3(p.x, H - 2.8, p.z)
+		lamp.light_color = LAMP
+		lamp.light_energy = 2.2
+		lamp.omni_range = 20.0
+		lamp.omni_attenuation = 0.7
+		lamp.set_meta("gfx_no_shadow", true)
+		add_child(lamp)
+
+
 ## Marks the four enclosed halls for Graphics (a reflection probe and baked bounce light
 ## each): a node per hall at the yard origin, in group "gfx_room", meta "gfx_box" its
 ## inside. The bay is the open courtyard, so it has none.
 func _tag_rooms() -> void:
-	for id: String in ["deliveries", "stock", "prep", "preassembly"]:
+	for id: String in ["deliveries", "stock", "prep", "preassembly", "plates"]:
 		var room := Node3D.new()
 		room.name = "Room_" + id
 		room.add_to_group("gfx_room")

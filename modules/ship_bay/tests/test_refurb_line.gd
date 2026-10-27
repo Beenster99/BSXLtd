@@ -40,7 +40,7 @@ func run_tests() -> void:
 	var tip := HudSlots.look_hint_for({"collider": (machines["bath"].node as Node).get_node("Body")})
 	check(str(tip.get("title", "")) == "Chemical Bath" and str(tip.get("text", "")).contains("bare metal"), "looking at a machine says what it does: %s" % [tip])
 	var rooms := yard.get_tree().get_nodes_in_group("gfx_room")
-	check(rooms.size() == 4 and (rooms[0].get_meta("gfx_box") is AABB), "the four halls are tagged for Graphics' room lighting")
+	check(rooms.size() == 5 and (rooms[0].get_meta("gfx_box") is AABB), "the five halls are tagged for Graphics' room lighting")
 	# The intake bay fits the large trolley, and trolleys have ways to the bays and outside.
 	var trolley_spec: Dictionary = preload("res://modules/ship_bay/internal/yard/hover_trolley.gd").SPECS
 	var deck_l: Vector2 = trolley_spec["l"]["deck"]

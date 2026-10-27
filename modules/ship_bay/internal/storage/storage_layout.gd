@@ -20,6 +20,13 @@ extends RefCounted
 ##   it fits. The heavy lift ("h") works aisles H, W and X.
 ## Locations without a home are spare: anything not in the catalogue goes to the first free one.
 ##
+## The plate hall (x -84..-50, z -46..-20, beenster 0.3.23), west of Stock through a door off
+## its transfer aisle, keeps the stock plates BSX buys (StockPlates, Shared Components) on
+## four plate racks round the plasma cutting bed: P1 and P2 either side of aisle P for metal,
+## R1 and R2 either side of aisle R for glass, seven shallow levels a bay, each level the home
+## of one plate size and thickness, the thick ones low. The heavy lift works them. Nothing
+## but plates goes on them.
+##
 ## Store 2 (the old Material prep hall, x 0..50, beenster 0.3.15) is all shelves too, laid out
 ## the same way off the same transfer aisle and cross aisle: small racks in aisles D and E
 ## (worked by its own picking lift, "p7"), large racks in Y and Z and heavy racks in J
@@ -61,6 +68,15 @@ const SMALL_AISLES := {"A": [-19.1, "stock"], "B": [-13.7, "stock"], "C": [-8.3,
 ## many places each bay has a level.
 const LARGE := {"depth": 2.6, "bay": 5.4, "bays": 2, "beams": [0.15, 2.85, 5.55], "height": 8.2, "aisle": 4.0}
 const HEAVY := {"depth": 3.4, "bay": 6.2, "bays": 2, "beams": [0.15, 4.6, 7.3], "height": 9.5, "aisle": 4.4}
+## The plate racks: 1.8 m deep, five 3.2 m bays (a 3 x 1.5 m plate lies flat in one), seven
+## levels 0.7 m apart; one place a level.
+const PLATE := {"depth": 1.8, "bay": 3.2, "bays": 5, "beams": [0.15, 0.85, 1.55, 2.25, 2.95, 3.65, 4.35], "height": 5.4, "aisle": 4.4}
+const PLATE_RACKS := [
+	["P1", -83.5, 1.0, "metal"], ["P2", -77.3, -1.0, "metal"],
+	["R1", -60.4, 1.0, "glass"], ["R2", -54.2, -1.0, "glass"],
+]
+## The plate hall's floor (x, z, width, depth), metres.
+const PLATE_HALL := Rect2(-84.0, -46.0, 34.0, 26.0)
 const BIG_RACKS := [
 	["H1", -49.6, 1.0, "heavy", [1, 1]], ["H2", -41.8, -1.0, "heavy", [1, 1]],
 	["W1", -38.1, 1.0, "large", [2, 2]], ["W2", -31.5, -1.0, "large", [2, 1]],
@@ -93,13 +109,16 @@ static func get_layout() -> Dictionary:
 	return _built
 
 
-## The catalogue: item id -> {name, category, mass (kg)}.
+## The catalogue: item id -> {name, category, mass (kg)}, the stock plates among them.
 static func items() -> Dictionary:
 	return get_layout()["items"]
 
 
 ## An item's size as drawn (x across, y up, z along; metres), or ZERO when not known.
 static func size_of(item: String) -> Vector3:
+	if StockPlates.is_plate(item):
+		var p: Vector3 = StockPlates.item(item)["size"]
+		return Vector3(p.z, p.y, p.x)   # lying flat, its length along the rack
 	if _sizes.is_empty():
 		var text := FileAccess.get_file_as_string(SIZES)
 		var parsed: Variant = JSON.parse_string(text) if text != "" else null
@@ -123,6 +142,8 @@ static func pallet_room() -> Vector3:
 ## "bin", "pallet" or "bulk" for goods of this mass (kg) and, given an item, its size:
 ## a part too big for a small rack's place is bulk whatever it weighs.
 static func kind_for(mass: float, item := "") -> String:
+	if item != "" and StockPlates.is_plate(item):
+		return "bulk"   # flat and wide: the heavy lift and the plate racks
 	if mass < BIN_MAX:
 		return "bin"
 	var size := size_of(item) if item != "" else Vector3.ZERO
@@ -138,7 +159,7 @@ static func kind_of(item: String) -> String:
 
 ## The rack ids west to east.
 static func rack_ids() -> PackedStringArray:
-	return PackedStringArray(["H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
+	return PackedStringArray(["P1", "P2", "R1", "R2", "H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
 			"D1", "D2", "E1", "E2", "Y1", "Y2", "Z1", "Z2", "J1", "J2"])
 
 
@@ -187,9 +208,10 @@ static func lift_for_rack(id: String) -> String:
 	return "p7" if hall_of(id) == "prep" else "p"
 
 
-## The hall a rack stands in: "stock" or "prep" (Store 2).
+## The hall a rack stands in: "stock", "prep" (Store 2) or "plates" (the plate hall).
 static func hall_of(id: String) -> String:
-	return "prep" if float(rack(id).get("x", 0.0)) > 0.0 else "stock"
+	var x := float(rack(id).get("x", 0.0))
+	return "prep" if x > 0.0 else ("plates" if x < PLATE_HALL.end.x else "stock")
 
 
 static func _racks() -> Dictionary:
@@ -209,6 +231,13 @@ static func _racks() -> Dictionary:
 		racks[r[0]] = {"id": r[0], "store": r[3], "x": float(r[1]) + float(spec["depth"]) * 0.5, "face": r[2],
 				"depth": spec["depth"], "bay": spec["bay"], "bays": spec["bays"], "beams": spec["beams"],
 				"height": spec["height"], "aisle": spec["aisle"], "per": r[4]}
+	for r: Array in PLATE_RACKS:
+		var per: Array = []
+		per.resize(int(PLATE["bays"]))
+		per.fill(1)
+		racks[r[0]] = {"id": r[0], "store": "plate", "x": float(r[1]) + float(PLATE["depth"]) * 0.5, "face": r[2],
+				"depth": PLATE["depth"], "bay": PLATE["bay"], "bays": PLATE["bays"], "beams": PLATE["beams"],
+				"height": PLATE["height"], "aisle": PLATE["aisle"], "per": per, "family": r[3]}
 	return racks
 
 
@@ -218,6 +247,9 @@ static func _build() -> Dictionary:
 	var parsed: Variant = JSON.parse_string(text) if text != "" else null
 	if parsed is Dictionary:
 		items = (parsed as Dictionary).get("items", {})
+	for id: String in StockPlates.items():
+		var p: Dictionary = StockPlates.item(id)
+		items[id] = {"name": p["name"], "category": p["category"], "mass": p["mass"]}
 	var racks := _racks()
 	var locations := {}
 	var bays: Array = []
@@ -248,6 +280,7 @@ static func _build() -> Dictionary:
 		var r: Dictionary = racks[id]
 		if r["store"] == "small":
 			continue
+		var plate: bool = r["store"] == "plate"
 		var beams: Array = r["beams"]
 		var length := float(r["bay"])
 		for bay in range(1, int(r["bays"]) + 1):
@@ -262,7 +295,7 @@ static func _build() -> Dictionary:
 							"level": level, "pos": pos,
 							"at": Vector3(r["x"], float(beams[level - 1]) + 0.06, z0 + ((pos - 0.5) / per - 0.5) * length),
 							"size": room, "face": Vector3(r["face"], 0, 0), "category": "", "home": ""}
-			bays.append({"rack": id, "bay": bay, "kind": "bulk", "category": ""})
+			bays.append({"rack": id, "bay": bay, "kind": "bulk", "category": "plate" if plate else ""})
 
 	# Sort the parts by kind and category; heaviest first inside a category.
 	var by_kind := {"bin": [], "pallet": [], "bulk": []}
@@ -326,6 +359,29 @@ static func _build() -> Dictionary:
 				best = c
 		b["category"] = best if b["kind"] == "pallet" else "small parts"
 
+	# Plates: each family along its racks, bay by bay, a size's thicknesses up a bay from the
+	# thickest at the bottom.
+	for fam: String in ["metal", "glass"]:
+		var places: Array = []
+		for r: Array in PLATE_RACKS:
+			if r[3] != fam:
+				continue
+			for bay in range(1, int(PLATE["bays"]) + 1):
+				for level in range(1, (PLATE["beams"] as Array).size() + 1):
+					places.append("%s-%02d-%d-1" % [r[0], bay, level])
+		var ids := Array(StockPlates.item_ids(fam))
+		var runs := {}
+		for pid: String in ids:
+			var key := pid.left(pid.rfind("_"))
+			if not runs.has(key):
+				runs[key] = []
+			(runs[key] as Array).push_front(pid)   # thickest first
+		var i := 0
+		for key: String in runs:
+			for pid: String in runs[key]:
+				if i < places.size():
+					_home(locations, homes, places[i], pid, items)
+				i += 1
 	var aisles := {}
 	for id: String in rack_ids():
 		if id.ends_with("1"):

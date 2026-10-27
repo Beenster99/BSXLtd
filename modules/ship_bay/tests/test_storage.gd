@@ -42,6 +42,8 @@ func run_tests() -> void:
 	var wrong := PackedStringArray()
 	var bulk := 0
 	for id: String in items:
+		if StockPlates.is_plate(id):
+			continue   # homed on the plate racks (test_plate_hall)
 		var kind := Layout.kind_of(id)
 		var loc := bus.home_location(id)
 		if kind == "bulk":
