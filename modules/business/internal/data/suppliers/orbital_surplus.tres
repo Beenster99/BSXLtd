@@ -12,7 +12,7 @@ parts = {
 "M12": 0.7,
 "RIVET_4": 0.7
 }
-categories = PackedStringArray("hull", "frame", "fittings", "electronics", "wiring", "piping", "glass", "fluids")
+categories = PackedStringArray("hull", "frame", "fittings", "electronics", "wiring", "piping", "glass", "fluids", "metal plates", "glass plates")
 conditions = {
 "new": 0.15,
 "refurbished": 0.25,
