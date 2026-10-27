@@ -42,8 +42,9 @@ func run_tests() -> void:
 
 	var rig: TradesBay = yard.get_node_or_null(TradesBus.YARD_RIG)
 	check(rig != null and rig.in_yard, "the shipyard gets you, the worker with the tools")
-	check(rig.find_children("*", "StaticBody3D", true, false).all(func(b: Node) -> bool: return b.get_parent() is TradesTestStand),
-			"no bench, no room: nothing built round you but the test stand")
+	check(rig.find_children("*", "StaticBody3D", true, false).all(func(b: Node) -> bool:
+			return b.get_parent() is TradesTestStand or (rig.cutting_bed != null and rig.cutting_bed.is_ancestor_of(b))),
+			"no bench, no room: nothing built round you but the test stand and the cutting bed")
 	check(not yard.get("walker_active") and rig.worker.camera.current, "the yard's walker stands down; your view is current")
 	check(rig.worker.global_position.distance_to(Vector3(3, 0, 6)) < 0.3, "you start where the walker stood")
 	var station := rig.ship_station()
