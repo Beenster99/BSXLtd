@@ -104,7 +104,7 @@ const SPOTS := {
 	"rig_emitter": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(31.3, 0.95, 14.6)),
 	# The plasma cutting bed (Tools' machine) in the middle of the plate hall west of
 	# Deliveries, its long side along z, the operator's screen side to the north.
-	"cutting_bed": Transform3D(Basis.IDENTITY, Vector3(-67.0, 0, -32.0)),
+	"cutting_bed": Transform3D(Basis.IDENTITY, Vector3(-64.8, 0, -35.6)),
 }
 ## Camera views for screenshots and a quick look round: id -> [eye, target].
 const VIEWS := {
@@ -1484,7 +1484,7 @@ func _build_plate_hall() -> void:
 		var board := _sign(str(rack["name"]).to_upper(), Vector3(float(rack["x"]), float(rack["height"]) + 0.7, z0 + 0.15), 0.0, 0.32)
 		board.name = "PlateSign_" + str(pr[0])
 	for p: Vector3 in [Vector3(-79.6, 0, -40.0), Vector3(-79.6, 0, -30.0), Vector3(-71.4, 0, -40.0), Vector3(-56.2, 0, -40.0), Vector3(-56.2, 0, -30.0),
-			Vector3(bed.origin.x, 0, bed.origin.z - 3.0), Vector3(bed.origin.x, 0, bed.origin.z + 3.0), Vector3(-67.0, 0, -23.0)]:
+			Vector3(bed.origin.x, 0, bed.origin.z - 4.5), Vector3(bed.origin.x, 0, bed.origin.z + 4.5), Vector3(-67.0, 0, -23.0)]:
 		_put(fixture, Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.RIGHT, PI), Vector3(p.x, H - 2.3, p.z)), _parts, false)
 		var lamp := OmniLight3D.new()
 		lamp.position = Vector3(p.x, H - 2.8, p.z)

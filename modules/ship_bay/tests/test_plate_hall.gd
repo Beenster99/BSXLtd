@@ -58,6 +58,12 @@ func run_tests() -> void:
 		if at != "" and str(locations[at]["store"]) == "plate":
 			strays.append(item)
 	check(strays.is_empty(), "nothing but plates goes on the plate racks: %s" % [strays])
+	var bed_at := bus.cutting_bed_spot().origin
+	var half := ShipBayBus.CUTTING_BED_ROOM * 0.5
+	var q_edge := Layout.aisle_x("Q") + Layout.aisle_width("Q") * 0.5
+	var r_back := Layout.rack_x("R1") - float(Layout.rack("R1")["depth"]) * 0.5
+	check(bed_at.x - half.x >= q_edge and bed_at.x + half.x <= r_back and bed_at.z + half.z <= Layout.RACK_Z0 + 1.0,
+			"the cutting bed's room stays out of aisle Q, off R1 and clear of the way in: x %.2f..%.2f between %.2f and %.2f" % [bed_at.x - half.x, bed_at.x + half.x, q_edge, r_back])
 	check(Yard.room_at(Vector3(-67, 1, -33)) == "plates" and Yard.room_at(bus.cutting_bed_spot().origin + Vector3.UP) == "plates",
 			"the plate hall is a room, the cutting bed's spot in it")
 	var crushed := ShipBayBus.scrap_materials("TitaniumPlate_2000x1000_8", 2)
