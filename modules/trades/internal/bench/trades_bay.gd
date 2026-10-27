@@ -976,6 +976,10 @@ func _build_worker() -> void:
 	worker.name = "Worker"
 	worker.agile = Flags.is_on("trades.jump")
 	add_child(worker)
+	if in_yard and Flags.is_on("trades.hover_board"):
+		worker.board = TradesHoverBoard.new()
+		worker.board.name = "HoverBoard"
+		worker.add_child(worker.board)
 	for hand: StretchHand in [worker.left_hand, worker.right_hand]:
 		hand.reach_m = HAND_REACH_M
 		hand.stretch_m = YARD_STRETCH_M if in_yard else HAND_STRETCH_M

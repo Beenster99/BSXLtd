@@ -53,6 +53,10 @@ const KEY_RESET := "trades.reset"
 const KEY_NEXT := "trades.next"
 const KEY_MODE := "trades.mode"           # the powered tools' mode: fasten / undo
 const KEY_HELMET := "trades.helmet"       # the welding shield up / down
+## Your hover board in the yard (trades.hover_board): out / away, and up / down while riding.
+const KEY_BOARD := "trades.board"
+const KEY_BOARD_UP := "trades.board_up"
+const KEY_BOARD_DOWN := "trades.board_down"
 const KEY_GROUP := "Tools"
 ## The wrist screen's Specs channel: torque windows and rivet heights (its flag too).
 const SPECS_CHANNEL := "trades.specs"
@@ -77,6 +81,10 @@ func register_module() -> void:
 	Keys.register(KEY_NEXT, "Next part in the tray", KEY_G, KEY_GROUP)
 	Keys.register(KEY_MODE, "Tool mode: fasten / undo", KEY_X, KEY_GROUP)
 	Keys.register(KEY_HELMET, "Welding shield up / down", KEY_H, KEY_GROUP)
+	if Flags.is_on("trades.hover_board"):
+		Keys.register(KEY_BOARD, "Hover board out / away", KEY_B, KEY_GROUP)
+		Keys.register(KEY_BOARD_UP, "Hover board higher (hold)", KEY_UP, KEY_GROUP)
+		Keys.register(KEY_BOARD_DOWN, "Hover board lower (hold)", KEY_DOWN, KEY_GROUP)
 	if Flags.is_on(SPECS_CHANNEL):
 		HudSlots.register_holo_channel(SPECS_CHANNEL, "Specs",
 				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
