@@ -1029,6 +1029,10 @@ func _build_worker() -> void:
 	if in_yard and Flags.is_on("trades.hover_board"):
 		worker.board = TradesHoverBoard.new()
 		worker.board.name = "HoverBoard"
+		var yard := get_parent() as Node3D
+		if yard:
+			# Its height is over the courtyard's floor (the yard's origin).
+			worker.board.floor_y = yard.global_position.y if yard.is_inside_tree() else yard.position.y
 		worker.add_child(worker.board)
 	for hand: StretchHand in [worker.left_hand, worker.right_hand]:
 		hand.reach_m = HAND_REACH_M

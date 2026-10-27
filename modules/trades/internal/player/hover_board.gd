@@ -6,14 +6,16 @@ extends Node3D
 ##
 ## B brings it out under your feet and puts it away again. Riding, WASD steers it where you
 ## look, Shift goes flat out, and the up and down arrows raise and lower how high it floats
-## over whatever is under it (the yard's floor, a deck, a ship's roof). It hangs under the
+## over the courtyard's floor (playtest 0.3.24: a set height, so it doesn't bob up and down over
+## a wreck's decks and holes), never lower than `min_height` over what is under it. It hangs under the
 ## worker's feet (this node is the worker's child), leans into the way it's going and hums.
 ## Step off high up and you drop, as from any height.
 
-## How high it floats over what's under it (m): the least, what it starts at, the most.
+## How high it floats over the courtyard floor (m): what it starts at and the most; and the
+## least it keeps over whatever is under it.
 @export var min_height := 0.3
 @export var start_height := 0.45
-@export var max_height := 8.0
+@export var max_height := 10.0
 ## How fast the arrows raise or lower it (m/s).
 @export var climb_rate := 1.8
 ## Top speed (m/s), and flat out with Shift.
@@ -31,12 +33,14 @@ extends Node3D
 ## How far down it looks for something to float over (m); past that it falls.
 @export var sense_m := 40.0
 ## The hum (dB), rising in pitch with speed.
-@export var hum_db := -20.0
+@export var hum_db := -34.0
 
 ## Riding now.
 var riding := false
-## How high it floats now (m over what's under it).
+## How high it floats now (m over the courtyard floor, `floor_y`).
 var height := 0.45
+## The courtyard floor's height (world y), set by the yard; NAN floats over what is under it.
+var floor_y := NAN
 ## Under it last step: the floor's height (world y) or NAN with nothing in reach.
 var ground_y := NAN
 
@@ -128,6 +132,10 @@ func set_riding(on: bool) -> void:
 	_lean = Vector2.ZERO
 	if on:
 		height = start_height
+		var worker := get_parent() as Node3D
+		if not is_nan(floor_y) and worker and worker.is_inside_tree():
+			# Out where you stand: on a wreck's deck it starts over the deck, not under it.
+			height = clampf(worker.global_position.y - floor_y + start_height, min_height, max_height)
 		if DisplayServer.get_name() != "headless":
 			_hum.play()
 	else:
@@ -155,6 +163,8 @@ func drive(worker: CharacterBody3D, input: Vector2, boost: bool, climb: float, d
 		vy = vel.y - 9.0 * delta
 	else:
 		var want := ground_y + height
+		if not is_nan(floor_y):
+			want = maxf(floor_y + height, ground_y + min_height)
 		vy = clampf((want - worker.global_position.y) * hold_rate, -max_sink, max_rise)
 	return Vector3(flat.x, vy, flat.z)
 

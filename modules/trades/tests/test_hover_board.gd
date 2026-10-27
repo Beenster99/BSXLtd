@@ -60,7 +60,24 @@ func run_tests() -> void:
 	await physics(60)
 	var high := worker.global_position.y
 	check(high > low + 2.5, "the up arrow raises it (%.2f m higher)" % (high - low))
-	check(board.height <= board.max_height, "never past its top height")
+	check(board.height <= board.max_height and board.max_height >= 10.0, "never past its top height (%.0f m)" % board.max_height)
+	# Its height is over the courtyard floor (playtest 0.3.24): a deck passing under doesn't lift it.
+	check(is_equal_approx(board.floor_y, yard.global_position.y), "it knows the courtyard floor")
+	var slab := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var bx := BoxShape3D.new()
+	bx.size = Vector3(4, 0.2, 4)
+	shape.shape = bx
+	slab.add_child(shape)
+	add_child(slab)
+	slab.global_position = Vector3(worker.global_position.x, floor_y + 1.2, worker.global_position.z)
+	await physics(60)
+	check(absf(worker.global_position.y - high) < 0.1, "a deck under it doesn't move it up or down (%.2f m)" % (worker.global_position.y - high))
+	slab.global_position.y = high - 0.15
+	await physics(60)
+	check(worker.global_position.y > high - 0.15 + board.min_height - 0.1, "but it stays over a deck it would go through (%.2f m over)" % (worker.global_position.y - slab.global_position.y))
+	slab.queue_free()
+	await physics(60)
 	Input.action_press(TradesBus.KEY_BOARD_DOWN)
 	await physics(180)
 	Input.action_release(TradesBus.KEY_BOARD_DOWN)
