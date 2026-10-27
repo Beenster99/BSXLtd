@@ -60,5 +60,8 @@ func run_tests() -> void:
 	check(hull == {"alloy": 22.5}, "hull plates crush into their own material: %s" % [hull])
 	check(StockPlates.crush_materials("WindowPane", 1, 40.0, "steel") == {"glass": 30.0}, "a pane built as steel is still glass")
 	check(StockPlates.crush_materials("DeckPlate", 1, 20.0, "") == {"steel": 15.0}, "an unknown material is steel")
+	check(StockPlates.crush_materials("TitaniumPlate_1000x1000_5:cut:T1", 2, 10.0) == {"titanium": 15.0}, "a cut piece crushes as its plate's material")
+	check(StockPlates.crush_materials("TitaniumPlate_1000x1000_5:cut:T1", 1) == {}, "a cut piece needs its mass")
+	check(StockPlates.crush_materials("NotAPlate:cut:T1", 1, 10.0) == {}, "a cut of something else is not a plate")
 	check(StockPlates.crush_materials("IonThruster", 1, 100.0, "steel").is_empty(), "anything else is left to the crusher's mix")
 	check(StockPlates.crush_materials("HullPlate", 1).is_empty(), "a sheet part needs its mass")
