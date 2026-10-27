@@ -6,6 +6,7 @@ extends ModuleTest
 
 
 func run_tests() -> void:
+	Flags.set_flag(GfxBus.MOOD, false)   # test_mood darkens on top of this
 	Flags.set_flag(GfxBus.SKY, true)
 	var sky := AlienSky.new()
 	sky.hour_override = 15.0
