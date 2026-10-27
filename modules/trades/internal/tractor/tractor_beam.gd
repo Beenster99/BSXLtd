@@ -952,6 +952,42 @@ func _make_goods(payload: Dictionary) -> TradesLoosePart:
 	return part
 
 
+## trades.cutting_bed: a loose part goes from the yard into a machine (a plate onto the cutting
+## bed), on every machine. Nothing if it isn't loose here.
+func take_away(id: String) -> void:
+	var part: TradesLoosePart = loose.get(id)
+	loose.erase(id)
+	if part == null or not is_instance_valid(part):
+		return
+	if part == held:
+		held = null
+		_stop_beam()
+	var net := _net()
+	if net:
+		net.call("unregister_mover", unit_id(id))
+	_forget_loose(id)
+	part.queue_free()
+
+
+## trades.cutting_bed: a part a machine made (a piece cut on the bed) lying loose for the beam,
+## as goods are: `box` its outline in its own space, `visual` its look, `kg` its mass.
+func adopt_piece(id: String, comp: String, box: AABB, visual: Node3D, xform: Transform3D, kg: float, cond := 1.0) -> TradesLoosePart:
+	if loose.has(id):
+		return loose[id]
+	var part := TradesLoosePart.new()
+	part.top_level = true
+	add_child(part)
+	part.setup_goods(id, comp, box, visual, cond)
+	part.mass = maxf(0.5, kg)
+	part.global_transform = xform
+	part.knocked.connect(_note_loose)
+	loose[id] = part
+	var net := _net()
+	if net:
+		net.call("register_mover", unit_id(id), part)
+	return part
+
+
 func _is_host() -> bool:
 	var net := _net()
 	return net == null or not net.has_method("is_host") or bool(net.call("is_host"))
