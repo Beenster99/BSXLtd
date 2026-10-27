@@ -150,6 +150,12 @@ static func crush_materials(id: String, qty: int, mass := 0.0, material := "") -
 	var it := item(id)
 	if not it.is_empty():
 		return {str(it["material"]): snappedf(float(it["mass"]) * qty * RECOVERY, 0.1)}
+	# A piece cut from a plate ("<plate id>:cut:<template>"): its own mass, the plate's material.
+	var cut := id.find(":cut:")
+	if cut > 0 and is_plate(id.left(cut)):
+		if mass <= 0.0:
+			return {}
+		return {str(item(id.left(cut))["material"]): snappedf(mass * qty * RECOVERY, 0.1)}
 	if not is_sheet(id) or mass <= 0.0:
 		return {}
 	var glassy := (table().get("sheet_parts", {}).get("glass", []) as Array).has(id)
