@@ -22,6 +22,7 @@ flags = {
 "graphics.gi": true,
 "graphics.hover": true,
 "graphics.lamps": true,
+"graphics.mood": true,
 "graphics.light": true,
 "graphics.ping": true,
 "graphics.profiler": true,
