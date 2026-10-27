@@ -303,6 +303,13 @@ func _test_holo() -> void:
 
 func _test_terminal_kit() -> void:
 	var T := TerminalKit
+	var dim := T.label("x", "body", 20, T.DIM)
+	var size := dim.get_theme_font_size("font_size")
+	T.glass_text(dim)
+	T.glass_text(dim)
+	check(dim.get_theme_font_size("font_size") == roundi(size * T.GLASS_TEXT) and dim.get_theme_color("font_color") == T.GLASS_DIM,
+			"glass text is bigger and its dim lines brighter, once")
+	check(T.GLASS_PLATE >= 0.8 and T.GLASS_KIOSK >= 0.8, "the wrist screen's plates are mostly opaque, so text reads over the yard")
 	var text_was: Variant = Settings.get_value(T.TEXT_SECTION, T.TEXT_KEY)
 	check(text_was == null or str(text_was) in T.TEXT_SIZES, "terminal text is a known size")
 	Settings.set_value(T.TEXT_SECTION, T.TEXT_KEY, "Standard")
@@ -333,7 +340,7 @@ func _test_terminal_kit() -> void:
 				T.cell("24", 60), T.cell("CR " + T.money(12400), 110, T.TEXT, "mono_bold")], i % 2 == 1, true))
 	check(rows.get_child_count() == 3 and rows.get_parent() is ScrollContainer, "kit lists hold rows")
 	var plate := (rows.get_child(0) as PanelContainer).get_theme_stylebox("panel") as StyleBoxFlat
-	check(plate.bg_color.a < 0.8, "rows on glass are see-through")
+	check(plate.bg_color.a < 1.0, "rows on glass are still a little see-through")
 	check(T.money(12400) == "12,400" and T.money(-5) == "-5", "money text")
 	var picked := [""]
 	var flow := T.chips(PackedStringArray(["hull", "wiring"]), "", func(n: String) -> void: picked[0] = n, true)

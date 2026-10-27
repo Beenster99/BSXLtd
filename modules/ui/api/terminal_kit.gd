@@ -27,8 +27,12 @@ const BAD := Color("ff5a3c")
 const CYAN := Color("6fc8e8")
 const AMBER := Color("e8c25a")
 ## How opaque plates and the kiosk are on glass.
-const GLASS_PLATE := 0.58
-const GLASS_KIOSK := 0.56
+const GLASS_PLATE := 0.86
+const GLASS_KIOSK := 0.9
+## On glass (the wrist screen) a channel's text is this much bigger and its dim text this
+## bright, so it reads over a bright yard (HoloTerminal applies it with glass_text()).
+const GLASS_TEXT := 1.2
+const GLASS_DIM := Color("b4bcc3")
 ## Settings > Gameplay "Terminal text": how big terminal and screen text and list rows are,
 ## so a tab can hold more. Sizes passed to the kit are at Standard; it scales them.
 const TEXT_SECTION := "terminal"
@@ -41,6 +45,19 @@ const TEXT_DEFAULT := "Compact"
 static func text_scale() -> float:
 	var v: Variant = Settings.get_value(TEXT_SECTION, TEXT_KEY)
 	return float(TEXT_SIZES.get(str(v), TEXT_SIZES[TEXT_DEFAULT]))
+
+
+## Makes a label or button readable on glass: bigger text, dim text brighter. Once per node.
+static func glass_text(c: Control) -> void:
+	if c.has_meta("glass_text") or not (c is Label or c is Button or c is LineEdit):
+		return
+	c.set_meta("glass_text", true)
+	c.add_theme_font_size_override("font_size", roundi(c.get_theme_font_size("font_size") * GLASS_TEXT))
+	var key := "font_color"
+	if c.has_theme_color_override(key):
+		var col := c.get_theme_color(key)
+		if col.is_equal_approx(DIM) or col.is_equal_approx(STEEL):
+			c.add_theme_color_override(key, GLASS_DIM)
 
 
 ## A size, font or width, at the chosen text scale.
