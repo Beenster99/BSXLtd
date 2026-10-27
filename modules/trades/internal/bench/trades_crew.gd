@@ -75,7 +75,7 @@ func _online() -> bool:
 ## What this player holds and does now, as the crew sees it.
 func held_state() -> Dictionary:
 	return {"tool": String(bay.tool), "sound": String(bay.looping()),
-			"helmet": bay.helmet_down() > 0.5, "crouch": bay.worker.crouched}
+			"helmet": bay.helmet_down() > 0.5, "crouch": bay.worker.crouched, "board": bay.worker.riding()}
 
 
 func _process(_delta: float) -> void:
@@ -117,6 +117,7 @@ func _on_held(peer: int, held: Dictionary) -> void:
 				p.stream = stream
 				p.play()
 	c.helmet = bool(held.get("helmet", false))
+	_show_board(peer, c, bool(held.get("board", false)))
 	_crew[peer] = c
 	var head := _net.call("avatar_head", peer) as Node3D if _net.has_method("avatar_head") else null
 	bay.crew_helmet(peer, c.helmet, head)
@@ -134,10 +135,28 @@ func _on_avatar(peer: int, _avatar: Node3D) -> void:
 
 func _drop(peer: int) -> void:
 	var c: Dictionary = _crew.get(peer, {})
-	for key: String in ["node", "sound"]:
+	for key: String in ["node", "sound", "board"]:
 		if is_instance_valid(c.get(key)):
 			(c[key] as Node).queue_free()
 	_crew.erase(peer)
+
+
+## A crewmate riding their hover board: the board under their avatar's feet, or gone.
+func _show_board(peer: int, c: Dictionary, on: bool) -> void:
+	var have := is_instance_valid(c.get("board"))
+	if on == have:
+		return
+	if not on:
+		(c.board as Node).queue_free()
+		c.erase("board")
+		return
+	var avatar := _net.call("avatar", peer) as Node3D if _net.has_method("avatar") else null
+	if avatar == null:
+		return
+	var look := TradesHoverBoard.build_look()
+	look.name = "CrewBoard"
+	avatar.add_child(look)
+	c.board = look
 
 
 ## A look-alike of one of our tools in a crewmate's avatar hand, held the way we hold it.
