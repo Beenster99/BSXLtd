@@ -1,6 +1,6 @@
 extends ModuleTest
 ## Ship and Bay: Settings > Debug > Ship's random wrecks (beenster, 26 Oct). A press rolls a
-## small, medium or large generated wreck and makes it the bay's ship in place of the Kestrel,
+## small, medium or large wreck (one of Void Salvage's designs) and makes it the bay's ship in place of the Kestrel,
 ## the same on every machine: set down on the cradle's saddles (a medium cradle for the bigger
 ## ones), with the scissor lift, scaffolds and power unit, and a marker on every weld, bolt and
 ## rivet still on it, which the trades work like the Kestrel's. "Bring the Kestrel back" puts
@@ -36,7 +36,7 @@ func run_tests() -> void:
 	(panel.get_node("Wreck") as Button).pressed.emit()
 	await frames(2)
 	_check_wreck(bus, bay, "small")
-	check(str(bay.get("cradle").get("size")) == Bay.cradle_size_for(bus.ship.bounds.size.z), "in the cradle for its length (%s, %.1f m)" % [bay.get("cradle").get("size"), bus.ship.bounds.size.z])
+	check(str(bay.get("cradle").get("size")) == Bay.cradle_size_for((bay.get("model").call("surface_box") as AABB).size.z), "in the cradle for its length (%s, %.1f m)" % [bay.get("cradle").get("size"), bus.ship.bounds.size.z])
 	check((bus.snapshot().get("bay_wreck", {}) as Dictionary) == bus.bay_wreck and str(bus.snapshot().get("ship_id", "")) == ShipBayBus.WRECK_ID,
 			"it goes in the save")
 	check(str((panel.get_node("Wreck") as Button).text) == "Another small wreck", "the button offers another")
@@ -78,7 +78,7 @@ func run_tests() -> void:
 		await frames(2)
 		var word := str(ShipBayBus.WRECK_SIZES[size]).to_lower()
 		_check_wreck(bus, bay, word)
-		check(str(bay.get("cradle").get("size")) == Bay.cradle_size_for(bus.ship.bounds.size.z), "a %s wreck in the cradle for its length (%s, %.1f m, %d ms to build)"
+		check(str(bay.get("cradle").get("size")) == Bay.cradle_size_for((bay.get("model").call("surface_box") as AABB).size.z), "a %s wreck in the cradle for its length (%s, %.1f m, %d ms to build)"
 				% [word, bay.get("cradle").get("size"), bus.ship.bounds.size.z, Time.get_ticks_msec() - t])
 	for pair: Array in [["S", 2], ["L", 2]]:
 		bus.wreck_seed = pair[1]
@@ -121,7 +121,7 @@ func _check_wreck(bus: ShipBayBus, bay: Node3D, word: String) -> void:
 			"the scissor lift, scaffolds and power unit are there")
 	# Down on the saddles: some saddle touches its belly, none cuts into it.
 	var spec: Dictionary = TransportCradle.SIZES[str(c.get("size"))]
-	var seat: Vector3 = bay.get("seat")
+	var seat: Vector3 = bay.get("seat") - Vector3(0, 0, Bay.cradle_offset(str(c.get("size"))))   # in the cradle's space
 	var pads: Array = Bay.saddle_points(spec, Vector2(seat.x, seat.z))
 	var points: Array[Vector2] = pads[0]
 	var tops: Array[float] = pads[1]
@@ -145,11 +145,32 @@ func _check_wreck(bus: ShipBayBus, bay: Node3D, word: String) -> void:
 		if not is_inf(low):
 			on_beam = minf(on_beam, float(spec.saddle_top) + seat.y + low - float(b[1]))
 	# A long one whose lowest point is past the medium cradle's ends stands on that on the floor.
-	var on_floor := float(spec.saddle_top) + seat.y + bus.ship.bounds.position.y + TransportCradle.REST
+	var box: AABB = model.call("surface_box")
+	check(box.has_volume() and box.position.y >= bus.ship.bounds.position.y - 0.05, "its surface's box no lower than the file's bounds: %s" % box)
+	var on_floor := float(spec.saddle_top) + seat.y + box.position.y + TransportCradle.REST
 	check((not is_inf(gap) and gap > -0.03 and gap < 0.08) or (gap > 0.0 and on_beam > -0.03 and on_beam < 0.08)
 			or (gap > 0.0 and on_beam > 0.0 and on_floor > -0.03 and on_floor < 0.08),
 			"its belly rests on the saddles (gap %.3f m), a keel on a beam (%.3f m) or its lowest point on the floor (%.3f m): %s"
 			% [gap, on_beam, on_floor, str(bus.bay_wreck.get("design", ""))])
+	var north := c.position.z - float(spec.length) * 0.5
+	check(north > -23.0 and _on_pedestals(bay, c),
+			"the %s cradle on its pedestals, clear of the north wall (%.1f m)" % [spec.name, north])
 	var ship_root: Node3D = bay.get("ship_root")
 	var nose := ship_root.global_position.z - (bay as Node3D).global_position.z + bus.ship.bounds.position.z
 	check(nose > -23.0, "its nose clear of the courtyard's north wall (%.1f m)" % nose)
+
+
+## Every foot of the cradle `c` stands over one of the bay's pedestals.
+func _on_pedestals(bay: Node3D, c: Node3D) -> bool:
+	var stands := bay.get_node_or_null("Pedestals")
+	if stands == null:
+		return false
+	for foot: Vector3 in c.call("pedestal_points"):
+		var under := false
+		for n: Node in stands.get_children():
+			if n is CollisionShape3D:
+				var p := (n as CollisionShape3D).global_position
+				under = under or Vector2(p.x - foot.x, p.z - foot.z).length() < 0.1
+		if not under:
+			return false
+	return true

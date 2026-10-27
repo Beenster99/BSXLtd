@@ -19,6 +19,7 @@ var file: Dictionary = {}
 ## The side door's sill and the power socket, ship space (access_points).
 var side_door := Vector3.ZERO
 var power_socket := Vector3.ZERO
+var _surface_box := AABB()
 
 
 func _init(f: Dictionary = {}, node_name := "Wreck") -> void:
@@ -143,6 +144,29 @@ func belly_under(points: Array[Vector2], skip_legs := false) -> PackedFloat64Arr
 				if y < low[k]:
 					low[k] = y
 	return low
+
+
+## The box round the ship's surface (ship space), from its meshes' corners: the file's own
+## bounds are looser (a slanted or turned plate counts its whole box). Worked out once.
+func surface_box() -> AABB:
+	if _surface_box.has_volume():
+		return _surface_box
+	var first := true
+	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null or not mi.visible:
+			continue
+		var xf := _local_xform(mi)
+		var box := xf * mi.mesh.get_aabb()
+		if not first and _surface_box.encloses(box):
+			continue
+		for v: Vector3 in mi.mesh.get_faces():
+			var at := xf * v
+			if first:
+				_surface_box = AABB(at, Vector3.ZERO)
+				first = false
+			else:
+				_surface_box = _surface_box.expand(at)
+	return _surface_box
 
 
 ## The lowest point of the ship's surface over `area` (ship x, z), INF when none is: read off
