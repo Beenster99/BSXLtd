@@ -1,0 +1,703 @@
+{
+	"format": "bsx-vs-wrecks",
+	"version": 1,
+	"wrecks": {
+		"arinox": {
+			"design": "arinox",
+			"name": "Exploration ship (Arinox)",
+			"class": "L",
+			"length_m": 64.0,
+			"mass_kg": 1631081.0,
+			"parts": 1533,
+			"joints": 2893,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Arinox",
+				"author": "Darkspot Industries",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3462895640"
+			},
+			"vs_version": "0.138.0"
+		},
+		"armoured_transport": {
+			"design": "armoured_transport",
+			"name": "Armoured transport (Kyper)",
+			"class": "M",
+			"length_m": 23.0,
+			"mass_kg": 362812.0,
+			"parts": 498,
+			"joints": 878,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Kyper Personnel Transport",
+				"author": "Dacrota",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3692367139"
+			},
+			"vs_version": "0.138.0"
+		},
+		"bay_freighter": {
+			"design": "bay_freighter",
+			"name": "Bay freighter (CL-1)",
+			"class": "L",
+			"length_m": 28.5,
+			"mass_kg": 901429.0,
+			"parts": 655,
+			"joints": 1127,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Manta Freighter by Diggrok (CL-1)",
+				"author": "Diggrok",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3690484680"
+			},
+			"vs_version": "0.138.0"
+		},
+		"cargo_shuttle": {
+			"design": "cargo_shuttle",
+			"name": "Cargo shuttle (CS225)",
+			"class": "M",
+			"length_m": 19.5,
+			"mass_kg": 255830.0,
+			"parts": 413,
+			"joints": 757,
+			"cargo_role": "freighter",
+			"rollable": true,
+			"reference": {
+				"name": "SLM CS225 MK.1 Cargo Shuttle",
+				"author": "ArchSlime",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3725456910"
+			},
+			"vs_version": "0.138.0"
+		},
+		"claymore": {
+			"design": "claymore",
+			"name": "Stealth gunship (Claymore)",
+			"class": "M",
+			"length_m": 25.0,
+			"mass_kg": 440809.0,
+			"parts": 613,
+			"joints": 1133,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "SB-19 CLAYMORE",
+				"author": "SonOfaWitch71",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3467852509"
+			},
+			"vs_version": "0.138.0"
+		},
+		"corsair_frigate": {
+			"design": "corsair_frigate",
+			"name": "Frigate (Corsair)",
+			"class": "L",
+			"length_m": 37.0,
+			"mass_kg": 681346.0,
+			"parts": 681,
+			"joints": 1217,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "CMS - 01A Corsair",
+				"author": "(see page)",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3466011981"
+			},
+			"vs_version": "0.138.0"
+		},
+		"courier": {
+			"design": "courier",
+			"name": "Courier (Q1S)",
+			"class": "M",
+			"length_m": 18.3,
+			"mass_kg": 307143.0,
+			"parts": 652,
+			"joints": 1169,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Q1S - COURIER - Starter Hydrogen Ship",
+				"author": "Commander Qutatron",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3770416413"
+			},
+			"vs_version": "0.138.0"
+		},
+		"dagger_frigate": {
+			"design": "dagger_frigate",
+			"name": "Frigate (Dagger)",
+			"class": "L",
+			"length_m": 43.0,
+			"mass_kg": 1006045.0,
+			"parts": 807,
+			"joints": 1502,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DAGGER CLASS FRIGATE",
+				"author": "Chiggi",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3460077199"
+			},
+			"vs_version": "0.138.0"
+		},
+		"devastator": {
+			"design": "devastator",
+			"name": "Cruiser (Devastator)",
+			"class": "XL",
+			"length_m": 74.0,
+			"mass_kg": 3090509.0,
+			"parts": 1109,
+			"joints": 1962,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "ROE Devastator Class Cruiser",
+				"author": "Republic of Earth",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3678613326"
+			},
+			"vs_version": "0.138.0"
+		},
+		"drill_miner": {
+			"design": "drill_miner",
+			"name": "Drill miner (N-M1)",
+			"class": "S",
+			"length_m": 12.0,
+			"mass_kg": 96642.0,
+			"parts": 326,
+			"joints": 537,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Miner N-M1",
+				"author": "Smokki",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3438342527"
+			},
+			"vs_version": "0.138.0"
+		},
+		"endeavor": {
+			"design": "endeavor",
+			"name": "Ring explorer (Endeavor)",
+			"class": "XL",
+			"length_m": 66.0,
+			"mass_kg": 885330.0,
+			"parts": 1103,
+			"joints": 2060,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Endeavor",
+				"author": "Darkspot Industries",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3445726089"
+			},
+			"vs_version": "0.138.0"
+		},
+		"escape_pod": {
+			"design": "escape_pod",
+			"name": "Escape pod (DSI US-1)",
+			"class": "XS",
+			"length_m": 9.0,
+			"mass_kg": 40319.0,
+			"parts": 181,
+			"joints": 310,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Escape Pod by Diggrok (DSI US-1)",
+				"author": "Diggrok",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3445334055"
+			},
+			"vs_version": "0.138.0"
+		},
+		"everest": {
+			"design": "everest",
+			"name": "Destroyer (Everest)",
+			"class": "L",
+			"length_m": 67.0,
+			"mass_kg": 2753781.0,
+			"parts": 966,
+			"joints": 1721,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "ROE Everest Class Destroyer",
+				"author": "Republic of Earth",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3787047868"
+			},
+			"vs_version": "0.138.0"
+		},
+		"executive_shuttle": {
+			"design": "executive_shuttle",
+			"name": "Executive shuttle",
+			"class": "M",
+			"length_m": 27.0,
+			"mass_kg": 420568.0,
+			"parts": 674,
+			"joints": 1331,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Executive Shuttle MKI",
+				"author": "JPX Reaper",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442307782"
+			},
+			"vs_version": "0.138.0"
+		},
+		"forge_welder": {
+			"design": "forge_welder",
+			"name": "Welder ship (Forge)",
+			"class": "L",
+			"length_m": 27.4,
+			"mass_kg": 617755.0,
+			"parts": 767,
+			"joints": 1590,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Forge [Welder]",
+				"author": "Pitohui",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3718541381"
+			},
+			"vs_version": "0.138.0"
+		},
+		"galaxy_railgun": {
+			"design": "galaxy_railgun",
+			"name": "Railgun ship (Galaxy)",
+			"class": "L",
+			"length_m": 48.0,
+			"mass_kg": 1349759.0,
+			"parts": 923,
+			"joints": 1652,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Galaxy",
+				"author": "Darkspot Industries",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3494470390"
+			},
+			"vs_version": "0.138.0"
+		},
+		"geo_golem": {
+			"design": "geo_golem",
+			"name": "Box miner (Geo Golem)",
+			"class": "M",
+			"length_m": 21.0,
+			"mass_kg": 651509.0,
+			"parts": 671,
+			"joints": 1189,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "UAI - Geo Golem",
+				"author": "UncleAndy",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3691479471"
+			},
+			"vs_version": "0.138.0"
+		},
+		"hex_drive": {
+			"design": "hex_drive",
+			"name": "Hex-drive cruiser (RX-39487)",
+			"class": "M",
+			"length_m": 19.5,
+			"mass_kg": 284688.0,
+			"parts": 516,
+			"joints": 911,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "RX-39487",
+				"author": "Capac Amaru",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442495990"
+			},
+			"vs_version": "0.138.0"
+		},
+		"iridium_miner": {
+			"design": "iridium_miner",
+			"name": "Ring miner (Iridium)",
+			"class": "M",
+			"length_m": 12.9,
+			"mass_kg": 277134.0,
+			"parts": 426,
+			"joints": 759,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Iridium [Miner]",
+				"author": "Pitohui",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3717735048"
+			},
+			"vs_version": "0.138.0"
+		},
+		"jupiter_cruiser": {
+			"design": "jupiter_cruiser",
+			"name": "Cruiser (Jupiter)",
+			"class": "XL",
+			"length_m": 66.0,
+			"mass_kg": 1754135.0,
+			"parts": 1360,
+			"joints": 2693,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Jupiter Class Interstellar Cruiser",
+				"author": "Jamsey",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=1642962796"
+			},
+			"vs_version": "0.138.0"
+		},
+		"k1_miner": {
+			"design": "k1_miner",
+			"name": "Hydrogen miner (K1)",
+			"class": "M",
+			"length_m": 20.5,
+			"mass_kg": 691119.0,
+			"parts": 586,
+			"joints": 1083,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "K1 Hydrogen Miner",
+				"author": "Pedro",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3659282111"
+			},
+			"vs_version": "0.138.0"
+		},
+		"lander": {
+			"design": "lander",
+			"name": "Lander (L1)",
+			"class": "M",
+			"length_m": 13.6,
+			"mass_kg": 235210.0,
+			"parts": 594,
+			"joints": 1178,
+			"cargo_role": "freighter",
+			"rollable": true,
+			"reference": {
+				"name": "SLM L1 MK.1 Lander",
+				"author": "ArchSlime",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3700504934"
+			},
+			"vs_version": "0.138.0"
+		},
+		"liner": {
+			"design": "liner",
+			"name": "Liner (Luxuria Nova)",
+			"class": "L",
+			"length_m": 28.0,
+			"mass_kg": 268998.0,
+			"parts": 457,
+			"joints": 834,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "BOD L. Luxuria Nova 2.0",
+				"author": "BOD",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3478656249"
+			},
+			"vs_version": "0.138.0"
+		},
+		"long_hauler": {
+			"design": "long_hauler",
+			"name": "Long hauler (Dionysus)",
+			"class": "L",
+			"length_m": 62.0,
+			"mass_kg": 1485880.0,
+			"parts": 751,
+			"joints": 1366,
+			"cargo_role": "freighter",
+			"rollable": true,
+			"reference": {
+				"name": "Party Ship Dionysus",
+				"author": "Grebanton1234",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442199760"
+			},
+			"vs_version": "0.138.0"
+		},
+		"mantis_fighter": {
+			"design": "mantis_fighter",
+			"name": "Twin-prong fighter (Mantis)",
+			"class": "M",
+			"length_m": 19.0,
+			"mass_kg": 177654.0,
+			"parts": 581,
+			"joints": 1097,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Mantis Fighter VS1",
+				"author": "Dan2D3D",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442103218"
+			},
+			"vs_version": "0.138.0"
+		},
+		"mission_runner": {
+			"design": "mission_runner",
+			"name": "Cargo runner (CS-1)",
+			"class": "M",
+			"length_m": 24.0,
+			"mass_kg": 272062.0,
+			"parts": 584,
+			"joints": 1075,
+			"cargo_role": "freighter",
+			"rollable": true,
+			"reference": {
+				"name": "Mission Runner by Diggrok (CS-1)",
+				"author": "Diggrok",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3621168964"
+			},
+			"vs_version": "0.138.0"
+		},
+		"mule_hauler": {
+			"design": "mule_hauler",
+			"name": "Hauler (Mule M-02)",
+			"class": "M",
+			"length_m": 23.0,
+			"mass_kg": 491155.0,
+			"parts": 344,
+			"joints": 609,
+			"cargo_role": "freighter",
+			"rollable": true,
+			"reference": {
+				"name": "Hauler \"Mule\" M-02",
+				"author": "B.O.S.",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3623084850"
+			},
+			"vs_version": "0.138.0"
+		},
+		"nexus_carrier": {
+			"design": "nexus_carrier",
+			"name": "Race carrier (Nexus)",
+			"class": "L",
+			"length_m": 53.0,
+			"mass_kg": 866250.0,
+			"parts": 768,
+			"joints": 1322,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Nexus",
+				"author": "Darkspot Industries",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3691314695"
+			},
+			"vs_version": "0.138.0"
+		},
+		"novaris": {
+			"design": "novaris",
+			"name": "Mobile base (Novaris)",
+			"class": "L",
+			"length_m": 63.0,
+			"mass_kg": 880311.0,
+			"parts": 935,
+			"joints": 1628,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Novaris",
+				"author": "Darkspot Industries",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3659910047"
+			},
+			"vs_version": "0.138.0"
+		},
+		"pioneer": {
+			"design": "pioneer",
+			"name": "Explorer (Pioneer)",
+			"class": "M",
+			"length_m": 17.8,
+			"mass_kg": 219924.0,
+			"parts": 677,
+			"joints": 1403,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Pioneer Mk.II",
+				"author": "Pitohui",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3692056502"
+			},
+			"vs_version": "0.138.0"
+		},
+		"pod_scout": {
+			"design": "pod_scout",
+			"name": "Pod scout (N-S1)",
+			"class": "M",
+			"length_m": 12.8,
+			"mass_kg": 65435.0,
+			"parts": 557,
+			"joints": 1029,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Scout N-S1",
+				"author": "Smokki",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3438342754"
+			},
+			"vs_version": "0.138.0"
+		},
+		"ranger": {
+			"design": "ranger",
+			"name": "Exploration ship (Ranger)",
+			"class": "L",
+			"length_m": 51.0,
+			"mass_kg": 666741.0,
+			"parts": 876,
+			"joints": 1657,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Ranger Class Ship RS-03",
+				"author": "B.O.S.",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3626164624"
+			},
+			"vs_version": "0.138.0"
+		},
+		"scabbard": {
+			"design": "scabbard",
+			"name": "Landing craft (Scabbard)",
+			"class": "L",
+			"length_m": 29.0,
+			"mass_kg": 475656.0,
+			"parts": 737,
+			"joints": 1616,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "ALC-22B SCABBARD",
+				"author": "SonOfaWitch71",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3477554796"
+			},
+			"vs_version": "0.138.0"
+		},
+		"scoop_miner": {
+			"design": "scoop_miner",
+			"name": "Narrow miner (Scoop)",
+			"class": "M",
+			"length_m": 25.0,
+			"mass_kg": 408128.0,
+			"parts": 429,
+			"joints": 787,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "EVs-d15/Ds \"Scoop\"",
+				"author": "Stellar Horizons",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3618045666"
+			},
+			"vs_version": "0.138.0"
+		},
+		"sentinel": {
+			"design": "sentinel",
+			"name": "Frigate (Sentinel)",
+			"class": "L",
+			"length_m": 50.0,
+			"mass_kg": 2047931.0,
+			"parts": 1104,
+			"joints": 2021,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "ROE Sentinal Class Frigate",
+				"author": "Republic of Earth",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3670833861"
+			},
+			"vs_version": "0.138.0"
+		},
+		"ship_carrier": {
+			"design": "ship_carrier",
+			"name": "Ship carrier (Porpoise)",
+			"class": "XL",
+			"length_m": 36.0,
+			"mass_kg": 1254380.0,
+			"parts": 1094,
+			"joints": 2202,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "KoIHS Ca1 \"Porpoise\"",
+				"author": "Komus",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3669444692"
+			},
+			"vs_version": "0.138.0"
+		},
+		"superhawk": {
+			"design": "superhawk",
+			"name": "Wedge hauler (Superhawk)",
+			"class": "L",
+			"length_m": 47.0,
+			"mass_kg": 974212.0,
+			"parts": 984,
+			"joints": 1777,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Almatech Superhawk",
+				"author": "Wizard_Aubrey_The_Gnarly",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3669607378"
+			},
+			"vs_version": "0.138.0"
+		},
+		"talon": {
+			"design": "talon",
+			"name": "Courier fighter (Talon)",
+			"class": "M",
+			"length_m": 20.0,
+			"mass_kg": 125167.0,
+			"parts": 565,
+			"joints": 1070,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI Talon (Concept)",
+				"author": "Diggrok",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442312581"
+			},
+			"vs_version": "0.138.0"
+		},
+		"tiburon": {
+			"design": "tiburon",
+			"name": "Heavy gunship (Tiburon)",
+			"class": "L",
+			"length_m": 78.65,
+			"mass_kg": 3527041.0,
+			"parts": 1589,
+			"joints": 2703,
+			"cargo_role": "",
+			"rollable": false,
+			"reference": {
+				"name": "Aegis Tiburon (Star Citizen)",
+				"author": "Cloud Imperium Games",
+				"url": "https://starcitizen.tools/Tiburon"
+			},
+			"vs_version": "0.138.0"
+		},
+		"titan_miner": {
+			"design": "titan_miner",
+			"name": "Heavy excavator (Titan)",
+			"class": "L",
+			"length_m": 27.1,
+			"mass_kg": 715927.0,
+			"parts": 773,
+			"joints": 1600,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "DSI - Titan [Miner]",
+				"author": "Pitohui",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3717777054"
+			},
+			"vs_version": "0.138.0"
+		},
+		"yacht": {
+			"design": "yacht",
+			"name": "Space yacht (Cascadia)",
+			"class": "L",
+			"length_m": 56.0,
+			"mass_kg": 753855.0,
+			"parts": 722,
+			"joints": 1312,
+			"cargo_role": "",
+			"rollable": true,
+			"reference": {
+				"name": "Ascension Spaceworks Cascadia",
+				"author": "Chris320N",
+				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3634347132"
+			},
+			"vs_version": "0.138.0"
+		}
+	}
+}

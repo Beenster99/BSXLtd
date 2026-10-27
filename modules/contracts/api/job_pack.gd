@@ -173,6 +173,10 @@ static func subject_spec_doc(job: ContractJob) -> Dictionary:
 		var gen := ShipGenerator.parse_id(String(s.get("design", o.design)))
 		if not gen.is_empty():
 			lines.append("Hull: a class %s %s of BSX's own make, design %s" % [String(gen["size"]), String(gen["family"]), String(s.get("design", ""))])
+		elif VsWreckLibrary.is_vs_wreck(String(s.get("design", o.design))):
+			var info := VsWreckLibrary.info(String(s.get("design", o.design)))
+			lines.append("Hull: a %s, %.0f m, Void Salvage class %s, design %s" % [String(info.get("name", "")), float(info.get("length_m", 0.0)),
+					String(info.get("class", "")), String(s.get("design", ""))])
 		if String(s.get("events", "")) != "":
 			lines.append("Damage: " + String(s.get("events", "")).replace(":", " ").replace(",", ", "))
 		if int(s.get("parts_left", 0)) > 0:
