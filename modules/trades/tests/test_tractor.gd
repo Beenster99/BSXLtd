@@ -31,7 +31,7 @@ func run_tests() -> void:
 	var station := rig.ship_station()
 	var beam := station.tractor
 	var at := rig.hotbar.find(&"tractor")
-	check(at >= 0 and at == rig.hotbar.size() - (2 if rig.hotbar.has(&"cutter") else 1),
+	check(at >= 0 and at == rig.hotbar.size() - 1 - int(rig.hotbar.has(&"cutter")) - int(rig.hotbar.has(&"template")),
 			"the tractor beam is on the hotbar after the hand tools (tool %d)" % (at + 1))
 	rig.set_tool(&"tractor")
 	var slot := ship_bus.get_slot(SLOT)

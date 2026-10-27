@@ -54,6 +54,8 @@ var agile := true
 var look_locked := false
 ## True while the keys drive something else (a trolley on remote): stand still.
 var held_still := false
+## Your hover board (trades.hover_board, in the yard): B brings it out and puts it away.
+var board: TradesHoverBoard
 
 var head: Node3D
 var camera: Camera3D
@@ -226,6 +228,16 @@ func _physics_process(delta: float) -> void:
 		input.y = Input.get_action_strength(Keys.BACK) - Input.get_action_strength(Keys.FORWARD)
 	if InputMap.has_action(Keys.CROUCH) and Input.is_action_just_pressed(Keys.CROUCH) and not held_still and _ladders == 0:
 		set_crouch(not crouched)
+	if board and InputMap.has_action(TradesBus.KEY_BOARD) and Input.is_action_just_pressed(TradesBus.KEY_BOARD) \
+			and not held_still and not look_locked:
+		set_board(not board.riding)
+	if board and board.riding:
+		var climb := 0.0
+		if not held_still and InputMap.has_action(TradesBus.KEY_BOARD_UP):
+			climb = Input.get_action_strength(TradesBus.KEY_BOARD_UP) - Input.get_action_strength(TradesBus.KEY_BOARD_DOWN)
+		velocity = board.drive(self, input, Input.is_action_pressed(Keys.RUN), climb, delta)
+		move_and_slide()
+		return
 	var speed := run_speed if Input.is_action_pressed(Keys.RUN) else walk_speed
 	if crouched:
 		speed = crouch_speed
@@ -246,6 +258,25 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y -= gravity * delta
 	move_and_slide()
+
+
+## Onto your hover board (it comes out under your feet) or off it (it goes away; high up you
+## drop). Not on a ladder; a crouch stands up first. Returns whether you're riding now.
+func set_board(on: bool) -> bool:
+	if board == null:
+		return false
+	if on and (_ladders > 0 or (crouched and not set_crouch(false))):
+		return board.riding
+	board.set_riding(on)
+	# The arrows are the board's while you ride: Ship and Bay's decks and lifts leave them be.
+	var yard_bus := Modules.bus("ship_bay")
+	if yard_bus and yard_bus.has_method("set_deck_keys"):
+		yard_bus.call("set_deck_keys", not board.riding)
+	return board.riding
+
+
+func riding() -> bool:
+	return board != null and board.riding
 
 
 ## A ladder's climbing space counts the worker in (+1) and out (-1). Leaving one out of its

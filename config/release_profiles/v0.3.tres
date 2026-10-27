@@ -22,6 +22,7 @@ flags = {
 "graphics.gi": true,
 "graphics.hover": true,
 "graphics.lamps": true,
+"graphics.mood": true,
 "graphics.light": true,
 "graphics.ping": true,
 "graphics.profiler": true,
@@ -106,9 +107,11 @@ flags = {
 "trades.part_info": true,
 "trades.goods_off": true,
 "trades.wheel_away": true,
+"trades.hover_board": true,
 "trades.no_pinning": true,
 "trades.crew_tools": true,
 "trades.unit_mounts": true,
+"trades.cutting_bed": true,
 "ui": true,
 "ui.debug_tab": true
 }

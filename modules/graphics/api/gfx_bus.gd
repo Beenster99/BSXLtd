@@ -58,6 +58,8 @@ const TORCH := "graphics.torch"
 const SKY := "graphics.sky"
 const SURFACES := "graphics.surfaces"
 const SCREENS := "graphics.screens"
+## The yard darker by day and night, night lamps in pools (beenster, 0.3.23).
+const MOOD := "graphics.mood"
 ## Group of rooms (halls, the bay) that get their own bounce light and reflections.
 const ROOM := "gfx_room"
 ## Meta on a room: its inside as an AABB in the room node's space.
@@ -79,6 +81,7 @@ const SkyLook := preload("res://modules/graphics/internal/sky_look.gd")
 const ZFightCheck := preload("res://modules/graphics/internal/zfight_check.gd")
 const SurfaceLook := preload("res://modules/graphics/internal/surface_look.gd")
 const LedScreen := preload("res://modules/graphics/internal/led_screen.gd")
+const MoodLook := preload("res://modules/graphics/internal/mood_look.gd")
 ## Seconds after a room appears before its bounce light bakes (its owner may still be
 ## building it).
 const BAKE_DELAY := 0.5
@@ -94,6 +97,7 @@ var beams: Array[MeshInstance3D] = []
 var _daylight := -1.0
 var _sky_on := false
 var _surfaces_on := false
+var _mood_on := false
 ## VoxelGIs waiting to bake, one per frame after BAKE_DELAY: [{gi, at}].
 var _bakes: Array[Dictionary] = []
 var _sky_hour := -100.0
@@ -150,6 +154,8 @@ func restyle(n: Node) -> void:
 	if Flags.is_on(LIGHT):
 		if n is WorldEnvironment and is_outdoor(n):
 			LightBaseline.apply_environment(n as WorldEnvironment)
+			if Flags.is_on(MOOD) and _daylight >= 0.0:
+				MoodLook.exposure(n as WorldEnvironment, _daylight)   # after Core's camera attributes
 			look_applied.emit(n)
 		elif n is DirectionalLight3D:
 			LightBaseline.apply_sun(n as DirectionalLight3D)
@@ -173,6 +179,8 @@ func restyle(n: Node) -> void:
 	if n.is_in_group("alien_sky"):
 		_dress_sky(n)
 	if n is GeometryInstance3D and Flags.is_on(SURFACES) and SurfaceLook.apply(n as GeometryInstance3D):
+		look_applied.emit(n)
+	if Flags.is_on(MOOD) and MoodLook.is_night_lamp(n) and MoodLook.lamp(n as Light3D):
 		look_applied.emit(n)
 
 
@@ -279,6 +287,9 @@ func _on_sky_time(hour: float, daylight: float) -> void:
 	if Flags.is_on(SKY):
 		for sky in get_tree().get_nodes_in_group("alien_sky"):
 			SkyLook.night(sky, hour, daylight)
+	if Flags.is_on(MOOD):
+		for sky in get_tree().get_nodes_in_group("alien_sky"):
+			MoodLook.sky(sky, daylight)
 	if torch:
 		torch.set_daylight(daylight)
 	if absf(hour - _sky_hour) < RoomLight.REPROBE_HOURS or not Flags.is_on(GI):
@@ -298,7 +309,7 @@ func _on_node_added(n: Node) -> void:
 		if m and m.has_meta(SurfaceLook.META):
 			restyle.call_deferred(n)
 		return
-	if n is WorldEnvironment or n is DirectionalLight3D or n is SpotLight3D:
+	if n is WorldEnvironment or n is DirectionalLight3D or n is Light3D:
 		# Core's Graphics tunes these deferred too; queued after it, so this lands on top.
 		restyle.call_deferred(n)
 
@@ -331,6 +342,14 @@ func _on_flags() -> void:
 			apply_all()
 		else:
 			_strip_surfaces(get_tree().root)
+	if is_inside_tree() and Flags.is_on(MOOD) != _mood_on:
+		_mood_on = Flags.is_on(MOOD)
+		if not _mood_on:
+			_unmood(get_tree().root)
+		else:
+			apply_all()
+		for sky in get_tree().get_nodes_in_group("alien_sky"):
+			sky.call("apply")   # the hour again from AlienSky's own numbers, then time_changed
 	var torch_on := Flags.is_on(TORCH)
 	if torch_on and torch == null:
 		Keys.register(HelmetTorch.ACTION, "Helmet torch", KEY_L)
@@ -349,6 +368,15 @@ func _strip_surfaces(n: Node) -> void:
 		SurfaceLook.remove(n as GeometryInstance3D)
 	for c in n.get_children():
 		_strip_surfaces(c)
+
+
+func _unmood(n: Node) -> void:
+	if n is Light3D:
+		MoodLook.unlamp(n as Light3D)
+	elif n is WorldEnvironment:
+		MoodLook.unexpose(n as WorldEnvironment)
+	for c in n.get_children():
+		_unmood(c)
 
 
 func _drop_torch() -> void:
