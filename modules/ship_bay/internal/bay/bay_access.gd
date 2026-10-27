@@ -582,7 +582,7 @@ func _lift_keys() -> void:
 	if InputMap.has_action("ship_bay.lower") and Input.is_action_pressed("ship_bay.lower"):
 		way -= 1
 	var bus := Modules.bus("ship_bay") as ShipBayBus
-	if way != 0 and ((bus and bus.remote_driving) or not _by_lift()):
+	if way != 0 and ((bus and (bus.remote_driving or not bus.deck_keys)) or not _by_lift()):
 		way = 0
 	if way == _key_way:
 		return

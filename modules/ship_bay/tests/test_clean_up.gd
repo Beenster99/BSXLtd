@@ -20,6 +20,14 @@ func run_tests() -> void:
 	Flags.set_flag("ship_bay.refurb_runs_intake", false)
 	check(ShipBayBus.clean_up_route(0.95) == "store" and ShipBayBus.clean_up_route(0.5) == "refurb" and ShipBayBus.clean_up_route(0.1) == "grind",
 			"the trolleys sort by condition: stores, refurbishing, crusher")
+	# Sheet metal and sheet glass are crushed into ingots whatever their condition (0.3.23).
+	check(ShipBayBus.is_sheet("HullPlate") and ShipBayBus.is_sheet("CabinWall") and ShipBayBus.is_sheet("WindowPane")
+			and ShipBayBus.is_sheet("BridgeWindow") and not ShipBayBus.is_sheet("") and not ShipBayBus.is_sheet("Reactor"),
+			"hull plates, wall panels and window glass are sheet")
+	check(ShipBayBus.clean_up_route(1.0, "HullPlate") == "grind" and ShipBayBus.clean_up_route(0.5, "WindowPane") == "grind"
+			and ShipBayBus.clean_up_route(1.0, "Reactor") == "store", "sheet goes to the crusher even as new; other parts by condition")
+	check(ShipBayBus.survey_route(0.8, "DeckPlate") == "grind" and ShipBayBus.survey_route(0.8, "Reactor") == "refurb",
+			"and the lines' survey sends sheet on to the crusher")
 	check(is_equal_approx(bus.fitted_condition("hold_panel_1"), 1.0), "with no work order a fitted part counts as new")
 	var yard := (load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene).instantiate() as Node3D
 	add_child(yard)

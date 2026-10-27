@@ -48,6 +48,14 @@ func run_tests() -> void:
 	await frames(3)
 	check(readied == [yard], "shipyard_ready hands other modules the yard")
 	check(bay.ship != null and bay.ship.ship_id == "vs_kestrel", "the Kestrel is in the bay")
+	# Tools hangs real extinguishers at the fire points: on a wall, facing into a room.
+	var fires := bay.fire_points()
+	var inside := fires.filter(func(f: Transform3D) -> bool:
+			var into := f.origin - f.basis.z * 0.5 + Vector3(0, 1, 0)
+			return Yard.room_at(into) != "" and f.origin.y > 0.0 and f.origin.y < 1.0)
+	check(fires.size() > 20 and inside.size() == fires.size(), "the fire points face into the rooms: %d of %d" % [inside.size(), fires.size()])
+	var bed := bay.cutting_bed_spot()
+	check(is_zero_approx(bed.origin.y) and Yard.room_at(bed.origin + Vector3(0, 1, 0)) == "", "the cutting bed's spot is on the floor west of the halls: %s" % bed.origin)
 	for spot: String in ["bench_preassembly", "bench_prep"]:
 		var box := PhysicsShapeQueryParameters3D.new()
 		var shape := BoxShape3D.new()

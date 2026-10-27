@@ -281,6 +281,25 @@ func run_tests() -> void:
 	f.pressed = true
 	fleet.call("_input", f)
 	check(fleet.get("remote_id") == "" and fleet.get("remote_view") == null and not bus.remote_driving, "F hands it back and the window closes")
+	# Standing on its deck, Up raises it; not while Tools' hover board has the keys.
+	var walker := yard.get("walker") as Node3D
+	check(walker != null, "the yard has its walker")
+	if walker:
+		yard.call("set_walker_active", true)
+		var deck := m.get("deck") as Node3D
+		var stood := walker.global_position
+		Input.action_press("ship_bay.raise")
+		bus.set_deck_keys(false)
+		walker.global_position = deck.global_position + Vector3(0, 0.1, 0)
+		var before := float(m.get("deck_target"))
+		fleet.call("_ride_keys", m, 0.5)
+		var resting := float(m.get("deck_target"))
+		bus.set_deck_keys(true)
+		fleet.call("_ride_keys", m, 0.5)
+		Input.action_release("ship_bay.raise")
+		walker.global_position = stood
+		yard.call("set_walker_active", false)
+		check(is_equal_approx(resting, before) and float(m.get("deck_target")) > before, "the deck keys rest while the hover board has them: %.2f, %.2f, %.2f" % [before, resting, m.get("deck_target")])
 
 	# No trolley TV of its own: Business's hall TVs show the Machines channel. The full-size
 	# screen still opens.

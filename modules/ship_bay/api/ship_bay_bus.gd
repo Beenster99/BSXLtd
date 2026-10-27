@@ -152,8 +152,13 @@ var _stock := StorageStock.new()
 var _part_values := Callable()
 ## The yard's trolley fleet while the shipyard is up (it sets this), for beam_to_trolley.
 var fleet: Node
+## The shipyard while one is built (it hands itself over as it emits shipyard_ready).
+var _yard: Shipyard
 ## True while this player drives a hover trolley on remote (see remote_driving_changed).
 var remote_driving := false
+## False while another module has the Up and Down keys (Tools' hover board, while ridden):
+## then they move no trolley deck and no scissor lift. Set it with set_deck_keys.
+var deck_keys := true
 ## Slot id -> the trolley sent for a part beamed off the ship, until it lands or is called off.
 var _beam_claims: Dictionary = {}
 ## Slot id -> {component, condition, body (the part's Node3D)}: parts off the ship lying
@@ -405,6 +410,23 @@ func shipyard_rooms() -> Dictionary:
 ## floor, +Z towards where the worker stands. Identity for an unknown id.
 func shipyard_spot(id: String) -> Transform3D:
 	return Shipyard.SPOTS.get(id, Transform3D.IDENTITY)
+
+
+## Where the extinguishers hang at the shipyard's fire points (Tools hangs real ones there
+## with trades.extinguishers): yard space, the origin at a bottle's foot on the wall, -Z out
+## of the wall into the room. Empty until a shipyard is built.
+func fire_points() -> Array[Transform3D]:
+	return _yard.fire_points.duplicate() if is_instance_valid(_yard) else ([] as Array[Transform3D])
+
+
+## Where Tools' plasma cutting bed stands in the plate hall: yard space, on the floor in the
+## middle of the hall, -Z the operator's side. CUTTING_BED_ROOM metres of it are kept clear
+## (across x, headroom y, along z).
+func cutting_bed_spot() -> Transform3D:
+	return Shipyard.SPOTS["cutting_bed"]
+
+
+const CUTTING_BED_ROOM := Vector3(4.5, 3.5, 8.0)
 
 
 ## Hands the shipyard's walker over (on = false: it stops where it is, leaves the mouse and
@@ -956,7 +978,17 @@ const STORE_FROM := 0.9
 
 
 ## Where a clean-up takes a loose part in this condition: "store", "refurb" or "grind".
-static func clean_up_route(condition: float) -> String:
+## Lets the raise and lower keys move the deck you stand on and the scissor lift (on), or
+## hands them to another module (off: Tools' hover board takes them while ridden).
+func set_deck_keys(on: bool) -> void:
+	deck_keys = on
+
+
+## Sheet metal and sheet glass (`component`, is_sheet) always go to the crusher: BSX makes
+## its own plates, so the old ones are crushed into ingots (beenster, 0.3.23).
+static func clean_up_route(condition: float, component := "") -> String:
+	if is_sheet(component):
+		return "grind"
 	if condition >= STORE_FROM:
 		return "store"
 	return "grind" if condition <= GRIND_BELOW else "refurb"
@@ -1000,7 +1032,7 @@ func loose_parts() -> Array[Dictionary]:
 		var cond := float(p["condition"])
 		var at: Vector3 = body.call("centre") if body.has_method("centre") else body.global_position
 		out.append({"slot": slot, "component": comp, "name": str(StorageLayout.items().get(comp, {}).get("name", comp)),
-				"condition": cond, "at": at, "route": clean_up_route(cond), "trolley": str(_beam_claims.get(slot, ""))})
+				"condition": cond, "at": at, "route": clean_up_route(cond, comp), "trolley": str(_beam_claims.get(slot, ""))})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.slot < b.slot)
 	return out
 
@@ -1509,23 +1541,44 @@ func line_candidates(line := "a") -> Array[Dictionary]:
 	for id: String in fed:
 		var c: Dictionary = _stock.crates[id]
 		infeed.append({"crate": id, "location": "INTAKE", "item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]),
-				"condition": float(c["condition"]), "route": str(c.get("route", survey_route(float(c["condition"]))))})
+				"condition": float(c["condition"]), "route": str(c.get("route", survey_route(float(c["condition"]), str(c["item"]))))})
 	for loc: String in _stock.stock:
 		var have: Dictionary = _stock.stock[loc]
 		var cond := float(have.get("condition", 1.0))
 		if cond < REFURB_BELOW:
 			var item := str(have["item"])
 			out.append({"location": loc, "item": item, "name": str(items.get(item, {}).get("name", item)),
-					"qty": int(have["qty"]), "condition": cond, "route": survey_route(cond)})
+					"qty": int(have["qty"]), "condition": cond, "route": survey_route(cond, item)})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return a.condition < b.condition if a.condition != b.condition else a.location < b.location)
 	infeed.append_array(out)
 	return infeed
 
 
-## What the survey says for goods in this condition: "grind" (scrap) or "refurb".
-static func survey_route(condition: float) -> String:
-	return "grind" if condition <= GRIND_BELOW else "refurb"
+## What the survey says for goods in this condition: "grind" (scrap) or "refurb". Sheet
+## metal and sheet glass (`item`, is_sheet) are always scrap.
+static func survey_route(condition: float, item := "") -> String:
+	return "grind" if condition <= GRIND_BELOW or is_sheet(item) else "refurb"
+
+
+## Sheet metal and sheet glass: hull and wall plates and panels, and glass panes. They are
+## crushed into ingots, never refurbished or shelved (beenster, 0.3.23).
+static func is_sheet(item: String) -> bool:
+	if item == "":
+		return false
+	var category := str(StorageLayout.items().get(item, {}).get("category", ""))
+	if category == "glass":
+		return true
+	if category != "" and category != "hull":
+		return false
+	for word: String in SHEET_WORDS:
+		if item.ends_with(word):
+			return true
+	return false
+
+
+## The ends of a sheet part's name (with the glass category).
+const SHEET_WORDS: PackedStringArray = ["Plate", "Panel", "Pane", "Sheet", "Wall", "Skin", "Glass"]
 
 
 ## The dust `qty` of a part crushes down into: material id -> kg.
@@ -1774,7 +1827,7 @@ func _apply_line(payload: Dictionary) -> void:
 					return
 				var cond := float(c["condition"])
 				st["survey"] = {"state": "waiting", "lot": {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]),
-						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond)}}
+						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond, str(c["item"]))}}
 				_stock.crates.erase(str(payload["crate"]))
 				stock_moved = true
 			else:
@@ -1787,7 +1840,7 @@ func _apply_line(payload: Dictionary) -> void:
 				var cond := float(have.get("condition", 1.0))
 				st["survey"] = {"state": "waiting", "lot": {"item": item, "name": str(known.get("name", item)),
 						"qty": int(have["qty"]), "condition": cond, "mass": float(known.get("mass", 0.0)),
-						"route": survey_route(cond)}}
+						"route": survey_route(cond, item)}}
 				_stock.stock.erase(loc)
 				stock_moved = true
 		"start":
@@ -1992,10 +2045,14 @@ func send_cradle(payload: Dictionary) -> void:
 ## bay, "restore_bay" brings the Kestrel back, "random_wreck" puts a random wreck in the bay
 ## in place of the Kestrel (rolled here, built the same on every machine).
 ## For "random_wreck", `design` is its size (WRECK_SIZES; "" for small).
+## The roll the debug random wreck uses: -1 a fresh one each press (tests pin it).
+var wreck_seed := -1
+
+
 func debug_ship(action: String, design := "") -> void:
 	var payload := {"action": action, "design": design}
 	if action == "random_wreck":
-		payload["wreck"] = random_wreck(-1, design if WRECK_SIZES.has(design) else "S")
+		payload["wreck"] = random_wreck(wreck_seed, design if WRECK_SIZES.has(design) else "S")
 	if _net:
 		_net.call("request", "ship_bay.debug_ship", payload)
 	elif _check_debug_ship(0, payload) is Dictionary:
