@@ -268,6 +268,10 @@ func set_board(on: bool) -> bool:
 	if on and (_ladders > 0 or (crouched and not set_crouch(false))):
 		return board.riding
 	board.set_riding(on)
+	# The arrows are the board's while you ride: Ship and Bay's decks and lifts leave them be.
+	var yard_bus := Modules.bus("ship_bay")
+	if yard_bus and yard_bus.has_method("set_deck_keys"):
+		yard_bus.call("set_deck_keys", not board.riding)
 	return board.riding
 
 
