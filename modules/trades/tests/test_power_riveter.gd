@@ -50,7 +50,7 @@ func run_tests() -> void:
 	# The cutter grinds its head off, throwing sparks.
 	rig.set_tool(&"cutter")
 	station.press(&"cutter")
-	_run(station, TradesShipJoints.GRIND_S * 0.5)
+	_run(station, TradesShipJoints.grind_s() * 0.5)
 	check(station.is_busy() and rig.sparks.count() > 0, "grinding: sparks fly (%d)" % rig.sparks.count())
 	_run(station, TradesShipJoints.GRIND_S * 0.6)
 	check(not ship_bus.is_joint_tight(f.joint_id), "the cutter grinds the rivet off")

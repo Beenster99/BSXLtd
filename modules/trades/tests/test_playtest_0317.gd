@@ -82,10 +82,11 @@ func run_tests() -> void:
 	var b := _first(station, "bolt", true)
 	var loose := _first(station, "bolt", false)
 	_aim_at(rig, station, b)
-	check(station._marker.material_override == station._ring_quiet and station._marker.mesh == station._quiet_mesh,
+	check((station._marker.material_override == station._ring_quiet and station._marker.mesh == station._quiet_mesh)
+			or (Flags.is_on("trades.clear_rings") and station._marker.material_override == station._ring_clear and station._marker.mesh == station._clear_mesh),
 			"the aim ring is the pale thin one on a tight bolt")
 	_aim_at(rig, station, loose)
-	check(station._marker.material_override == station._ring_quiet, "and on a loose one too")
+	check(station._marker.material_override in [station._ring_quiet, station._ring_clear], "and on a loose one too")
 	var stand := station.test_stand
 	var mats := {}
 	for id: String in stand._markers:

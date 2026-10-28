@@ -103,7 +103,8 @@ func _on_held(peer: int, held: Dictionary) -> void:
 	if not is_instance_valid(c.get("sound")) and hand:
 		var p := AudioStreamPlayer3D.new()
 		p.name = "CrewToolSound"
-		p.volume_db = SOUND_DB
+		p.volume_db = SOUND_DB + TradesBay.tool_db()
+		p.bus = Sfx.bus()
 		p.max_distance = SOUND_RANGE_M
 		hand.add_child(p)
 		c.sound = p
