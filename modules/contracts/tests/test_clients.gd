@@ -165,6 +165,15 @@ func _test_standing(bus: ContractsBus) -> void:
 	check(changes == ["%s 10 1" % client], "standing_changed: %s" % str(changes))
 	bus.add_standing(client, 20)
 	check(bus.level_of(client) == 2, "trusted at 30")
+	var now_tier2 := 0
+	var now_lower := 0
+	for j in _generated(bus):
+		if String(j.order.client.get("company", "")) == client and j.state == ContractJob.OFFERED:
+			if int((j.order.raw.get("offer", {}) as Dictionary).get("tier", 0)) == 2:
+				now_tier2 += 1
+			else:
+				now_lower += 1
+	check(now_tier2 > 0 and now_lower == 0, "reaching a level reposts the client's offers at the new tier at once: %d tier two, %d lower" % [now_tier2, now_lower])
 	bus.advance_cycle(bus.cycle() + 30)
 	var tier2 := false
 	for j in _generated(bus):
