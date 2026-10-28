@@ -69,6 +69,21 @@ func run_tests() -> void:
 	await frames(2)
 	check(ItemLook.size_of(ItemLook.look_id(slot.accepts[0], key)).is_equal_approx(own), "it keeps its shape after the wreck has gone")
 	check(ItemLook.size_of(ItemLook.look_id(slot.accepts[0], key + "x")).is_equal_approx(plain), "an unknown shape falls back to the item")
+	# Tools' beam can take a delivered crate off the goods-in floor (trades.goods_in): its look
+	# box carries the count and the look, goods_visual draws it, collect_crate takes it.
+	var landed: PackedStringArray = bus._stock.land("TEST-GI", [{"item_id": slot.accepts[0], "qty": 2, "mass": 10.0}])
+	bus.stock_changed.emit()
+	await frames(2)
+	var box: Node = null
+	for a: Node in yard.find_child("Stores", true, false).find_children("Look", "Area3D", true, false):
+		if str(a.get_meta("crate_id", "")) == landed[0]:
+			box = a
+	check(box != null and int(box.get_meta("qty", 0)) == 2 and str(box.get_meta("look_id", "")) != "", "its look box carries the count and the look")
+	var vis := bus.goods_visual(str(box.get_meta("look_id", "")) if box else slot.accepts[0], 0.8)
+	check(vis != null and vis.find_children("*", "MeshInstance3D", true, false).size() > 0, "goods_visual draws it")
+	vis.free()
+	bus.collect_crate(landed[0])
+	check(not bus.delivered_crates().has(landed[0]), "collect_crate takes a crate standing on the floor")
 	yard.queue_free()
 	await frames(2)
 	Flags.set_flag("ship_bay.bay_cradle", was)

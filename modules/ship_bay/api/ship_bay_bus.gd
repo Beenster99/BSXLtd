@@ -121,6 +121,7 @@ const WRECK_SIZES := {"S": "Small", "M": "Medium", "L": "Large"}
 
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
 const EmitterRig := preload("res://modules/ship_bay/internal/yard/emitter_rig.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 const DebugShipsPanel := preload("res://modules/ship_bay/internal/ui/debug_ships_panel.gd")
 ## The Debug page's section (Settings > Debug > Ship).
 const DEBUG_SECTION := "ship_bay"
@@ -1154,7 +1155,15 @@ func land_beamed(slot_id: String, trolley_id: String, component: String, conditi
 		_apply_beamed(payload)
 
 
-## Takes a picked crate off the trolley that brought it; crate_collected follows.
+## Goods as they look (Tools draws a part it lifts off the goods-in floor with it): `item`
+## the look box's "look_id" (a part off a ship keeps its own shape) or a component id, at
+## `condition`; ItemLook's pieces under a Node3D whose origin is the underside's middle.
+func goods_visual(item: String, condition: float) -> Node3D:
+	return ItemLook.make(item, ItemLook.look_for(condition))
+
+
+## Takes a picked crate off the trolley that brought it, or a delivered crate standing on the
+## goods-in floor (Tools' beam lifts it, trades.goods_in); crate_collected follows.
 func collect_crate(crate_id: String) -> void:
 	var payload := {"crate_id": crate_id}
 	if _net:
@@ -2395,7 +2404,13 @@ func _apply_hand(payload: Dictionary) -> void:
 
 
 func _check_collect(_sender: int, payload: Dictionary) -> Variant:
-	return payload if _stock.crates.get(str(payload.get("crate_id", "")), {}).has("to") else "no such picked crate"
+	var c: Dictionary = _stock.crates.get(str(payload.get("crate_id", "")), {})
+	if c.has("to"):
+		return payload
+	# A delivered one only while it stands on the floor: not on a trolley or a line.
+	if not c.is_empty() and str(c.get("carrier", "")) == "" and not c.has("line"):
+		return payload
+	return "no such crate on the floor or picked"
 
 
 func _apply_collect(payload: Dictionary) -> void:

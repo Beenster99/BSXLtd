@@ -2044,7 +2044,8 @@ func _refresh_stores() -> void:
 				Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4), 2.4, at, kind != "bulk")
 		var foot := Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4)
 		ItemLook.look_box(_stores, AABB(at - Vector3(foot.x * 0.5, 0.0, foot.y * 0.5), Vector3(foot.x, maxf(h, 0.2), foot.y)),
-				{"component": str(c["item"]), "condition": float(c.get("condition", 1.0)), "crate_id": id})
+				{"component": str(c["item"]), "condition": float(c.get("condition", 1.0)), "crate_id": id, "qty": int(c["qty"]),
+				"look_id": ItemLook.look_id(str(c["item"]), str(c.get("shape", "")))})
 		var dest := _bus.place_for(str(c["item"]))
 		var tag := _tag("%s  x%d\n%s  ->  %s" % [c["name"], int(c["qty"]), str(c["grade"]).to_upper(), dest if dest != "" else "NO SPACE"],
 				at + Vector3(0, h + 0.25, 0), 0.09, Vector3(0, 0, 1), _stores)
