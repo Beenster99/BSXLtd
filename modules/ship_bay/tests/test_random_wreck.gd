@@ -105,6 +105,24 @@ func run_tests() -> void:
 	check(bus.try_position(s.slot_id, s.fitted), "and goes back in its slot")
 	await get_tree().physics_frame
 	check(shapes.all(func(cs: CollisionShape3D) -> bool: return not cs.disabled), "put back, it comes back")
+	# Looking at it tells everything about it (Tools, for beenster: "see all the information
+	# about any object on the wreck when i look at it").
+	var cs0: CollisionShape3D = shapes[0]
+	var body := cs0.get_parent() as CollisionObject3D
+	var shape_idx := -1
+	for o: int in body.get_shape_owners():
+		if body.shape_owner_get_owner(o) == cs0:
+			shape_idx = body.shape_owner_get_shape_index(o, 0)
+	var info := bus.inspect_at(body, shape_idx, cs0.global_position)
+	check(str(info.get("slot_id", "")) == s.slot_id and str(info.get("path", "")) in s.parts and float(info.get("mass_kg", 0.0)) > 0.0
+			and info.has("condition") and info.has("removal") and info.has("power") and info.has("fluid") and info.has("faults")
+			and str(info.get("slot_state", "")) == "positioned", "looked at, it says what it is: %s" % [info])
+	var joints: Dictionary = info.get("joints", {})
+	var total := 0
+	for k: String in joints:
+		total += int((joints[k] as Array)[1])
+	check(total == s.fasteners.size(), "and how it is held: %s" % [joints])
+	check(bus.inspect_at(bay, 0, Vector3.ZERO).is_empty() and bus.inspect_at(null, 0, Vector3.ZERO).is_empty(), "anything else says nothing")
 	for fp in s.fasteners:
 		bus.note_joint_made(fp.joint_id, 0.9)
 	# A late joiner builds the same one, with what was done to it.

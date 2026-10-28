@@ -20,6 +20,7 @@ const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 const FileShip := preload("res://modules/ship_bay/internal/ships/file_ship_model.gd")
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
+const StorageLayout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 ## How far Use (F) reaches from the camera, metres.
 const USE_REACH := 3.5
 
@@ -43,6 +44,8 @@ var colliders: Dictionary = {}
 var markers: Dictionary = {}
 ## joint_id -> its joint's path in the ship's file (a ship built from one).
 var _joint_paths: Dictionary = {}
+## CollisionShape3D -> its part's id in a file ship's model (built on the first inspect).
+var _shape_parts: Dictionary = {}
 var _bus: ShipBayBus
 var _tight_mat := _quiet_ring()
 var _loose_mat := _tight_mat
@@ -267,6 +270,8 @@ func _show_ship(def: ShipDefinition) -> void:
 	ItemLook.part_source = _part_shape
 	if _bus:
 		_bus.part_info_source = _part_info
+		_bus.inspect_source = _inspect
+	_shape_parts = {}
 	_build_access()
 	for s in def.slots:
 		for f in s.fasteners:
@@ -575,6 +580,105 @@ func _part_info(slot_id: String) -> Dictionary:
 			top = part.mass
 			material = part.material
 	return {} if kg <= 0.0 else {"mass": snappedf(kg, 0.1), "material": material}
+
+
+const FAULT_WORDS := {PartData.Fault.DEAD_LAMP: "dead lamp", PartData.Fault.BREACHED: "breached",
+		PartData.Fault.BLOWN_SCREEN: "blown screen", PartData.Fault.CRACKED: "cracked",
+		PartData.Fault.KINKED: "kinked", PartData.Fault.DOOR_HANGING: "door hanging",
+		PartData.Fault.DOOR_OFF: "door off"}
+const JOINT_WORDS := ["weld", "rivet", "bolt", "connector", "spot"]
+
+
+## ShipBayBus.inspect_at for the ship in this bay: the part a hit on the ship's body landed
+## on, everything the file and the bay know of it; {} when the hit is on something else.
+func _inspect(collider: Object, shape_idx: int, _point: Vector3) -> Dictionary:
+	if not model is FileShip or _bus == null or _bus.ship == null or not collider is CollisionObject3D:
+		return {}
+	var body := collider as CollisionObject3D
+	if not is_instance_valid(ship_root) or not ship_root.is_ancestor_of(body):
+		return {}
+	var owner_id := body.shape_find_owner(shape_idx)
+	if owner_id < 0:
+		return {}
+	var shape_node: Object = body.shape_owner_get_owner(owner_id)
+	var im: VsShipImport = (model as FileShip).importer
+	if _shape_parts.is_empty():
+		var pm := im.kit.model
+		for id: int in pm._colliders:
+			_shape_parts[pm._colliders[id]] = id
+		for id: int in pm._extra_colliders:
+			for c: Object in pm._extra_colliders[id]:
+				_shape_parts[c] = id
+	if not _shape_parts.has(shape_node):
+		return {}
+	var part: PartData = im.kit.model.parts.get(int(_shape_parts[shape_node]))
+	if part == null:
+		return {}
+	return part_report(part, im)
+
+
+## Everything about one part of the ship in the bay (inspect_at's keys).
+func part_report(part: PartData, im: VsShipImport) -> Dictionary:
+	var slot: MountSlot = null
+	for s in _bus.ship.slots:
+		if s.parts.has(part.path):
+			slot = s
+			break
+	var entry: Dictionary = (WreckMaker.damage_of(_bus.ship.file).get("parts", {}) as Dictionary).get(part.path, {})
+	var cond: Dictionary = entry.get("condition", {})
+	var wear := float(cond.get("wear", part.wear))
+	var scorch := float(cond.get("scorch", part.scorch))
+	var condition := _bus.fitted_condition(slot.slot_id) if slot else ShipBayBus.wreck_part_condition(wear, scorch)
+	var faults: Array[String] = []
+	for f: int in FAULT_WORDS:
+		if part.faults & f != 0:
+			faults.append(str(FAULT_WORDS[f]))
+	var joints := {}
+	if slot:
+		for f in slot.fasteners:
+			var tally: Array = joints.get(f.kind, [0, 0])
+			tally[1] += 1
+			if _bus.is_joint_tight(f.joint_id):
+				tally[0] += 1
+			joints[f.kind] = tally
+	else:
+		for path: String in im.joints_by_path:
+			var c: ConnectionData = im.joints_by_path[path]
+			if c.part_a == part.id or c.part_b == part.id:
+				var word: String = JOINT_WORDS[c.kind] if c.kind < JOINT_WORDS.size() else "joint"
+				var tally: Array = joints.get(word, [0, 0])
+				tally[1] += 1
+				if c.health > 0.0:
+					tally[0] += 1
+				joints[word] = tally
+	var items := StorageLayout.items()
+	var item: String = slot.fitted if slot and items.has(slot.fitted) else part.part_name
+	var removal := part.removal
+	return {
+		"slot_id": slot.slot_id if slot else "",
+		"slot_state": str(ShipBayBus.SlotState.keys()[_bus.get_slot_state(slot.slot_id)]).to_lower() if slot else "",
+		"path": part.path,
+		"name": part.part_name,
+		"display_name": slot.display_name if slot and slot.display_name != "" else part.part_name.capitalize(),
+		"kind": str(PartData.Kind.keys()[part.kind]).to_lower(),
+		"category": str(items.get(item, {}).get("category", "")),
+		"material": part.material,
+		"mass_kg": snappedf(part.mass, 0.1),
+		"value_new": snappedf(part.value, 1.0),
+		"value_now": snappedf(part.value * condition * PartData.REMOVAL_VALUE[removal], 1.0),
+		"condition": condition,
+		"wear": wear,
+		"scorch": scorch,
+		"removal": str(PartData.Removal.keys()[removal]).to_lower(),
+		"faults": faults,
+		"power": str(PartData.Power.keys()[part.power]).to_lower(),
+		"power_level": part.source_level() if part.power == PartData.Power.SOURCE else 0.0,
+		"fluid": part.fluid,
+		"litres": snappedf(part.fluid_capacity * part.fluid_level, 0.1),
+		"capacity_l": part.fluid_capacity,
+		"hazard": part.kind == PartData.Kind.HAZARD,
+		"joints": joints,
+	}
 
 
 static func _ship_xform(node: Node3D, root: Node3D) -> Transform3D:

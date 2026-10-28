@@ -1163,6 +1163,25 @@ func trolley_deck_position(trolley_id: String) -> Variant:
 ## bay, so a part off a wreck that the catalogue doesn't list still weighs what it did.
 var part_info_source := Callable()
 
+## Set by the bay: inspect_at's answer for a hit on the ship in the bay.
+var inspect_source := Callable()
+
+
+## Tools: everything known about the part a world-space aim hit landed on, when the hit is
+## on the ship or wreck in the bay; {} for anything else. Keys: slot_id ("" when no slot
+## holds it), slot_state (FITTED... as a word, "" with no slot), path, name, display_name,
+## kind (hull, frame, hazard, conduit, component, glass), category (the stores' category,
+## "" if they don't keep it), material, mass_kg, value_new and value_now (credits), condition
+## (0..1, as the bay reads it), wear and scorch (0..1), removal (attached, intact, forced,
+## cut), faults (words), power (none, source, conductor, switch, consumer), power_level
+## (0..1 a source puts out, else 0), fluid ("" for none), litres and capacity_l, hazard
+## (bool), joints {kind: [tight, total]} (the slot's own bolts, rivets and welds).
+func inspect_at(collider: Object, shape_idx: int, point: Vector3) -> Dictionary:
+	if not inspect_source.is_valid() or collider == null:
+		return {}
+	var out: Variant = inspect_source.call(collider, shape_idx, point)
+	return out if out is Dictionary else {}
+
 
 func part_shape_key(slot_id: String) -> String:
 	if ship == null or slot_id == "":
