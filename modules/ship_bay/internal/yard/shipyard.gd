@@ -102,9 +102,40 @@ const SPOTS := {
 	# deck height (EmitterRig.DECK_H), +X (the coil, then the test mass rail) to the south,
 	# its worker to the west.
 	"rig_emitter": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(31.3, 0.95, 14.6)),
+	# (With "ship_bay.upgrade_hall" on, the rig stands in the upgrade hall: UPGRADE_SPOTS.)
 	# The plasma cutting bed (Tools' machine) in the middle of the plate hall west of
 	# Deliveries, its long side along z, the operator's screen side to the north.
 	"cutting_bed": Transform3D(Basis.IDENTITY, Vector3(-64.8, 0, -35.6)),
+}
+## The upgrade hall (beenster, 0.3.26: "move the field sweep machine to a new hall where we
+## will have other upgrade rigs"): a free-standing shed east of Store 2, north of the crusher
+## house, reached from the front strip by a path up the crusher house's east end to a roller
+## door at the east end of its south wall. Its floor (x, z), height, the door (centre x,
+## width, height), metres.
+const UPGRADE_HALL := Rect2(62.0, -46.0, 36.0, 34.0)
+const UPGRADE_H := 9.0
+const UPGRADE_DOOR := Vector3(93.0, 7.0, 6.0)
+## Its rig bays, one per rig the Component Upgrades plan names: [spot id, name, what it takes,
+## the plan's stage it comes in ("" built), the bay's middle (x, z)]. Each bay is UPGRADE_BAY
+## across (x) and along (z); the aisle from the door runs up the east side.
+const UPGRADE_BAYS := [
+	["rig_emitter", "EMITTER FRAME", "ATTRACTOR COILS", "", Vector2(70.0, -22.0)],
+	["rig_tank", "TANK BENCH", "TANKS AND PUMPS", "U2", Vector2(81.0, -22.0)],
+	["rig_engine", "ENGINE STAND", "MAIN ENGINES", "U2", Vector2(70.0, -38.0)],
+	["rig_drive", "DRIVE CRADLE", "QUANTUM DRIVES", "U2", Vector2(81.0, -38.0)],
+	["rig_sensor", "SENSOR AND WINCH FRAME", "RADAR, SURVEY, WINCH, NETS", "U4", Vector2(92.0, -38.0)],
+]
+const UPGRADE_BAY := Vector2(9.0, 12.0)
+## The rigs' places in the upgrade hall, as SPOTS gives them (a bay still to come has its
+## bay's middle on the floor, +Z towards the aisle). The emitter frame rig's deck middle at
+## deck height, +X (the coil, then the test mass rail) to the south, its worker to the west,
+## as it stood in Pre-assembly.
+const UPGRADE_SPOTS := {
+	"rig_emitter": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(70.0, 0.95, -24.0)),
+	"rig_tank": Transform3D(Basis.IDENTITY, Vector3(81.0, 0, -22.0)),
+	"rig_engine": Transform3D(Basis.IDENTITY, Vector3(70.0, 0, -38.0)),
+	"rig_drive": Transform3D(Basis.IDENTITY, Vector3(81.0, 0, -38.0)),
+	"rig_sensor": Transform3D(Basis.IDENTITY, Vector3(92.0, 0, -38.0)),
 }
 ## Camera views for screenshots and a quick look round: id -> [eye, target].
 const VIEWS := {
@@ -132,6 +163,7 @@ const VIEWS := {
 	"storage_aisle": [Vector3(-11.1, 1.7, -25.6), Vector3(-11.1, 3.2, -42.0)],
 	"storage_aisle_d": [Vector3(-5.7, 1.7, -25.2), Vector3(-5.7, 2.6, -42.0)],
 	"plate_hall": [Vector3(-52.5, 6.5, -21.5), Vector3(-70.0, 1.0, -36.0)],
+	"upgrade_hall": [Vector3(95.5, 4.5, -14.5), Vector3(74.0, 0.5, -32.0)],
 	"storage_bins": [Vector3(-6.4, 1.7, -27.4), Vector3(-3.65, 1.4, -32.5)],
 	"storage_bulk": [Vector3(-27.0, 6.5, -25.0), Vector3(-42.0, 1.5, -37.0)],
 	"storage_heavy": [Vector3(-44.0, 2.0, -25.4), Vector3(-44.0, 3.5, -40.0)],
@@ -264,6 +296,8 @@ func _ready() -> void:
 	_build_prep()
 	_build_plate_hall()
 	_build_preassembly()
+	if Flags.is_on("ship_bay.upgrade_hall"):
+		_build_upgrade_hall()
 	_tag_rooms()
 	_build_courtyard()
 	_build_crane()
@@ -296,7 +330,7 @@ func _ready() -> void:
 	add_child(yard_ships)
 	if Flags.is_on("ship_bay.emitter_rig"):
 		emitter_rig = EmitterRig.new()
-		var rig_spot: Transform3D = SPOTS["rig_emitter"]
+		var rig_spot := spot("rig_emitter")
 		emitter_rig.transform = Transform3D(rig_spot.basis, rig_spot.origin - Vector3(0, EmitterRig.DECK_H, 0))
 		add_child(emitter_rig)
 	if apron and Flags.is_on("ship_bay.dolly"):
@@ -449,7 +483,22 @@ static func room_at(point: Vector3) -> String:
 	for id: String in ROOMS:
 		if (ROOMS[id].box as AABB).has_point(point):
 			return id
+	if Flags.is_on("ship_bay.upgrade_hall") and upgrade_box().has_point(point):
+		return "upgrades"
 	return ""
+
+
+## A work place by id (SPOTS, or UPGRADE_SPOTS with the upgrade hall built), Identity for none.
+static func spot(id: String) -> Transform3D:
+	if Flags.is_on("ship_bay.upgrade_hall") and UPGRADE_SPOTS.has(id):
+		return UPGRADE_SPOTS[id]
+	return SPOTS.get(id, Transform3D.IDENTITY)
+
+
+## The upgrade hall's inside (not one of ROOMS: no doorway joins it to the halls).
+static func upgrade_box() -> AABB:
+	var r := UPGRADE_HALL
+	return AABB(Vector3(r.position.x, 0, r.position.y), Vector3(r.size.x, UPGRADE_H, r.size.y))
 
 
 ## Hands control to another module (off) or takes it back (on). Off, the walker stands still
@@ -1503,11 +1552,14 @@ func _build_plate_hall() -> void:
 ## each): a node per hall at the yard origin, in group "gfx_room", meta "gfx_box" its
 ## inside. The bay is the open courtyard, so it has none.
 func _tag_rooms() -> void:
-	for id: String in ["deliveries", "stock", "prep", "preassembly", "plates"]:
+	var ids := ["deliveries", "stock", "prep", "preassembly", "plates"]
+	if Flags.is_on("ship_bay.upgrade_hall"):
+		ids.append("upgrades")
+	for id: String in ids:
 		var room := Node3D.new()
 		room.name = "Room_" + id
 		room.add_to_group("gfx_room")
-		room.set_meta("gfx_box", ROOMS[id]["box"])
+		room.set_meta("gfx_box", upgrade_box() if id == "upgrades" else ROOMS[id]["box"])
 		room.set_meta("gfx_id", "room:" + id)
 		add_child(room)
 
@@ -1594,6 +1646,106 @@ func _build_crusher_house() -> void:
 			lamp.set_meta("gfx_no_shadow", true)
 			add_child(lamp)
 			_put(_box(Vector3(1.4, 0.12, 0.4)), Transform3D(Basis(), p + Vector3(0, 0.1, 0)), _glow_mat(Color(1.0, 0.93, 0.82), 2.5), false)
+
+
+## The upgrade hall: a clad shed on portal frames standing on its own (UPGRADE_HALL), a
+## roller door at the east end of its south wall onto a concrete path down the crusher
+## house's east end to the front strip. Inside, an epoxy floor with a hazard-bordered bay
+## for each rig (UPGRADE_BAYS), its name and what it takes painted on the floor, the bays
+## still to come marked with their stage; high-bay lamps over them.
+func _build_upgrade_hall() -> void:
+	var r := UPGRADE_HALL
+	var hh := UPGRADE_H
+	var door := UPGRADE_DOOR
+	var t := 0.3
+	var top := hh - 0.02
+	var clad := _paint(Color(0.34, 0.38, 0.44), 0.4, 0.55, "satin_paint")
+	# The floor: epoxy inside, a little under the walls; the path out to the front strip.
+	_block(Vector3(r.get_center().x, 0.0024, r.get_center().y), Vector3(r.size.x + 0.1, 0.04, r.size.y + 0.1),
+			_surface(_paint(Color(0.5, 0.53, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"), false)
+	_hall_joints(r, 0.0229)
+	var path := Rect2(88.6, r.end.y + 0.05, 10.4, 24.45 - (r.end.y + 0.05))
+	_block(Vector3(path.get_center().x, -0.01, path.get_center().y), Vector3(path.size.x, 0.04, path.size.y), _concrete, false)
+	_slab_joints(path, 0.0)
+	var link := Rect2(90.3, 24.45, 8.7, 35.0 - 24.45)
+	_block(Vector3(link.get_center().x, -0.01, link.get_center().y), Vector3(link.size.x, 0.04, link.size.y), _concrete, false)
+	_slab_joints(link, 0.0)
+	# Walls: north, west, east whole; the south either side of the door and over it.
+	_block(Vector3(r.get_center().x, top * 0.5, r.position.y + t * 0.5), Vector3(r.size.x, top, t), clad)
+	_block(Vector3(r.position.x + t * 0.5, top * 0.5, r.get_center().y), Vector3(t, top, r.size.y - t * 2.0), clad)
+	_block(Vector3(r.end.x - t * 0.5, top * 0.5, r.get_center().y), Vector3(t, top, r.size.y - t * 2.0), clad)
+	var zs := r.end.y - t * 0.5
+	var dl := door.x - door.y * 0.5
+	var dr := door.x + door.y * 0.5
+	_block(Vector3((r.position.x + dl) * 0.5, top * 0.5, zs), Vector3(dl - r.position.x, top, t), clad)
+	_block(Vector3((dr + r.end.x) * 0.5, top * 0.5, zs), Vector3(r.end.x - dr, top, t), clad)
+	_block(Vector3(door.x, (door.z + top) * 0.5, zs), Vector3(door.y, top - door.z, t), clad)
+	# The roof, overhanging all round, and an orange fascia along its front.
+	_block(Vector3(r.get_center().x, hh + 0.15, r.get_center().y), Vector3(r.size.x + 0.6, 0.3, r.size.y + 0.6),
+			_paint(Color(0.3, 0.32, 0.34), 0.4, 0.6, "satin_paint"))
+	_put(_box(Vector3(r.size.x + 0.64, 0.5, 0.1)), Transform3D(Basis(), Vector3(r.get_center().x, hh + 0.1, r.end.y + 0.35)), _trim, false)
+	# Portal frames: a column at each side and a rafter across every 6 m.
+	var col := _lib("ibeam/upgrade_col", func() -> PartShapes.PartShape:
+			return PartShapes.i_beam(top - 0.5, 0.4, 0.5, 0.03))
+	var rafter := _lib("ibeam/upgrade_rafter", func() -> PartShapes.PartShape:
+			return PartShapes.i_beam(r.size.y - t * 2.0 - 0.02, 0.4, 0.5, 0.03))
+	var upright := Basis(Vector3(0, 1, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1))
+	var x := r.position.x + 6.0
+	while x < r.end.x - 1.0:
+		for z: float in [r.position.y + t + 0.27, r.end.y - t - 0.27]:
+			if z > r.end.y - 1.0 and absf(x - door.x) < door.y * 0.5 + 0.4:
+				continue   # no column in the doorway
+			_put(col, Transform3D(upright, Vector3(x, (top - 0.5) * 0.5, z)), _frame, false)
+		_put(rafter, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(x, top - 0.26, r.get_center().y)), _frame, false)
+		x += 6.0
+	# The rolled-up shutter over the door and hazard stripes up its jambs.
+	_put(_lib("prism/upgrade_shutter", func() -> PartShapes.PartShape:
+			return PartShapes.prism(16, 0.45, door.y + 0.6)), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(door.x, door.z + 0.5, r.end.y - t - 0.5)), _frame, false)
+	for k: float in [-1.0, 1.0]:
+		for i in 5:
+			_put(_box(Vector3(0.2, 0.6, 0.06)), Transform3D(Basis(), Vector3(door.x + k * (door.y * 0.5 + 0.1), 0.4 + i * 1.2, r.end.y + 0.031)), _hazard, false)
+	_sign("UPGRADE HALL", Vector3(door.x - 14.0, door.z + 0.9, r.end.y + 0.12), 0.0, 1.2)
+	# The bays: a hazard border each, the name and what it takes painted at the aisle end,
+	# the ones to come with their stage.
+	var line := _paint(HAZARD, 0.0, 0.7, "hazard_paint")
+	var b := UPGRADE_BAY
+	for bay: Array in UPGRADE_BAYS:
+		var c: Vector2 = bay[4]
+		for k: float in [-0.5, 0.5]:
+			_block(Vector3(c.x + b.x * k, 0.026, c.y), Vector3(0.12, 0.004, b.y), line, false)
+			_block(Vector3(c.x, 0.026, c.y + b.y * k), Vector3(b.x + 0.12, 0.004, 0.12), line, false)
+		var built := str(bay[3]) == ""
+		var words := [str(bay[1]), str(bay[2])] if built else [str(bay[1]), str(bay[2]), "COMING IN " + str(bay[3])]
+		for n in words.size():
+			var paint := Label3D.new()
+			paint.name = "BayPaint_%s_%d" % [bay[0], n]
+			paint.text = words[n]
+			paint.font = ShipKit.mono_font()
+			paint.font_size = 96
+			paint.pixel_size = (0.5 if n == 0 else 0.28) / 96.0
+			paint.modulate = Color(0.95, 0.75, 0.1) if n != 2 else Color(0.9, 0.9, 0.88)
+			paint.outline_size = 0
+			paint.shaded = true
+			paint.double_sided = false
+			paint.width = (b.x - 0.8) / paint.pixel_size
+			paint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			paint.position = Vector3(c.x, 0.03, c.y + b.y * 0.5 - 0.9 - n * 0.7)
+			paint.rotation = Vector3(-PI * 0.5, 0, 0)
+			add_child(paint)
+	# High-bay lamps over the bays and the aisle (shadowless; they burn all day).
+	for lp: Vector2 in [Vector2(70.0, -40.0), Vector2(81.0, -40.0), Vector2(92.0, -40.0), Vector2(70.0, -30.0), Vector2(81.0, -30.0),
+			Vector2(92.0, -30.0), Vector2(70.0, -19.0), Vector2(81.0, -19.0), Vector2(93.0, -19.0)]:
+		var p := Vector3(lp.x, top - 1.0, lp.y)
+		var lamp := OmniLight3D.new()
+		lamp.position = p
+		lamp.light_color = Color(1.0, 0.93, 0.82)
+		lamp.light_energy = 3.0
+		lamp.omni_range = 22.0   # m
+		lamp.omni_attenuation = 0.6
+		lamp.shadow_enabled = false
+		lamp.set_meta("gfx_no_shadow", true)
+		add_child(lamp)
+		_put(_box(Vector3(1.4, 0.12, 0.4)), Transform3D(Basis(), p + Vector3(0, 0.1, 0)), _glow_mat(Color(1.0, 0.93, 0.82), 2.5), false)
 
 
 func _build_courtyard() -> void:

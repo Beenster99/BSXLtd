@@ -497,9 +497,11 @@ func _obstacles(t: Trolley) -> Array:
 		# Riding on this trolley's deck is not being in its way.
 		if flat.length() > t.radius() or p.y < 0.5:
 			out.append([p, 0.4])
+	# Every other trolley down its whole length, not just its middle.
 	for o: Trolley in trolleys.values():
 		if o != t:
-			out.append([o.global_position, o.radius()])
+			for p2 in o.footprint():
+				out.append([p2, o.radius()])
 	return out
 
 
@@ -1476,7 +1478,8 @@ func _go(t: Trolley, to: Vector3, yaw: float, around := false) -> bool:
 	if around:
 		for o: Trolley in trolleys.values():
 			if o != t:
-				avoid.append([o.global_position, o.radius() + 0.7])
+				for p in o.footprint():
+					avoid.append([p, o.radius() + 0.7])
 	t.path = nav.route(t.global_position, to, t.clearance(), avoid)
 	t.final_yaw = yaw
 	var far := Vector2(to.x - t.global_position.x, to.z - t.global_position.z).length() > 0.3
@@ -1517,8 +1520,10 @@ func _give_way_point(t: Trolley) -> Vector3:
 	var near: Trolley = null
 	var near_d := INF
 	for o: Trolley in trolleys.values():
-		var d := o.global_position.distance_to(t.global_position)
-		if o != t and d < near_d:
+		if o == t:
+			continue
+		var d := t.gap_to(o)
+		if d < near_d:
 			near_d = d
 			near = o
 	if near == null:
@@ -1532,7 +1537,10 @@ func _give_way_point(t: Trolley) -> Vector3:
 		for turn: float in [0.0, 0.8, -0.8, 1.57, -1.57]:
 			var p := t.global_position + away.rotated(Vector3.UP, turn) * dist
 			p.y = 0.0
-			if nav.is_free(p, t.clearance()) and p.distance_to(near.global_position) > near.radius() + t.radius():
+			var clear := true
+			for q in near.footprint():
+				clear = clear and p.distance_to(q) > near.radius() + t.radius()
+			if nav.is_free(p, t.clearance()) and clear:
 				return p
 	return Vector3.INF
 
@@ -1543,7 +1551,7 @@ func _has_way(t: Trolley) -> bool:
 	for o: Trolley in trolleys.values():
 		if o == t:
 			continue
-		if o.global_position.distance_to(t.global_position) > o.radius() + t.radius() + 0.9:
+		if t.gap_to(o) > 0.9:
 			continue
 		# One standing still (parked, unloading) won't move off: go round it.
 		if o.path.is_empty() and o.drive_input == Vector2.ZERO:

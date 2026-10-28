@@ -410,6 +410,20 @@ func run_tests() -> void:
 	var rest := crate.global_position.y - 0.2 - top.y
 	check(absf(rest) < 0.03, "a box set down on a trolley rests on its deck: %.3f m over" % rest)
 	crate.queue_free()
+	# A trolley driving across the end of a long one stops short of it, not just short of its
+	# middle (0.3.26: "trolleys are clashing too much").
+	fleet.set_physics_process(false)
+	var small: Node3D = (fleet.get("trolleys") as Dictionary)["s"]
+	var at := court.get_center()
+	at.y = 0.0
+	low.call("pose", at, 0.0, 0.7)
+	small.call("pose", at + Vector3(8, 0, 3.5), PI * 0.5, 0.7)
+	small.set("path", PackedVector3Array([at + Vector3(-8, 0, 3.5)]))
+	for i in 600:
+		small.call("step", 1.0 / 60.0, fleet.call("_obstacles", small))
+	var tail_gap := float(small.call("gap_to", low))
+	check(tail_gap > 0.0 and tail_gap < 1.5, "a trolley crossing the large one's tail stops short of it: %.2f m apart" % tail_gap)
+	fleet.set_physics_process(true)
 	bus.crate_carried.disconnect(on_carry)
 	yard.queue_free()
 	await frames(1)

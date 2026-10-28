@@ -162,6 +162,32 @@ func radius() -> float:
 	return float(spec["radius"])
 
 
+## Where it stands as a row of circles of radius() down its length (yard space, on the
+## floor): a long trolley is 8.8 m from nose to tail, so its centre alone let others drive
+## into its ends (beenster, 0.3.26: "trolleys are clashing too much"). `at`/`yaw` ask
+## where they would be standing there instead.
+func footprint(at := Vector3.INF, yaw_at := NAN) -> PackedVector3Array:
+	var here := global_position if at == Vector3.INF else at
+	var y := _yaw if is_nan(yaw_at) else yaw_at
+	var half := maxf(float((spec["deck"] as Vector2).y) * 0.5 - radius(), 0.0)
+	var n := 1 + ceili(half * 2.0 / radius())
+	var along := -Basis(Vector3.UP, y).z
+	var out := PackedVector3Array()
+	for i in n:
+		var p := here + along * (lerpf(-half, half, float(i) / (n - 1)) if n > 1 else 0.0)
+		out.append(Vector3(p.x, 0.0, p.z))
+	return out
+
+
+## How far apart its footprint and `o`'s are, edge to edge, metres (negative overlapping).
+func gap_to(o: Node3D) -> float:
+	var best := INF
+	for a in footprint():
+		for b in o.call("footprint"):
+			best = minf(best, a.distance_to(b))
+	return best - radius() - float(o.call("radius"))
+
+
 ## How much room it needs either side on a route, metres: the bigger trolleys squeeze down
 ## the bulk floor's lanes with a hand's width to spare.
 func clearance() -> float:
@@ -275,23 +301,30 @@ func step(delta: float, obstacles: Array) -> void:
 		_speed = 0.0
 	else:
 		_speed = move_toward(_speed, 0.0, accel * 2.0 * delta)
-	var forward := -Basis(Vector3.UP, _yaw).z
-	# Something close ahead (a person, another trolley): stop and wait.
+	# Something close ahead of its nose (a person, another trolley's length): stop and wait.
 	var held := false
-	var going := signf(_speed) if _speed != 0.0 else 1.0
-	for o: Array in obstacles:
-		var away: Vector3 = o[0] - here
-		away.y = 0.0
-		var along := away.dot(forward * going)
-		var aside := sqrt(maxf(away.length_squared() - along * along, 0.0))
-		# Only what is in the lane ahead counts: passing beside something is fine.
-		if away.length() - float(o[1]) - radius() < 0.6 and along > 0.0 and aside < float(o[1]) + radius() + 0.2 and want != 0.0:
-			_speed = 0.0
-			held = true
-			break
+	if want != 0.0 and not _lane_clear(here, signf(_speed) if _speed != 0.0 else 1.0, obstacles):
+		_speed = 0.0
+		held = true
+	var forward := -Basis(Vector3.UP, _yaw).z
 	blocked_for = blocked_for + delta if held else 0.0
 	var next := here + forward * _speed * delta
 	global_transform = Transform3D(Basis(Vector3.UP, _yaw), Vector3(next.x, 0.0, next.z))
+
+
+## Is the lane ahead of its nose (going 1) or tail (-1) clear of every obstacle? Only what
+## is in the lane counts: passing beside something is fine.
+func _lane_clear(here: Vector3, going: float, obstacles: Array) -> bool:
+	var forward := -Basis(Vector3.UP, _yaw).z * going
+	var nose := maxf(float((spec["deck"] as Vector2).y) * 0.5 - radius(), 0.0)
+	for o: Array in obstacles:
+		var away: Vector3 = o[0] - here
+		away.y = 0.0
+		var along := away.dot(forward)
+		var aside := sqrt(maxf(away.length_squared() - along * along, 0.0))
+		if along > 0.0 and along - nose - float(o[1]) - radius() < 0.6 and aside < float(o[1]) + radius() + 0.02:
+			return false
+	return true
 
 
 ## Raises or lowers the deck toward deck_target (every peer runs this), and slides the

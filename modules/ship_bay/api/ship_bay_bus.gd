@@ -127,7 +127,7 @@ const DEBUG_SECTION := "ship_bay"
 ## Component rigs in the yard (Component Upgrades): id -> {kind, takes (a unit family: unit
 ## ids start with it), room}. The rig's place is shipyard_spot(id): origin on its deck's
 ## middle at deck height, +X along the unit, +Z towards the worker.
-const RIGS := {"rig_emitter": {"kind": "emitter_frame", "takes": "attractor_coil", "room": "preassembly"}}
+const RIGS := {"rig_emitter": {"kind": "emitter_frame", "takes": "attractor_coil", "room": "upgrades"}}
 ## Designs that can stand on the apron for a look (YardShips.PLACES).
 const YARD_SHIP_DESIGNS: PackedStringArray = ["manta"]
 const SlotTracker := preload("res://modules/ship_bay/internal/slot_tracker.gd")
@@ -409,7 +409,7 @@ func shipyard_rooms() -> Dictionary:
 ## A clear work place in the shipyard ("bench_preassembly", "bench_prep"): origin on the
 ## floor, +Z towards where the worker stands. Identity for an unknown id.
 func shipyard_spot(id: String) -> Transform3D:
-	return Shipyard.SPOTS.get(id, Transform3D.IDENTITY)
+	return Shipyard.spot(id)
 
 
 ## Where the extinguishers hang at the shipyard's fire points (Tools hangs real ones there
