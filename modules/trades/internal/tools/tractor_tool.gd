@@ -8,6 +8,8 @@ extends TradesTool
 ## (held like the drill).
 
 const GRIP := Vector3(0, 0.2, 0.11)
+## Where the hand really closes on it (trades.arm_fit): the rubber grip under the back end.
+const HAND_GRIP := Vector3(0, -0.156, 0.08)
 const BEAM_COLOR := Color(0.35, 0.85, 1.0)
 const ALIGNED_COLOR := Color(0.45, 1.0, 0.55)
 
@@ -32,6 +34,12 @@ func _ready() -> void:
 	name = "Tractor"
 	grip = GRIP
 	hold = Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-70.0)), Vector3(0, -0.02, 0.0))
+	if Flags.is_on("trades.arm_fit"):
+		# Held like the drill, whose body runs up +Y from its tip: this one's runs down -Y
+		# from the lens, so it is turned over about its length and gripped by its handle
+		# (GRIP was 35 cm off it, and the tool floated beside the glove).
+		grip = HAND_GRIP
+		hold = hold * Transform3D(Basis(Vector3.BACK, PI), Vector3.ZERO)
 	var steel := steel()
 	var dark := anodised()
 	var body := body()
@@ -65,7 +73,8 @@ func _ready() -> void:
 	box(Vector3(0.058, 0.04, 0.03), Vector3(0, -0.17, 0.0), dark)
 	if Flags.is_on("trades.tool_display"):
 		# The display's arm on the coils' left side: the back end is too near the eye in hand.
-		add_screen(Vector3(-0.031, -0.058, 0), Vector3.LEFT, Vector2(0.05, 0.034), 9, 3, Vector3.UP)
+		var side := -1.0 if not Flags.is_on("trades.arm_fit") else 1.0
+		add_screen(Vector3(0.031 * side, -0.058, 0), Vector3.RIGHT * side, Vector2(0.05, 0.034), 9, 3, Vector3.UP)
 	else:
 		add_screen(Vector3(0, -0.1702, 0.0151), Vector3.BACK, Vector2(0.05, 0.034), 9, 3, Vector3.UP)
 	# Pistol grip, trigger, and the battery pack under it.

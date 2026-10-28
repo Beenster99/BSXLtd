@@ -272,7 +272,7 @@ func clang(speed_lost: float) -> void:
 	var db := lerpf(CLANG_QUIET_DB, CLANG_FULL_DB, sqrt(hard)) + heavy * 4.0
 	var pitch := lerpf(1.35, 0.6, heavy) * randf_range(0.94, 1.06)
 	var p := AudioStreamPlayer3D.new()
-	p.stream = TradesSounds.clang(heavy)
+	p.stream = TradesSounds.clang(heavy, hard)
 	p.volume_db = db
 	p.pitch_scale = pitch
 	p.unit_size = 6.0

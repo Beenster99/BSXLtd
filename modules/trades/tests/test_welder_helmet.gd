@@ -28,6 +28,8 @@ func run_tests() -> void:
 	var was_skill := Flags.is_on("trades.weld_skill")
 	Flags.set_flag("trades.vs_tools", false)
 	Flags.set_flag("trades.weld_skill", false)
+	var was_cutter := Flags.is_on("trades.cutter_welds")
+	Flags.set_flag("trades.cutter_welds", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)
@@ -134,6 +136,7 @@ func run_tests() -> void:
 	Flags.set_flag("trades.weld_helmet", was_helmet)
 	Flags.set_flag("trades.trace_weld", was_trace)
 	Flags.set_flag("trades.helmet_toggle", was_toggle)
+	Flags.set_flag("trades.cutter_welds", was_cutter)
 
 
 ## Runs the station and the bay's shield together, as frames would.
