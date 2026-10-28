@@ -12,11 +12,25 @@ signal ping_received(ping: Dictionary)
 signal ping_removed(ping_id: int)
 signal held_changed(peer_id: int, held: Dictionary)
 signal avatar_added(peer_id: int, avatar: Node3D)
+signal emote_received(emote: Dictionary)
 
 const SAY := "crew.say"
 const ACTIVITY := "crew.activity"
 const PING := "crew.ping"
 const HELD := "crew.held"
+const EMOTE := "crew.emote"
+const EMOTE_GAP := 0.5  # seconds between one player's emotes, enforced on the host
+## The emote wheel, clockwise from the top: id and what it says.
+const EMOTES: Array[Dictionary] = [
+	{"id": "wave", "label": "Hello"},
+	{"id": "thumbs_up", "label": "Good"},
+	{"id": "come_here", "label": "Come here"},
+	{"id": "point", "label": "Over there"},
+	{"id": "help", "label": "Need help"},
+	{"id": "stop", "label": "Wait"},
+	{"id": "thumbs_down", "label": "No good"},
+	{"id": "cheer", "label": "Done!"},
+]
 const HELD_KEYS := 8
 const HELD_TEXT := 48
 const PING_LIFE := 10.0
@@ -29,6 +43,7 @@ const COLOURS: Array[Color] = [Color("e8792b"), Color("6fc8e8"), Color("7fd47a")
 const LOG_SIZE := 100
 const MAX_CHARS := 200
 const AVATAR := preload("res://modules/multiplayer/internal/crew/crew_avatar.gd")
+const WHEEL := preload("res://modules/multiplayer/internal/crew/emote_wheel.gd")
 
 var net: MultiplayerBus
 var _log: Array[Dictionary] = []  # {"time", "peer", "name", "text"}
@@ -44,6 +59,8 @@ var _check := 0.0
 var _pings: Array[Dictionary] = []
 var _last_ping: Dictionary = {}  # peer id -> host clock time of their last ping
 var _ping_seq := 0  # host side: ping ids
+var _last_emote: Dictionary = {}  # peer id -> host clock time of their last emote
+var wheel: CanvasLayer
 
 
 func _ready() -> void:
@@ -56,6 +73,10 @@ func _ready() -> void:
 	net.register_event(ACTIVITY, _apply_activity, _validate_activity)
 	net.register_event(PING, _apply_ping, _validate_ping)
 	net.register_event(HELD, _apply_held, _validate_held)
+	net.register_event(EMOTE, _apply_emote, _validate_emote)
+	wheel = WHEEL.new()
+	wheel.emotes = EMOTES
+	add_child(wheel)
 	net.register_snapshot_provider("crew", self)
 	for s: Signal in [net.session_started, net.session_ended, net.peer_joined, net.peer_left]:
 		s.connect(func(_a = null, _b = null) -> void: _sync_presence())
@@ -221,6 +242,50 @@ func _apply_held(p: Dictionary) -> void:
 		a.set("hands_live", bool((p.held as Dictionary).get("hands", false)))
 		a.set("crouch", bool((p.held as Dictionary).get("crouch", false)))
 	held_changed.emit(peer, (p.held as Dictionary).duplicate())
+
+
+# --- Emotes: signals to the crew -------------------------------------------------------
+
+func emote(emote_id: String) -> void:
+	net.request(EMOTE, {"emote": emote_id})
+
+
+## Opens the emote wheel (while middle mouse is held).
+func open_wheel() -> void:
+	wheel.open()
+
+
+## Closes the wheel and sends what it pointed at; gives that emote's id ("" for none).
+func close_wheel() -> String:
+	var picked: String = wheel.close()
+	if picked != "":
+		emote(picked)
+	return picked
+
+
+static func emote_label(emote_id: String) -> String:
+	for e in EMOTES:
+		if e.id == emote_id:
+			return e.label
+	return ""
+
+
+func _validate_emote(sender: int, p: Dictionary) -> Variant:
+	var id := str(p.get("emote", ""))
+	if emote_label(id) == "":
+		return "no such emote"
+	var now := net.server_time()
+	if now - float(_last_emote.get(sender, -INF)) < EMOTE_GAP:
+		return "emoting too fast"
+	_last_emote[sender] = now
+	return {"peer": sender, "name": player_name(sender), "emote": id, "label": emote_label(id), "time": now}
+
+
+func _apply_emote(p: Dictionary) -> void:
+	var a := avatar_of(int(p.peer))
+	if a:
+		a.call("play_emote", str(p.emote), str(p.label))
+	emote_received.emit(p)
 
 
 # --- Activity --------------------------------------------------------------------------

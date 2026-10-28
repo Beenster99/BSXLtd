@@ -47,6 +47,28 @@ func run_tests() -> void:
 	check(got.size() == before, "a ping with no real place is refused")
 	net.ping_received.disconnect(on_ping)
 
+	# Emotes: the wheel picks by direction, sends on let go, and holds the view still.
+	var signals: Array[Dictionary] = []
+	var on_emote := func(e: Dictionary) -> void: signals.append(e)
+	net.emote_received.connect(on_emote)
+	check(net.emotes().size() == 8 and net.emotes()[0].id == "wave", "eight emotes, Hello at the top")
+	net.open_emote_wheel()
+	check(net.emote_wheel_open() and HudSlots.pointer_claimed(), "the wheel opens and holds the view still")
+	net._crew.wheel.aim(Vector2(0, -100))
+	check(net._crew.wheel.selected() == "wave", "up picks the top slice")
+	net._crew.wheel.aim(Vector2(100, 0))
+	check(net._crew.wheel.selected() == "come_here", "right picks the third slice (clockwise)")
+	check(net.close_emote_wheel() == "come_here" and not HudSlots.pointer_claimed(), "let go sends it and frees the view")
+	check(signals.size() == 1 and signals[0].emote == "come_here" and signals[0].label == "Come here" and signals[0].peer == 1,
+			"emote reaches everyone with what it says: %s" % str(signals))
+	await _wait_real(0.6)
+	net.open_emote_wheel()
+	net._crew.wheel.aim(Vector2(5, 5))
+	check(net.close_emote_wheel() == "" and signals.size() == 1, "let go in the middle sends nothing")
+	net.emote("dance")
+	check(signals.size() == 1, "an unknown emote is refused")
+	net.emote_received.disconnect(on_emote)
+
 	HudSlots.register_holo_section(MultiplayerBus.CREW_CHANNEL, "_test_transfer", "Transfer money",
 			func(_glass: bool) -> Control: return Label.new())
 	var factory: Callable = HudSlots.holo_channel(MultiplayerBus.CREW_CHANNEL).factory
@@ -152,6 +174,13 @@ func _two_players() -> void:
 	check(await _until(func(): return a.avatar_hand(b_id) != null), "a hand that's gone doesn't break the avatar")
 	b.set_local_hands(null, null)
 	check(await _until(func(): return not bool(a.held(b_id).get("hands", true))), "hands go back to rest when unshared")
+
+	# Ben signals; Ana sees his avatar act it out.
+	await _wait_real(0.6)
+	b.emote("help")
+	check(await _until(func(): return a.avatar(b_id).call("emote") == "help"), "Ben's avatar acts out his emote")
+	var bubble := a.avatar(b_id).find_child("Bubble", true, false) as Label3D
+	check(bubble.visible and bubble.text == "NEED HELP", "a bubble over his helmet says what it means")
 
 	# The host's time of day is everyone's.
 	Settings.set_value(AlienSky.SECTION, AlienSky.KEY, 21.5)
