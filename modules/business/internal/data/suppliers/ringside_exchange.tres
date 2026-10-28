@@ -8,7 +8,7 @@ version = 2
 id = "ringside_exchange"
 display_name = "Ringside Salvage Exchange"
 parts = {}
-categories = PackedStringArray("engines", "electronics", "machinery", "cargo", "weapons", "hull", "fluids", "metal plates", "glass plates")
+categories = PackedStringArray("engines", "electronics", "machinery", "cargo", "weapons", "hull", "fluids", "metal plates", "beams", "glass plates")
 conditions = {
 "new": 0.3,
 "refurbished": 0.3,
