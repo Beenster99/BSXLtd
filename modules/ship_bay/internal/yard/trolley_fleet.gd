@@ -1682,7 +1682,8 @@ func _show_cargo() -> void:
 		var first := _bus.crate_info(load[0])
 		for cid in load:
 			var c := _bus.crate_info(cid)
-			lots.append({"item": str(c.get("item", "")), "count": int(c.get("qty", 1)), "condition": float(c.get("condition", 1.0)), "crate_id": cid})
+			lots.append({"item": ItemLook.look_id(str(c.get("item", "")), str(c.get("shape", ""))), "count": int(c.get("qty", 1)),
+					"condition": float(c.get("condition", 1.0)), "crate_id": cid})
 			mass += float(c.get("mass", 0.0)) * int(c.get("qty", 1))
 		var name := "%s x%d" % [first.get("name", ""), int(first.get("qty", 1))]
 		if load.size() > 1:
@@ -1703,7 +1704,7 @@ func beam_out(crate_id: String, to: Vector3) -> void:
 ## beam coming from `emitter`; `ends` are other trolleys that wait for it to land.
 func _beam_crate(cid: String, from: Variant, to: Variant, emitter: Trolley, ends: Array, done := Callable()) -> void:
 	var c := _bus.crate_info(cid)
-	var lots := [{"item": str(c.get("item", "")), "count": int(c.get("qty", 1)),
+	var lots := [{"item": ItemLook.look_id(str(c.get("item", "")), str(c.get("shape", ""))), "count": int(c.get("qty", 1)),
 			"look": ItemLook.look_for(float(c.get("condition", 1.0)))}]
 	var target: Variant = (to as Trolley).deck if to is Trolley else to
 	var all := ends.duplicate()

@@ -262,13 +262,13 @@ func _draw_lot() -> void:
 
 
 func _dress(node: Node3D, lot: Dictionary) -> void:
-	var key := "%s|%.2f" % [str(lot.get("item", "")), float(lot.get("mass", 0.0))]
+	var key := "%s|%s|%.2f" % [str(lot.get("item", "")), str(lot.get("shape", "")), float(lot.get("mass", 0.0))]
 	if node.get_meta("key", "") == key:
 		return
 	node.set_meta("key", key)
 	for c in node.get_children():
 		c.free()
-	var item := ItemLook.make(str(lot.get("item", "")), ItemLook.Look.RUST, float(lot.get("mass", 0.0)))
+	var item := ItemLook.make(ItemLook.look_id(str(lot.get("item", "")), str(lot.get("shape", ""))), ItemLook.Look.RUST, float(lot.get("mass", 0.0)))
 	node.add_child(item)
 	var s: Vector3 = item.get_meta("size")
 	ItemLook.look_box(node, AABB(Vector3(-s.x * 0.5, 0.0, -s.z * 0.5), s), {"component": str(lot.get("item", "")), "condition": float(lot.get("condition", 0.0))})
@@ -327,7 +327,7 @@ func _draw_crates() -> void:
 		node.name = "Crate_" + id.replace("/", "_")
 		node.position = _bus.crate_position(id) + Vector3(0, 0.15, 0)
 		_crates_root.add_child(node)
-		_dress(node, {"item": c.item, "mass": c.mass})
+		_dress(node, {"item": c.item, "mass": c.mass, "shape": c.get("shape", "")})
 		var tag := Label3D.new()
 		tag.text = "%s  x%d\nTO CRUSH  %d%%" % [c.name, int(c.qty), roundi(float(c.condition) * 100.0)]
 		tag.font = ShipKit.mono_font()
@@ -335,7 +335,7 @@ func _draw_crates() -> void:
 		tag.pixel_size = 0.0025
 		tag.outline_size = 6
 		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-		tag.position = Vector3(0, ItemLook.size_of(str(c.item), float(c.mass)).y + 0.4, 0)
+		tag.position = Vector3(0, ItemLook.size_of(ItemLook.look_id(str(c.item), str(c.get("shape", ""))), float(c.mass)).y + 0.4, 0)
 		node.add_child(tag)
 		_crate_nodes[id] = node
 

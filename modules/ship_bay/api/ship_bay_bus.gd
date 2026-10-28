@@ -1129,6 +1129,17 @@ func trolley_deck_position(trolley_id: String) -> Variant:
 	return fleet.call("deck_position", trolley_id)
 
 
+## The key a part taken off the bay's ship keeps its own shape by (ItemLook.look_id): the
+## ship (a wreck by its design and seed) and the slot. "" with no ship.
+func part_shape_key(slot_id: String) -> String:
+	if ship == null or slot_id == "":
+		return ""
+	var by := ship.ship_id
+	if ship.ship_id == WRECK_ID:
+		by = "%s@%d" % [str(bay_wreck.get("design", "")), int(bay_wreck.get("seed", 0))]
+	return "%s/%s" % [by, slot_id]
+
+
 ## The trolley under a beamed part has its deck up: the part lands on it (its driver asks).
 func land_beamed(slot_id: String, trolley_id: String, component: String, condition: float, route := "store") -> void:
 	var payload := {"slot": slot_id, "trolley": trolley_id, "component": component, "condition": condition, "route": route}
@@ -1832,7 +1843,7 @@ func _apply_line(payload: Dictionary) -> void:
 					return
 				var cond := float(c["condition"])
 				st["survey"] = {"state": "waiting", "lot": {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]),
-						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond, str(c["item"]))}}
+						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond, str(c["item"])), "shape": str(c.get("shape", ""))}}
 				_stock.crates.erase(str(payload["crate"]))
 				stock_moved = true
 			else:
@@ -1874,13 +1885,13 @@ func _apply_line(payload: Dictionary) -> void:
 				_stock.crates[_line_crate_id()] = {"order_id": "line", "item": lot["item"], "qty": int(lot["qty"]),
 						"name": lot["name"], "condition": clampf(float(lot["condition"]), 0.0, 1.0), "grade": "scrap",
 						"mass": float(lot["mass"]), "spot": -1, "carrier": "", "at": [p.x, p.y, p.z],
-						"line": "scrap", "line_id": l, "route": "grind"}
+						"line": "scrap", "line_id": l, "route": "grind", "shape": str(lot.get("shape", ""))}
 				stock_moved = true
 			elif to == "trolley":
 				# Onto the line's trolley as goods for the stores, as good as new.
 				_stock.crates[_line_crate_id()] = {"order_id": "line", "item": lot["item"], "qty": int(lot["qty"]),
 						"name": lot["name"], "condition": clampf(float(lot["condition"]), 0.0, 1.0), "grade": "refurbished",
-						"mass": float(lot["mass"]), "spot": -1, "carrier": l}
+						"mass": float(lot["mass"]), "spot": -1, "carrier": l, "shape": str(lot.get("shape", ""))}
 				stock_moved = true
 			else:
 				st[to] = {"state": "waiting", "lot": lot}
@@ -1910,7 +1921,7 @@ func _apply_line(payload: Dictionary) -> void:
 				return
 			crusher["state"] = "running"
 			crusher["lot"] = {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]), "condition": float(c["condition"]),
-					"mass": float(c["mass"])}
+					"mass": float(c["mass"]), "shape": str(c.get("shape", ""))}
 			crusher["from"] = c.get("at", [])
 			crusher["cast"] = 0
 			_stock.crates.erase(cid)
@@ -2423,7 +2434,7 @@ func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
 
 func _apply_beamed(payload: Dictionary) -> void:
 	var by := str(payload["trolley"])
-	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by)
+	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by, part_shape_key(str(payload["slot"])))
 	if _beam_claims.get(str(payload["slot"])) == by:
 		_beam_claims.erase(str(payload["slot"]))
 	_clean_routes.erase(str(payload["slot"]))

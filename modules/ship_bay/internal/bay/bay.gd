@@ -19,6 +19,7 @@ const QUIET_GLOW := 0.35
 const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 const FileShip := preload("res://modules/ship_bay/internal/ships/file_ship_model.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 ## How far Use (F) reaches from the camera, metres.
 const USE_REACH := 3.5
 
@@ -256,6 +257,7 @@ func _show_ship(def: ShipDefinition) -> void:
 		ship_root.position = Vector3(0, cradle_height, 0) + seat
 		add_child(ship_root)
 	pieces = model.call("slot_pieces", def) if model and model.has_method("slot_pieces") else pieces_by_slot(ship_root, def)
+	ItemLook.part_source = _part_shape
 	_build_access()
 	for s in def.slots:
 		for f in s.fasteners:
@@ -504,6 +506,34 @@ static func pieces_by_slot(root: Node3D, def: ShipDefinition) -> Dictionary:
 				(out[s.slot_id] as Array).append(mi)
 				break
 	return out
+
+
+## A part of this ship by its shape key (ShipBayBus.part_shape_key), for ItemLook: its pieces'
+## meshes as one, in ship space, and the first one's paint; [] when it isn't this ship's.
+func _part_shape(key: String) -> Array:
+	if _bus == null or ship_root == null:
+		return []
+	var mine := _bus.part_shape_key("-")
+	if mine == "" or not key.begins_with(mine.trim_suffix("-")):
+		return []
+	var meshes: Array = pieces.get(key.trim_prefix(mine.trim_suffix("-")), [])
+	var st := SurfaceTool.new()
+	var paint: Material = null
+	var any := false
+	for mi: MeshInstance3D in meshes:
+		if not is_instance_valid(mi) or mi.mesh == null:
+			continue
+		var xf := _ship_xform(mi, ship_root)
+		for k in mi.mesh.get_surface_count():
+			if mi.mesh.surface_get_primitive_type(k) != Mesh.PRIMITIVE_TRIANGLES:
+				continue
+			st.append_from(mi.mesh, k, xf)
+			any = true
+		if paint == null:
+			paint = mi.material_override if mi.material_override else mi.mesh.surface_get_material(0)
+	if not any:
+		return []
+	return [st.commit(), paint]
 
 
 static func _ship_xform(node: Node3D, root: Node3D) -> Transform3D:

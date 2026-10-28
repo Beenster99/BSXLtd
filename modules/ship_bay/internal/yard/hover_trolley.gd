@@ -229,7 +229,7 @@ func set_cargo(c: Dictionary) -> void:
 		if boxes[i] == null:
 			continue
 		var lot: Dictionary = given[i]
-		var metas := {"component": str(lot.get("item", "")), "condition": float(lot.get("condition", 1.0))}
+		var metas := {"component": ItemLook.item_of(str(lot.get("item", ""))), "condition": float(lot.get("condition", 1.0))}
 		if str(lot.get("crate_id", "")) != "":
 			metas["crate_id"] = str(lot["crate_id"])
 		ItemLook.look_box(_cargo_mesh, boxes[i], metas)

@@ -82,7 +82,7 @@ func pick(loc: String, qty: int, carrier: String, to: Vector3) -> String:
 
 ## A part beamed off the ship onto a trolley's deck: a crate ("beam/<n>", order "beam") that
 ## trolley carries, to put away like a delivery. Returns its id, "" when the trolley is full.
-func beam(item: String, condition: float, carrier: String) -> String:
+func beam(item: String, condition: float, carrier: String, shape := "") -> String:
 	if item == "" or not has_room(carrier, {"qty": 1, "mass": float(Layout.items().get(item, {}).get("mass", 0.0))}):
 		return ""
 	var known: Dictionary = Layout.items().get(item, {})
@@ -93,6 +93,8 @@ func beam(item: String, condition: float, carrier: String) -> String:
 	crates[id] = {"order_id": "beam", "item": item, "qty": 1, "name": str(known.get("name", item)),
 			"condition": clampf(condition, 0.0, 1.0), "grade": "off the ship", "mass": float(known.get("mass", 0.0)),
 			"spot": -1, "carrier": carrier}
+	if shape != "":
+		crates[id]["shape"] = shape   # it keeps its own shape (ItemLook.look_id)
 	return id
 
 
