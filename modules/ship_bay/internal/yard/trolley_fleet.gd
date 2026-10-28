@@ -501,7 +501,7 @@ func _obstacles(t: Trolley) -> Array:
 	for o: Trolley in trolleys.values():
 		if o != t:
 			for p2 in o.footprint():
-				out.append([p2, o.radius()])
+				out.append([p2, o.radius(), true])
 	return out
 
 
@@ -1085,21 +1085,34 @@ func _go_to_person(t: Trolley, to: Vector3) -> void:
 	var reach := t.radius() + COME_GAP
 	var stand := to + dir * reach
 	# Another trolley already waiting there (goods brought earlier, not yet collected): stand
-	# beside it, round the person, rather than queue behind it for good.
-	for k in 12:
-		var a := (float((k + 1) / 2) * (1.0 if k % 2 == 0 else -1.0)) * PI / 6.0 if k > 0 else 0.0
-		var p := to + dir.rotated(Vector3.UP, a) * reach
-		if _stand_free(t, p) and (nav == null or nav.is_free(p, t.clearance())):
-			stand = p
+	# beside it, round the person, rather than queue behind it for good; a ring further out
+	# when the near one is full.
+	var found := false
+	for out: float in [0.0, 3.0, 6.0]:
+		for k in 12:
+			var a := (float((k + 1) / 2) * (1.0 if k % 2 == 0 else -1.0)) * PI / 6.0 if k > 0 else 0.0
+			var p := to + dir.rotated(Vector3.UP, a) * (reach + out)
+			if _stand_free(t, p, atan2(p.x - to.x, p.z - to.z)) and (nav == null or nav.is_free(p, t.clearance())):
+				stand = p
+				found = true
+				break
+		if found:
 			break
 	_go(t, stand, atan2(stand.x - to.x, stand.z - to.z))
 
 
-## No other trolley stands (still, with nowhere to go) where `t` would stand at `p`.
-func _stand_free(t: Trolley, p: Vector3) -> bool:
+## No other trolley stands, or is on its way to stand, where `t` would stand at `p` facing
+## `yaw`, down either one's whole length (two brought goods at once: the second stood
+## behind the first for good).
+func _stand_free(t: Trolley, p: Vector3, yaw: float) -> bool:
 	for o: Trolley in trolleys.values():
-		if o != t and o.path.is_empty() and Vector2(o.global_position.x - p.x, o.global_position.z - p.z).length() < o.radius() + t.radius() + 0.4:
-			return false
+		if o == t:
+			continue
+		var there := o.footprint() if o.path.is_empty() else o.footprint(o.path[o.path.size() - 1], o.yaw() if is_nan(o.final_yaw) else o.final_yaw)
+		for a in t.footprint(p, yaw):
+			for b in there:
+				if a.distance_to(b) < o.radius() + t.radius() + 0.4:
+					return false
 	return true
 
 

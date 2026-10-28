@@ -262,7 +262,7 @@ func set_cargo(c: Dictionary) -> void:
 
 
 ## Moves it for one physics step: remote input or the path, slowing for `obstacles`
-## (floor points with a radius each: [[Vector3, float], ...]).
+## (floor points with a radius each, and true for another trolley's: [[Vector3, float, bool], ...]).
 func step(delta: float, obstacles: Array) -> void:
 	var top := float(spec["speed"]) * speed_scale * (fast_scale if fast or boost else 1.0)
 	var want := 0.0
@@ -322,7 +322,10 @@ func _lane_clear(here: Vector3, going: float, obstacles: Array) -> bool:
 		away.y = 0.0
 		var along := away.dot(forward)
 		var aside := sqrt(maxf(away.length_squared() - along * along, 0.0))
-		if along > 0.0 and along - nose - float(o[1]) - radius() < 0.6 and aside < float(o[1]) + radius() + 0.02:
+		# Another trolley's length counts from this one's nose; a person from its middle, as
+		# trolleys called to someone stop that far from them.
+		var reach := nose if o.size() > 2 and bool(o[2]) else 0.0
+		if along > 0.0 and along - reach - float(o[1]) - radius() < 0.6 and aside < float(o[1]) + radius() + 0.02:
 			return false
 	return true
 

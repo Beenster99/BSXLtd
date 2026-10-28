@@ -157,7 +157,7 @@ func run_tests() -> void:
 	var counts := {}
 	for k: String in kinds.values():
 		counts[k] = int(counts.get(k, 0)) + 1
-	check(counts == {"concrete": 1, "ground": 1, "epoxy": 5, "asphalt": 2},
+	check(counts == {"concrete": 1, "ground": 1, "epoxy": 6, "asphalt": 2},
 			"the ground paints are tagged for Graphics' surfaces: %s" % [counts])
 	_check_apron(yard)
 	yard.queue_free()
