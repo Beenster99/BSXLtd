@@ -55,6 +55,15 @@ func run_tests() -> void:
 			"dust": {}, "ingots": {}, "cast": 0}
 	bus._crushed(crusher)
 	check(int(crusher["cast"]) > 0, "and ten of them cast ingots: %s (dust %s, %.1f kg each)" % [crusher["ingots"], crusher["dust"], float(c["mass"])])
+	# The crusher's status board lists the smelter's metal and the ingots it cast (0.3.26).
+	var plant := yard.find_child("CrusherPlant", true, false)
+	if plant:
+		plant.set("_state", crusher)
+		plant.call("_show")
+		var board_text := str((plant.get("board") as Node).call("text"))
+		check(board_text.contains(str(c["material"]).to_upper()) and board_text.contains("INGOTS"), "the crusher board shows the smelter: %s" % board_text)
+	else:
+		check(false, "the yard has a crusher plant")
 	# The bay's ship gone, a shape already built stays; one never built falls back to its item.
 	bus._apply_debug_ship({"action": "restore_bay"})
 	await frames(2)

@@ -77,6 +77,8 @@ const PALLETS := 10
 @export var feed_time := 3.0
 
 var screen: Node3D
+## The big status board on the north wall over the smelter (beenster, 0.3.26).
+var board: Node3D
 var running := 0.0
 var _bus: ShipBayBus
 ## The loader's tractor beam and where it shines from while it draws a lot in (INF: off).
@@ -125,6 +127,7 @@ func _ready() -> void:
 	_build_smelter()
 	_build_ingot_yard()
 	_build_screen()
+	_build_board()
 	_crates_root = Node3D.new()
 	_crates_root.name = "Crates"
 	add_child(_crates_root)
@@ -242,6 +245,7 @@ func _show() -> void:
 		total += int(ingots[m])
 	lines.append("INGOT YARD: %d INGOTS (%s KG EACH)" % [total, _kg(ShipBayBus.INGOT_KG)])
 	screen.call("set_body", "\n".join(lines))
+	_show_board(state, lot, waiting)
 	_draw_lot()
 	_draw_ingots()
 
@@ -683,6 +687,51 @@ func _build_screen() -> void:
 	screen.transform = Transform3D(face, post + Vector3(0, 1.25, 0) + face * Vector3(0, 0, 0.04))
 	holder.add_child(screen)
 	screen.call("setup", Vector2(0.62, 0.42), "CRUSHER  CR-1", 1)
+
+
+## The status board: a wall screen high on the shed's north wall, over the crusher and the
+## smelter, read from the door and the whole hall.
+func _build_board() -> void:
+	var at := Vector3(CRUSHER.x + 2.6, 7.4, HOUSE.position.y + 0.3)
+	_part(PartShapes.chamfer_box(Vector3(4.6, 2.8, 0.12), 0.03).mesh, at, _mats["dark"])
+	board = Touch.new()
+	board.name = "Board"
+	# A 0.8 x 0.47 m screen drawn 5.5 times over, so its text reads from across the hall.
+	board.transform = Transform3D(Basis().scaled(Vector3(5.5, 5.5, 1)), at + Vector3(0, 0, 0.07))
+	add_child(board)
+	board.call("setup", Vector2(0.8, 0.47), "CRUSHER AND SMELTER", 1)
+
+
+## The board's text: the crusher, what waits on the pad, the smelter's dust by metal with how
+## near each is to its next ingot, the ingot yard's count by metal and the last run's cast.
+func _show_board(state: String, lot: Dictionary, waiting: int) -> void:
+	if board == null:
+		return
+	board.call("set_status", "CRUSHING" if state == "running" else ("%d WAITING" % waiting if waiting > 0 else "IDLE"),
+			T.AMBER if state == "running" else (T.CYAN if waiting > 0 else T.DIM))
+	var lines := PackedStringArray()
+	lines.append("CRUSHER  " + ("%s x%d" % [str(lot.get("name", "")).to_upper().left(22), int(lot.get("qty", 1))] if state == "running" else "EMPTY"))
+	lines.append("FEED PAD %d LOT%s WAITING" % [waiting, "" if waiting == 1 else "S"])
+	lines.append("")
+	lines.append("SMELTER  (%s KG MAKES AN INGOT)" % _kg(ShipBayBus.INGOT_KG))
+	var dust: Dictionary = _state.get("dust", {})
+	var ingots: Dictionary = _state.get("ingots", {})
+	var any := false
+	for m: String in MATERIALS:
+		var kg := float(dust.get(m, 0.0))
+		if kg < 0.1 and int(ingots.get(m, 0)) == 0:
+			continue
+		any = true
+		var fill := clampi(floori(kg / ShipBayBus.INGOT_KG * 10.0), 0, 10)
+		lines.append("%-8s %4s KG %s%s %3d INGOTS" % [m.to_upper(), _kg(kg), "#".repeat(fill), ".".repeat(10 - fill), int(ingots.get(m, 0))])
+	if not any:
+		lines.append("NOTHING YET: CRUSHED PARTS MELT HERE")
+	lines.append("")
+	var total := 0
+	for m: String in ingots:
+		total += int(ingots[m])
+	lines.append("INGOT YARD %d   LAST RUN CAST %d" % [total, int(_state.get("cast", 0))])
+	board.call("set_body", "\n".join(lines))
 
 
 func _plate(text: String, colour: Color) -> Label3D:
