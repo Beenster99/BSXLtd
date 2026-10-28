@@ -253,7 +253,7 @@ func _tink(p: Dictionary, at: Vector3, speed: float) -> void:
 		return
 	var a := AudioStreamPlayer3D.new()
 	a.stream = TradesSounds.tink(_rng.randi())
-	a.volume_db = -10.0 - hits * 6.0 + clampf(speed - 2.0, -6.0, 4.0)
+	a.volume_db = -10.0 - hits * 6.0 + clampf(speed - 2.0, -6.0, 4.0) + TradesBay.tool_db()
 	a.pitch_scale = _rng.randf_range(0.9, 1.12)
 	a.unit_size = 3.0
 	a.max_distance = 30.0

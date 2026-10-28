@@ -89,6 +89,20 @@ const UNWELD_S := 3.5
 const BOLT_TRAVEL_M := 0.022
 ## The cutter's disc spinning up before it bites (s).
 const SPIN_UP_S := 0.3
+## trades.quick_cutter (beenster, 0.3.27: "cutter should be quicker"): seconds for the cutter to
+## grind a rivet's head off and to cut a weld out.
+const QUICK_GRIND_S := 0.9
+const QUICK_WELD_CUT_S := 1.6
+
+
+## Seconds the cutter takes on a rivet.
+static func grind_s() -> float:
+	return QUICK_GRIND_S if Flags.is_on("trades.quick_cutter") else GRIND_S
+
+
+## Seconds the cutter takes on a weld.
+static func weld_cut_s() -> float:
+	return QUICK_WELD_CUT_S if Flags.is_on("trades.quick_cutter") else UNWELD_S
 ## The aim this far off the joint and the tool slips off it (m).
 const SLIP_M := 0.14
 
@@ -178,6 +192,13 @@ var _ring_tight := TradesLook.glow(Color(0.3, 1.0, 0.4), 2.5)
 var _ring_quiet := TradesLook.quiet_ring()
 var _ring_mesh: TorusMesh
 var _quiet_mesh: TorusMesh
+## trades.clear_rings (beenster, 0.3.27: "i cant see the bolt and rivet highlights any more"):
+## a wreck's own bolt and rivet heads are as big as the quiet ring (3 cm) and hid it, and on
+## its dark plates the pale ring barely showed. A wider ring, lit enough to see.
+const CLEAR_RING_IN_M := 0.046
+const CLEAR_RING_OUT_M := 0.051
+var _ring_clear := TradesLook.glow(TradesLook.QUIET_RING, 1.1)
+var _clear_mesh: TorusMesh
 ## The chalk line along a seam and the torch tip's point (trades.weld_guide).
 var guide: TradesWeldGuide
 ## The tractor beam (tool 7), for lifting parts that are off the ship.
@@ -221,6 +242,11 @@ func build() -> void:
 	_quiet_mesh.outer_radius = 0.032
 	_quiet_mesh.rings = 24
 	_quiet_mesh.ring_segments = 6
+	_clear_mesh = TorusMesh.new()
+	_clear_mesh.inner_radius = CLEAR_RING_IN_M
+	_clear_mesh.outer_radius = CLEAR_RING_OUT_M
+	_clear_mesh.rings = 32
+	_clear_mesh.ring_segments = 6
 	_marker = MeshInstance3D.new()
 	_marker.mesh = ring
 	_marker.material_override = _ring_loose
@@ -1174,7 +1200,7 @@ func _rivet_made(f: FastenerPoint, mm: float) -> void:
 ## sparks fly, and the rivet (or its head) jumps off when it gives.
 func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 	var heat := _tool_held == &"welder"
-	var need := HEAT_S if heat else GRIND_S
+	var need := HEAT_S if heat else grind_s()
 	var progress := clampf(_held_s / need, 0.0, 1.0)
 	var sparks := bay.sparks
 	if heat:
@@ -1231,7 +1257,7 @@ func _grind_at(at: Vector3, n: Vector3, progress: float) -> void:
 ## trades.cutter_welds: the cutter on a weld cuts it out where you point along the seam, like
 ## Void Salvage's: hold it there (or anywhere else on the seam) and the weld gives.
 func _work_weld_cut(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
-	var progress := clampf(_held_s / UNWELD_S, 0.0, 1.0)
+	var progress := clampf(_held_s / weld_cut_s(), 0.0, 1.0)
 	_grind_at(_aim_point(_working), n, progress)
 	bay.worker.right_hand.set_grip(1.0)
 	var bus := bay.bus()
@@ -2308,6 +2334,9 @@ func _place_marker() -> void:
 	var quiet := Flags.is_on("trades.quiet_rings")
 	_marker.mesh = _quiet_mesh if quiet else _ring_mesh
 	_marker.material_override = _ring_quiet if quiet else (_ring_tight if is_tight(points[i]) else _ring_loose)
+	if quiet and Flags.is_on("trades.clear_rings"):
+		_marker.mesh = _clear_mesh
+		_marker.material_override = _ring_clear
 	var n := (ship_xform.basis * points[i].normal).normalized()
 	var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
 	var at := points_world[i]

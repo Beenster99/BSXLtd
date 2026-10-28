@@ -20,6 +20,8 @@ const PLATE_MIN_SIDE := 0.15
 const PLANE_M := 0.25
 ## How far the scribe reaches (m from the eye).
 const REACH_M := 6.0
+## How far a hit face may lean off a plate's mount facing and still be that plate (degrees).
+const FACE_DEG := 40.0
 ## The right-hand panel's card.
 const INFO := "trades.plate"
 const GLOW := Color(0.45, 1.0, 0.85)
@@ -97,15 +99,20 @@ func set_tracing(on: bool) -> void:
 ## plane is its mount's facing (its box is fat round it), so the Kestrel's 8 cm and slanted
 ## plates count too (playtest 0.3.24: the scribe found almost none).
 ## `keep`: the plate being traced keeps the chalk where it meets a neighbour along an edge.
-static func plate_at(p: Vector3, keep := "") -> Dictionary:
+## `face`: the ship-space normal of the surface the aim hit (trades.scribe_faces, beenster
+## 0.3.27: "scribe doesnt seem to be able to pick up the angled sections"): a wreck's tapering
+## plates face their ring's way, not the way their mount says, so the hit face sets the plane.
+static func plate_at(p: Vector3, keep := "", face := Vector3.ZERO) -> Dictionary:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	if bus == null:
 		return {}
 	var best := {}
 	var best_d := INF
 	for s: MountSlot in bus.get_slots():
-		var plate := plate_of(s)
-		if plate.is_empty() or not s.box.grow(0.06).has_point(p):
+		if not s.box.grow(0.06).has_point(p):
+			continue
+		var plate := plate_of(s, face)
+		if plate.is_empty():
 			continue
 		var off := p - (plate.centre as Vector3)
 		var d := absf(off.dot(plate.n))
@@ -123,7 +130,8 @@ static func plate_at(p: Vector3, keep := "") -> Dictionary:
 
 
 ## A slot as a plate (plate_at's dictionary without the point), or {} when it isn't one.
-static func plate_of(s: MountSlot) -> Dictionary:
+## `face` (ship space, or zero): a plate within FACE_DEG of facing it is taken as facing it.
+static func plate_of(s: MountSlot, face := Vector3.ZERO) -> Dictionary:
 	var b := s.box
 	var dims := [b.size.x, b.size.y, b.size.z]
 	var thin := 0
@@ -138,6 +146,10 @@ static func plate_of(s: MountSlot) -> Dictionary:
 		n[thin] = 1.0
 	else:
 		return {}
+	if face != Vector3.ZERO and Flags.is_on("trades.scribe_faces"):
+		var f := face.normalized() * signf(face.dot(n)) if face.dot(n) != 0.0 else Vector3.ZERO
+		if f != Vector3.ZERO and f.dot(n) >= cos(deg_to_rad(FACE_DEG)):
+			n = f
 	# Across the plate: v as near up as the plate allows (along the ship where it lies flat).
 	var v := Vector3.UP - n * n.y
 	if v.length() < 0.3:
@@ -174,16 +186,19 @@ func _physics_process(_delta: float) -> void:
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * REACH_M)
 	q.exclude = [(w as CollisionObject3D).get_rid()]
 	var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
-	aim_at(hit.position if not hit.is_empty() else Vector3.INF)
+	aim_at(hit.position if not hit.is_empty() else Vector3.INF, hit.get("normal", Vector3.ZERO))
 
 
 ## Aims the scribe at a world point (INF: at nothing): the plate there becomes `aimed`.
-func aim_at(world: Vector3) -> void:
+## `normal`: the world normal of the face hit there, if known.
+func aim_at(world: Vector3, normal := Vector3.ZERO) -> void:
 	if not world.is_finite():
 		_aim({})
 		return
-	var p := ship_xform().affine_inverse() * world
-	_aim(plate_at(p, str((aimed.slot as MountSlot).slot_id) if not aimed.is_empty() else ""))
+	var xf := ship_xform()
+	var p := xf.affine_inverse() * world
+	var face := (xf.basis.inverse() * normal).normalized() if normal != Vector3.ZERO else Vector3.ZERO
+	_aim(plate_at(p, str((aimed.slot as MountSlot).slot_id) if not aimed.is_empty() else "", face))
 
 
 func ship_xform() -> Transform3D:
