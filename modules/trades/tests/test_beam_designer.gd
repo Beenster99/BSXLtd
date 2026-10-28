@@ -24,10 +24,13 @@ func run_tests() -> void:
 	bus.reset_data()
 
 	# The sections.
-	for id: String in TradesBeamSections.ORDER:
+	check(TradesBeamSections.order().size() == 13, "every stocked section can be drawn: %d" % TradesBeamSections.order().size())
+	for id: String in TradesBeamSections.order():
 		var m := TradesBeamSections.mesh(id, 2.0)
 		check(m.get_surface_count() == 1 and m.get_aabb().size.z > 1.99, "%s builds as a 2 m beam" % TradesBeamSections.name_of(id))
-	check(absf(TradesBeamSections.mass("box_100", 6.0) - 88.2) < 0.1, "a 6 m box weighs 88 kg")
+	var bar := StockBeams.item("SteelBox_100x100x5_6000")
+	check(absf(TradesBeamSections.mass("box_100x100x5", 6.0) - float(bar.mass)) < 0.1, "a 6 m box weighs as the stock bar: %.1f kg" % float(bar.mass))
+	check(TradesBeamSections.normal("box_100") == "box_100x100x5" and TradesBeamSections.has("i_150"), "the first designs' sections still read")
 
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
@@ -112,7 +115,7 @@ func run_tests() -> void:
 	d.turn_beam(first, 45.0, true)
 	check(is_equal_approx(float(d.beam(first).turn), 45.0), "Shift rolls it about its length")
 	# The wheel on a beam changes its section.
-	check(d.wheel(1) and str(d.beam(first).section) == TradesBeamSections.step("box_100", 1), "the wheel on it changes its section")
+	check(d.wheel(1) and str(d.beam(first).section) == TradesBeamSections.step(TradesBeamSections.DEFAULT, 1), "the wheel on it changes its section")
 	# Picking up and setting down elsewhere: only shared when it is set down.
 	d.pick_up(first)
 	var was: Vector3 = d.beam(first).a
@@ -148,9 +151,9 @@ func run_tests() -> void:
 			"each beam is drawn in the hologram")
 
 	# Shared: the event refuses a bad design.
-	check(d._validate(2, {"ship": ship, "rows": [{"a": [0, 0, 0], "b": [0, 0, 0.01], "section": "box_100"}]}) is String, "a beam too short is refused")
+	check(d._validate(2, {"ship": ship, "rows": [{"a": [0, 0, 0], "b": [0, 0, 0.01], "section": "box_100x100x5"}]}) is String, "a beam too short is refused")
 	check(d._validate(2, {"ship": ship, "rows": [{"a": [0, 0, 0], "b": [0, 0, 2], "section": "nope"}]}) is String, "an unknown section is refused")
-	check(d._validate(2, {"ship": ship, "rows": [{"a": [0, 0, 0], "b": [0, 0, 2], "section": "box_100"}]}) is Dictionary, "a good one is taken")
+	check(d._validate(2, {"ship": ship, "rows": [{"a": [0, 0, 0], "b": [0, 0, 2], "section": "box_100x100x5"}]}) is Dictionary, "a good one is taken")
 	# Kept in the save, gone with a new game; the tracer's snapshot leaves it alone.
 	var count := d.beams().size()
 	bus.load_data({"templates": []}, bus.save_version())

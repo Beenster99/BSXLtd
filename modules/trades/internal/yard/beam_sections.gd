@@ -1,68 +1,83 @@
 class_name TradesBeamSections
 extends RefCounted
-## The beam sections the design tablet draws with (trades.beam_designer): box tube, I-beam,
-## channel and angle, each with its profile (metres, across the beam: x wide, y high) and its
-## mass a metre of steel. Until Shared Components has stock beams these are the designer's own;
-## the sizes match the bars planned for the stock list (beam plan, B1).
+## The beam sections the design tablet draws with (trades.beam_designer): every section Shared
+## Components stocks as beam bars (StockBeams: box tube, I-beam, channel and angle), named
+## "<family>_<w>x<h>x<t>" in millimetres ("box_100x100x5"). A design's beams are steel for now;
+## the bars to buy are StockBeams' steel ones (bar_id).
 
-## id -> {name, family (box|i|channel|angle), w, h, t (m), kg_m (steel, kg a metre)}.
-const SECTIONS := {
-	"box_100": {"name": "Box 100 x 100 x 5", "family": "box", "w": 0.1, "h": 0.1, "t": 0.005, "kg_m": 14.7},
-	"box_150": {"name": "Box 150 x 100 x 6", "family": "box", "w": 0.1, "h": 0.15, "t": 0.006, "kg_m": 22.3},
-	"i_150": {"name": "I-beam 150 x 75", "family": "i", "w": 0.075, "h": 0.15, "t": 0.007, "kg_m": 14.0},
-	"channel_100": {"name": "Channel 100 x 50", "family": "channel", "w": 0.05, "h": 0.1, "t": 0.006, "kg_m": 10.2},
-	"angle_75": {"name": "Angle 75 x 75 x 6", "family": "angle", "w": 0.075, "h": 0.075, "t": 0.006, "kg_m": 6.8},
-}
-## The order the mouse wheel steps through them.
-const ORDER: Array[String] = ["box_100", "box_150", "i_150", "channel_100", "angle_75"]
-const DEFAULT := "box_100"
+const DEFAULT := "box_100x100x5"
+## The designer's first sections (before stock beams), and what they are now.
+const OLD := {"box_100": "box_100x100x5", "box_150": "box_150x100x6", "i_150": "i_100x100x6",
+		"channel_100": "channel_50x100x5", "angle_75": "angle_75x75x6"}
+
+static var _sections: Dictionary = {}
+static var _order: Array[String] = []
+
+
+## id -> {name, family, w, h, t (m), kg_m (steel, kg a metre), bar (the steel 6 m bar's id)}.
+static func sections() -> Dictionary:
+	if _sections.is_empty():
+		for bar: String in StockBeams.item_ids("", "steel"):
+			var it := StockBeams.item(bar)
+			if int(it.length_mm) != 6000:
+				continue
+			var id := "%s_%dx%dx%d" % [it.family, it.w_mm, it.h_mm, it.t_mm]
+			_sections[id] = {"name": "%s %d x %d x %d" % [StockBeams.family(str(it.family)).get("display_name", it.family),
+					it.w_mm, it.h_mm, it.t_mm], "family": str(it.family), "w": float(it.section.w), "h": float(it.section.h),
+					"t": float(it.section.t), "kg_m": float(it.mass) / float(it.length), "bar": bar}
+			_order.append(id)
+	return _sections
+
+
+## The order the mouse wheel steps through them (by family, then size).
+static func order() -> Array[String]:
+	sections()
+	return _order
+
+
+## A section id as it is now (the designer's first ids are mapped on).
+static func normal(id: String) -> String:
+	return str(OLD.get(id, id))
 
 
 static func has(id: String) -> bool:
-	return SECTIONS.has(id)
+	return sections().has(normal(id))
+
+
+static func info(id: String) -> Dictionary:
+	var all := sections()
+	return all.get(normal(id), all.get(DEFAULT, {}))
 
 
 static func name_of(id: String) -> String:
-	return str((SECTIONS.get(id, SECTIONS[DEFAULT]) as Dictionary).name)
+	return str(info(id).get("name", id))
 
 
-## The next section along ORDER from `id` (+1) or the one before (-1), wrapping round.
+## The next section along the order from `id` (+1) or the one before (-1), wrapping round.
 static func step(id: String, by: int) -> String:
-	var i := ORDER.find(id)
-	return ORDER[posmod((i if i >= 0 else 0) + by, ORDER.size())]
+	var o := order()
+	if o.is_empty():
+		return DEFAULT
+	var i := o.find(normal(id))
+	return o[posmod((i if i >= 0 else 0) + by, o.size())]
 
 
 ## Its mass for a length (kg, steel).
 static func mass(id: String, length_m: float) -> float:
-	return float((SECTIONS.get(id, SECTIONS[DEFAULT]) as Dictionary).kg_m) * length_m
+	return float(info(id).get("kg_m", 0.0)) * length_m
 
 
 ## The section's half width across its widest side (m): how near another beam may come.
 static func radius(id: String) -> float:
-	var s: Dictionary = SECTIONS.get(id, SECTIONS[DEFAULT])
-	return maxf(float(s.w), float(s.h)) * 0.5
+	var s := info(id)
+	return maxf(float(s.get("w", 0.1)), float(s.get("h", 0.1))) * 0.5
 
 
-## Its profile as one closed outline, counter-clockwise, about the beam's centre line (m).
-## A box is drawn by its outside (the hologram has no inside to see).
+## Its profile's outer edge, counter-clockwise, about the beam's centre line (m). A box is drawn
+## by its outside (the hologram has no inside to see).
 static func outline(id: String) -> PackedVector2Array:
-	var s: Dictionary = SECTIONS.get(id, SECTIONS[DEFAULT])
-	var w := float(s.w) * 0.5
-	var h := float(s.h) * 0.5
-	var t := float(s.t)
-	match str(s.family):
-		"i":
-			var web := t * 0.5
-			return PackedVector2Array([Vector2(-w, -h), Vector2(w, -h), Vector2(w, -h + t), Vector2(web, -h + t),
-					Vector2(web, h - t), Vector2(w, h - t), Vector2(w, h), Vector2(-w, h), Vector2(-w, h - t),
-					Vector2(-web, h - t), Vector2(-web, -h + t), Vector2(-w, -h + t)])
-		"channel":
-			return PackedVector2Array([Vector2(-w, -h), Vector2(w, -h), Vector2(w, -h + t), Vector2(-w + t, -h + t),
-					Vector2(-w + t, h - t), Vector2(w, h - t), Vector2(w, h), Vector2(-w, h)])
-		"angle":
-			return PackedVector2Array([Vector2(-w, -h), Vector2(w, -h), Vector2(w, -h + t), Vector2(-w + t, -h + t),
-					Vector2(-w + t, h), Vector2(-w, h)])
-	return PackedVector2Array([Vector2(-w, -h), Vector2(w, -h), Vector2(w, h), Vector2(-w, h)])
+	var s := info(id)
+	return StockBeams.section_outline(str(s.get("family", "box")), float(s.get("w", 0.1)), float(s.get("h", 0.1)), float(s.get("t", 0.005)))
 
 
 ## The section run `length_m` along -Z..+Z about the origin (centred), as a mesh.

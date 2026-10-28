@@ -22,6 +22,9 @@ extends Node3D
 ## metal and its thickness, lifts, and parks. The kerf glows and cools behind it. Then the cut
 ## piece ("<plate>:cut:<template>") and the skeleton left of the sheet ("<plate>:offcut") lie
 ## on the bed as loose parts for the beam.
+## A stock beam bar (StockBeams) lies along the bed the same way (trades.beam_cutting): the
+## console takes a list of lengths, each end square or mitred, and the torch runs across the bar
+## at each cut (TradesBeamCuts); the pieces and what is left drop as loose parts.
 ## Every player sees the same run: the host checks a cut and everyone plays it from the same
 ## program (event trades.cut); the plate on the bed reaches late joiners in a snapshot.
 
@@ -71,6 +74,8 @@ var torch_h := LIFT_M
 ## Which template the console has picked, and its turn (radians, quarter turns).
 var picked := ""
 var turn := 0.0
+## The console's list of beam lengths to cut from a bar on the bed: [{mm, a, b}] (degrees).
+var lengths: Array = []
 var panel: Control  # TradesCutterPanel
 
 var _net: Node
@@ -94,6 +99,9 @@ var _hiss: AudioStreamPlayer3D
 var _motor: AudioStreamPlayer3D
 var _screen: TouchScreen
 var _clock := 0.0
+## Pieces this bed just laid down: not taken back onto it till they've been lifted off (a square
+## length of beam would be).
+var _just_made: Dictionary = {}
 
 
 static func enabled() -> bool:
@@ -156,6 +164,19 @@ static func plate_info(id: String) -> Dictionary:
 			"material": str(it.get("material", "steel")), "family": str(it.get("family", "metal"))}
 
 
+## What the bed takes for a loose part's component: a stock plate, a beam bar (with
+## trades.beam_cutting) or {}.
+static func load_info(component: String) -> Dictionary:
+	var info := plate_info(component)
+	if info.is_empty() and TradesBeamCuts.enabled():
+		info = TradesBeamCuts.bar_info(component)
+	return info
+
+
+func is_beam() -> bool:
+	return TradesBeamCuts.is_beam(plate)
+
+
 ## The bed set on its spot with its rails along the room's longer side (`room`: Ship and Bay's
 ## CUTTING_BED_ROOM, x across and z along the spot; a bed's rails run along its own x).
 static func lay_along(spot: Transform3D, room: Variant) -> Transform3D:
@@ -181,7 +202,11 @@ func set_plate(info: Dictionary) -> void:
 		var s: Vector2 = plate.size
 		_plate_node = MeshInstance3D.new()
 		_plate_node.name = "Plate"
-		_plate_node.mesh = TradesPlateShapes.extrude(_rect_centred(s), [], t)
+		if is_beam():
+			_plate_node.name = "Bar"
+			_plate_node.mesh = TradesBeamCuts.mesh(plate, s.x)
+		else:
+			_plate_node.mesh = TradesPlateShapes.extrude(_rect_centred(s), [], t)
 		_plate_node.material_override = _plate_mat(plate)
 		_plate_node.position = Vector3(0, SLAT_Y + t * 0.5, 0)
 		add_child(_plate_node)
@@ -201,9 +226,14 @@ func _physics_process(_delta: float) -> void:
 		return
 	for id: String in beam.loose.keys():
 		var part: TradesLoosePart = beam.loose[id]
-		if not is_instance_valid(part) or part.held:
+		if not is_instance_valid(part):
 			continue
-		var info := plate_info(part.component)
+		if part.held:
+			_just_made.erase(id)
+			continue
+		if _just_made.has(id):
+			continue
+		var info := load_info(part.component)
 		if info.is_empty() or not fits_bed(info.size):
 			continue
 		var local := global_transform.affine_inverse() * part.global_position
@@ -248,6 +278,8 @@ func refusal(template_id: String, quarter := turn) -> String:
 		return "Cutting"
 	if plate.is_empty():
 		return "No plate on the bed"
+	if is_beam():
+		return "A beam is on the bed: cut lengths"
 	var t := template(template_id)
 	if t.is_empty():
 		return "Pick a config"
@@ -267,6 +299,12 @@ func cut(template_id := picked) -> String:
 
 
 func _validate_cut(sender: int, p: Dictionary) -> Variant:
+	if p.has("lengths"):
+		var list := _clean_lengths(p.get("lengths"))
+		var why_beam := length_refusal(list)
+		if why_beam != "":
+			return why_beam
+		return {"lengths": list, "peer": sender, "plate": plate.duplicate(), "serial": _serial()}
 	var why := refusal(str(p.get("template", "")), float(p.get("turn", 0.0)))
 	if why != "":
 		return why
@@ -275,6 +313,15 @@ func _validate_cut(sender: int, p: Dictionary) -> Variant:
 
 
 func _apply_cut(p: Dictionary) -> void:
+	if p.has("lengths"):
+		var lay := TradesBeamCuts.layout(plate, p.lengths)
+		if lay.is_empty():
+			return
+		job = {"lengths": p.lengths, "layout": lay, "serial": str(p.serial), "program": _beam_program(lay),
+				"step": 0, "t": 0.0, "from": head, "from_h": torch_h}
+		_kerf_points.clear()
+		_refresh_panel()
+		return
 	var t := template(str(p.template))
 	if t.is_empty():
 		return
@@ -306,9 +353,27 @@ func _program(shape: Dictionary) -> Array:
 	return steps
 
 
-## The cutting feed (m/s) for this plate.
+## The head's moves for a bar: for each cut across it a rapid to its start beside the bar, down to
+## the bar's top, a short pierce at its edge, across at the feed, and up clear of the bar; then
+## back to park and down to the lifter's rest.
+func _beam_program(lay: Dictionary) -> Array:
+	var steps: Array = []
+	var feed := _feed()
+	var top := float(plate.thickness)
+	for c: Array in lay.cuts:
+		steps.append({"kind": "rapid", "to": c[0], "speed": rapid_speed})
+		steps.append({"kind": "lift", "to": top + STANDOFF_M})
+		steps.append({"kind": "pierce", "s": pierce_s * 0.4})
+		steps.append({"kind": "cut", "to": c[1], "speed": feed})
+		steps.append({"kind": "lift", "to": top + LIFT_M})
+	steps.append({"kind": "rapid", "to": PARK, "speed": rapid_speed})
+	steps.append({"kind": "lift", "to": LIFT_M})
+	return steps
+
+
+## The cutting feed (m/s) for this plate (or a bar's wall).
 func _feed() -> float:
-	var mm := float(plate.get("thickness", 0.005)) * 1000.0
+	var mm := float(plate.get("wall", plate.get("thickness", 0.005))) * 1000.0
 	var base := jet_feed if is_glass() else plasma_feed
 	return clampf(base * 4.0 / (3.0 + mm), base * 0.25, base) * feed_scale
 
@@ -365,6 +430,9 @@ func _process(delta: float) -> void:
 
 
 func _finish() -> void:
+	if job.has("layout"):
+		_finish_beam()
+		return
 	var shape: Dictionary = job.shape
 	var serial := str(job.serial)
 	var info := plate.duplicate()
@@ -381,6 +449,63 @@ func _finish() -> void:
 	_lay_piece(off_id, "%s:offcut" % info.id, _rect_centred(info.size), [hole], t, info)
 	made = PackedStringArray([piece_id, off_id])
 	_refresh_panel()
+
+
+## The bar's pieces and what is left of it as loose parts where they lay on the bed.
+func _finish_beam() -> void:
+	var lay: Dictionary = job.layout
+	var serial := str(job.serial)
+	var info := plate.duplicate()
+	job = {}
+	_drop_plate_node()
+	plate = {}
+	made = PackedStringArray()
+	var bar := str(info.bar)
+	var k := 0
+	for pc: Dictionary in lay.pieces:
+		var m := int(pc.mm) / 1000.0
+		var component := TradesBeamCuts.piece_name(bar, int(pc.mm), float(pc.a), float(pc.b))
+		var id := "%s#%s.%d" % [component, serial, k]
+		_lay_bar(id, component, info, m, float(pc.a), float(pc.b), TradesBeamCuts.piece_middle(float(pc.from), m))
+		made.append(id)
+		k += 1
+	var left := float(lay.left_m)
+	if left >= TradesBeamCuts.MIN_M:
+		var mm := roundi(left * 1000.0)
+		var component := TradesBeamCuts.piece_name(bar, mm, float(lay.left_a), 0.0)
+		var id := "%s#%s.left" % [component, serial]
+		_lay_bar(id, component, info, left, float(lay.left_a), 0.0, float(lay.left_from) + left * 0.5)
+		made.append(id)
+	var beam := _tractor()
+	for old: String in _just_made.keys():
+		if beam == null or not (beam.get("loose") as Dictionary).has(old):
+			_just_made.erase(old)
+	for id in made:
+		_just_made[id] = true
+	lengths.clear()
+	_refresh_panel()
+
+
+func _lay_bar(id: String, component: String, info: Dictionary, length_m: float, a: float, b: float, x: float) -> void:
+	var visual := MeshInstance3D.new()
+	visual.mesh = TradesBeamCuts.mesh(info, length_m, a, b)
+	visual.material_override = _plate_mat(info)
+	var holder := Node3D.new()
+	holder.add_child(visual)
+	var size: Vector2 = info.size
+	var h := float(info.thickness)
+	var box := AABB(Vector3(-length_m * 0.5, -h * 0.5, -size.y * 0.5), Vector3(length_m, h, size.y))
+	var xform := global_transform * Transform3D(Basis(), Vector3(x, SLAT_Y + h * 0.5 + 0.002, 0))
+	var kg := TradesBeamCuts.piece_kg(info, length_m, a, b)
+	var beam := _tractor()
+	if beam and beam.has_method("adopt_piece"):
+		beam.call("adopt_piece", id, component, box, holder, xform, kg, float(info.get("condition", 1.0)))
+	else:
+		holder.name = "Piece_" + id.validate_node_name()
+		holder.set_meta("component", component)
+		holder.top_level = true
+		add_child(holder)
+		holder.global_transform = xform
 
 
 ## A cut piece as a loose part on the slats, for the tractor beam (on every machine, same id).
@@ -455,6 +580,61 @@ func apply_net_snapshot(data: Dictionary) -> void:
 func pick(id: String) -> void:
 	picked = id
 	_refresh_panel()
+
+
+## The beam lengths: why a list can't be cut from the bar now, or "".
+func length_refusal(list := lengths) -> String:
+	if not job.is_empty():
+		return "Cutting"
+	if not is_beam():
+		return "No beam on the bed"
+	if list.is_empty():
+		return "Add a length"
+	if TradesBeamCuts.layout(plate, list).is_empty():
+		return "Too long for this bar"
+	return ""
+
+
+func add_length(mm: int, a := 0.0, b := 0.0) -> String:
+	var list := lengths.duplicate(true)
+	list.append({"mm": mm, "a": a, "b": b})
+	if is_beam() and TradesBeamCuts.layout(plate, list).is_empty():
+		return "Too long for this bar"
+	lengths = list
+	_refresh_panel()
+	return ""
+
+
+func remove_length(i: int) -> void:
+	if i >= 0 and i < lengths.size():
+		lengths.remove_at(i)
+	_refresh_panel()
+
+
+func clear_lengths() -> void:
+	lengths.clear()
+	_refresh_panel()
+
+
+## The console's START for a bar: asks the host to cut the lengths.
+func cut_lengths() -> String:
+	var why := length_refusal()
+	if why != "":
+		return why
+	_ask(CUT_EVENT, {"lengths": lengths.duplicate(true)})
+	return ""
+
+
+static func _clean_lengths(v: Variant) -> Array:
+	var out: Array = []
+	if v is Array:
+		for e: Variant in v:
+			if e is Dictionary and out.size() < 64:
+				var a := float(e.get("a", 0.0))
+				var b := float(e.get("b", 0.0))
+				out.append({"mm": clampi(int(e.get("mm", 0)), 0, 12000),
+						"a": a if TradesBeamCuts.MITRES.has(a) else 0.0, "b": b if TradesBeamCuts.MITRES.has(b) else 0.0})
+	return out
 
 
 func rotate_quarter() -> void:

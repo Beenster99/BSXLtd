@@ -5,6 +5,9 @@ extends Control
 ## bed's own stored sizes; on the right the bed drawn with the plate on it and the picked
 ## config laid where it will be cut, the plate's and the cut's figures, and ROTATE, DELETE (a
 ## saved config) and START. Look at it and click, like every screen in the yard.
+## With a beam bar on the bed (trades.beam_cutting) the left side is the lengths: the next
+## length, nudged by the steps, its two ends (square or mitred), ADD, and the cut list (click one
+## to take it off); the right draws the bar with its cuts, and CLEAR and START.
 
 const BG := Color(0.04, 0.06, 0.07)
 const INK := Color(0.78, 0.95, 0.9)
@@ -21,6 +24,10 @@ var _status: Label
 var _cut: Button
 var _delete: Button
 var _rotate: Button
+## The next beam length the console will add: millimetres and its ends (degrees).
+var entry_mm := 1000
+var entry_a := 0.0
+var entry_b := 0.0
 
 
 func _ready() -> void:
@@ -85,6 +92,11 @@ func refresh() -> void:
 		# Out now, so the new buttons keep their names.
 		_list.remove_child(c)
 		c.queue_free()
+	if bed.call("is_beam"):
+		_refresh_lengths()
+		return
+	_rotate.visible = true
+	_delete.text = "DELETE"
 	var bus := Modules.bus("trades")
 	var templates: Array = bus.call("templates") if bus and bus.has_method("templates") else []
 	var saved := templates.filter(func(t: Dictionary) -> bool: return str(t.kind) == "traced")
@@ -162,13 +174,132 @@ func _kerf_m(t: Dictionary) -> float:
 	return m
 
 
+## The lengths screen for a bar on the bed.
+func _refresh_lengths() -> void:
+	var plate: Dictionary = bed.get("plate")
+	var job: Dictionary = bed.get("job")
+	var list: Array = bed.get("lengths")
+	_list.add_child(_label("NEXT LENGTH", 22, AMBER))
+	var length := _label("%d mm" % entry_mm, 40, INK)
+	length.name = "EntryLength"
+	_list.add_child(length)
+	var steps := GridContainer.new()
+	steps.columns = 3
+	steps.add_theme_constant_override("h_separation", 8)
+	steps.add_theme_constant_override("v_separation", 8)
+	_list.add_child(steps)
+	for by: int in [-1000, -100, -10, 1000, 100, 10]:
+		var b := _small("%+d" % by, func() -> void: nudge(by))
+		b.name = "Step_%s%d" % ["m" if by < 0 else "p", absi(by)]
+		steps.add_child(b)
+	var ends := HBoxContainer.new()
+	ends.add_theme_constant_override("separation", 8)
+	_list.add_child(ends)
+	var ea := _small("END A  %s" % _end_word(entry_a), func() -> void: toggle_end(0))
+	ea.name = "EndA"
+	ea.custom_minimum_size = Vector2(180, 54)
+	ends.add_child(ea)
+	var eb := _small("END B  %s" % _end_word(entry_b), func() -> void: toggle_end(1))
+	eb.name = "EndB"
+	eb.custom_minimum_size = Vector2(180, 54)
+	ends.add_child(eb)
+	var add := _button("ADD", _press_add)
+	add.name = "AddLength"
+	add.custom_minimum_size = Vector2(368, 58)
+	add.disabled = not job.is_empty()
+	_list.add_child(add)
+	_list.add_child(_label("CUT LIST  (click one to take it off)", 20, DIM))
+	if list.is_empty():
+		_list.add_child(_label("Nothing yet.", 18, DIM))
+	for i in list.size():
+		var e: Dictionary = list[i]
+		var row := _small("%d.  %d mm   %s / %s" % [i + 1, int(e.mm), _end_word(float(e.a)), _end_word(float(e.b))],
+				func() -> void: bed.call("remove_length", i))
+		row.name = "Length_%d" % i
+		row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		row.custom_minimum_size = Vector2(368, 46)
+		row.disabled = not job.is_empty()
+		_list.add_child(row)
+	var s: Vector2 = plate.size
+	var lines := PackedStringArray()
+	lines.append("BAR     %s %s  %d mm long" % [str(plate.material).to_upper(), StockBeams.family(str(plate.beam_family)).get("display_name", plate.beam_family),
+			roundi(s.x * 1000.0)])
+	lines.append("        %d x %d x %d mm section" % [roundi(s.y * 1000.0), roundi(float(plate.thickness) * 1000.0), roundi(float(plate.wall) * 1000.0)])
+	var lay := TradesBeamCuts.layout(plate, list)
+	if not list.is_empty():
+		if lay.is_empty():
+			lines.append("USED    the list is longer than the bar")
+		else:
+			lines.append("USED    %d mm in %d pieces,  %d mm left" % [roundi(float(lay.used_m) * 1000.0), list.size(), roundi(float(lay.left_m) * 1000.0)])
+			var feed: float = bed.call("_feed")
+			lines.append("CUTS    %d across the bar,  about %d s" % [(lay.cuts as Array).size(), ceili((lay.cuts as Array).size() * (s.y + 0.06) / feed)])
+	_info.text = "\n".join(lines)
+	var why: String = bed.call("length_refusal")
+	if not job.is_empty():
+		var program: Array = job.program
+		_status.text = "CUTTING  %d%%" % roundi(100.0 * int(job.step) / maxf(program.size(), 1))
+		_status.add_theme_color_override("font_color", AMBER)
+	elif why == "":
+		_status.text = "READY  ·  press START"
+		_status.add_theme_color_override("font_color", GREEN)
+	else:
+		_status.text = why.to_upper()
+		_status.add_theme_color_override("font_color", RED if why != "Add a length" else DIM)
+	_cut.disabled = why != ""
+	_rotate.visible = false
+	_delete.text = "CLEAR"
+	_delete.disabled = list.is_empty() or not job.is_empty()
+	_preview.queue_redraw()
+
+
+func nudge(by: int) -> void:
+	entry_mm = clampi(entry_mm + by, 50, 12000)
+	refresh()
+
+
+## Steps an end through square, 45, 30 and 60 degrees.
+func toggle_end(which: int) -> void:
+	var m := TradesBeamCuts.MITRES
+	if which == 0:
+		entry_a = m[(m.find(entry_a) + 1) % m.size()]
+	else:
+		entry_b = m[(m.find(entry_b) + 1) % m.size()]
+	refresh()
+
+
+static func _end_word(deg: float) -> String:
+	return "SQUARE" if deg == 0.0 else "%d°" % roundi(deg)
+
+
+func _press_add() -> void:
+	var why: String = bed.call("add_length", entry_mm, entry_a, entry_b)
+	if why != "":
+		_status.text = why.to_upper()
+		_status.add_theme_color_override("font_color", RED)
+
+
+func _small(text: String, pressed: Callable) -> Button:
+	var b := _button(text, pressed)
+	b.custom_minimum_size = Vector2(117, 54)
+	b.add_theme_font_size_override("font_size", 19)
+	return b
+
+
 func _press_cut() -> void:
+	if bed.call("is_beam"):
+		var why_beam: String = bed.call("cut_lengths")
+		if why_beam != "":
+			_status.text = why_beam.to_upper()
+		return
 	var why: String = bed.call("cut")
 	if why != "":
 		_status.text = why.to_upper()
 
 
 func _delete_picked() -> void:
+	if bed.call("is_beam"):
+		bed.call("clear_lengths")
+		return
 	var bus := Modules.bus("trades")
 	if bus and bus.has_method("remove_template"):
 		bus.call("remove_template", str(bed.get("picked")))
@@ -192,6 +323,9 @@ func _draw_preview() -> void:
 	if not plate.is_empty():
 		var s: Vector2 = plate.size
 		_preview.draw_rect(Rect2(to.call(-s * 0.5), s * scale), Color(0.35, 0.38, 0.4, 0.8))
+	if bed.call("is_beam"):
+		_draw_bar(to)
+		return
 	var t: Dictionary = bed.call("template", str(bed.get("picked")))
 	var job: Dictionary = bed.get("job")
 	if not job.is_empty():
@@ -209,6 +343,31 @@ func _draw_preview() -> void:
 		for p in loop:
 			pts.append(to.call(p))
 		_preview.draw_polyline(pts, AMBER if not job.is_empty() else INK, 3.0, true)
+	if not job.is_empty():
+		var head: Vector2 = bed.get("head")
+		_preview.draw_circle(to.call(head), 7.0, Color(0.6, 0.85, 1.0))
+
+
+## A bar's cut list: the pieces shaded in turn, each cut line, and the head while it runs.
+func _draw_bar(to: Callable) -> void:
+	var plate: Dictionary = bed.get("plate")
+	var job: Dictionary = bed.get("job")
+	var lay: Dictionary = job.layout if not job.is_empty() else TradesBeamCuts.layout(plate, bed.get("lengths"))
+	if lay.is_empty():
+		return
+	var w: float = (plate.size as Vector2).y
+	var k := 0
+	for pc: Dictionary in lay.pieces:
+		var x0 := float(pc.from)
+		var x1 := x0 + int(pc.mm) / 1000.0
+		var ta := tan(deg_to_rad(float(pc.a))) * w
+		var tb := tan(deg_to_rad(float(pc.b))) * w
+		var quad := PackedVector2Array([to.call(Vector2(x0, -w * 0.5)), to.call(Vector2(x1, -w * 0.5)),
+				to.call(Vector2(x1 - tb, w * 0.5)), to.call(Vector2(x0 + ta, w * 0.5))])
+		_preview.draw_colored_polygon(quad, Color(0.3, 0.75, 0.65, 0.35 if k % 2 == 0 else 0.2))
+		k += 1
+	for c: Array in lay.cuts:
+		_preview.draw_line(to.call(c[0]), to.call(c[1]), AMBER if not job.is_empty() else INK, 3.0, true)
 	if not job.is_empty():
 		var head: Vector2 = bed.get("head")
 		_preview.draw_circle(to.call(head), 7.0, Color(0.6, 0.85, 1.0))
