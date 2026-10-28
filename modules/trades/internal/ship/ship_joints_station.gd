@@ -1525,16 +1525,22 @@ func inspect_lines() -> PackedStringArray:
 	if _bus == null:
 		return lines
 	var loose := tractor.held if tractor.held else tractor.aimed_part(Flags.is_on("trades.part_info"))
+	var info := aim_info() if loose == null else {}
 	var slot_id := ""
 	if loose:
 		slot_id = loose.slot_id
 	elif joint:
 		slot_id = FastenerPoint.slot_of(joint.joint_id)
+	elif not info.is_empty():
+		slot_id = str(info.get("slot_id", ""))
 	else:
 		slot_id = tractor.aimed_slot()
 	var slot := _bus.get_slot(slot_id) if slot_id != "" else null
 	if slot == null:
-		return lines
+		# A hull plate, a frame member, a pipe: no slot, but Ship and Bay knows all about it.
+		return info_lines(info, true) if not info.is_empty() and joint == null else lines
+	if str(info.get("slot_id", "")) != slot_id:
+		info = {}
 	var comp := _bus.get_component(slot_id)
 	if comp == "":
 		comp = loose.component if loose else String(_removed.get(slot_id, slot.fitted))
@@ -1548,6 +1554,8 @@ func inspect_lines() -> PackedStringArray:
 	lines.append("%-9s %s" % ["STATE", SLOT_STATES.get(_bus.get_slot_state(slot_id), "-")])
 	var size := slot.box.size
 	var mass := float(spec.get("mass")) if spec else 0.0
+	if mass <= 0.0:
+		mass = float(info.get("mass_kg", 0.0))
 	if mass > 0.0:
 		lines.append("%-9s %s" % ["MASS", _kg(mass)])
 	else:
@@ -1555,6 +1563,9 @@ func inspect_lines() -> PackedStringArray:
 	lines.append("%-9s %.2f x %.2f x %.2f m" % ["SIZE", size.x, size.y, size.z])
 	if spec and str(spec.get("material")) != "":
 		lines.append("%-9s %s" % ["MATERIAL", str(spec.get("material"))])
+	elif str(info.get("material", "")) != "":
+		lines.append("%-9s %s" % ["MATERIAL", str(info.material)])
+	lines.append_array(info_lines(info, false))
 	# The joints holding it on, by kind and spec, and how many are in.
 	var groups := {}
 	for f in slot.fasteners:
@@ -1593,6 +1604,97 @@ func inspect_lines() -> PackedStringArray:
 	if not slot.accepts.is_empty():
 		lines.append("%-9s %s" % ["TAKES", ", ".join(slot.accepts)])
 	return lines
+
+
+## trades.wreck_info (beenster, 0.3.27: "i should be able to see all the information about any
+## object on the wreck when i look at it"): what Ship and Bay knows of the part on the ship or
+## wreck under the aim (ShipBayBus.inspect_at), or {} for none.
+const INFO_M := 12.0
+
+
+func aim_info() -> Dictionary:
+	if _bus == null or not Flags.is_on("trades.wreck_info") or bay == null or bay.worker == null \
+			or not bay.worker.is_inside_tree():
+		return {}
+	var o := bay.worker.aim_origin()
+	var q := PhysicsRayQueryParameters3D.create(o, o + bay.worker.aim_dir() * INFO_M)
+	q.exclude = [bay.worker.get_rid()]
+	var hit := bay.worker.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return {}
+	return _bus.inspect_at(hit.collider, int(hit.shape), hit.position)
+
+
+const INFO_STATES := {"fitted": "FITTED", "loosened": "LOOSENED", "empty": "OFF THE SHIP",
+		"positioned": "IN PLACE, NOT FASTENED", "installed": "INSTALLED"}
+
+
+## The sheet from inspect_at's answer: `whole` for a part with no slot (its title, mass and
+## joints too), else only what the slot's own sheet doesn't say.
+static func info_lines(info: Dictionary, whole: bool) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if info.is_empty():
+		return lines
+	var row := func(label: String, text: String) -> void:
+		lines.append("%-9s %s" % [label, text])
+	if whole:
+		var title := str(info.get("display_name", ""))
+		if title == "":
+			title = str(info.get("name", "part"))
+		lines.append(title.to_upper())
+		if str(info.get("slot_state", "")) != "":
+			row.call("STATE", INFO_STATES.get(str(info.slot_state), str(info.slot_state)))
+		if float(info.get("mass_kg", 0.0)) > 0.0:
+			row.call("MASS", _kg(float(info.mass_kg)))
+		if str(info.get("material", "")) != "":
+			row.call("MATERIAL", str(info.material))
+	var kind := str(info.get("kind", ""))
+	var category := str(info.get("category", ""))
+	if kind != "" or category != "":
+		row.call("KIND", kind + (" (%s)" % category if category != "" and category != kind else ""))
+	if info.has("condition"):
+		var cond := "%d%%" % roundi(float(info.condition) * 100.0)
+		var marks := PackedStringArray()
+		if float(info.get("wear", 0.0)) >= 0.01:
+			marks.append("worn %d%%" % roundi(float(info.wear) * 100.0))
+		if float(info.get("scorch", 0.0)) >= 0.01:
+			marks.append("scorched %d%%" % roundi(float(info.scorch) * 100.0))
+		row.call("CONDITION", cond + (" (%s)" % ", ".join(marks) if not marks.is_empty() else ""))
+	if float(info.get("value_new", 0.0)) > 0.0 or float(info.get("value_now", 0.0)) > 0.0:
+		row.call("VALUE", "%s cr now, %s cr new" % [_credits(float(info.value_now)), _credits(float(info.get("value_new", 0.0)))])
+	var removal := str(info.get("removal", ""))
+	if removal != "" and removal != "attached":
+		row.call("REMOVED", removal)
+	var faults: Array = info.get("faults", [])
+	if not faults.is_empty():
+		row.call("FAULTS", ", ".join(PackedStringArray(faults)))
+	var power := str(info.get("power", ""))
+	if power != "" and power != "none":
+		var level := float(info.get("power_level", 0.0))
+		row.call("POWER", power + (" at %d%%" % roundi(level * 100.0) if power == "source" else ""))
+	if str(info.get("fluid", "")) != "":
+		row.call("FLUID", "%s, %d of %d L" % [str(info.fluid), roundi(float(info.get("litres", 0.0))), roundi(float(info.get("capacity_l", 0.0)))])
+	if bool(info.get("hazard", false)):
+		row.call("HAZARD", "yes: take care")
+	if whole:
+		var joints: Dictionary = info.get("joints", {})
+		var first := true
+		for k: String in joints:
+			var c: Array = joints[k]
+			row.call("JOINTS" if first else "", "%d %s%s, %d in" % [int(c[1]), k, "" if int(c[1]) == 1 else "s", int(c[0])])
+			first = false
+		if joints.is_empty():
+			row.call("JOINTS", "none")
+	return lines
+
+
+static func _credits(cr: float) -> String:
+	var s := str(roundi(cr))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return s + out
 
 
 ## The test stand's sheet: what's on it, how many of each are in, and the joint you're on.
