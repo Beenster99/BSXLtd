@@ -426,9 +426,11 @@ func _build() -> void:
 		screen.call("add_button", "organise", "ORGANISE SCRAP", func() -> void: screen_action.emit("organise"))
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(d.x, CHASSIS_TOP - HOVER + 0.5, d.y)
+	# Up to the chassis top only: the deck has its own (a box reaching higher held what was put
+	# on the deck 42 cm over it: beenster, 0.3.26).
+	shape.size = Vector3(d.x, CHASSIS_TOP - HOVER, d.y)
 	col.shape = shape
-	col.position = Vector3(0, (HOVER + CHASSIS_TOP + 0.5) * 0.5, 0)
+	col.position = Vector3(0, (HOVER + CHASSIS_TOP) * 0.5, 0)
 	add_child(col)
 	# The deck: a grating plate on a frame; the line trolleys have a waist rail round three
 	# sides (not the back). The yard trolleys have none, so parts stack on an open deck

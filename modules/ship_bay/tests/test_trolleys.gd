@@ -394,6 +394,22 @@ func run_tests() -> void:
 		wrist.queue_free()
 	bus.set_part_values(Callable())
 
+	# Something set down on a parked yard trolley rests on its deck, not over it (0.3.26: the
+	# chassis's box reached 42 cm over the deck).
+	var low: Node3D = (fleet.get("trolleys") as Dictionary)["l"]
+	var top := (low.get("deck") as Node3D).global_position
+	var crate := RigidBody3D.new()
+	var cs := CollisionShape3D.new()
+	cs.shape = BoxShape3D.new()
+	(cs.shape as BoxShape3D).size = Vector3(0.6, 0.4, 0.6)
+	crate.add_child(cs)
+	yard.add_child(crate)
+	crate.global_position = top + Vector3(0, 0.5, 0)
+	for i in 90:
+		await get_tree().physics_frame
+	var rest := crate.global_position.y - 0.2 - top.y
+	check(absf(rest) < 0.03, "a box set down on a trolley rests on its deck: %.3f m over" % rest)
+	crate.queue_free()
 	bus.crate_carried.disconnect(on_carry)
 	yard.queue_free()
 	await frames(1)
