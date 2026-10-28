@@ -1888,7 +1888,7 @@ func _refresh_stores() -> void:
 			continue   # still on its delivery truck
 		var at := _bus.crate_position(id)
 		var kind := StorageLayout.kind_for(float(c["mass"]), str(c["item"]))
-		var h := _goods_items(batches, str(c["item"]), int(c["qty"]), float(c.get("condition", 1.0)),
+		var h := _goods_items(batches, ItemLook.look_id(str(c["item"]), str(c.get("shape", ""))), int(c["qty"]), float(c.get("condition", 1.0)),
 				Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4), 2.4, at, kind != "bulk")
 		var foot := Vector2(2.4, 2.4) if kind == "bulk" else Vector2(1.2, 1.4)
 		ItemLook.look_box(_stores, AABB(at - Vector3(foot.x * 0.5, 0.0, foot.y * 0.5), Vector3(foot.x, maxf(h, 0.2), foot.y)),
