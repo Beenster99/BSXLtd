@@ -50,7 +50,11 @@ func run_tests() -> void:
 	var jid := s.fasteners[0].joint_id
 	check(bus.note_joint_removed(jid) and not bus.is_joint_tight(jid) and bus.get_slot_state(s.slot_id) == ShipBayBus.SlotState.LOOSENED,
 			"a joint on it comes undone (%s)" % jid)
+	var im: VsShipImport = (bay.get("model") as FileShip).importer
+	var c := im.joint_at(s.fasteners[0].path)
+	check(c != null and im.kit.model.joint_view(c) == null, "its own bolt head or weld bead goes with it")
 	check(bus.note_joint_made(jid, 0.9) and bus.is_joint_tight(jid), "and is made again")
+	check(im.kit.model.joint_view(c) != null, "and comes back when it is made")
 	var marker: MeshInstance3D = (bay.get("markers") as Dictionary)[jid]
 	check(marker.material_override != null, "its marker shows it")
 	# A late joiner builds the same one, with what was done to it.

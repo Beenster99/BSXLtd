@@ -38,6 +38,8 @@ var access: Node3D
 var pieces: Dictionary = {}
 ## joint_id -> MeshInstance3D marker.
 var markers: Dictionary = {}
+## joint_id -> its joint's path in the ship's file (a ship built from one).
+var _joint_paths: Dictionary = {}
 var _bus: ShipBayBus
 var _tight_mat := _quiet_ring()
 var _loose_mat := _tight_mat
@@ -217,6 +219,7 @@ func _show_ship(def: ShipDefinition) -> void:
 		access = null
 	pieces = {}
 	markers = {}
+	_joint_paths = {}
 	seat = Vector3.ZERO
 	if cradle and cradle.get("load_node") != null and not is_instance_valid(cradle.get("load_node")):
 		cradle.set("load_node", null)
@@ -266,6 +269,8 @@ func _show_ship(def: ShipDefinition) -> void:
 			var m := _fastener_marker(f)
 			ship_root.add_child(m)
 			markers[f.joint_id] = m
+			if f.path != "":
+				_joint_paths[f.joint_id] = f.path
 		_apply_slot(s.slot_id)
 	_refresh_markers()
 
@@ -608,6 +613,26 @@ func _show_joint(joint_id: String) -> void:
 	m.material_override = _tight_mat if tight else _loose_mat
 	for head: Node in m.get_children():
 		(head as Node3D).visible = tight
+	_show_file_head(joint_id, tight)
+
+
+## A ship built from its file draws every joint's own head too (Void Salvage's JointView):
+## gone while the joint is undone, back when it is made (0.3.26: undone bolts and cut rivets
+## stayed in place).
+func _show_file_head(joint_id: String, tight: bool) -> void:
+	if not model is FileShip or not _joint_paths.has(joint_id):
+		return
+	var im: VsShipImport = (model as FileShip).importer
+	var c := im.joint_at(str(_joint_paths[joint_id]))
+	if c == null or im.kit == null or im.kit.model == null:
+		return
+	var pm := im.kit.model
+	if not tight:
+		var view := pm.forget_view(c)
+		if view:
+			view.clear()
+	elif pm.joint_view(c) == null and pm.parts.has(c.part_a):
+		pm.remake_view(c, pm.parts[c.part_a])
 
 
 ## Only the rings near the focus point show (ShipBayBus.set_marker_focus); the heads always
