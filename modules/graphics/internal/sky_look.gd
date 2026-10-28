@@ -22,6 +22,24 @@ const PALETTE := {
 	"halo": 0.2,
 	"horizon_glow": 0.08,
 }
+## A calm sky (flag "graphics.calm_sky", beenster's 0.3.26 playtest: "the planets are too
+## bright and distracting, the player should be focused on the work in the yard"): smaller
+## planets sat back in the air, fewer and dimmer stars, a faint galaxy and nebula, a softer
+## halo round the sun.
+const CALM := {
+	"giant_radius": 0.17,
+	"ice_radius": 0.05,
+	"moon_radius": 0.028,
+	"planet_dim": 0.4,
+	"star_brightness": 2.2,
+	"faint_stars": 0.5,
+	"galaxy": 0.25,
+	"nebula": 0.3,
+	"halo": 0.12,
+}
+## Meta on the sky material: that the calm values are on it.
+const CALMED := "gfx_sky_calm"
+
 ## Cloud cover (0 clear .. 1 overcast) and how far the wind moves them per hour.
 const CLOUD_COVER := 0.5
 const WIND_PER_HOUR := Vector2(0.21, 0.08)
@@ -34,7 +52,7 @@ const NIGHT_AMBIENT := 0.35
 
 
 ## Dresses an AlienSky (a node in group "alien_sky" with sky_material and environment).
-static func apply(sky: Node) -> void:
+static func apply(sky: Node, calm := false) -> void:
 	var m := sky.get("sky_material") as ShaderMaterial
 	if m == null:
 		return
@@ -44,6 +62,12 @@ static func apply(sky: Node) -> void:
 	for key: String in PALETTE:
 		m.set_shader_parameter(key, PALETTE[key])
 	m.set_shader_parameter("cloud_cover", CLOUD_COVER)
+	for key: String in CALM:
+		m.set_shader_parameter(key, CALM[key] if calm else PALETTE.get(key))   # null: the shader's default
+	if calm:
+		m.set_meta(CALMED, true)
+	elif m.has_meta(CALMED):
+		m.remove_meta(CALMED)
 	var env := sky.get("environment") as Environment
 	if env:
 		env.fog_height = HAZE_HEIGHT
@@ -60,6 +84,10 @@ static func remove(sky: Node) -> void:
 	m.remove_meta(SAVED)
 	for key: String in PALETTE:
 		m.set_shader_parameter(key, null)   # back to the shader's own defaults
+	for key: String in CALM:
+		m.set_shader_parameter(key, null)
+	if m.has_meta(CALMED):
+		m.remove_meta(CALMED)
 	var env := sky.get("environment") as Environment
 	if env:
 		env.fog_height_density = 0.0

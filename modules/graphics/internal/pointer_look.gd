@@ -13,6 +13,10 @@ extends Node
 ##     Multiplayer's ping_removed. Z (ACTION, rebindable) pings too, for mice without a
 ##     middle button. A ping out of view gets an arrow at the screen's edge pointing to it,
 ##     and a crewmate's ping plays its own sound, so it isn't missed.
+##   - Emotes: when Multiplayer offers an emote wheel (net.open_emote_wheel), a tap of the
+##     middle button or Z pings on release and holding it past HOLD opens the wheel instead;
+##     letting go picks (net.close_emote_wheel) and sends no ping. Without one, a press pings
+##     at once as before.
 
 signal hovered(target: Node)
 signal ping_shown(ping: Dictionary)
@@ -43,6 +47,8 @@ const PING_COLOUR := Color(1.0, 0.75, 0.25)
 const NAME_META := "gfx_name"
 ## The ping key (as well as the middle mouse button).
 const ACTION := "graphics.ping"
+## Held longer than this (s), the ping button opens the emote wheel instead.
+const HOLD := 0.25
 ## How far in from the screen's edge the arrows to pings out of view sit, px.
 const EDGE := 56.0
 
@@ -57,6 +63,11 @@ var live: Array[Dictionary] = []
 var _net: Node
 var _local_id := 0
 var _arrows: Control
+## While the ping button is down (with an emote wheel to open): when it went down (s), whether
+## by the mouse, and whether the wheel is open. -1: not down.
+var _held_at := -1.0
+var _held_mouse := false
+var _wheel := false
 
 
 func attach_net(net: Node) -> void:
@@ -100,6 +111,7 @@ func _process(_delta: float) -> void:
 	elif target:
 		set_target(null)
 	_age_pings()
+	_follow_hold()
 	if _arrows:
 		_arrows.queue_redraw()
 
@@ -110,8 +122,50 @@ func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	var key := InputMap.has_action(ACTION) and not event is InputEventMouse and event.is_action_pressed(ACTION) and not event.is_echo()
 	if key or (mb and mb.pressed and mb.button_index == MOUSE_BUTTON_MIDDLE):
-		if ping_at_pointer():
+		if has_wheel():
+			_held_at = _now()
+			_held_mouse = mb != null
 			get_viewport().set_input_as_handled()
+		elif ping_at_pointer():
+			get_viewport().set_input_as_handled()
+
+
+## Whether Multiplayer offers the emote wheel (a hold of the ping button opens it).
+func has_wheel() -> bool:
+	return _net != null and _net.has_method("open_emote_wheel") and _net.has_method("close_emote_wheel")
+
+
+## The ping button held: past HOLD the wheel opens; let go, a tap pings and a hold picks.
+## Polled, so a release the wheel's own UI swallows still counts.
+func _follow_hold() -> void:
+	if _held_at < 0.0:
+		return
+	var down := Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE) if _held_mouse \
+			else (InputMap.has_action(ACTION) and Input.is_action_pressed(ACTION))
+	if down:
+		if not _wheel and _now() - _held_at >= HOLD and has_wheel():
+			_wheel = true
+			_net.call("open_emote_wheel")
+		return
+	release_hold()
+
+
+## Lets go of the ping button (tests call it): the wheel picks, or a tap pings.
+func release_hold() -> void:
+	if _held_at < 0.0:
+		return
+	_held_at = -1.0
+	if _wheel:
+		_wheel = false
+		if has_wheel():
+			_net.call("close_emote_wheel")
+	else:
+		ping_at_pointer()
+
+
+## Whether the emote wheel is open from a hold.
+func wheel_open() -> bool:
+	return _wheel
 
 
 ## Where an arrow to a ping out of view sits on screen and which way it points:

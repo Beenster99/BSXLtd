@@ -36,6 +36,8 @@ extends Node
 ##     drawn as that ground surface, in its own colour and roughness: patches, a tint per
 ##     slab, aggregate, dirt, oil stains, scuffs and relief ("graphics.surfaces", G5). Set
 ##     the meta on the material (shared paints are fine) before a node using it is added;
+##   - a calmer sky (smaller, dimmer planets, fewer stars) while "graphics.calm_sky" is on;
+##   - sea(size) gives the water for a shore ("graphics.sea");
 ##   - more groups (gfx_screen...) arrive with later stages.
 ##   Example:  unit.add_to_group("gfx_interactable"); unit.set_meta("gfx_id", "unit:3")
 ## Group names are plain strings, so tagging a node needs no dependency on this module.
@@ -60,6 +62,8 @@ const SURFACES := "graphics.surfaces"
 const SCREENS := "graphics.screens"
 ## The yard darker by day and night, night lamps in pools (beenster, 0.3.23).
 const MOOD := "graphics.mood"
+const CALM_SKY := "graphics.calm_sky"
+const SEA := "graphics.sea"
 ## Group of rooms (halls, the bay) that get their own bounce light and reflections.
 const ROOM := "gfx_room"
 ## Meta on a room: its inside as an AABB in the room node's space.
@@ -82,6 +86,7 @@ const ZFightCheck := preload("res://modules/graphics/internal/zfight_check.gd")
 const SurfaceLook := preload("res://modules/graphics/internal/surface_look.gd")
 const LedScreen := preload("res://modules/graphics/internal/led_screen.gd")
 const MoodLook := preload("res://modules/graphics/internal/mood_look.gd")
+const SeaLook := preload("res://modules/graphics/internal/sea_look.gd")
 ## Seconds after a room appears before its bounce light bakes (its owner may still be
 ## building it).
 const BAKE_DELAY := 0.5
@@ -98,6 +103,7 @@ var _daylight := -1.0
 var _sky_on := false
 var _surfaces_on := false
 var _mood_on := false
+var _calm_on := false
 ## VoxelGIs waiting to bake, one per frame after BAKE_DELAY: [{gi, at}].
 var _bakes: Array[Dictionary] = []
 var _sky_hour := -100.0
@@ -187,7 +193,7 @@ func restyle(n: Node) -> void:
 ## Puts Graphics's sky on an AlienSky while "graphics.sky" is on, and takes it off when not.
 func _dress_sky(sky: Node) -> void:
 	if Flags.is_on(SKY):
-		SkyLook.apply(sky)
+		SkyLook.apply(sky, Flags.is_on(CALM_SKY))
 		look_applied.emit(sky)
 	else:
 		SkyLook.remove(sky)
@@ -216,6 +222,15 @@ func led_screen(glass: MeshInstance3D, kind: String, text: String) -> Node3D:
 	if not Flags.is_on(SCREENS) or glass == null or glass.get_parent() == null:
 		return null
 	return LedScreen.over(glass, kind, text)
+
+
+## A sea ("graphics.sea"): a flat plane `size` metres across (x, z) at y 0 of whatever you add it
+## to, its top the water: slow swells, the sky's reflection by the hour, deeper colour further
+## out and foam where it laps against anything solid. No collision. Off, a plain dark-blue
+## plane, so the call always gives water. Lay the shore, quay walls and the seabed yourself.
+##   yard.add_child(Modules.bus("graphics").sea(Vector2(2000, 2000)))
+func sea(size: Vector2) -> MeshInstance3D:
+	return SeaLook.make(size, Flags.is_on(SEA))
 
 
 ## Faces under root that Z-fight: [{a, b, area, at, normal}], biggest overlap first (a and b
@@ -332,8 +347,9 @@ func _on_flags() -> void:
 		profiler.queue_free()
 		profiler = null
 		Keys.unregister(Profiler.ACTION)
-	if is_inside_tree() and Flags.is_on(SKY) != _sky_on:
+	if is_inside_tree() and (Flags.is_on(SKY) != _sky_on or Flags.is_on(CALM_SKY) != _calm_on):
 		_sky_on = Flags.is_on(SKY)
+		_calm_on = Flags.is_on(CALM_SKY)
 		for sky in get_tree().get_nodes_in_group("alien_sky"):
 			_dress_sky(sky)
 	if is_inside_tree() and Flags.is_on(SURFACES) != _surfaces_on:
