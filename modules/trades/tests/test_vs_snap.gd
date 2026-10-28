@@ -11,7 +11,7 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 	Flags.set_flag("trades.aim_visible", true)
-	var yard := (load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene).instantiate() as Node3D
+	var yard := (load(Router.scene_path(ShipBayBus.SHIPYARD_SCENE)) as PackedScene).instantiate() as Node3D
 	add_child(yard)
 	await frames(10)
 	var rig: TradesBay = yard.get_node_or_null(TradesBus.YARD_RIG)
