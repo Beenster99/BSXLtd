@@ -497,9 +497,11 @@ func _obstacles(t: Trolley) -> Array:
 		# Riding on this trolley's deck is not being in its way.
 		if flat.length() > t.radius() or p.y < 0.5:
 			out.append([p, 0.4])
+	# Every other trolley down its whole length, not just its middle.
 	for o: Trolley in trolleys.values():
 		if o != t:
-			out.append([o.global_position, o.radius()])
+			for p2 in o.footprint():
+				out.append([p2, o.radius(), true])
 	return out
 
 
@@ -1083,21 +1085,34 @@ func _go_to_person(t: Trolley, to: Vector3) -> void:
 	var reach := t.radius() + COME_GAP
 	var stand := to + dir * reach
 	# Another trolley already waiting there (goods brought earlier, not yet collected): stand
-	# beside it, round the person, rather than queue behind it for good.
-	for k in 12:
-		var a := (float((k + 1) / 2) * (1.0 if k % 2 == 0 else -1.0)) * PI / 6.0 if k > 0 else 0.0
-		var p := to + dir.rotated(Vector3.UP, a) * reach
-		if _stand_free(t, p) and (nav == null or nav.is_free(p, t.clearance())):
-			stand = p
+	# beside it, round the person, rather than queue behind it for good; a ring further out
+	# when the near one is full.
+	var found := false
+	for out: float in [0.0, 3.0, 6.0]:
+		for k in 12:
+			var a := (float((k + 1) / 2) * (1.0 if k % 2 == 0 else -1.0)) * PI / 6.0 if k > 0 else 0.0
+			var p := to + dir.rotated(Vector3.UP, a) * (reach + out)
+			if _stand_free(t, p, atan2(p.x - to.x, p.z - to.z)) and (nav == null or nav.is_free(p, t.clearance())):
+				stand = p
+				found = true
+				break
+		if found:
 			break
 	_go(t, stand, atan2(stand.x - to.x, stand.z - to.z))
 
 
-## No other trolley stands (still, with nowhere to go) where `t` would stand at `p`.
-func _stand_free(t: Trolley, p: Vector3) -> bool:
+## No other trolley stands, or is on its way to stand, where `t` would stand at `p` facing
+## `yaw`, down either one's whole length (two brought goods at once: the second stood
+## behind the first for good).
+func _stand_free(t: Trolley, p: Vector3, yaw: float) -> bool:
 	for o: Trolley in trolleys.values():
-		if o != t and o.path.is_empty() and Vector2(o.global_position.x - p.x, o.global_position.z - p.z).length() < o.radius() + t.radius() + 0.4:
-			return false
+		if o == t:
+			continue
+		var there := o.footprint() if o.path.is_empty() else o.footprint(o.path[o.path.size() - 1], o.yaw() if is_nan(o.final_yaw) else o.final_yaw)
+		for a in t.footprint(p, yaw):
+			for b in there:
+				if a.distance_to(b) < o.radius() + t.radius() + 0.4:
+					return false
 	return true
 
 
@@ -1476,7 +1491,8 @@ func _go(t: Trolley, to: Vector3, yaw: float, around := false) -> bool:
 	if around:
 		for o: Trolley in trolleys.values():
 			if o != t:
-				avoid.append([o.global_position, o.radius() + 0.7])
+				for p in o.footprint():
+					avoid.append([p, o.radius() + 0.7])
 	t.path = nav.route(t.global_position, to, t.clearance(), avoid)
 	t.final_yaw = yaw
 	var far := Vector2(to.x - t.global_position.x, to.z - t.global_position.z).length() > 0.3
@@ -1517,8 +1533,10 @@ func _give_way_point(t: Trolley) -> Vector3:
 	var near: Trolley = null
 	var near_d := INF
 	for o: Trolley in trolleys.values():
-		var d := o.global_position.distance_to(t.global_position)
-		if o != t and d < near_d:
+		if o == t:
+			continue
+		var d := t.gap_to(o)
+		if d < near_d:
 			near_d = d
 			near = o
 	if near == null:
@@ -1532,7 +1550,10 @@ func _give_way_point(t: Trolley) -> Vector3:
 		for turn: float in [0.0, 0.8, -0.8, 1.57, -1.57]:
 			var p := t.global_position + away.rotated(Vector3.UP, turn) * dist
 			p.y = 0.0
-			if nav.is_free(p, t.clearance()) and p.distance_to(near.global_position) > near.radius() + t.radius():
+			var clear := true
+			for q in near.footprint():
+				clear = clear and p.distance_to(q) > near.radius() + t.radius()
+			if nav.is_free(p, t.clearance()) and clear:
 				return p
 	return Vector3.INF
 
@@ -1543,7 +1564,7 @@ func _has_way(t: Trolley) -> bool:
 	for o: Trolley in trolleys.values():
 		if o == t:
 			continue
-		if o.global_position.distance_to(t.global_position) > o.radius() + t.radius() + 0.9:
+		if t.gap_to(o) > 0.9:
 			continue
 		# One standing still (parked, unloading) won't move off: go round it.
 		if o.path.is_empty() and o.drive_input == Vector2.ZERO:
@@ -1682,7 +1703,8 @@ func _show_cargo() -> void:
 		var first := _bus.crate_info(load[0])
 		for cid in load:
 			var c := _bus.crate_info(cid)
-			lots.append({"item": str(c.get("item", "")), "count": int(c.get("qty", 1)), "condition": float(c.get("condition", 1.0)), "crate_id": cid})
+			lots.append({"item": ItemLook.look_id(str(c.get("item", "")), str(c.get("shape", ""))), "count": int(c.get("qty", 1)),
+					"condition": float(c.get("condition", 1.0)), "crate_id": cid})
 			mass += float(c.get("mass", 0.0)) * int(c.get("qty", 1))
 		var name := "%s x%d" % [first.get("name", ""), int(first.get("qty", 1))]
 		if load.size() > 1:
@@ -1703,7 +1725,7 @@ func beam_out(crate_id: String, to: Vector3) -> void:
 ## beam coming from `emitter`; `ends` are other trolleys that wait for it to land.
 func _beam_crate(cid: String, from: Variant, to: Variant, emitter: Trolley, ends: Array, done := Callable()) -> void:
 	var c := _bus.crate_info(cid)
-	var lots := [{"item": str(c.get("item", "")), "count": int(c.get("qty", 1)),
+	var lots := [{"item": ItemLook.look_id(str(c.get("item", "")), str(c.get("shape", ""))), "count": int(c.get("qty", 1)),
 			"look": ItemLook.look_for(float(c.get("condition", 1.0)))}]
 	var target: Variant = (to as Trolley).deck if to is Trolley else to
 	var all := ends.duplicate()

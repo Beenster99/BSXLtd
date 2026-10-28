@@ -13,14 +13,29 @@ func run_tests() -> void:
 	bus.reset_data()
 	var spot := bus.shipyard_spot("rig_emitter")
 	check(spot != Transform3D.IDENTITY and absf(spot.origin.y - Rig.DECK_H) < 0.001, "the rig has a spot at deck height: %s" % spot.origin)
-	check(Yard.room_at(spot.origin) == "preassembly", "in Pre-assembly")
-	check(spot.origin.distance_to(bus.shipyard_spot("bench_preassembly").origin) > 6.0, "clear of Trades' test stand")
-	# The rig's floor outline, mass rail included, stays in the room and off the lines' trolleys.
-	var room: AABB = Yard.ROOMS["preassembly"]["box"]
-	for corner: Vector3 in [Vector3(-2.4, 0, -1.0), Vector3(Rig.DECK.x * 0.5 + Rig.MASS_RAIL + 0.6, 0, 1.0),
-			Vector3(-2.4, 0, 1.0), Vector3(Rig.DECK.x * 0.5 + Rig.MASS_RAIL + 0.6, 0, -1.0)]:
+	# It stands in the upgrade hall (beenster, 0.3.26), in its own bay there.
+	check(Yard.room_at(spot.origin) == "upgrades", "in the upgrade hall")
+	var bay: Array = Yard.UPGRADE_BAYS[0]
+	var bay_box := Rect2((bay[4] as Vector2) - Yard.UPGRADE_BAY * 0.5, Yard.UPGRADE_BAY).grow(-0.2)
+	# The rig's floor outline, mass rail and worker's place included, stays inside its bay.
+	for corner: Vector3 in [Vector3(-2.4, 0, -1.0), Vector3(Rig.DECK.x * 0.5 + Rig.MASS_RAIL + 0.6, 0, 1.6),
+			Vector3(-2.4, 0, 1.6), Vector3(Rig.DECK.x * 0.5 + Rig.MASS_RAIL + 0.6, 0, -1.0)]:
 		var p := spot * (corner - Vector3(0, Rig.DECK_H, 0))
-		check(room.grow(-0.3).has_point(p + Vector3(0, 1, 0)) and p.x < 33.0 and p.z > 7.0, "the rig's corner %s is in the room, west of line A's trolley and south of the doorway" % p)
+		check(bay_box.has_point(Vector2(p.x, p.z)), "the rig's corner %s is inside its bay %s" % [p, bay_box])
+	# The other rigs the plan names have a bay each, apart, all in the hall.
+	var hall := Yard.upgrade_box()
+	for i in Yard.UPGRADE_BAYS.size():
+		var b: Array = Yard.UPGRADE_BAYS[i]
+		var r := Rect2((b[4] as Vector2) - Yard.UPGRADE_BAY * 0.5, Yard.UPGRADE_BAY)
+		check(Rect2(hall.position.x, hall.position.z, hall.size.x, hall.size.z).grow(-0.4).encloses(r), "bay %s is in the hall" % b[0])
+		check(bus.shipyard_spot(str(b[0])) != Transform3D.IDENTITY, "bay %s has a spot" % b[0])
+		for j in range(i + 1, Yard.UPGRADE_BAYS.size()):
+			var o: Array = Yard.UPGRADE_BAYS[j]
+			check(not r.intersects(Rect2((o[4] as Vector2) - Yard.UPGRADE_BAY * 0.5, Yard.UPGRADE_BAY)), "bays %s and %s are apart" % [b[0], o[0]])
+	# The door's aisle up the east side stays clear of the bays.
+	var aisle := Rect2(Yard.UPGRADE_DOOR.x - Yard.UPGRADE_DOOR.y * 0.5, -28.0, Yard.UPGRADE_DOOR.y, hall.end.z + 28.0)
+	check(Yard.UPGRADE_BAYS.all(func(b: Array) -> bool: return not aisle.intersects(Rect2((b[4] as Vector2) - Yard.UPGRADE_BAY * 0.5, Yard.UPGRADE_BAY))),
+			"the way in from the door is clear")
 
 	var rig := Rig.new()
 	rig.sweep_time = 0.2

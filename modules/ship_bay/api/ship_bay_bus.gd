@@ -121,13 +121,14 @@ const WRECK_SIZES := {"S": "Small", "M": "Medium", "L": "Large"}
 
 const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
 const EmitterRig := preload("res://modules/ship_bay/internal/yard/emitter_rig.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 const DebugShipsPanel := preload("res://modules/ship_bay/internal/ui/debug_ships_panel.gd")
 ## The Debug page's section (Settings > Debug > Ship).
 const DEBUG_SECTION := "ship_bay"
 ## Component rigs in the yard (Component Upgrades): id -> {kind, takes (a unit family: unit
 ## ids start with it), room}. The rig's place is shipyard_spot(id): origin on its deck's
 ## middle at deck height, +X along the unit, +Z towards the worker.
-const RIGS := {"rig_emitter": {"kind": "emitter_frame", "takes": "attractor_coil", "room": "preassembly"}}
+const RIGS := {"rig_emitter": {"kind": "emitter_frame", "takes": "attractor_coil", "room": "upgrades"}}
 ## Designs that can stand on the apron for a look (YardShips.PLACES).
 const YARD_SHIP_DESIGNS: PackedStringArray = ["manta"]
 const SlotTracker := preload("res://modules/ship_bay/internal/slot_tracker.gd")
@@ -409,7 +410,7 @@ func shipyard_rooms() -> Dictionary:
 ## A clear work place in the shipyard ("bench_preassembly", "bench_prep"): origin on the
 ## floor, +Z towards where the worker stands. Identity for an unknown id.
 func shipyard_spot(id: String) -> Transform3D:
-	return Shipyard.SPOTS.get(id, Transform3D.IDENTITY)
+	return Shipyard.spot(id)
 
 
 ## Where the extinguishers hang at the shipyard's fire points (Tools hangs real ones there
@@ -1129,6 +1130,22 @@ func trolley_deck_position(trolley_id: String) -> Variant:
 	return fleet.call("deck_position", trolley_id)
 
 
+## The key a part taken off the bay's ship keeps its own shape by (ItemLook.look_id): the
+## ship (a wreck by its design and seed) and the slot. "" with no ship.
+## What the bay's ship says of a slot's part: {mass (kg), material}, {} for none. Set by the
+## bay, so a part off a wreck that the catalogue doesn't list still weighs what it did.
+var part_info_source := Callable()
+
+
+func part_shape_key(slot_id: String) -> String:
+	if ship == null or slot_id == "":
+		return ""
+	var by := ship.ship_id
+	if ship.ship_id == WRECK_ID:
+		by = "%s@%d" % [str(bay_wreck.get("design", "")), int(bay_wreck.get("seed", 0))]
+	return "%s/%s" % [by, slot_id]
+
+
 ## The trolley under a beamed part has its deck up: the part lands on it (its driver asks).
 func land_beamed(slot_id: String, trolley_id: String, component: String, condition: float, route := "store") -> void:
 	var payload := {"slot": slot_id, "trolley": trolley_id, "component": component, "condition": condition, "route": route}
@@ -1138,7 +1155,15 @@ func land_beamed(slot_id: String, trolley_id: String, component: String, conditi
 		_apply_beamed(payload)
 
 
-## Takes a picked crate off the trolley that brought it; crate_collected follows.
+## Goods as they look (Tools draws a part it lifts off the goods-in floor with it): `item`
+## the look box's "look_id" (a part off a ship keeps its own shape) or a component id, at
+## `condition`; ItemLook's pieces under a Node3D whose origin is the underside's middle.
+func goods_visual(item: String, condition: float) -> Node3D:
+	return ItemLook.make(item, ItemLook.look_for(condition))
+
+
+## Takes a picked crate off the trolley that brought it, or a delivered crate standing on the
+## goods-in floor (Tools' beam lifts it, trades.goods_in); crate_collected follows.
 func collect_crate(crate_id: String) -> void:
 	var payload := {"crate_id": crate_id}
 	if _net:
@@ -1590,6 +1615,10 @@ static func scrap_materials(item_id: String, qty: int, mass := 0.0, material := 
 		return own
 	var d: Dictionary = StorageLayout.items().get(item_id, {})
 	var kg := float(d.get("mass", 0.0)) * qty * RECOVERY
+	if d.is_empty() and mass > 0.0:
+		# A part off a wreck the catalogue doesn't list: its own mass, of its own material.
+		var mat := material if Materials.TABLE.has(material) else "steel"
+		return {mat: snappedf(mass * qty * RECOVERY, 0.1)}
 	var out := {}
 	var mix: Dictionary = SCRAP_MIX.get(str(d.get("category", "")), {"steel": 1.0})
 	for m: String in mix:
@@ -1832,7 +1861,8 @@ func _apply_line(payload: Dictionary) -> void:
 					return
 				var cond := float(c["condition"])
 				st["survey"] = {"state": "waiting", "lot": {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]),
-						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond, str(c["item"]))}}
+						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond, str(c["item"])), "shape": str(c.get("shape", "")),
+						"material": str(c.get("material", ""))}}
 				_stock.crates.erase(str(payload["crate"]))
 				stock_moved = true
 			else:
@@ -1874,13 +1904,13 @@ func _apply_line(payload: Dictionary) -> void:
 				_stock.crates[_line_crate_id()] = {"order_id": "line", "item": lot["item"], "qty": int(lot["qty"]),
 						"name": lot["name"], "condition": clampf(float(lot["condition"]), 0.0, 1.0), "grade": "scrap",
 						"mass": float(lot["mass"]), "spot": -1, "carrier": "", "at": [p.x, p.y, p.z],
-						"line": "scrap", "line_id": l, "route": "grind"}
+						"line": "scrap", "line_id": l, "route": "grind", "shape": str(lot.get("shape", "")), "material": str(lot.get("material", ""))}
 				stock_moved = true
 			elif to == "trolley":
 				# Onto the line's trolley as goods for the stores, as good as new.
 				_stock.crates[_line_crate_id()] = {"order_id": "line", "item": lot["item"], "qty": int(lot["qty"]),
 						"name": lot["name"], "condition": clampf(float(lot["condition"]), 0.0, 1.0), "grade": "refurbished",
-						"mass": float(lot["mass"]), "spot": -1, "carrier": l}
+						"mass": float(lot["mass"]), "spot": -1, "carrier": l, "shape": str(lot.get("shape", "")), "material": str(lot.get("material", ""))}
 				stock_moved = true
 			else:
 				st[to] = {"state": "waiting", "lot": lot}
@@ -1910,7 +1940,7 @@ func _apply_line(payload: Dictionary) -> void:
 				return
 			crusher["state"] = "running"
 			crusher["lot"] = {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]), "condition": float(c["condition"]),
-					"mass": float(c["mass"])}
+					"mass": float(c["mass"]), "shape": str(c.get("shape", "")), "material": str(c.get("material", ""))}
 			crusher["from"] = c.get("at", [])
 			crusher["cast"] = 0
 			_stock.crates.erase(cid)
@@ -2374,7 +2404,13 @@ func _apply_hand(payload: Dictionary) -> void:
 
 
 func _check_collect(_sender: int, payload: Dictionary) -> Variant:
-	return payload if _stock.crates.get(str(payload.get("crate_id", "")), {}).has("to") else "no such picked crate"
+	var c: Dictionary = _stock.crates.get(str(payload.get("crate_id", "")), {})
+	if c.has("to"):
+		return payload
+	# A delivered one only while it stands on the floor: not on a trolley or a line.
+	if not c.is_empty() and str(c.get("carrier", "")) == "" and not c.has("line"):
+		return payload
+	return "no such crate on the floor or picked"
 
 
 func _apply_collect(payload: Dictionary) -> void:
@@ -2423,7 +2459,13 @@ func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
 
 func _apply_beamed(payload: Dictionary) -> void:
 	var by := str(payload["trolley"])
-	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by)
+	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by, part_shape_key(str(payload["slot"])))
+	var info: Variant = part_info_source.call(str(payload["slot"])) if part_info_source.is_valid() and id != "" else {}
+	if info is Dictionary and not (info as Dictionary).is_empty():
+		# Its own weight and metal (the crusher melts them), when the catalogue has none.
+		if float(_stock.crates[id].get("mass", 0.0)) <= 0.0:
+			_stock.crates[id]["mass"] = float(info.get("mass", 0.0))
+		_stock.crates[id]["material"] = str(info.get("material", ""))
 	if _beam_claims.get(str(payload["slot"])) == by:
 		_beam_claims.erase(str(payload["slot"]))
 	_clean_routes.erase(str(payload["slot"]))

@@ -510,7 +510,7 @@ func _draw_lot(s: String) -> void:
 
 
 func _dress_lot(node: Node3D, lot: Dictionary) -> void:
-	var key := "%s|%.2f|%s" % [str(lot.item), float(lot.mass), _look(lot)]
+	var key := "%s|%s|%.2f|%s" % [str(lot.item), str(lot.get("shape", "")), float(lot.mass), _look(lot)]
 	if node.get_meta("key", "") == key:
 		return
 	node.set_meta("key", key)
@@ -524,7 +524,7 @@ func _dress_lot(node: Node3D, lot: Dictionary) -> void:
 	node.add_child(body)
 	# The part itself, as it is: rusty or worn, then bare, then in its own paint again.
 	var looks := {"rust": ItemLook.Look.RUST, "worn": ItemLook.Look.WORN, "bare": ItemLook.Look.BARE, "coat": ItemLook.Look.NEW}
-	var item := ItemLook.make(str(lot.item), looks[_look(lot)], float(lot.mass))
+	var item := ItemLook.make(ItemLook.look_id(str(lot.item), str(lot.get("shape", ""))), looks[_look(lot)], float(lot.mass))
 	body.add_child(item)
 	var s: Vector3 = item.get_meta("size")
 	ItemLook.look_box(body, AABB(Vector3(-s.x * 0.5, 0.0, -s.z * 0.5), s), {"component": str(lot.item), "condition": float(lot.get("condition", 1.0))})
@@ -603,7 +603,7 @@ func _draw_crates() -> void:
 		node.set_meta("line", str(c.line))
 		node.position = _bus.crate_position(id) + Vector3(0, 0.15, 0)
 		_crates_root.add_child(node)
-		_dress_lot(node, {"item": c.item, "mass": c.mass, "condition": c.condition})
+		_dress_lot(node, {"item": c.item, "mass": c.mass, "condition": c.condition, "shape": c.get("shape", "")})
 		var tag := Label3D.new()
 		tag.text = "%s  x%d\n%s  %d%%" % [c.name, int(c.qty), "FOR REFURB" if str(c.line) == "in" else "SCRAP: TO THE CRUSHER",
 				roundi(float(c.condition) * 100.0)]
@@ -612,7 +612,7 @@ func _draw_crates() -> void:
 		tag.pixel_size = 0.0025
 		tag.outline_size = 6
 		tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-		tag.position = Vector3(0, _lot_size(str(c.item), float(c.mass)).y + 0.4, 0)
+		tag.position = Vector3(0, _lot_size(ItemLook.look_id(str(c.item), str(c.get("shape", ""))), float(c.mass)).y + 0.4, 0)
 		node.add_child(tag)
 		_crate_nodes[id] = node
 	# A lot still riding along hides the bay's copies until it lands.
@@ -634,7 +634,7 @@ func _animate(s: String, k: float) -> void:
 			# The platen comes down onto the lot three times (in the frame's terms).
 			var top := float(m.platen_top)
 			var lot_d: Dictionary = _station(s).get("lot", {})
-			var low := BED + (_lot_size(str(lot_d.get("item", "")), float(lot_d.get("mass", 0.0))).y / SCALE.y + 0.06 if lot else 0.5)
+			var low := BED + (_lot_size(ItemLook.look_id(str(lot_d.get("item", "")), str(lot_d.get("shape", ""))), float(lot_d.get("mass", 0.0))).y / SCALE.y + 0.06 if lot else 0.5)
 			(m.platen as Node3D).position.y = minf(lerpf(top, low, absf(sin(k * PI * 3.0))), top)
 			if lot and k > 0.5:
 				(lot.get_node("Body") as Node3D).basis = Basis()

@@ -162,6 +162,32 @@ func radius() -> float:
 	return float(spec["radius"])
 
 
+## Where it stands as a row of circles of radius() down its length (yard space, on the
+## floor): a long trolley is 8.8 m from nose to tail, so its centre alone let others drive
+## into its ends (beenster, 0.3.26: "trolleys are clashing too much"). `at`/`yaw` ask
+## where they would be standing there instead.
+func footprint(at := Vector3.INF, yaw_at := NAN) -> PackedVector3Array:
+	var here := global_position if at == Vector3.INF else at
+	var y := _yaw if is_nan(yaw_at) else yaw_at
+	var half := maxf(float((spec["deck"] as Vector2).y) * 0.5 - radius(), 0.0)
+	var n := 1 + ceili(half * 2.0 / radius())
+	var along := -Basis(Vector3.UP, y).z
+	var out := PackedVector3Array()
+	for i in n:
+		var p := here + along * (lerpf(-half, half, float(i) / (n - 1)) if n > 1 else 0.0)
+		out.append(Vector3(p.x, 0.0, p.z))
+	return out
+
+
+## How far apart its footprint and `o`'s are, edge to edge, metres (negative overlapping).
+func gap_to(o: Node3D) -> float:
+	var best := INF
+	for a in footprint():
+		for b in o.call("footprint"):
+			best = minf(best, a.distance_to(b))
+	return best - radius() - float(o.call("radius"))
+
+
 ## How much room it needs either side on a route, metres: the bigger trolleys squeeze down
 ## the bulk floor's lanes with a hand's width to spare.
 func clearance() -> float:
@@ -229,14 +255,14 @@ func set_cargo(c: Dictionary) -> void:
 		if boxes[i] == null:
 			continue
 		var lot: Dictionary = given[i]
-		var metas := {"component": str(lot.get("item", "")), "condition": float(lot.get("condition", 1.0))}
+		var metas := {"component": ItemLook.item_of(str(lot.get("item", ""))), "condition": float(lot.get("condition", 1.0))}
 		if str(lot.get("crate_id", "")) != "":
 			metas["crate_id"] = str(lot["crate_id"])
 		ItemLook.look_box(_cargo_mesh, boxes[i], metas)
 
 
 ## Moves it for one physics step: remote input or the path, slowing for `obstacles`
-## (floor points with a radius each: [[Vector3, float], ...]).
+## (floor points with a radius each, and true for another trolley's: [[Vector3, float, bool], ...]).
 func step(delta: float, obstacles: Array) -> void:
 	var top := float(spec["speed"]) * speed_scale * (fast_scale if fast or boost else 1.0)
 	var want := 0.0
@@ -275,23 +301,33 @@ func step(delta: float, obstacles: Array) -> void:
 		_speed = 0.0
 	else:
 		_speed = move_toward(_speed, 0.0, accel * 2.0 * delta)
-	var forward := -Basis(Vector3.UP, _yaw).z
-	# Something close ahead (a person, another trolley): stop and wait.
+	# Something close ahead of its nose (a person, another trolley's length): stop and wait.
 	var held := false
-	var going := signf(_speed) if _speed != 0.0 else 1.0
-	for o: Array in obstacles:
-		var away: Vector3 = o[0] - here
-		away.y = 0.0
-		var along := away.dot(forward * going)
-		var aside := sqrt(maxf(away.length_squared() - along * along, 0.0))
-		# Only what is in the lane ahead counts: passing beside something is fine.
-		if away.length() - float(o[1]) - radius() < 0.6 and along > 0.0 and aside < float(o[1]) + radius() + 0.2 and want != 0.0:
-			_speed = 0.0
-			held = true
-			break
+	if want != 0.0 and not _lane_clear(here, signf(_speed) if _speed != 0.0 else 1.0, obstacles):
+		_speed = 0.0
+		held = true
+	var forward := -Basis(Vector3.UP, _yaw).z
 	blocked_for = blocked_for + delta if held else 0.0
 	var next := here + forward * _speed * delta
 	global_transform = Transform3D(Basis(Vector3.UP, _yaw), Vector3(next.x, 0.0, next.z))
+
+
+## Is the lane ahead of its nose (going 1) or tail (-1) clear of every obstacle? Only what
+## is in the lane counts: passing beside something is fine.
+func _lane_clear(here: Vector3, going: float, obstacles: Array) -> bool:
+	var forward := -Basis(Vector3.UP, _yaw).z * going
+	var nose := maxf(float((spec["deck"] as Vector2).y) * 0.5 - radius(), 0.0)
+	for o: Array in obstacles:
+		var away: Vector3 = o[0] - here
+		away.y = 0.0
+		var along := away.dot(forward)
+		var aside := sqrt(maxf(away.length_squared() - along * along, 0.0))
+		# Another trolley's length counts from this one's nose; a person from its middle, as
+		# trolleys called to someone stop that far from them.
+		var reach := nose if o.size() > 2 and bool(o[2]) else 0.0
+		if along > 0.0 and along - reach - float(o[1]) - radius() < 0.6 and aside < float(o[1]) + radius() + 0.02:
+			return false
+	return true
 
 
 ## Raises or lowers the deck toward deck_target (every peer runs this), and slides the
@@ -426,9 +462,11 @@ func _build() -> void:
 		screen.call("add_button", "organise", "ORGANISE SCRAP", func() -> void: screen_action.emit("organise"))
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(d.x, CHASSIS_TOP - HOVER + 0.5, d.y)
+	# Up to the chassis top only: the deck has its own (a box reaching higher held what was put
+	# on the deck 42 cm over it: beenster, 0.3.26).
+	shape.size = Vector3(d.x, CHASSIS_TOP - HOVER, d.y)
 	col.shape = shape
-	col.position = Vector3(0, (HOVER + CHASSIS_TOP + 0.5) * 0.5, 0)
+	col.position = Vector3(0, (HOVER + CHASSIS_TOP) * 0.5, 0)
 	add_child(col)
 	# The deck: a grating plate on a frame; the line trolleys have a waist rail round three
 	# sides (not the back). The yard trolleys have none, so parts stack on an open deck

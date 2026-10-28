@@ -19,6 +19,7 @@ const QUIET_GLOW := 0.35
 const Access := preload("res://modules/ship_bay/internal/bay/bay_access.gd")
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 const FileShip := preload("res://modules/ship_bay/internal/ships/file_ship_model.gd")
+const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 ## How far Use (F) reaches from the camera, metres.
 const USE_REACH := 3.5
 
@@ -37,6 +38,8 @@ var access: Node3D
 var pieces: Dictionary = {}
 ## joint_id -> MeshInstance3D marker.
 var markers: Dictionary = {}
+## joint_id -> its joint's path in the ship's file (a ship built from one).
+var _joint_paths: Dictionary = {}
 var _bus: ShipBayBus
 var _tight_mat := _quiet_ring()
 var _loose_mat := _tight_mat
@@ -216,6 +219,7 @@ func _show_ship(def: ShipDefinition) -> void:
 		access = null
 	pieces = {}
 	markers = {}
+	_joint_paths = {}
 	seat = Vector3.ZERO
 	if cradle and cradle.get("load_node") != null and not is_instance_valid(cradle.get("load_node")):
 		cradle.set("load_node", null)
@@ -256,12 +260,17 @@ func _show_ship(def: ShipDefinition) -> void:
 		ship_root.position = Vector3(0, cradle_height, 0) + seat
 		add_child(ship_root)
 	pieces = model.call("slot_pieces", def) if model and model.has_method("slot_pieces") else pieces_by_slot(ship_root, def)
+	ItemLook.part_source = _part_shape
+	if _bus:
+		_bus.part_info_source = _part_info
 	_build_access()
 	for s in def.slots:
 		for f in s.fasteners:
 			var m := _fastener_marker(f)
 			ship_root.add_child(m)
 			markers[f.joint_id] = m
+			if f.path != "":
+				_joint_paths[f.joint_id] = f.path
 		_apply_slot(s.slot_id)
 	_refresh_markers()
 
@@ -506,6 +515,59 @@ static func pieces_by_slot(root: Node3D, def: ShipDefinition) -> Dictionary:
 	return out
 
 
+## A part of this ship by its shape key (ShipBayBus.part_shape_key), for ItemLook: its pieces'
+## meshes as one, in ship space, and the first one's paint; [] when it isn't this ship's.
+func _part_shape(key: String) -> Array:
+	if _bus == null or ship_root == null:
+		return []
+	var mine := _bus.part_shape_key("-")
+	if mine == "" or not key.begins_with(mine.trim_suffix("-")):
+		return []
+	var meshes: Array = pieces.get(key.trim_prefix(mine.trim_suffix("-")), [])
+	var st := SurfaceTool.new()
+	var paint: Material = null
+	var any := false
+	for mi: MeshInstance3D in meshes:
+		if not is_instance_valid(mi) or mi.mesh == null:
+			continue
+		var xf := _ship_xform(mi, ship_root)
+		for k in mi.mesh.get_surface_count():
+			if mi.mesh.surface_get_primitive_type(k) != Mesh.PRIMITIVE_TRIANGLES:
+				continue
+			st.append_from(mi.mesh, k, xf)
+			any = true
+		if paint == null:
+			paint = mi.material_override if mi.material_override else mi.mesh.surface_get_material(0)
+	if not any:
+		return []
+	return [st.commit(), paint]
+
+
+## A slot's part as the ship built it: {mass (kg), material (the heaviest piece's)}, {} for
+## a ship that doesn't say (only one built from its file does).
+func _part_info(slot_id: String) -> Dictionary:
+	if not model is FileShip or _bus == null or _bus.ship == null:
+		return {}
+	var paths := {}
+	for s in _bus.ship.slots:
+		if s.slot_id == slot_id:
+			for p: String in s.parts:
+				paths[p] = true
+	var by_path: Dictionary = (model as FileShip).importer.parts_by_path
+	var kg := 0.0
+	var material := ""
+	var top := -1.0
+	for p: String in paths:
+		var part: PartData = by_path.get(p)
+		if part == null:
+			continue
+		kg += part.mass
+		if part.mass > top:
+			top = part.mass
+			material = part.material
+	return {} if kg <= 0.0 else {"mass": snappedf(kg, 0.1), "material": material}
+
+
 static func _ship_xform(node: Node3D, root: Node3D) -> Transform3D:
 	var t := Transform3D.IDENTITY
 	var n: Node = node
@@ -551,6 +613,26 @@ func _show_joint(joint_id: String) -> void:
 	m.material_override = _tight_mat if tight else _loose_mat
 	for head: Node in m.get_children():
 		(head as Node3D).visible = tight
+	_show_file_head(joint_id, tight)
+
+
+## A ship built from its file draws every joint's own head too (Void Salvage's JointView):
+## gone while the joint is undone, back when it is made (0.3.26: undone bolts and cut rivets
+## stayed in place).
+func _show_file_head(joint_id: String, tight: bool) -> void:
+	if not model is FileShip or not _joint_paths.has(joint_id):
+		return
+	var im: VsShipImport = (model as FileShip).importer
+	var c := im.joint_at(str(_joint_paths[joint_id]))
+	if c == null or im.kit == null or im.kit.model == null:
+		return
+	var pm := im.kit.model
+	if not tight:
+		var view := pm.forget_view(c)
+		if view:
+			view.clear()
+	elif pm.joint_view(c) == null and pm.parts.has(c.part_a):
+		pm.remake_view(c, pm.parts[c.part_a])
 
 
 ## Only the rings near the focus point show (ShipBayBus.set_marker_focus); the heads always

@@ -28,6 +28,22 @@ enum Look { NEW, WORN, RUST, BARE }
 
 static var _shapes: Dictionary = {}
 static var _paints: Dictionary = {}
+## A part taken off the ship keeps its own shape: lots and crates carry its "shape" key (the
+## bus's part_shape_key) and draw with look_id(); this builds that shape from the bay's ship
+## (key -> [ArrayMesh in ship space, its material] or [] when the ship has no such part). Set by
+## the bay; a shape once built is kept, so the part keeps it after its ship has gone.
+static var part_source := Callable()
+
+
+## The id goods are drawn by: the item itself, or its part's own shape when it came off a
+## ship ("shape:<key>|<item>").
+static func look_id(item: String, shape := "") -> String:
+	return item if shape == "" else "shape:%s|%s" % [shape, item]
+
+
+## The catalogue item a look id draws.
+static func item_of(id: String) -> String:
+	return id.get_slice("|", 1) if id.begins_with("shape:") else id
 
 
 ## The item's size (its box, metres).
@@ -91,6 +107,9 @@ static func pieces(item: String, look := Look.NEW, mass := -1.0) -> Array:
 ## The goods' paint: a stock plate its own metal or glass (StockPlates.paint), anything
 ## else the body paint for its look.
 static func _paint_for(item: String, look: int) -> Material:
+	if item.begins_with("shape:") and look == Look.NEW and _shapes.has(item) and _shapes[item].get("paint") is Material:
+		return _shapes[item]["paint"]
+	item = item_of(item)
 	if StockPlates.is_plate(item):
 		if not _paints.has("plate:" + item):
 			_paints["plate:" + item] = StockPlates.paint(item)
@@ -107,6 +126,11 @@ static func _mesh(root: Node3D, mesh: Mesh, xf: Transform3D, mat: Material) -> v
 
 
 static func _entry(item: String, mass: float) -> Dictionary:
+	if item.begins_with("shape:"):
+		var e := _part_entry(item)
+		if not e.is_empty():
+			return e
+		item = item_of(item)
 	var info: Dictionary = StorageLayout.items().get(item, {})
 	var kg := mass if mass >= 0.0 else float(info.get("mass", 50.0))
 	var key := item if not info.is_empty() or mass < 0.0 else "%s@%d" % [item, roundi(kg)]
@@ -122,6 +146,30 @@ static func _entry(item: String, mass: float) -> Dictionary:
 	var box: AABB = Transform3D(basis, Vector3.ZERO) * shape.mesh.get_aabb()
 	var e := {"shape": shape, "basis": basis, "aabb": box}
 	_shapes[key] = e
+	return e
+
+
+## A part's own shape, from part_source: laid with its thinnest side up, so a wall panel lies
+## flat as it would on a deck. {} when it can't be had.
+static func _part_entry(id: String) -> Dictionary:
+	if _shapes.has(id):
+		return _shapes[id]
+	if not part_source.is_valid():
+		return {}
+	var got: Variant = part_source.call(id.get_slice("|", 0).trim_prefix("shape:"))
+	if not got is Array or (got as Array).is_empty() or not (got as Array)[0] is ArrayMesh:
+		return {}
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = got[0]
+	var size := shape.mesh.get_aabb().size
+	var basis := Basis()
+	if size.x < size.y and size.x <= size.z:
+		basis = Basis(Vector3.BACK, PI * 0.5)    # its thin x up
+	elif size.z < size.y and size.z < size.x:
+		basis = Basis(Vector3.RIGHT, PI * 0.5)   # its thin z up
+	var e := {"shape": shape, "basis": basis, "aabb": Transform3D(basis, Vector3.ZERO) * shape.mesh.get_aabb(),
+			"paint": got[1] if (got as Array).size() > 1 else null}
+	_shapes[id] = e
 	return e
 
 
