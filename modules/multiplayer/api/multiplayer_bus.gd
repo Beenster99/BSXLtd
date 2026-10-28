@@ -48,6 +48,10 @@ signal held_changed(peer_id: int, held: Dictionary)
 ## An avatar for another player was put in the scene (joining, or a scene change rebuilt it):
 ## dress it now, e.g. the tool in its hand from held(peer_id).
 signal avatar_added(peer_id: int, avatar: Node3D)
+## Someone signalled the crew (the sender too, solo play included): {"peer", "name",
+## "emote": id from EMOTES, "label": what it says ("Need help"), "time": host clock}.
+## Their avatar acts it out with a bubble over the helmet; see emote().
+signal emote_received(emote: Dictionary)
 
 const ONLINE_FLAG := "multiplayer.online"
 const DEFAULT_PORT := 24570
@@ -91,6 +95,7 @@ func register_module() -> void:
 	_crew.ping_removed.connect(ping_removed.emit)
 	_crew.held_changed.connect(held_changed.emit)
 	_crew.avatar_added.connect(avatar_added.emit)
+	_crew.emote_received.connect(emote_received.emit)
 	add_child(_crew)
 	var world: Node = preload("res://modules/multiplayer/internal/world_sync.gd").new()
 	world.name = "World"
@@ -359,6 +364,33 @@ func set_held(state: Dictionary) -> void:
 ## What a player last shared with set_held() ({} for nothing).
 func held(peer_id: int) -> Dictionary:
 	return _crew.held(peer_id)
+
+
+## Signals the crew: an emote id from emotes() ("wave", "thumbs_up", "come_here", "point",
+## "help", "stop", "thumbs_down", "cheer"). The host allows one per player every 0.5 s.
+func emote(emote_id: String) -> void:
+	_crew.emote(emote_id)
+
+
+## The emotes on the wheel, clockwise from the top: [{"id", "label"}].
+func emotes() -> Array[Dictionary]:
+	return _crew.EMOTES.duplicate(true)
+
+
+## Graphics: middle mouse (or the ping key) held past a tap opens the emote wheel; the
+## player moves the mouse toward a signal. While it's open the view doesn't turn.
+func open_emote_wheel() -> void:
+	_crew.open_wheel()
+
+
+## Graphics: let go. Sends the emote the wheel points at and gives its id, or "" when the
+## player let go in the middle (nothing sent).
+func close_emote_wheel() -> String:
+	return _crew.close_wheel()
+
+
+func emote_wheel_open() -> bool:
+	return _crew.wheel.is_open
 
 
 ## This player's crew colour (host orange, then cyan, green, amber), for markers and names.
