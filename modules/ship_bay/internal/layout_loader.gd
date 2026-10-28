@@ -45,7 +45,7 @@ static func load_ship(dir: String) -> ShipDefinition:
 const WRECK_RULES := {
 	"skin": {"under": "/skin/", "prefix": "plate_", "name": "Hull plate", "accepts": ["HullPlate"], "fitted": "HullPlate", "access": "outboard"},
 	"frame": {"phase": "frame", "prefix": "frame_", "access": "inboard"},
-	"rest": {"prefix": "part_", "access": "inboard"},
+	"rest": {"prefix": "part_", "access": "inboard", "unhide": true},
 }
 
 
@@ -286,7 +286,8 @@ static func _rest_fittings(rule: Dictionary, f: Dictionary, taken: Array[MountSl
 		var counts := {}
 		for j: Dictionary in joints[path]:
 			var fp := _file_fastener(s.slot_id, j, counts)
-			_out_from_under(fp, s.box)
+			if bool(rule.get("unhide", false)) and unhides(path):
+				_out_from_under(fp, s.box)
 			s.fasteners.append(fp)
 		s.mount = _facing(s.fasteners[0].normal, s.box.get_center())
 		out.append(s)
@@ -295,22 +296,43 @@ static func _rest_fittings(rule: Dictionary, f: Dictionary, taken: Array[MountSl
 
 ## Void Salvage bolts a seat, console or locker down by one bolt in the middle of its foot,
 ## hidden under the part itself, so nobody could see how it came off (beenster, 0.3.27). A
-## fastener under its part's box (inside its footprint, seen along the joint's normal) is moved
-## out past the box's side that faces the ship's middle (inboard, where you stand to work it),
-## at the same height: the joint is the same, only where you find it.
+## bolt under its part (on the floor of a box standing at least STANDS_OFF tall, inside its
+## footprint) is moved out past the box's side that faces the ship's
+## middle (inboard, where you stand to work it), at the same height: the joint is the same,
+## only where you find it. Welds, rivets and beam ends stay put. Wrecks only
+## (WRECK_RULES "rest" unhide).
 const UNDER_MARGIN := 0.03      # m in from the box's sides that counts as under it
 const OUT_FROM_UNDER := 0.05    # m outside the box the fastener goes
+const STANDS_OFF := 0.15        # m a part must stand out along the normal to hide a joint
+
+
+## Parts whose hidden bolts are moved out: fitted furniture, units and tanks.
+static func unhides(path: String) -> bool:
+	return path.begins_with("component/") or path.begins_with("hazard/")
+
+
+static func is_under(f: FastenerPoint, box: AABB) -> bool:
+	# A bolt down through a standing part's foot onto a deck (up or down): the part stands at
+	# least STANDS_OFF tall over a footprint at least that wide both ways (not a beam's end).
+	var n := f.normal.abs().max_axis_index()
+	if f.kind != "bolt" or n != Vector3.AXIS_Y or box.size.y < STANDS_OFF or minf(box.size.x, box.size.z) < STANDS_OFF:
+		return false
+	if absf(f.position[n] - box.position[n]) > UNDER_MARGIN and absf(f.position[n] - box.end[n]) > UNDER_MARGIN:
+		return false
+	for a in 3:
+		if a != n and (f.position[a] <= box.position[a] + UNDER_MARGIN or f.position[a] >= box.end[a] - UNDER_MARGIN):
+			return false
+	return true
 
 
 static func _out_from_under(f: FastenerPoint, box: AABB) -> void:
+	if not is_under(f, box):
+		return
 	var n := f.normal.abs().max_axis_index()
 	var sides: Array[int] = []
 	for a in 3:
 		if a != n:
 			sides.append(a)
-	for a in sides:
-		if f.position[a] <= box.position[a] + UNDER_MARGIN or f.position[a] >= box.end[a] - UNDER_MARGIN:
-			return
 	var best := Vector3.INF
 	for a in sides:
 		for end: float in [box.position[a] - OUT_FROM_UNDER, box.end[a] + OUT_FROM_UNDER]:

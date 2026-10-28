@@ -795,7 +795,9 @@ func _build_shell() -> void:
 		# The side wings' floors stop 1 mm short across, so their edges under the outer walls
 		# don't lie in one plane with the north wing's.
 		var across := 0.0 if s.x > s.z else 0.002
-		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T - across, 0.04, s.z + T), _surface(_paint(r[2], 0.0, 0.55, "satin_paint"), "epoxy"), false)
+		# Solid (beenster, 0.3.27): loose parts lay on the ground 2 cm under it, thin cut plates
+		# out of sight.
+		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T - across, 0.04, s.z + T), _surface(_paint(r[2], 0.0, 0.55, "satin_paint"), "epoxy"))
 		_hall_joints(Rect2(c.x - s.x * 0.5, c.z - s.z * 0.5, s.x, s.z), lift + 0.0205)
 		# Walkway lines down the long way, a metre and a half in from each wall.
 		var long_x := s.x > s.z
@@ -1566,7 +1568,7 @@ func _build_plate_hall() -> void:
 	var line := _paint(HAZARD, 0.0, 0.7, "hazard_paint")
 	# The floor runs a little under the walls; a hair over the wings' so no faces share a plane.
 	_block(Vector3(r.get_center().x, 0.0024, r.get_center().y), Vector3(r.size.x + T, 0.04, r.size.y + T),
-			_surface(_paint(Color(0.52, 0.54, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"), false)
+			_surface(_paint(Color(0.52, 0.54, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"))   # solid, as the wings' floors
 	_hall_joints(r, 0.0229)
 	var roof := _paint(Color(0.32, 0.33, 0.35), 0.4, 0.7, "galvanised")
 	# (It stops short of the north wing's roof: overlapping, they flickered.)
@@ -1720,7 +1722,7 @@ func _build_upgrade_hall() -> void:
 	var clad := _paint(Color(0.34, 0.38, 0.44), 0.4, 0.55, "satin_paint")
 	# The floor: epoxy inside, a little under the walls; the path out to the front strip.
 	_block(Vector3(r.get_center().x, 0.0024, r.get_center().y), Vector3(r.size.x + 0.1, 0.04, r.size.y + 0.1),
-			_surface(_paint(Color(0.5, 0.53, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"), false)
+			_surface(_paint(Color(0.5, 0.53, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"))   # solid, as the wings' floors
 	_hall_joints(r, 0.0229)
 	var path := Rect2(88.6, r.end.y + 0.05, 10.4, 24.45 - (r.end.y + 0.05))
 	_block(Vector3(path.get_center().x, -0.01, path.get_center().y), Vector3(path.size.x, 0.04, path.size.y), _concrete, false)

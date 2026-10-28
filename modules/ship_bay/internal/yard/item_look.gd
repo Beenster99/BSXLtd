@@ -151,7 +151,13 @@ static func _entry(item: String, mass: float) -> Dictionary:
 		made = _material_goods(item, str(info.get("category", "")), kg)
 	var paint: Material = null
 	if made.is_empty():
-		made = _vs_goods(item)
+		var built: Array = _build(item)
+		# The library's own build where it has a real one; Void Salvage's part where it would
+		# be a plain box, or nothing, and only where it fits the stores' place for it.
+		if built.is_empty() or item in BOXY:
+			made = _vs_goods(item)
+		if not made.is_empty() and not built.is_empty() and not _fits_within(made, built):
+			made = []
 		if not made.is_empty():
 			paint = made[2]
 	if made.is_empty():
@@ -197,10 +203,34 @@ static func _own_goods(item: String) -> bool:
 
 
 ## Whether an item is drawn as Void Salvage's own part (goods_pack.gd packs those): anything
-## that isn't BSX's own goods or raw material.
+## that isn't BSX's own goods or raw material and has no real build in the library.
 static func needs_vs_look(item: String) -> bool:
 	var info: Dictionary = StorageLayout.items().get(item, {})
-	return not _own_goods(item) and _material_goods(item, str(info.get("category", "")), float(info.get("mass", 50.0))).is_empty()
+	return not _own_goods(item) and _material_goods(item, str(info.get("category", "")), float(info.get("mass", 50.0))).is_empty() \
+			and (item in BOXY or _build(item).is_empty())
+
+
+## Items the library builds as a plain housing (machine units, junction boxes, cabinets):
+## beenster (0.3.27) saw white boxes on the shelves, so these take Void Salvage's own part.
+const BOXY: PackedStringArray = ["OxygenGenerator", "Assembler", "Gearforge", "DrillMotor", "Forge", "Smelter",
+		"Refinery", "CoolantPump", "FuelPump", "RailBreech", "BridgeJunction", "CockpitJunction", "HangarJunction",
+		"HoldJunction", "EngineJunction", "BreakerPanel"]
+
+
+## Whether shape-and-basis `a` fits in `b`'s box, either way round (sides sorted, 10% to
+## spare): the stores' homes are sized from the library's build.
+static func _fits_within(a: Array, b: Array) -> bool:
+	var sa := _sorted_sides(a)
+	var sb := _sorted_sides(b)
+	return sa[0] <= sb[0] * 1.1 and sa[1] <= sb[1] * 1.1 and sa[2] <= sb[2] * 1.1
+
+
+static func _sorted_sides(made: Array) -> Array:
+	var basis: Basis = made[1] if made.size() > 1 else Basis()
+	var size := (Transform3D(basis, Vector3.ZERO) * (made[0] as PartShapes.PartShape).mesh.get_aabb()).size
+	var out := [size.x, size.y, size.z]
+	out.sort()
+	return out
 
 
 ## Void Salvage's own part for a catalogue item, laid with its thinnest side up: [shape,
@@ -220,6 +250,10 @@ static func _vs_goods(item: String) -> Array:
 	var shape: PartShapes.PartShape = VsWreckLibrary.mesh_shape(_goods, p) if str(recipe.get("shape", "")) == "vs_mesh" \
 			else VsShipImport.make_shape(recipe, p)
 	if shape == null or shape.mesh == null:
+		return []
+	# Too big for a rack or a trolley (a 10 m engine pod): the library's smaller one instead.
+	var longest := shape.mesh.get_aabb().size
+	if maxf(longest.x, maxf(longest.y, longest.z)) > MAX_EDGE:
 		return []
 	# Panels and strips lie flat, thin side up; anything chunkier (a seat, a console) stands
 	# as it was fitted.

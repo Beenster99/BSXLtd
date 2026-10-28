@@ -36,6 +36,9 @@ var model: Node3D
 var access: Node3D
 ## slot_id -> Array of the model's MeshInstance3Ds inside its box.
 var pieces: Dictionary = {}
+## Slot id -> the ship body's collision shapes for its parts (file ships), off while the slot
+## is EMPTY.
+var colliders: Dictionary = {}
 ## joint_id -> MeshInstance3D marker.
 var markers: Dictionary = {}
 ## joint_id -> its joint's path in the ship's file (a ship built from one).
@@ -260,19 +263,22 @@ func _show_ship(def: ShipDefinition) -> void:
 		ship_root.position = Vector3(0, cradle_height, 0) + seat
 		add_child(ship_root)
 	pieces = model.call("slot_pieces", def) if model and model.has_method("slot_pieces") else pieces_by_slot(ship_root, def)
+	colliders = model.call("slot_colliders", def) if model and model.has_method("slot_colliders") else {}
 	ItemLook.part_source = _part_shape
 	if _bus:
 		_bus.part_info_source = _part_info
 	_build_access()
 	for s in def.slots:
 		for f in s.fasteners:
-			var m := _fastener_marker(f)
+			var m := _fastener_marker(f, def.ship_id == ShipBayBus.WRECK_ID)
 			ship_root.add_child(m)
 			markers[f.joint_id] = m
 			if f.path != "":
 				_joint_paths[f.joint_id] = f.path
 		_apply_slot(s.slot_id)
 	_refresh_markers()
+	if def.ship_id == ShipBayBus.WRECK_ID:
+		_lift_markers.call_deferred(def)
 
 
 ## The top of the loaded ship (ship space), metres.
@@ -458,7 +464,9 @@ func _call_along(from: Vector3, direction: Vector3, meta: String) -> bool:
 ## A fastener as it looks on the ship: its head (a hex bolt, a domed rivet, a round plug) on
 ## a thin washer ring in one quiet pale blue, tight or undone. The ring is the marker
 ## (Tools' look card names the state); the head is its child, so hiding the ring hides both.
-func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
+## `wide`: a wreck's, whose own Void Salvage bolt and rivet heads (about 3 cm across) hid a
+## ring of the Kestrel's size (Tools, 0.3.27).
+func _fastener_marker(f: FastenerPoint, wide := false) -> MeshInstance3D:
 	var n := f.normal.normalized()
 	if f.kind == "weld" and f.seam_up != Vector3.ZERO:
 		# A weld is its bead along the seam on a thin strip lit by its state.
@@ -479,7 +487,8 @@ func _fastener_marker(f: FastenerPoint) -> MeshInstance3D:
 	var x := side.cross(n).normalized()
 	var ring := MeshInstance3D.new()
 	var big := f.kind != "rivet"
-	ring.mesh = PartShapes.ring(0.026 if big else 0.017, 0.031 if big else 0.020, 0.003, 16).mesh
+	var r_in := (0.046 if wide else 0.026) if big else (0.036 if wide else 0.017)
+	ring.mesh = PartShapes.ring(r_in, r_in + (0.005 if big or wide else 0.003), 0.003, 20 if wide else 16).mesh
 	ring.transform = Transform3D(Basis(x, n, x.cross(n)), f.position + n * 0.002)
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var head := MeshInstance3D.new()
@@ -587,6 +596,40 @@ func _apply_slot(slot_id: String) -> void:
 	var gone := _bus.get_slot_state(slot_id) == ShipBayBus.SlotState.EMPTY
 	for mi: MeshInstance3D in pieces.get(slot_id, []):
 		mi.visible = not gone
+	for c: CollisionShape3D in colliders.get(slot_id, []):
+		if is_instance_valid(c):
+			c.set_deferred("disabled", gone)
+
+
+## A wreck's fastener points sit a couple of centimetres under its plates' faces (Void
+## Salvage's flush skin grows the plate's look out over its joints), so the bay's rings were
+## buried with only a sliver showing (beenster via Tools, 0.3.27). Once the ship is in the
+## physics space each ring (and weld strip) moves out along its normal onto the face a ray
+## straight in finds, within LIFT_REACH.
+const LIFT_REACH := 0.06   # m out from the point a ray starts, and how far in it looks
+
+
+func _lift_markers(def: ShipDefinition) -> void:
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	if not is_inside_tree() or ship_root == null or not is_instance_valid(ship_root):
+		return
+	var space := get_world_3d().direct_space_state
+	var xf := ship_root.global_transform
+	for s in def.slots:
+		for f in s.fasteners:
+			var m: MeshInstance3D = markers.get(f.joint_id)
+			if m == null:
+				continue
+			var n := f.normal.normalized()
+			var q := PhysicsRayQueryParameters3D.create(xf * (f.position + n * LIFT_REACH), xf * (f.position - n * LIFT_REACH * 0.5))
+			q.hit_back_faces = false
+			var hit := space.intersect_ray(q)
+			if hit.is_empty():
+				continue
+			var out := (xf.affine_inverse() * (hit["position"] as Vector3) - f.position).dot(n)
+			if out > 0.002:
+				m.position = f.position + n * (out + 0.002)
 
 
 func _refresh_markers() -> void:
