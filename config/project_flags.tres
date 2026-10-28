@@ -123,6 +123,7 @@ flags = {
 "trades.part_landing": true,
 "trades.parts_on_decks": true,
 "trades.part_info": true,
+"trades.wreck_info": true,
 "trades.goods_off": true,
 "trades.wheel_away": true,
 "trades.hover_board": true,
