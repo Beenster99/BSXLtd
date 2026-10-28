@@ -792,16 +792,41 @@ func can_lift_goods() -> bool:
 
 ## The goods on a trolley under the aim within range (their look box: an Area3D with meta
 ## look_only, crate_id and component), or null.
+## How far behind the first solid thing the aim meets goods may still be picked (m): the goods'
+## own collision sits inside their look box.
+const GOODS_BEHIND_M := 0.6
+
+
 func aimed_goods() -> Area3D:
 	if not can_lift_goods() or not is_inside_tree():
 		return null
 	var worker := station.bay.worker
 	var from := worker.aim_origin()
-	var q := PhysicsRayQueryParameters3D.create(from, from + worker.aim_dir() * RANGE_M)
+	var to := from + worker.aim_dir() * RANGE_M
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(from, to)
 	q.collide_with_areas = true
-	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	var area := hit.get("collider") as Area3D
-	return area if _on_a_trolley(area) else null
+	if not Flags.is_on("trades.goods_aim_through"):
+		var hit := space.intersect_ray(q)
+		var area := hit.get("collider") as Area3D
+		return area if _on_a_trolley(area) else null
+	# Past other areas (a trolley's reach, a HERE marker, a pick zone: beenster couldn't lift a
+	# brought crate, 0.3.26), but not through a wall or a body more than a crate's depth in front.
+	var solid := PhysicsRayQueryParameters3D.create(from, to)
+	var wall := space.intersect_ray(solid)
+	var limit := from.distance_to(wall["position"]) + GOODS_BEHIND_M if not wall.is_empty() else INF
+	q.collide_with_bodies = false
+	var skip: Array[RID] = []
+	for i in 8:
+		q.exclude = skip
+		var hit := space.intersect_ray(q)
+		if hit.is_empty() or from.distance_to(hit["position"]) > limit:
+			return null
+		var area := hit.get("collider") as Area3D
+		if _on_a_trolley(area):
+			return area
+		skip.append(hit["rid"])
+	return null
 
 
 ## A look box of goods riding a trolley's deck.

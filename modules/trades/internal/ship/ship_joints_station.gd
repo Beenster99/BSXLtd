@@ -601,9 +601,6 @@ func press(tool: StringName) -> void:
 		else:
 			bay.hint("Nothing to cut out: this weld isn't made. The %s lays it." % _named(&"welder"))
 		return
-	if f.kind == "weld" and tool == &"welder" and cutter_welds() and tight:
-		bay.hint("Already welded. The %s cuts it out." % _named(&"cutter"))
-		return
 	if f.kind == "weld" and tool == &"welder" and vs_tools() and tight and Flags.is_on("trades.unweld"):
 		# Point and hold on a weld cuts it out; no unweld mode to switch to.
 		_begin(true, tool)
@@ -691,9 +688,10 @@ func back_out(tool: StringName) -> void:
 				bay.hint("Rivets come out with the %s." % " or the ".join(_out_tools("rivet").map(_named)))
 				return
 		"weld":
-			var cutter := &"cutter" if cutter_welds() else &"welder"
-			if tool != cutter:
-				bay.hint("Cut a weld out with the %s." % _named(cutter))
+			# The welder unwelds (beenster, 0.3.26); with trades.cutter_welds the cutter does too.
+			var cutters: Array = [&"welder", &"cutter"] if cutter_welds() else [&"welder"]
+			if not tool in cutters:
+				bay.hint("Cut a weld out with the %s." % " or the ".join(cutters.map(_named)))
 				return
 			if not Flags.is_on("trades.unweld"):
 				bay.hint("Cutting welds isn't switched on yet.")
@@ -1112,7 +1110,7 @@ func kind_help(kind: String) -> String:
 			return "%s to set, %s to take out" % [_named(&"rivet_squeezer"), " or ".join(_out_tools(kind).map(_named))]
 		"weld":
 			if cutter_welds():
-				return "%s: hold left click on the seam to weld it; %s: hold on it to cut it out" % [_named(&"welder"), _named(&"cutter")]
+				return "%s: hold left click on the seam to weld it, or on a weld to cut it out; %s: hold on a weld to cut it out" % [_named(&"welder"), _named(&"cutter")]
 			if vs_tools():
 				return "%s: hold left click along the seam to weld it; hold it on a weld to cut it out" % _named(&"welder")
 			return "%s: left click welds; %s switches it to unweld, which cuts welds out" \

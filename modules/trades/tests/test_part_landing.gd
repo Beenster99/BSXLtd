@@ -230,6 +230,20 @@ func _goods_off(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) 
 
 	_look_at(rig, one.global_position + Vector3.UP * 0.2)
 	await frames(1)
+	# A trolley's own areas round its deck (its reach, the HERE marker) don't hide the goods.
+	if Flags.is_on("trades.goods_aim_through"):
+		var reach := Area3D.new()
+		reach.monitoring = false
+		var rs := CollisionShape3D.new()
+		var rb := BoxShape3D.new()
+		rb.size = Vector3(4, 3, 4)
+		rs.shape = rb
+		reach.add_child(rs)
+		deck.add_child(reach)
+		await frames(2)
+		check(beam.aimed_goods() != null, "goods inside a trolley's bigger area are still aimed at")
+		reach.queue_free()
+		await frames(2)
 	check(beam.aimed_goods() != null and str(beam.actions()[0][1]).contains("trolley") and beam.aim_title().contains("on a trolley"),
 			"aimed at goods on a trolley, the beam offers to lift them off (%s)" % beam.aim_title())
 	rig.ship_station().press(&"tractor")

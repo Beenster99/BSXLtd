@@ -105,6 +105,7 @@ flags = {
 "trades.metal_sounds": true,
 "trades.aim_visible": true,
 "trades.arm_fit": true,
+"trades.goods_aim_through": true,
 "trades.weld_skill": true,
 "trades.quiet_tractor": true,
 "trades.part_landing": true,
