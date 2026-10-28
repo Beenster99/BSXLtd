@@ -35,8 +35,50 @@ func run_tests() -> void:
 	off = _worst(station, bay)
 	check(off.x < 0.05, "after it moves too (%.3f m)" % off.x)
 	ship_root.global_position -= Vector3(2, 0, 1)
+	station.update(0.3)
+	# Playtest 0.3.26: "rivet, bolt and weld highlighting seems to have gone". The frame's welds
+	# behind the skin kept winning the aim; now a joint behind the surface you look at isn't
+	# picked (trades.aim_visible), and the one in front of you is.
+	var was_vis := Flags.is_on("trades.aim_visible")
+	Flags.set_flag("trades.aim_visible", true)
+	var seen := [0, 0]
+	var hidden := [0, 0]
+	for i in range(0, station.points.size(), 5):
+		var depth := await _look_at(rig, station, i)
+		# Only where the look lands on it (a joint high overhead is past the neck's reach).
+		if is_nan(depth) or rig.aim_distance(station.points_world[i]) > 0.02:
+			continue
+		if depth < 0.03 and seen[1] < 6:
+			seen[1] += 1
+			seen[0] += 1 if station.aimed == i else 0
+		elif depth > 0.3 and hidden[1] < 6:
+			hidden[1] += 1
+			hidden[0] += 1 if station.aimed != i else 0
+	check(seen[1] > 0 and seen[0] == seen[1], "looking at a joint in front of you picks it (%d of %d)" % seen)
+	check(hidden[1] > 0 and hidden[0] == hidden[1], "one behind the skin you're looking at isn't picked (%d of %d)" % hidden)
+	Flags.set_flag("trades.aim_visible", was_vis)
 	ship_bus.debug_ship("restore_bay")
 	Flags.set_flag("ship_bay.bay_cradle", was)
+
+
+## Stand in front of joint i and look at it; how far it lies behind the first surface on the
+## way (metres; NAN when it faces up or down, or nothing is in the way).
+func _look_at(rig: TradesBay, station: TradesShipJoints, i: int) -> float:
+	var at := station.points_world[i]
+	var n := (station.ship_xform.basis * station.points[i].normal).normalized()
+	if absf(n.y) > 0.5:
+		return NAN
+	rig.worker.global_position = at + n * 0.9 - Vector3(0, 1.55, 0)
+	rig.worker.face(at)
+	await frames(1)
+	station.update(0.0)
+	var o := rig.worker.aim_origin()
+	var q := PhysicsRayQueryParameters3D.create(o, o + (at - o).normalized() * 20.0)
+	q.exclude = [rig.worker.get_rid()]
+	var hit := rig.worker.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return NAN
+	return o.distance_to(at) - o.distance_to(hit.position)
 
 
 ## [worst distance between a joint's point and Ship and Bay's marker on it, joints compared].

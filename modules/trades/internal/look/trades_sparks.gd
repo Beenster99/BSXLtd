@@ -124,6 +124,10 @@ func emit(at: Vector3, dir: Vector3, count: int, speed: float, spread := 0.6, li
 ## Bolts and rivet heads that come out fall under gravity and lie where they land (beenster,
 ## 0.3.14): at most POP_MAX at once (the oldest goes), each gone after POP_LIFE_S, fading
 ## over the last POP_FADE_S.
+## Times a fallen bit has hit something (tests).
+var tinks := 0
+
+
 func pop(at: Vector3, vel: Vector3, mesh: Mesh, mat: Material) -> void:
 	while _pops.size() >= POP_MAX:
 		var old: Dictionary = _pops.pop_front()
@@ -227,6 +231,7 @@ func _step_pops(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 			q.exclude = exclude
 			var hit := space.intersect_ray(q)
 			if not hit.is_empty():
+				_tink(p, hit.position, v.length())
 				v = v.bounce(hit.normal) * 0.4
 				to = (hit.position as Vector3) + (hit.normal as Vector3) * 0.004
 				# Slow on something it can lie on: it settles there.
@@ -236,6 +241,27 @@ func _step_pops(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 		p.vel = v
 		mi.global_position = to
 		mi.rotation += (p.spin as Vector3) * delta * minf(1.0, v.length())
+
+
+## trades.metal_sounds: a fallen bit tinks as it hits something, quieter each bounce (a few at
+## most).
+func _tink(p: Dictionary, at: Vector3, speed: float) -> void:
+	var hits: int = p.get("tinks", 0)
+	p.tinks = hits + 1
+	tinks += 1
+	if hits >= 3 or speed < 0.5 or not Flags.is_on("trades.metal_sounds") or DisplayServer.get_name() == "headless":
+		return
+	var a := AudioStreamPlayer3D.new()
+	a.stream = TradesSounds.tink(_rng.randi())
+	a.volume_db = -10.0 - hits * 6.0 + clampf(speed - 2.0, -6.0, 4.0)
+	a.pitch_scale = _rng.randf_range(0.9, 1.12)
+	a.unit_size = 3.0
+	a.max_distance = 30.0
+	a.bus = Sfx.bus()
+	a.finished.connect(a.queue_free)
+	add_child(a)
+	a.global_position = at
+	a.play()
 
 
 func _draw() -> void:

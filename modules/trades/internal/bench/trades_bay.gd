@@ -29,6 +29,13 @@ const TOOL_LABELS := {
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
 	&"cutter": "Cutter", &"template": "Scribe",
 }
+## trades.vs_order (beenster, 0.3.26: "copy the order of the tools directly from Void Salvage"):
+## the yard's hotbar in Void Salvage's order (grinder, cutter, socket, plasma, grabber, limpets,
+## battery), each of ours where its Void Salvage match sits: the cutter 2, the wrench 3 (the
+## socket), the tractor 5 (the grabber). Ours with no match fill the gaps: the rivet gun 1, the
+## welder 4, the scribe 6, hands 7.
+const YARD_ORDER: Array[StringName] = [&"rivet_squeezer", &"cutter", &"torque_wrench", &"welder",
+		&"tractor", &"template", &"hands"]
 ## The tools trades.slim_hotbar leaves off the yard's hotbar.
 const SLIM_DROPS: Array[StringName] = [&"drill", &"wire_tool", &"cutter"]
 ## A tool's name on the hotbar and its display: the wrench is the powered one with
@@ -150,6 +157,15 @@ func _ready() -> void:
 	# trades.cutting_bed: the template scribe traces plates at the ship for the cutting bed.
 	if in_yard and TradesCuttingBed.enabled():
 		hotbar.append(&"template")
+	if in_yard and Flags.is_on("trades.vs_order"):
+		var ordered: Array[StringName] = []
+		for t in YARD_ORDER:
+			if hotbar.has(t):
+				ordered.append(t)
+		for t in hotbar:
+			if not ordered.has(t):
+				ordered.append(t)
+		hotbar = ordered
 	_build_worker()
 	sparks = TradesSparks.new()
 	sparks.name = "Sparks"
@@ -881,6 +897,23 @@ func play(sound: StringName, pitch := 1.0, db := 0.0) -> void:
 		return
 	p.pitch_scale = pitch
 	p.volume_db = db
+	p.play()
+
+
+## A one-shot sound out in the world at `at` (a joint giving way where it is).
+func play_at(stream: AudioStream, at: Vector3, db := 0.0, pitch := 1.0) -> void:
+	if stream == null or not is_inside_tree() or DisplayServer.get_name() == "headless":
+		return
+	var p := AudioStreamPlayer3D.new()
+	p.stream = stream
+	p.volume_db = db
+	p.pitch_scale = pitch
+	p.unit_size = 5.0
+	p.max_distance = 45.0
+	p.bus = Sfx.bus()
+	p.finished.connect(p.queue_free)
+	add_child(p)
+	p.global_position = at
 	p.play()
 
 

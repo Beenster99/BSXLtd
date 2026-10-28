@@ -112,6 +112,13 @@ static func vs_tools() -> bool:
 static func weld_skill() -> bool:
 	return Flags.is_on("trades.weld_skill")
 
+
+## trades.cutter_welds (beenster, 0.3.26: "copy the behaviour of the cutter from Void Salvage so
+## that dealing with welds is much easier"): as Void Salvage's cutter, ours cuts a weld out
+## wherever you point along its seam and hold; the welder only lays them, held still on the seam.
+static func cutter_welds() -> bool:
+	return Flags.is_on("trades.cutter_welds") and Flags.is_on("trades.cutter")
+
 ## Ship space to this station's world: read from the yard on every refresh, and followed while
 ## the ship moves (a wreck set down on its cradle, a cradle driven). A stale one left the tools
 ## aiming up to 0.7 m off a wreck's bolts and rivets (0.3.24).
@@ -588,6 +595,12 @@ func press(tool: StringName) -> void:
 		else:
 			_press_power(f, tight)
 		return
+	if f.kind == "weld" and tool == &"cutter" and cutter_welds():
+		if tight:
+			_begin(true, tool)
+		else:
+			bay.hint("Nothing to cut out: this weld isn't made. The %s lays it." % _named(&"welder"))
+		return
 	if f.kind == "weld" and tool == &"welder" and vs_tools() and tight and Flags.is_on("trades.unweld"):
 		# Point and hold on a weld cuts it out; no unweld mode to switch to.
 		_begin(true, tool)
@@ -675,8 +688,10 @@ func back_out(tool: StringName) -> void:
 				bay.hint("Rivets come out with the %s." % " or the ".join(_out_tools("rivet").map(_named)))
 				return
 		"weld":
-			if tool != &"welder":
-				bay.hint("Cut a weld out with the %s." % _named(&"welder"))
+			# The welder unwelds (beenster, 0.3.26); with trades.cutter_welds the cutter does too.
+			var cutters: Array = [&"welder", &"cutter"] if cutter_welds() else [&"welder"]
+			if not tool in cutters:
+				bay.hint("Cut a weld out with the %s." % " or the ".join(cutters.map(_named)))
 				return
 			if not Flags.is_on("trades.unweld"):
 				bay.hint("Cutting welds isn't switched on yet.")
@@ -775,6 +790,8 @@ func update(delta: float) -> void:
 		_work_rivet_out(f, at, n)
 	elif f.kind == "bolt" and not _undoing:
 		_work_bolt(f, at, n)
+	elif f.kind == "weld" and _undoing and _tool_held == &"cutter":
+		_work_weld_cut(f, at, n)
 	elif f.kind == "weld" and _undoing and vs_tools():
 		_work_unweld(f, at, n)
 	elif f.kind == "weld" and traces(f):
@@ -967,7 +984,7 @@ func _job_key() -> String:
 		return ""
 	var f := points[_working]
 	var keeps := _working_power() or (f.kind == "rivet" and _undoing and _tool_held in [&"welder", &"cutter"]) \
-			or (f.kind == "weld" and _undoing and _tool_held == &"welder")
+			or (f.kind == "weld" and _undoing and _tool_held in [&"welder", &"cutter"])
 	return "%s:%s" % [f.joint_id, "out" if _undoing else "in"] if keeps else ""
 
 
@@ -1072,6 +1089,8 @@ func kind_tools(kind: String) -> Array:
 		if Flags.is_on("trades.rivet_heat"):
 			out.append(&"welder")
 		out.append(&"cutter")
+	if kind == "weld" and cutter_welds():
+		out.append(&"cutter")
 	# Only what's on the hotbar (trades.slim_hotbar leaves the drill, crimper and cutter off).
 	return out.filter(func(t: StringName) -> bool: return bay.hotbar.has(t))
 
@@ -1090,6 +1109,8 @@ func kind_help(kind: String) -> String:
 		"rivet":
 			return "%s to set, %s to take out" % [_named(&"rivet_squeezer"), " or ".join(_out_tools(kind).map(_named))]
 		"weld":
+			if cutter_welds():
+				return "%s: hold left click on the seam to weld it, or on a weld to cut it out; %s: hold on a weld to cut it out" % [_named(&"welder"), _named(&"cutter")]
 			if vs_tools():
 				return "%s: hold left click along the seam to weld it; hold it on a weld to cut it out" % _named(&"welder")
 			return "%s: left click welds; %s switches it to unweld, which cuts welds out" \
@@ -1162,29 +1183,7 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 		if sparks:
 			sparks.emit(at + n * 0.004, n, SPARKS_HEAT, 1.8, 0.9)
 	else:
-		var cutter := bay.tool_node(&"cutter") as TradesCutter
-		cutter.ground = progress
-		var xform := _on_surface(at, n, 0.0)
-		bay.place_tool(&"cutter", xform)
-		bay.worker.right_hand.reach_to(xform * TradesCutter.GRIP, n)
-		if vs_tools():
-			# The disc whines up to speed, then the note drops as it bites into the head.
-			cutter.spin = clampf(_run_s / SPIN_UP_S, 0.0, 1.0)
-			cutter.biting = _run_s >= SPIN_UP_S
-			if cutter.biting:
-				bay.loop(&"grind", true, 0.82 + randf() * 0.06)
-				bay.worker.kick(0.0015)
-			else:
-				bay.loop(&"grind", true, 0.6 + cutter.spin * 0.6)
-		else:
-			cutter.spin = 1.0
-			bay.loop(&"grind", true, 0.95 + randf() * 0.1)
-		if sparks:
-			# Off the disc's edge, down along the surface.
-			var down := Vector3.DOWN - n * n.dot(Vector3.DOWN)
-			if down.length() < 0.1:
-				down = xform.basis.z
-			sparks.emit(at + n * 0.003, down.normalized() + n * 0.35, SPARKS_GRIND, 4.5, 0.3)
+		_grind_at(at, n, progress)
 	bay.worker.right_hand.set_grip(1.0)
 	var bus := bay.bus()
 	if bus:
@@ -1197,8 +1196,50 @@ func _work_rivet_out(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
 		pop_part(kind, at + n * 0.01, vel)
 		if bay.crew:
 			bay.crew.share_pop(kind, at + n * 0.01, vel)
-	bay.play(&"pop" if heat else &"clunk", 1.3)
+	if not Flags.is_on("trades.metal_sounds"):
+		bay.play(&"pop" if heat else &"clunk", 1.3)
 	_finish(f)
+
+
+## The cutter's disc on the work at `at`: placed, spun up, biting, throwing sparks.
+func _grind_at(at: Vector3, n: Vector3, progress: float) -> void:
+	var cutter := bay.tool_node(&"cutter") as TradesCutter
+	cutter.ground = progress
+	var xform := _on_surface(at, n, 0.0)
+	bay.place_tool(&"cutter", xform)
+	bay.worker.right_hand.reach_to(xform * TradesCutter.GRIP, n)
+	if vs_tools():
+		# The disc whines up to speed, then the note drops as it bites in.
+		cutter.spin = clampf(_run_s / SPIN_UP_S, 0.0, 1.0)
+		cutter.biting = _run_s >= SPIN_UP_S
+		if cutter.biting:
+			bay.loop(&"grind", true, 0.82 + randf() * 0.06)
+			bay.worker.kick(0.0015)
+		else:
+			bay.loop(&"grind", true, 0.6 + cutter.spin * 0.6)
+	else:
+		cutter.spin = 1.0
+		bay.loop(&"grind", true, 0.95 + randf() * 0.1)
+	if bay.sparks:
+		# Off the disc's edge, down along the surface.
+		var down := Vector3.DOWN - n * n.dot(Vector3.DOWN)
+		if down.length() < 0.1:
+			down = xform.basis.z
+		bay.sparks.emit(at + n * 0.003, down.normalized() + n * 0.35, SPARKS_GRIND, 4.5, 0.3)
+
+
+## trades.cutter_welds: the cutter on a weld cuts it out where you point along the seam, like
+## Void Salvage's: hold it there (or anywhere else on the seam) and the weld gives.
+func _work_weld_cut(f: FastenerPoint, at: Vector3, n: Vector3) -> void:
+	var progress := clampf(_held_s / UNWELD_S, 0.0, 1.0)
+	_grind_at(_aim_point(_working), n, progress)
+	bay.worker.right_hand.set_grip(1.0)
+	var bus := bay.bus()
+	if bus and not is_practice(f):
+		bus.joint_progress.emit(StringName(f.joint_id), progress)
+	if progress >= 1.0:
+		_traced.erase(f.joint_id)
+		_finish(f)
 
 
 # --- Doing the work -------------------------------------------------------------------------
@@ -1251,7 +1292,9 @@ func _begin(undo: bool, tool: StringName) -> void:
 			else:
 				bay.hint("Drilling it out..." if undo else "Squeezing...")
 		"weld":
-			if undo and vs_tools():
+			if undo and _tool_held == &"cutter":
+				bay.hint("Cutting the weld out: keep the disc on the seam...")
+			elif undo and vs_tools():
 				bay.hint("Cutting the weld out: keep the arc on it...")
 			elif traces(points[_working]) and weld_skill() and not undo:
 				bay.hint("Run the arc along the line at a steady pace: too fast won't take, too slow burns.")
@@ -1272,7 +1315,12 @@ func _finish(f: FastenerPoint) -> void:
 			var bus := bay.bus()
 			if bus and not is_practice(f):
 				bus.remove_joint(StringName(f.joint_id))
-			bay.play(&"clunk", 1.1)
+			if Flags.is_on("trades.metal_sounds") and f.kind in ["bolt", "rivet", "weld"]:
+				var i := points.find(f)
+				bay.play_at(TradesSounds.give(f.kind), points_world[i] if i >= 0 else ship_xform * f.position,
+						-4.0, randf_range(0.93, 1.07))
+			else:
+				bay.play(&"clunk", 1.1)
 			bay.hint("%s off.%s" % [f.kind.capitalize(), " The part is free." if _slot_empty(f) else ""])
 	else:
 		_made(f, 1.0)
@@ -1706,7 +1754,8 @@ func _seam_offset(f: FastenerPoint, at: Vector3, n: Vector3) -> float:
 ## point of its seam, so the aim stays on it all the way along.
 func _aim_point(i: int) -> Vector3:
 	var f := points[i]
-	if not traces(f):
+	# A weld is found anywhere along its seam, as Void Salvage's tools find one (trades.cutter_welds).
+	if not traces(f) and not (cutter_welds() and f.kind == "weld" and f.seam_size.x > 0.0):
 		return points_world[i]
 	var n := (ship_xform.basis * f.normal).normalized()
 	return points_world[i] + _seam_dir(f, n) * _seam_offset(f, points_world[i], n)
@@ -2046,13 +2095,39 @@ func _update_ring_focus() -> void:
 	if _bus and _bus.has_method("set_marker_focus"):
 		_bus.call("set_marker_focus", at, radius)
 
+## trades.aim_visible (beenster, 0.3.26: "rivet, bolt and weld highlighting seems to have
+## gone"): Void Salvage's ship files hold the frame's welds behind the skin, so the aim kept
+## picking a weld out of sight, ringed where nobody could see it, over the rivet in front of
+## you. A joint further along the aim than the first surface it meets by more than this is
+## behind that surface and isn't picked (metres).
+const HIDDEN_BEHIND_M := 0.06
+
+
+## How far along the aim the first surface is (metres), INF when there's none.
+func _aim_surface() -> float:
+	var o := bay.worker.aim_origin()
+	var d := bay.worker.aim_dir()
+	var world := bay.worker.get_world_3d()
+	if world == null:
+		return INF
+	var q := PhysicsRayQueryParameters3D.create(o, o + d * POINTER_RAY_M)
+	q.exclude = [bay.worker.get_rid()]
+	var hit := world.direct_space_state.intersect_ray(q)
+	return INF if hit.is_empty() else ((hit.position as Vector3) - o).dot(d)
+
+
 func _update_aim() -> void:
 	var best := -1
 	var best_d := PICK_M
 	var hand := bay.worker.right_hand
+	var surface := _aim_surface() if Flags.is_on("trades.aim_visible") else INF
+	var o := bay.worker.aim_origin()
+	var dir := bay.worker.aim_dir()
 	for i in points_world.size():
 		var p := _aim_point(i)
 		var d := bay.aim_distance(p)
+		if d < best_d and (p - o).dot(dir) > surface + HIDDEN_BEHIND_M:
+			continue
 		if d < best_d and hand.can_reach(p):
 			best = i
 			best_d = d

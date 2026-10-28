@@ -212,7 +212,12 @@ func _process(delta: float) -> void:
 		f.rotation.x = -_grip * 1.2
 	if held:
 		held.global_position = _glove.global_transform * Vector3(0, -0.02, -0.06)
-	var wrist := _glove.global_transform * Vector3(0, 0, 0.08)
+	# The real glove's cuff is 8 cm back; the ball's back is its radius (trades.arm_fit: the
+	# sleeve ran out 4 cm short of the ball and the hand floated off its arm).
+	var cuff := 0.08
+	if Flags.is_on("trades.sphere_hands") and Flags.is_on("trades.arm_fit"):
+		cuff = SPHERE_R * 0.6
+	var wrist := _glove.global_transform * Vector3(0, 0, cuff)
 	if arm_root.is_finite():
 		_draw_sleeve(arm_root, wrist, 1.0)
 	elif Flags.is_on("trades.forearms"):

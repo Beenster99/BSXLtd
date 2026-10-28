@@ -22,6 +22,9 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The welder's own unweld (trades.cutter_welds hands it to the cutter: test_playtest_0326).
+	saved["trades.cutter_welds"] = Flags.is_on("trades.cutter_welds")
+	Flags.set_flag("trades.cutter_welds", false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)

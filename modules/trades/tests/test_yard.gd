@@ -54,8 +54,9 @@ func run_tests() -> void:
 	var practice := station.test_stand.joints.size() if station and station.test_stand else 0
 	check(station != null and station.points.size() - practice == expected and expected > 0,
 			"the ship is the station: all %d of its joints" % expected)
+	var next: StringName = rig.hotbar[(rig.hotbar.find(rig.tool) + 1) % rig.hotbar.size()]
 	rig.wheel(1)
-	check(rig.tool == &"torque_wrench", "the mouse wheel moves along the tools")
+	check(rig.tool == next, "the mouse wheel moves along the tools (%s, %s)" % [rig.tool, next])
 
 	# A bolt: break it loose and torque it again.
 	var bolt := _first(station, "bolt")
