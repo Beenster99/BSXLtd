@@ -15,6 +15,14 @@ func run_tests() -> void:
 	add_child(bare)
 	await frames(3)
 	check(bare.get("city") == null, "with ship_bay.city off there is no city round the yard")
+	# The yard by the sea (ship_bay.sea, 0.3.27): water south of the quay, the land stopping there.
+	if Flags.is_on("ship_bay.sea"):
+		var water := bare.get_node_or_null("Sea") as Node3D
+		var ground := bare.get_node_or_null("Ground") as MeshInstance3D
+		var shore: float = bare.get_script().SHORE_Z
+		check(water != null and absf(water.position.y - bare.get_script().SEA_Y) < 0.01 and water.position.z > shore, "the sea lies south of the quay, under its top")
+		check(ground != null and ground.position.z + (ground.mesh as PlaneMesh).size.y * 0.5 <= shore + 0.01, "the ground stops at the shore")
+		check(bare.get_node_or_null("QuayWall") != null, "with a quay wall along the apron")
 	bare.queue_free()
 	await frames(2)
 	Flags.set_flag("ship_bay.city", true)

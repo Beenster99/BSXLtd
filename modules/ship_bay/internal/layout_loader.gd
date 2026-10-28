@@ -285,10 +285,41 @@ static func _rest_fittings(rule: Dictionary, f: Dictionary, taken: Array[MountSl
 		s.parts = PackedStringArray([path])
 		var counts := {}
 		for j: Dictionary in joints[path]:
-			s.fasteners.append(_file_fastener(s.slot_id, j, counts))
+			var fp := _file_fastener(s.slot_id, j, counts)
+			_out_from_under(fp, s.box)
+			s.fasteners.append(fp)
 		s.mount = _facing(s.fasteners[0].normal, s.box.get_center())
 		out.append(s)
 	return out
+
+
+## Void Salvage bolts a seat, console or locker down by one bolt in the middle of its foot,
+## hidden under the part itself, so nobody could see how it came off (beenster, 0.3.27). A
+## fastener under its part's box (inside its footprint, seen along the joint's normal) is moved
+## out past the box's side that faces the ship's middle (inboard, where you stand to work it),
+## at the same height: the joint is the same, only where you find it.
+const UNDER_MARGIN := 0.03      # m in from the box's sides that counts as under it
+const OUT_FROM_UNDER := 0.05    # m outside the box the fastener goes
+
+
+static func _out_from_under(f: FastenerPoint, box: AABB) -> void:
+	var n := f.normal.abs().max_axis_index()
+	var sides: Array[int] = []
+	for a in 3:
+		if a != n:
+			sides.append(a)
+	for a in sides:
+		if f.position[a] <= box.position[a] + UNDER_MARGIN or f.position[a] >= box.end[a] - UNDER_MARGIN:
+			return
+	var best := Vector3.INF
+	for a in sides:
+		for end: float in [box.position[a] - OUT_FROM_UNDER, box.end[a] + OUT_FROM_UNDER]:
+			var p := f.position
+			p[a] = end
+			# Inboard: nearest the ship's centre line (x, y 0), then its middle along z.
+			if best == Vector3.INF or Vector2(p.x, p.y).length() + absf(p.z) * 0.01 < Vector2(best.x, best.y).length() + absf(best.z) * 0.01 - 0.001:
+				best = p
+	f.position = best
 
 
 ## A wreck's damage (the file's "damage" block, WreckMaker): slots whose parts are all gone or

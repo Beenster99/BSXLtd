@@ -36,6 +36,36 @@ func run_tests() -> void:
 	(panel.get_node("Wreck") as Button).pressed.emit()
 	await frames(2)
 	_check_wreck(bus, bay, "small")
+	# Nothing's fasteners hide under it: a seat's bolt in the middle of its foot is moved out
+	# past its inboard side (beenster, 0.3.27: "I cannot see how to remove them").
+	var hidden: Array = []
+	for slot in bus.ship.slots:
+		if not slot.slot_id.begins_with("part_"):
+			continue
+		for f in slot.fasteners:
+			var n := f.normal.abs().max_axis_index()
+			var under := true
+			for a in 3:
+				if a != n and (f.position[a] <= slot.box.position[a] + 0.03 or f.position[a] >= slot.box.end[a] - 0.03):
+					under = false
+			if under:
+				hidden.append(f.joint_id)
+	check(hidden.is_empty(), "no fitting's bolt is hidden under it: %s" % [hidden.slice(0, 4)])
+	# Charred parts come off worn (beenster, 0.3.27: black plates read over 75%).
+	check(ShipBayBus.clean_up_route(ShipBayBus.wreck_part_condition(0.0, 0.6)) == "refurb"
+			and ShipBayBus.clean_up_route(ShipBayBus.wreck_part_condition(0.0, 1.0)) == "grind"
+			and ShipBayBus.wreck_part_condition(0.0, 0.0) == 1.0, "half charred wants refurbishing, burnt through the crusher")
+	var dparts: Dictionary = WreckMaker.damage_of(bus.ship.file).get("parts", {})
+	var worst := 1.0
+	var expect := 1.0
+	for slot in bus.ship.slots:
+		for path in slot.parts:
+			var cond: Dictionary = (dparts.get(path, {}) as Dictionary).get("condition", {})
+			var c := ShipBayBus.wreck_part_condition(float(cond.get("wear", 0.0)), float(cond.get("scorch", 0.0)))
+			if c < expect:
+				expect = c
+				worst = bus.fitted_condition(slot.slot_id)
+	check(expect < 1.0 and worst <= expect + 0.001, "a damaged part on the wreck comes off in the condition its damage says (%.2f)" % worst)
 	check(str(bay.get("cradle").get("size")) == Bay.cradle_size_for((bay.get("model").call("surface_box") as AABB).size.z), "in the cradle for its length (%s, %.1f m)" % [bay.get("cradle").get("size"), bus.ship.bounds.size.z])
 	check((bus.snapshot().get("bay_wreck", {}) as Dictionary) == bus.bay_wreck and str(bus.snapshot().get("ship_id", "")) == ShipBayBus.WRECK_ID,
 			"it goes in the save")

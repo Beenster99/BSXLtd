@@ -4,7 +4,8 @@ extends VBoxContainer
 ## the scaffold rigs) with what it is doing, where it is, the goods on it and where they are
 ## going, and its controls in an ACTIONS drop-down: REMOTE CONTROL
 ## takes a trolley on remote and PUSH takes hold of the bay's kit (both put the wrist away),
-## FOLLOW ME, FAST, BRING <part> TO ME (the picking lift
+## FOLLOW ME, FAST, CLEAN UP (a yard trolley fetches and sorts loose parts until stopped),
+## BRING <part> TO ME (the picking lift
 ## fetches the next part the ship in the bay takes), PUT AWAY / TO STORES, and the lift's and
 ## power unit's own controls. Over the rows (with "ship_bay.clean_up" on), the loose parts
 ## lying about the yard and CLEAN UP, which sends trolleys to sort them: good ones to the
@@ -82,6 +83,8 @@ func machines() -> Array:
 					else ["drive", "come", "fast", "put_away"]
 			if ["s", "m", "l"].has(id):   # the yard's trolleys leave deliveries to goods-in
 				acts = ["drive", "come", "fast"]
+				if Flags.is_on("ship_bay.organise_scrap"):
+					acts.append("clean")   # beenster, 0.3.27: CLEAN UP in the yard trolleys' actions
 			if (fleet.get("auto_load") as Dictionary).has(id):
 				acts.append("auto")
 			out.append(["trolley:" + id, str(t.get("spec")["name"]), acts])
@@ -350,6 +353,9 @@ func _label_for(id: String, action: String) -> String:
 		"auto":
 			var on := bool((fleet.get("auto_load") as Dictionary).get(id.trim_prefix("trolley:"), false)) if fleet else false
 			return "AUTO LOAD ON" if on else "AUTO LOAD OFF"
+		"clean":
+			var bus := Modules.bus("ship_bay") as ShipBayBus
+			return "STOP CLEANING UP" if bus and bus.is_organising(id.trim_prefix("trolley:")) else "CLEAN UP"
 		"up":
 			return "RAISE"
 		"down":
@@ -389,6 +395,11 @@ func press(id: String, action: String) -> void:
 			(Modules.bus("ship_bay") as ShipBayBus).command_trolley(trolley, "put_away")
 		"auto":
 			fleet.call("toggle_auto", trolley)
+		"clean":
+			# The trolley's organise mode: it fetches loose parts it can carry, one after another,
+			# and sorts them as CLEAN UP does, until it is told to stop.
+			var bus := Modules.bus("ship_bay") as ShipBayBus
+			bus.set_organising(trolley, not bus.is_organising(trolley))
 		"up":
 			access.call("lift_up")
 		"down":

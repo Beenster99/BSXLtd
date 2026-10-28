@@ -689,10 +689,14 @@ func _build_screen() -> void:
 	screen.call("setup", Vector2(0.62, 0.42), "CRUSHER  CR-1", 1)
 
 
-## The status board: a wall screen high on the shed's north wall, over the crusher and the
-## smelter, read from the door and the whole hall.
+## The status board: a wall screen on the shed's north wall east of the smelter, clear of
+## the crusher, its middle at the height of the halls' wall TVs (beenster, 0.3.27).
+const BOARD_Y := 2.45   # m, the screen's centre over the floor
+const BOARD_X := 82.6   # m, its middle along the wall
+
+
 func _build_board() -> void:
-	var at := Vector3(CRUSHER.x + 2.6, 7.4, HOUSE.position.y + 0.3)
+	var at := Vector3(BOARD_X, BOARD_Y, HOUSE.position.y + 0.3)
 	_part(PartShapes.chamfer_box(Vector3(4.6, 2.8, 0.12), 0.03).mesh, at, _mats["dark"])
 	board = Touch.new()
 	board.name = "Board"
