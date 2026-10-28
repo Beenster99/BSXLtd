@@ -27,7 +27,7 @@ const TOOLS: Array[StringName] = [&"hands", &"torque_wrench", &"drill", &"rivet_
 const TOOL_LABELS := {
 	&"hands": "Hands", &"torque_wrench": "Torque wrench", &"drill": "Drill",
 	&"rivet_squeezer": "Squeezer", &"welder": "Welder", &"wire_tool": "Crimper", &"tractor": "Tractor",
-	&"cutter": "Cutter", &"template": "Scribe",
+	&"cutter": "Cutter", &"template": "Scribe", &"tablet": "Tablet",
 }
 ## trades.vs_order (beenster, 0.3.26: "copy the order of the tools directly from Void Salvage"):
 ## the yard's hotbar in Void Salvage's order (grinder, cutter, socket, plasma, grabber, limpets,
@@ -90,6 +90,8 @@ var tool_nodes: Dictionary = {}
 ## bed, or null.
 var tracer: TradesPlateTracer
 var cutting_bed: TradesCuttingBed
+## trades.beam_designer (in the yard): the hologram beam designer the design tablet drives, or null.
+var designer: TradesBeamDesigner
 
 var _focus: TradesStation
 var _pressed: TradesStation
@@ -157,6 +159,9 @@ func _ready() -> void:
 	# trades.cutting_bed: the template scribe traces plates at the ship for the cutting bed.
 	if in_yard and TradesCuttingBed.enabled():
 		hotbar.append(&"template")
+	# trades.beam_designer: the design tablet draws a beam modification round the ship.
+	if in_yard and TradesBeamDesigner.enabled():
+		hotbar.append(&"tablet")
 	if in_yard and Flags.is_on("trades.vs_order"):
 		var ordered: Array[StringName] = []
 		for t in YARD_ORDER:
@@ -229,6 +234,8 @@ func _enter_yard() -> void:
 	if TradesCuttingBed.enabled() and yard and yard_bus and yard_bus.has_method("cutting_bed_spot"):
 		build_cutting_bed(yard.global_transform * TradesCuttingBed.lay_along(yard_bus.call("cutting_bed_spot") as Transform3D,
 				ShipBayBus.CUTTING_BED_ROOM))
+	if TradesBeamDesigner.enabled():
+		build_designer()
 	_focus = s
 	if yard_bus:
 		yard_bus.set_walker_active(yard, false)
@@ -257,6 +264,15 @@ func _enter_yard() -> void:
 	hint(s.start_hint())
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## trades.beam_designer: the hologram beam designer round the ship.
+func build_designer() -> void:
+	designer = TradesBeamDesigner.new()
+	designer.name = "BeamDesigner"
+	designer.bay = self
+	add_child(designer)
+	designer.build(_net())
 
 
 ## trades.cutting_bed: the plasma cutting bed in Ship and Bay's plate hall, and the tracer that
@@ -516,6 +532,8 @@ func _on_action(action: String) -> void:
 		return
 	if action == Keys.INTERACT and extinguishers and extinguishers.interact():
 		return
+	if tool == &"tablet" and designer and designer.key(action):
+		return
 	match action:
 		TradesBus.KEY_VIEW:
 			worker.set_view(not worker.third_person)
@@ -547,6 +565,13 @@ func _on_mouse_button(event: InputEventMouseButton) -> void:
 	if extinguishers and extinguishers.holding() and event.button_index == MOUSE_BUTTON_LEFT:
 		extinguishers.set_spraying(event.pressed)
 		return
+	if tool == &"tablet" and designer:
+		if event.pressed and (event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT):
+			designer.click(event.button_index == MOUSE_BUTTON_LEFT)
+			return
+		if event.pressed and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN) \
+				and designer.wheel(-1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1):
+			return
 	if _focus == null:
 		return
 	match event.button_index:
@@ -1098,7 +1123,7 @@ func _build_tools() -> void:
 	var scripts := {
 		&"torque_wrench": TradesPowerWrench if TradesShipJoints.powered() else TradesTorqueWrench, &"drill": TradesDrill, &"rivet_squeezer": TradesRivetGun if in_yard and Flags.is_on("trades.power_riveter") else TradesRivetSqueezer,
 		&"welder": TradesWeldTorch, &"wire_tool": TradesWireTool, &"tractor": TradesTractorTool, &"cutter": TradesCutter,
-		&"template": TradesTemplateScribe,
+		&"template": TradesTemplateScribe, &"tablet": TradesDesignTablet,
 	}
 	for id: StringName in scripts:
 		var t: TradesTool = (scripts[id] as GDScript).new()
