@@ -28,7 +28,10 @@ extends RefCounted
 ## thickness, the thick ones low. The 6 and 12 m plates for the big cutting bed lie on three
 ## long racks in the hall's west end: 12 m plates on L1 and L2 either side of aisle L, 6 m
 ## ones two to a level on M1 by aisle M, a material at a time. The heavy lift works them.
-## Nothing but plates goes on them.
+## Nothing but plates goes on them. The stock beam bars (StockBeams, 6 and 12 m) lie on the
+## cantilever rack M2 across aisle M from M1, backed onto P1 (Tools' beam plan, 0.3.28): its
+## arms reach out of a spine of columns, twelve levels of five lanes across the arms, a bar
+## size to a lane; the 12 m bars low, the 6 m ones two to a lane over them.
 ##
 ## Store 2 (the old Material prep hall, x 0..50, beenster 0.3.15) is all shelves too, laid out
 ## the same way off the same transfer aisle and cross aisle: small racks in aisles D and E
@@ -84,6 +87,12 @@ const PLATE_RACKS := [
 const LONG := {"depth": 3.2, "bay": 12.4, "bays": 1, "height": 5.2, "aisle": 4.4,
 		"beams": [0.15, 0.57, 0.99, 1.41, 1.83, 2.25, 2.67, 3.09, 3.51, 3.93, 4.35, 4.77]}
 const LONG_RACKS := [["L1", -103.5, 1.0, 1], ["L2", -95.9, -1.0, 1], ["M1", -92.6, 1.0, 2]]
+## The beam rack: cantilever arms off a spine at its back, one 12.4 m bay, the long racks'
+## twelve levels, `lanes` bars side by side across an arm (0.24 m each, room for the 200 mm
+## sections); [rack, west face x, front].
+const BEAM := {"depth": 1.4, "bay": 12.4, "bays": 1, "height": 5.2, "aisle": 4.4, "lanes": 5, "lane": 0.24,
+		"beams": [0.15, 0.57, 0.99, 1.41, 1.83, 2.25, 2.67, 3.09, 3.51, 3.93, 4.35, 4.77]}
+const BEAM_RACK := ["M2", -84.95, -1.0]
 ## The plate hall's floor (x, z, width, depth), metres.
 const PLATE_HALL := Rect2(-104.0, -46.0, 54.0, 26.0)
 const BIG_RACKS := [
@@ -128,6 +137,11 @@ static func size_of(item: String) -> Vector3:
 	if StockPlates.is_plate(item):
 		var p: Vector3 = StockPlates.item(item)["size"]
 		return Vector3(p.z, p.y, p.x)   # lying flat, its length along the rack
+	if StockBeams.is_beam(item) or not beam_piece(item).is_empty():
+		var piece := beam_piece(item)
+		var bar: String = piece[0] if not piece.is_empty() else item
+		var b: Vector3 = StockBeams.item(bar)["size"]
+		return Vector3(b.z, b.y, float(piece[1]) if not piece.is_empty() else b.x)   # its length along the rack
 	if _sizes.is_empty():
 		var text := FileAccess.get_file_as_string(SIZES)
 		var parsed: Variant = JSON.parse_string(text) if text != "" else null
@@ -157,8 +171,8 @@ static func pallet_room() -> Vector3:
 ## "bin", "pallet" or "bulk" for goods of this mass (kg) and, given an item, its size:
 ## a part too big for a small rack's place is bulk whatever it weighs.
 static func kind_for(mass: float, item := "") -> String:
-	if item != "" and StockPlates.is_plate(item):
-		return "bulk"   # flat and wide: the heavy lift and the plate racks
+	if item != "" and (StockPlates.is_plate(item) or StockBeams.is_beam(item) or not beam_piece(item).is_empty()):
+		return "bulk"   # flat and wide, or long: the heavy lift and the plate and beam racks
 	var size := size_of(item) if item != "" else Vector3.ZERO
 	if mass < BIN_MAX and (size == Vector3.ZERO or fits(size, bin_room())):
 		return "bin"
@@ -174,7 +188,7 @@ static func kind_of(item: String) -> String:
 
 ## The rack ids west to east.
 static func rack_ids() -> PackedStringArray:
-	return PackedStringArray(["L1", "L2", "M1", "P1", "P2", "Q1", "R1", "R2", "H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
+	return PackedStringArray(["L1", "L2", "M1", "M2", "P1", "P2", "Q1", "R1", "R2", "H1", "H2", "W1", "W2", "X1", "X2", "A1", "A2", "B1", "B2", "C1", "C2",
 			"D1", "D2", "E1", "E2", "Y1", "Y2", "Z1", "Z2", "J1", "J2"])
 
 
@@ -261,6 +275,9 @@ static func _racks() -> Dictionary:
 				"depth": LONG["depth"], "bay": LONG["bay"], "bays": LONG["bays"], "beams": LONG["beams"],
 				"height": LONG["height"], "aisle": LONG["aisle"], "per": [r[3]], "plate_kind": "", "family": "",
 				"material": "", "name": "Long plate", "long": true}
+	racks[BEAM_RACK[0]] = {"id": BEAM_RACK[0], "store": "beam", "x": float(BEAM_RACK[1]) + float(BEAM["depth"]) * 0.5,
+			"face": BEAM_RACK[2], "depth": BEAM["depth"], "bay": BEAM["bay"], "bays": BEAM["bays"], "beams": BEAM["beams"],
+			"height": BEAM["height"], "aisle": BEAM["aisle"], "per": [int(BEAM["lanes"])], "name": "Beams", "cantilever": true}
 	return racks
 
 
@@ -273,6 +290,9 @@ static func _build() -> Dictionary:
 	for id: String in StockPlates.items():
 		var p: Dictionary = StockPlates.item(id)
 		items[id] = {"name": p["name"], "category": p["category"], "mass": p["mass"]}
+	for id: String in StockBeams.items():
+		var b: Dictionary = StockBeams.item(id)
+		items[id] = {"name": b["name"], "category": b["category"], "mass": b["mass"]}
 	var racks := _racks()
 	var locations := {}
 	var bays: Array = []
@@ -301,7 +321,7 @@ static func _build() -> Dictionary:
 	# The large and heavy racks, west to east: bulk places, no homes.
 	for id: String in rack_ids():
 		var r: Dictionary = racks[id]
-		if r["store"] == "small":
+		if r["store"] == "small" or r["store"] == "beam":
 			continue
 		var plate: bool = r["store"] == "plate"
 		var beams: Array = r["beams"]
@@ -419,6 +439,7 @@ static func _build() -> Dictionary:
 				if i < places.size():
 					_home(locations, homes, places[i], pid, items)
 				i += 1
+	_beam_homes(racks[BEAM_RACK[0]], locations, homes, items, bays)
 	var aisles := {}
 	for id: String in rack_ids():
 		if id.ends_with("1"):
@@ -432,6 +453,69 @@ static func _build() -> Dictionary:
 				goods_in.append(spot)
 	return {"items": items, "locations": locations, "homes": homes, "bays": bays, "racks": racks,
 			"aisles": aisles, "goods_in": goods_in}
+
+
+## A length cut off a stock bar on the plasma bed (Tools: "<bar>:len:<mm>", with
+## ":<a>:<b>" end angles when an end is mitred): [bar id, length (m)], [] for anything else.
+static func beam_piece(item: String) -> Array:
+	var at := item.find(":len:")
+	if at < 0 or not StockBeams.is_beam(item.left(at)):
+		return []
+	var mm := item.substr(at + 5).get_slice(":", 0)
+	return [item.left(at), maxf(mm.to_float(), 1.0) / 1000.0] if mm.is_valid_float() else []
+
+
+## Where a place's label goes (yard space): on its front edge over the place, except on the
+## beam rack, whose lanes lie one behind another: there each lane's label is set along the
+## arms' front so they don't cover each other.
+static func label_at(l: Dictionary) -> Vector3:
+	var r := rack(str(l["rack"]))
+	var at: Vector3 = l["at"]
+	var front := float(r.get("x", at.x)) + float(r.get("face", 1.0)) * (float(r.get("depth", 0.0)) * 0.5 + 0.04)
+	if str(l.get("store", "")) != "beam":
+		return Vector3(front, at.y, at.z)
+	var lane := (int(l["pos"]) - 1) / 2
+	return Vector3(front, at.y, at.z + (lane - (int(BEAM["lanes"]) - 1) * 0.5) * 1.15)
+
+
+## The beam rack's places, each a bar's home: lanes across an arm (front to back), levels
+## up; the 12 m bars a lane each from the bottom, then the 6 m ones two to a lane (back
+## half and front half of the bay), in StockBeams' order (material, family, size).
+static func _beam_homes(r: Dictionary, locations: Dictionary, homes: Dictionary, items: Dictionary, bays: Array) -> void:
+	var beams: Array = r["beams"]
+	var lanes := int(BEAM["lanes"])
+	var lane := float(BEAM["lane"])
+	var face := float(r["face"])
+	var front := float(r["x"]) + face * float(r["depth"]) * 0.5
+	var length := float(r["bay"])
+	var runs: Array = []
+	for want: int in [12000, 6000]:
+		var run := Array(StockBeams.item_ids()).filter(func(id: String) -> bool: return int(StockBeams.item(id)["length_mm"]) == want)
+		runs.append(run)
+	var slot := 0   # lanes used, bottom level first
+	for k in runs.size():
+		var per_lane := 1 if k == 0 else 2
+		var run: Array = runs[k]
+		for i in run.size():
+			if i % per_lane == 0 and i > 0:
+				slot += 1
+			if slot >= lanes * beams.size():
+				return
+			var level := slot / lanes + 1
+			var ln := slot % lanes
+			var half := i % per_lane
+			var pos := ln * 2 + half + 1
+			var along := length if per_lane == 1 else length * 0.5
+			var z := RACK_Z0 - length * 0.5 + (0.0 if per_lane == 1 else (half - 0.5) * along)
+			var top := float(beams[level]) if level < beams.size() else float(r["height"])
+			var loc := "%s-01-%d-%d" % [r["id"], level, pos]
+			locations[loc] = {"id": loc, "kind": "bulk", "store": "beam", "rack": r["id"], "bay": 1, "level": level,
+					"pos": pos, "at": Vector3(front - face * (0.1 + (ln + 0.5) * lane), float(beams[level - 1]) + 0.06, z),
+					"size": Vector3(lane - 0.02, top - float(beams[level - 1]) - 0.08, along - 0.1),
+					"face": Vector3(face, 0, 0), "category": "", "home": ""}
+			_home(locations, homes, loc, run[i], items)
+		slot += 1
+	bays.append({"rack": r["id"], "bay": 1, "kind": "bulk", "category": "beam"})
 
 
 static func _home(locations: Dictionary, homes: Dictionary, loc: String, item: String, items: Dictionary) -> void:

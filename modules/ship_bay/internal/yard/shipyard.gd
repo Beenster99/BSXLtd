@@ -1461,6 +1461,9 @@ func _storage_rack(rack: String) -> void:
 	var L := StorageLayout
 	var layout := L.get_layout()
 	var r := L.rack(rack)
+	if r.get("cantilever", false):
+		_beam_rack(rack)
+		return
 	var x := float(r["x"])
 	var face := float(r["face"])
 	var depth := float(r["depth"])
@@ -1511,6 +1514,44 @@ func _storage_rack(rack: String) -> void:
 		_tag(_place_text(l), Vector3(x + face * (depth * 0.5 + 0.04), at.y - 0.06 - (0.05 if heavy else 0.0), at.z), 0.045 if not heavy else 0.07, Vector3(face, 0, 0))
 	_collide_xf(_box_shape(Vector3(depth + 0.1, tall, bays * length)),
 			_at(Vector3(x, tall * 0.5, L.RACK_Z0 - bays * length * 0.5)))
+
+
+## The beam rack (StorageLayout.BEAM): a spine of I-section columns down its back on wide
+## feet, an arm off every column at each level reaching out over the aisle with a stop at its
+## tip, a label per bar on the arms' front edge.
+func _beam_rack(rack: String) -> void:
+	var L := StorageLayout
+	var layout := L.get_layout()
+	var r := L.rack(rack)
+	var x := float(r["x"])
+	var face := float(r["face"])
+	var depth := float(r["depth"])
+	var tall := float(r["height"])
+	var length := float(r["bay"])
+	var back := x - face * (depth * 0.5 - 0.1)
+	var columns := 6
+	var column := _box(Vector3(0.2, tall, 0.2))
+	var foot := _box(Vector3(depth, 0.16, 0.24))
+	var arm := _box(Vector3(depth - 0.1, 0.1, 0.12))
+	var stop := _box(Vector3(0.06, 0.12, 0.12))
+	var brace := _box(Vector3(0.06, 0.06, length / (columns - 1)))
+	for i in columns:
+		var z := L.RACK_Z0 - 0.15 - i * (length - 0.3) / (columns - 1)
+		_put(column, _at(Vector3(back, tall * 0.5, z)), _blue, false)
+		_put(foot, _at(Vector3(x, 0.08, z)), _blue, false)
+		for y: float in r["beams"]:
+			_put(arm, _at(Vector3(x + face * 0.05, y - 0.05, z)), _trim, false)
+			_put(stop, _at(Vector3(x + face * (depth * 0.5 - 0.03), y + 0.06, z)), _trim, false)
+	for y: float in [1.2, 2.6, 4.0]:
+		for i in columns - 1:
+			_put(brace, _at(Vector3(back, y, L.RACK_Z0 - 0.15 - (i + 0.5) * (length - 0.3) / (columns - 1))), _blue, false)
+	_tag("%s-01  BEAMS  6 AND 12 M BARS" % rack, Vector3(x + face * (depth * 0.5 + 0.05), tall - 0.35, L.bay_z(1, rack)), 0.13, Vector3(face, 0, 0))
+	for id: String in layout["locations"]:
+		var l: Dictionary = layout["locations"][id]
+		if l["rack"] == rack:
+			var at := L.label_at(l)
+			_tag(_place_text(l), Vector3(at.x, at.y - 0.12, at.z), 0.04, Vector3(face, 0, 0))
+	_collide_xf(_box_shape(Vector3(depth + 0.1, tall, length)), _at(Vector3(x, tall * 0.5, L.RACK_Z0 - length * 0.5)))
 
 
 ## "B2-03-4-1\nIon thruster" for a location; spare places show their id alone.
@@ -2089,8 +2130,10 @@ func _refresh_stores() -> void:
 		var room_box: Vector3 = l["size"]
 		ItemLook.look_box(_stores, AABB(l["at"] - Vector3(room_box.x * 0.5, 0.0, room_box.z * 0.5), room_box),
 				{"component": str(have["item"]), "condition": float(have.get("condition", 1.0)), "location": loc})
-		var tag := _tag("%s  x%d" % [item.get("name", have["item"]), int(have["qty"])],
-				l["at"] + Vector3(float(l["face"].x) * (float(l["size"].x) * 0.5 + 0.06), 0.55 if l["kind"] != "bulk" else 1.4, 0), 0.06, l["face"], _stores)
+		var tag_at: Vector3 = l["at"] + Vector3(float(l["face"].x) * (float(l["size"].x) * 0.5 + 0.06), 0.55 if l["kind"] != "bulk" else 1.4, 0)
+		if str(l["store"]) == "beam":
+			tag_at = StorageLayout.label_at(l) + Vector3(float(l["face"].x) * 0.02, 0.2, 0)   # its lane's own spot, under the arm above
+		var tag := _tag("%s  x%d" % [item.get("name", have["item"]), int(have["qty"])], tag_at, 0.06 if str(l["store"]) != "beam" else 0.035, l["face"], _stores)
 	var crates := _bus.delivered_crates()
 	for id: String in crates:
 		var c: Dictionary = crates[id]

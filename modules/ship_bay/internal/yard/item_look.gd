@@ -117,6 +117,12 @@ static func _paint_for(item: String, look: int) -> Material:
 	item = item_of(item)
 	if look == Look.NEW and _shapes.get(item, {}).get("paint") is Material:
 		return _shapes[item]["paint"]
+	var piece := StorageLayout.beam_piece(item)
+	var bar: String = piece[0] if not piece.is_empty() else item
+	if StockBeams.is_beam(bar):
+		if not _paints.has("beam:" + bar):
+			_paints["beam:" + bar] = StockBeams.paint(bar)
+		return _paints["beam:" + bar]
 	if StockPlates.is_plate(item):
 		if not _paints.has("plate:" + item):
 			_paints["plate:" + item] = StockPlates.paint(item)
@@ -197,9 +203,9 @@ static func _part_entry(id: String) -> Dictionary:
 
 
 ## Whether an item is one BSX makes or buys as its own goods, drawn by its own builder:
-## stock plates, fasteners and ship modules (lower-case ids).
+## stock plates and beams, fasteners and ship modules (lower-case ids).
 static func _own_goods(item: String) -> bool:
-	return StockPlates.is_plate(item) or item in ["M10", "M12", "RIVET_4"] or (item != "" and item[0] == item[0].to_lower())
+	return StockPlates.is_plate(item) or StockBeams.is_beam(item) or not StorageLayout.beam_piece(item).is_empty() or item in ["M10", "M12", "RIVET_4"] or (item != "" and item[0] == item[0].to_lower())
 
 
 ## Whether an item is drawn as Void Salvage's own part (goods_pack.gd packs those): anything
@@ -273,6 +279,13 @@ static func _build(item: String) -> Array:
 	if StockPlates.is_plate(item):
 		# A stock plate lying flat, its length along Z (down a rack's bay).
 		return [StockPlates.make_shape(item), Basis(Vector3.UP, PI * 0.5)]
+	if StockBeams.is_beam(item):
+		# A stock bar, its length along Z (down the beam rack).
+		return [StockBeams.make_shape(item), Basis(Vector3.UP, PI * 0.5)]
+	var piece := StorageLayout.beam_piece(item)
+	if not piece.is_empty():
+		# A length cut off one on the plasma bed (its ends drawn square).
+		return [StockBeams.extrude(StockBeams.outline(piece[0]), StockBeams.holes(piece[0]), float(piece[1])), Basis(Vector3.UP, PI * 0.5)]
 	match item:
 		# Electronics
 		"Antenna": return [WreckParts.antenna(1.4, 0.7)]
