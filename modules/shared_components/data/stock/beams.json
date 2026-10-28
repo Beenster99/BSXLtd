@@ -1,0 +1,24 @@
+{
+  "format": "bsx-stock-beams",
+  "version": 1,
+  "notes": [
+    "BSX-only stock: straight bars of box tube, I-beam, channel and angle bought from suppliers in 6 m and 12 m lengths, cut to length on the plasma bed and built into beam assemblies. Void Salvage has no such parts; nothing here goes into a ship file.",
+    "An item id is <Kind>_<w>x<h>x<t>_<length>: SteelBox_100x100x5_6000 is a 100 mm wide, 100 mm tall steel box tube with 5 mm walls, 6 m long (millimetres).",
+    "Section sizes: w is the width across (an I-beam's or channel's flange width, an angle's horizontal leg), h the height (the web, or the upright leg), t the wall, web and flange thickness.",
+    "Mass comes from the section's area x length x the material's density in Void Salvage's Materials table. Value is credits a kilogram x the material's price factor; Business sets the selling prices."
+  ],
+  "materials": {
+    "steel": {"display_name": "Steel", "prefix": "Steel"},
+    "alloy": {"display_name": "Alloy", "prefix": "Alloy"},
+    "titanium": {"display_name": "Titanium", "prefix": "Titanium"}
+  },
+  "families": {
+    "box": {"display_name": "box tube", "kind": "Box", "sections": [[50, 50, 3], [100, 100, 5], [150, 100, 6], [200, 200, 8]]},
+    "i": {"display_name": "I-beam", "kind": "IBeam", "sections": [[100, 100, 6], [150, 200, 8], [200, 300, 10]]},
+    "channel": {"display_name": "channel", "kind": "Channel", "sections": [[50, 100, 5], [75, 150, 6], [100, 200, 8]]},
+    "angle": {"display_name": "angle", "kind": "Angle", "sections": [[50, 50, 5], [75, 75, 6], [100, 100, 8]]}
+  },
+  "lengths": [6000, 12000],
+  "category": "stock_beams",
+  "credits_per_kg": 2.0
+}
