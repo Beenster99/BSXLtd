@@ -160,6 +160,13 @@ func _test_plates() -> void:
 		sellers[l.supplier_id] = true
 	check(ids.size() == StockPlates.items().size(), "every plate size and thickness is on sale: %d of %d" % [ids.size(), StockPlates.items().size()])
 	check(sellers.size() >= 2, "from more than one supplier: %s" % str(sellers.keys()))
+	var bars := {}
+	var bar_sellers := {}
+	for l in bus.get_listings("beams"):
+		bars[l.part] = true
+		bar_sellers[l.supplier_id] = true
+	check(bars.size() == StockBeams.items().size() and bar_sellers.size() >= 2,
+			"every beam bar is on sale under BEAMS from more than one supplier: %d of %d, %s" % [bars.size(), StockBeams.items().size(), str(bar_sellers.keys())])
 	var steel := bus.get_listings("metal plates").filter(func(l: MarketListing) -> bool: return l.part.begins_with("SteelPlate_"))
 	var thick := {}
 	for l: MarketListing in steel:

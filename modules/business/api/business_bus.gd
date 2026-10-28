@@ -66,9 +66,9 @@ signal order_refused(reason: String)
 
 const SAVE_SECTION := "business"
 const DATA_DIR := "res://modules/business/internal/data"
-## Shared Components' stock plates go on the market under these categories (their own
-## "stock_metal"/"stock_glass" read badly as category chips).
-const PLATE_CATEGORIES := {"stock_metal": "metal plates", "stock_glass": "glass plates"}
+## Shared Components' stock plates and beams go on the market under these categories
+## (their own "stock_metal"/"stock_glass"/"stock_beams" read badly as category chips).
+const PLATE_CATEGORIES := {"stock_metal": "metal plates", "stock_glass": "glass plates", "stock_beams": "beams"}
 const Books := preload("res://modules/business/internal/books.gd")
 const YardFront := preload("res://modules/business/internal/yard/yard_front.gd")
 const TerminalScreen := preload("res://modules/business/internal/ui/terminal_screen.gd")
@@ -141,18 +141,19 @@ func _init() -> void:
 		if s:
 			suppliers.append(s)
 	_books = Books.new(self, load(DATA_DIR + "/business_rules.tres"), load(DATA_DIR + "/prices.tres"),
-			_with_stock_plates(load(DATA_DIR + "/market_catalogue.tres")), suppliers)
+			_with_stock(load(DATA_DIR + "/market_catalogue.tres")), suppliers)
 
 
-## The catalogue plus BSX's stock plates (metal and glass in standard sizes and thicknesses),
-## so suppliers dealing in "metal plates" or "glass plates" list every one. A copy: the
-## loaded resource stays as Void Salvage's list.
-static func _with_stock_plates(catalogue: MarketCatalogue) -> MarketCatalogue:
+## The catalogue plus BSX's stock plates (metal and glass in standard sizes and thicknesses)
+## and beam bars (box, I, channel and angle in 6 and 12 m lengths), so suppliers dealing in
+## "metal plates", "glass plates" or "beams" list every one. A copy: the loaded resource
+## stays as Void Salvage's list.
+static func _with_stock(catalogue: MarketCatalogue) -> MarketCatalogue:
 	var out := catalogue.duplicate() as MarketCatalogue
 	out.parts = catalogue.parts.duplicate()
-	var plates := StockPlates.items()
-	for id: String in plates:
-		var p: Dictionary = plates[id]
+	var stock := StockPlates.items().merged(StockBeams.items())
+	for id: String in stock:
+		var p: Dictionary = stock[id]
 		var category := str(p.get("category", ""))
 		out.parts[id] = {"name": str(p.get("name", id)), "category": str(PLATE_CATEGORIES.get(category, category)),
 				"value": int(p.get("value", 0)), "mass": float(p.get("mass", 0.0)), "blurb": str(p.get("blurb", ""))}
