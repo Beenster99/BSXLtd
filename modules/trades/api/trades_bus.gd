@@ -29,6 +29,8 @@ signal unit_changed(rig_id: String, state: Dictionary)
 signal part_on_deck(crate_id: String, body: Node3D, deck: Node3D)
 ## trades.cutting_bed: a plate template was traced at the ship or deleted; templates() has them.
 signal templates_changed
+## trades.beam_designer: a ship's beam design changed; beam_design(ship_id) has it.
+signal beam_design_changed(ship_id: String)
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
@@ -73,6 +75,7 @@ var _units: Dictionary = {}  # rig_id -> unit_state()
 var _deck_parts: Dictionary = {}  # crate_id -> the loose part on a trolley's deck
 var _traced: Array[Dictionary] = []  # trades.cutting_bed: templates traced off plates
 var _next_template := 1
+var _beam_designs: Dictionary = {}  # trades.beam_designer: ship id -> beam rows
 
 
 func register_module() -> void:
@@ -96,7 +99,7 @@ func register_module() -> void:
 				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
 	if TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t)):
 		Router.register_scene(WORKBENCH, BENCH_SCENE)
-	if Flags.is_on("trades.cutting_bed"):
+	if Flags.is_on("trades.cutting_bed") or Flags.is_on("trades.beam_designer"):
 		Saves.register_section("trades", self)
 	if Flags.is_on("trades.shipyard"):
 		var yard_bus := Modules.bus("ship_bay") as ShipBayBus
@@ -205,7 +208,7 @@ func save_data() -> Dictionary:
 	var rows: Array = []
 	for t in _traced:
 		rows.append({"id": t.id, "name": t.name, "source": t.get("source", ""), "outline": _points_out(t.outline)})
-	return {"templates": rows, "next": _next_template}
+	return {"templates": rows, "next": _next_template, "beam_designs": _beam_designs.duplicate(true)}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -217,10 +220,42 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	for t in _traced:
 		_next_template = maxi(_next_template, str(t.id).trim_prefix("T-").to_int() + 1)
 	templates_changed.emit()
+	# The tracer's late-join snapshot carries only the templates: the designs stay.
+	if data.has("beam_designs") or data.is_empty():
+		_beam_designs.clear()
+	var designs: Variant = data.get("beam_designs", {})
+	if designs is Dictionary:
+		for ship_id: Variant in designs:
+			set_beam_design(str(ship_id), designs[ship_id])
 
 
 func reset_data() -> void:
 	load_data({}, SAVE_VERSION)
+
+
+## trades.beam_designer: the beams drawn round a ship in the courtyard (rows: id, a and b
+## (ship-space ends, [x, y, z] m), section (TradesBeamSections id), turn (degrees about its length)).
+func beam_design(ship_id: String) -> Array:
+	return (_beam_designs.get(ship_id, []) as Array).duplicate(true)
+
+
+## Replaces a ship's beam design (the designer's event on every machine). Rows that don't read
+## are dropped.
+func set_beam_design(ship_id: String, rows: Variant) -> void:
+	var kept: Array = []
+	if rows is Array:
+		for r: Variant in rows:
+			if r is Dictionary and (r as Dictionary).get("a") is Array and (r as Dictionary).get("b") is Array \
+					and ((r as Dictionary).a as Array).size() == 3 and ((r as Dictionary).b as Array).size() == 3:
+				var d := r as Dictionary
+				kept.append({"id": int(d.get("id", 0)), "a": (d.a as Array).map(func(x: Variant) -> float: return float(x)),
+						"b": (d.b as Array).map(func(x: Variant) -> float: return float(x)),
+						"section": str(d.get("section", "box_100")), "turn": float(d.get("turn", 0.0))})
+	if kept.is_empty():
+		_beam_designs.erase(ship_id)
+	else:
+		_beam_designs[ship_id] = kept
+	beam_design_changed.emit(ship_id)
 
 
 static func _points_out(points: PackedVector2Array) -> Array:
