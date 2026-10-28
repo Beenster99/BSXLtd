@@ -6,6 +6,10 @@ extends Node
 ## avatars: Multiplayer tags each avatar's head with group CREW_HEAD and meta "peer_id",
 ## and every switch goes round the crew as the event "graphics.torch" (late joiners get
 ## them in the "graphics" snapshot).
+## A torch never shadows the body wearing it (beenster, 0.3.27: "the head torch has a big
+## shadow on the left hand side"; your own hidden body, which still casts the sun's shadow,
+## stood between the lamp and the left of the view): the wearer's meshes go on render layer
+## OWN_LAYER and torches leave that layer out of their shadow casters.
 
 const ACTION := "graphics.torch"
 const EVENT := "graphics.torch"
@@ -22,6 +26,12 @@ const COLOUR := Color(0.94, 0.97, 1.0)
 const ENERGY := 7.0     # Godot light energy (the yard's lamp posts are 12, 7 m up)
 const RANGE := 30.0     # metres
 const ANGLE := 32.0     # degrees, centre to edge
+## The render layer (1..20) of meshes on a body wearing a torch, kept out of torches' shadows.
+const OWN_LAYER := 20
+## How far up from a camera or head the wearer's body may be.
+const WEARER_DEPTH := 3
+## How often the wearer's meshes are looked over again for new ones (a tool picked up), s.
+const RESCAN := 0.5
 ## Its share of the volumetric dust (Core multiplies a spot's by about 10): a faint beam.
 const FOG := 0.02
 
@@ -34,6 +44,7 @@ var crew_lamps: Dictionary = {}
 var _net: Node
 var _night := false
 var _sky_seen := false
+var _rescan := 0.0
 
 
 func _ready() -> void:
@@ -56,7 +67,30 @@ static func make_lamp() -> SpotLight3D:
 	l.light_volumetric_fog_energy = FOG
 	l.light_specular = 0.6
 	l.set_meta("gfx_no_beam", true)
+	l.shadow_caster_mask = 0xFFFFFFFF & ~(1 << (OWN_LAYER - 1))
 	return l
+
+
+## The body a camera or head belongs to: a character or rigid body within WEARER_DEPTH
+## parents of it, else its own parent (the head, or the avatar).
+static func wearer_of(n: Node) -> Node:
+	var p := n.get_parent()
+	for i in WEARER_DEPTH:
+		if p == null:
+			break
+		if p is CharacterBody3D or p is RigidBody3D:
+			return p
+		p = p.get_parent()
+	return n.get_parent()
+
+
+## Puts every mesh on `body` on OWN_LAYER (as well as its own layers), so torches don't
+## shadow it.
+static func unshadow(body: Node) -> void:
+	if body == null:
+		return
+	for g in body.find_children("*", "GeometryInstance3D", true, false):
+		(g as GeometryInstance3D).set_layer_mask_value(OWN_LAYER, true)
 
 
 func attach_net(net: Node) -> void:
@@ -95,6 +129,7 @@ func set_on(value: bool) -> void:
 	lamp.visible = on
 	if on:
 		_follow()
+		_rescan = 0.0
 	if _net and bool(_net.call("is_online")):
 		_net.call("request", EVENT, {"on": on})
 
@@ -115,11 +150,26 @@ func set_daylight(daylight: float) -> void:
 		set_on(night)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if on:
 		_follow()
 	for peer: int in crew:
 		_place_crew(peer)
+	_rescan -= delta
+	if _rescan <= 0.0:
+		_rescan = RESCAN
+		_unshadow_wearers()
+
+
+## Keeps the torch wearers' own meshes (yours and lit crewmates') out of the torches' shadows.
+func _unshadow_wearers() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() and on else null
+	if cam:
+		unshadow(wearer_of(cam))
+	for peer: int in crew_lamps:
+		var l: Node = crew_lamps[peer]
+		if is_instance_valid(l) and l.get_parent():
+			unshadow(wearer_of(l.get_parent()))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -175,6 +225,7 @@ func _place_crew(peer: int) -> void:
 	l.position = OFFSET
 	head.add_child(l)
 	crew_lamps[peer] = l
+	unshadow(wearer_of(head))
 
 
 ## A crewmate's avatar head, or null.

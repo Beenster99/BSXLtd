@@ -31,6 +31,10 @@ func _ready() -> void:
 	name = "Cutter"
 	grip = GRIP
 	hold = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, -0.03, 0))
+	# trades.cutter_inline (beenster, 0.3.27: "rotate cutter to be inline with arm: its at 90
+	# degrees"): the body runs back along the forearm, the disc out ahead of the fingers.
+	if Flags.is_on("trades.cutter_inline"):
+		hold = Transform3D(Basis(Vector3.UP, PI), Vector3(0, -0.03, 0))
 	var steel := steel()
 	var dark := anodised()
 	var body := body()

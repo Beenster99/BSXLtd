@@ -15,10 +15,22 @@ func run_tests() -> void:
 	if torch == null:
 		return
 	torch.set_on(false)
+	# Your rig: a body with a hidden mesh (it casts the sun's shadow only) and the camera on its head.
+	var rig := CharacterBody3D.new()
+	add_child(rig)
+	var body_mesh := MeshInstance3D.new()
+	body_mesh.mesh = CapsuleMesh.new()
+	body_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	rig.add_child(body_mesh)
+	var rig_head := Node3D.new()
+	rig.add_child(rig_head)
 	var cam := Camera3D.new()
 	cam.position = Vector3(3, 1.7, 5)
 	cam.rotation_degrees = Vector3(0, 30, 0)
-	add_child(cam)
+	rig_head.add_child(cam)
+	var crate := MeshInstance3D.new()
+	crate.mesh = BoxMesh.new()
+	add_child(crate)
 	cam.make_current()
 
 	_press()
@@ -29,6 +41,11 @@ func run_tests() -> void:
 	check(offset.is_equal_approx(torch.OFFSET), "it sits on the helmet, up and right of the eyes")
 	check((-lamp.global_basis.z).dot(-cam.global_basis.z) > 0.999, "and shines where you look")
 	check(lamp.has_meta("gfx_no_beam"), "no dust cone in your own face")
+	check(body_mesh.get_layer_mask_value(torch.OWN_LAYER) and body_mesh.get_layer_mask_value(1),
+			"your own body is marked, and keeps its layer")
+	check(lamp.shadow_caster_mask & body_mesh.layers & ~1 == 0 and lamp.shadow_caster_mask & 1 != 0,
+			"so your torch casts no shadow of you, but does of everything else")
+	check(not crate.get_layer_mask_value(torch.OWN_LAYER), "the rest of the world is left alone")
 	cam.position = Vector3(-4, 1.7, 0)
 	await frames(2)
 	check((cam.global_transform.affine_inverse() * lamp.global_position).is_equal_approx(torch.OFFSET), "it follows you")
@@ -61,6 +78,12 @@ func run_tests() -> void:
 	await frames(2)
 	var theirs := head.get_node_or_null("HelmetTorch_7") as SpotLight3D
 	check(theirs != null, "a crewmate's torch shows on their head")
+	var helmet := MeshInstance3D.new()
+	head.add_child(helmet)
+	torch._unshadow_wearers()
+	check(helmet.get_layer_mask_value(torch.OWN_LAYER) and theirs.shadow_caster_mask & helmet.layers & ~1 == 0,
+			"and doesn't shadow their own avatar")
+	check(not crate.get_layer_mask_value(torch.OWN_LAYER), "nor marks anything past the avatar")
 	check(torch.get_net_snapshot().torches.has("7"), "late joiners hear of it")
 	torch._apply({"peer": 7, "on": false})
 	await frames(2)

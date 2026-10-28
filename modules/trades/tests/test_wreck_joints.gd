@@ -40,9 +40,13 @@ func run_tests() -> void:
 	# behind the skin kept winning the aim; now a joint behind the surface you look at isn't
 	# picked (trades.aim_visible), and the one in front of you is.
 	var was_vis := Flags.is_on("trades.aim_visible")
+	var was_snap := Flags.is_on("trades.vs_snap")
 	Flags.set_flag("trades.aim_visible", true)
+	Flags.set_flag("trades.vs_snap", false)
+	rig.set_tool(&"hands")
 	var seen := [0, 0]
 	var hidden := [0, 0]
+	var hidden_ids: Array[int] = []
 	for i in range(0, station.points.size(), 5):
 		var depth := await _look_at(rig, station, i)
 		# Only where the look lands on it (a joint high overhead is past the neck's reach).
@@ -54,8 +58,22 @@ func run_tests() -> void:
 		elif depth > 0.3 and hidden[1] < 6:
 			hidden[1] += 1
 			hidden[0] += 1 if station.aimed != i else 0
+			hidden_ids.append(i)
 	check(seen[1] > 0 and seen[0] == seen[1], "looking at a joint in front of you picks it (%d of %d)" % seen)
 	check(hidden[1] > 0 and hidden[0] == hidden[1], "one behind the skin you're looking at isn't picked (%d of %d)" % hidden)
+	# trades.vs_snap (beenster, 0.3.27: "in Void Salvage bolts and rivets which are behind plates
+	# or obscured can still be detected by the tool in hand"): the same hidden ones are picked.
+	Flags.set_flag("trades.vs_snap", true)
+	var found := 0
+	var reached := 0
+	for i in hidden_ids:
+		await _look_at(rig, station, i)
+		if not rig.worker.right_hand.can_reach(station.points_world[i]) or rig.aim_distance(station.points_world[i]) > 0.02:
+			continue
+		reached += 1
+		found += 1 if station.aimed == i else 0
+	check(reached > 0 and found == reached, "with the snap, the ones behind the skin on the aim line, in reach, are picked (%d of %d)" % [found, reached])
+	Flags.set_flag("trades.vs_snap", was_snap)
 	Flags.set_flag("trades.aim_visible", was_vis)
 	ship_bus.debug_ship("restore_bay")
 	Flags.set_flag("ship_bay.bay_cradle", was)

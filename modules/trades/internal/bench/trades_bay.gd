@@ -386,6 +386,9 @@ func set_tool(id: StringName) -> void:
 	var bus := bus()
 	if bus:
 		bus.tool_equipped.emit(1, id)
+	# trades.vs_snap: what the aim snaps to depends on the tool in hand.
+	if _focus and _focus.has_method("tool_changed"):
+		_focus.call("tool_changed")
 	_refresh_hud()
 
 
@@ -891,12 +894,22 @@ func pick(points: Array, pick_m: float) -> int:
 	return best
 
 
+## trades.quiet_tools (beenster, 0.3.27: "volume of tools is too loud by default, reduce their
+## sound"): every tool sound this much quieter (dB), on the Effects bus so Settings > Sound
+## turns them down further.
+const QUIET_TOOLS_DB := -10.0
+
+
+static func tool_db() -> float:
+	return QUIET_TOOLS_DB if Flags.is_on("trades.quiet_tools") else 0.0
+
+
 func play(sound: StringName, pitch := 1.0, db := 0.0) -> void:
 	var p: AudioStreamPlayer = _players.get(sound)
 	if p == null or DisplayServer.get_name() == "headless":
 		return
 	p.pitch_scale = pitch
-	p.volume_db = db
+	p.volume_db = db + tool_db()
 	p.play()
 
 
@@ -906,7 +919,7 @@ func play_at(stream: AudioStream, at: Vector3, db := 0.0, pitch := 1.0) -> void:
 		return
 	var p := AudioStreamPlayer3D.new()
 	p.stream = stream
-	p.volume_db = db
+	p.volume_db = db + tool_db()
 	p.pitch_scale = pitch
 	p.unit_size = 5.0
 	p.max_distance = 45.0
@@ -1112,6 +1125,12 @@ func _build_audio() -> void:
 	_loops[&"grind"] = _player(TradesSounds.hum(0.5, 0.4, 180.0, 7000.0))
 	_players[&"punch"] = _player(TradesSounds.burst(0.12, 1.0, 1400.0))
 	_players[&"pop"] = _player(TradesSounds.burst(0.06, 0.8, 1800.0))
+	if Flags.is_on("trades.quiet_tools"):
+		for p: AudioStreamPlayer in _loops.values():
+			p.volume_db += QUIET_TOOLS_DB
+			p.bus = Sfx.bus()
+		for p: AudioStreamPlayer in _players.values():
+			p.bus = Sfx.bus()
 
 
 func _player(stream: AudioStream) -> AudioStreamPlayer:

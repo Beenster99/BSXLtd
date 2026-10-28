@@ -445,8 +445,39 @@ func level_of(client_id: String) -> int:
 func add_standing(client_id: String, points: int) -> void:
 	if client_id == "" or points == 0:
 		return
+	var before := level_of(client_id)
 	_standing[client_id] = maxi(0, standing_of(client_id) + points)
 	standing_changed.emit(client_id, standing_of(client_id), level_of(client_id))
+	if level_of(client_id) > before:
+		_repost_for_level(client_id)
+
+
+## Reposted offers take slots from here up, by tier, clear of the cycle's own and call-ins.
+const REPOST_SLOT := 500
+
+
+## A client whose standing just reached a new level puts up fresh offers at the tier it
+## unlocks right away, in place of its untaken lower ones, so the board shows the change
+## without waiting for the next day (0.3.27 feedback: a debug reputation boost looked like
+## it did nothing). Host only.
+func _repost_for_level(client_id: String) -> void:
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
+	if not (Flags.is_on(CLIENTS_FLAG) and Flags.is_on(KINDS_FLAG)):
+		return
+	var tier := maxi(1, level_of(client_id))
+	for id: String in _jobs.keys():
+		var job: ContractJob = _jobs[id]
+		if job.state == ContractJob.OFFERED and job.expires >= 0 \
+				and String(job.order.client.get("company", "")) == client_id \
+				and int((job.order.raw.get("offer", {}) as Dictionary).get("tier", 0)) < tier:
+			_jobs.erase(id)
+			offer_expired.emit(id)
+	var tries := 0
+	while _open_offers(client_id) < OFFERS_PER_CLIENT and tries < OFFERS_PER_CLIENT * 3:
+		_post_generated(client_id, _cycle, REPOST_SLOT + tier * 10 + tries)
+		tries += 1
+	_prune_unlisted()
 
 
 ## A new cycle on the board: untaken generated offers past their life leave it, and each

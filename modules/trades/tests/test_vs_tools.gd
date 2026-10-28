@@ -37,7 +37,7 @@ func run_tests() -> void:
 	bus.joint_completed.connect(on_done)
 
 	check(rig.hotbar.has(&"cutter"), "the cutter is back on the yard's hotbar: %s" % str(rig.hotbar))
-	check(is_equal_approx(rig._loops[&"beam"].volume_db, TradesTractor.QUIET_DB), "the tractor's hum is quieter")
+	check(is_equal_approx(rig._loops[&"beam"].volume_db, TradesTractor.QUIET_DB + TradesBay.tool_db()), "the tractor's hum is quieter")
 	check(JointSpec.new().sequence is PackedInt32Array, "a joint spec's order is a packed array")
 
 	# The wrench: a tight bolt spins out, rising as it backs out; let go and it carries on.
