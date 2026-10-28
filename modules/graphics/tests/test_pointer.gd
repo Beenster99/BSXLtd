@@ -94,6 +94,30 @@ func run_tests() -> void:
 	if pointer.live.size() > before:
 		pointer._drop(pointer.live[-1])
 
+	# With an emote wheel on offer: a tap pings on release, a hold opens the wheel and pings nothing.
+	var wheel := FakeWheel.new()
+	pointer.attach_net(wheel)
+	check(pointer.has_wheel(), "Multiplayer's emote wheel is seen")
+	before = pointer.live.size()
+	Input.parse_input_event(z)
+	await frames(1)
+	pointer.release_hold()
+	await frames(1)
+	check(pointer.live.size() == before + 1 and wheel.opened == 0, "a tap pings, on release")
+	if pointer.live.size() > before:
+		pointer._drop(pointer.live[-1])
+	before = pointer.live.size()
+	Input.action_press(pointer.ACTION)
+	Input.parse_input_event(z)
+	await get_tree().create_timer(pointer.HOLD + 0.15).timeout
+	await frames(2)
+	check(wheel.opened == 1 and pointer.wheel_open(), "held, the emote wheel opens")
+	Input.action_release(pointer.ACTION)
+	await frames(2)
+	check(wheel.closed == 1 and not pointer.wheel_open(), "let go, the wheel picks")
+	check(pointer.live.size() == before, "and no ping is sent")
+	pointer.attach_net(null)
+
 	# A ping by id (a crewmate's), and by place with no id.
 	pointer.show_ping({"peer": 2, "name": "Sam", "colour": Color.GREEN, "at": Vector3(0, 0, 50), "object_id": "crate:1"})
 	check(pointer.live.size() == 2 and pointer.highlighter.colour_of(crate) == Color.GREEN, "a crewmate's ping finds the crate by id")
@@ -159,3 +183,16 @@ func _box(parent: Node3D, at: Vector3, usable: bool) -> StaticBody3D:
 	parent.add_child(body)
 	body.global_position = at
 	return body
+
+
+## Stands in for Multiplayer's emote wheel.
+class FakeWheel extends Node:
+	var opened := 0
+	var closed := 0
+
+	func open_emote_wheel() -> void:
+		opened += 1
+
+	func close_emote_wheel() -> String:
+		closed += 1
+		return "wave"

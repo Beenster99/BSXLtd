@@ -35,6 +35,9 @@ uniform vec3 cloud_night : source_color = vec3(0.05, 0.055, 0.09);
 // Faint stars between the bright ones, and the galaxy's band.
 uniform float faint_stars = 1.0;
 uniform float galaxy = 0.6;
+uniform float nebula = 1.0;
+// How bright the planets are against the sky (1 as drawn; lower sits them back in the air).
+uniform float planet_dim : hint_range(0.0, 1.0) = 1.0;
 
 // Each planet: direction (normalised in code), angular radius (radians), two colours.
 uniform vec3 giant_dir = vec3(-0.55, 0.42, -0.72);
@@ -239,20 +242,26 @@ void sky() {
 		col += faint(v) * faint_stars * night * smoothstep(0.0, 0.2, h);
 		col += galaxy_band(v) * galaxy * 0.08 * night * smoothstep(0.0, 0.2, h);
 		float neb = fbm(v * 3.0 + vec3(7.0)) * smoothstep(0.2, 0.0, abs(dot(v, normalize(vec3(0.4, 0.3, 1.0)))));
-		col += vec3(0.25, 0.08, 0.32) * neb * night * 0.9;
+		col += vec3(0.25, 0.08, 0.32) * neb * night * 0.9 * nebula;
 	}
 	// Planets show by day as pale discs and at night in full colour. Haze near the horizon.
 	vec3 sky = col;
 	float haze = smoothstep(-0.02, 0.25, h);
 	float vis = mix(0.8, 1.0, night) * haze;
+	vec3 dimmed = mix(sky, vec3(0.0), night);   // a dim planet fades toward the air by day, darkens by night
 	vec4 moon = planet(v, normalize(moon_dir), moon_radius, moon_a, moon_b, 2);
+	moon.rgb = mix(dimmed, moon.rgb, planet_dim);
 	col = mix(col, col * (1.0 - vis) + moon.rgb * vis + hor * 0.15 * (1.0 - night), moon.a);
 	vec4 ice = planet(v, normalize(ice_dir), ice_radius, ice_a, ice_b, 1);
+	ice.rgb = mix(dimmed, ice.rgb, planet_dim);
 	col = mix(col, col * (1.0 - vis) + ice.rgb * vis + hor * 0.15 * (1.0 - night), ice.a);
 	vec3 gc = normalize(giant_dir);
 	float ring_t;
 	vec4 ring = rings(v, gc, giant_radius, mix(giant_a, vec3(0.9), 0.4), ring_t);
 	vec4 giant = planet(v, gc, giant_radius, giant_a, giant_b, 0);
+	giant.rgb = mix(dimmed, giant.rgb, planet_dim);
+	ring.rgb = mix(dimmed, ring.rgb, planet_dim);
+	ring.a *= mix(0.5, 1.0, planet_dim);
 	float giant_t = dot(v, gc);
 	// Rings behind the disc first, then the disc, then rings in front of it.
 	if (ring_t > giant_t || giant.a < 0.01) {
