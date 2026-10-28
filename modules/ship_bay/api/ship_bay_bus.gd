@@ -1131,6 +1131,11 @@ func trolley_deck_position(trolley_id: String) -> Variant:
 
 ## The key a part taken off the bay's ship keeps its own shape by (ItemLook.look_id): the
 ## ship (a wreck by its design and seed) and the slot. "" with no ship.
+## What the bay's ship says of a slot's part: {mass (kg), material}, {} for none. Set by the
+## bay, so a part off a wreck that the catalogue doesn't list still weighs what it did.
+var part_info_source := Callable()
+
+
 func part_shape_key(slot_id: String) -> String:
 	if ship == null or slot_id == "":
 		return ""
@@ -1601,6 +1606,10 @@ static func scrap_materials(item_id: String, qty: int, mass := 0.0, material := 
 		return own
 	var d: Dictionary = StorageLayout.items().get(item_id, {})
 	var kg := float(d.get("mass", 0.0)) * qty * RECOVERY
+	if d.is_empty() and mass > 0.0:
+		# A part off a wreck the catalogue doesn't list: its own mass, of its own material.
+		var mat := material if Materials.TABLE.has(material) else "steel"
+		return {mat: snappedf(mass * qty * RECOVERY, 0.1)}
 	var out := {}
 	var mix: Dictionary = SCRAP_MIX.get(str(d.get("category", "")), {"steel": 1.0})
 	for m: String in mix:
@@ -1843,7 +1852,8 @@ func _apply_line(payload: Dictionary) -> void:
 					return
 				var cond := float(c["condition"])
 				st["survey"] = {"state": "waiting", "lot": {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]),
-						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond, str(c["item"])), "shape": str(c.get("shape", ""))}}
+						"condition": cond, "mass": float(c["mass"]), "route": survey_route(cond, str(c["item"])), "shape": str(c.get("shape", "")),
+						"material": str(c.get("material", ""))}}
 				_stock.crates.erase(str(payload["crate"]))
 				stock_moved = true
 			else:
@@ -1885,13 +1895,13 @@ func _apply_line(payload: Dictionary) -> void:
 				_stock.crates[_line_crate_id()] = {"order_id": "line", "item": lot["item"], "qty": int(lot["qty"]),
 						"name": lot["name"], "condition": clampf(float(lot["condition"]), 0.0, 1.0), "grade": "scrap",
 						"mass": float(lot["mass"]), "spot": -1, "carrier": "", "at": [p.x, p.y, p.z],
-						"line": "scrap", "line_id": l, "route": "grind", "shape": str(lot.get("shape", ""))}
+						"line": "scrap", "line_id": l, "route": "grind", "shape": str(lot.get("shape", "")), "material": str(lot.get("material", ""))}
 				stock_moved = true
 			elif to == "trolley":
 				# Onto the line's trolley as goods for the stores, as good as new.
 				_stock.crates[_line_crate_id()] = {"order_id": "line", "item": lot["item"], "qty": int(lot["qty"]),
 						"name": lot["name"], "condition": clampf(float(lot["condition"]), 0.0, 1.0), "grade": "refurbished",
-						"mass": float(lot["mass"]), "spot": -1, "carrier": l, "shape": str(lot.get("shape", ""))}
+						"mass": float(lot["mass"]), "spot": -1, "carrier": l, "shape": str(lot.get("shape", "")), "material": str(lot.get("material", ""))}
 				stock_moved = true
 			else:
 				st[to] = {"state": "waiting", "lot": lot}
@@ -1921,7 +1931,7 @@ func _apply_line(payload: Dictionary) -> void:
 				return
 			crusher["state"] = "running"
 			crusher["lot"] = {"item": str(c["item"]), "name": str(c["name"]), "qty": int(c["qty"]), "condition": float(c["condition"]),
-					"mass": float(c["mass"]), "shape": str(c.get("shape", ""))}
+					"mass": float(c["mass"]), "shape": str(c.get("shape", "")), "material": str(c.get("material", ""))}
 			crusher["from"] = c.get("at", [])
 			crusher["cast"] = 0
 			_stock.crates.erase(cid)
@@ -2435,6 +2445,12 @@ func _check_beamed(_sender: int, payload: Dictionary) -> Variant:
 func _apply_beamed(payload: Dictionary) -> void:
 	var by := str(payload["trolley"])
 	var id := _stock.beam(str(payload["component"]), float(payload["condition"]), by, part_shape_key(str(payload["slot"])))
+	var info: Variant = part_info_source.call(str(payload["slot"])) if part_info_source.is_valid() and id != "" else {}
+	if info is Dictionary and not (info as Dictionary).is_empty():
+		# Its own weight and metal (the crusher melts them), when the catalogue has none.
+		if float(_stock.crates[id].get("mass", 0.0)) <= 0.0:
+			_stock.crates[id]["mass"] = float(info.get("mass", 0.0))
+		_stock.crates[id]["material"] = str(info.get("material", ""))
 	if _beam_claims.get(str(payload["slot"])) == by:
 		_beam_claims.erase(str(payload["slot"]))
 	_clean_routes.erase(str(payload["slot"]))

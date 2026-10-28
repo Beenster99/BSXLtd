@@ -258,6 +258,8 @@ func _show_ship(def: ShipDefinition) -> void:
 		add_child(ship_root)
 	pieces = model.call("slot_pieces", def) if model and model.has_method("slot_pieces") else pieces_by_slot(ship_root, def)
 	ItemLook.part_source = _part_shape
+	if _bus:
+		_bus.part_info_source = _part_info
 	_build_access()
 	for s in def.slots:
 		for f in s.fasteners:
@@ -534,6 +536,31 @@ func _part_shape(key: String) -> Array:
 	if not any:
 		return []
 	return [st.commit(), paint]
+
+
+## A slot's part as the ship built it: {mass (kg), material (the heaviest piece's)}, {} for
+## a ship that doesn't say (only one built from its file does).
+func _part_info(slot_id: String) -> Dictionary:
+	if not model is FileShip or _bus == null or _bus.ship == null:
+		return {}
+	var paths := {}
+	for s in _bus.ship.slots:
+		if s.slot_id == slot_id:
+			for p: String in s.parts:
+				paths[p] = true
+	var by_path: Dictionary = (model as FileShip).importer.parts_by_path
+	var kg := 0.0
+	var material := ""
+	var top := -1.0
+	for p: String in paths:
+		var part: PartData = by_path.get(p)
+		if part == null:
+			continue
+		kg += part.mass
+		if part.mass > top:
+			top = part.mass
+			material = part.material
+	return {} if kg <= 0.0 else {"mass": snappedf(kg, 0.1), "material": material}
 
 
 static func _ship_xform(node: Node3D, root: Node3D) -> Transform3D:

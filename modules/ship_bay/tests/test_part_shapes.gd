@@ -42,6 +42,19 @@ func run_tests() -> void:
 	for cid in bus.trolley_load("m"):
 		crate = cid
 	check(crate != "" and str(bus.crate_info(crate).get("shape", "")) == key, "its crate on the trolley carries the shape: %s" % bus.crate_info(crate))
+	# It weighs what it did on the ship, so the crusher melts it into ingots (0.3.26: nothing
+	# off a wreck ever made one).
+	var c := bus.crate_info(crate)
+	check(float(c.get("mass", 0.0)) > 1.0 and str(c.get("material", "")) != "", "its crate weighs %.1f kg of %s" % [float(c.get("mass", 0.0)), c.get("material", "")])
+	var dust := ShipBayBus.scrap_materials(str(c["item"]), 1, float(c["mass"]), str(c["material"]))
+	var kg := 0.0
+	for m: String in dust:
+		kg += float(dust[m])
+	check(is_equal_approx(kg, snappedf(float(c["mass"]) * ShipBayBus.RECOVERY, 0.1)), "crushed, it gives its own kilograms of dust: %s" % dust)
+	var crusher := {"state": "running", "lot": {"item": str(c["item"]), "qty": 1, "mass": float(c["mass"]) * 10.0, "material": str(c["material"])},
+			"dust": {}, "ingots": {}, "cast": 0}
+	bus._crushed(crusher)
+	check(int(crusher["cast"]) > 0, "and ten of them cast ingots: %s (dust %s, %.1f kg each)" % [crusher["ingots"], crusher["dust"], float(c["mass"])])
 	# The bay's ship gone, a shape already built stays; one never built falls back to its item.
 	bus._apply_debug_ship({"action": "restore_bay"})
 	await frames(2)
