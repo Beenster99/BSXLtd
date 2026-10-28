@@ -1,6 +1,6 @@
 extends Node
 ## Shoots the BSX stock plates for the ship page and the release notes: the five kinds,
-## steel's four sizes, and a stack of one kind in every thickness. Needs a renderer:
+## steel's four sizes, and a stack of one kind in every thickness, and the stock beams. Needs a renderer:
 ##   xvfb-run -a -s "-screen 0 1600x900x24" godot --path . --rendering-driver opengl3 \
 ##       res://modules/shared_components/internal/tools/stock_capture.tscn -- --out=/abs/dir
 
@@ -63,6 +63,15 @@ func _run() -> void:
 		y += t + 0.004
 		i += 1
 	await _shoot(out, "stock_03_thicknesses", Vector3(5.1, 0.45, -1.9), Vector3(6.2, 0.02, -3.2), 40.0)
+	# Beams: the biggest 6 m section of each family in steel, side by side, seen from their ends.
+	var bx := -7.5
+	for fam in StockBeams.FAMILIES:
+		var ids := StockBeams.item_ids(fam, "steel")
+		var bid := ids[ids.size() - 2]
+		var bs: Vector3 = StockBeams.item(bid)["size"]
+		kit.add(StockBeams.make_shape(bid), Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(bx, bs.y * 0.5 + 0.002, 5.0)), StockBeams.paint(bid))
+		bx += 0.55
+	await _shoot(out, "stock_04_beams", Vector3(-5.4, 0.9, 9.4), Vector3(-6.7, 0.1, 6.5), 40.0)
 	get_tree().quit()
 
 
