@@ -777,9 +777,13 @@ func update(delta: float) -> void:
 	if wiring:
 		_update_wiring()
 		guide.hide_all()
+		if not hinted.is_empty():
+			_show_hints(Vector3.INF)
 		return
 	if _working < 0 and not tractor.is_holding():
 		_update_aim()
+	elif not hinted.is_empty():
+		_show_hints(Vector3.INF)
 	_place_marker()
 	_update_ring_focus()
 	_arc.visible = false
@@ -2142,11 +2146,122 @@ func _aim_surface() -> float:
 	return INF if hit.is_empty() else ((hit.position as Vector3) - o).dot(d)
 
 
+## trades.vs_snap (beenster, 0.3.27: "I like the way tools in void salvage jump to the nearby
+## bolt/rivet rather than me having to refocus all the time", and "in Void Salvage bolts and
+## rivets which are behind plates or obscured can still be detected by the tool in hand"): the
+## tool in hand takes the nearest joint it can work within SNAP_M of where the look meets
+## something, or within PICK_M of the aim line however deep, hidden or not, and keeps it while it is within STICK_M of the nearest. The ones it
+## could work within HINT_M of there show through whatever hides them.
+const SNAP_M := 0.35
+const STICK_M := 0.015
+const HINT_M := 0.5
+const HINTS_MAX := 24
+var _hints: Array[MeshInstance3D] = []
+var _hint_mat: StandardMaterial3D
+## The joint indices hinted now (tests).
+var hinted: Array[int] = []
+
+
+static func vs_snap() -> bool:
+	return Flags.is_on("trades.vs_snap")
+
+
+## A new tool in hand: the snap looks again for what it can work.
+func tool_changed() -> void:
+	if vs_snap() and _working < 0 and not wiring and bay and bay.worker and not tractor.is_holding():
+		_update_aim()
+
+
+## Does the tool in hand work joints of `kind`? (Hands or nothing: every kind.)
+func _works(kind: String) -> bool:
+	var t := bay.tool
+	if t == &"" or t == &"hands" or not bay.hotbar.has(t):
+		return true
+	return kind_tools(kind).has(t)
+
+
+## The snap: the nearest workable joint to the point the look lands on, or -2 when the look
+## lands on nothing (the aim line then picks, as before).
+func _snap_aim(hand: Node) -> int:
+	var world := bay.worker.get_world_3d()
+	if world == null:
+		return -2
+	var o := bay.worker.aim_origin()
+	var d := bay.worker.aim_dir()
+	var q := PhysicsRayQueryParameters3D.create(o, o + d * POINTER_RAY_M)
+	q.exclude = [bay.worker.get_rid()]
+	var hit := world.direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		_show_hints(Vector3.INF)
+		return -2
+	var at: Vector3 = hit.position
+	var best := -1
+	var best_d := SNAP_M
+	var now_d := INF
+	for i in points_world.size():
+		var f := points[i]
+		if not _works(f.kind):
+			continue
+		var p := _aim_point(i)
+		# Near where the look lands, or right on the aim line however deep (behind a plate).
+		var dd := minf(p.distance_to(at), bay.aim_distance(p) if bay.aim_distance(p) < PICK_M else INF)
+		if dd >= SNAP_M or not hand.call("can_reach", p):
+			continue
+		if i == aimed:
+			now_d = dd
+		if dd < best_d:
+			best = i
+			best_d = dd
+	_show_hints(at)
+	if aimed >= 0 and now_d <= best_d + STICK_M:
+		return aimed
+	return best
+
+
+## Rings through the plates on the workable joints near `at` (INF: none).
+func _show_hints(at: Vector3) -> void:
+	hinted.clear()
+	if at.is_finite():
+		var near: Array = []
+		for i in points_world.size():
+			var dd := points_world[i].distance_to(at)
+			if dd < HINT_M and i != aimed and _works(points[i].kind) and not from_end(points[i]):
+				near.append([dd, i])
+		near.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		for e: Array in near.slice(0, HINTS_MAX):
+			hinted.append(int(e[1]))
+	if _hint_mat == null:
+		_hint_mat = StandardMaterial3D.new()
+		_hint_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_hint_mat.no_depth_test = true
+		_hint_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_hint_mat.albedo_color = Color(TradesLook.QUIET_RING, 0.45)
+		_hint_mat.render_priority = 1
+	while _hints.size() < hinted.size():
+		var m := MeshInstance3D.new()
+		m.mesh = _clear_mesh if _clear_mesh else _quiet_mesh
+		m.material_override = _hint_mat
+		m.top_level = true
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(m)
+		_hints.append(m)
+	for k in _hints.size():
+		var m := _hints[k]
+		m.visible = k < hinted.size()
+		if not m.visible:
+			continue
+		var i := hinted[k]
+		var n := (ship_xform.basis * points[i].normal).normalized()
+		var x := n.cross(Vector3.UP) if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
+		m.global_transform = Transform3D(Basis(x.normalized(), n, x.normalized().cross(n)).scaled(Vector3.ONE * 0.7), points_world[i] + n * 0.012)
+
+
 func _update_aim() -> void:
 	var best := -1
 	var best_d := PICK_M
 	var hand := bay.worker.right_hand
-	var surface := _aim_surface() if Flags.is_on("trades.aim_visible") else INF
+	var snapped := _snap_aim(hand) if vs_snap() else -2
+	var surface := _aim_surface() if Flags.is_on("trades.aim_visible") and not vs_snap() else INF
 	var o := bay.worker.aim_origin()
 	var dir := bay.worker.aim_dir()
 	for i in points_world.size():
@@ -2157,6 +2272,8 @@ func _update_aim() -> void:
 		if d < best_d and hand.can_reach(p):
 			best = i
 			best_d = d
+	if snapped != -2:
+		best = snapped
 	if best != aimed:
 		aimed = best
 		# What the tool does to it is in the tips (actions); the old hint goes.

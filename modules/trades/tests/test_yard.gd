@@ -60,6 +60,7 @@ func run_tests() -> void:
 
 	# A bolt: break it loose and torque it again.
 	var bolt := _first(station, "bolt")
+	rig.set_tool(&"hands")
 	_aim_at(rig, station, bolt)
 	check(station.aimed == bolt, "aiming at a bolt picks it")
 	# The tips say what the tool in hand does to it, with its keys (beenster, 0.3.7).

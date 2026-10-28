@@ -115,6 +115,7 @@ flags = {
 "trades.quick_cutter": true,
 "trades.clear_rings": true,
 "trades.scribe_faces": true,
+"trades.vs_snap": true,
 "trades.weld_skill": true,
 "trades.quiet_tractor": true,
 "trades.part_landing": true,
