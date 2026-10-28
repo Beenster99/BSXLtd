@@ -199,6 +199,7 @@ func run_tests() -> void:
 	check(not is_instance_valid(b) and beam.on_deck.is_empty(), "release_deck_part frees a part on a deck too")
 
 	await _goods_off(rig, beam, api, deck)
+	await _goods_in(rig, beam, api, deck)
 
 	yard.queue_free()
 	await frames(1)
@@ -291,6 +292,59 @@ func _goods_off(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) 
 	beam.trolley_api = api
 	cargo.queue_free()
 	Flags.set_flag("trades.goods_off", had)
+
+
+## A delivered crate on the goods-in floor (trades.goods_in): a look box under the shipyard's
+## "Stores" with a crate_id comes off as one loose part and Ship and Bay collects the crate;
+## a stocked rack place (meta "location", no crate_id) stays put.
+func _goods_in(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) -> void:
+	var saved := {"trades.goods_off": Flags.is_on("trades.goods_off"), "trades.goods_in": Flags.is_on("trades.goods_in")}
+	Flags.set_flag("trades.goods_off", true)
+	Flags.set_flag("trades.goods_in", true)
+	var comp := str((Modules.bus("ship_bay") as ShipBayBus).storage_items().keys()[0])
+	var stand_in: Object = _make(FAKE_API + "var collected: Array = []\nfunc collect_crate(crate_id: String) -> void:\n\tcollected.append(crate_id)\nvar looks: Array = []\nfunc goods_visual(item: String, condition: float) -> Node3D:\n\tlooks.append(item)\n\tvar n := Node3D.new()\n\tvar m := MeshInstance3D.new()\n\tm.mesh = BoxMesh.new()\n\tn.add_child(m)\n\treturn n\n", RefCounted.new())
+	stand_in.set("deck", deck)
+	beam.trolley_api = stand_in
+	var yard_side := Node3D.new()
+	rig.get_parent().add_child(yard_side)
+	var stores := Node3D.new()
+	stores.name = "Stores"
+	yard_side.add_child(stores)
+	# Clear of the deck and the goods already lifted off it.
+	stores.global_position = rig.worker.global_position + rig.worker.global_basis * Vector3(1.2, 0.3, -2.5)
+	var size := Vector3(0.6, 0.4, 0.5)
+	_look_box(stores, AABB(Vector3(-size.x * 0.5, 0, -size.z * 0.5), size), {"component": comp, "condition": 0.8, "crate_id": "in_1", "look_id": "plate_x", "qty": 1})
+	await frames(2)
+	_look_at(rig, stores.global_position + Vector3.UP * 0.2)
+	await frames(1)
+	check(beam.aimed_goods() != null and beam.aim_title().contains("goods in") and str(beam.actions()[0][1]).contains("floor"),
+			"aimed at a delivered crate in goods in, the beam offers to lift it off the floor (%s)" % beam.aim_title())
+	rig.ship_station().press(&"tractor")
+	var got := beam.held
+	check(got != null and TradesTractor.is_goods(got) and got.component == comp and (stand_in.get("collected") as Array) == ["in_1"],
+			"it takes it, and Ship and Bay collects the crate (%s)" % [stand_in.get("collected")])
+	check(got != null and got.global_position.distance_to(stores.global_position) < 0.05 and is_equal_approx(got.condition, 0.8),
+			"it comes off where it sat, in its condition")
+	check((stand_in.get("looks") as Array) == ["plate_x"], "looking as Ship and Bay draws it, by its own look (%s)" % [stand_in.get("looks")])
+	if got:
+		rig.ship_station().release()
+	# A rack place's look box carries "location", not a crate: the beam leaves it.
+	var rack := Node3D.new()
+	stores.add_child(rack)
+	_look_box(rack, AABB(Vector3(-size.x * 0.5, 0, -size.z * 0.5), size), {"component": comp, "condition": 1.0, "location": "R1-A"})
+	for a: Node in stores.find_children("*", "Area3D", true, false):
+		if a.has_meta("crate_id"):
+			a.queue_free()
+	if got:
+		got.global_position += Vector3(0, 0, -6)
+	await frames(2)
+	_look_at(rig, stores.global_position + Vector3.UP * 0.2)
+	await frames(1)
+	check(beam.aimed_goods() == null, "a stocked rack place isn't taken by the beam")
+	yard_side.queue_free()
+	beam.trolley_api = api
+	for flag: String in saved:
+		Flags.set_flag(flag, saved[flag])
 
 
 func _item(parent: Node3D, comp: String, size: Vector3, at: Vector3) -> Node3D:

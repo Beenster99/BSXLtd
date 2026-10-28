@@ -281,7 +281,9 @@ func aim_title() -> String:
 	var part := held if held else aimed_part(can_lift_decks())
 	if part == null:
 		var goods := aimed_goods()
-		return "%s, on a trolley" % _name_of(str(goods.get_meta("component"))) if goods else ""
+		if goods == null:
+			return ""
+		return "%s, %s" % [_name_of(str(goods.get_meta("component"))), "in goods in" if _in_stores(goods) else "on a trolley"]
 	var slot := _bus.get_slot(part.slot_id) if _bus else null
 	var what := slot.display_name if slot and slot.display_name != "" else _name_of(part.component) if slot == null else part.slot_id
 	if held:
@@ -301,8 +303,9 @@ func actions() -> Array:
 	var aimed := aimed_part(can_lift_decks())
 	if aimed:
 		return [[TradesBay.HOLD_CLICK, "lift it off the trolley" if crate_of(aimed) != "" else "lift it with the beam"]]
-	if aimed_goods():
-		return [[TradesBay.HOLD_CLICK, "lift it off the trolley"]]
+	var goods := aimed_goods()
+	if goods:
+		return [[TradesBay.HOLD_CLICK, "lift it off the floor" if _in_stores(goods) else "lift it off the trolley"]]
 	var slot_id := aimed_slot()
 	if slot_id != "" and _bus and _bus.get_slot_state(slot_id) == ShipBayBus.SlotState.POSITIONED and _tight(slot_id) == 0:
 		return [[TradesBay.HOLD_CLICK, "lift it off its mount"]]
@@ -809,7 +812,7 @@ func aimed_goods() -> Area3D:
 	if not Flags.is_on("trades.goods_aim_through"):
 		var hit := space.intersect_ray(q)
 		var area := hit.get("collider") as Area3D
-		return area if _on_a_trolley(area) else null
+		return area if _liftable(area) else null
 	# Past other areas (a trolley's reach, a HERE marker, a pick zone: beenster couldn't lift a
 	# brought crate, 0.3.26), but not through a wall or a body more than a crate's depth in front.
 	var solid := PhysicsRayQueryParameters3D.create(from, to)
@@ -823,7 +826,7 @@ func aimed_goods() -> Area3D:
 		if hit.is_empty() or from.distance_to(hit["position"]) > limit:
 			return null
 		var area := hit.get("collider") as Area3D
-		if _on_a_trolley(area):
+		if _liftable(area):
 			return area
 		skip.append(hit["rid"])
 	return null
@@ -842,6 +845,27 @@ static func _on_a_trolley(area: Area3D) -> bool:
 	return false
 
 
+## Goods the beam can take: on a trolley's deck, or (trades.goods_in) a delivered crate on the
+## goods-in floor (a look box with a crate_id under the shipyard's "Stores"; a stocked rack
+## place carries "location" instead and stays put).
+static func _liftable(area: Area3D) -> bool:
+	return _on_a_trolley(area) or _in_stores(area)
+
+
+static func _in_stores(area: Area3D) -> bool:
+	if not Flags.is_on("trades.goods_in") or area == null or not area.has_meta("look_only") \
+			or str(area.get_meta("crate_id", "")) == "" or str(area.get_meta("component", "")) == "":
+		return false
+	var n := area.get_parent()
+	while n:
+		if n is PhysicsBody3D:
+			return false
+		if n.name == &"Stores":
+			return true
+		n = n.get_parent()
+	return false
+
+
 ## This machine's look box for the goods in `crate_id` on a trolley, or null.
 func _goods_area(crate_id: String) -> Area3D:
 	var yard := station.bay.get_parent() if station and station.bay else null
@@ -849,7 +873,7 @@ func _goods_area(crate_id: String) -> Area3D:
 		return null
 	# Several look boxes under one parent don't all keep the name "Look": go by their metas.
 	for a: Node in yard.find_children("*", "Area3D", true, false):
-		if str(a.get_meta("crate_id", "")) == crate_id and _on_a_trolley(a as Area3D):
+		if str(a.get_meta("crate_id", "")) == crate_id and _liftable(a as Area3D):
 			return a as Area3D
 	return null
 
@@ -889,6 +913,8 @@ func _check_lift(payload: Dictionary) -> Variant:
 			return "Its twin is already off the ship: put that one back first."
 		return {"kind": "deck", "crate_id": crate_id}
 	var area := _goods_area(crate_id) if can_lift_goods() else null
+	if area and _in_stores(area):
+		return _check_stores(crate_id, area)
 	var items := _items_in(area) if area else ([] as Array[Node3D])
 	if items.is_empty():
 		return "That one won't come off its trolley just now."
@@ -899,6 +925,25 @@ func _check_lift(payload: Dictionary) -> Variant:
 	return {"kind": "goods", "crate_id": crate_id, "component": str(area.get_meta("component")),
 			"condition": float(area.get_meta("condition", 1.0)), "xform": top.global_transform,
 			"box": AABB(Vector3(-size.x * 0.5, 0.0, -size.z * 0.5), size), "count": items.size()}
+
+
+## A delivered crate on the goods-in floor: the whole crate comes off as one loose part (its
+## look from Ship and Bay's goods_visual when it has one, else a plain box over its look box).
+func _check_stores(crate_id: String, area: Area3D) -> Variant:
+	if not _has("collect_crate"):
+		return "That one won't come off the floor just now."
+	var count := int(area.get_meta("qty", 1))
+	if count > 1:
+		return "That's a crate of %d: the beam can't take one out of it yet." % count
+	var shape := area.get_child(0) as CollisionShape3D if area.get_child_count() > 0 else null
+	var b := shape.shape as BoxShape3D if shape else null
+	if b == null:
+		return "That one won't come off the floor just now."
+	var under := Transform3D(Basis.IDENTITY, shape.position - Vector3(0, b.size.y * 0.5, 0))
+	return {"kind": "goods", "from": "stores", "crate_id": crate_id, "component": str(area.get_meta("component")),
+			"look_id": str(area.get_meta("look_id", area.get_meta("component"))),
+			"condition": float(area.get_meta("condition", 1.0)), "xform": area.global_transform * under,
+			"box": AABB(Vector3(-b.size.x * 0.5, 0.0, -b.size.z * 0.5), b.size), "count": 1}
 
 
 ## Asks for the lift: through Multiplayer when it's loaded (the host checks and tells
@@ -942,14 +987,17 @@ func _apply_lift(payload: Dictionary) -> void:
 		part = _make_goods(payload)
 	if _is_host():
 		_lifting.erase(crate_id)
-		if _has("lift_off_trolley"):
+		if str(payload.get("from", "")) == "stores":
+			if _has("collect_crate"):
+				_api().call("collect_crate", crate_id)
+		elif _has("lift_off_trolley"):
 			if int(payload.get("count", 1)) > 1 and _lifts_one():
 				_api().call("lift_off_trolley", crate_id, 1)
 			else:
 				_api().call("lift_off_trolley", crate_id)
 	if part and int(payload.get("peer", 0)) == _local_peer() and station.bay.tool == &"tractor":
 		_take(part)
-		station.bay.hint("Lifted it off the trolley.")
+		station.bay.hint("Lifted it off the floor." if str(payload.get("from", "")) == "stores" else "Lifted it off the trolley.")
 
 
 ## Goods off a trolley as a loose part, looking as Ship and Bay drew them (a copy of the item
@@ -964,6 +1012,9 @@ func _make_goods(payload: Dictionary) -> TradesLoosePart:
 	if not items.is_empty():
 		visual = items[items.size() - 1].duplicate() as Node3D
 		visual.transform = Transform3D.IDENTITY
+	elif _has("goods_visual"):
+		# Its own shape when it came off a ship (look_id), else the plain component's.
+		visual = _api().call("goods_visual", str(payload.get("look_id", payload["component"])), float(payload.get("condition", 1.0))) as Node3D
 	var part := TradesLoosePart.new()
 	part.top_level = true
 	add_child(part)
