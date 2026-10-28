@@ -245,7 +245,7 @@ func register_module() -> void:
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
 				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk", "storage_heavy",
-				"dock", "launch_towers", "city", "downtown", "crusher_house", "crusher"]:
+				"dock", "launch_towers", "crusher_house", "crusher"] + (["city", "downtown"] if Flags.is_on("ship_bay.city") else []):
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 		# The lift up at the side door, and the power unit's plug clipped on the hull.

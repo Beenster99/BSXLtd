@@ -58,6 +58,7 @@ flags = {
 "ship_bay.dolly": true,
 "ship_bay.emitter_rig": true,
 "ship_bay.upgrade_hall": true,
+"ship_bay.city": false,
 "ship_bay.ship_starts_powered": true,
 "ship_bay.shipyard": true,
 "ship_bay.trucks": true,

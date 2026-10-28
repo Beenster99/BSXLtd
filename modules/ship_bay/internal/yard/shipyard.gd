@@ -262,7 +262,7 @@ var emitter_rig: Node3D
 var yard_ships: Node3D
 ## The delivery trucks that bring each order to the truck doors (delivery_trucks.gd).
 var trucks: Node3D
-## The city round the yard (YardCity).
+## The city round the yard (YardCity), with "ship_bay.city" on; else null.
 var city: Node3D
 ## The apron's pad, docks and holding lane and the scrap end (apron.gd), with
 ## "ship_bay.apron" on; else null.
@@ -307,8 +307,11 @@ func _ready() -> void:
 		apron = Apron.new()
 		add_child(apron)
 		apron.call("build", self)
-	city = City.new()
-	add_child(city)
+	# No city round the yard (beenster, 0.3.27: "please remove the cityscape and the moving
+	# vehicles"); ship_bay.city brings it back.
+	if Flags.is_on("ship_bay.city"):
+		city = City.new()
+		add_child(city)
 	_build_night_lights()
 	_flush()
 	bay = BAY_SCENE.instantiate() as Node3D

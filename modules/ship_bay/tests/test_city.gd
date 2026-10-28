@@ -8,6 +8,21 @@ const City := preload("res://modules/ship_bay/internal/yard/yard_city.gd")
 
 
 func run_tests() -> void:
+	# The city is off by default (beenster, 0.3.27): without the flag the yard stands alone.
+	var was := Flags.is_on("ship_bay.city")
+	Flags.set_flag("ship_bay.city", false)
+	var bare := (load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene).instantiate() as Node3D
+	add_child(bare)
+	await frames(3)
+	check(bare.get("city") == null, "with ship_bay.city off there is no city round the yard")
+	bare.queue_free()
+	await frames(2)
+	Flags.set_flag("ship_bay.city", true)
+	await _with_city()
+	Flags.set_flag("ship_bay.city", was)
+
+
+func _with_city() -> void:
 	var yard := (load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene).instantiate() as Node3D
 	add_child(yard)
 	await frames(3)
