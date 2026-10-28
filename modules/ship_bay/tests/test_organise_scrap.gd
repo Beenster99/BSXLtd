@@ -43,6 +43,21 @@ func run_tests() -> void:
 	check(absf(low - deck_top) < 0.01, "goods on a deck sit on it: %.3f m over" % (low - deck_top))
 	p.call("set_cargo", {})
 
+	# The wrist's Machines channel: CLEAN UP in each yard trolley's actions (beenster, 0.3.27)
+	# turns the same mode on and off.
+	var wrist: Node = fleet.get_script().WristMachines.new(fleet, false)
+	yard.add_child(wrist)
+	for id: String in ["s", "m", "l"]:
+		check(((wrist.get("_rows") as Dictionary)["trolley:" + id]["items"] as Dictionary).has("clean"), "trolley %s's actions have CLEAN UP" % id.to_upper())
+	wrist.call("press", "trolley:l", "clean")
+	await frames(2)
+	wrist.call("refresh")
+	check(bus.is_organising("l") and str(wrist.call("text")).contains("STOP CLEANING UP"), "chosen, the trolley cleans up and the menu offers to stop it")
+	wrist.call("press", "trolley:l", "clean")
+	await frames(2)
+	check(not bus.is_organising("l"), "chosen again, it stops")
+	wrist.queue_free()
+
 	# Every yard trolley has the button; pressed, it lights and the trolley roams.
 	for id: String in ["s", "m", "l"]:
 		var screen: Node = all[id].get("screen")

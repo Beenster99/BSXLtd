@@ -41,6 +41,7 @@ func _covered(label: String, f: Dictionary) -> void:
 		if st == WreckMaker.STATE_ATTACHED:
 			on[p["path"]] = true
 	var seen := {}
+	var boxes := {}
 	var twice := 0
 	var bad_kind: Array = []
 	var off := 0
@@ -49,9 +50,11 @@ func _covered(label: String, f: Dictionary) -> void:
 			if seen.has(fp.path):
 				twice += 1
 			seen[fp.path] = fp
+			boxes[fp.path] = s.box
 			if not fp.kind in WORKED:
 				bad_kind.append(fp.kind)
 	var missing: Array = []
+	var unhid: Array = []
 	var counts := {}
 	for j: Dictionary in f.get("joints", []):
 		if not (on.has(j["a"]) and on.has(j["b"])):
@@ -60,6 +63,13 @@ func _covered(label: String, f: Dictionary) -> void:
 		if not seen.has(j["path"]):
 			missing.append(j["path"])
 		elif (seen[j["path"]] as FastenerPoint).position.distance_to(Vector3(j["at"][0], j["at"][1], j["at"][2])) > 0.001:
-			off += 1
+			# Bolts hidden under a fitting's foot are moved out where you can see them (0.3.27).
+			var was := FastenerPoint.new()
+			was.position = Vector3(j["at"][0], j["at"][1], j["at"][2])
+			was.normal = (seen[j["path"]] as FastenerPoint).normal
+			if LayoutLoader.is_under(was, boxes[j["path"]]) and LayoutLoader.unhides(str(j["a"])):
+				unhid.append(str(j["a"]).get_slice("/", 1))
+			else:
+				off += 1
 	check(missing.is_empty(), "%s: every joint still on her is workable (%s; %d missing %s)" % [label, counts, missing.size(), missing.slice(0, 5)])
-	check(twice == 0 and bad_kind.is_empty() and off == 0, "%s: once each, a tool's kind, in place (%d twice, kinds %s, %d moved)" % [label, twice, bad_kind, off])
+	check(twice == 0 and bad_kind.is_empty() and off == 0, "%s: once each, a tool's kind, in place (%d twice, kinds %s, %d moved; %d out from under fittings, %s)" % [label, twice, bad_kind, off, unhid.size(), unhid.slice(0, 6)])

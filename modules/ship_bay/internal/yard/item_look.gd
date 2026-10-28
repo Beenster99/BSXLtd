@@ -33,6 +33,11 @@ static var _paints: Dictionary = {}
 ## (key -> [ArrayMesh in ship space, its material] or [] when the ship has no such part). Set by
 ## the bay; a shape once built is kept, so the part keeps it after its ship has gone.
 static var part_source := Callable()
+## Void Salvage's own look for each catalogue item no library builder draws (one part of that
+## name off its wrecks, packed by internal/tools/goods_pack.gd): {parts: item -> part record,
+## meshes, materials: item -> material record}. Read once.
+const GOODS_FILE := "res://modules/ship_bay/internal/yard/goods_looks.res"
+static var _goods: Dictionary = {}
 
 
 ## The id goods are drawn by: the item itself, or its part's own shape when it came off a
@@ -110,6 +115,8 @@ static func _paint_for(item: String, look: int) -> Material:
 	if item.begins_with("shape:") and look == Look.NEW and _shapes.has(item) and _shapes[item].get("paint") is Material:
 		return _shapes[item]["paint"]
 	item = item_of(item)
+	if look == Look.NEW and _shapes.get(item, {}).get("paint") is Material:
+		return _shapes[item]["paint"]
 	if StockPlates.is_plate(item):
 		if not _paints.has("plate:" + item):
 			_paints["plate:" + item] = StockPlates.paint(item)
@@ -136,15 +143,31 @@ static func _entry(item: String, mass: float) -> Dictionary:
 	var key := item if not info.is_empty() or mass < 0.0 else "%s@%d" % [item, roundi(kg)]
 	if _shapes.has(key):
 		return _shapes[key]
-	var made: Array = _build(item)
+	# BSX's own goods first (stock plates, fasteners, ship modules, raw sheet and beam), then
+	# Void Salvage's own part in its paint (beenster, 0.3.27: nothing on the shelves drawn as
+	# a box, everything as the actual part), then the library's builder, then a stand-in.
+	var made: Array = _build(item) if _own_goods(item) else []
 	if made.is_empty():
 		made = _material_goods(item, str(info.get("category", "")), kg)
+	var paint: Material = null
+	if made.is_empty():
+		var built: Array = _build(item)
+		# The library's own build where it has a real one; Void Salvage's part where it would
+		# be a plain box, or nothing, and only where it fits the stores' place for it.
+		if built.is_empty() or item in BOXY:
+			made = _vs_goods(item)
+		if not made.is_empty() and not built.is_empty() and not _fits_within(made, built):
+			made = []
+		if not made.is_empty():
+			paint = made[2]
+	if made.is_empty():
+		made = _build(item)
 	if made.is_empty():
 		made = _stand_in(str(info.get("category", "")), kg)
 	var shape: PartShapes.PartShape = made[0]
 	var basis: Basis = made[1] if made.size() > 1 else Basis()
 	var box: AABB = Transform3D(basis, Vector3.ZERO) * shape.mesh.get_aabb()
-	var e := {"shape": shape, "basis": basis, "aabb": box}
+	var e := {"shape": shape, "basis": basis, "aabb": box, "paint": paint}
 	_shapes[key] = e
 	return e
 
@@ -171,6 +194,78 @@ static func _part_entry(id: String) -> Dictionary:
 			"paint": got[1] if (got as Array).size() > 1 else null}
 	_shapes[id] = e
 	return e
+
+
+## Whether an item is one BSX makes or buys as its own goods, drawn by its own builder:
+## stock plates, fasteners and ship modules (lower-case ids).
+static func _own_goods(item: String) -> bool:
+	return StockPlates.is_plate(item) or item in ["M10", "M12", "RIVET_4"] or (item != "" and item[0] == item[0].to_lower())
+
+
+## Whether an item is drawn as Void Salvage's own part (goods_pack.gd packs those): anything
+## that isn't BSX's own goods or raw material and has no real build in the library.
+static func needs_vs_look(item: String) -> bool:
+	var info: Dictionary = StorageLayout.items().get(item, {})
+	return not _own_goods(item) and _material_goods(item, str(info.get("category", "")), float(info.get("mass", 50.0))).is_empty() \
+			and (item in BOXY or _build(item).is_empty())
+
+
+## Items the library builds as a plain housing (machine units, junction boxes, cabinets):
+## beenster (0.3.27) saw white boxes on the shelves, so these take Void Salvage's own part.
+const BOXY: PackedStringArray = ["OxygenGenerator", "Assembler", "Gearforge", "DrillMotor", "Forge", "Smelter",
+		"Refinery", "CoolantPump", "FuelPump", "RailBreech", "BridgeJunction", "CockpitJunction", "HangarJunction",
+		"HoldJunction", "EngineJunction", "BreakerPanel"]
+
+
+## Whether shape-and-basis `a` fits in `b`'s box, either way round (sides sorted, 10% to
+## spare): the stores' homes are sized from the library's build.
+static func _fits_within(a: Array, b: Array) -> bool:
+	var sa := _sorted_sides(a)
+	var sb := _sorted_sides(b)
+	return sa[0] <= sb[0] * 1.1 and sa[1] <= sb[1] * 1.1 and sa[2] <= sb[2] * 1.1
+
+
+static func _sorted_sides(made: Array) -> Array:
+	var basis: Basis = made[1] if made.size() > 1 else Basis()
+	var size := (Transform3D(basis, Vector3.ZERO) * (made[0] as PartShapes.PartShape).mesh.get_aabb()).size
+	var out := [size.x, size.y, size.z]
+	out.sort()
+	return out
+
+
+## Void Salvage's own part for a catalogue item, laid with its thinnest side up: [shape,
+## basis, paint] or [] when GOODS_FILE has none.
+static func _vs_goods(item: String) -> Array:
+	if _goods.is_empty():
+		_goods = {"parts": {}}
+		var r: Resource = load(GOODS_FILE) if ResourceLoader.exists(GOODS_FILE) else null
+		if r and r.has_meta("zstd"):
+			var data: Variant = bytes_to_var((r.get_meta("zstd") as PackedByteArray).decompress(int(r.get_meta("size")), FileAccess.COMPRESSION_ZSTD))
+			if data is Dictionary:
+				_goods = data
+	var p: Dictionary = _goods["parts"].get(item, {})
+	if p.is_empty():
+		return []
+	var recipe: Dictionary = p.get("shape", {})
+	var shape: PartShapes.PartShape = VsWreckLibrary.mesh_shape(_goods, p) if str(recipe.get("shape", "")) == "vs_mesh" \
+			else VsShipImport.make_shape(recipe, p)
+	if shape == null or shape.mesh == null:
+		return []
+	# Too big for a rack or a trolley (a 10 m engine pod): the library's smaller one instead.
+	var longest := shape.mesh.get_aabb().size
+	if maxf(longest.x, maxf(longest.y, longest.z)) > MAX_EDGE:
+		return []
+	# Panels and strips lie flat, thin side up; anything chunkier (a seat, a console) stands
+	# as it was fitted.
+	var size := shape.mesh.get_aabb().size
+	var basis := Basis()
+	var flat := minf(size.x, minf(size.y, size.z)) < 0.35 * (size.x + size.y + size.z - maxf(size.x, maxf(size.y, size.z)) - minf(size.x, minf(size.y, size.z)))
+	if flat and size.x < size.y and size.x <= size.z:
+		basis = Basis(Vector3.BACK, PI * 0.5)    # its thin x up
+	elif flat and size.z < size.y and size.z < size.x:
+		basis = Basis(Vector3.RIGHT, PI * 0.5)   # its thin z up
+	var mat: Dictionary = _goods.get("materials", {}).get(item, {})
+	return [shape, basis, VsShipImport._material_of(mat) if not mat.is_empty() else null]
 
 
 ## The parts library's own builder for a catalogue item: [shape, basis] or [] for none.

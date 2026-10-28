@@ -262,7 +262,7 @@ var emitter_rig: Node3D
 var yard_ships: Node3D
 ## The delivery trucks that bring each order to the truck doors (delivery_trucks.gd).
 var trucks: Node3D
-## The city round the yard (YardCity).
+## The city round the yard (YardCity), with "ship_bay.city" on; else null.
 var city: Node3D
 ## The apron's pad, docks and holding lane and the scrap end (apron.gd), with
 ## "ship_bay.apron" on; else null.
@@ -307,8 +307,11 @@ func _ready() -> void:
 		apron = Apron.new()
 		add_child(apron)
 		apron.call("build", self)
-	city = City.new()
-	add_child(city)
+	# No city round the yard (beenster, 0.3.27: "please remove the cityscape and the moving
+	# vehicles"); ship_bay.city brings it back.
+	if Flags.is_on("ship_bay.city"):
+		city = City.new()
+		add_child(city)
 	_build_night_lights()
 	_flush()
 	bay = BAY_SCENE.instantiate() as Node3D
@@ -572,6 +575,56 @@ func _paints_init() -> void:
 
 # --- The planet ---------------------------------------------------------------------------
 
+## The shore (ship_bay.sea, beenster 0.3.27: the yard by the sea like a traditional
+## shipyard): z of the quay's face, metres, just south of the apron (Apron.AREA ends at 150).
+const SHORE_Z := 152.0
+## The sea's surface under the quay's top, and the seabed under that (m).
+const SEA_Y := -1.5
+const SEABED_Y := -8.0
+
+
+## The quay along the apron's south edge (a concrete wall with a coping, bollards and ladders),
+## a rock bank either side of it, and Graphics' sea beyond (a plain blue plane without
+## Graphics). Ships stand on the apron; nothing goes out on the water yet.
+func _build_sea() -> void:
+	var gfx := Modules.bus("graphics")
+	var water: MeshInstance3D = gfx.call("sea", Vector2(4000, 2000)) if gfx and gfx.has_method("sea") else null
+	if water == null:
+		water = MeshInstance3D.new()
+		var plane := PlaneMesh.new()
+		plane.size = Vector2(4000, 2000)
+		water.mesh = plane
+		water.material_override = _paint(Color(0.08, 0.2, 0.3), 0.0, 0.2)
+	water.name = "Sea"
+	water.position = Vector3(0, SEA_Y, SHORE_Z + 1000.0)
+	add_child(water)
+	_block(Vector3(0, SEABED_Y, SHORE_Z + 1000.0), Vector3(4000, 0.2, 2000), _paint(Color(0.16, 0.14, 0.12), 0.0, 1.0), false).name = "Seabed"
+	# The quay wall under the apron's edge, its coping a step proud of the face.
+	var quay := Rect2(Apron.AREA.position.x - 5.0, 0, Apron.AREA.size.x + 10.0, 0)
+	var wall_h := -SEABED_Y
+	_block(Vector3(quay.get_center().x, -wall_h * 0.5 - 0.03, SHORE_Z - 1.0), Vector3(quay.size.x, wall_h, 2.0), _concrete).name = "QuayWall"
+	_block(Vector3(quay.get_center().x, -0.01, SHORE_Z - 0.3), Vector3(quay.size.x, 0.06, 0.6), _paint(Color(0.72, 0.7, 0.66), 0.0, 0.9), false).name = "QuayCoping"
+	var iron := _paint(Color(0.12, 0.12, 0.13), 0.6, 0.5)
+	var x := quay.position.x + 6.0
+	var k := 0
+	while x < quay.end.x - 3.0:
+		# A bollard every 12 m, a ladder down the face every third.
+		_put(_lib("bollard_post", func() -> PartShapes.PartShape: return PartShapes.prism(12, 0.22, 0.5)), _at(Vector3(x, 0.25, SHORE_Z - 0.9)), iron, false)
+		_put(_lib("bollard_cap", func() -> PartShapes.PartShape: return PartShapes.prism(12, 0.3, 0.08)), _at(Vector3(x, 0.5, SHORE_Z - 0.9)), iron, false)
+		if k % 3 == 1:
+			for side: float in [-0.25, 0.25]:
+				_put(_box(Vector3(0.05, 3.2, 0.05)), _at(Vector3(x + 6.0 + side, -1.5, SHORE_Z + 0.08)), iron, false)
+			for r in 9:
+				_put(_box(Vector3(0.5, 0.04, 0.04)), _at(Vector3(x + 6.0, -2.9 + r * 0.35, SHORE_Z + 0.08)), iron, false)
+		x += 12.0
+		k += 1
+	# A rock bank either side of the quay, the ground's edge stepping down to the water.
+	var rock := _paint(Color(0.36, 0.25, 0.19), 0.0, 1.0)
+	for span: Vector2 in [Vector2(-2000.0, quay.position.x), Vector2(quay.end.x, 2000.0)]:
+		_block(Vector3((span.x + span.y) * 0.5, -wall_h * 0.5 - 0.05, SHORE_Z - 1.5), Vector3(span.y - span.x, wall_h, 3.0), rock, false)
+		_block(Vector3((span.x + span.y) * 0.5, SEA_Y - 0.3, SHORE_Z + 1.5), Vector3(span.y - span.x, 1.2, 3.0), rock, false)
+
+
 func _build_planet() -> void:
 	# The sky, sun and planet-light come from UI's AlienSky, which follows the time of day.
 	_sky = AlienSky.new()
@@ -582,15 +635,20 @@ func _build_planet() -> void:
 
 	# The ground: dusty red-brown plain, with a concrete apron in front of the open end and
 	# a road to the truck doors.
+	# With the sea (ship_bay.sea) the land stops at the quay, SHORE_Z, south of the apron.
+	var sea := Flags.is_on("ship_bay.sea")
+	var land := Rect2(-2000, -2000, 4000, (SHORE_Z + 2000.0) if sea else 4000.0)
 	var ground := MeshInstance3D.new()
 	ground.name = "Ground"
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(4000, 4000)
+	plane.size = land.size
 	ground.mesh = plane
-	ground.position.y = -0.02
+	ground.position = Vector3(land.get_center().x, -0.02, land.get_center().y)
 	ground.material_override = _surface(_paint(Color(0.4, 0.26, 0.18), 0.0, 1.0), "ground")
 	add_child(ground)
-	_collide(Vector3(0, -0.5, 0), Vector3(4000, 1.0, 4000))
+	_collide(Vector3(land.get_center().x, -0.5, land.get_center().y), Vector3(land.size.x, 1.0, land.size.y))
+	if sea:
+		_build_sea()
 	if Flags.is_on("ship_bay.apron"):
 		# The front strip; the Apron lays the rest from z = 35.
 		_block(Vector3(0, -0.01, 29.75), Vector3(90, 0.04, 10.5), _concrete, false)
@@ -737,7 +795,9 @@ func _build_shell() -> void:
 		# The side wings' floors stop 1 mm short across, so their edges under the outer walls
 		# don't lie in one plane with the north wing's.
 		var across := 0.0 if s.x > s.z else 0.002
-		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T - across, 0.04, s.z + T), _surface(_paint(r[2], 0.0, 0.55, "satin_paint"), "epoxy"), false)
+		# Solid (beenster, 0.3.27): loose parts lay on the ground 2 cm under it, thin cut plates
+		# out of sight.
+		_block(Vector3(c.x, lift, c.z), Vector3(s.x + T - across, 0.04, s.z + T), _surface(_paint(r[2], 0.0, 0.55, "satin_paint"), "epoxy"))
 		_hall_joints(Rect2(c.x - s.x * 0.5, c.z - s.z * 0.5, s.x, s.z), lift + 0.0205)
 		# Walkway lines down the long way, a metre and a half in from each wall.
 		var long_x := s.x > s.z
@@ -1508,7 +1568,7 @@ func _build_plate_hall() -> void:
 	var line := _paint(HAZARD, 0.0, 0.7, "hazard_paint")
 	# The floor runs a little under the walls; a hair over the wings' so no faces share a plane.
 	_block(Vector3(r.get_center().x, 0.0024, r.get_center().y), Vector3(r.size.x + T, 0.04, r.size.y + T),
-			_surface(_paint(Color(0.52, 0.54, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"), false)
+			_surface(_paint(Color(0.52, 0.54, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"))   # solid, as the wings' floors
 	_hall_joints(r, 0.0229)
 	var roof := _paint(Color(0.32, 0.33, 0.35), 0.4, 0.7, "galvanised")
 	# (It stops short of the north wing's roof: overlapping, they flickered.)
@@ -1662,7 +1722,7 @@ func _build_upgrade_hall() -> void:
 	var clad := _paint(Color(0.34, 0.38, 0.44), 0.4, 0.55, "satin_paint")
 	# The floor: epoxy inside, a little under the walls; the path out to the front strip.
 	_block(Vector3(r.get_center().x, 0.0024, r.get_center().y), Vector3(r.size.x + 0.1, 0.04, r.size.y + 0.1),
-			_surface(_paint(Color(0.5, 0.53, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"), false)
+			_surface(_paint(Color(0.5, 0.53, 0.56), 0.0, 0.55, "satin_paint"), "epoxy"))   # solid, as the wings' floors
 	_hall_joints(r, 0.0229)
 	var path := Rect2(88.6, r.end.y + 0.05, 10.4, 24.45 - (r.end.y + 0.05))
 	_block(Vector3(path.get_center().x, -0.01, path.get_center().y), Vector3(path.size.x, 0.04, path.size.y), _concrete, false)

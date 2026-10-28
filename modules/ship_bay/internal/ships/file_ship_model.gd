@@ -70,6 +70,25 @@ func _find_access() -> void:
 ## Slot id -> the model's meshes that are the slot's part (the visuals of the file's parts it
 ## holds), as KestrelModel.slot_pieces, plus loose look pieces inside a fitting's or unit's
 ## box.
+## Slot id -> the collision shapes of its parts on the ship's body (a part's own and any
+## extra ones), so a part taken off leaves no invisible copy behind for loose parts to catch
+## on (Tools, 0.3.27: a ceiling lamp held up by its own ghost shape).
+func slot_colliders(def: ShipDefinition) -> Dictionary:
+	var model := importer.kit.model
+	var out := {}
+	for s in def.slots:
+		var shapes: Array = []
+		for p: String in s.parts:
+			var part: PartData = importer.parts_by_path.get(p)
+			if part == null:
+				continue
+			if model._colliders.has(part.id):
+				shapes.append(model._colliders[part.id])
+			shapes.append_array(model._extra_colliders.get(part.id, []))
+		out[s.slot_id] = shapes
+	return out
+
+
 func slot_pieces(def: ShipDefinition) -> Dictionary:
 	var out := {}
 	var taken := {}

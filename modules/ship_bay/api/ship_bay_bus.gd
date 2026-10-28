@@ -245,7 +245,7 @@ func register_module() -> void:
 		for view: String in ["overview", "courtyard", "deliveries", "stock", "prep", "preassembly",
 				"kestrel_front", "kestrel_stern", "kestrel_rivets", "kestrel_cabin", "kestrel_hold",
 				"kestrel_access", "kestrel_lift", "storage_aisle", "storage_bins", "storage_bulk", "storage_heavy",
-				"dock", "launch_towers", "city", "downtown", "crusher_house", "crusher"]:
+				"dock", "launch_towers", "crusher_house", "crusher"] + (["city", "downtown"] if Flags.is_on("ship_bay.city") else []):
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
 		# The lift up at the side door, and the power unit's plug clipped on the hull.
@@ -270,9 +270,10 @@ func register_module() -> void:
 		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
 			scene.call("set_time_of_day", 22.0)
 			scene.call("show_view", "courtyard"))
-		Shots.register("shipyard_city_night", SHIPYARD_SCENE, func(scene: Node) -> void:
-			scene.call("set_time_of_day", 21.5)
-			scene.call("show_view", "downtown"))
+		if Flags.is_on("ship_bay.city"):
+			Shots.register("shipyard_city_night", SHIPYARD_SCENE, func(scene: Node) -> void:
+				scene.call("set_time_of_day", 21.5)
+				scene.call("show_view", "downtown"))
 		# A sample delivery in the hall, then some of it put away (these change the stores).
 		Shots.register("shipyard_goods_in", SHIPYARD_SCENE, func(scene: Node) -> void:
 			_sample_delivery()
@@ -998,13 +999,39 @@ static func clean_up_route(condition: float, component := "") -> String:
 ## The condition (0..1) a part fitted in this slot of the ship in the bay is in: the active
 ## job's work order says (current_fit), else as new.
 func fitted_condition(slot_id: String) -> float:
+	var c := wreck_condition(slot_id)
 	var contracts := Modules.bus("contracts") as ContractsBus
 	var job := contracts.get_active_job() if contracts else null
 	if job and job.order:
 		for f: Dictionary in job.order.current_fit:
 			if str(f.get("slot", "")) == slot_id:
-				return clampf(float(f.get("condition", 1.0)), 0.0, 1.0)
-	return 1.0
+				return minf(c, clampf(float(f.get("condition", 1.0)), 0.0, 1.0))
+	return c
+
+
+## How much a wreck's wear and fire weigh on a part's condition here. Void Salvage's own
+## condition() lets fire take at most 60%, so a plate charred black still read over 75%
+## (beenster, 0.3.27): BSX weighs charring as the look says. A part scorched through (1.0)
+## is fit only for the crusher; half scorched wants the refurbishment line.
+const WRECK_WEAR := 0.5
+const WRECK_SCORCH := 0.9
+
+
+## A part on the wreck in the bay as its damage left it (0.1..1; 1 for a ship that isn't a
+## wreck): its parts' worst wear and scorch from the file's damage block.
+func wreck_condition(slot_id: String) -> float:
+	var slot := get_slot(slot_id)
+	var damage := WreckMaker.damage_of(ship.file) if slot else {}
+	var parts: Dictionary = damage.get("parts", {})
+	var c := 1.0
+	for path: String in slot.parts if slot else PackedStringArray():
+		var cond: Dictionary = (parts.get(path, {}) as Dictionary).get("condition", {})
+		c = minf(c, wreck_part_condition(float(cond.get("wear", 0.0)), float(cond.get("scorch", 0.0))))
+	return c
+
+
+static func wreck_part_condition(wear: float, scorch: float) -> float:
+	return clampf((1.0 - WRECK_WEAR * clampf(wear, 0.0, 1.0)) * (1.0 - WRECK_SCORCH * clampf(scorch, 0.0, 1.0)), 0.1, 1.0)
 
 
 ## Tools: a part off the ship is lying loose in the yard (or its condition changed: call

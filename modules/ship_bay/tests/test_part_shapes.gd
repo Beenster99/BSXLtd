@@ -62,6 +62,7 @@ func run_tests() -> void:
 		plant.call("_show")
 		var board_text := str((plant.get("board") as Node).call("text"))
 		check(board_text.contains(str(c["material"]).to_upper()) and board_text.contains("INGOTS"), "the crusher board shows the smelter: %s" % board_text)
+		check(absf((plant.get("board") as Node3D).global_position.y - 2.45) < 0.1, "at the wall TVs' height (0.3.27): %.2f m" % (plant.get("board") as Node3D).global_position.y)
 	else:
 		check(false, "the yard has a crusher plant")
 	# The bay's ship gone, a shape already built stays; one never built falls back to its item.
@@ -82,6 +83,13 @@ func run_tests() -> void:
 	var vis := bus.goods_visual(str(box.get_meta("look_id", "")) if box else slot.accepts[0], 0.8)
 	check(vis != null and vis.find_children("*", "MeshInstance3D", true, false).size() > 0, "goods_visual draws it")
 	vis.free()
+	# Bought parts with no builder of their own are drawn as Void Salvage's own part, in its
+	# paint, not a stand-in box (beenster, 0.3.27: "Grab frame", "Glow strip" in goods-in).
+	for item: String in ["GrabFrame", "GlowStrip", "EngineFeed"]:
+		var made: Array = ItemLook._vs_goods(item)
+		check(made.size() == 3 and made[2] != null, "%s has Void Salvage's look and paint" % item)
+		var e: Dictionary = ItemLook._entry(item, -1.0)
+		check(e["paint"] != null, "and goods-in draws %s with it (%s)" % [item, ItemLook.size_of(item)])
 	bus.collect_crate(landed[0])
 	check(not bus.delivered_crates().has(landed[0]), "collect_crate takes a crate standing on the floor")
 	yard.queue_free()

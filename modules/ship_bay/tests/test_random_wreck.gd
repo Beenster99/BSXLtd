@@ -9,6 +9,7 @@ extends ModuleTest
 
 const DebugPanel := preload("res://modules/ship_bay/internal/ui/debug_ships_panel.gd")
 const FileShip := preload("res://modules/ship_bay/internal/ships/file_ship_model.gd")
+const LayoutLoader := preload("res://modules/ship_bay/internal/layout_loader.gd")
 const Bay := preload("res://modules/ship_bay/internal/bay/bay.gd")
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 
@@ -36,6 +37,42 @@ func run_tests() -> void:
 	(panel.get_node("Wreck") as Button).pressed.emit()
 	await frames(2)
 	_check_wreck(bus, bay, "small")
+	# Nothing's fasteners hide under it: a seat's bolt in the middle of its foot is moved out
+	# past its inboard side (beenster, 0.3.27: "I cannot see how to remove them").
+	var hidden: Array = []
+	for slot in bus.ship.slots:
+		if not slot.slot_id.begins_with("part_") or not LayoutLoader.unhides(slot.parts[0]):
+			continue
+		for f in slot.fasteners:
+			if LayoutLoader.is_under(f, slot.box):
+				hidden.append(f.joint_id)
+	check(hidden.is_empty(), "no fitting's bolt is hidden under it: %s" % [hidden.slice(0, 4)])
+	# The rings sit on the plates' faces, not under them (Tools, 0.3.27).
+	for i in 4:
+		await get_tree().physics_frame
+	var lifted := 0
+	var all_markers: Dictionary = bay.get("markers")
+	for slot in bus.ship.slots:
+		for f in slot.fasteners:
+			var mk: MeshInstance3D = all_markers.get(f.joint_id)
+			if mk and (mk.position - f.position).dot(f.normal.normalized()) > 0.004:
+				lifted += 1
+	check(lifted > 0, "rings buried under a plate's face are lifted onto it (%d)" % lifted)
+	# Charred parts come off worn (beenster, 0.3.27: black plates read over 75%).
+	check(ShipBayBus.clean_up_route(ShipBayBus.wreck_part_condition(0.0, 0.6)) == "refurb"
+			and ShipBayBus.clean_up_route(ShipBayBus.wreck_part_condition(0.0, 1.0)) == "grind"
+			and ShipBayBus.wreck_part_condition(0.0, 0.0) == 1.0, "half charred wants refurbishing, burnt through the crusher")
+	var dparts: Dictionary = WreckMaker.damage_of(bus.ship.file).get("parts", {})
+	var worst := 1.0
+	var expect := 1.0
+	for slot in bus.ship.slots:
+		for path in slot.parts:
+			var cond: Dictionary = (dparts.get(path, {}) as Dictionary).get("condition", {})
+			var c := ShipBayBus.wreck_part_condition(float(cond.get("wear", 0.0)), float(cond.get("scorch", 0.0)))
+			if c < expect:
+				expect = c
+				worst = bus.fitted_condition(slot.slot_id)
+	check(expect < 1.0 and worst <= expect + 0.001, "a damaged part on the wreck comes off in the condition its damage says (%.2f)" % worst)
 	check(str(bay.get("cradle").get("size")) == Bay.cradle_size_for((bay.get("model").call("surface_box") as AABB).size.z), "in the cradle for its length (%s, %.1f m)" % [bay.get("cradle").get("size"), bus.ship.bounds.size.z])
 	check((bus.snapshot().get("bay_wreck", {}) as Dictionary) == bus.bay_wreck and str(bus.snapshot().get("ship_id", "")) == ShipBayBus.WRECK_ID,
 			"it goes in the save")
@@ -57,6 +94,19 @@ func run_tests() -> void:
 	check(im.kit.model.joint_view(c) != null, "and comes back when it is made")
 	var marker: MeshInstance3D = (bay.get("markers") as Dictionary)[jid]
 	check(marker.material_override != null, "its marker shows it")
+	# A part taken off leaves no collision behind (Tools, 0.3.27: a ceiling lamp held up by its
+	# own shape): every joint out, the slot's shapes go off; positioned again, back on.
+	var shapes: Array = (bay.get("colliders") as Dictionary).get(s.slot_id, [])
+	for fp in s.fasteners:
+		bus.note_joint_removed(fp.joint_id)
+	await get_tree().physics_frame
+	check(not shapes.is_empty() and bus.get_slot_state(s.slot_id) == ShipBayBus.SlotState.EMPTY
+			and shapes.all(func(cs: CollisionShape3D) -> bool: return cs.disabled), "taken off, its collision goes (%d shapes)" % shapes.size())
+	check(bus.try_position(s.slot_id, s.fitted), "and goes back in its slot")
+	await get_tree().physics_frame
+	check(shapes.all(func(cs: CollisionShape3D) -> bool: return not cs.disabled), "put back, it comes back")
+	for fp in s.fasteners:
+		bus.note_joint_made(fp.joint_id, 0.9)
 	# A late joiner builds the same one, with what was done to it.
 	bus.note_joint_removed(jid)
 	var snap := bus.snapshot()
