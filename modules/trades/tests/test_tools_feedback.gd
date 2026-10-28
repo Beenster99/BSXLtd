@@ -50,6 +50,8 @@ func run_tests() -> void:
 	var slot := ship_bus.get_slot(SLOT)
 	var home := station.ship_xform * slot.mount
 	var f := slot.fasteners[0]
+	# Bare hands: the aim (trades.vs_snap) takes a joint of any kind.
+	rig.set_tool(&"hands")
 	_stand_off(rig, station.ship_xform * f.position, home.basis.z)
 	_run(station, 1)
 	check(station.aimed >= 0, "aiming at one of the engine's joints")

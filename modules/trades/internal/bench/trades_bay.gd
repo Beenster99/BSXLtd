@@ -386,6 +386,9 @@ func set_tool(id: StringName) -> void:
 	var bus := bus()
 	if bus:
 		bus.tool_equipped.emit(1, id)
+	# trades.vs_snap: what the aim snaps to depends on the tool in hand.
+	if _focus and _focus.has_method("tool_changed"):
+		_focus.call("tool_changed")
 	_refresh_hud()
 
 
