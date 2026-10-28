@@ -302,7 +302,7 @@ func _goods_in(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) -
 	Flags.set_flag("trades.goods_off", true)
 	Flags.set_flag("trades.goods_in", true)
 	var comp := str((Modules.bus("ship_bay") as ShipBayBus).storage_items().keys()[0])
-	var stand_in: Object = _make(FAKE_API + "var collected: Array = []\nfunc collect_crate(crate_id: String) -> void:\n\tcollected.append(crate_id)\n", RefCounted.new())
+	var stand_in: Object = _make(FAKE_API + "var collected: Array = []\nfunc collect_crate(crate_id: String) -> void:\n\tcollected.append(crate_id)\nvar looks: Array = []\nfunc goods_visual(item: String, condition: float) -> Node3D:\n\tlooks.append(item)\n\tvar n := Node3D.new()\n\tvar m := MeshInstance3D.new()\n\tm.mesh = BoxMesh.new()\n\tn.add_child(m)\n\treturn n\n", RefCounted.new())
 	stand_in.set("deck", deck)
 	beam.trolley_api = stand_in
 	var yard_side := Node3D.new()
@@ -313,7 +313,7 @@ func _goods_in(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) -
 	# Clear of the deck and the goods already lifted off it.
 	stores.global_position = rig.worker.global_position + rig.worker.global_basis * Vector3(1.2, 0.3, -2.5)
 	var size := Vector3(0.6, 0.4, 0.5)
-	_look_box(stores, AABB(Vector3(-size.x * 0.5, 0, -size.z * 0.5), size), {"component": comp, "condition": 0.8, "crate_id": "in_1"})
+	_look_box(stores, AABB(Vector3(-size.x * 0.5, 0, -size.z * 0.5), size), {"component": comp, "condition": 0.8, "crate_id": "in_1", "look_id": "plate_x", "qty": 1})
 	await frames(2)
 	_look_at(rig, stores.global_position + Vector3.UP * 0.2)
 	await frames(1)
@@ -325,6 +325,7 @@ func _goods_in(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) -
 			"it takes it, and Ship and Bay collects the crate (%s)" % [stand_in.get("collected")])
 	check(got != null and got.global_position.distance_to(stores.global_position) < 0.05 and is_equal_approx(got.condition, 0.8),
 			"it comes off where it sat, in its condition")
+	check((stand_in.get("looks") as Array) == ["plate_x"], "looking as Ship and Bay draws it, by its own look (%s)" % [stand_in.get("looks")])
 	if got:
 		rig.ship_station().release()
 	# A rack place's look box carries "location", not a crate: the beam leaves it.

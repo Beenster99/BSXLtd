@@ -941,6 +941,7 @@ func _check_stores(crate_id: String, area: Area3D) -> Variant:
 		return "That one won't come off the floor just now."
 	var under := Transform3D(Basis.IDENTITY, shape.position - Vector3(0, b.size.y * 0.5, 0))
 	return {"kind": "goods", "from": "stores", "crate_id": crate_id, "component": str(area.get_meta("component")),
+			"look_id": str(area.get_meta("look_id", area.get_meta("component"))),
 			"condition": float(area.get_meta("condition", 1.0)), "xform": area.global_transform * under,
 			"box": AABB(Vector3(-b.size.x * 0.5, 0.0, -b.size.z * 0.5), b.size), "count": 1}
 
@@ -1012,7 +1013,8 @@ func _make_goods(payload: Dictionary) -> TradesLoosePart:
 		visual = items[items.size() - 1].duplicate() as Node3D
 		visual.transform = Transform3D.IDENTITY
 	elif _has("goods_visual"):
-		visual = _api().call("goods_visual", str(payload["component"]), float(payload.get("condition", 1.0))) as Node3D
+		# Its own shape when it came off a ship (look_id), else the plain component's.
+		visual = _api().call("goods_visual", str(payload.get("look_id", payload["component"])), float(payload.get("condition", 1.0))) as Node3D
 	var part := TradesLoosePart.new()
 	part.top_level = true
 	add_child(part)
