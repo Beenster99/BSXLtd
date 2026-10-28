@@ -270,9 +270,10 @@ func register_module() -> void:
 		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
 			scene.call("set_time_of_day", 22.0)
 			scene.call("show_view", "courtyard"))
-		Shots.register("shipyard_city_night", SHIPYARD_SCENE, func(scene: Node) -> void:
-			scene.call("set_time_of_day", 21.5)
-			scene.call("show_view", "downtown"))
+		if Flags.is_on("ship_bay.city"):
+			Shots.register("shipyard_city_night", SHIPYARD_SCENE, func(scene: Node) -> void:
+				scene.call("set_time_of_day", 21.5)
+				scene.call("show_view", "downtown"))
 		# A sample delivery in the hall, then some of it put away (these change the stores).
 		Shots.register("shipyard_goods_in", SHIPYARD_SCENE, func(scene: Node) -> void:
 			_sample_delivery()
