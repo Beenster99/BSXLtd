@@ -27,6 +27,12 @@ func run_tests() -> void:
 	orders.size = Vector2(860, 420)
 	add_child(orders)
 	await frames(2)
+	# A countdown label freed with its page doesn't trip the clock's tick.
+	var gone := Label.new()
+	orders.call("_count_down", gone, 10)
+	gone.free()
+	orders.call("_tick_countdowns")
+	check((orders.get("_countdowns") as Array).all(func(l: Variant) -> bool: return is_instance_valid(l)), "a freed countdown is dropped on the next tick")
 	var list: VBoxContainer = orders.get("_list")
 	var entries: Array = orders.get("_entries")
 	var cats := {}

@@ -1280,6 +1280,7 @@ func _count_down(l: Label, eta_minute: int, prefix := "") -> Label:
 
 
 func _tick_countdowns() -> void:
-	_countdowns = _countdowns.filter(func(l: Label) -> bool: return is_instance_valid(l))
+	# Untyped: a freed label can't be passed as a Label, and filter() returns a plain Array.
+	_countdowns.assign(_countdowns.filter(func(l: Variant) -> bool: return is_instance_valid(l)))
 	for l in _countdowns:
 		l.text = str(l.get_meta("prefix")) + bus.arrival_text(int(l.get_meta("eta")))
