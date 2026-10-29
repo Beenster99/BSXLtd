@@ -853,7 +853,10 @@ func place_frame_order() -> String:
 			_play(&"clunk")
 			_say("Can't order it: %s." % b.get("reason", "the shop said no"))
 			return str(b.get("reason", "refused"))
-		var r := (Modules.bus("business") as BusinessBus).place_market_order(b.basket)
+		# Booked against the job in hand, when there is one (Business: its contract_id).
+		var contracts := Modules.bus("contracts") as ContractsBus
+		var job := contracts.get_active_job() if contracts else null
+		var r := (Modules.bus("business") as BusinessBus).place_market_order(b.basket, job.job_id if job else "")
 		if not r.is_ok():
 			_play(&"clunk")
 			_say("Can't order it: %s." % r.message)
