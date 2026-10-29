@@ -24,6 +24,10 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The tools' old jobs (trades.tool_one_job and trades.gone_rings change them: test_gone_rings).
+	for flag: String in ["trades.tool_one_job", "trades.gone_rings"]:
+		saved[flag] = Flags.is_on(flag)
+		Flags.set_flag(flag, false)
 	# The rings' colours (the quiet one-colour rings are test_playtest_0317's).
 	saved["trades.quiet_rings"] = Flags.is_on("trades.quiet_rings")
 	Flags.set_flag("trades.quiet_rings", false)

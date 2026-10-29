@@ -5,7 +5,7 @@ extends Node3D
 ## board can raise in height with the up and down arrows"). Behind trades.hover_board.
 ##
 ## B brings it out under your feet and puts it away again. Riding, WASD steers it where you
-## look, Shift goes flat out, and the up and down arrows raise and lower how high it floats
+## look, Shift goes flat out, and Space and Left Ctrl (playtest 0.3.29; the arrows before) raise and lower how high it floats
 ## over the courtyard's floor (playtest 0.3.24: a set height, so it doesn't bob up and down over
 ## a wreck's decks and holes), never lower than `min_height` over what is under it. It hangs under the
 ## worker's feet (this node is the worker's child), leans into the way it's going and hums.
@@ -16,7 +16,7 @@ extends Node3D
 @export var min_height := 0.3
 @export var start_height := 0.45
 @export var max_height := 10.0
-## How fast the arrows raise or lower it (m/s).
+## How fast Space and Ctrl raise or lower it (m/s).
 @export var climb_rate := 1.8
 ## Top speed (m/s), and flat out with Shift.
 @export var cruise_speed := 8.0
@@ -143,7 +143,7 @@ func set_riding(on: bool) -> void:
 
 
 ## One physics step riding: the velocity the worker moves with this step, from the steering
-## keys (`input`: x right, y back, -1..1), Shift, the arrows' climb (-1..1) and the floor under.
+## keys (`input`: x right, y back, -1..1), Shift, the climb (Space up, Ctrl down) (-1..1) and the floor under.
 func drive(worker: CharacterBody3D, input: Vector2, boost: bool, climb: float, delta: float) -> Vector3:
 	height = clampf(height + climb * climb_rate * delta, min_height, max_height)
 	var vel := worker.velocity

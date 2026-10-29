@@ -10,6 +10,11 @@ extends Node3D
 ## its size, its area and whether it is saved yet. Left click saves it: it is measured into a
 ## cutting config (named for the plate, numbered T-001, T-002...) that the cutting bed's screen
 ## offers for everyone, kept in the save, and a chalk line is left round the plate.
+##
+## trades.scribe_beams (beenster, 0.3.29: "scribe tool should pick beams now too"): a member of
+## her frame (a ring, a stringer, a post) or a beam of the hologram under the aim lights up
+## the same way, the panel gives its length and section, and left click puts its length on the
+## cutting bed's cut list.
 
 const EVENT := "trades.template"
 const SECTION := "trades_templates"
@@ -39,6 +44,15 @@ var _highlight: MeshInstance3D
 var _chalk: MeshInstance3D
 var _said_at := -10000
 var _shown := ""
+## The beam under the scribe's aim (trades.scribe_beams): {name, a, b (ship space), size
+## (Vector2 across its section, m), source (the frame part's path, or "holo:<id>")}, {} for none.
+var beam: Dictionary = {}
+## How near the aim a hologram beam's line counts as on it (m).
+const HOLO_PICK_M := 0.15
+
+
+static func beams_on() -> bool:
+	return Flags.is_on("trades.scribe_beams")
 
 
 static func enabled() -> bool:
@@ -87,10 +101,153 @@ func _exit_tree() -> void:
 			_net.call("unregister_snapshot_provider", SECTION)
 
 
-## The scribe's left click: pressed saves the plate under the aim.
+## The scribe's left click: pressed saves the plate under the aim (or takes the beam's length).
 func set_tracing(on: bool) -> void:
 	if on:
-		save_aimed()
+		if not beam.is_empty():
+			take_beam()
+		else:
+			save_aimed()
+
+
+## A ray (world space) that goes on through parts taken off the ship: their shapes stay on
+## her body a while, but there's nothing there to pick.
+static func through_gone(space: PhysicsDirectSpaceState3D, from: Vector3, dir: Vector3, exclude: Array[RID] = []) -> Dictionary:
+	var ship := Modules.bus("ship_bay") as ShipBayBus
+	var at := from
+	var end := from + dir * REACH_M
+	for i in 8:
+		var q := PhysicsRayQueryParameters3D.create(at, end)
+		q.exclude = exclude
+		var hit := space.intersect_ray(q)
+		if hit.is_empty() or ship == null \
+				or str(ship.inspect_at(hit.collider, int(hit.get("shape", 0)), hit.position).get("slot_state", "")) != "empty":
+			return hit
+		at = (hit.position as Vector3) + dir * 0.01
+	return {}
+
+
+## The beam under a world-space aim from `from` along `dir`, the ray's `hit` given: a hologram
+## beam the line passes within HOLO_PICK_M of (nearer than the hit), else the frame member the
+## hit is on; {} for none (see `beam`).
+func beam_at(from: Vector3, dir: Vector3, hit: Dictionary) -> Dictionary:
+	var xf := ship_xform()
+	var xi := xf.affine_inverse()
+	var o := xi * from
+	var d := (xi.basis * dir).normalized()
+	var hit_t := INF if hit.is_empty() else from.distance_to(hit.position as Vector3)
+	var best := {}
+	var best_t := hit_t
+	var ship := Modules.bus("ship_bay") as ShipBayBus
+	var bus := Modules.bus("trades") as TradesBus
+	if ship and ship.ship and bus:
+		for r: Dictionary in bus.beam_design(ship.ship.ship_id):
+			var a := VsShipImport.vec3(r.a)
+			var b := VsShipImport.vec3(r.b)
+			var c := Geometry3D.get_closest_points_between_segments(o, o + d * REACH_M, a, b)
+			var t := o.distance_to(c[0])
+			if c[0].distance_to(c[1]) < HOLO_PICK_M and t < best_t:
+				var sec := TradesBeamSections.normal(str(r.section))
+				best_t = t
+				best = {"name": "Hologram beam, %s" % TradesBeamSections.name_of(sec), "a": a, "b": b,
+						"size": Vector2(float(TradesBeamSections.info(sec).get("w", 0.1)), float(TradesBeamSections.info(sec).get("h", 0.1))), "source": "holo:%d" % int(r.id)}
+	if not best.is_empty() or hit.is_empty() or ship == null or ship.ship == null:
+		return best
+	var info := ship.inspect_at(hit.collider, int(hit.get("shape", 0)), hit.position)
+	if str(info.get("kind", "")) != "frame" or str(info.get("slot_state", "")) == "empty":
+		return {}
+	var path := str(info.get("path", ""))
+	for part: Variant in TradesBeamDesigner._ship_file(ship.ship).get("parts", []):
+		if not part is Dictionary or str((part as Dictionary).get("path", "")) != path:
+			continue
+		var shape: Dictionary = (part as Dictionary).get("shape", {})
+		var args: Array = shape.get("args", [])
+		if str(shape.get("shape", "")) != "girder" or args.size() < 3:
+			return {}
+		var pxf := VsShipImport.xform((part as Dictionary).get("xform", {}))
+		var half := pxf.basis.x.normalized() * float(args[0]) * 0.5
+		var shown := str(info.get("display_name", "")) if str(info.get("display_name", "")) != "" else str(info.get("name", "Frame member")).capitalize()
+		return {"name": shown, "a": pxf.origin - half, "b": pxf.origin + half,
+				"size": Vector2(float(args[1]), float(args[2])), "source": path}
+	return {}
+
+
+func _aim_beam(found: Dictionary) -> void:
+	var key := "" if found.is_empty() else str(found.source)
+	var was := "" if beam.is_empty() else str(beam.source)
+	beam = found
+	if found.is_empty():
+		if was != "":
+			(_highlight.mesh as ImmediateMesh).clear_surfaces()
+			HudSlots.clear_info(INFO)
+		return
+	plate_name = str(found.name)
+	_draw_beam()
+	if key != was:
+		_shown = ""
+		HudSlots.set_info(INFO, "Beam", "\n".join(beam_lines()), 9)
+
+
+## A beam's length (mm).
+static func beam_mm(b: Dictionary) -> int:
+	return roundi((b.a as Vector3).distance_to(b.b) * 1000.0)
+
+
+## What the right-hand panel says about the aimed beam.
+func beam_lines() -> PackedStringArray:
+	var out := PackedStringArray()
+	if beam.is_empty():
+		return out
+	var size: Vector2 = beam.size
+	out.append(str(beam.name))
+	out.append("Length  %d mm" % beam_mm(beam))
+	out.append("Section  %d x %d mm" % [roundi(size.x * 1000.0), roundi(size.y * 1000.0)])
+	out.append("Left click: add it to the cutting bed's cut list")
+	return out
+
+
+## Puts the aimed beam's length on the cutting bed's cut list. Returns why not, or "".
+func take_beam() -> String:
+	if beam.is_empty():
+		return "no beam"
+	var bed := bay.get("cutting_bed") as TradesCuttingBed if bay else null
+	if bed == null:
+		_say("There's no cutting bed to send it to.")
+		return "no bed"
+	var mm := clampi(beam_mm(beam), 50, 12000)
+	var why := bed.add_length(mm)
+	if why != "":
+		_say("%d mm: %s." % [mm, why])
+		return why
+	if bay and bay.has_method("play"):
+		bay.call("play", &"tick")
+	if bay and bay.has_method("hint"):
+		bay.call("hint", "%d mm added to the cutting bed's cut list (%d on it)." % [mm, bed.lengths.size()])
+	return ""
+
+
+## The aimed beam lit: its line glowing, breathing.
+func _draw_beam() -> void:
+	var im := _highlight.mesh as ImmediateMesh
+	im.clear_surfaces()
+	var xf := ship_xform()
+	var a := xf * (beam.a as Vector3)
+	var b := xf * (beam.b as Vector3)
+	var size: Vector2 = beam.size
+	var r := maxf(size.x, size.y) * 0.5 + 0.03
+	var along := (b - a).normalized()
+	var side := along.cross(Vector3.UP if absf(along.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT).normalized()
+	var up := side.cross(along).normalized()
+	var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() / 1000.0 * 4.0)
+	var edge := Color(GLOW.r, GLOW.g, GLOW.b, 0.5 + 0.3 * pulse)
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 4:
+		var c0 := (side * cos(k * PI / 2.0) + up * sin(k * PI / 2.0)) * r
+		var c1 := (side * cos((k + 1) * PI / 2.0) + up * sin((k + 1) * PI / 2.0)) * r
+		for q: Vector3 in [a + c0, b + c0, b + c1, a + c0, b + c1, a + c1]:
+			im.surface_set_color(Color(edge, 0.15 + 0.08 * pulse))
+			im.surface_add_vertex(q)
+	im.surface_end()
 
 
 ## The plate slot under a ship-space point: {slot, box, centre, u, v, n (ship-space plane axes:
@@ -186,6 +343,13 @@ func _physics_process(_delta: float) -> void:
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * REACH_M)
 	q.exclude = [(w as CollisionObject3D).get_rid()]
 	var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
+	if beams_on():
+		var found := beam_at(from, dir, through_gone(w.get_world_3d().direct_space_state, from, dir, q.exclude))
+		if not found.is_empty():
+			_aim({})
+			_aim_beam(found)
+			return
+		_aim_beam({})
 	aim_at(hit.position if not hit.is_empty() else Vector3.INF, hit.get("normal", Vector3.ZERO))
 
 

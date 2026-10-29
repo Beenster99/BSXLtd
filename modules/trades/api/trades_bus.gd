@@ -92,8 +92,8 @@ func register_module() -> void:
 	Keys.register(KEY_HELMET, "Welding shield up / down", KEY_H, KEY_GROUP)
 	if Flags.is_on("trades.hover_board"):
 		Keys.register(KEY_BOARD, "Hover board out / away", KEY_B, KEY_GROUP)
-		Keys.register(KEY_BOARD_UP, "Hover board higher (hold)", KEY_UP, KEY_GROUP)
-		Keys.register(KEY_BOARD_DOWN, "Hover board lower (hold)", KEY_DOWN, KEY_GROUP)
+		Keys.register(KEY_BOARD_UP, "Hover board higher (hold)", KEY_SPACE, KEY_GROUP)
+		Keys.register(KEY_BOARD_DOWN, "Hover board lower (hold)", KEY_CTRL, KEY_GROUP)
 	if Flags.is_on(SPECS_CHANNEL):
 		HudSlots.register_holo_channel(SPECS_CHANNEL, "Specs",
 				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)

@@ -394,6 +394,13 @@ func _place(i: int) -> void:
 			var hand: Variant = _hand_of(int(u.peer))
 			if hand is Transform3D:
 				node.global_transform = hand
+	# In your own hand: your helmet torch casts no shadow of it (Graphics' "gfx_held").
+	var in_mine := str(u.where) == IN_HAND and int(u.peer) == _local_peer()
+	if in_mine != node.is_in_group("gfx_held"):
+		if in_mine:
+			node.add_to_group("gfx_held")
+		else:
+			node.remove_from_group("gfx_held")
 	node.visible = true
 
 
