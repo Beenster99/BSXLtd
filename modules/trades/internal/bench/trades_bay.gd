@@ -521,6 +521,8 @@ func _actions() -> Array[String]:
 	# The tablet's R steps through the design's versions.
 	if tool == &"tablet" and Flags.is_on("trades.shift_keys"):
 		out.append(TradesBus.KEY_ROTATE)
+	if tool == &"tablet" and Flags.is_on("trades.frame_order"):
+		out.append(TradesBus.KEY_ORDER)
 	for i in hotbar.size():
 		out.append(TradesBus.KEY_TOOL + str(i + 1))
 	return out
