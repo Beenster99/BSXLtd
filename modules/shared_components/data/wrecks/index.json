@@ -5,7 +5,7 @@
 		"arinox": {
 			"design": "arinox",
 			"name": "Exploration ship (Arinox)",
-			"class": "L",
+			"class": "XL",
 			"length_m": 64.0,
 			"mass_kg": 1631081.0,
 			"parts": 1533,
@@ -17,12 +17,12 @@
 				"author": "Darkspot Industries",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3462895640"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"armoured_transport": {
 			"design": "armoured_transport",
 			"name": "Armoured transport (Kyper)",
-			"class": "M",
+			"class": "S",
 			"length_m": 23.0,
 			"mass_kg": 362812.0,
 			"parts": 498,
@@ -34,12 +34,12 @@
 				"author": "Dacrota",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3692367139"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"bay_freighter": {
 			"design": "bay_freighter",
 			"name": "Bay freighter (CL-1)",
-			"class": "L",
+			"class": "M",
 			"length_m": 28.5,
 			"mass_kg": 901429.0,
 			"parts": 655,
@@ -51,16 +51,16 @@
 				"author": "Diggrok",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3690484680"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"cargo_shuttle": {
 			"design": "cargo_shuttle",
 			"name": "Cargo shuttle (CS225)",
-			"class": "M",
+			"class": "S",
 			"length_m": 19.5,
 			"mass_kg": 255830.0,
 			"parts": 413,
-			"joints": 757,
+			"joints": 758,
 			"cargo_role": "freighter",
 			"rollable": true,
 			"reference": {
@@ -68,7 +68,7 @@
 				"author": "ArchSlime",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3725456910"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"claymore": {
 			"design": "claymore",
@@ -85,12 +85,12 @@
 				"author": "SonOfaWitch71",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3467852509"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"corsair_frigate": {
 			"design": "corsair_frigate",
 			"name": "Frigate (Corsair)",
-			"class": "L",
+			"class": "M",
 			"length_m": 37.0,
 			"mass_kg": 681346.0,
 			"parts": 681,
@@ -102,7 +102,7 @@
 				"author": "(see page)",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3466011981"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"courier": {
 			"design": "courier",
@@ -111,7 +111,7 @@
 			"length_m": 18.3,
 			"mass_kg": 307143.0,
 			"parts": 652,
-			"joints": 1169,
+			"joints": 1185,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -119,7 +119,7 @@
 				"author": "Commander Qutatron",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3770416413"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"dagger_frigate": {
 			"design": "dagger_frigate",
@@ -128,7 +128,7 @@
 			"length_m": 43.0,
 			"mass_kg": 1006045.0,
 			"parts": 807,
-			"joints": 1502,
+			"joints": 1550,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -136,7 +136,7 @@
 				"author": "Chiggi",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3460077199"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"devastator": {
 			"design": "devastator",
@@ -153,16 +153,16 @@
 				"author": "Republic of Earth",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3678613326"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"drill_miner": {
 			"design": "drill_miner",
 			"name": "Drill miner (N-M1)",
-			"class": "S",
+			"class": "XS",
 			"length_m": 12.0,
 			"mass_kg": 96642.0,
 			"parts": 326,
-			"joints": 537,
+			"joints": 601,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -170,7 +170,7 @@
 				"author": "Smokki",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3438342527"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"endeavor": {
 			"design": "endeavor",
@@ -187,7 +187,7 @@
 				"author": "Darkspot Industries",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3445726089"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"escape_pod": {
 			"design": "escape_pod",
@@ -204,12 +204,12 @@
 				"author": "Diggrok",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3445334055"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"everest": {
 			"design": "everest",
 			"name": "Destroyer (Everest)",
-			"class": "L",
+			"class": "XL",
 			"length_m": 67.0,
 			"mass_kg": 2753781.0,
 			"parts": 966,
@@ -221,7 +221,7 @@
 				"author": "Republic of Earth",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3787047868"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"executive_shuttle": {
 			"design": "executive_shuttle",
@@ -238,7 +238,7 @@
 				"author": "JPX Reaper",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442307782"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"forge_welder": {
 			"design": "forge_welder",
@@ -255,7 +255,7 @@
 				"author": "Pitohui",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3718541381"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"galaxy_railgun": {
 			"design": "galaxy_railgun",
@@ -264,7 +264,7 @@
 			"length_m": 48.0,
 			"mass_kg": 1349759.0,
 			"parts": 923,
-			"joints": 1652,
+			"joints": 1654,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -272,7 +272,7 @@
 				"author": "Darkspot Industries",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3494470390"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"geo_golem": {
 			"design": "geo_golem",
@@ -289,12 +289,12 @@
 				"author": "UncleAndy",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3691479471"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"hex_drive": {
 			"design": "hex_drive",
 			"name": "Hex-drive cruiser (RX-39487)",
-			"class": "M",
+			"class": "S",
 			"length_m": 19.5,
 			"mass_kg": 284688.0,
 			"parts": 516,
@@ -306,16 +306,16 @@
 				"author": "Capac Amaru",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442495990"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"iridium_miner": {
 			"design": "iridium_miner",
 			"name": "Ring miner (Iridium)",
-			"class": "M",
+			"class": "S",
 			"length_m": 12.9,
 			"mass_kg": 277134.0,
 			"parts": 426,
-			"joints": 759,
+			"joints": 767,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -323,7 +323,7 @@
 				"author": "Pitohui",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3717735048"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"jupiter_cruiser": {
 			"design": "jupiter_cruiser",
@@ -332,7 +332,7 @@
 			"length_m": 66.0,
 			"mass_kg": 1754135.0,
 			"parts": 1360,
-			"joints": 2693,
+			"joints": 2738,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -340,7 +340,7 @@
 				"author": "Jamsey",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=1642962796"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"k1_miner": {
 			"design": "k1_miner",
@@ -357,7 +357,7 @@
 				"author": "Pedro",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3659282111"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"lander": {
 			"design": "lander",
@@ -366,7 +366,7 @@
 			"length_m": 13.6,
 			"mass_kg": 235210.0,
 			"parts": 594,
-			"joints": 1178,
+			"joints": 1179,
 			"cargo_role": "freighter",
 			"rollable": true,
 			"reference": {
@@ -374,12 +374,12 @@
 				"author": "ArchSlime",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3700504934"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"liner": {
 			"design": "liner",
 			"name": "Liner (Luxuria Nova)",
-			"class": "L",
+			"class": "S",
 			"length_m": 28.0,
 			"mass_kg": 268998.0,
 			"parts": 457,
@@ -391,7 +391,7 @@
 				"author": "BOD",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3478656249"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"long_hauler": {
 			"design": "long_hauler",
@@ -408,7 +408,7 @@
 				"author": "Grebanton1234",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442199760"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"mantis_fighter": {
 			"design": "mantis_fighter",
@@ -425,7 +425,7 @@
 				"author": "Dan2D3D",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442103218"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"mission_runner": {
 			"design": "mission_runner",
@@ -442,12 +442,12 @@
 				"author": "Diggrok",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3621168964"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"mule_hauler": {
 			"design": "mule_hauler",
 			"name": "Hauler (Mule M-02)",
-			"class": "M",
+			"class": "S",
 			"length_m": 23.0,
 			"mass_kg": 491155.0,
 			"parts": 344,
@@ -459,7 +459,7 @@
 				"author": "B.O.S.",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3623084850"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"nexus_carrier": {
 			"design": "nexus_carrier",
@@ -476,7 +476,7 @@
 				"author": "Darkspot Industries",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3691314695"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"novaris": {
 			"design": "novaris",
@@ -485,7 +485,7 @@
 			"length_m": 63.0,
 			"mass_kg": 880311.0,
 			"parts": 935,
-			"joints": 1628,
+			"joints": 1630,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -493,7 +493,24 @@
 				"author": "Darkspot Industries",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3659910047"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
+		},
+		"patience": {
+			"design": "patience",
+			"name": "Training hulk (Patience)",
+			"class": "M",
+			"length_m": 24.0,
+			"mass_kg": 163715.0,
+			"parts": 596,
+			"joints": 1247,
+			"cargo_role": "",
+			"rollable": false,
+			"reference": {
+				"name": "the Void Salvage test freighter",
+				"author": "Void Salvage",
+				"url": "https://github.com/dantheo999/void-salvage/blob/main/scripts/world/test_ship.gd"
+			},
+			"vs_version": "0.147.0"
 		},
 		"pioneer": {
 			"design": "pioneer",
@@ -510,12 +527,12 @@
 				"author": "Pitohui",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3692056502"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"pod_scout": {
 			"design": "pod_scout",
 			"name": "Pod scout (N-S1)",
-			"class": "M",
+			"class": "S",
 			"length_m": 12.8,
 			"mass_kg": 65435.0,
 			"parts": 557,
@@ -527,7 +544,7 @@
 				"author": "Smokki",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3438342754"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"ranger": {
 			"design": "ranger",
@@ -544,16 +561,16 @@
 				"author": "B.O.S.",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3626164624"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"scabbard": {
 			"design": "scabbard",
 			"name": "Landing craft (Scabbard)",
-			"class": "L",
-			"length_m": 29.0,
-			"mass_kg": 475656.0,
-			"parts": 737,
-			"joints": 1616,
+			"class": "XL",
+			"length_m": 34.5,
+			"mass_kg": 1633817.0,
+			"parts": 1359,
+			"joints": 3302,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -561,12 +578,12 @@
 				"author": "SonOfaWitch71",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3477554796"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"scoop_miner": {
 			"design": "scoop_miner",
 			"name": "Narrow miner (Scoop)",
-			"class": "M",
+			"class": "S",
 			"length_m": 25.0,
 			"mass_kg": 408128.0,
 			"parts": 429,
@@ -578,12 +595,12 @@
 				"author": "Stellar Horizons",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3618045666"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"sentinel": {
 			"design": "sentinel",
 			"name": "Frigate (Sentinel)",
-			"class": "L",
+			"class": "XL",
 			"length_m": 50.0,
 			"mass_kg": 2047931.0,
 			"parts": 1104,
@@ -595,7 +612,7 @@
 				"author": "Republic of Earth",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3670833861"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"ship_carrier": {
 			"design": "ship_carrier",
@@ -612,7 +629,7 @@
 				"author": "Komus",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3669444692"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"superhawk": {
 			"design": "superhawk",
@@ -621,7 +638,7 @@
 			"length_m": 47.0,
 			"mass_kg": 974212.0,
 			"parts": 984,
-			"joints": 1777,
+			"joints": 1817,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -629,7 +646,7 @@
 				"author": "Wizard_Aubrey_The_Gnarly",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3669607378"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"talon": {
 			"design": "talon",
@@ -646,16 +663,16 @@
 				"author": "Diggrok",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3442312581"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"tiburon": {
 			"design": "tiburon",
 			"name": "Heavy gunship (Tiburon)",
-			"class": "L",
+			"class": "XL",
 			"length_m": 78.65,
 			"mass_kg": 3527041.0,
 			"parts": 1589,
-			"joints": 2703,
+			"joints": 2891,
 			"cargo_role": "",
 			"rollable": false,
 			"reference": {
@@ -663,7 +680,7 @@
 				"author": "Cloud Imperium Games",
 				"url": "https://starcitizen.tools/Tiburon"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"titan_miner": {
 			"design": "titan_miner",
@@ -680,7 +697,7 @@
 				"author": "Pitohui",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3717777054"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		},
 		"yacht": {
 			"design": "yacht",
@@ -689,7 +706,7 @@
 			"length_m": 56.0,
 			"mass_kg": 753855.0,
 			"parts": 722,
-			"joints": 1312,
+			"joints": 1317,
 			"cargo_role": "",
 			"rollable": true,
 			"reference": {
@@ -697,7 +714,7 @@
 				"author": "Chris320N",
 				"url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3634347132"
 			},
-			"vs_version": "0.138.0"
+			"vs_version": "0.147.0"
 		}
 	}
 }

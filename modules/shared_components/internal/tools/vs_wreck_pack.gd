@@ -82,6 +82,7 @@ static func pack_of(vsw: Dictionary) -> Dictionary:
 		kind_of[id] = kind
 		var g: Dictionary = p.get("geometry", {})
 		var shape: Dictionary
+		var corners: Array[Vector3] = []   # a mesh's own corners, for a box that hugs a turned part
 		if g.has("recipe"):
 			shape = g["recipe"]
 		elif g.has("mesh"):
@@ -98,6 +99,7 @@ static func pack_of(vsw: Dictionary) -> Dictionary:
 				if not corner.has(q):
 					corner[q] = pts.size()
 					pts.append(q)
+					corners.append(Vector3(q) * 1e-3)
 				idx.append(corner[q])
 			var verts := PackedInt32Array()
 			for axis in 3:
@@ -116,6 +118,10 @@ static func pack_of(vsw: Dictionary) -> Dictionary:
 		var b: Dictionary = g.get("bounds", {})
 		var local := AABB(VsShipImport.vec3(b.get("pos", [-0.5, -0.5, -0.5])), VsShipImport.vec3(b.get("size", [1, 1, 1])))
 		var box := x * local
+		if not corners.is_empty():
+			box = AABB(x * corners[0], Vector3.ZERO)
+			for c in corners:
+				box = box.expand(x * c)
 		var rec := {"id": id, "path": path, "name": name, "kind": kind, "material": str(p.get("material", "steel")),
 				"mass": float(p.get("mass_kg", 1.0)), "group": "", "by": "vswreck", "shape": shape,
 				"mat": str(p.get("look", "")), "xform": p.get("xform", {}),
@@ -135,7 +141,7 @@ static func pack_of(vsw: Dictionary) -> Dictionary:
 		if not path_of.has(a) or not path_of.has(bb):
 			continue
 		var kind := str(j.get("kind", "weld"))
-		var rec := {"id": int(j["id"]), "path": "joint/%s/%d" % [kind, int(j["id"])], "kind": kind, "head": 0,
+		var rec := {"id": int(j["id"]), "path": "joint/%s/%d" % [kind, int(j["id"])], "kind": kind, "head": int(j.get("head", 0)),
 				"phase": _phase(kind, kind_of[a], kind_of[bb]), "a": path_of[a], "b": path_of[bb],
 				"at": j.get("at", [0, 0, 0]), "normal": j.get("normal", [0, 1, 0])}
 		var seam: Dictionary = j.get("seam", {})
