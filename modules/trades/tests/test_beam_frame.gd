@@ -33,7 +33,6 @@ func run_tests() -> void:
 	for n: Vector3 in nodes:
 		top_x = maxf(top_x, n.x)
 	var node := Vector3.INF
-	print("NODES ", nodes.filter(func(n: Vector3) -> bool: return n.x > 2.0))
 	for n: Vector3 in nodes:
 		if n.x > top_x - 0.1 and absf(n.z - bb.get_center().z) < 3.0 and n.y > 0.5 \
 				and (not node.is_finite() or absf(n.z - bb.get_center().z) < absf(node.z - bb.get_center().z)):
