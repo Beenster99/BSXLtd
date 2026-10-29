@@ -36,6 +36,9 @@ extends Node
 ##     drawn as that ground surface, in its own colour and roughness: patches, a tint per
 ##     slab, aggregate, dirt, oil stains, scuffs and relief ("graphics.surfaces", G5). Set
 ##     the meta on the material (shared paints are fine) before a node using it is added;
+##   - a node in group "gfx_held" is something the local player holds that isn't under their
+##     body's node (a tool and its screen): helmet torches never shadow it, as they never
+##     shadow the body wearing them ("graphics.torch");
 ##   - a calmer sky (smaller, dimmer planets, fewer stars) while "graphics.calm_sky" is on;
 ##   - sea(size) gives the water for a shore ("graphics.sea");
 ##   - more groups (gfx_screen...) arrive with later stages.

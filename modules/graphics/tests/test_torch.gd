@@ -46,6 +46,14 @@ func run_tests() -> void:
 	check(lamp.shadow_caster_mask & body_mesh.layers & ~1 == 0 and lamp.shadow_caster_mask & 1 != 0,
 			"so your torch casts no shadow of you, but does of everything else")
 	check(not crate.get_layer_mask_value(torch.OWN_LAYER), "the rest of the world is left alone")
+	var tool := Node3D.new()
+	tool.top_level = true
+	tool.add_to_group("gfx_held")
+	var screen := MeshInstance3D.new()
+	tool.add_child(screen)
+	add_child(tool)
+	torch._unshadow_wearers()
+	check(screen.get_layer_mask_value(torch.OWN_LAYER), "nor of the tool in your hand and its screen (group gfx_held)")
 	cam.position = Vector3(-4, 1.7, 0)
 	await frames(2)
 	check((cam.global_transform.affine_inverse() * lamp.global_position).is_equal_approx(torch.OFFSET), "it follows you")
