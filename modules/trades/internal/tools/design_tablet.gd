@@ -33,8 +33,14 @@ func _ready() -> void:
 	add_screen(Vector3(0, 0.085, -0.0085), Vector3.FORWARD, Vector2(0.16, 0.11), 14, 4, Vector3.UP, Color(0.5, 0.85, 1.0))
 
 
+## trades.frame_builder (beenster, 0.3.30: "Please rename Tablet to 'Frame Builder'").
+static func renamed() -> bool:
+	return Flags.is_on("trades.frame_builder")
+
+
 func readout_text() -> String:
-	var head := "BEAM DESIGN" if version == "" else "DESIGN %s%s" % [version, "  " + test if test != "" else ""]
+	var head := ("FRAME BUILDER" if renamed() else "BEAM DESIGN") if version == "" \
+			else "%s %s%s" % ["BUILD" if renamed() else "DESIGN", version, "  " + test if test != "" else ""]
 	return "%s\n%s\n%s\n%d BEAMS" % [head, section.left(14).to_upper(), doing.left(14).to_upper(), count]
 
 

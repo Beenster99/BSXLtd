@@ -11,9 +11,13 @@ func run_tests() -> void:
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var bus := Modules.bus("trades") as TradesBus
 	var saved := {}
-	for flag: String in ["trades.beam_designer", "trades.beam_versions", "trades.beam_grow", "trades.beam_clear"]:
+	for flag: String in ["trades.beam_designer", "trades.beam_versions", "trades.beam_grow", "trades.beam_clear", "trades.beam_edit", "trades.beam_grid",
+			"trades.shift_keys", "trades.one_section", "trades.beam_copy", "trades.frame_builder"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# Only 100 x 100 x 5 box beams (trades.one_section).
+	check(TradesBeamSections.order() == ([TradesBeamSections.DEFAULT] as Array[String]), "the tablet has only the 100 x 100 x 5 box beam")
+	Flags.set_flag("trades.one_section", false)
 	bus.reset_data()
 	var yard: Node3D = load(Router.scene_path(ShipBayBus.SHIPYARD_SCENE)).instantiate()
 	add_child(yard)
@@ -75,6 +79,19 @@ func run_tests() -> void:
 			"it grows a metre straight out of the face")
 	d._draw()
 	check(d.get_node("Hologram/Ghost").visible, "drawn as it grows")
+	check(d.get_node("Hologram/Grid").visible and (d.get_node("Hologram/Grid") as MeshInstance3D).mesh.get_surface_count() == 1,
+			"a thin grid round its end to line it up")
+	# Shift+E from the keyboard reaches the tilt (an exact key match used to refuse it).
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_E
+	ev.physical_keycode = KEY_E
+	ev.shift_pressed = true
+	ev.pressed = true
+	d.fake_keys = [KEY_SHIFT]
+	rig._handle_input(ev)
+	d.fake_keys = []
+	check(is_equal_approx(float(d.draft.pitch), 15.0), "Shift+E pressed on the keyboard tilts it: %s" % d.draft.pitch)
+	d.draft.pitch = 0.0
 	d.wheel(-1)
 	d.wheel(-1)
 	check(is_equal_approx(float(d.draft.length), TradesBeamDesigner.GROW_M + 0.2), "the wheel makes it longer: %.2f m" % float(d.draft.length))
@@ -146,6 +163,67 @@ func run_tests() -> void:
 	d.fake_keys = null
 	check(is_equal_approx(float(d.beam(second).turn), 15.0), "Ctrl+E rolls it")
 	check(d.undo() and is_equal_approx(float(d.beam(second).turn), 0.0), "undo takes the roll back")
+	# Edit it: a click takes it back up from its root, the same keys change it, a click puts it back.
+	var before_edit := d.beam(second)
+	d.hovered = second
+	d.root_on = ""
+	check(d.doing().contains("Click to edit"), "on a placed beam the panel says click to edit: %s" % d.doing())
+	d.click(true)
+	check(d.editing() == second and (d.draft.root as Vector3).is_equal_approx(before_edit.a), "a click takes it up to edit, from its root")
+	d._draw()
+	check(not d.has_node("Hologram/Beam_%d" % second) or not d.get_node("Hologram/Beam_%d" % second).visible, "drawn as the growing beam while it's edited")
+	check(d.doing().contains("Editing"), "the panel says it's being edited")
+	d.wheel(-1)
+	d.fake_keys = [KEY_SHIFT]
+	d.key(TradesBus.KEY_TURN_RIGHT)
+	d.fake_keys = []
+	var n_before := d.beams().size()
+	d.click(true)
+	var edited := d.beam(second)
+	var el := (edited.a as Vector3).distance_to(edited.b)
+	var bl := (before_edit.a as Vector3).distance_to(before_edit.b)
+	check(d.draft.is_empty() and d.beams().size() == n_before and (edited.a as Vector3).is_equal_approx(before_edit.a)
+			and absf(el - (bl + 0.1)) < 0.005 and ((edited.b as Vector3) - (edited.a as Vector3)).normalized().y > 0.2,
+			"put back longer and tilted up, the same beam: %.2f m" % el)
+	check(d.undo() and (d.beam(second).b as Vector3).is_equal_approx(before_edit.b), "undo puts it back as it was")
+	d.hovered = second
+	d.click(true)
+	d.wheel(-3)
+	d.click(false)
+	check(d.draft.is_empty() and (d.beam(second).b as Vector3).is_equal_approx(before_edit.b), "right click leaves it as it was")
+	# Copy it (trades.beam_copy): G takes a copy, a click on the frame grows it from there, a click places it.
+	d.hovered = second
+	d.root_on = ""
+	check(d.doing().contains("G copy"), "on a placed beam the panel offers G copy: %s" % d.doing())
+	var src := d.beam(second)
+	var n_copy := d.beams().size()
+	check(d.key(TradesBus.KEY_NEXT) and not d.copying.is_empty() and d.beams().size() == n_copy, "G takes a copy, placing nothing yet")
+	d.hovered = -1
+	check(d.doing().contains("Copy of a"), "the panel says where to grow the copy: %s" % d.doing())
+	d.root_on = "frame"
+	d.root_point = node
+	d.root_normal = Vector3.RIGHT
+	d.click(true)
+	check(not d.draft.is_empty() and d.copying.is_empty(), "a click on the frame starts the copy growing there")
+	var copied := d.place_growing()
+	var cb := d.beam(copied)
+	var sd: Vector3 = (src.b as Vector3) - (src.a as Vector3)
+	var cd: Vector3 = (cb.b as Vector3) - (cb.a as Vector3) if not cb.is_empty() else Vector3.ZERO
+	check(copied >= 0 and d.beams().size() == n_copy + 1, "one beam more: %d of %d" % [d.beams().size(), n_copy])
+	check((cb.a as Vector3).distance_to(node) < 0.01, "from %s, the node at %s" % [cb.get("a"), node])
+	check( absf(cd.length() - sd.length()) < 0.005 and cd.normalized().dot(sd.normalized()) > 0.999 and str(cb.section) == str(src.section),
+			"the copy is placed from the frame, as long and the same way as the beam: %s from %s" % [cb, src])
+	check(d.undo() and d.beams().size() == n_copy, "undo takes the copy away")
+	d.hovered = second
+	d.key(TradesBus.KEY_NEXT)
+	d.hovered = -1
+	d.root_on = ""
+	d.click(false)
+	check(d.copying.is_empty() and d.beams().size() == n_copy, "right click drops a copy")
+	# The tablet is the Frame Builder now (trades.frame_builder).
+	check(TradesBay.label_of(&"tablet") == "Frame Builder", "the tablet is called the Frame Builder: %s" % TradesBay.label_of(&"tablet"))
+	d._info()
+	check((rig.tool_node(&"tablet") as TradesDesignTablet).readout_text().contains("BUILD"), "and its screen says so")
 	# Right click deletes it; undo brings it back.
 	d.hovered = second
 	d.click(false)

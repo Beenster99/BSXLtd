@@ -16,6 +16,9 @@ func run_tests() -> void:
 	# Drawn end to end, the first way (trades.beam_grow, growing out of the ship, is test_beam_grow's).
 	saved["trades.beam_grow"] = Flags.is_on("trades.beam_grow")
 	Flags.set_flag("trades.beam_grow", false)
+	# Every stocked section (trades.one_section keeps the tablet to 100 x 100 x 5: test_beam_grow).
+	saved["trades.one_section"] = Flags.is_on("trades.one_section")
+	Flags.set_flag("trades.one_section", false)
 	bus.reset_data()
 	# The real yard: the ship in the bay is built from her file, frame and plates as parts.
 	var yard: Node3D = load(Router.scene_path(ShipBayBus.SHIPYARD_SCENE)).instantiate()

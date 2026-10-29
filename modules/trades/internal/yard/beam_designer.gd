@@ -124,6 +124,9 @@ var _grab_before: Dictionary = {}
 ## ship's plating, which TEST asks to strip), "ship" (another part of her), "end" (a beam's
 ## end) or "" (nothing the tablet can click), at `root_point` facing `root_normal`.
 var draft: Dictionary = {}
+## trades.beam_copy: the beam G copied, to grow from the next root clicked ({dir (ship space),
+## length (m), section}), {} while none.
+var copying: Dictionary = {}
 var root_on := ""
 var root_point := Vector3.INF
 var root_normal := Vector3.ZERO
@@ -151,6 +154,35 @@ static func versions_on() -> bool:
 
 static func grow_on() -> bool:
 	return Flags.is_on("trades.beam_grow")
+
+
+## trades.beam_edit (beenster, 0.3.30: "We need to be able to edit existing beams"): a click on
+## a placed beam takes it back up as a growing beam from its root, with the same keys (wheel
+## length, Q/E swing, Shift+Q/E tilt); a click puts it back changed, right click as it was.
+static func edit_on() -> bool:
+	return Flags.is_on("trades.beam_edit")
+
+
+## trades.beam_copy (beenster, 0.3.30: "a \"copy this\" option when we select a holo beam"): G on
+## a beam takes a copy of it (its length, the way it points, its section); the next click on the
+## frame or a beam's end grows the copy from there, to adjust and click down as any other.
+static func copy_on() -> bool:
+	return Flags.is_on("trades.beam_copy")
+
+
+## trades.beam_grid (beenster, 0.3.30: "a sort of thin holo grid to help with 3D alignment"):
+## while a beam grows, a thin level grid at its far end's height, a line down to the grid and
+## lines along the ship's three axes through the end.
+static func grid_on() -> bool:
+	return Flags.is_on("trades.beam_grid")
+
+## The grid's cells and how far it reaches either way from the beam's end (m).
+const GRID_CELL_M := 0.5
+const GRID_HALF_M := 3.0
+const GRID_COLOUR := Color(0.35, 0.8, 1.0, 0.16)
+const AXIS_COLOUR := Color(0.45, 0.9, 1.0, 0.45)
+var _grid: MeshInstance3D
+var _grid_key := ""
 
 
 ## trades.beam_clear (beenster, 0.3.29: "it should be possible to remove all holo designs to
@@ -185,6 +217,19 @@ func build(net: Node = null) -> void:
 	_ghost.material_override = _mats.ghost
 	_ghost.visible = false
 	_holo.add_child(_ghost)
+	_grid = MeshInstance3D.new()
+	_grid.name = "Grid"
+	_grid.mesh = ImmediateMesh.new()
+	var gm := StandardMaterial3D.new()
+	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.vertex_color_use_as_albedo = true
+	gm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	gm.no_depth_test = true
+	_grid.material_override = gm
+	_grid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_grid.visible = false
+	_holo.add_child(_grid)
 	_marker = MeshInstance3D.new()
 	_marker.name = "Snap"
 	var dot := SphereMesh.new()
@@ -692,6 +737,13 @@ func key(action: String) -> bool:
 			_play(&"tick")
 			return true
 		TradesBus.KEY_NEXT:
+			if grow_on() and copy_on() and grabbed < 0 and draft.is_empty():
+				if hovered < 0:
+					return false
+				copy_beam(hovered)
+				_play(&"tick")
+				_say("Copied. Click where the copy should grow from.")
+				return true
 			if hovered < 0 or grabbed >= 0:
 				return false
 			var b := beam(hovered)
@@ -757,13 +809,21 @@ func _click_grow(left: bool) -> bool:
 		elif root_on != "":
 			start_growing()
 			_play(&"tick")
+		elif not copying.is_empty():
+			_say("Point at the frame or a beam's end to grow the copy from.")
 		elif hovered >= 0:
-			pick_up(hovered)
+			if edit_on():
+				take_up(hovered)
+				_play(&"tick")
+			else:
+				pick_up(hovered)
 		else:
 			_say("Point at the ship, or the end of a beam, to grow a beam from it.")
 		return true
 	if not draft.is_empty():
 		draft = {}
+	elif not copying.is_empty():
+		copying = {}
 	elif hovered >= 0:
 		delete_beam(hovered)
 		hovered = -1
@@ -790,7 +850,7 @@ static func grow_dir(n: Vector3, yaw: float, pitch: float) -> Vector3:
 ## frame node within reach of it, else [where it reaches, ""].
 func draft_end() -> Array:
 	var e: Vector3 = (draft.root as Vector3) + grow_dir(draft.normal, float(draft.yaw), float(draft.pitch)) * float(draft.length)
-	var sn := snap(e, -1, false)
+	var sn := snap(e, editing(), false)
 	if sn[1] != "" and (sn[0] as Vector3).distance_to(draft.root) >= MIN_M:
 		return sn
 	return [e, ""]
@@ -801,13 +861,57 @@ func start_growing() -> bool:
 	if root_on == "" or not root_point.is_finite():
 		return false
 	draft = {"root": root_point, "normal": root_normal, "yaw": 0.0, "pitch": 0.0, "length": GROW_M}
+	if not copying.is_empty():
+		draft.normal = copying.dir
+		draft.length = copying.length
+		section = str(copying.section)
+		copying = {}
 	return true
+
+
+## Takes a copy of a placed beam to grow from the next root clicked (trades.beam_copy).
+func copy_beam(id: int) -> bool:
+	var b := beam(id)
+	if b.is_empty():
+		return false
+	var d: Vector3 = (b.b as Vector3) - (b.a as Vector3)
+	copying = {"dir": d.normalized(), "length": d.length(), "section": str(b.section)}
+	return true
+
+
+## Takes a placed beam back up as the growing beam (trades.beam_edit): from its root, the way
+## it points, its length and section. False when there's no such beam.
+func take_up(id: int) -> bool:
+	var b := beam(id)
+	if b.is_empty():
+		return false
+	var d: Vector3 = (b.b as Vector3) - (b.a as Vector3)
+	draft = {"root": b.a, "normal": d.normalized(), "yaw": 0.0, "pitch": 0.0, "length": d.length(), "editing": id}
+	section = str(b.section)
+	hovered = -1
+	return true
+
+
+## The beam being edited as the growing beam (trades.beam_edit), or -1.
+func editing() -> int:
+	return int(draft.get("editing", -1))
 
 
 ## Places the growing beam for everyone. Its id, or -1 when it can't be.
 func place_growing() -> int:
 	if draft.is_empty():
 		return -1
+	if editing() >= 0:
+		var was := editing()
+		if beam(was).is_empty():
+			draft = {}
+			return -1
+		var end: Vector3 = draft_end()[0]
+		if end.distance_to(draft.root) < MIN_M:
+			return -1
+		edit_beam(was, {"b": end, "section": section})
+		draft = {}
+		return was
 	var id := add_beam(draft.root, draft_end()[0])
 	if id >= 0:
 		draft = {}
@@ -1326,7 +1430,7 @@ static func beam_xform(b: Dictionary) -> Transform3D:
 func _draw() -> void:
 	var list := beams()
 	var faint := not _anyone_holding()
-	var key := "%s|%s|%s|%s|%s|%d|%d|%s" % [str(list), str(clashes), str(loose_ends), str(plated_ends), str(unattached), hovered, grabbed, faint]
+	var key := "%s|%s|%s|%s|%s|%d|%d|%s|%d" % [str(list), str(clashes), str(loose_ends), str(plated_ends), str(unattached), hovered, grabbed, faint, editing()]
 	if key != _drawn_key:
 		_drawn_key = key
 		for c in _holo.get_children():
@@ -1336,6 +1440,9 @@ func _draw() -> void:
 		var meshes := {}
 		for b: Dictionary in list:
 			var id := int(b.id)
+			# The one being edited is drawn as the growing beam instead.
+			if id == editing():
+				continue
 			var l := ((b.b as Vector3) - (b.a as Vector3)).length()
 			var mk := "%s/%.3f" % [b.section, l]
 			if not meshes.has(mk):
@@ -1387,8 +1494,47 @@ func _draw() -> void:
 		if not b.is_empty():
 			_length_label.position = ((b.a as Vector3) + (b.b as Vector3)) * 0.5 + Vector3.UP * 0.15
 			_length_label.text = "%d mm" % roundi(((b.b as Vector3) - (b.a as Vector3)).length() * 1000.0)
+	_draw_grid(_ghost.visible and not draft.is_empty())
 	_draw_others()
 	_info()
+
+
+## The alignment grid round the growing beam's end (trades.beam_grid), in ship space: a level
+## grid on the ship's own 0.5 m lines at the end's height, a line from the end down (or up) to
+## it, and the ship's three axes through the end.
+func _draw_grid(on: bool) -> void:
+	on = on and grid_on()
+	_grid.visible = on
+	if not on:
+		_grid_key = ""
+		return
+	var e := aim_point
+	var key := str(e.snappedf(0.001))
+	if key == _grid_key:
+		return
+	_grid_key = key
+	var im := _grid.mesh as ImmediateMesh
+	im.clear_surfaces()
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	var y := e.y
+	var c := Vector3(snappedf(e.x, GRID_CELL_M), y, snappedf(e.z, GRID_CELL_M))
+	var n := roundi(GRID_HALF_M / GRID_CELL_M)
+	for k in range(-n, n + 1):
+		var fade := 1.0 - absf(k) / float(n + 1)
+		var col := Color(GRID_COLOUR, GRID_COLOUR.a * fade)
+		for q: Vector3 in [c + Vector3(k * GRID_CELL_M, 0, -GRID_HALF_M), c + Vector3(k * GRID_CELL_M, 0, GRID_HALF_M),
+				c + Vector3(-GRID_HALF_M, 0, k * GRID_CELL_M), c + Vector3(GRID_HALF_M, 0, k * GRID_CELL_M)]:
+			im.surface_set_color(col)
+			im.surface_add_vertex(q)
+	var root: Vector3 = draft.root
+	for q: Vector3 in [root, Vector3(root.x, y, root.z)]:
+		im.surface_set_color(GRID_COLOUR)
+		im.surface_add_vertex(q)
+	for ax: Vector3 in [Vector3.RIGHT, Vector3.UP, Vector3.BACK]:
+		for q: Vector3 in [e - ax * GRID_HALF_M, e + ax * GRID_HALF_M]:
+			im.surface_set_color(AXIS_COLOUR)
+			im.surface_add_vertex(q)
+	im.surface_end()
 
 
 func _beam_mesh(mi: MeshInstance3D, sec: String, l: float) -> void:
@@ -1466,12 +1612,20 @@ func info_lines() -> PackedStringArray:
 ## What the tablet is doing, in a few words with its keys.
 func doing() -> String:
 	if grow_on() and grabbed < 0:
+		var sec := ", Shift+wheel section" if TradesBeamSections.order().size() > 1 else ""
 		if not draft.is_empty():
-			return "Growing: wheel length, Shift+wheel section, Q/E swing, Shift+Q/E tilt, click to place, right click cancel"
+			if editing() >= 0:
+				return "Editing (Growing from its root): wheel length%s, Q/E swing, Shift+Q/E tilt, click to put it back, right click leave it as it was" % sec
+			return "Growing: wheel length%s, Q/E swing, Shift+Q/E tilt, click to place, right click cancel" % sec
+		if not copying.is_empty():
+			var l := "Copy of a %d mm beam: " % roundi(float(copying.length) * 1000.0)
+			if root_on != "":
+				return l + "click to grow it from here, right click drop the copy"
+			return l + "point at the frame or a beam's end to grow it from, right click drop the copy"
 		if root_on == "end":
 			return "Click to grow a beam on from this end"
 		if hovered >= 0:
-			return "Click to move, right click delete, wheel length, Shift+wheel section, Q/E swing, Shift+Q/E tilt, Ctrl+Q/E roll"
+			return "Click to %s, right click delete,%s wheel length%s, Q/E swing, Shift+Q/E tilt, Ctrl+Q/E roll" % ["edit" if edit_on() else "move", " G copy," if copy_on() else "", sec]
 		if root_on != "":
 			return "Click to grow a beam out of the ship here" + (" (strip this plate first)" if root_on == "plate" else "")
 		return "Point at the ship's frame, or a beam's end, to grow a beam" + (", X undo, R version, H test" if versions_on() else ", X undo") \
@@ -1504,7 +1658,7 @@ func _info() -> void:
 	var text := "\n".join(info_lines())
 	if text != _shown:
 		_shown = text
-		HudSlots.set_info(INFO, "Beam design", text, 9)
+		HudSlots.set_info(INFO, "Frame Builder" if TradesDesignTablet.renamed() else "Beam design", text, 9)
 
 
 func _play(sound: StringName) -> void:

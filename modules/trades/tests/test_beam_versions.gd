@@ -24,6 +24,9 @@ func run_tests() -> void:
 	# Drawn end to end, the first way (trades.beam_grow, growing out of the ship, is test_beam_grow's).
 	saved["trades.beam_grow"] = Flags.is_on("trades.beam_grow")
 	Flags.set_flag("trades.beam_grow", false)
+	# Every stocked section (trades.one_section keeps the tablet to 100 x 100 x 5: test_beam_grow).
+	saved["trades.one_section"] = Flags.is_on("trades.one_section")
+	Flags.set_flag("trades.one_section", false)
 	bus.reset_data()
 
 	# The bus keeps versions.
@@ -100,7 +103,7 @@ func run_tests() -> void:
 	check(info.contains("[A] 3") and info.contains("B 1") and info.contains("C -"), "the panel lists them: %s" % info)
 	await frames(1)
 	var tab := rig.tool_node(&"tablet") as TradesDesignTablet
-	check(tab.version == "A" and tab.readout_text().begins_with("DESIGN A"), "the tablet shows the version: %s" % tab.readout_text())
+	check(tab.version == "A" and tab.readout_text().begins_with("BUILD A" if TradesDesignTablet.renamed() else "DESIGN A"), "the tablet shows the version: %s" % tab.readout_text())
 
 	# A clash fails it; nothing to test.
 	d.show_version("C")
