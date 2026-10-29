@@ -250,7 +250,7 @@ func set_beam_design(ship_id: String, rows: Variant) -> void:
 				var d := r as Dictionary
 				kept.append({"id": int(d.get("id", 0)), "a": (d.a as Array).map(func(x: Variant) -> float: return float(x)),
 						"b": (d.b as Array).map(func(x: Variant) -> float: return float(x)),
-						"section": str(d.get("section", "box_100")), "turn": float(d.get("turn", 0.0))})
+						"section": str(d.get("section", "box_100x100x5")), "turn": float(d.get("turn", 0.0))})
 	if kept.is_empty():
 		_beam_designs.erase(ship_id)
 	else:

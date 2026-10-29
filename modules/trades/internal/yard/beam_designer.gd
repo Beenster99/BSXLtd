@@ -159,7 +159,7 @@ func beams() -> Array:
 	if bus == null:
 		return out
 	for r: Dictionary in bus.beam_design(ship_id()):
-		var b := {"id": int(r.id), "a": _v(r.a), "b": _v(r.b), "section": str(r.section), "turn": float(r.turn)}
+		var b := {"id": int(r.id), "a": _v(r.a), "b": _v(r.b), "section": TradesBeamSections.normal(str(r.section)), "turn": float(r.turn)}
 		if not _moving.is_empty() and int(_moving.id) == b.id:
 			b = _moving.duplicate()
 		out.append(b)
@@ -561,7 +561,7 @@ func run_checks() -> void:
 		# The beam's body (its ends left out, where it meets what holds it) against the world.
 		if l > 0.3:
 			var box := BoxShape3D.new()
-			var s: Dictionary = TradesBeamSections.SECTIONS.get(sec, {})
+			var s: Dictionary = TradesBeamSections.info(sec)
 			box.size = Vector3(float(s.get("w", 0.1)) * 0.8, float(s.get("h", 0.1)) * 0.8, l - 0.2)
 			var q := PhysicsShapeQueryParameters3D.new()
 			q.shape = box
