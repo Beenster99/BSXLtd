@@ -47,7 +47,12 @@ func run_tests() -> void:
 	var seen := [0, 0]
 	var hidden := [0, 0]
 	var hidden_ids: Array[int] = []
-	for i in range(0, station.points.size(), 5):
+	# Every joint in turn until six of each are found: sampling every fifth missed them all
+	# once Ship and Bay added inner bolts (a hidden one counts only where the hand reaches it,
+	# for the snap's check below).
+	for i in station.points.size():
+		if seen[1] >= 6 and hidden[1] >= 6:
+			break
 		var depth := await _look_at(rig, station, i)
 		# Only where the look lands on it (a joint high overhead is past the neck's reach).
 		if is_nan(depth) or rig.aim_distance(station.points_world[i]) > 0.02:
@@ -55,7 +60,7 @@ func run_tests() -> void:
 		if depth < 0.03 and seen[1] < 6:
 			seen[1] += 1
 			seen[0] += 1 if station.aimed == i else 0
-		elif depth > 0.3 and hidden[1] < 6:
+		elif depth > 0.3 and hidden[1] < 6 and rig.worker.right_hand.can_reach(station.points_world[i]):
 			hidden[1] += 1
 			hidden[0] += 1 if station.aimed != i else 0
 			hidden_ids.append(i)
