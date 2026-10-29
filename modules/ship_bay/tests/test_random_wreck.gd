@@ -31,6 +31,27 @@ func run_tests() -> void:
 	var panel := DebugPanel.new(bus)
 	add_child(panel)
 	check(bus.ship != null and bus.ship.ship_id == "vs_kestrel", "the Kestrel is in the bay")
+	# Looking at a part of the Kestrel says what it is too (Tools: beams drawn off its bare frame).
+	var kim: VsShipImport = bay.get("model").get("importer")
+	var kslot: MountSlot = null
+	var kshape: CollisionShape3D = null
+	for ks in bus.ship.slots:
+		for kp: String in ks.parts:
+			var kpart: PartData = kim.parts_by_path.get(kp)
+			if kpart and kim.kit.model._colliders.has(kpart.id) and kpart.kind == PartData.Kind.FRAME:
+				kslot = ks
+				kshape = kim.kit.model._colliders[kpart.id]
+				break
+		if kshape:
+			break
+	var kinfo := {}
+	if kshape:
+		var kbody := kshape.get_parent() as CollisionObject3D
+		for o: int in kbody.get_shape_owners():
+			if kbody.shape_owner_get_owner(o) == kshape:
+				kinfo = bus.inspect_at(kbody, kbody.shape_owner_get_shape_index(o, 0), kshape.global_position)
+	check(kslot != null and str(kinfo.get("slot_id", "")) == kslot.slot_id and str(kinfo.get("kind", "")) == "frame"
+			and str(kinfo.get("slot_state", "")) == "fitted", "looked at, a Kestrel frame part says what it is: %s" % [kinfo])
 	# Pinned rolls: a courier on landing legs, then tugs with low sterns and wings (they once
 	# sat up to 1.2 m over the saddles on loose part boxes).
 	bus.wreck_seed = 9

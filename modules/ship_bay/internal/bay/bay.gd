@@ -560,14 +560,14 @@ func _part_shape(key: String) -> Array:
 ## A slot's part as the ship built it: {mass (kg), material (the heaviest piece's)}, {} for
 ## a ship that doesn't say (only one built from its file does).
 func _part_info(slot_id: String) -> Dictionary:
-	if not model is FileShip or _bus == null or _bus.ship == null:
+	if _importer() == null or _bus == null or _bus.ship == null:
 		return {}
 	var paths := {}
 	for s in _bus.ship.slots:
 		if s.slot_id == slot_id:
 			for p: String in s.parts:
 				paths[p] = true
-	var by_path: Dictionary = (model as FileShip).importer.parts_by_path
+	var by_path: Dictionary = _importer().parts_by_path
 	var kg := 0.0
 	var material := ""
 	var top := -1.0
@@ -589,10 +589,17 @@ const FAULT_WORDS := {PartData.Fault.DEAD_LAMP: "dead lamp", PartData.Fault.BREA
 const JOINT_WORDS := ["weld", "rivet", "bolt", "connector", "spot"]
 
 
+## The Void Salvage build behind the ship in the bay: a wreck's (FileShip) or the Kestrel's,
+## both built from a ship file; null for a ship that isn't.
+func _importer() -> VsShipImport:
+	var im: Variant = model.get("importer") if model != null and is_instance_valid(model) else null
+	return im if im is VsShipImport else null
+
+
 ## ShipBayBus.inspect_at for the ship in this bay: the part a hit on the ship's body landed
 ## on, everything the file and the bay know of it; {} when the hit is on something else.
 func _inspect(collider: Object, shape_idx: int, _point: Vector3) -> Dictionary:
-	if not model is FileShip or _bus == null or _bus.ship == null or not collider is CollisionObject3D:
+	if _importer() == null or _bus == null or _bus.ship == null or not collider is CollisionObject3D:
 		return {}
 	var body := collider as CollisionObject3D
 	if not is_instance_valid(ship_root) or not ship_root.is_ancestor_of(body):
@@ -601,7 +608,7 @@ func _inspect(collider: Object, shape_idx: int, _point: Vector3) -> Dictionary:
 	if owner_id < 0:
 		return {}
 	var shape_node: Object = body.shape_owner_get_owner(owner_id)
-	var im: VsShipImport = (model as FileShip).importer
+	var im := _importer()
 	if _shape_parts.is_empty():
 		var pm := im.kit.model
 		for id: int in pm._colliders:
@@ -767,9 +774,9 @@ func _show_joint(joint_id: String) -> void:
 ## gone while the joint is undone, back when it is made (0.3.26: undone bolts and cut rivets
 ## stayed in place).
 func _show_file_head(joint_id: String, tight: bool) -> void:
-	if not model is FileShip or not _joint_paths.has(joint_id):
+	var im := _importer()
+	if im == null or not _joint_paths.has(joint_id):
 		return
-	var im: VsShipImport = (model as FileShip).importer
 	var c := im.joint_at(str(_joint_paths[joint_id]))
 	if c == null or im.kit == null or im.kit.model == null:
 		return
