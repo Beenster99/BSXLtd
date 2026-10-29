@@ -554,7 +554,7 @@ func status_line() -> String:
 		return "Ship: %d joints, %d tight" % [ship, _tight_count()] if ship > 0 else ""
 	var f := points[aimed]
 	var line := "%s  %s %s  %s" % [f.joint_id.to_upper(), f.spec.to_upper(), f.kind.to_upper(), _state_word(f)]
-	# The powered wrench's setting is the player's to find (Tab, the wrist's Specs channel).
+	# The powered wrench's setting is the player's to find (the wrist's Specs channel).
 	if f.kind == "bolt" and not powered():
 		var nm := torque_range(f.spec)
 		line += "  [%d-%d N m]" % [roundi(nm.x), roundi(nm.y)]
@@ -1506,7 +1506,7 @@ func _grip_point(tool: StringName, at: Vector3, n: Vector3) -> Vector3:
 	return t.global_transform * t.grip + n * 0.015 if t else at
 
 
-# --- Inspect (hold Tab) ---------------------------------------------------------------------
+# --- What you look at, on the right-hand panel -------------------------------------------
 
 const SLOT_STATES := {
 	ShipBayBus.SlotState.FITTED: "FITTED", ShipBayBus.SlotState.LOOSENED: "LOOSENED",

@@ -281,6 +281,8 @@ func _goods_off(rig: TradesBay, beam: TradesTractor, api: Object, deck: Node3D) 
 	check(first != null and (two.get("lifted") as Array) == [["goods_2", 1]], "one comes off the stack (%s)" % [two.get("lifted")])
 	rig.ship_station().release()
 	if first:
+		# Out of the way and held there, so the beam finds the stack again, not this one.
+		first.freeze = true
 		first.global_position += Vector3(0, 0, -6)
 	await frames(2)
 	rig.ship_station().press(&"tractor")

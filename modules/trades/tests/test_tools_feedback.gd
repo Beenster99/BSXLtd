@@ -15,7 +15,7 @@ const SLOT := "eng_port"
 func run_tests() -> void:
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var saved := {}
-	for flag: String in ["trades.tractor", "trades.sphere_hands", "trades.tool_panel", "trades.tool_display", "trades.inspect", "trades.unweld"]:
+	for flag: String in ["trades.tractor", "trades.sphere_hands", "trades.tool_panel", "trades.tool_display", "trades.part_info", "trades.unweld"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
 	# Held still on a weld (tracing is test_welder_helmet's).
@@ -55,16 +55,12 @@ func run_tests() -> void:
 	_stand_off(rig, station.ship_xform * f.position, home.basis.z)
 	_run(station, 1)
 	check(station.aimed >= 0, "aiming at one of the engine's joints")
-	check(rig.inspect_text() == "", "the details stay hidden until Tab is held")
-	Input.action_press(TradesBus.KEY_INSPECT)
-	await frames(1)
-	var info := rig.inspect_text()
-	Input.action_release(TradesBus.KEY_INSPECT)
+	# Always on the right-hand panel, no key to hold (beenster, 29 Oct).
+	var info := "\n".join(rig.part_info({}))
 	check(info.contains(SLOT) and info.contains("JOINTS") and info.contains("MASS") and info.contains("FITTED"),
-			"holding Tab shows the part's slot, state, mass and joints")
+			"the right-hand panel shows the part's slot, state, mass and joints, no key held")
 	check(info.contains("JOINT ") and info.contains(f.spec), "and the joint you're looking at")
-	await frames(1)
-	check(rig.inspect_text() == "", "let go of Tab: it hides again")
+	check(not Keys.has("trades.inspect"), "there's no Tab key for part details any more")
 
 	# Hold the rotate key in the beam: the mouse turns the part instead of the view.
 	for g in ship_bus.get_fasteners(SLOT):
