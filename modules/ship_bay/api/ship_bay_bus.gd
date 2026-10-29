@@ -2134,6 +2134,8 @@ func debug_ship(action: String, design := "") -> void:
 	var payload := {"action": action, "design": design}
 	if action == "random_wreck":
 		payload["wreck"] = random_wreck(wreck_seed, design if WRECK_SIZES.has(design) else "S")
+	elif action == "named_wreck":
+		payload["wreck"] = named_wreck(design, wreck_seed)
 	if _net:
 		_net.call("request", "ship_bay.debug_ship", payload)
 	elif _check_debug_ship(0, payload) is Dictionary:
@@ -2169,6 +2171,33 @@ static func random_wreck(seed_value := -1, size := "S") -> Dictionary:
 	else:
 		name = "%s wreck" % str(VsWreckLibrary.info(design).get("name", design))
 	return {"design": design, "seed": rng.randi_range(1, 999999), "events": events, "name": name, "size": size}
+
+
+## A named wreck for the bay (Settings > Debug > Ship's wreck list; beenster, 0.3.31: "how do
+## i spawn the patience"): Void Salvage design `design` ("vsw:patience"), any one the library
+## packs, training hulks included, with one to three wreck events as random_wreck rolls them.
+## {} for a design the library doesn't have.
+static func named_wreck(design: String, seed_value := -1) -> Dictionary:
+	if not VsWreckLibrary.is_vs_wreck(design) or VsWreckLibrary.info(design).is_empty():
+		return {}
+	var w := random_wreck(seed_value, "S")
+	w["design"] = design
+	w["name"] = "%s wreck" % str(VsWreckLibrary.info(design).get("name", design))
+	var size := VsWreckLibrary.size_of(design)
+	w["size"] = size if WRECK_SIZES.has(size) else "L"
+	return w
+
+
+## Every wreck design the library packs, for the debug list: [[id, label]] by name.
+static func wreck_choices() -> Array:
+	var out: Array = []
+	for d: String in VsWreckLibrary.index():
+		var id := "vsw:" + d
+		var info := VsWreckLibrary.info(id)
+		var size := VsWreckLibrary.size_of(id)
+		out.append([id, "%s (%s, %d m)" % [str(info.get("name", d)), size if size != "" else "XL", int(float(info.get("length_m", 0.0)))]])
+	out.sort_custom(func(a: Array, b: Array) -> bool: return str(a[1]) < str(b[1]))
+	return out
 
 
 # --- Component rigs (Component Upgrades) -----------------------------------------------
@@ -2343,7 +2372,7 @@ func _check_debug_ship(_sender: int, payload: Dictionary) -> Variant:
 	var action := str(payload.get("action", ""))
 	if action in ["spawn", "remove"]:
 		return payload if YARD_SHIP_DESIGNS.has(str(payload.get("design", ""))) else "no such ship to stand on the apron"
-	if action == "random_wreck":
+	if action in ["random_wreck", "named_wreck"]:
 		var w: Variant = payload.get("wreck", {})
 		var d := str((w as Dictionary).get("design", "")) if w is Dictionary else ""
 		return payload if ShipGenerator.is_generated(d) or (VsWreckLibrary.is_vs_wreck(d) and not VsWreckLibrary.info(d).is_empty()) else "no wreck rolled"
@@ -2376,7 +2405,7 @@ func _apply_debug_ship(payload: Dictionary) -> void:
 				bay_wreck_changed.emit()
 			if ship == null:
 				load_ship("vs_kestrel")
-		"random_wreck":
+		"random_wreck", "named_wreck":
 			bay_cleared = true
 			unload_ship()
 			bay_wreck = (payload.get("wreck", {}) as Dictionary).duplicate(true)
