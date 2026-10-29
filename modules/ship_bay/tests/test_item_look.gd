@@ -12,11 +12,11 @@ func run_tests() -> void:
 	var stand_ins := 0
 	for id: String in Layout.items():
 		var size := ItemLook.size_of(id)
-		if size.x <= 0.0 or size.y <= 0.0 or size.z <= 0.0 or maxf(size.x, maxf(size.y, size.z)) > (12.5 if StockPlates.is_plate(id) else 6.0):
+		if size.x <= 0.0 or size.y <= 0.0 or size.z <= 0.0 or maxf(size.x, maxf(size.y, size.z)) > (12.5 if StockPlates.is_plate(id) or StockBeams.is_beam(id) else 6.0):
 			odd.append("%s %s" % [id, size])
 		if ItemLook._build(id).is_empty():
 			stand_ins += 1
-	check(odd.is_empty(), "every item has a size between nothing and 6 m (a stock plate 12.5 m): %s" % [odd])
+	check(odd.is_empty(), "every item has a size between nothing and 6 m (a stock plate or bar 12.5 m): %s" % [odd])
 	check(stand_ins < Layout.items().size() / 2, "most items are built as themselves (%d stand-ins of %d)" % [stand_ins, Layout.items().size()])
 	var boxed: Array = []
 	for id: String in Layout.items():

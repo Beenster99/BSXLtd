@@ -174,8 +174,8 @@ func place_for(item: String, mass := -1.0) -> String:
 	var fallback := ""
 	for loc: String in layout["locations"]:
 		var l: Dictionary = layout["locations"][loc]
-		if l["home"] != "" or stock.has(loc) or l["store"] == "plate":
-			continue   # (the plate racks take only the plates homed on them)
+		if l["home"] != "" or stock.has(loc) or l["store"] in ["plate", "beam"]:
+			continue   # (the plate and beam racks take only the stock homed on them)
 		var room: Vector3 = l["size"]
 		var fit: bool = size == Vector3.ZERO or l["kind"] == "bin" or Layout.fits(size, room)
 		if l["kind"] == kind and fit:
