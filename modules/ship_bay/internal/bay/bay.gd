@@ -44,6 +44,9 @@ var colliders: Dictionary = {}
 var markers: Dictionary = {}
 ## joint_id -> its joint's path in the ship's file (a ship built from one).
 var _joint_paths: Dictionary = {}
+## Joints whose Void Salvage weld bead the bay never draws: inside walls and floors the
+## loader bolts instead (LayoutLoader._bolted_inside).
+var _no_file_head: Dictionary = {}
 ## CollisionShape3D -> its part's id in a file ship's model (built on the first inspect).
 var _shape_parts: Dictionary = {}
 var _bus: ShipBayBus
@@ -226,6 +229,7 @@ func _show_ship(def: ShipDefinition) -> void:
 	pieces = {}
 	markers = {}
 	_joint_paths = {}
+	_no_file_head = {}
 	seat = Vector3.ZERO
 	if cradle and cradle.get("load_node") != null and not is_instance_valid(cradle.get("load_node")):
 		cradle.set("load_node", null)
@@ -279,8 +283,10 @@ func _show_ship(def: ShipDefinition) -> void:
 			ship_root.add_child(m)
 			markers[f.joint_id] = m
 			m.set_meta("kind", f.kind)
-			if f.path != "":
+			if f.path != "" and not f.has_meta("copy"):
 				_joint_paths[f.joint_id] = f.path
+			if f.has_meta("inside"):
+				_no_file_head[f.joint_id] = true
 		_apply_slot(s.slot_id)
 	_refresh_markers()
 	if def.ship_id == ShipBayBus.WRECK_ID:
@@ -784,7 +790,7 @@ func _show_file_head(joint_id: String, tight: bool) -> void:
 	if c == null or im.kit == null or im.kit.model == null:
 		return
 	var pm := im.kit.model
-	if not tight:
+	if not tight or _no_file_head.has(joint_id):
 		var view := pm.forget_view(c)
 		if view:
 			view.clear()
