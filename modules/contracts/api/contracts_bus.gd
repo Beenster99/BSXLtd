@@ -699,37 +699,70 @@ func _debug_section() -> Control:
 	intro.text = "Call in a contract offer from any client at any level, whatever BSX's standing with them. It lands on the board as an offer (host)."
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(intro)
-	var picked := {"client": String(ContractClients.TABLE.keys()[0]), "tier": "1"}
 	var names := PackedStringArray()
 	var by_name := {}
 	for id: String in ContractClients.TABLE:
 		var name := ContractClients.display_name(id)
 		names.append(name)
 		by_name[name] = id
-	var client_row := HBoxContainer.new()
-	client_row.add_child(TerminalKit.label("Client", "mono_medium", 13, TerminalKit.DIM))
-	var client_chips := TerminalKit.chips(names, ContractClients.display_name(String(picked["client"])),
-			func(name: String) -> void: picked["client"] = String(by_name.get(name, picked["client"])), false, false)
-	client_chips.name = "ClientChips"
-	client_row.add_child(client_chips)
-	col.add_child(client_row)
-	var tier_row := HBoxContainer.new()
-	tier_row.add_child(TerminalKit.label("Level", "mono_medium", 13, TerminalKit.DIM))
 	var tier_names := PackedStringArray()
 	for t: String in TIERS:
 		tier_names.append("Tier %s (%s)" % [t, ContractClients.level_name(int(t))])
-	var tier_chips := TerminalKit.chips(tier_names, tier_names[0],
-			func(name: String) -> void: picked["tier"] = name.substr(5, 1), false, false)
-	tier_chips.name = "TierChips"
-	tier_row.add_child(tier_chips)
+	# The chip rows are rebuilt on every pick so the chosen one lights up (0.3.29 feedback:
+	# picks looked like they did nothing).
+	var client_row := HBoxContainer.new()
+	client_row.add_child(TerminalKit.label("Client", "mono_medium", 13, TerminalKit.DIM))
+	col.add_child(client_row)
+	var tier_row := HBoxContainer.new()
+	tier_row.add_child(TerminalKit.label("Level", "mono_medium", 13, TerminalKit.DIM))
 	col.add_child(tier_row)
+	var picked := {"client": String(ContractClients.TABLE.keys()[0]), "tier": "1", "names": names, "by_name": by_name,
+			"tier_names": tier_names, "client_row": client_row, "tier_row": tier_row}
+	_debug_refresh(picked)
 	var button := Button.new()
 	button.name = "CallIn"
 	button.text = "Call in an offer"
 	button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	button.pressed.connect(func() -> void: request_call_in(String(picked["client"]), int(String(picked["tier"]))))
 	col.add_child(button)
+	var result := Label.new()
+	result.name = "Result"
+	result.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(result)
+	button.pressed.connect(func() -> void:
+		var client_id := String(picked["client"])
+		var tier := int(String(picked["tier"]))
+		request_call_in(client_id, tier)
+		result.text = "Called in a tier %d offer from %s: look on the board's %s tab." % [tier, ContractClients.display_name(client_id),
+				"Void Salvage" if String(ContractClients.TABLE[client_id].get("game", "")) == "void_salvage" else "Local work"])
 	return col
+
+
+## A Debug chip was pressed: name is the chip, which "client" or "tier". The rows are rebuilt
+## so the pick lights up.
+func _debug_pick(name: String, state: Dictionary, which: String) -> void:
+	if which == "client":
+		state["client"] = String((state["by_name"] as Dictionary).get(name, state["client"]))
+	else:
+		state["tier"] = name.substr(5, 1)
+	_debug_refresh(state)
+
+
+func _debug_refresh(state: Dictionary) -> void:
+	_debug_chips(state["client_row"], "ClientChips", state["names"], ContractClients.display_name(String(state["client"])),
+			_debug_pick.bind(state, "client"))
+	_debug_chips(state["tier_row"], "TierChips", state["tier_names"],
+			"Tier %s (%s)" % [state["tier"], ContractClients.level_name(int(String(state["tier"])))], _debug_pick.bind(state, "tier"))
+
+
+## Fills a Debug row with a chip per name, the current one lit.
+func _debug_chips(row: HBoxContainer, chips_name: String, names: PackedStringArray, current: String, on_pick: Callable) -> void:
+	var old := row.get_node_or_null(chips_name)
+	if old:
+		row.remove_child(old)
+		old.queue_free()
+	var chips := TerminalKit.chips(names, current, on_pick, false, false)
+	chips.name = chips_name
+	row.add_child(chips)
 
 
 func _post_generated(client_id: String, at_cycle: int, slot: int, tier := -1) -> String:
