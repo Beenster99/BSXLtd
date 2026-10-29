@@ -4,7 +4,8 @@ extends RefCounted
 ## beenster 0.3.31: "Once I am happy with my new frame, what do i do to commit it and get the
 ## parts ordered as a package"). Static: works out which stock bars the design's beams are cut
 ## from (Shared Components' StockBeams, packed the way the plasma bed lays them out) and the one
-## basket that buys them from Business's market. The Frame Builder (TradesBeamDesigner) shows it,
+## basket that buys them from Business's market. Business is optional (Tools runs without it,
+## as the Quality tests do), so its bus is reached by its methods, not its classes. The Frame Builder (TradesBeamDesigner) shows it,
 ## places the order and keeps what was committed with the ship's design (TradesBus).
 ##
 ## A cut plan: {bars [{bar (the stock bar's id), lengths [{mm, a, b}] (the bed's cut list for it)}],
@@ -84,7 +85,7 @@ static func still_to_buy(counts: Dictionary, ordered: Dictionary) -> Dictionary:
 ## {listing_id, qty} lines): from one supplier who has it all when one does (the cheapest of
 ## them), else the cheapest listing for each bar. {ok, reason, basket, supplier ("" when it
 ## takes more than one), lines [{bar, name, qty, cost}], cost}.
-static func basket(business: BusinessBus, need: Dictionary) -> Dictionary:
+static func basket(business: Object, need: Dictionary) -> Dictionary:
 	var out := {"ok": false, "reason": "", "basket": [], "supplier": "", "lines": [], "cost": 0}
 	if need.is_empty():
 		out.reason = "nothing new to order"
@@ -94,16 +95,18 @@ static func basket(business: BusinessBus, need: Dictionary) -> Dictionary:
 		return out
 	var by_supplier := {}
 	var cheapest := {}
-	for l: MarketListing in business.get_listings():
-		if not need.has(l.part) or l.condition != PartCondition.NEW or l.available < int(need[l.part]):
+	for l: Object in business.call("get_listings"):
+		var part := str(l.get("part"))
+		if not need.has(part) or str(l.get("condition")) != "new" or int(l.get("available")) < int(need[part]):
 			continue
-		var cost := business.listing_cost(l, int(need[l.part]))
-		var s: Dictionary = by_supplier.get(l.supplier_id, {})
-		if not s.has(l.part) or cost < int((s[l.part] as Array)[1]):
-			s[l.part] = [l, cost]
-		by_supplier[l.supplier_id] = s
-		if not cheapest.has(l.part) or cost < int((cheapest[l.part] as Array)[1]):
-			cheapest[l.part] = [l, cost]
+		var cost := int(business.call("listing_cost", l, int(need[part])))
+		var sid := str(l.get("supplier_id"))
+		var s: Dictionary = by_supplier.get(sid, {})
+		if not s.has(part) or cost < int((s[part] as Array)[1]):
+			s[part] = [l, cost]
+		by_supplier[sid] = s
+		if not cheapest.has(part) or cost < int((cheapest[part] as Array)[1]):
+			cheapest[part] = [l, cost]
 	var pick := {}
 	var best := -1
 	for sid: String in by_supplier:
@@ -128,16 +131,16 @@ static func basket(business: BusinessBus, need: Dictionary) -> Dictionary:
 		pick = cheapest
 	for bar: String in need:
 		var e: Array = pick[bar]
-		var l := e[0] as MarketListing
-		out.basket.append({"listing_id": l.id, "qty": int(need[bar])})
+		var l := e[0] as Object
+		out.basket.append({"listing_id": str(l.get("id")), "qty": int(need[bar])})
 		out.lines.append({"bar": bar, "name": str(StockBeams.item(bar).get("name", bar)), "qty": int(need[bar]), "cost": int(e[1])})
-	var q := business.quote_market(out.basket)
-	out.ok = q.ok
-	out.reason = q.reason
-	out.cost = q.cost if q.ok else 0
-	if q.ok and q.cost > business.get_cash():
+	var q: Object = business.call("quote_market", out.basket)
+	out.ok = bool(q.get("ok"))
+	out.reason = str(q.get("reason"))
+	out.cost = int(q.get("cost")) if out.ok else 0
+	if out.ok and int(out.cost) > int(business.call("get_cash")):
 		out.ok = false
-		out.reason = "not enough cash: it costs %d CR" % q.cost
+		out.reason = "not enough cash: it costs %d CR" % out.cost
 	return out
 
 

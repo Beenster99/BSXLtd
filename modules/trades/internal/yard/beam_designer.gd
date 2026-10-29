@@ -831,7 +831,7 @@ func offer_order() -> Dictionary:
 	var plan := TradesFrameOrder.cut_plan(rows)
 	var done := committed()
 	var need := TradesFrameOrder.still_to_buy(plan.counts, done.get("ordered", {}))
-	var b := TradesFrameOrder.basket(Modules.bus("business") as BusinessBus, need) if not need.is_empty() else {}
+	var b := TradesFrameOrder.basket(Modules.bus("business"), need) if not need.is_empty() else {}
 	order_offer = {"key": design_key(), "plan": plan, "need": need, "basket": b}
 	_play(&"tick")
 	_say(order_line())
@@ -856,11 +856,14 @@ func place_frame_order() -> String:
 		# Booked against the job in hand, when there is one (Business: its contract_id).
 		var contracts := Modules.bus("contracts") as ContractsBus
 		var job := contracts.get_active_job() if contracts else null
-		var r := (Modules.bus("business") as BusinessBus).place_market_order(b.basket, job.job_id if job else "")
-		if not r.is_ok():
+		var shop: Object = Modules.bus("business")
+		if shop == null:
+			return "no shop"
+		var r: Object = shop.call("place_market_order", b.basket, job.job_id if job else "")
+		if not bool(r.call("is_ok")):
 			_play(&"clunk")
-			_say("Can't order it: %s." % r.message)
-			return r.message
+			_say("Can't order it: %s." % r.get("message"))
+			return str(r.get("message"))
 		for bar: String in need:
 			ordered[bar] = int(ordered.get(bar, 0)) + int(need[bar])
 		cost += int(b.cost)
@@ -936,9 +939,10 @@ func order_line() -> String:
 	if not bool(b.get("ok", false)):
 		return "%s. Can't order: %s" % [head, b.get("reason", "")]
 	var from := ""
-	var bb := Modules.bus("business") as BusinessBus
-	if str(b.supplier) != "" and bb and bb.supplier(str(b.supplier)):
-		from = " from %s" % bb.supplier(str(b.supplier)).display_name
+	var bb: Object = Modules.bus("business")
+	var who: Object = bb.call("supplier", str(b.supplier)) if bb and str(b.supplier) != "" else null
+	if who:
+		from = " from %s" % who.get("display_name")
 	var buying := "" if need.hash() == (plan.counts as Dictionary).hash() else " (buying %s)" % _bars_text(need)
 	return "%s%s%s, %d CR. O again to commit and order, right click cancel" % [head, buying, from, int(b.cost)]
 
