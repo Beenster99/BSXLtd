@@ -1693,7 +1693,9 @@ func _show_cargo() -> void:
 			if _deck_parts.has(cid):
 				continue
 			var f := beams.flight("crate:" + cid)
-			if f.is_empty() or f["to"] != t.deck:
+			# A flight's target can be a point (Vector3) or a node.
+			var to: Variant = null if f.is_empty() else f["to"]
+			if not (to is Object and to == t.deck):
 				load.append(cid)
 		if load.is_empty():
 			if not t.cargo.is_empty():
