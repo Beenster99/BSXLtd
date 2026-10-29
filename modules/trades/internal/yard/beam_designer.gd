@@ -68,6 +68,8 @@ const HOLD_M := 0.08
 const END_CLEAR_M := 0.2
 ## How near a fitted plate an end on the frame may be before the plate is in the way (m).
 const PLATE_M := 0.25
+## trades.gentle_plates: only the plates touching the end (m).
+const PLATE_GENTLE_M := 0.15
 const MEET_M := 0.06
 ## How often the clash and support checks run while nothing changes (s).
 const CHECK_S := 1.0
@@ -124,6 +126,10 @@ var _grab_before: Dictionary = {}
 ## ship's plating, which TEST asks to strip), "ship" (another part of her), "end" (a beam's
 ## end) or "" (nothing the tablet can click), at `root_point` facing `root_normal`.
 var draft: Dictionary = {}
+## trades.frame_order: the order O offers before a second O places it ({} while none):
+## {key (design_key when made), plan (TradesFrameOrder.cut_plan), need {bar: n}, basket
+## (TradesFrameOrder.basket)}.
+var order_offer: Dictionary = {}
 ## trades.beam_copy: the beam G copied, to grow from the next root clicked ({dir (ship space),
 ## length (m), section}), {} while none.
 var copying: Dictionary = {}
@@ -168,6 +174,14 @@ static func edit_on() -> bool:
 ## frame or a beam's end grows the copy from there, to adjust and click down as any other.
 static func copy_on() -> bool:
 	return Flags.is_on("trades.beam_copy")
+
+
+## trades.frame_order (beenster, 0.3.31: "Once I am happy with my new frame, what do i do to
+## commit it and get the parts ordered as a package"): O shows what the frame's beams are cut
+## from and what that costs; O again commits the frame and buys the bars in one order. A frame
+## committed again orders only bars it didn't have before.
+static func order_on() -> bool:
+	return Flags.is_on("trades.frame_order")
 
 
 ## trades.beam_grid (beenster, 0.3.30: "a sort of thin holo grid to help with 3D alignment"):
@@ -772,6 +786,14 @@ func key(action: String) -> bool:
 				return false
 			test()
 			return true
+		TradesBus.KEY_ORDER:
+			if not order_on() or grabbed >= 0 or start.is_finite() or not draft.is_empty():
+				return false
+			if order_offer.is_empty() or str(order_offer.key) != design_key():
+				offer_order()
+			else:
+				place_frame_order()
+			return true
 		TradesBus.KEY_RESET:
 			if not clear_on():
 				return false
@@ -795,6 +817,135 @@ func key(action: String) -> bool:
 
 func _held(k: Key) -> bool:
 	return (fake_keys as Array).has(k) if fake_keys is Array else Input.is_key_pressed(k)
+
+
+# --- Committing the frame and ordering its parts (trades.frame_order) -----------------------
+
+## Works out what the frame needs and offers the order (the panel shows it). Returns the offer.
+func offer_order() -> Dictionary:
+	order_offer = {}
+	var rows := beams()
+	if rows.is_empty():
+		_say("Nothing to commit: draw the frame's beams first.")
+		return {}
+	var plan := TradesFrameOrder.cut_plan(rows)
+	var done := committed()
+	var need := TradesFrameOrder.still_to_buy(plan.counts, done.get("ordered", {}))
+	var b := TradesFrameOrder.basket(Modules.bus("business") as BusinessBus, need) if not need.is_empty() else {}
+	order_offer = {"key": design_key(), "plan": plan, "need": need, "basket": b}
+	_play(&"tick")
+	_say(order_line())
+	return order_offer
+
+
+## Commits the frame and places the offered order. "" when done, else why not.
+func place_frame_order() -> String:
+	if order_offer.is_empty() or str(order_offer.key) != design_key():
+		offer_order()
+		return "changed"
+	var need: Dictionary = order_offer.need
+	var b: Dictionary = order_offer.basket
+	var done := committed()
+	var ordered: Dictionary = (done.get("ordered", {}) as Dictionary).duplicate()
+	var cost := int(done.get("cost", 0))
+	if not need.is_empty():
+		if not bool(b.get("ok", false)):
+			_play(&"clunk")
+			_say("Can't order it: %s." % b.get("reason", "the shop said no"))
+			return str(b.get("reason", "refused"))
+		var r := (Modules.bus("business") as BusinessBus).place_market_order(b.basket)
+		if not r.is_ok():
+			_play(&"clunk")
+			_say("Can't order it: %s." % r.message)
+			return r.message
+		for bar: String in need:
+			ordered[bar] = int(ordered.get(bar, 0)) + int(need[bar])
+		cost += int(b.cost)
+	var rows: Array = []
+	for row: Dictionary in beams():
+		rows.append(_row(row))
+	var cuts: Array = []
+	for bar: Dictionary in (order_offer.plan as Dictionary).bars:
+		cuts.append({"bar": bar.bar, "mm": (bar.lengths as Array).map(func(e: Dictionary) -> int: return int(e.mm))})
+	# Bars already cut for an earlier commit stay cut when the plan hasn't changed.
+	var cut_already := done_cuts(done, cuts)
+	_ask({"ship": ship_id(), "commit": {"version": version(), "rows": rows, "counts": (order_offer.plan as Dictionary).counts,
+			"ordered": ordered, "cost": cost, "by": str(_me()), "cuts": cuts, "done": cut_already}})
+	var bars := 0
+	for bar: String in need:
+		bars += int(need[bar])
+	order_offer = {}
+	_play(&"click")
+	if bars > 0:
+		_say("Frame committed. %d bar%s ordered for %d CR: they come in with the deliveries." % [bars, "" if bars == 1 else "s", int(b.cost)])
+	else:
+		_say("Frame committed. Its bars are on order already.")
+	return ""
+
+
+## Which of a new commit's bars count as cut already: one cut for the commit before with the
+## same bar and lengths.
+static func done_cuts(before: Dictionary, cuts: Array) -> Array:
+	var was: Array = before.get("cuts", [])
+	var free: Array = (before.get("done", []) as Array).duplicate()
+	var out: Array = []
+	for i in cuts.size():
+		for j: int in free:
+			if j < was.size() and str(was[j].bar) == str(cuts[i].bar) and str(was[j].mm) == str(cuts[i].mm):
+				out.append(i)
+				free.erase(j)
+				break
+	return out
+
+
+## The frame committed on this ship ({} before one).
+func committed() -> Dictionary:
+	var bus := Modules.bus("trades") as TradesBus
+	return bus.committed_frame(ship_id()) if bus else {}
+
+
+## True when the design showing is the one committed.
+func is_committed() -> bool:
+	var c := committed()
+	if c.is_empty() or str(c.version) != version():
+		return false
+	var mine: Array = []
+	for row: Dictionary in beams():
+		mine.append(_row(row))
+	var theirs: Array = []
+	for row: Dictionary in c.rows:
+		theirs.append(_row({"id": row.id, "a": _v(row.a), "b": _v(row.b), "section": row.section, "turn": row.turn}))
+	return str(mine) == str(theirs)
+
+
+## The offer in a line, for the panel and the hint.
+func order_line() -> String:
+	if order_offer.is_empty():
+		return ""
+	var plan: Dictionary = order_offer.plan
+	var need: Dictionary = order_offer.need
+	var head := "%d beam%s cut from %s" % [int(plan.pieces), "" if int(plan.pieces) == 1 else "s", _bars_text(plan.counts)]
+	if int(plan.spliced) > 0:
+		head += " (%d spliced from two bars)" % plan.spliced
+	if need.is_empty():
+		return head + ". All on order already: O again to commit, right click cancel"
+	var b: Dictionary = order_offer.basket
+	if not bool(b.get("ok", false)):
+		return "%s. Can't order: %s" % [head, b.get("reason", "")]
+	var from := ""
+	var bb := Modules.bus("business") as BusinessBus
+	if str(b.supplier) != "" and bb and bb.supplier(str(b.supplier)):
+		from = " from %s" % bb.supplier(str(b.supplier)).display_name
+	var buying := "" if need.hash() == (plan.counts as Dictionary).hash() else " (buying %s)" % _bars_text(need)
+	return "%s%s%s, %d CR. O again to commit and order, right click cancel" % [head, buying, from, int(b.cost)]
+
+
+static func _bars_text(counts: Dictionary) -> String:
+	var bits := PackedStringArray()
+	for bar: String in counts:
+		var it := StockBeams.item(bar)
+		bits.append("%d x %d m bar" % [int(counts[bar]), roundi(float(it.get("length", 0.0)))] + ("" if int(counts[bar]) == 1 else "s"))
+	return ", ".join(bits)
 
 
 # --- Growing a beam out of the ship (trades.beam_grow) --------------------------------------
@@ -822,6 +973,9 @@ func _click_grow(left: bool) -> bool:
 		return true
 	if not draft.is_empty():
 		draft = {}
+	elif not order_offer.is_empty():
+		order_offer = {}
+		_say("Order cancelled.")
 	elif not copying.is_empty():
 		copying = {}
 	elif hovered >= 0:
@@ -1361,11 +1515,19 @@ func plated_at(end: Vector3) -> bool:
 	var b := Modules.bus("ship_bay") as ShipBayBus
 	if b == null or b.ship == null:
 		return false
+	var fitted := false
+	var reach := PLATE_GENTLE_M if Flags.is_on("trades.gentle_plates") else PLATE_M
 	for s: MountSlot in b.get_slots():
-		if s.slot_id.begins_with("plate_") and s.box.grow(PLATE_M).has_point(end) \
-				and b.get_slot_state(s.slot_id) != ShipBayBus.SlotState.EMPTY:
-			return true
-	return false
+		if not s.slot_id.begins_with("plate_") or not s.box.grow(reach).has_point(end):
+			continue
+		if b.get_slot_state(s.slot_id) != ShipBayBus.SlotState.EMPTY:
+			fitted = true
+		elif Flags.is_on("trades.gentle_plates"):
+			# trades.gentle_plates (beenster, 0.3.31: "the test highlights some ends which are
+			# obscured by plates but it wasn't the case"): a plate taken off beside the end
+			# leaves the frame there bare, whatever its neighbours still cover.
+			return false
+	return fitted
 
 
 ## Whether a hit is on a part of the ship that has been taken off (its slot empty).
@@ -1589,6 +1751,18 @@ func info_lines() -> PackedStringArray:
 			row.append(("[%s]" if v == version() else "%s") % v + " " + (str(counts[v]) if int(counts[v]) > 0 else "-"))
 		out.append("Version  %s" % "   ".join(row))
 	out.append("Design  %d beams, %.1f m, %d kg" % [n, t.x, roundi(t.y)])
+	if order_on():
+		var c := committed()
+		if not order_offer.is_empty():
+			out.append("Order  " + order_line())
+		elif not c.is_empty():
+			var bars := 0
+			for bar: String in c.ordered:
+				bars += int(c.ordered[bar])
+			out.append("Committed  version %s, %d beams, %d bar%s ordered, %d CR%s" % [c.version, (c.rows as Array).size(), bars,
+					"" if bars == 1 else "s", int(c.cost), "" if is_committed() else ": changed since, O to commit again"])
+		elif n > 0:
+			out.append("Happy with it?  O commits the frame and orders its parts")
 	if not clashes.is_empty():
 		out.append("Clashes  %d beams (red)" % clashes.size())
 	if not loose_ends.is_empty():
@@ -1629,7 +1803,7 @@ func doing() -> String:
 		if root_on != "":
 			return "Click to grow a beam out of the ship here" + (" (strip this plate first)" if root_on == "plate" else "")
 		return "Point at the ship's frame, or a beam's end, to grow a beam" + (", X undo, R version, H test" if versions_on() else ", X undo") \
-				+ (", Backspace clear all" if clear_on() else "")
+				+ (", Backspace clear all" if clear_on() else "") + (", O commit and order" if order_on() and not beams().is_empty() else "")
 	if grabbed >= 0:
 		return "Moving: click to set it down, Q/E turn, right click cancel"
 	if start.is_finite():
@@ -1686,6 +1860,16 @@ func _validate(sender: int, p: Dictionary) -> Variant:
 	var out := {"ship": str(p.get("ship", ""))}
 	if p.has("put") or p.has("del"):
 		return _validate_one(sender, p, out)
+	if p.has("commit"):
+		var c: Variant = p.commit
+		if not c is Dictionary or not (c as Dictionary).get("rows") is Array or ((c as Dictionary).rows as Array).size() > MAX_BEAMS:
+			return "bad commit"
+		for r: Variant in (c as Dictionary).rows:
+			var bad := _bad_row(r)
+			if bad != "":
+				return bad
+		out["commit"] = c
+		return out
 	if p.has("show"):
 		if not TradesBus.BEAM_VERSIONS.has(str(p.show)):
 			return "bad version"
@@ -1756,6 +1940,9 @@ func _apply(p: Dictionary) -> void:
 		return
 	if p.has("put") or p.has("del"):
 		_apply_one(bus, p)
+		return
+	if p.has("commit"):
+		bus.set_committed_frame(str(p.ship), p.commit)
 		return
 	if p.has("rows"):
 		bus.set_beam_design(str(p.ship), p.rows, str(p.get("version", "")))

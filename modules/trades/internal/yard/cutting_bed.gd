@@ -177,6 +177,28 @@ func is_beam() -> bool:
 	return TradesBeamCuts.is_beam(plate)
 
 
+## trades.frame_order: the committed frame's bar this bar's cut list came from ({ship, index, mm}
+## or {}), and the console's line about it.
+var frame_cut: Dictionary = {}
+var frame_note := ""
+
+
+## A bar on the bed with nothing to cut takes the next cut list of a committed frame that is
+## made from that bar (TradesBus.next_frame_cut).
+func _take_frame_cut() -> void:
+	frame_cut = {}
+	frame_note = ""
+	var bus := _trades()
+	if not is_beam() or not lengths.is_empty() or bus == null or not Flags.is_on("trades.frame_order"):
+		return
+	frame_cut = bus.next_frame_cut(str(plate.bar))
+	if frame_cut.is_empty():
+		return
+	for mm: int in frame_cut.mm:
+		lengths.append({"mm": mm, "a": 0.0, "b": 0.0})
+	frame_note = "FROM THE COMMITTED FRAME: BAR %d OF %d" % [int(frame_cut.index) + 1, int(frame_cut.of)]
+
+
 ## The bed set on its spot with its rails along the room's longer side (`room`: Ship and Bay's
 ## CUTTING_BED_ROOM, x across and z along the spot; a bed's rails run along its own x).
 static func lay_along(spot: Transform3D, room: Variant) -> Transform3D:
@@ -210,6 +232,7 @@ func set_plate(info: Dictionary) -> void:
 		_plate_node.material_override = _plate_mat(plate)
 		_plate_node.position = Vector3(0, SLAT_Y + t * 0.5, 0)
 		add_child(_plate_node)
+	_take_frame_cut()
 	_refresh_panel()
 
 
@@ -454,6 +477,12 @@ func _finish() -> void:
 ## The bar's pieces and what is left of it as loose parts where they lay on the bed.
 func _finish_beam() -> void:
 	var lay: Dictionary = job.layout
+	if not frame_cut.is_empty() and _trades():
+		var cut_mm: Array = (job.lengths as Array).map(func(e: Dictionary) -> int: return int(e.mm))
+		if str(cut_mm) == str(frame_cut.mm):
+			_trades().note_frame_cut(str(frame_cut.ship), int(frame_cut.index))
+	frame_cut = {}
+	frame_note = ""
 	var serial := str(job.serial)
 	var info := plate.duplicate()
 	job = {}

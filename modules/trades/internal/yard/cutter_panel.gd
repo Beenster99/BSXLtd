@@ -208,6 +208,11 @@ func _refresh_lengths() -> void:
 	add.custom_minimum_size = Vector2(368, 58)
 	add.disabled = not job.is_empty()
 	_list.add_child(add)
+	var note := str(bed.get("frame_note"))
+	if note != "":
+		var fl := _label(note, 18, AMBER)
+		fl.name = "FrameNote"
+		_list.add_child(fl)
 	_list.add_child(_label("CUT LIST  (click one to take it off)", 20, DIM))
 	if list.is_empty():
 		_list.add_child(_label("Nothing yet.", 18, DIM))
