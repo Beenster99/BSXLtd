@@ -100,6 +100,34 @@ func run_tests() -> void:
 	check(_at_crusher(bus), "the scrap pump went to the crusher: %s" % [bus.line_state().crusher])
 	bus.clean_up_claimed.disconnect(on_claim)
 
+	# A trolley takes a deckful in one go, up to 20 pieces, not one at a time (beenster,
+	# 0.3.29), and the trolleys pass through each other for now.
+	bus.set_organising("s", false)
+	bus.set_organising("l", false)
+	await frames(2)
+	claimed.clear()
+	bus.clean_up_claimed.connect(on_claim)
+	for k in 6:
+		var body := Node3D.new()
+		body.name = "batch_%d" % k
+		yard.add_child(body)
+		body.global_position = Vector3(-8 + k * 3.0, 0.4, 14)
+		bus.note_loose("batch_%d" % k, "Gyroscope", 0.95, body)
+	for i in 600:
+		await get_tree().physics_frame
+		if claimed.size() >= 6:
+			break
+	check(claimed.size() == 6 and claimed.all(func(c: Array) -> bool: return c[1] == "m"), "one trolley went for all six pieces at once: %s" % [claimed])
+	for i in 7200:
+		await get_tree().physics_frame
+		if bus.loose_parts().is_empty() and bus.trolley_load("m").is_empty() and bus.stock_count("Gyroscope") >= 6:
+			break
+	check(bus.loose_parts().is_empty() and bus.stock_count("Gyroscope") >= 6, "and put them all away: %d in stock, %s loose, %s aboard, crates %s" % [bus.stock_count("Gyroscope"), bus.loose_parts().size(), bus.trolley_load("m"), bus.delivered_crates().keys()])
+	bus.clean_up_claimed.disconnect(on_claim)
+	check((fleet.call("_obstacles", all["m"]) as Array).is_empty(), "other trolleys are no obstacle to it")
+	bus.set_organising("s", true)
+	await frames(2)
+
 	# PARK ends it.
 	(all["m"].get("screen") as Node).call("press", "park")
 	await frames(2)

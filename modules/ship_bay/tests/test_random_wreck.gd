@@ -111,10 +111,12 @@ func run_tests() -> void:
 	var im: VsShipImport = (bay.get("model") as FileShip).importer
 	var c := im.joint_at(s.fasteners[0].path)
 	check(c != null and im.kit.model.joint_view(c) == null, "its own bolt head or weld bead goes with it")
+	var ring: MeshInstance3D = (bay.get("markers") as Dictionary)[jid]
+	check(ring.visible == not (s.fasteners[0].kind in ["bolt", "rivet"]), "an undone bolt or rivet leaves no ring; a weld keeps its (%s)" % s.fasteners[0].kind)
 	check(bus.note_joint_made(jid, 0.9) and bus.is_joint_tight(jid), "and is made again")
 	check(im.kit.model.joint_view(c) != null, "and comes back when it is made")
 	var marker: MeshInstance3D = (bay.get("markers") as Dictionary)[jid]
-	check(marker.material_override != null, "its marker shows it")
+	check(marker.material_override != null and marker.visible, "its marker shows it")
 	# A part taken off leaves no collision behind (Tools, 0.3.27: a ceiling lamp held up by its
 	# own shape): every joint out, the slot's shapes go off; positioned again, back on.
 	var shapes: Array = (bay.get("colliders") as Dictionary).get(s.slot_id, [])

@@ -278,6 +278,7 @@ func _show_ship(def: ShipDefinition) -> void:
 			var m := _fastener_marker(f, def.ship_id == ShipBayBus.WRECK_ID)
 			ship_root.add_child(m)
 			markers[f.joint_id] = m
+			m.set_meta("kind", f.kind)
 			if f.path != "":
 				_joint_paths[f.joint_id] = f.path
 		_apply_slot(s.slot_id)
@@ -746,8 +747,6 @@ func _lift_markers(def: ShipDefinition) -> void:
 func _refresh_markers() -> void:
 	for id: String in markers:
 		var m: MeshInstance3D = markers[id]
-		var slot_state := _bus.get_slot_state(FastenerPoint.slot_of(id))
-		m.visible = slot_state != ShipBayBus.SlotState.EMPTY
 		_show_joint(id)
 	_on_marker_focus(_bus.marker_focus_at, _bus.marker_focus_radius)
 
@@ -760,10 +759,14 @@ func _on_joint_changed(joint_id: String, _made: bool) -> void:
 
 ## The ring (or weld strip) is lit by the joint's state; the head (or bead) on it shows only
 ## while the joint is made, so an undone bolt, a cut-out rivet or a ground-off weld leaves
-## just its lit ring where it was (beenster, 0.3.20).
+## just its lit ring where it was (beenster, 0.3.20). An undone bolt or rivet leaves no ring
+## either (ship_bay.gone_rings; beenster, 0.3.29: "when a rivet or bolt is removed so is its
+## highlight"); welds and plugs keep theirs.
 func _show_joint(joint_id: String) -> void:
 	var m: MeshInstance3D = markers[joint_id]
 	var tight := _bus.is_joint_tight(joint_id)
+	var gone := not tight and Flags.is_on("ship_bay.gone_rings") and str(m.get_meta("kind", "")) in ["bolt", "rivet"]
+	m.visible = _bus.get_slot_state(FastenerPoint.slot_of(joint_id)) != ShipBayBus.SlotState.EMPTY and not gone
 	m.material_override = _tight_mat if tight else _loose_mat
 	for head: Node in m.get_children():
 		(head as Node3D).visible = tight

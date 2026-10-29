@@ -12,6 +12,10 @@ func run_tests() -> void:
 	bus.reset_data()
 	# Deliveries land at once here: the trucks have their own test (test_trucks).
 	Flags.set_flag("ship_bay.trucks", false)
+	# How trolleys keep out of each other's way (they pass through each other for now,
+	# ship_bay.trolleys_pass, tested in test_organise_scrap).
+	var passing := Flags.is_on("ship_bay.trolleys_pass")
+	Flags.set_flag("ship_bay.trolleys_pass", false)
 	var scene := load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene
 	var yard := scene.instantiate() as Node3D
 	add_child(yard)
@@ -428,4 +432,5 @@ func run_tests() -> void:
 	yard.queue_free()
 	await frames(1)
 	Flags.set_flag("ship_bay.trucks", true)
+	Flags.set_flag("ship_bay.trolleys_pass", passing)
 	bus.reset_data()
