@@ -33,6 +33,12 @@ func carried(palm: Transform3D) -> Transform3D:
 	return palm * hold * Transform3D(Basis(), -grip)
 
 
+## Where its display rides off the knuckle close up (override): BESIDE, or further out for a
+## tool whose body would show through it.
+func display_beside() -> Vector2:
+	return BESIDE
+
+
 ## Text for its screen (override; "" = no screen).
 func readout_text() -> String:
 	return ""
@@ -208,7 +214,8 @@ func _build_swivel(base: Node3D, accent: Color) -> void:
 func _beside_tool(cam: Camera3D, k: Vector3) -> Vector3:
 	var depth := clampf(-k.z, DISPLAY_NEAR, DISPLAY_FAR)
 	var shrink := depth / maxf(-k.z, 0.01)
-	var at := Vector3(k.x * shrink + BESIDE.x, k.y * shrink + BESIDE.y, -depth)
+	var beside := display_beside()
+	var at := Vector3(k.x * shrink + beside.x, k.y * shrink + beside.y, -depth)
 	var clear := depth * tan(deg_to_rad(cam.fov) * 0.5) * CLEAR
 	var off := Vector2(at.x, at.y)
 	if off.length() < clear:

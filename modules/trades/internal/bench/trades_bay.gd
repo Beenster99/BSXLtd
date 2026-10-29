@@ -125,16 +125,13 @@ var _looping := &""
 ## What we last told the others about our arc, and when.
 var _torch_sent := {}
 var _torch_sent_s := 0.0
-## The tool panel (the tool in hand's readings, bottom right) and the inspect panel (hold
-## Tab: key data of what you're looking at).
+## The tool panel (the tool in hand's readings, bottom right).
 var _tool_panel: PanelContainer
 var _tool_title: Label
 var _tool_text: Label
 var _tool_state: Label
 var _tool_bar: ColorRect
 var _tool_light: ColorRect
-var _inspect_panel: PanelContainer
-var _inspect_label: Label
 
 
 ## Its look hint provider's id (HudSlots.register_look_hint).
@@ -377,9 +374,6 @@ func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	HudSlots.unregister_look_hint(LOOK_HINT_ID)
 	_clear_info()
-	# A screenshot may have left Tab held down.
-	if InputMap.has_action(TradesBus.KEY_INSPECT):
-		Input.action_release(TradesBus.KEY_INSPECT)
 
 
 func station(station_id: StringName) -> TradesStation:
@@ -478,10 +472,9 @@ func _keys_line() -> String:
 	var tools := "%s-%s" % [k.call(TradesBus.KEY_TOOL + "1"), k.call(TradesBus.KEY_TOOL + str(hotbar.size()))]
 	var turn := "%s/%s" % [k.call(TradesBus.KEY_TURN_LEFT), k.call(TradesBus.KEY_TURN_RIGHT)]
 	if in_yard:
-		var details := "  %s part details" % k.call(TradesBus.KEY_INSPECT) if Flags.is_on("trades.inspect") else ""
-		return "%s walk  %s run  %s jump / climb  %s view  wheel/%s tool  LMB use  RMB take off  %s turn%s  %s pause" % [
+		return "%s walk  %s run  %s jump / climb  %s view  wheel/%s tool  LMB use  RMB take off  %s turn  %s pause" % [
 				walk, k.call(Keys.RUN), k.call(Keys.JUMP), k.call(TradesBus.KEY_VIEW), tools, turn,
-				details, k.call(Keys.CANCEL)]
+				k.call(Keys.CANCEL)]
 	return "%s walk  %s view  wheel/%s tool  LMB use (hold to carry)  LMB+wheel turn  MMB free/90°  RMB take off  %s amps  %s part  %s reset  %s pause" % [
 			walk, k.call(TradesBus.KEY_VIEW), tools, turn, k.call(TradesBus.KEY_NEXT), k.call(TradesBus.KEY_RESET), k.call(Keys.CANCEL)]
 
@@ -610,6 +603,7 @@ func _process(delta: float) -> void:
 		if scribe:
 			scribe.plate = tracer.plate_name
 			scribe.saved = tracer.saved_as((tracer.aimed.slot as MountSlot).slot_id) if not tracer.aimed.is_empty() else ""
+			_scribe_summary(scribe)
 	_placed.clear()
 	for s in stations:
 		s.update(delta)
@@ -627,8 +621,25 @@ func _process(delta: float) -> void:
 	TradesTool.first_person = not worker.third_person
 	_update_remote_torches()
 	_update_tool_panel()
-	_update_inspect()
 	_post_info()
+
+
+## The scribe's display summary of the plate under its aim: its size, its state on the ship and
+## its mass (what Ship and Bay knows of it).
+func _scribe_summary(scribe: TradesTemplateScribe) -> void:
+	var s := tracer.aimed.get("slot") as MountSlot
+	scribe.size = tracer.aimed.get("size", Vector2.ZERO)
+	scribe.state = ""
+	scribe.mass_kg = 0.0
+	if s == null or tool != &"template":
+		return
+	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
+	if yard_bus:
+		scribe.state = str(TradesShipJoints.SLOT_STATES.get(yard_bus.get_slot_state(s.slot_id), ""))
+	var station := ship_station()
+	var info := station.aim_info() if station else {}
+	if str(info.get("slot_id", "")) == s.slot_id:
+		scribe.mass_kg = float(info.get("mass_kg", 0.0))
 
 
 ## Out on the work, first person, the tool in use and the hand on it are drawn up toward the
@@ -683,33 +694,14 @@ func _update_tool_panel() -> void:
 	_tool_light.color = Color(1.0, 0.55, 0.15) if alert else Color(0.25, 0.12, 0.05)
 
 
-func _update_inspect() -> void:
-	if _inspect_panel == null:
-		return
-	var on := InputMap.has_action(TradesBus.KEY_INSPECT) and Input.is_action_pressed(TradesBus.KEY_INSPECT)
-	_inspect_panel.visible = on
-	if not on:
-		_inspect_label.text = ""
-		return
-	var lines := _focus.inspect_lines() if _focus else PackedStringArray()
-	if lines.is_empty():
-		lines = PackedStringArray(["Look at a part or a joint."])
-	_inspect_label.text = "\n".join(lines)
-
-
-## What the tool panel and the inspect panel show now (tests).
+## What the tool panel shows now (tests).
 func tool_panel_text() -> String:
 	return "%s\n%s\n%s" % [_tool_title.text, _tool_text.text, _tool_state.text] if _tool_panel else ""
-
-
-func inspect_text() -> String:
-	return _inspect_label.text if _inspect_panel and _inspect_panel.visible else ""
 
 
 ## The ids of Tools' cards in the HUD's right-hand panel (UI's HudSlots.set_info).
 const INFO_TOOL := "trades.tool"
 const INFO_HINT := "trades.hint"
-const INFO_PART := "trades.part"
 
 
 ## The mouse in the tips (TradesStation.actions); keys go by their bound names.
@@ -742,9 +734,6 @@ func look_hint(hit := {}) -> Dictionary:
 	if keys.is_empty() and (info.is_empty() or (_own_hint(hit) and not _hit_is_part(hit))):
 		# Nothing to do here, or it has its own card (a door button on the ship, a machine).
 		return {}
-	if Flags.is_on("trades.inspect") and not Flags.is_on("trades.part_info") and InputMap.has_action(TradesBus.KEY_INSPECT) \
-			and not _focus.inspect_lines().is_empty():
-		keys.append([TradesBus.KEY_INSPECT, "part details (hold)"])
 	var title := _focus.aim_title(tool) if not keys.is_empty() else ""
 	# The spec of what you're looking at, tool in hand (beenster, 2026-10-22).
 	var spec := _focus.aim_spec(tool) if Flags.is_on("trades.hover_specs") else ""
@@ -817,14 +806,10 @@ func _post_info() -> void:
 		HudSlots.set_info(INFO_HINT, "Next", _hint_label.text, 11)
 	else:
 		HudSlots.clear_info(INFO_HINT)
-	if _inspect_label and _inspect_label.text != "":
-		HudSlots.set_info(INFO_PART, "Part details", _inspect_label.text, 12)
-	else:
-		HudSlots.clear_info(INFO_PART)
 
 
 func _clear_info() -> void:
-	for id: String in [INFO_TOOL, INFO_HINT, INFO_PART]:
+	for id: String in [INFO_TOOL, INFO_HINT]:
 		HudSlots.clear_info(id)
 
 
@@ -1018,26 +1003,6 @@ func stage_on_ship(kind: String = "bolt", third_person: bool = false) -> void:
 	worker.set_view(third_person)
 	worker.global_position = view[0]
 	worker.face(view[1])
-	for i in 30:
-		await get_tree().process_frame
-
-
-## Release screenshot in the yard: looking at a joint on the ship with Tab held, its part's
-## details up.
-func stage_inspect() -> void:
-	var s := ship_station()
-	if s == null:
-		return
-	var view := s.stage_joint("bolt", 1.5)
-	if view.is_empty():
-		return
-	s.reset()
-	s.aimed = -1
-	set_tool(&"torque_wrench")
-	worker.set_view(false)
-	worker.global_position = view[0]
-	worker.face(view[1])
-	Input.action_press(TradesBus.KEY_INSPECT)
 	for i in 30:
 		await get_tree().process_frame
 
@@ -1363,22 +1328,6 @@ func _build_hud() -> void:
 	# The readings live on the tool's own display now; the HUD panel only without one.
 	if Flags.is_on("trades.tool_panel") and not Flags.is_on("trades.tool_display"):
 		_build_tool_panel(root)
-	if Flags.is_on("trades.inspect"):
-		_inspect_panel = _card()
-		root.add_child(_inspect_panel)
-		_inspect_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT, Control.PRESET_MODE_MINSIZE, 40)
-		_inspect_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-		_inspect_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
-		var details := VBoxContainer.new()
-		details.add_theme_constant_override("separation", 6)
-		_inspect_panel.add_child(details)
-		var head := TradesLook.hud_label(16, TradesLook.HUD_WARN)
-		head.text = "PART DETAILS"
-		details.add_child(head)
-		_inspect_label = TradesLook.hud_label(20)
-		details.add_child(_inspect_label)
-		_inspect_panel.visible = false
-		_inspect_panel.modulate.a = 0.0   # shown in the right-hand panel (_post_info)
 
 
 ## The tool in hand's readings, large and labelled, bottom right over the hotbar: its name,

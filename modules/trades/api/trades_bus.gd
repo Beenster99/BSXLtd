@@ -53,7 +53,6 @@ const KEY_TURN_RIGHT := "trades.turn_right"
 ## Held: the mouse turns the part in the tractor beam instead of the view.
 const KEY_ROTATE := "trades.rotate"
 ## Held: the key data of the part or joint you are looking at.
-const KEY_INSPECT := "trades.inspect"
 ## The practice bench's: start the job again, the next part in the tray.
 const KEY_RESET := "trades.reset"
 const KEY_NEXT := "trades.next"
@@ -87,7 +86,6 @@ func register_module() -> void:
 	Keys.register(KEY_TURN_LEFT, "Turn left / amps down", KEY_Q, KEY_GROUP)
 	Keys.register(KEY_TURN_RIGHT, "Turn right / amps up", KEY_E, KEY_GROUP)
 	Keys.register(KEY_ROTATE, "Rotate the part in the beam (hold)", KEY_R, KEY_GROUP)
-	Keys.register(KEY_INSPECT, "Show part details (hold)", KEY_TAB, KEY_GROUP)
 	Keys.register(KEY_RESET, "Start the bench job again", KEY_BACKSPACE, KEY_GROUP)
 	Keys.register(KEY_NEXT, "Next part in the tray", KEY_G, KEY_GROUP)
 	Keys.register(KEY_MODE, "Tool mode: fasten / undo", KEY_X, KEY_GROUP)
@@ -111,9 +109,6 @@ func register_module() -> void:
 			for shot: Array in [["bolt", false], ["bolt", true], ["connector", false]]:
 				Shots.register("tools_%s_on_kestrel%s" % [shot[0], "_third_person" if shot[1] else ""], ShipBayBus.SHIPYARD_SCENE,
 						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_on_ship", shot[0], shot[1]), 40)
-			if Flags.is_on("trades.inspect"):
-				Shots.register("tools_inspect_part", ShipBayBus.SHIPYARD_SCENE,
-						func(scene: Node) -> void: await scene.get_node(YARD_RIG).call("stage_inspect"), 40)
 			if Flags.is_on("trades.test_stand"):
 				for third: bool in [false, true]:
 					Shots.register("tools_test_stand%s" % ("_third_person" if third else ""), ShipBayBus.SHIPYARD_SCENE,

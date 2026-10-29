@@ -1,6 +1,6 @@
 extends ModuleTest
 ## Playtest 0.3.27 (beenster): "i should be able to see all the information about any object
-## on the wreck when i look at it" (trades.wreck_info). Tab's sheet takes what Ship and Bay knows
+## on the wreck when i look at it" (trades.wreck_info). The right-hand panel's sheet takes what Ship and Bay knows
 ## of the part under the aim (ShipBayBus.inspect_at): a hull plate with no slot gets a sheet of
 ## its own, a part in a slot gets its condition, value, faults, power and fluid added.
 
@@ -68,7 +68,7 @@ func run_tests() -> void:
 				slotted = [got, "\n".join(lines)]
 	check(not plain.is_empty() and str(plain[1]).contains("CONDITION") and str(plain[1]).contains("MASS")
 			and str(plain[1]).contains(str(plain[0].get("display_name", plain[0].get("name", ""))).to_upper()),
-			"looking at a part with no slot, Tab shows its own sheet: %s" % (str(plain[1]).replace("\n", " | ") if not plain.is_empty() else "none found"))
+			"looking at a part with no slot, the panel shows its own sheet: %s" % (str(plain[1]).replace("\n", " | ") if not plain.is_empty() else "none found"))
 	check(not slotted.is_empty() and str(slotted[1]).contains("SLOT") and str(slotted[1]).contains("CONDITION") and not str(slotted[1]).contains("(est.)"),
 			"a part in a slot keeps its sheet and gains its condition and real mass: %s" % (str(slotted[1]).replace("\n", " | ") if not slotted.is_empty() else "none found"))
 	Flags.set_flag("trades.wreck_info", false)

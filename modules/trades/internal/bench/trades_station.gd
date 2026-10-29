@@ -72,7 +72,7 @@ func motion(_relative: Vector2) -> bool:
 	return false
 
 
-## Key data about what the aim is on (a part, a joint), for the inspect panel (hold Tab).
+## Key data about what the aim is on (a part, a joint), for the right-hand panel (always on).
 ## Empty when the aim is on nothing this station knows.
 func inspect_lines() -> PackedStringArray:
 	return PackedStringArray()
