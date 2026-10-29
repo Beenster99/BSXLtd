@@ -21,6 +21,14 @@ extends Node3D
 ## The design is kept per ship in TradesBus (in the save) and shared with the crew by one
 ## event that carries the whole design; a beam clashing with the ship or another beam is red,
 ## an end that nothing holds is amber.
+##
+## A modification is built onto the ship's own frame (beenster, 29 Oct: "the beams and design
+## that we add MUST be attached to the existing beam structure"): strip the outer plates to
+## show the frame, then draw beams from it. An end holds only on a frame member of the ship or
+## on another beam of the design; the ground, the cradle and the plating don't count. An end
+## on the frame where a plate is still fitted is pink (strip that plate first), and beams
+## that never reach the frame through the design are "not on the ship". Ends snap to the
+## frame's nodes and onto a member under the aim.
 
 const EVENT := "trades.beams"
 const SECTION := "trades_beams"
@@ -30,7 +38,7 @@ const REACH_M := 14.0
 const AIR_M := 4.0
 ## Snapping: to another beam's end, to a corner of the ship's frame, else to the grid (m).
 const SNAP_END_M := 0.25
-const SNAP_NODE_M := 0.15
+const SNAP_NODE_M := 0.3
 const GRID_M := 0.05
 ## Turning steps (degrees), the shortest beam and the most in a design.
 const TURN_DEG := 15.0
@@ -40,6 +48,10 @@ const MAX_BEAMS := 300
 ## How near a beam's end must be to something for it to count as held (m), and how close two
 ## beams' ends must be to count as meeting.
 const HOLD_M := 0.08
+## How much of each end the clash check leaves out (m): where the beam meets what holds it.
+const END_CLEAR_M := 0.2
+## How near a fitted plate an end on the frame may be before the plate is in the way (m).
+const PLATE_M := 0.25
 const MEET_M := 0.06
 ## How often the clash and support checks run while nothing changes (s).
 const CHECK_S := 1.0
@@ -49,6 +61,7 @@ const BLUE_FAINT := Color(0.35, 0.75, 1.0, 0.25)
 const LIT := Color(0.7, 0.95, 1.0, 0.6)
 const RED := Color(1.0, 0.25, 0.2, 0.55)
 const AMBER := Color(1.0, 0.7, 0.15, 0.9)
+const PINK := Color(1.0, 0.35, 0.8, 0.9)
 const GHOST := Color(0.6, 0.9, 1.0, 0.35)
 
 var bay: Node  # TradesBay
@@ -59,13 +72,17 @@ var section := TradesBeamSections.DEFAULT
 var hovered := -1
 var grabbed := -1
 var start := Vector3.INF
-## The snapped point under the aim now (ship space) and what it snapped to: "end", "node",
-## "grid" or "".
+## The snapped point under the aim now (ship space) and what it snapped to: "end", "node" (a
+## frame node), "frame" (a member under the aim), "plate" (plating over it), "grid" or "".
 var aim_point := Vector3.INF
 var snapped_to := ""
 ## The checks' findings: beam ids that clash, and [beam id, end 0|1] pairs nothing holds.
 var clashes: Dictionary = {}
 var loose_ends: Array = []
+## [beam id, end 0|1] pairs on the frame where a plate is still fitted over it, and the ids of
+## beams that don't reach the ship's frame through the design.
+var plated_ends: Array = []
+var unattached: Array = []
 ## The last TEST (trades.beam_versions): {version, key (the design it tested), beams, clashes,
 ## loose, kg, length, shift (Vector3, ship space, m), ship_kg, passed}; {} before one.
 var test_result: Dictionary = {}
@@ -102,8 +119,8 @@ func build(net: Node = null) -> void:
 	_holo.name = "Hologram"
 	_holo.top_level = true
 	add_child(_holo)
-	for key: String in ["blue", "faint", "lit", "red", "amber", "ghost"]:
-		_mats[key] = _material({"blue": BLUE, "faint": BLUE_FAINT, "lit": LIT, "red": RED, "amber": AMBER, "ghost": GHOST}[key])
+	for key: String in ["blue", "faint", "lit", "red", "amber", "pink", "ghost"]:
+		_mats[key] = _material({"blue": BLUE, "faint": BLUE_FAINT, "lit": LIT, "red": RED, "amber": AMBER, "pink": PINK, "ghost": GHOST}[key])
 	_ghost = MeshInstance3D.new()
 	_ghost.name = "Ghost"
 	_ghost.material_override = _mats.ghost
@@ -354,8 +371,9 @@ func test() -> Dictionary:
 	if t.y > 0.0 and ship_kg > 0.0:
 		shift = (mid / t.y - (ship.centre as Vector3)) * t.y / (ship_kg + t.y)
 	test_result = {"version": version(), "key": design_key(), "beams": list.size(), "clashes": clashes.size(),
-			"loose": loose_ends.size(), "kg": t.y, "length": t.x, "shift": shift, "ship_kg": ship_kg,
-			"passed": not list.is_empty() and clashes.is_empty() and loose_ends.is_empty()}
+			"loose": loose_ends.size(), "plated": plated_ends.size(), "unattached": unattached.size(),
+			"kg": t.y, "length": t.x, "shift": shift, "ship_kg": ship_kg,
+			"passed": not list.is_empty() and clashes.is_empty() and loose_ends.is_empty() and plated_ends.is_empty() and unattached.is_empty()}
 	_play(&"click" if test_result.passed else &"clunk")
 	_say(test_line())
 	return test_result
@@ -370,8 +388,12 @@ func test_line() -> String:
 	var bits := PackedStringArray()
 	if int(test_result.clashes) > 0:
 		bits.append("%d clash%s" % [test_result.clashes, "" if int(test_result.clashes) == 1 else "es"])
+	if int(test_result.unattached) > 0:
+		bits.append("%d beam%s not on the ship's frame" % [test_result.unattached, "" if int(test_result.unattached) == 1 else "s"])
 	if int(test_result.loose) > 0:
 		bits.append("%d loose end%s" % [test_result.loose, "" if int(test_result.loose) == 1 else "s"])
+	if int(test_result.plated) > 0:
+		bits.append("%d end%s under plating (strip it first)" % [test_result.plated, "" if int(test_result.plated) == 1 else "s"])
 	var head := "Version %s passes" % test_result.version if bits.is_empty() else "Version %s fails: %s" % [test_result.version, ", ".join(bits)]
 	return "%s. Adds %d kg%s." % [head, roundi(float(test_result.kg)), _shift_words(test_result.shift, float(test_result.ship_kg))]
 
@@ -397,6 +419,16 @@ func _ship_def() -> ShipDefinition:
 
 
 static var _mass_cache: Dictionary = {}
+static var _files: Dictionary = {}
+
+
+## A ship's Void Salvage file: a wreck's own, else her design's (read once).
+static func _ship_file(def: ShipDefinition) -> Dictionary:
+	if not def.file.is_empty():
+		return def.file
+	if not _files.has(def.ship_id):
+		_files[def.ship_id] = VsShipImport.design_source(def.ship_id.trim_prefix("vs_"))
+	return _files[def.ship_id]
 
 
 ## A ship's mass (kg) and centre of mass (ship space) from its Void Salvage file's parts:
@@ -407,7 +439,7 @@ static func ship_mass(def: ShipDefinition) -> Dictionary:
 	var key := def.ship_id + ("#%d" % def.file.hash() if not def.file.is_empty() else "")
 	if _mass_cache.has(key):
 		return _mass_cache[key]
-	var f := def.file if not def.file.is_empty() else VsShipImport.design_source(def.ship_id.trim_prefix("vs_"))
+	var f := _ship_file(def)
 	var kg := 0.0
 	var sum := Vector3.ZERO
 	for p: Variant in f.get("parts", []):
@@ -636,10 +668,12 @@ func _aim() -> void:
 	q.exclude = [w.get_rid()]
 	var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
 	var p: Vector3
+	var on := ""
 	if not hit.is_empty():
 		p = ship_xform().affine_inverse() * (hit.position as Vector3)
 		if hovered >= 0 and near_t > from.distance_to(p):
 			hovered = -1
+		on = part_kind(hit.get("collider"), int(hit.get("shape", 0)), hit.position)
 	elif start.is_finite():
 		p = from + dir * clampf(from.distance_to(start), 1.0, REACH_M)
 	else:
@@ -647,8 +681,10 @@ func _aim() -> void:
 	if start.is_finite():
 		hovered = -1
 	var s := snap(p)
+	if s[1] == "grid" and on == "frame":
+		s = [p, "frame"]
 	aim_point = s[0]
-	snapped_to = s[1]
+	snapped_to = s[1] if s[1] != "grid" or on != "plate" else "plate"
 
 
 func _follow_grab(from: Vector3, dir: Vector3) -> void:
@@ -694,17 +730,11 @@ func snap(p: Vector3, skip := -1, grid := true) -> Array:
 	if best.is_finite():
 		return [best, "end"]
 	best_d = SNAP_NODE_M
-	var b := Modules.bus("ship_bay") as ShipBayBus
-	if b:
-		for s: MountSlot in b.get_slots():
-			if not s.box.grow(SNAP_NODE_M).has_point(p):
-				continue
-			for i in 8:
-				var c := s.box.get_endpoint(i)
-				var d := c.distance_to(p)
-				if d < best_d:
-					best_d = d
-					best = c
+	for c: Vector3 in frame_nodes():
+		var d := c.distance_to(p)
+		if d < best_d:
+			best_d = d
+			best = c
 	if best.is_finite():
 		return [best, "node"]
 	return [p.snapped(Vector3.ONE * GRID_M), "grid"] if grid else [p, ""]
@@ -714,6 +744,9 @@ func snap(p: Vector3, skip := -1, grid := true) -> Array:
 func run_checks() -> void:
 	clashes.clear()
 	loose_ends.clear()
+	plated_ends.clear()
+	unattached.clear()
+	var ends := {}
 	var list := beams()
 	if list.is_empty() or not is_inside_tree():
 		return
@@ -729,17 +762,21 @@ func run_checks() -> void:
 		var sec := str(b.section)
 		var r := TradesBeamSections.radius(sec)
 		var l := a.distance_to(e)
-		# The beam's body (its ends left out, where it meets what holds it) against the world.
-		if l > 0.3:
+		# The beam's body (its ends left out, where it meets what holds it: a frame node is
+		# half a metre across) against the world.
+		if l > END_CLEAR_M * 2.0 + 0.1:
 			var box := BoxShape3D.new()
 			var s: Dictionary = TradesBeamSections.info(sec)
-			box.size = Vector3(float(s.get("w", 0.1)) * 0.8, float(s.get("h", 0.1)) * 0.8, l - 0.2)
+			box.size = Vector3(float(s.get("w", 0.1)) * 0.8, float(s.get("h", 0.1)) * 0.8, l - END_CLEAR_M * 2.0)
 			var q := PhysicsShapeQueryParameters3D.new()
 			q.shape = box
 			q.transform = xf * beam_xform(b)
 			q.exclude = exclude
-			if not space.intersect_shape(q, 1).is_empty():
-				clashes[int(b.id)] = "ship"
+			for hit: Dictionary in space.intersect_shape(q, 8):
+				# A part already taken off her (its slot empty) is out of the way.
+				if not _gone(hit.get("collider"), int(hit.get("shape", 0))):
+					clashes[int(b.id)] = "ship"
+					break
 		for o: Dictionary in list:
 			if int(o.id) <= int(b.id):
 				continue
@@ -757,26 +794,127 @@ func run_checks() -> void:
 				clashes[int(o.id)] = "beam"
 		for k in 2:
 			var end: Vector3 = a if k == 0 else e
-			if not _held(end, int(b.id), list, space, xf, exclude):
+			var on := _end_on(end, int(b.id), list, space, xf, exclude)
+			if on == "frame" or on == "plated":
+				ends[int(b.id)] = true
+			if on == "":
 				loose_ends.append([int(b.id), k])
+			elif on == "plated":
+				plated_ends.append([int(b.id), k])
+	# Which beams reach the frame through the design: from every beam with an end on the
+	# frame, along the beams whose ends meet or rest on each other.
+	var reached := {}
+	var todo: Array = []
+	for id: int in ends:
+		reached[id] = true
+		todo.append(id)
+	while not todo.is_empty():
+		var id: int = todo.pop_back()
+		var b0 := {}
+		for o: Dictionary in list:
+			if int(o.id) == id:
+				b0 = o
+		for o: Dictionary in list:
+			if reached.has(int(o.id)) or not _touches(b0, o):
+				continue
+			reached[int(o.id)] = true
+			todo.append(int(o.id))
+	for o: Dictionary in list:
+		if not reached.has(int(o.id)):
+			unattached.append(int(o.id))
 
 
-func _held(end: Vector3, id: int, list: Array, space: PhysicsDirectSpaceState3D, xf: Transform3D, exclude: Array[RID]) -> bool:
+## Whether two beams of the design meet: an end of one on the other.
+static func _touches(b: Dictionary, o: Dictionary) -> bool:
+	for pair: Array in [[b, o], [o, b]]:
+		var x: Dictionary = pair[0]
+		var y: Dictionary = pair[1]
+		for end: Vector3 in [x.a, x.b]:
+			if end.distance_to(y.a) < MEET_M or end.distance_to(y.b) < MEET_M:
+				return true
+			var c := Geometry3D.get_closest_point_to_segment(end, y.a, y.b)
+			if c.distance_to(end) < TradesBeamSections.radius(str(y.section)) + HOLD_M:
+				return true
+	return false
+
+
+## What holds an end: "beam" (another beam of the design), "frame" (a frame member of the
+## ship), "plated" (a frame member with a plate still fitted over it there), "" (nothing:
+## the air, the ground, the cradle or a plate alone).
+func _end_on(end: Vector3, id: int, list: Array, space: PhysicsDirectSpaceState3D, xf: Transform3D, exclude: Array[RID]) -> String:
 	for o: Dictionary in list:
 		if int(o.id) == id:
 			continue
 		if end.distance_to(o.a) < MEET_M or end.distance_to(o.b) < MEET_M:
-			return true
+			return "beam"
 		var c := Geometry3D.get_closest_point_to_segment(end, o.a, o.b)
 		if c.distance_to(end) < TradesBeamSections.radius(str(o.section)) + HOLD_M:
-			return true
+			return "beam"
 	var ball := SphereShape3D.new()
 	ball.radius = HOLD_M
 	var q := PhysicsShapeQueryParameters3D.new()
 	q.shape = ball
 	q.transform = Transform3D(Basis(), xf * end)
 	q.exclude = exclude
-	return not space.intersect_shape(q, 1).is_empty()
+	for hit: Dictionary in space.intersect_shape(q, 16):
+		if part_kind(hit.get("collider"), int(hit.get("shape", 0)), xf * end) == "frame":
+			return "plated" if plated_at(end) else "frame"
+	return ""
+
+
+## Whether one of the ship's outer plates is still fitted over the frame at `end` (ship space).
+func plated_at(end: Vector3) -> bool:
+	var b := Modules.bus("ship_bay") as ShipBayBus
+	if b == null or b.ship == null:
+		return false
+	for s: MountSlot in b.get_slots():
+		if s.slot_id.begins_with("plate_") and s.box.grow(PLATE_M).has_point(end) \
+				and b.get_slot_state(s.slot_id) != ShipBayBus.SlotState.EMPTY:
+			return true
+	return false
+
+
+## Whether a hit is on a part of the ship that has been taken off (its slot empty).
+func _gone(collider: Object, shape_idx: int) -> bool:
+	var b := Modules.bus("ship_bay") as ShipBayBus
+	if b == null or collider == null:
+		return false
+	return str(b.inspect_at(collider, shape_idx, Vector3.ZERO).get("slot_state", "")) == "empty"
+
+
+## What a hit on the ship is: "frame" (a member still on her), "plate" (a hull plate or a pane
+## still fitted), "" for anything else (or nothing the bay knows).
+func part_kind(collider: Object, shape_idx: int, at: Vector3) -> String:
+	var b := Modules.bus("ship_bay") as ShipBayBus
+	if b == null or collider == null:
+		return ""
+	var info := b.inspect_at(collider, shape_idx, at)
+	if info.is_empty() or str(info.get("slot_state", "")) == "empty":
+		return ""
+	match str(info.get("kind", "")):
+		"frame":
+			return "frame"
+		"hull", "glass":
+			return "plate"
+	return ""
+
+
+## The ship's frame nodes still on her (ship space): where members meet, for ends to snap to.
+## From her Void Salvage file; a node whose slot is empty has been taken off.
+func frame_nodes() -> Array:
+	var b := Modules.bus("ship_bay") as ShipBayBus
+	var out: Array = []
+	if b == null or b.ship == null:
+		return out
+	var gone := {}
+	for s: MountSlot in b.get_slots():
+		if s.slot_id.begins_with("frame_") and b.get_slot_state(s.slot_id) == ShipBayBus.SlotState.EMPTY:
+			for path: String in s.parts:
+				gone[path] = true
+	for p: Variant in _ship_file(b.ship).get("parts", []):
+		if p is Dictionary and str((p as Dictionary).get("name", "")) == "FrameNode" and not gone.has(str((p as Dictionary).get("path", ""))):
+			out.append(VsShipImport.vec3(((p as Dictionary).get("xform", {}) as Dictionary).get("o", [0, 0, 0])))
+	return out
 
 
 ## A beam's transform in ship space: its middle, its length along Z, its section's height up
@@ -798,7 +936,7 @@ static func beam_xform(b: Dictionary) -> Transform3D:
 func _draw() -> void:
 	var list := beams()
 	var faint := not _anyone_holding()
-	var key := "%s|%s|%s|%d|%d|%s" % [str(list), str(clashes), str(loose_ends), hovered, grabbed, faint]
+	var key := "%s|%s|%s|%s|%s|%d|%d|%s" % [str(list), str(clashes), str(loose_ends), str(plated_ends), str(unattached), hovered, grabbed, faint]
 	if key != _drawn_key:
 		_drawn_key = key
 		for c in _holo.get_children():
@@ -818,9 +956,9 @@ func _draw() -> void:
 			mi.transform = beam_xform(b)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mi.material_override = _mats.red if clashes.has(id) else (_mats.lit if id == hovered or id == grabbed
-					else (_mats.faint if faint else _mats.blue))
+					else (_mats.amber if unattached.has(id) else (_mats.faint if faint else _mats.blue)))
 			_holo.add_child(mi)
-		for le: Array in loose_ends:
+		for le: Array in loose_ends + plated_ends:
 			var b := {}
 			for o: Dictionary in list:
 				if int(o.id) == int(le[0]):
@@ -833,14 +971,14 @@ func _draw() -> void:
 			sm.radius = 0.06
 			sm.height = 0.12
 			dot.mesh = sm
-			dot.material_override = _mats.amber
+			dot.material_override = _mats.amber if loose_ends.has(le) else _mats.pink
 			dot.position = b.a if int(le[1]) == 0 else b.b
 			_holo.add_child(dot)
 	# The beam being drawn, the snap point and the length.
 	_marker.visible = holding() and aim_point.is_finite()
 	if _marker.visible:
 		_marker.position = aim_point
-		_marker.material_override = _mats.lit if snapped_to != "end" else _mats.amber
+		_marker.material_override = _mats.amber if snapped_to == "end" else (_mats.pink if snapped_to == "plate" else _mats.lit)
 	_ghost.visible = holding() and start.is_finite() and aim_point.is_finite() and start.distance_to(aim_point) > 0.01
 	_length_label.visible = _ghost.visible or grabbed >= 0
 	if _ghost.visible:
@@ -881,7 +1019,11 @@ func info_lines() -> PackedStringArray:
 	if not clashes.is_empty():
 		out.append("Clashes  %d beams (red)" % clashes.size())
 	if not loose_ends.is_empty():
-		out.append("Loose ends  %d (amber): nothing holds them" % loose_ends.size())
+		out.append("Loose ends  %d (amber): not on the frame or another beam" % loose_ends.size())
+	if not plated_ends.is_empty():
+		out.append("Plated  %d ends (pink): strip the plates over the frame there" % plated_ends.size())
+	if not unattached.is_empty():
+		out.append("Not on the ship  %d beams (amber): join them to her frame" % unattached.size())
 	var id := grabbed if grabbed >= 0 else hovered
 	if id >= 0:
 		var b := beam(id)

@@ -99,8 +99,11 @@ func run_tests() -> void:
 	var resting := d.add_beam(Vector3(1.0 + 0.05, y + 6.0, 0), Vector3(3, y + 6.0, 0))
 	d.run_checks()
 	check(not d.clashes.has(resting) and not d.loose_ends.any(func(e: Array) -> bool: return e[0] == resting and e[1] == 0),
-			"one ending on the ship is held there and doesn't clash")
+			"one ending on another beam is held there and doesn't clash")
 	d.delete_beam(through)
+	d.run_checks()
+	check(d.loose_ends.any(func(e: Array) -> bool: return e[0] == resting and e[1] == 0),
+			"resting on something that isn't the ship's frame doesn't hold it")
 	d.delete_beam(resting)
 	block.queue_free()
 
