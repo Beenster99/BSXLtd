@@ -47,6 +47,8 @@ func _covered(label: String, f: Dictionary) -> void:
 	var off := 0
 	for s: MountSlot in def.slots:
 		for fp: FastenerPoint in s.fasteners:
+			if fp.has_meta("copy"):
+				continue   # an inside panel's extra bolts share their file joint (0.3.32)
 			if seen.has(fp.path):
 				twice += 1
 			seen[fp.path] = fp
@@ -62,7 +64,7 @@ func _covered(label: String, f: Dictionary) -> void:
 		counts[j["kind"]] = int(counts.get(j["kind"], 0)) + 1
 		if not seen.has(j["path"]):
 			missing.append(j["path"])
-		elif (seen[j["path"]] as FastenerPoint).position.distance_to(Vector3(j["at"][0], j["at"][1], j["at"][2])) > 0.001:
+		elif (seen[j["path"]] as FastenerPoint).position.distance_to(Vector3(j["at"][0], j["at"][1], j["at"][2])) > _slack(seen[j["path"]], j):
 			# Bolts hidden under a fitting's foot are moved out where you can see them (0.3.27).
 			var was := FastenerPoint.new()
 			was.position = Vector3(j["at"][0], j["at"][1], j["at"][2])
@@ -73,3 +75,12 @@ func _covered(label: String, f: Dictionary) -> void:
 				off += 1
 	check(missing.is_empty(), "%s: every joint still on her is workable (%s; %d missing %s)" % [label, counts, missing.size(), missing.slice(0, 5)])
 	check(twice == 0 and bad_kind.is_empty() and off == 0, "%s: once each, a tool's kind, in place (%d twice, kinds %s, %d moved; %d out from under fittings, %s)" % [label, twice, bad_kind, off, unhid.size(), unhid.slice(0, 6)])
+
+
+## How far a fastener may sit from its joint's place: an inside wall's or floor's weld made a
+## row of bolts has its first bolt along the seam (LayoutLoader._bolted_inside).
+func _slack(fp: FastenerPoint, j: Dictionary) -> float:
+	if not fp.has_meta("inside"):
+		return 0.001
+	var size: Variant = j.get("seam_size")
+	return (float(size[0]) * 0.5 if size is Array else 0.0) + 0.001

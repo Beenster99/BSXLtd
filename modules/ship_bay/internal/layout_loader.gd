@@ -103,21 +103,25 @@ static func from_file(f: Dictionary, ship_id: String, bsx: Dictionary) -> ShipDe
 			s.mount = _facing(s.fasteners[0].normal, s.mount.origin)
 		def.slots.append(s)
 	var fitted_parts := {}
+	var recs := {}
+	for p: Dictionary in f.get("parts", []):
+		recs[str(p.get("path", ""))] = p
+	var seen := inside_seen(f)
 	for entry: Dictionary in bsx.get("fittings", []):
-		var s := _fitting_slot(entry, f)
+		var s := _fitting_slot(entry, f, recs, seen)
 		if s:
 			def.slots.append(s)
 			fitted_parts[entry.get("part", "")] = true
 	if bsx.has("skin"):
 		for entry: Dictionary in _skin_fittings(bsx["skin"], f, fitted_parts):
-			var s := _fitting_slot(entry, f)
+			var s := _fitting_slot(entry, f, recs, seen)
 			if s:
 				def.slots.append(s)
 	if bsx.has("frame"):
-		for s: MountSlot in _frame_fittings(bsx["frame"], f):
+		for s: MountSlot in _frame_fittings(bsx["frame"], f, seen):
 			def.slots.append(s)
 	if bsx.has("rest"):
-		for s: MountSlot in _rest_fittings(bsx["rest"], f, def.slots):
+		for s: MountSlot in _rest_fittings(bsx["rest"], f, def.slots, seen):
 			def.slots.append(s)
 	_apply_damage(def, f)
 	return def
@@ -205,7 +209,7 @@ static func _skin_fittings(rule: Dictionary, f: Dictionary, taken: Dictionary) -
 ## as a fitting of its own, holding just those welds (each weld goes to its joint's `a` end,
 ## so no weld is in two slots; rivets and bolts onto the member stay with the plates and
 ## linings they hold): slot "<prefix><body>_<member>" ("frame_cockpit_wall_ring_e0").
-static func _frame_fittings(rule: Dictionary, f: Dictionary) -> Array[MountSlot]:
+static func _frame_fittings(rule: Dictionary, f: Dictionary, seen: Dictionary) -> Array[MountSlot]:
 	var phase: String = rule.get("phase", "frame")
 	var welds := {}
 	var order: Array = []
@@ -218,7 +222,9 @@ static func _frame_fittings(rule: Dictionary, f: Dictionary) -> Array[MountSlot]
 			order.append(a)
 		(welds[a] as Array).append(j)
 	var recs := {}
+	var all_recs := {}
 	for p: Dictionary in f.get("parts", []):
+		all_recs[str(p.get("path", ""))] = p
 		if welds.has(p.get("path", "")):
 			recs[p["path"]] = p
 	var out: Array[MountSlot] = []
@@ -242,7 +248,7 @@ static func _frame_fittings(rule: Dictionary, f: Dictionary) -> Array[MountSlot]
 		s.parts = PackedStringArray([path])
 		var counts := {}
 		for j: Dictionary in welds[path]:
-			s.fasteners.append(_file_fastener(s.slot_id, j, counts))
+			s.fasteners.append_array(_bolted_inside(s.slot_id, j, counts, all_recs, seen))
 		s.mount = _facing(s.fasteners[0].normal, s.box.get_center())
 		out.append(s)
 	return out
@@ -251,7 +257,7 @@ static func _frame_fittings(rule: Dictionary, f: Dictionary) -> Array[MountSlot]
 ## Every other part with joints not yet in a slot (decks, walls, linings, fittings and units),
 ## a fitting holding those joints (each by its `a` end, or its `b` end when `a` has no part
 ## record): slot "<prefix><path>" ("part_deck_0_plate_3"), named by the part.
-static func _rest_fittings(rule: Dictionary, f: Dictionary, taken: Array[MountSlot]) -> Array[MountSlot]:
+static func _rest_fittings(rule: Dictionary, f: Dictionary, taken: Array[MountSlot], seen: Dictionary) -> Array[MountSlot]:
 	var covered := {}
 	for s: MountSlot in taken:
 		for p in s.fasteners:
@@ -285,12 +291,152 @@ static func _rest_fittings(rule: Dictionary, f: Dictionary, taken: Array[MountSl
 		s.parts = PackedStringArray([path])
 		var counts := {}
 		for j: Dictionary in joints[path]:
-			var fp := _file_fastener(s.slot_id, j, counts)
-			if bool(rule.get("unhide", false)) and unhides(path):
-				_out_from_under(fp, s.box)
-			s.fasteners.append(fp)
+			for fp in _bolted_inside(s.slot_id, j, counts, recs, seen):
+				if bool(rule.get("unhide", false)) and unhides(path):
+					_out_from_under(fp, s.box)
+				s.fasteners.append(fp)
 		s.mount = _facing(s.fasteners[0].normal, s.box.get_center())
 		out.append(s)
+	return out
+
+
+## Inside floors and walls are bolted down (beenster, 0.3.31: "the internal walls and floors
+## should be bolted but there didn't seem to be as many"). Void Salvage welds most partitions
+## and some deck plates, and holds a wall panel by a bolt or two. In a ship's frame and
+## rest fittings (flag ship_bay.bolted_inside) a weld or spot weld on such a panel is a row of bolts along
+## its seam, one every BOLT_PITCH, and a panel held by fewer than FEW_BOLTS bolts has each
+## edge bolt it has repeated along that edge. The extra bolts ("<slot>/x<n>", meta "copy")
+## share their file joint, so they start undone with it; a weld made bolts has meta "inside"
+## (the bay hides its Void Salvage bead). Rivets and connectors stay as they are.
+const INSIDE_NAMES := ["DeckPlate", "WallPanel", "WallLining", "InnerPanel", "Partition", "Grating"]
+const INSIDE_ENDINGS := ["Wall", "Floor"]
+const BOLT_PITCH := 0.4      # m between bolts along a seam or edge
+const BOLT_INSET := 0.06     # m in from a panel's corner to its end bolts
+const EDGE_BAND := 0.2       # how near an edge (share of the panel's size) a bolt must be
+const FEW_BOLTS := 4         # a panel with fewer file bolts gets its edge bolts repeated
+const MAX_ROW := 10          # most bolts one seam or edge gets
+const PANEL_SLACK := 0.03    # m outside a panel's box a bolt on it may sit
+const MIN_GAP := 0.12        # m an extra bolt keeps from the panel's other bolts
+
+
+static func is_inside_panel(rec: Dictionary) -> bool:
+	if str(rec.get("category", "")) == "frame":
+		return false
+	var name := str(rec.get("name", ""))
+	if name in INSIDE_NAMES:
+		return true
+	for e: String in INSIDE_ENDINGS:
+		if name.ends_with(e):
+			return true
+	return false
+
+
+## File joint `j` as the slot's fasteners: just `_file_fastener`'s, or bolts when it holds an
+## inside floor or wall (above). `recs`: part path -> record; `seen` keeps, per panel, its
+## file bolts and the edges already repeated, across the slots of one ship.
+static func _bolted_inside(slot_id: String, j: Dictionary, counts: Dictionary, recs: Dictionary, seen: Dictionary) -> Array[FastenerPoint]:
+	var fp := _file_fastener(slot_id, j, counts)
+	var out: Array[FastenerPoint] = [fp]
+	if not Flags.is_on("ship_bay.bolted_inside") or not fp.kind in ["weld", "bolt"]:
+		return out
+	var panel := {}
+	for end: String in ["b", "a"]:
+		var rec: Dictionary = recs.get(str(j.get(end, "")), {})
+		if not rec.is_empty() and is_inside_panel(rec):
+			panel = rec
+			break
+	if panel.is_empty():
+		return out
+	var info: Dictionary = seen.get_or_add(str(panel.get("path", "")), {"bolts": 0, "edges": {}})
+	var spots: Array[Vector3] = []
+	if fp.kind == "weld":
+		var length := maxf(fp.seam_size.x, 0.0)
+		var along := fp.seam_up.normalized()
+		var n := clampi(int(round(length / BOLT_PITCH)), 1, MAX_ROW)
+		var centre := fp.position
+		# A seam can run on past the panel (a bulkhead's foot across several deck plates):
+		# only the bolts over this panel.
+		var on := _box(panel.get("box", {})).grow(PANEL_SLACK)
+		for k in n:
+			var p := centre + along * ((float(k) + 0.5) * length / n - length * 0.5)
+			if on.has_point(p):
+				spots.append(p)
+		if spots.is_empty():
+			spots.append(centre)
+		fp.kind = "bolt"
+		fp.spec = SPECS["bolt"]
+		fp.seam_up = Vector3.ZERO
+		fp.seam_size = Vector2.ZERO
+		fp.position = spots[0]
+		fp.set_meta("inside", true)
+	elif int(info["bolts"]) < FEW_BOLTS:
+		spots = [fp.position]
+		spots.append_array(_along_edge(fp, _box(panel.get("box", {})), info))
+	var taken: Array = info.get_or_add("at", [])
+	taken.append(fp.position)
+	for k in range(1, spots.size()):
+		# Not on top of a bolt the panel already has (two seams meeting at a corner).
+		if taken.any(func(q: Vector3) -> bool: return q.distance_to(spots[k]) < MIN_GAP):
+			continue
+		taken.append(spots[k])
+		var x := FastenerPoint.new()
+		x.kind = "bolt"
+		x.spec = SPECS["bolt"]
+		x.normal = fp.normal
+		x.position = spots[k]
+		x.path = fp.path
+		counts["x"] = int(counts.get("x", 0)) + 1
+		x.joint_id = "%s/x%d" % [slot_id, counts["x"]]
+		x.set_meta("copy", true)
+		out.append(x)
+	return out
+
+
+## `_bolted_inside`'s `seen` for ship file `f`: each part's file bolts, counted up front.
+static func inside_seen(f: Dictionary) -> Dictionary:
+	var out := {}
+	for j: Dictionary in f.get("joints", []):
+		if str(j.get("kind", "")) != "bolt":
+			continue
+		for end: String in ["a", "b"]:
+			var info: Dictionary = out.get_or_add(str(j.get(end, "")), {"bolts": 0, "edges": {}})
+			info["bolts"] = int(info["bolts"]) + 1
+	return out
+
+
+## More bolts along the panel edge that file bolt `fp` sits by: the panel's box must lie flat
+## to an axis the bolt faces down, and the bolt within EDGE_BAND of one edge across the row.
+## None when the bolt sits mid-panel or the edge already has its row.
+static func _along_edge(fp: FastenerPoint, box: AABB, info: Dictionary) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var na := fp.normal.abs().max_axis_index()
+	if absf(fp.normal[na]) < 0.98:
+		return out
+	var best := -1
+	for s: int in [(na + 1) % 3, (na + 2) % 3]:
+		var o := 3 - na - s
+		if box.size[o] <= 0.0 or box.size[s] < BOLT_PITCH * 2.0:
+			continue
+		var rel := (fp.position[o] - box.position[o]) / box.size[o]
+		if rel > EDGE_BAND and rel < 1.0 - EDGE_BAND:
+			continue
+		if best < 0 or box.size[s] > box.size[best]:
+			best = s
+	if best < 0:
+		return out
+	var other := 3 - na - best
+	var key := "%d:%d" % [best, int(round(fp.position[other] * 20.0))]
+	if (info["edges"] as Dictionary).has(key):
+		return out
+	info["edges"][key] = true
+	var a := box.position[best] + BOLT_INSET
+	var b := box.end[best] - BOLT_INSET
+	var n := clampi(int(floor((b - a) / BOLT_PITCH)) + 1, 2, MAX_ROW)
+	for k in n:
+		var p := fp.position
+		p[best] = lerpf(a, b, float(k) / float(n - 1))
+		if absf(p[best] - fp.position[best]) > BOLT_PITCH * 0.5:
+			out.append(p)
 	return out
 
 
@@ -385,12 +531,9 @@ static func _apply_damage(def: ShipDefinition, f: Dictionary) -> void:
 
 ## A file part BSX treats as a replaceable fitting (a hull plate): its slot, box and joints
 ## (every file joint on the part) from the file. Null when the file has no such part.
-static func _fitting_slot(e: Dictionary, f: Dictionary) -> MountSlot:
+static func _fitting_slot(e: Dictionary, f: Dictionary, recs: Dictionary, seen: Dictionary) -> MountSlot:
 	var path: String = e.get("part", "")
-	var rec := {}
-	for p: Dictionary in f.get("parts", []):
-		if p.get("path", "") == path:
-			rec = p
+	var rec: Dictionary = recs.get(path, {})
 	if rec.is_empty():
 		push_error("ShipBay: fitting %s names no part %s" % [e.get("slot_id", ""), path])
 		return null
@@ -405,7 +548,7 @@ static func _fitting_slot(e: Dictionary, f: Dictionary) -> MountSlot:
 	var counts := {}
 	for j: Dictionary in f.get("joints", []):
 		if j.get("a", "") == path or j.get("b", "") == path:
-			s.fasteners.append(_file_fastener(s.slot_id, j, counts))
+			s.fasteners.append_array(_bolted_inside(s.slot_id, j, counts, recs, seen))
 	s.mount = _facing(s.fasteners[0].normal if not s.fasteners.is_empty() else Vector3.BACK, s.box.get_center())
 	return s
 
