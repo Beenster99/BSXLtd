@@ -63,4 +63,32 @@ func _test_call_in(bus: ContractsBus) -> void:
 	if button:
 		button.pressed.emit()
 		check(bus.job_ids().size() == before + 5, "pressing the button calls an offer in")
+		# Pick another client and tier three: the chips light up and the call-in follows them.
+		var client_chip: Button = null
+		for b in section.find_child("ClientChips", true, false).get_children():
+			if (b as Button).text == ContractClients.display_name("tallow_reserve").to_upper():
+				client_chip = b
+		var tier_chip: Button = section.find_child("TierChips", true, false).get_child(2)
+		check(client_chip != null and tier_chip != null, "chips for Tallow Reserve and tier three")
+		if client_chip and tier_chip:
+			client_chip.pressed.emit()
+			tier_chip.pressed.emit()
+			var lit := PackedStringArray()
+			for b in section.find_child("ClientChips", true, false).get_children() + section.find_child("TierChips", true, false).get_children():
+				if (b as Button).get_theme_stylebox("normal").border_width_bottom == 4:
+					lit.append((b as Button).text)
+			check(lit == PackedStringArray([ContractClients.display_name("tallow_reserve").to_upper(), "TIER 3 (PREFERRED)"]), "the picked chips light up: %s" % str(lit))
+			var ids_before := bus.job_ids()
+			button.pressed.emit()
+			var new_ids := PackedStringArray()
+			for jid in bus.job_ids():
+				if not jid in ids_before:
+					new_ids.append(jid)
+			check(new_ids.size() == 1, "one more offer")
+			if new_ids.size() == 1:
+				var called := bus.get_job(new_ids[0])
+				var called_tier := int((called.order.raw.get("offer", {}) as Dictionary).get("tier", 0))
+				check(String(called.order.client.get("company", "")) == "tallow_reserve" and called_tier == 3,
+						"from the picked client at the picked tier: %s tier %d" % [called.order.client.get("company", ""), called_tier])
+			check((section.find_child("Result", true, false) as Label).text.begins_with("Called in a tier 3 offer from " + ContractClients.display_name("tallow_reserve")), "the result line says what landed")
 	section.queue_free()
