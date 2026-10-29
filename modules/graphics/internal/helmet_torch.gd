@@ -9,7 +9,8 @@ extends Node
 ## A torch never shadows the body wearing it (beenster, 0.3.27: "the head torch has a big
 ## shadow on the left hand side"; your own hidden body, which still casts the sun's shadow,
 ## stood between the lamp and the left of the view): the wearer's meshes go on render layer
-## OWN_LAYER and torches leave that layer out of their shadow casters.
+## OWN_LAYER and torches leave that layer out of their shadow casters. What you hold that
+## isn't under your body (a tool and its screen, 0.3.29) is tagged with group HELD.
 
 const ACTION := "graphics.torch"
 const EVENT := "graphics.torch"
@@ -28,6 +29,8 @@ const RANGE := 30.0     # metres
 const ANGLE := 32.0     # degrees, centre to edge
 ## The render layer (1..20) of meshes on a body wearing a torch, kept out of torches' shadows.
 const OWN_LAYER := 20
+## Group of things the local player holds or wears that sit outside their body's node.
+const HELD := "gfx_held"
 ## How far up from a camera or head the wearer's body may be.
 const WEARER_DEPTH := 3
 ## How often the wearer's meshes are looked over again for new ones (a tool picked up), s.
@@ -89,6 +92,8 @@ static func wearer_of(n: Node) -> Node:
 static func unshadow(body: Node) -> void:
 	if body == null:
 		return
+	if body is GeometryInstance3D:
+		(body as GeometryInstance3D).set_layer_mask_value(OWN_LAYER, true)
 	for g in body.find_children("*", "GeometryInstance3D", true, false):
 		(g as GeometryInstance3D).set_layer_mask_value(OWN_LAYER, true)
 
@@ -166,6 +171,8 @@ func _unshadow_wearers() -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() and on else null
 	if cam:
 		unshadow(wearer_of(cam))
+		for n in get_tree().get_nodes_in_group(HELD):
+			unshadow(n)
 	for peer: int in crew_lamps:
 		var l: Node = crew_lamps[peer]
 		if is_instance_valid(l) and l.get_parent():
