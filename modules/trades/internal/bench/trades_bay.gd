@@ -1095,6 +1095,8 @@ func _build_tools() -> void:
 		t.title = label_of(id, in_yard)
 		t.top_level = true
 		t.visible = false
+		# Held in your hand: your helmet torch casts no shadow of it (Graphics' "gfx_held").
+		t.add_to_group("gfx_held")
 		add_child(t)
 		tool_nodes[id] = t
 

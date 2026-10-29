@@ -29,8 +29,24 @@ extends Node3D
 ## on the frame where a plate is still fitted is pink (strip that plate first), and beams
 ## that never reach the frame through the design are "not on the ship". Ends snap to the
 ## frame's nodes and onto a member under the aim.
+##
+## Grown out of the ship (trades.beam_grow, beenster, 29 Oct): a click on the ship (or on the
+## end of a beam of the design) starts a beam growing straight out of that face; the wheel sets
+## its length (Shift: its section), Q/E swing it left and right, Shift+Q/E tilt it up and down,
+## and a second click places it. Nothing but the ship and the design's beam ends can be clicked:
+## not the ground, the walls or anything else in the yard. The same keys change a placed beam
+## (about the end it grew from; Ctrl+Q/E rolls it). Everyone sees everyone's beam as it grows,
+## and each change goes out a beam at a time so the crew can work on one design together.
 
 const EVENT := "trades.beams"
+## trades.beam_grow: each player's beam as it grows, for the others to see.
+const DRAFT_EVENT := "trades.beam_draft"
+const DRAFT_S := 0.1
+## A grown beam's first length, the wheel's step, and how near a beam's end the aim must be to
+## grow from it (m).
+const GROW_M := 1.0
+const LENGTH_STEP_M := 0.1
+const END_PICK_M := 0.3
 const SECTION := "trades_beams"
 const INFO := "trades.beams"
 ## How far the tablet reaches (m from the eye), and where the aim lands when it meets nothing.
@@ -100,6 +116,25 @@ var _moving: Dictionary = {}
 var _pick_when_here := -1
 var _grab_offset := Vector3.ZERO
 var _grab_depth := AIR_M
+## The beam as it was when picked up (its row), for undo once it is set down; {} for a copy.
+var _grab_before: Dictionary = {}
+## trades.beam_grow: the beam growing out of the ship, {} while none: {root, normal (ship
+## space: where it starts and the face it grows out of), yaw, pitch (degrees off the face's
+## normal), length (m)}. What the aim can grow one from now: `root_on` "frame", "plate" (the
+## ship's plating, which TEST asks to strip), "ship" (another part of her), "end" (a beam's
+## end) or "" (nothing the tablet can click), at `root_point` facing `root_normal`.
+var draft: Dictionary = {}
+var root_on := ""
+var root_point := Vector3.INF
+var root_normal := Vector3.ZERO
+## The other players' beams as they grow: peer -> {a, b, section}.
+var drafts: Dictionary = {}
+var _draft_sent := ""
+var _draft_s := 0.0
+## Where the aim meets something the tablet can't grow a beam from (ship space), INF when not.
+var _bad_point := Vector3.INF
+## Tests: the modifier keys held (KEY_SHIFT, KEY_CTRL), in place of the keyboard's; null: the keyboard.
+var fake_keys: Variant = null
 var _check_s := 0.0
 var _dirty := true
 var _drawn_key := ""
@@ -112,6 +147,30 @@ static func enabled() -> bool:
 
 static func versions_on() -> bool:
 	return Flags.is_on("trades.beam_versions")
+
+
+static func grow_on() -> bool:
+	return Flags.is_on("trades.beam_grow")
+
+
+## trades.beam_clear (beenster, 0.3.29: "it should be possible to remove all holo designs to
+## remove clutter"): Backspace on the tablet takes every beam of the version on show away at
+## once, as one step undo brings back.
+static func clear_on() -> bool:
+	return Flags.is_on("trades.beam_clear")
+
+
+## Takes every beam of the design on show away (one undo step). How many went.
+func clear_all() -> int:
+	var n := beams().size()
+	if n == 0:
+		return 0
+	grabbed = -1
+	hovered = -1
+	start = Vector3.INF
+	draft = {}
+	commit([])
+	return n
 
 
 func build(net: Node = null) -> void:
@@ -151,6 +210,7 @@ func build(net: Node = null) -> void:
 	_net = net
 	if _net:
 		_net.call("register_event", EVENT, _apply, _validate)
+		_net.call("register_event", DRAFT_EVENT, _apply_draft, _validate_draft)
 		if _net.has_method("register_snapshot_provider"):
 			_net.call("register_snapshot_provider", SECTION, self)
 
@@ -159,11 +219,44 @@ func _exit_tree() -> void:
 	HudSlots.clear_info(INFO)
 	if _net:
 		_net.call("unregister_event", EVENT)
+		_net.call("unregister_event", DRAFT_EVENT)
 		if _net.has_method("unregister_snapshot_provider"):
 			_net.call("unregister_snapshot_provider", SECTION)
 
 
-func _material(c: Color) -> StandardMaterial3D:
+## The hologram's look (beenster, 29 Oct: "the hologram beam should look like a hologram of a
+## beam"): see-through light, its edges and the faces seen side on brightest, scan lines running
+## up it and a faint flicker. Drawn over itself (no depth write), so the inside shows through.
+const HOLO_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec4 tint : source_color = vec4(0.35, 0.75, 1.0, 0.55);
+uniform float lines_per_m = 28.0;
+uniform float speed = 1.5;
+varying vec3 world;
+void vertex() {
+	world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+void fragment() {
+	float rim = pow(1.0 - abs(dot(normalize(NORMAL), normalize(VIEW))), 2.0);
+	float scan = smoothstep(0.55, 1.0, 0.5 + 0.5 * sin((world.y + world.x * 0.3) * lines_per_m * 6.2832 - TIME * speed * 6.2832));
+	float flick = 0.9 + 0.1 * sin(TIME * 31.0) * sin(TIME * 7.0);
+	ALBEDO = tint.rgb * (0.5 + 1.3 * rim + 0.6 * scan) * flick;
+	ALPHA = clamp(tint.a * (0.35 + 0.65 * rim + 0.4 * scan), 0.0, 1.0);
+}
+"""
+static var _holo_shader: Shader
+
+
+func _material(c: Color) -> Material:
+	if grow_on():
+		if _holo_shader == null:
+			_holo_shader = Shader.new()
+			_holo_shader.code = HOLO_SHADER
+		var h := ShaderMaterial.new()
+		h.shader = _holo_shader
+		h.set_shader_parameter("tint", c)
+		return h
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -238,14 +331,38 @@ func totals() -> Vector2:
 
 
 ## Puts the design in place of what is there (an edit: undoable). `list`: beam dictionaries.
+## Sent as one change per beam that differs, so two players editing different beams at once
+## both keep their work (beenster, 29 Oct: "all players can do the same at the same time").
 func commit(list: Array, undoable := true) -> void:
-	if undoable:
-		_undo.append(beams())
-		_redo.clear()
-	var rows: Array = []
+	var now := {}
+	for b: Dictionary in beams():
+		now[int(b.id)] = _row(b)
+	var want := {}
 	for b: Dictionary in list:
-		rows.append(_row(b))
-	_ask({"ship": ship_id(), "version": version(), "rows": rows})
+		want[int(b.id)] = _row(b)
+	var step: Array = []
+	for id: int in now:
+		if not want.has(id):
+			step.append([id, now[id], null])
+	for id: int in want:
+		if not now.has(id) or str(now[id]) != str(want[id]):
+			step.append([id, now.get(id), want[id]])
+	if step.is_empty():
+		return
+	if undoable:
+		_undo.append(step)
+		_redo.clear()
+	for c: Array in step:
+		_send(c[0], c[2], c[1] == null)
+
+
+## Sends one beam's change: its new row, or null to take it away.
+## `fresh`: a new beam, whose id the host changes if another player took it meanwhile.
+func _send(id: int, row: Variant, fresh := false) -> void:
+	if row == null:
+		_ask({"ship": ship_id(), "version": version(), "del": id})
+	else:
+		_ask({"ship": ship_id(), "version": version(), "put": row, "new": fresh})
 
 
 func _next_id(list: Array) -> int:
@@ -299,19 +416,25 @@ func turn_beam(id: int, deg: float, roll := false) -> void:
 	edit_beam(id, {"a": mid + r * ((b.a as Vector3) - mid), "b": mid + r * ((b.b as Vector3) - mid)})
 
 
+## Undo and redo go a change at a time: [[id, row before or null, row after or null], ...]
+## for each beam it touched, so undoing yours leaves what others did since alone.
 func undo() -> bool:
 	if _undo.is_empty():
 		return false
-	_redo.append(beams())
-	commit(_undo.pop_back(), false)
+	var step: Array = _undo.pop_back()
+	_redo.append(step)
+	for c: Array in step:
+		_send(c[0], c[1])
 	return true
 
 
 func redo() -> bool:
 	if _redo.is_empty():
 		return false
-	_undo.append(beams())
-	commit(_redo.pop_back(), false)
+	var step: Array = _redo.pop_back()
+	_undo.append(step)
+	for c: Array in step:
+		_send(c[0], c[2])
 	return true
 
 
@@ -467,6 +590,8 @@ func holding() -> bool:
 
 ## Left (pressed) or right click with the tablet. Returns true when it used it.
 func click(left: bool) -> bool:
+	if grow_on() and grabbed < 0:
+		return _click_grow(left)
 	if left:
 		if grabbed >= 0:
 			set_down()
@@ -487,8 +612,6 @@ func click(left: bool) -> bool:
 		# Put back where it was: the move never left this machine.
 		grabbed = -1
 		_moving = {}
-		if not _undo.is_empty():
-			_undo.pop_back()
 		_dirty = true
 	elif start.is_finite():
 		start = Vector3.INF
@@ -505,9 +628,7 @@ func pick_up(id: int, push := true) -> void:
 	if b.is_empty():
 		return
 	grabbed = id
-	if push:
-		_undo.append(beams())
-		_redo.clear()
+	_grab_before = _row(b) if push else {}
 	_moving = b.duplicate()
 	var eye := _eye_ship()
 	var mid := ((b.a as Vector3) + (b.b as Vector3)) * 0.5
@@ -519,6 +640,19 @@ func pick_up(id: int, push := true) -> void:
 ## One wheel notch: true when it changed a section (else the bay changes tools).
 func wheel(step: int) -> bool:
 	var id := grabbed if grabbed >= 0 else hovered
+	if grow_on():
+		var shift := _held(KEY_SHIFT)
+		if not draft.is_empty():
+			if shift:
+				section = TradesBeamSections.step(section, step)
+			else:
+				draft.length = clampf(float(draft.length) - step * LENGTH_STEP_M, MIN_M, MAX_M)
+			_play(&"tick")
+			return true
+		if id >= 0 and not shift:
+			stretch_beam(id, -step * LENGTH_STEP_M)
+			_play(&"tick")
+			return true
 	if start.is_finite() or id < 0:
 		if not start.is_finite():
 			return false
@@ -534,13 +668,17 @@ func wheel(step: int) -> bool:
 
 ## A key with the tablet in hand (TradesBus.KEY_*). True when it used it.
 func key(action: String) -> bool:
-	var shift := Input.is_key_pressed(KEY_SHIFT)
+	var shift := _held(KEY_SHIFT)
 	var id := grabbed if grabbed >= 0 else hovered
 	match action:
 		TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT:
+			var deg := TURN_DEG * (1.0 if action == TradesBus.KEY_TURN_RIGHT else -1.0)
+			if grow_on() and (not draft.is_empty() or (hovered >= 0 and grabbed < 0)):
+				_turn_grow(deg, shift, _held(KEY_CTRL))
+				_play(&"tick")
+				return true
 			if id < 0:
 				return false
-			var deg := TURN_DEG * (1.0 if action == TradesBus.KEY_TURN_RIGHT else -1.0)
 			if grabbed >= 0:
 				var b := beam(id)
 				if shift:
@@ -582,8 +720,18 @@ func key(action: String) -> bool:
 				return false
 			test()
 			return true
+		TradesBus.KEY_RESET:
+			if not clear_on():
+				return false
+			var n := clear_all()
+			if n > 0:
+				_play(&"clunk")
+				_say("Cleared %d beam%s. X brings them back." % [n, "" if n == 1 else "s"])
+			else:
+				_say("No beams to clear.")
+			return true
 		TradesBus.KEY_MODE:
-			if grabbed >= 0 or start.is_finite():
+			if grabbed >= 0 or start.is_finite() or not draft.is_empty():
 				return false
 			if redo() if shift else undo():
 				_play(&"tick")
@@ -591,6 +739,237 @@ func key(action: String) -> bool:
 				_say("Nothing to redo." if shift else "Nothing to undo.")
 			return true
 	return false
+
+
+func _held(k: Key) -> bool:
+	return (fake_keys as Array).has(k) if fake_keys is Array else Input.is_key_pressed(k)
+
+
+# --- Growing a beam out of the ship (trades.beam_grow) --------------------------------------
+
+func _click_grow(left: bool) -> bool:
+	if left:
+		if not draft.is_empty():
+			if place_growing() >= 0:
+				_play(&"click")
+			else:
+				_say("A beam runs %d mm to %d m." % [roundi(MIN_M * 1000.0), roundi(MAX_M)])
+		elif root_on != "":
+			start_growing()
+			_play(&"tick")
+		elif hovered >= 0:
+			pick_up(hovered)
+		else:
+			_say("Point at the ship, or the end of a beam, to grow a beam from it.")
+		return true
+	if not draft.is_empty():
+		draft = {}
+	elif hovered >= 0:
+		delete_beam(hovered)
+		hovered = -1
+		_play(&"clunk")
+	return true
+
+
+## A face's up and across (unit vectors at right angles to its normal `n`), for swinging and
+## tilting a beam grown out of it: across is level unless the face is.
+static func face_axes(n: Vector3) -> Array:
+	var up := Vector3.UP if absf(n.dot(Vector3.UP)) < 0.95 else Vector3.FORWARD
+	var side := up.cross(n).normalized()
+	return [n.cross(side).normalized(), side]
+
+
+## Which way a beam grown out of a face points: its normal swung `yaw` degrees about the face's
+## up and tilted `pitch` degrees up off it.
+static func grow_dir(n: Vector3, yaw: float, pitch: float) -> Vector3:
+	var ax := face_axes(n)
+	return n.rotated(ax[1], deg_to_rad(-pitch)).rotated(ax[0], deg_to_rad(yaw)).normalized()
+
+
+## The growing beam's far end (ship space) and what it snapped to: another beam's end or a
+## frame node within reach of it, else [where it reaches, ""].
+func draft_end() -> Array:
+	var e: Vector3 = (draft.root as Vector3) + grow_dir(draft.normal, float(draft.yaw), float(draft.pitch)) * float(draft.length)
+	var sn := snap(e, -1, false)
+	if sn[1] != "" and (sn[0] as Vector3).distance_to(draft.root) >= MIN_M:
+		return sn
+	return [e, ""]
+
+
+## Starts a beam growing out of where the aim is: false when it isn't on the ship or a beam's end.
+func start_growing() -> bool:
+	if root_on == "" or not root_point.is_finite():
+		return false
+	draft = {"root": root_point, "normal": root_normal, "yaw": 0.0, "pitch": 0.0, "length": GROW_M}
+	return true
+
+
+## Places the growing beam for everyone. Its id, or -1 when it can't be.
+func place_growing() -> int:
+	if draft.is_empty():
+		return -1
+	var id := add_beam(draft.root, draft_end()[0])
+	if id >= 0:
+		draft = {}
+	return id
+
+
+## Q/E on the growing beam or the one under the aim: swing (`tilt` false) or tilt it, or roll it.
+func _turn_grow(deg: float, tilt: bool, roll: bool) -> void:
+	if not draft.is_empty():
+		if tilt:
+			draft.pitch = clampf(float(draft.pitch) + deg, -90.0, 90.0)
+		else:
+			draft.yaw = wrapf(float(draft.yaw) + deg, -180.0, 180.0)
+		return
+	if roll:
+		turn_beam(hovered, deg, true)
+	else:
+		swing_beam(hovered, deg, tilt)
+
+
+## Swings (`tilt` false) or tilts a placed beam `deg` degrees about the end it grew from.
+func swing_beam(id: int, deg: float, tilt := false) -> void:
+	var b := beam(id)
+	if b.is_empty():
+		return
+	var a: Vector3 = b.a
+	var d: Vector3 = (b.b as Vector3) - a
+	var ax := face_axes(d.normalized())
+	var r := d.rotated(ax[1], deg_to_rad(-deg)) if tilt else d.rotated(ax[0], deg_to_rad(deg))
+	edit_beam(id, {"b": a + r}, grabbed < 0)
+
+
+## Makes a placed beam `by` metres longer (shorter when negative) from the end it grew from.
+func stretch_beam(id: int, by: float) -> void:
+	var b := beam(id)
+	if b.is_empty():
+		return
+	var d: Vector3 = (b.b as Vector3) - (b.a as Vector3)
+	var l := clampf(d.length() + by, MIN_M, MAX_M)
+	edit_beam(id, {"b": (b.a as Vector3) + d.normalized() * l}, grabbed < 0)
+
+
+## What a hit on the ship can grow a beam from: "frame" (a member still on her), "plate" (a
+## plate or pane still fitted), "ship" (another part of her), "" for anything that isn't her.
+func ship_part(collider: Object, shape_idx: int, at: Vector3) -> String:
+	var b := Modules.bus("ship_bay") as ShipBayBus
+	if b == null or collider == null:
+		return ""
+	var info := b.inspect_at(collider, shape_idx, at)
+	if info.is_empty() or str(info.get("slot_state", "")) == "empty":
+		return ""
+	match str(info.get("kind", "")):
+		"frame":
+			return "frame"
+		"hull", "glass":
+			return "plate"
+	return "ship"
+
+
+## The aim with trades.beam_grow: the growing beam's end, else what a click would grow from.
+func _aim_grow(near_t: float, hit: Dictionary, from: Vector3, dir: Vector3) -> void:
+	root_on = ""
+	root_point = Vector3.INF
+	root_normal = Vector3.ZERO
+	_bad_point = Vector3.INF
+	if not draft.is_empty():
+		hovered = -1
+		var e := draft_end()
+		aim_point = e[0]
+		snapped_to = e[1]
+		return
+	var xi := ship_xform().affine_inverse()
+	var hit_t := INF if hit.is_empty() else from.distance_to(xi * (hit.position as Vector3))
+	if hovered >= 0 and near_t <= hit_t:
+		var b := beam(hovered)
+		var c: Vector3 = Geometry3D.get_closest_points_between_segments(from, from + dir * REACH_M, b.a, b.b)[1]
+		for k in 2:
+			var end: Vector3 = b.a if k == 0 else b.b
+			var other: Vector3 = b.b if k == 0 else b.a
+			if c.distance_to(end) < END_PICK_M:
+				root_on = "end"
+				root_point = end
+				root_normal = (end - other).normalized()
+	elif not hit.is_empty():
+		hovered = -1
+		var kind := ship_part(hit.get("collider"), int(hit.get("shape", 0)), hit.position)
+		if kind != "":
+			root_on = kind
+			root_point = xi * (hit.position as Vector3)
+			root_normal = (xi.basis * (hit.normal as Vector3)).normalized()
+		else:
+			_bad_point = xi * (hit.position as Vector3)
+	aim_point = root_point
+	snapped_to = root_on
+
+
+## The tablet's ray into the yard (world space), going on through parts taken off the ship:
+## their shapes stay on her body, but there's nothing there to click.
+func cast(world_from: Vector3, world_dir: Vector3, exclude: Array[RID] = []) -> Dictionary:
+	var space := get_world_3d().direct_space_state
+	var at := world_from
+	var end := world_from + world_dir * REACH_M
+	for i in 8:
+		var q := PhysicsRayQueryParameters3D.create(at, end)
+		q.exclude = exclude
+		var hit := space.intersect_ray(q)
+		if hit.is_empty() or not grow_on() or not _gone(hit.get("collider"), int(hit.get("shape", 0))):
+			return hit
+		at = (hit.position as Vector3) + world_dir * 0.01
+	return {}
+
+
+## Sends this player's growing beam to the others (a few times a second while it changes).
+func _share_draft(delta: float) -> void:
+	_draft_s -= delta
+	if _net == null or not bool(_net.call("is_online")):
+		return
+	var p := {}
+	if holding() and not draft.is_empty():
+		var e: Vector3 = draft_end()[0]
+		p = {"ship": ship_id(), "a": _arr(draft.root), "b": _arr(e), "section": section}
+	var want := str(p)
+	if want == _draft_sent or (want != "{}" and _draft_s > 0.0):
+		return
+	_draft_s = DRAFT_S
+	_draft_sent = want
+	_net.call("request", DRAFT_EVENT, p)
+
+
+static func _arr(v: Vector3) -> Array:
+	return [snappedf(v.x, 0.001), snappedf(v.y, 0.001), snappedf(v.z, 0.001)]
+
+
+func _validate_draft(sender: int, p: Dictionary) -> Variant:
+	if not p.has("a"):
+		return {"peer": sender}
+	if _bad_row(p, false) != "":
+		return "bad beam"
+	return {"peer": sender, "ship": str(p.get("ship", "")), "a": p.a, "b": p.b, "section": str(p.section)}
+
+
+func _apply_draft(p: Dictionary) -> void:
+	var peer := int(p.get("peer", 0))
+	if peer == _me():
+		return
+	if p.has("a"):
+		drafts[peer] = {"ship": str(p.ship), "a": _v(p.a), "b": _v(p.b), "section": str(p.section)}
+	else:
+		drafts.erase(peer)
+
+
+## The other players' growing beams round this ship, those still here.
+func others_growing() -> Dictionary:
+	var online := _net != null and bool(_net.call("is_online"))
+	var here: Dictionary = _net.call("peers") if online and _net.has_method("peers") else {}
+	var out := {}
+	for peer: int in drafts.keys():
+		if online and not here.has(peer):
+			drafts.erase(peer)
+		elif str(drafts[peer].ship) == ship_id():
+			out[peer] = drafts[peer]
+	return out
 
 
 # --- Every step: the aim, the snapping, the checks ------------------------------------------
@@ -619,9 +998,13 @@ func _physics_process(delta: float) -> void:
 	else:
 		hovered = -1
 		start = Vector3.INF
+		draft = {}
+		root_on = ""
+		_bad_point = Vector3.INF
 		if grabbed >= 0:
 			set_down()
 		aim_point = Vector3.INF
+	_share_draft(delta)
 	_check_s -= delta
 	if _dirty or _check_s <= 0.0:
 		_check_s = CHECK_S
@@ -634,10 +1017,16 @@ func _physics_process(delta: float) -> void:
 func set_down() -> void:
 	if grabbed < 0:
 		return
-	var list := beams()
+	var moved := _row(_moving) if not _moving.is_empty() else {}
+	var id := grabbed
 	grabbed = -1
 	_moving = {}
-	commit(list, false)
+	if moved.is_empty():
+		return
+	if not _grab_before.is_empty() and str(_grab_before) != str(moved):
+		_undo.append([[id, _grab_before, moved]])
+		_redo.clear()
+	_send(id, moved)
 
 
 func _aim() -> void:
@@ -664,9 +1053,10 @@ func _aim() -> void:
 	# The surface under the aim.
 	var world_from: Vector3 = w.call("aim_origin")
 	var world_dir: Vector3 = w.call("aim_dir")
-	var q := PhysicsRayQueryParameters3D.create(world_from, world_from + world_dir * REACH_M)
-	q.exclude = [w.get_rid()]
-	var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
+	var hit := cast(world_from, world_dir, [w.get_rid()])
+	if grow_on():
+		_aim_grow(near_t, hit, from, dir)
+		return
 	var p: Vector3
 	var on := ""
 	if not hit.is_empty():
@@ -975,28 +1365,60 @@ func _draw() -> void:
 			dot.position = b.a if int(le[1]) == 0 else b.b
 			_holo.add_child(dot)
 	# The beam being drawn, the snap point and the length.
-	_marker.visible = holding() and aim_point.is_finite()
+	var bad := holding() and _bad_point.is_finite()
+	_marker.visible = holding() and (aim_point.is_finite() or bad)
 	if _marker.visible:
-		_marker.position = aim_point
-		_marker.material_override = _mats.amber if snapped_to == "end" else (_mats.pink if snapped_to == "plate" else _mats.lit)
-	_ghost.visible = holding() and start.is_finite() and aim_point.is_finite() and start.distance_to(aim_point) > 0.01
+		_marker.position = aim_point if aim_point.is_finite() else _bad_point
+		_marker.material_override = _mats.red if bad else (_mats.amber if snapped_to == "end" else (_mats.pink if snapped_to == "plate" else _mats.lit))
+	var ga := start if draft.is_empty() else (draft.root as Vector3)
+	_ghost.visible = holding() and ga.is_finite() and aim_point.is_finite() and ga.distance_to(aim_point) > 0.01
 	_length_label.visible = _ghost.visible or grabbed >= 0
 	if _ghost.visible:
-		var g := {"a": start, "b": aim_point, "section": section, "turn": 0.0}
-		var l := start.distance_to(aim_point)
-		var gk := "%s/%.3f" % [section, l]
-		if _ghost.get_meta("key", "") != gk:
-			_ghost.set_meta("key", gk)
-			_ghost.mesh = TradesBeamSections.mesh(section, l)
+		var g := {"a": ga, "b": aim_point, "section": section, "turn": 0.0}
+		var l := ga.distance_to(aim_point)
+		_beam_mesh(_ghost, section, l)
 		_ghost.transform = beam_xform(g)
-		_length_label.position = (start + aim_point) * 0.5 + Vector3.UP * 0.15
+		_length_label.position = (ga + aim_point) * 0.5 + Vector3.UP * 0.15
 		_length_label.text = "%d mm" % roundi(l * 1000.0)
+		if not draft.is_empty() and (absf(float(draft.yaw)) > 0.1 or absf(float(draft.pitch)) > 0.1):
+			_length_label.text += "  %+d° %+d°" % [roundi(float(draft.yaw)), roundi(float(draft.pitch))]
 	elif grabbed >= 0:
 		var b := beam(grabbed)
 		if not b.is_empty():
 			_length_label.position = ((b.a as Vector3) + (b.b as Vector3)) * 0.5 + Vector3.UP * 0.15
 			_length_label.text = "%d mm" % roundi(((b.b as Vector3) - (b.a as Vector3)).length() * 1000.0)
+	_draw_others()
 	_info()
+
+
+func _beam_mesh(mi: MeshInstance3D, sec: String, l: float) -> void:
+	var gk := "%s/%.3f" % [sec, l]
+	if mi.get_meta("key", "") != gk:
+		mi.set_meta("key", gk)
+		mi.mesh = TradesBeamSections.mesh(sec, l)
+
+
+## The other players' beams as they grow, faint, where they are now.
+func _draw_others() -> void:
+	var others := others_growing()
+	for c in _holo.get_children():
+		if c.name.begins_with("Draft_") and not others.has(int(str(c.name).trim_prefix("Draft_"))):
+			_holo.remove_child(c)
+			c.queue_free()
+	for peer: int in others:
+		var g: Dictionary = others[peer]
+		var mi := _holo.get_node_or_null("Draft_%d" % peer) as MeshInstance3D
+		if mi == null:
+			mi = MeshInstance3D.new()
+			mi.name = "Draft_%d" % peer
+			mi.material_override = _mats.ghost
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_holo.add_child(mi)
+		var l := (g.a as Vector3).distance_to(g.b)
+		if l < 0.01:
+			continue
+		_beam_mesh(mi, str(g.section), l)
+		mi.transform = beam_xform({"a": g.a, "b": g.b, "turn": 0.0})
 
 
 func _anyone_holding() -> bool:
@@ -1009,6 +1431,11 @@ func info_lines() -> PackedStringArray:
 	var t := totals()
 	var n := beams().size()
 	out.append("Next beam  %s" % TradesBeamSections.name_of(section))
+	if not draft.is_empty():
+		out.append("Growing  %d mm, swung %+d°, tilted %+d°" % [roundi(float(draft.length) * 1000.0), roundi(float(draft.yaw)), roundi(float(draft.pitch))])
+	var others := others_growing().size()
+	if others > 0:
+		out.append("Crew drawing  %d beam%s" % [others, "" if others == 1 else "s"])
 	if versions_on():
 		var counts := version_counts()
 		var row := PackedStringArray()
@@ -1038,15 +1465,27 @@ func info_lines() -> PackedStringArray:
 
 ## What the tablet is doing, in a few words with its keys.
 func doing() -> String:
+	if grow_on() and grabbed < 0:
+		if not draft.is_empty():
+			return "Growing: wheel length, Shift+wheel section, Q/E swing, Shift+Q/E tilt, click to place, right click cancel"
+		if root_on == "end":
+			return "Click to grow a beam on from this end"
+		if hovered >= 0:
+			return "Click to move, right click delete, wheel length, Shift+wheel section, Q/E swing, Shift+Q/E tilt, Ctrl+Q/E roll"
+		if root_on != "":
+			return "Click to grow a beam out of the ship here" + (" (strip this plate first)" if root_on == "plate" else "")
+		return "Point at the ship's frame, or a beam's end, to grow a beam" + (", X undo, R version, H test" if versions_on() else ", X undo") \
+				+ (", Backspace clear all" if clear_on() else "")
 	if grabbed >= 0:
 		return "Moving: click to set it down, Q/E turn, right click cancel"
 	if start.is_finite():
 		return "Drawing: click the far end, wheel for the section, right click cancel"
 	if hovered >= 0:
 		return "Click to move, right click delete, G copy, Q/E turn, wheel section"
+	var clear := ", Backspace clear all" if clear_on() else ""
 	if versions_on():
-		return "Click to start a beam, X undo, R version, H test"
-	return "Click to start a beam, X undo"
+		return "Click to start a beam, X undo, R version, H test" + clear
+	return "Click to start a beam, X undo" + clear
 
 
 func _info() -> void:
@@ -1056,7 +1495,7 @@ func _info() -> void:
 		tab.count = beams().size()
 		tab.version = version() if versions_on() else ""
 		tab.test = "" if test_result.is_empty() or str(test_result.key) != design_key() else ("PASS" if test_result.passed else "FAIL")
-		tab.doing = "moving" if grabbed >= 0 else ("drawing" if start.is_finite() else ("on a beam" if hovered >= 0 else "ready"))
+		tab.doing = "moving" if grabbed >= 0 else ("drawing" if start.is_finite() or not draft.is_empty() else ("on a beam" if hovered >= 0 else "ready"))
 	if not holding():
 		if _shown != "":
 			_shown = ""
@@ -1089,8 +1528,10 @@ func _ask(p: Dictionary) -> void:
 		_apply(v)
 
 
-func _validate(_sender: int, p: Dictionary) -> Variant:
+func _validate(sender: int, p: Dictionary) -> Variant:
 	var out := {"ship": str(p.get("ship", ""))}
+	if p.has("put") or p.has("del"):
+		return _validate_one(sender, p, out)
 	if p.has("show"):
 		if not TradesBus.BEAM_VERSIONS.has(str(p.show)):
 			return "bad version"
@@ -1105,28 +1546,98 @@ func _validate(_sender: int, p: Dictionary) -> Variant:
 	if not rows is Array or (rows as Array).size() > MAX_BEAMS:
 		return "bad design"
 	for r: Variant in rows:
-		if not r is Dictionary or not (r as Dictionary).get("a") is Array or not (r as Dictionary).get("b") is Array:
-			return "bad beam"
-		var d := r as Dictionary
-		if (d.a as Array).size() != 3 or (d.b as Array).size() != 3:
-			return "bad beam"
-		var l := _v(d.a).distance_to(_v(d.b))
-		if not is_finite(l) or l < MIN_M * 0.5 or l > MAX_M:
-			return "bad length"
-		if not TradesBeamSections.has(str(d.get("section", ""))):
-			return "bad section"
+		var bad := _bad_row(r, false)
+		if bad != "":
+			return bad
 	out["rows"] = rows
 	return out
+
+
+## One beam's change: its row checked, a new beam's id made free on the host's design.
+func _validate_one(sender: int, p: Dictionary, out: Dictionary) -> Variant:
+	var v := str(p.get("version", ""))
+	if v != "" and not TradesBus.BEAM_VERSIONS.has(v):
+		return "bad version"
+	out["version"] = v
+	if p.has("del"):
+		out["del"] = int(p.del)
+		return out
+	var bad := _bad_row(p.get("put"))
+	if bad != "":
+		return bad
+	var row := (p.put as Dictionary).duplicate()
+	var bus := Modules.bus("trades") as TradesBus
+	if bool(p.get("new", false)) and bus:
+		var used := {}
+		var top := 0
+		for r: Dictionary in bus.beam_design(out.ship, v):
+			used[int(r.id)] = true
+			top = maxi(top, int(r.id))
+		if used.has(int(row.id)):
+			out["asked"] = int(row.id)
+			row["id"] = top + 1
+	out["put"] = row
+	out["peer"] = sender
+	return out
+
+
+## Why a beam's row can't be taken ("" when it can).
+static func _bad_row(r: Variant, need_id := true) -> String:
+	if not r is Dictionary or not (r as Dictionary).get("a") is Array or not (r as Dictionary).get("b") is Array:
+		return "bad beam"
+	var d := r as Dictionary
+	if (d.a as Array).size() != 3 or (d.b as Array).size() != 3 or (need_id and not d.has("id")):
+		return "bad beam"
+	var l := _v(d.a).distance_to(_v(d.b))
+	if not is_finite(l) or l < MIN_M * 0.5 or l > MAX_M:
+		return "bad length"
+	if not TradesBeamSections.has(str(d.get("section", ""))):
+		return "bad section"
+	return ""
 
 
 func _apply(p: Dictionary) -> void:
 	var bus := Modules.bus("trades") as TradesBus
 	if bus == null:
 		return
+	if p.has("put") or p.has("del"):
+		_apply_one(bus, p)
+		return
 	if p.has("rows"):
 		bus.set_beam_design(str(p.ship), p.rows, str(p.get("version", "")))
 	if p.has("show"):
 		bus.show_beam_version(str(p.ship), str(p.show))
+
+
+func _apply_one(bus: TradesBus, p: Dictionary) -> void:
+	var ship := str(p.ship)
+	var v := str(p.get("version", ""))
+	var rows: Array = bus.beam_design(ship, v).duplicate(true)
+	var id := int(p.del) if p.has("del") else int((p.put as Dictionary).id)
+	rows = rows.filter(func(r: Dictionary) -> bool: return int(r.id) != id)
+	if p.has("put"):
+		rows.append(p.put)
+	bus.set_beam_design(ship, rows, v)
+	# A new beam of mine the host gave another id: keep pointing at it.
+	if p.has("asked") and int(p.get("peer", -1)) == _me():
+		_renumber(int(p.asked), id)
+
+
+func _me() -> int:
+	return int(_net.call("local_peer_id")) if _net and bool(_net.call("is_online")) else 1
+
+
+func _renumber(from: int, to: int) -> void:
+	if _pick_when_here == from:
+		_pick_when_here = to
+	for stack: Array in [_undo, _redo]:
+		for step: Array in stack:
+			for c: Array in step:
+				if int(c[0]) == from:
+					c[0] = to
+					for i in [1, 2]:
+						if c[i] is Dictionary:
+							c[i]["id"] = to
 
 
 func get_net_snapshot() -> Dictionary:

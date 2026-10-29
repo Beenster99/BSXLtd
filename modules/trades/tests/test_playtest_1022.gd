@@ -21,6 +21,10 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The tools' old jobs (trades.tool_one_job and trades.gone_rings change them: test_gone_rings).
+	for flag: String in ["trades.tool_one_job", "trades.gone_rings"]:
+		saved[flag] = Flags.is_on(flag)
+		Flags.set_flag(flag, false)
 	ship_bus.load_ship("vs_kestrel")
 	var yard := _fake_yard()
 	add_child(yard)

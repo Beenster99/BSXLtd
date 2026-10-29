@@ -131,7 +131,14 @@ static func weld_skill() -> bool:
 ## that dealing with welds is much easier"): as Void Salvage's cutter, ours cuts a weld out
 ## wherever you point along its seam and hold; the welder only lays them, held still on the seam.
 static func cutter_welds() -> bool:
-	return Flags.is_on("trades.cutter_welds") and Flags.is_on("trades.cutter")
+	return Flags.is_on("trades.cutter_welds") and Flags.is_on("trades.cutter") and not one_job()
+
+
+## trades.tool_one_job (playtest 0.3.29, beenster: "cutter tool should only work on rivets,
+## welder tool should only work on welds"): the cutter takes rivets out and leaves welds alone;
+## the welder lays and cuts welds and no longer heats rivets out.
+static func one_job() -> bool:
+	return Flags.is_on("trades.tool_one_job")
 
 ## Ship space to this station's world: read from the yard on every refresh, and followed while
 ## the ship moves (a wreck set down on its cradle, a cradle driven). A stale one left the tools
@@ -487,6 +494,8 @@ func _note_removed(f: FastenerPoint) -> bool:
 		if is_unit(f):
 			_unit_quality.erase(f.joint_id)
 			_unit_changed(f.joint_id)
+	if gone and f.kind in ["rivet", "bolt"]:
+		_just_out = f.joint_id
 	if gone and f.kind == "bolt":
 		_drop_bolt(f)
 	return gone
@@ -1116,7 +1125,7 @@ func _report(f: FastenerPoint, trade: StringName, measurements: Dictionary) -> v
 func kind_tools(kind: String) -> Array:
 	var out: Array = (KIND_TOOLS.get(kind, []) as Array).duplicate()
 	if kind == "rivet":
-		if Flags.is_on("trades.rivet_heat"):
+		if Flags.is_on("trades.rivet_heat") and not one_job():
 			out.append(&"welder")
 		out.append(&"cutter")
 	if kind == "weld" and cutter_welds():
@@ -2274,6 +2283,29 @@ func tool_changed() -> void:
 		_update_aim()
 
 
+## trades.gone_rings (beenster, 0.3.29: "when a rivet or bolt is removed so is its highlight"):
+## a rivet or bolt that is out keeps no ring and isn't aimed, unless the tool in hand is one
+## that puts it back (the rivet gun, the wrench); the one just taken out shows no ring even
+## then until the look leaves it (it stays aimed, so the wrench can run it straight back in).
+static func gone_rings() -> bool:
+	return Flags.is_on("trades.gone_rings")
+
+## The joint id last taken out, dark until the look moves off it (gone_rings).
+var _just_out := ""
+## Is joint `i` taken off and so out of the aim and the rings (gone_rings)? `drawn`: for the
+## rings, where the one just taken out counts too.
+func is_gone(i: int, drawn := false) -> bool:
+	if not gone_rings() or i < 0 or i >= points.size():
+		return false
+	var f := points[i]
+	if not (f.kind in ["rivet", "bolt"]) or is_tight(f):
+		return false
+	if drawn and f.joint_id == _just_out:
+		return true
+	var t := bay.tool if bay else &""
+	return not ((KIND_TOOLS.get(f.kind, []) as Array).has(t) and t != &"drill")
+
+
 ## Does the tool in hand work joints of `kind`? (Hands or nothing: every kind.)
 func _works(kind: String) -> bool:
 	var t := bay.tool
@@ -2302,7 +2334,7 @@ func _snap_aim(hand: Node) -> int:
 	var now_d := INF
 	for i in points_world.size():
 		var f := points[i]
-		if not _works(f.kind):
+		if not _works(f.kind) or is_gone(i):
 			continue
 		var p := _aim_point(i)
 		# Near where the look lands, or right on the aim line however deep (behind a plate).
@@ -2327,7 +2359,7 @@ func _show_hints(at: Vector3) -> void:
 		var near: Array = []
 		for i in points_world.size():
 			var dd := points_world[i].distance_to(at)
-			if dd < HINT_M and i != aimed and _works(points[i].kind) and not from_end(points[i]):
+			if dd < HINT_M and i != aimed and _works(points[i].kind) and not from_end(points[i]) and not is_gone(i, true):
 				near.append([dd, i])
 		near.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 		for e: Array in near.slice(0, HINTS_MAX):
@@ -2367,6 +2399,8 @@ func _update_aim() -> void:
 	var o := bay.worker.aim_origin()
 	var dir := bay.worker.aim_dir()
 	for i in points_world.size():
+		if is_gone(i):
+			continue
 		var p := _aim_point(i)
 		var d := bay.aim_distance(p)
 		if d < best_d and (p - o).dot(dir) > surface + HIDDEN_BEHIND_M:
@@ -2377,6 +2411,9 @@ func _update_aim() -> void:
 	if snapped != -2:
 		best = snapped
 	if best != aimed:
+		# The one just taken out may ring again once the aim has left it (gone_rings).
+		if aimed >= 0 and points[aimed].joint_id == _just_out:
+			_just_out = ""
 		aimed = best
 		# What the tool does to it is in the tips (actions); the old hint goes.
 		bay.hint("")
@@ -2547,8 +2584,8 @@ func actions(tool: StringName) -> Array:
 
 func _place_marker() -> void:
 	var i := _working if _working >= 0 else aimed
-	_marker.visible = i >= 0
-	if i < 0:
+	_marker.visible = i >= 0 and (_working >= 0 or not is_gone(i, true))
+	if not _marker.visible:
 		return
 	var quiet := Flags.is_on("trades.quiet_rings")
 	_marker.mesh = _quiet_mesh if quiet else _ring_mesh

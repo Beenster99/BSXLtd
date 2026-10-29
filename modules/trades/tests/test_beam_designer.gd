@@ -21,6 +21,9 @@ func run_tests() -> void:
 	for flag: String in ["trades.beam_designer"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# Drawn end to end, the first way (trades.beam_grow, growing out of the ship, is test_beam_grow's).
+	saved["trades.beam_grow"] = Flags.is_on("trades.beam_grow")
+	Flags.set_flag("trades.beam_grow", false)
 	bus.reset_data()
 
 	# The sections.

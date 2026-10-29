@@ -24,6 +24,10 @@ func run_tests() -> void:
 	for flag: String in FLAGS:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	# The tools' old jobs (trades.tool_one_job and trades.gone_rings change them: test_gone_rings).
+	for flag: String in ["trades.tool_one_job", "trades.gone_rings"]:
+		saved[flag] = Flags.is_on(flag)
+		Flags.set_flag(flag, false)
 	# The cutter is tested here, so the full hotbar.
 	saved["trades.slim_hotbar"] = Flags.is_on("trades.slim_hotbar")
 	Flags.set_flag("trades.slim_hotbar", false)
