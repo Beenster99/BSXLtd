@@ -14,6 +14,10 @@ extends Node3D
 ##   Q / E          turn the beam 15 degrees about the upright (Shift: roll it about its length)
 ##   G              copy the beam you point at and pick the copy up
 ##   X              undo (Shift+X redo)
+##   R              (trades.beam_versions) show the next version, A, B or C (Shift+R: copy this
+##                  version into the next and show it)
+##   H              (trades.beam_versions) TEST the version showing: every end held, no
+##                  clashes, the mass it adds and how far it moves the ship's centre of mass
 ## The design is kept per ship in TradesBus (in the save) and shared with the crew by one
 ## event that carries the whole design; a beam clashing with the ship or another beam is red,
 ## an end that nothing holds is amber.
@@ -62,6 +66,9 @@ var snapped_to := ""
 ## The checks' findings: beam ids that clash, and [beam id, end 0|1] pairs nothing holds.
 var clashes: Dictionary = {}
 var loose_ends: Array = []
+## The last TEST (trades.beam_versions): {version, key (the design it tested), beams, clashes,
+## loose, kg, length, shift (Vector3, ship space, m), ship_kg, passed}; {} before one.
+var test_result: Dictionary = {}
 
 var _net: Node
 var _holo: Node3D
@@ -84,6 +91,10 @@ var _shown := ""
 
 static func enabled() -> bool:
 	return Flags.is_on("trades.beam_designer")
+
+
+static func versions_on() -> bool:
+	return Flags.is_on("trades.beam_versions")
 
 
 func build(net: Node = null) -> void:
@@ -166,6 +177,21 @@ func beams() -> Array:
 	return out
 
 
+## The version of the design showing ("A", "B" or "C").
+func version() -> String:
+	var bus := Modules.bus("trades") as TradesBus
+	return bus.beam_version(ship_id()) if bus else "A"
+
+
+## How many beams each version has: {letter: count}.
+func version_counts() -> Dictionary:
+	var bus := Modules.bus("trades") as TradesBus
+	var out := {}
+	for v: String in TradesBus.BEAM_VERSIONS:
+		out[v] = bus.beam_design(ship_id(), v).size() if bus else 0
+	return out
+
+
 func beam(id: int) -> Dictionary:
 	for b: Dictionary in beams():
 		if int(b.id) == id:
@@ -202,7 +228,7 @@ func commit(list: Array, undoable := true) -> void:
 	var rows: Array = []
 	for b: Dictionary in list:
 		rows.append(_row(b))
-	_ask({"ship": ship_id(), "rows": rows})
+	_ask({"ship": ship_id(), "version": version(), "rows": rows})
 
 
 func _next_id(list: Array) -> int:
@@ -270,6 +296,135 @@ func redo() -> bool:
 	_undo.append(beams())
 	commit(_redo.pop_back(), false)
 	return true
+
+
+# --- Versions and the test (trades.beam_versions) ------------------------------------------
+
+func _next_version() -> String:
+	var all := TradesBus.BEAM_VERSIONS
+	return all[(all.find(version()) + 1) % all.size()]
+
+
+## Shows another version: what was being drawn or moved is let go, and undo starts afresh.
+func show_version(v: String) -> void:
+	if not TradesBus.BEAM_VERSIONS.has(v) or v == version():
+		return
+	_let_go()
+	_ask({"ship": ship_id(), "show": v})
+
+
+## Copies the version showing into `v` (in place of what it had) and shows it.
+func copy_to(v: String) -> void:
+	if not TradesBus.BEAM_VERSIONS.has(v) or v == version():
+		return
+	var rows: Array = []
+	for b: Dictionary in beams():
+		rows.append(_row(b))
+	_let_go()
+	_ask({"ship": ship_id(), "version": v, "rows": rows, "show": v})
+
+
+func _let_go() -> void:
+	grabbed = -1
+	_moving = {}
+	start = Vector3.INF
+	_undo.clear()
+	_redo.clear()
+	_dirty = true
+
+
+## A key for the design as it stands, so a test can tell it is out of date.
+func design_key() -> String:
+	return "%s|%s" % [version(), str(beams())]
+
+
+## TEST: runs the checks on the version showing and keeps what they found in test_result.
+func test() -> Dictionary:
+	run_checks()
+	_check_s = 0.0
+	var list := beams()
+	var t := totals()
+	var mid := Vector3.ZERO
+	for b: Dictionary in list:
+		var l := ((b.b as Vector3) - (b.a as Vector3)).length()
+		mid += ((b.a as Vector3) + (b.b as Vector3)) * 0.5 * TradesBeamSections.mass(str(b.section), l)
+	var ship := ship_mass(_ship_def())
+	var ship_kg := float(ship.get("kg", 0.0))
+	var shift := Vector3.ZERO
+	if t.y > 0.0 and ship_kg > 0.0:
+		shift = (mid / t.y - (ship.centre as Vector3)) * t.y / (ship_kg + t.y)
+	test_result = {"version": version(), "key": design_key(), "beams": list.size(), "clashes": clashes.size(),
+			"loose": loose_ends.size(), "kg": t.y, "length": t.x, "shift": shift, "ship_kg": ship_kg,
+			"passed": not list.is_empty() and clashes.is_empty() and loose_ends.is_empty()}
+	_play(&"click" if test_result.passed else &"clunk")
+	_say(test_line())
+	return test_result
+
+
+## The test's verdict in a line, "" before one.
+func test_line() -> String:
+	if test_result.is_empty():
+		return ""
+	if int(test_result.beams) == 0:
+		return "Nothing to test: version %s has no beams." % test_result.version
+	var bits := PackedStringArray()
+	if int(test_result.clashes) > 0:
+		bits.append("%d clash%s" % [test_result.clashes, "" if int(test_result.clashes) == 1 else "es"])
+	if int(test_result.loose) > 0:
+		bits.append("%d loose end%s" % [test_result.loose, "" if int(test_result.loose) == 1 else "s"])
+	var head := "Version %s passes" % test_result.version if bits.is_empty() else "Version %s fails: %s" % [test_result.version, ", ".join(bits)]
+	return "%s. Adds %d kg%s." % [head, roundi(float(test_result.kg)), _shift_words(test_result.shift, float(test_result.ship_kg))]
+
+
+## How far the design moves the ship's centre of mass, in words (ship space: -Z forward, +X
+## to the right, +Y up).
+static func _shift_words(shift: Vector3, ship_kg: float) -> String:
+	if ship_kg <= 0.0:
+		return ""
+	var parts := PackedStringArray()
+	for axis in [[shift.z, "aft", "forward"], [shift.y, "up", "down"], [shift.x, "right", "left"]]:
+		var mm := roundi(absf(float(axis[0])) * 1000.0)
+		if mm >= 1:
+			parts.append("%d mm %s" % [mm, axis[1] if float(axis[0]) > 0.0 else axis[2]])
+	if parts.is_empty():
+		return ", centre of mass unmoved"
+	return ", moves the centre of mass " + ", ".join(parts)
+
+
+func _ship_def() -> ShipDefinition:
+	var b := Modules.bus("ship_bay") as ShipBayBus
+	return b.ship if b else null
+
+
+static var _mass_cache: Dictionary = {}
+
+
+## A ship's mass (kg) and centre of mass (ship space) from its Void Salvage file's parts:
+## {kg, centre}; {} when its file can't be read.
+static func ship_mass(def: ShipDefinition) -> Dictionary:
+	if def == null:
+		return {}
+	var key := def.ship_id + ("#%d" % def.file.hash() if not def.file.is_empty() else "")
+	if _mass_cache.has(key):
+		return _mass_cache[key]
+	var f := def.file if not def.file.is_empty() else VsShipImport.design_source(def.ship_id.trim_prefix("vs_"))
+	var kg := 0.0
+	var sum := Vector3.ZERO
+	for p: Variant in f.get("parts", []):
+		if not p is Dictionary:
+			continue
+		var m := float((p as Dictionary).get("mass", 0.0))
+		var box: Dictionary = (p as Dictionary).get("box", {})
+		var at := Vector3.ZERO
+		if box.has("pos") and box.has("size"):
+			at = VsShipImport.vec3(box.pos) + VsShipImport.vec3(box.size) * 0.5
+		else:
+			at = VsShipImport.vec3(((p as Dictionary).get("xform", {}) as Dictionary).get("o", [0, 0, 0]))
+		kg += m
+		sum += at * m
+	var out := {} if kg <= 0.0 else {"kg": kg, "centre": sum / kg}
+	_mass_cache[key] = out
+	return out
 
 
 # --- Input (the bay hands it the tablet's clicks, keys and wheel) ---------------------------
@@ -378,6 +533,22 @@ func key(action: String) -> bool:
 			# The copy only arrives with the event: offline at once, online a moment later.
 			_pick_when_here = int(copy.id)
 			_say("Copied. Move the copy and click to set it down.")
+			return true
+		TradesBus.KEY_ROTATE:
+			if not versions_on():
+				return false
+			if shift:
+				var to := _next_version()
+				copy_to(to)
+				_say("Copied into version %s." % to)
+			else:
+				show_version(_next_version())
+			_play(&"tick")
+			return true
+		TradesBus.KEY_HELMET:
+			if not versions_on():
+				return false
+			test()
 			return true
 		TradesBus.KEY_MODE:
 			if grabbed >= 0 or start.is_finite():
@@ -700,6 +871,12 @@ func info_lines() -> PackedStringArray:
 	var t := totals()
 	var n := beams().size()
 	out.append("Next beam  %s" % TradesBeamSections.name_of(section))
+	if versions_on():
+		var counts := version_counts()
+		var row := PackedStringArray()
+		for v: String in TradesBus.BEAM_VERSIONS:
+			row.append(("[%s]" if v == version() else "%s") % v + " " + (str(counts[v]) if int(counts[v]) > 0 else "-"))
+		out.append("Version  %s" % "   ".join(row))
 	out.append("Design  %d beams, %.1f m, %d kg" % [n, t.x, roundi(t.y)])
 	if not clashes.is_empty():
 		out.append("Clashes  %d beams (red)" % clashes.size())
@@ -711,6 +888,8 @@ func info_lines() -> PackedStringArray:
 		if not b.is_empty():
 			out.append("This beam  %s, %d mm" % [TradesBeamSections.name_of(str(b.section)),
 					roundi(((b.b as Vector3) - (b.a as Vector3)).length() * 1000.0)])
+	if versions_on() and not test_result.is_empty():
+		out.append(("Test  " + test_line()) if str(test_result.key) == design_key() else "Test  changed since: H to test again")
 	out.append(doing())
 	return out
 
@@ -723,6 +902,8 @@ func doing() -> String:
 		return "Drawing: click the far end, wheel for the section, right click cancel"
 	if hovered >= 0:
 		return "Click to move, right click delete, G copy, Q/E turn, wheel section"
+	if versions_on():
+		return "Click to start a beam, X undo, R version, H test"
 	return "Click to start a beam, X undo"
 
 
@@ -731,6 +912,8 @@ func _info() -> void:
 	if tab:
 		tab.section = TradesBeamSections.name_of(section)
 		tab.count = beams().size()
+		tab.version = version() if versions_on() else ""
+		tab.test = "" if test_result.is_empty() or str(test_result.key) != design_key() else ("PASS" if test_result.passed else "FAIL")
 		tab.doing = "moving" if grabbed >= 0 else ("drawing" if start.is_finite() else ("on a beam" if hovered >= 0 else "ready"))
 	if not holding():
 		if _shown != "":
@@ -765,6 +948,17 @@ func _ask(p: Dictionary) -> void:
 
 
 func _validate(_sender: int, p: Dictionary) -> Variant:
+	var out := {"ship": str(p.get("ship", ""))}
+	if p.has("show"):
+		if not TradesBus.BEAM_VERSIONS.has(str(p.show)):
+			return "bad version"
+		out["show"] = str(p.show)
+		if not p.has("rows"):
+			return out
+	if p.has("version"):
+		if not TradesBus.BEAM_VERSIONS.has(str(p.version)):
+			return "bad version"
+		out["version"] = str(p.version)
 	var rows: Variant = p.get("rows")
 	if not rows is Array or (rows as Array).size() > MAX_BEAMS:
 		return "bad design"
@@ -779,13 +973,18 @@ func _validate(_sender: int, p: Dictionary) -> Variant:
 			return "bad length"
 		if not TradesBeamSections.has(str(d.get("section", ""))):
 			return "bad section"
-	return {"ship": str(p.get("ship", "")), "rows": rows}
+	out["rows"] = rows
+	return out
 
 
 func _apply(p: Dictionary) -> void:
 	var bus := Modules.bus("trades") as TradesBus
-	if bus:
-		bus.set_beam_design(str(p.ship), p.rows)
+	if bus == null:
+		return
+	if p.has("rows"):
+		bus.set_beam_design(str(p.ship), p.rows, str(p.get("version", "")))
+	if p.has("show"):
+		bus.show_beam_version(str(p.ship), str(p.show))
 
 
 func get_net_snapshot() -> Dictionary:
@@ -798,4 +997,4 @@ func apply_net_snapshot(data: Dictionary) -> void:
 	var designs: Variant = data.get("designs", {})
 	if bus and designs is Dictionary:
 		for ship: Variant in designs:
-			bus.set_beam_design(str(ship), designs[ship])
+			bus.restore_beam_design(str(ship), designs[ship])

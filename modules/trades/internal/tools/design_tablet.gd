@@ -13,6 +13,10 @@ const GRIP := Vector3(0, 0.1, 0.01)
 var section := ""
 var doing := ""
 var count := 0
+## trades.beam_versions: the version showing ("" with versions off) and the last test's
+## verdict on it ("PASS", "FAIL", "" untested or changed since).
+var version := ""
+var test := ""
 
 
 func _ready() -> void:
@@ -30,11 +34,15 @@ func _ready() -> void:
 
 
 func readout_text() -> String:
-	return "BEAM DESIGN\n%s\n%s\n%d BEAMS" % [section.left(14).to_upper(), doing.left(14).to_upper(), count]
+	var head := "BEAM DESIGN" if version == "" else "DESIGN %s%s" % [version, "  " + test if test != "" else ""]
+	return "%s\n%s\n%s\n%d BEAMS" % [head, section.left(14).to_upper(), doing.left(14).to_upper(), count]
 
 
 func panel_rows() -> Array:
-	return [["Next", section.get_slice(" ", 0) + " " + section.get_slice(" ", 1)], ["Beams", str(count)]]
+	var rows := [["Next", section.get_slice(" ", 0) + " " + section.get_slice(" ", 1)], ["Beams", str(count)]]
+	if version != "":
+		rows.push_front(["Version", version + ("  " + test if test != "" else "")])
+	return rows
 
 
 func panel_state() -> String:

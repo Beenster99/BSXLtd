@@ -31,6 +31,8 @@ signal part_on_deck(crate_id: String, body: Node3D, deck: Node3D)
 signal templates_changed
 ## trades.beam_designer: a ship's beam design changed; beam_design(ship_id) has it.
 signal beam_design_changed(ship_id: String)
+## trades.beam_versions: the versions a design may keep side by side.
+const BEAM_VERSIONS: Array[String] = ["A", "B", "C"]
 
 const WORKBENCH := "workbench"
 const BENCH_SCENE := "res://modules/trades/internal/bench/workbench.tscn"
@@ -75,7 +77,7 @@ var _units: Dictionary = {}  # rig_id -> unit_state()
 var _deck_parts: Dictionary = {}  # crate_id -> the loose part on a trolley's deck
 var _traced: Array[Dictionary] = []  # trades.cutting_bed: templates traced off plates
 var _next_template := 1
-var _beam_designs: Dictionary = {}  # trades.beam_designer: ship id -> beam rows
+var _beam_designs: Dictionary = {}  # trades.beam_designer: ship id -> {showing, versions {letter: rows}}
 
 
 func register_module() -> void:
@@ -226,7 +228,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	var designs: Variant = data.get("beam_designs", {})
 	if designs is Dictionary:
 		for ship_id: Variant in designs:
-			set_beam_design(str(ship_id), designs[ship_id])
+			restore_beam_design(str(ship_id), designs[ship_id])
 
 
 func reset_data() -> void:
@@ -235,13 +237,70 @@ func reset_data() -> void:
 
 ## trades.beam_designer: the beams drawn round a ship in the courtyard (rows: id, a and b
 ## (ship-space ends, [x, y, z] m), section (TradesBeamSections id), turn (degrees about its length)).
-func beam_design(ship_id: String) -> Array:
-	return (_beam_designs.get(ship_id, []) as Array).duplicate(true)
+## trades.beam_versions: a ship keeps up to three versions (BEAM_VERSIONS); `version` "" is the
+## one showing.
+func beam_design(ship_id: String, version := "") -> Array:
+	var d: Dictionary = _beam_designs.get(ship_id, {})
+	var v := version if BEAM_VERSIONS.has(version) else beam_version(ship_id)
+	return ((d.get("versions", {}) as Dictionary).get(v, []) as Array).duplicate(true)
 
 
-## Replaces a ship's beam design (the designer's event on every machine). Rows that don't read
-## are dropped.
-func set_beam_design(ship_id: String, rows: Variant) -> void:
+## The version of a ship's design showing ("A" when it has none).
+func beam_version(ship_id: String) -> String:
+	return str((_beam_designs.get(ship_id, {}) as Dictionary).get("showing", "A"))
+
+
+## Shows another version of a ship's design (the designer's event on every machine).
+func show_beam_version(ship_id: String, version: String) -> void:
+	if not BEAM_VERSIONS.has(version) or beam_version(ship_id) == version:
+		return
+	var d: Dictionary = _beam_designs.get(ship_id, {"versions": {}})
+	d["showing"] = version
+	_beam_designs[ship_id] = d
+	beam_design_changed.emit(ship_id)
+
+
+## Replaces a version of a ship's beam design ("" the one showing; the designer's event on
+## every machine). Rows that don't read are dropped.
+func set_beam_design(ship_id: String, rows: Variant, version := "") -> void:
+	var v := version if BEAM_VERSIONS.has(version) else beam_version(ship_id)
+	var d: Dictionary = _beam_designs.get(ship_id, {"showing": "A", "versions": {}})
+	var versions: Dictionary = d.get("versions", {})
+	var kept := _beam_rows(rows)
+	if kept.is_empty():
+		versions.erase(v)
+	else:
+		versions[v] = kept
+	d["versions"] = versions
+	if versions.is_empty() and str(d.get("showing", "A")) == "A":
+		_beam_designs.erase(ship_id)
+	else:
+		_beam_designs[ship_id] = d
+	beam_design_changed.emit(ship_id)
+
+
+## Puts back a ship's whole design as save_data wrote it: {showing, versions}, or (a save from
+## before versions) one list of rows, which becomes version A.
+func restore_beam_design(ship_id: String, entry: Variant) -> void:
+	_beam_designs.erase(ship_id)
+	if entry is Array:
+		set_beam_design(ship_id, entry, "A")
+		return
+	if not entry is Dictionary:
+		beam_design_changed.emit(ship_id)
+		return
+	var versions: Variant = (entry as Dictionary).get("versions", {})
+	if versions is Dictionary:
+		for v: Variant in versions:
+			if BEAM_VERSIONS.has(str(v)):
+				set_beam_design(ship_id, versions[v], str(v))
+	var showing := str((entry as Dictionary).get("showing", "A"))
+	if showing != "A":
+		show_beam_version(ship_id, showing)
+	beam_design_changed.emit(ship_id)
+
+
+static func _beam_rows(rows: Variant) -> Array:
 	var kept: Array = []
 	if rows is Array:
 		for r: Variant in rows:
@@ -251,11 +310,7 @@ func set_beam_design(ship_id: String, rows: Variant) -> void:
 				kept.append({"id": int(d.get("id", 0)), "a": (d.a as Array).map(func(x: Variant) -> float: return float(x)),
 						"b": (d.b as Array).map(func(x: Variant) -> float: return float(x)),
 						"section": str(d.get("section", "box_100x100x5")), "turn": float(d.get("turn", 0.0))})
-	if kept.is_empty():
-		_beam_designs.erase(ship_id)
-	else:
-		_beam_designs[ship_id] = kept
-	beam_design_changed.emit(ship_id)
+	return kept
 
 
 static func _points_out(points: PackedVector2Array) -> Array:
