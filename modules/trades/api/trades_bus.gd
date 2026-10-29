@@ -58,6 +58,8 @@ const KEY_RESET := "trades.reset"
 const KEY_NEXT := "trades.next"
 const KEY_MODE := "trades.mode"           # the powered tools' mode: fasten / undo
 const KEY_HELMET := "trades.helmet"       # the welding shield up / down
+## trades.frame_order: the Frame Builder commits the frame and orders its parts.
+const KEY_ORDER := "trades.order"
 ## Your hover board in the yard (trades.hover_board): out / away, and up / down while riding.
 const KEY_BOARD := "trades.board"
 const KEY_BOARD_UP := "trades.board_up"
@@ -90,6 +92,8 @@ func register_module() -> void:
 	Keys.register(KEY_NEXT, "Next part in the tray", KEY_G, KEY_GROUP)
 	Keys.register(KEY_MODE, "Tool mode: fasten / undo", KEY_X, KEY_GROUP)
 	Keys.register(KEY_HELMET, "Welding shield up / down", KEY_H, KEY_GROUP)
+	if Flags.is_on("trades.frame_order"):
+		Keys.register(KEY_ORDER, "Frame Builder: commit the frame and order its parts", KEY_O, KEY_GROUP)
 	if Flags.is_on("trades.hover_board"):
 		Keys.register(KEY_BOARD, "Hover board out / away", KEY_B, KEY_GROUP)
 		Keys.register(KEY_BOARD_UP, "Hover board higher (hold)", KEY_SPACE, KEY_GROUP)
@@ -267,7 +271,7 @@ func set_beam_design(ship_id: String, rows: Variant, version := "") -> void:
 	else:
 		versions[v] = kept
 	d["versions"] = versions
-	if versions.is_empty() and str(d.get("showing", "A")) == "A":
+	if versions.is_empty() and str(d.get("showing", "A")) == "A" and not d.has("committed"):
 		_beam_designs.erase(ship_id)
 	else:
 		_beam_designs[ship_id] = d
@@ -292,7 +296,73 @@ func restore_beam_design(ship_id: String, entry: Variant) -> void:
 	var showing := str((entry as Dictionary).get("showing", "A"))
 	if showing != "A":
 		show_beam_version(ship_id, showing)
+	if (entry as Dictionary).get("committed") is Dictionary:
+		set_committed_frame(ship_id, (entry as Dictionary).committed)
 	beam_design_changed.emit(ship_id)
+
+
+## trades.frame_order: the frame last committed on a ship ({} before one): {version, rows (the
+## beams as committed), counts {bar: n} (the stock bars its cut plan needs), ordered {bar: n}
+## (bought for it so far), cost (CR spent on it), by (who committed it)}.
+func committed_frame(ship_id: String) -> Dictionary:
+	return ((_beam_designs.get(ship_id, {}) as Dictionary).get("committed", {}) as Dictionary).duplicate(true)
+
+
+## Keeps a ship's committed frame (the Frame Builder's event on every machine; {} forgets it).
+func set_committed_frame(ship_id: String, entry: Dictionary) -> void:
+	var d: Dictionary = _beam_designs.get(ship_id, {"showing": "A", "versions": {}})
+	if entry.is_empty():
+		d.erase("committed")
+	else:
+		d["committed"] = {"version": str(entry.get("version", "A")), "rows": _beam_rows(entry.get("rows", [])),
+				"counts": _bar_counts(entry.get("counts", {})), "ordered": _bar_counts(entry.get("ordered", {})),
+				"cost": int(entry.get("cost", 0)), "by": str(entry.get("by", "")), "cuts": _frame_cuts(entry.get("cuts", [])),
+				"done": (entry.get("done", []) as Array).map(func(x: Variant) -> int: return int(x)) if entry.get("done") is Array else []}
+	_beam_designs[ship_id] = d
+	beam_design_changed.emit(ship_id)
+
+
+## The next bar of a committed frame cut from `bar` not cut yet: {ship, index, of, mm [lengths]}
+## or {} (the cutting bed fills its cut list from it).
+func next_frame_cut(bar: String) -> Dictionary:
+	for ship: String in _beam_designs:
+		var c: Dictionary = (_beam_designs[ship] as Dictionary).get("committed", {})
+		var cuts: Array = c.get("cuts", [])
+		for i in cuts.size():
+			if str(cuts[i].bar) == bar and not (c.get("done", []) as Array).has(i):
+				return {"ship": ship, "index": i, "of": cuts.size(), "mm": (cuts[i].mm as Array).duplicate()}
+	return {}
+
+
+## A committed frame's bar was cut to its list (on every machine, as the bed finishes).
+func note_frame_cut(ship_id: String, index: int) -> void:
+	var c: Dictionary = (_beam_designs.get(ship_id, {}) as Dictionary).get("committed", {})
+	if c.is_empty():
+		return
+	var done: Array = c.get("done", [])
+	if not done.has(index):
+		done.append(index)
+	c["done"] = done
+	beam_design_changed.emit(ship_id)
+
+
+static func _frame_cuts(v: Variant) -> Array:
+	var out: Array = []
+	if v is Array:
+		for e: Variant in v:
+			if e is Dictionary and (e as Dictionary).get("mm") is Array:
+				out.append({"bar": str((e as Dictionary).get("bar", "")),
+						"mm": ((e as Dictionary).mm as Array).map(func(x: Variant) -> int: return int(x))})
+	return out
+
+
+static func _bar_counts(v: Variant) -> Dictionary:
+	var out := {}
+	if v is Dictionary:
+		for k: Variant in v:
+			if int(v[k]) > 0:
+				out[str(k)] = int(v[k])
+	return out
 
 
 static func _beam_rows(rows: Variant) -> Array:

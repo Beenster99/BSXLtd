@@ -60,6 +60,16 @@ func run_tests() -> void:
 	var res := d.test()
 	check(not bool(res.passed) and d.test_line().contains("under plating"), "TEST says strip the plating: %s" % d.test_line())
 
+	# trades.gentle_plates: one plate beside it taken off leaves the frame there bare.
+	var gentle := Flags.is_on("trades.gentle_plates")
+	Flags.set_flag("trades.gentle_plates", true)
+	check(plates.size() > 1, "more than one plate meets at the node: %d" % plates.size())
+	if plates.size() > 1:
+		for f in plates[0].fasteners:
+			ship_bus.note_joint_removed(f.joint_id)
+		d.run_checks()
+		check(not d.plated_ends.any(func(e: Array) -> bool: return e[0] == stub), "one plate beside it off: no longer pink")
+	Flags.set_flag("trades.gentle_plates", gentle)
 	# Strip the plates there: the end holds on the bare frame.
 	for s in plates:
 		for f in s.fasteners:

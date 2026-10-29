@@ -140,6 +140,8 @@ flags = {
 "trades.one_section": true,
 "trades.beam_copy": true,
 "trades.frame_builder": true,
+"trades.frame_order": true,
+"trades.gentle_plates": true,
 "trades.goods_off": true,
 "trades.wheel_away": true,
 "trades.hover_board": true,
