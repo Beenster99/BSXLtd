@@ -46,6 +46,8 @@ static func label_of(id: StringName, yard := true) -> String:
 		return "Power wrench"
 	if id == &"rivet_squeezer" and yard and Flags.is_on("trades.power_riveter"):
 		return "Rivet gun"
+	if id == &"tablet" and TradesDesignTablet.renamed():
+		return "Frame Builder"
 	return String(TOOL_LABELS.get(id, id))
 
 
@@ -500,15 +502,25 @@ func _handle_input(event: InputEvent) -> void:
 		_on_mouse_button(event)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		for action in _actions():
-			if InputMap.has_action(action) and event.is_action_pressed(action, false, true):
+			if InputMap.has_action(action) and event.is_action_pressed(action, false, not _shifts(action)):
 				_on_action(action)
 				return
+
+
+## Keys that also work with Shift or Ctrl held (the tablet's tilt, roll, redo and version copy:
+## beenster, 0.3.30 "shift Q/E does not tilt": an exact match refused them with Shift down).
+func _shifts(action: String) -> bool:
+	return Flags.is_on("trades.shift_keys") and action in [TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT,
+			TradesBus.KEY_MODE, TradesBus.KEY_ROTATE]
 
 
 ## The key actions the bay reads (Settings > Key binds can move any of them).
 func _actions() -> Array[String]:
 	var out: Array[String] = [TradesBus.KEY_VIEW, TradesBus.KEY_TURN_LEFT, TradesBus.KEY_TURN_RIGHT,
 			TradesBus.KEY_RESET, TradesBus.KEY_NEXT, TradesBus.KEY_MODE, TradesBus.KEY_HELMET, Keys.INTERACT, Keys.CANCEL]
+	# The tablet's R steps through the design's versions.
+	if tool == &"tablet" and Flags.is_on("trades.shift_keys"):
+		out.append(TradesBus.KEY_ROTATE)
 	for i in hotbar.size():
 		out.append(TradesBus.KEY_TOOL + str(i + 1))
 	return out

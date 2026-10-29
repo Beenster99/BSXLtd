@@ -29,9 +29,13 @@ static func sections() -> Dictionary:
 	return _sections
 
 
-## The order the mouse wheel steps through them (by family, then size).
+## The order the mouse wheel steps through them (by family, then size). With
+## trades.one_section (beenster, 0.3.30: "We only need 100 x 100 x 5 box beams") only that one;
+## a design's beams drawn in another still read as theirs.
 static func order() -> Array[String]:
 	sections()
+	if Flags.is_on("trades.one_section") and _sections.has(DEFAULT):
+		return [DEFAULT] as Array[String]
 	return _order
 
 
