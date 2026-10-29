@@ -497,7 +497,11 @@ func _obstacles(t: Trolley) -> Array:
 		# Riding on this trolley's deck is not being in its way.
 		if flat.length() > t.radius() or p.y < 0.5:
 			out.append([p, 0.4])
-	# Every other trolley down its whole length, not just its middle.
+	# Every other trolley down its whole length, not just its middle; for now (beenster,
+	# 0.3.29: "trolleys should be able to clip through each other to avoid clashing") they
+	# drive through one another instead.
+	if Flags.is_on("ship_bay.trolleys_pass"):
+		return out
 	for o: Trolley in trolleys.values():
 		if o != t:
 			for p2 in o.footprint():
@@ -1488,7 +1492,7 @@ func _go(t: Trolley, to: Vector3, yaw: float, around := false) -> bool:
 	if nav == null:
 		build_nav()
 	var avoid: Array = []
-	if around:
+	if around and not Flags.is_on("ship_bay.trolleys_pass"):
 		for o: Trolley in trolleys.values():
 			if o != t:
 				for p in o.footprint():
@@ -1835,9 +1839,37 @@ func _organise() -> void:
 				best_d = d
 		if not best.is_empty() and _bus.organise_part(id, best):
 			best["trolley"] = id
+			if Flags.is_on("ship_bay.organise_batch"):
+				_organise_more(id, t, best, parts)
 			continue
 		if job != "roam" or _arrived(t):
 			_roam(id, t)
+
+
+## Fills an organising trolley's deck (beenster, 0.3.29: "max 20 pieces per trolley, not
+## picking one piece up at a time"): after its first part, the nearest loose part to the last
+## one taken, again and again, until it is full or none it can carry is left.
+func _organise_more(id: String, t: Trolley, first: Dictionary, parts: Array[Dictionary]) -> void:
+	var taken := 1
+	var last: Vector3 = first.at
+	while _bus.trolley_goods(id) + taken < _bus.trolley_capacity(id):
+		var best: Dictionary = {}
+		var best_d := INF
+		for p: Dictionary in parts:
+			if str(p.trolley) != "":
+				continue
+			var mass := float(_bus.storage_items().get(str(p.component), {}).get("mass", 0.0))
+			if not t.carries(Layout.kind_for(mass, str(p.component))):
+				continue
+			var d := last.distance_to(p.at)
+			if d < best_d:
+				best = p
+				best_d = d
+		if best.is_empty() or not _bus.organise_part(id, best):
+			return
+		best["trolley"] = id
+		last = best.at
+		taken += 1
 
 
 ## Drives to a free spot somewhere in the courtyard.
