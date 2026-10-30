@@ -6,6 +6,7 @@ extends ModuleTest
 ##   tools/run_tests.sh contracts
 
 const Generator := preload("res://modules/contracts/internal/offer_generator.gd")
+const Board := preload("res://modules/contracts/internal/board_panel.gd")
 const FLAGS := {"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true,
 		"contracts.clients": true, "contracts.wrecks": true, "contracts.debug": true}
 
@@ -33,6 +34,7 @@ func run_tests() -> void:
 	_test_flow(bus)
 	_test_pack_and_save(bus)
 	_test_online_action(bus)
+	_test_docket_words()
 	Flags.use(saved)
 	Modules.load_all()
 
@@ -189,3 +191,11 @@ func _test_online_action(bus: ContractsBus) -> void:
 	check(job.stage == 1, "the host applies it")
 	check((job.order.stages[1].get("checks", []) as Array) == ["weapons_destroyed"] and (job.order.stages[2].get("checks", []) as Array).has("reactor_out"),
 			"stages carry the checks Quality confirms first")
+
+
+func _test_docket_words() -> void:
+	var ref := ComponentRef.from_dict({"id": "AssaultCannon"})
+	check(Board.want_text({"what": "part", "component": ref, "qty": 4, "disposition": "destroyed"}).ends_with("destroyed"),
+			"a destroyed want reads destroyed on the docket")
+	check(Board.want_text({"what": "part", "component": ref, "qty": 1}).ends_with("back"),
+			"a returned want reads back on the docket")
