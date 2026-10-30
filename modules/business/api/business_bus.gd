@@ -25,6 +25,8 @@ signal ledger_entry_added(entry: LedgerEntry)
 
 signal deposit_received(contract_id: String, amount: int)
 signal final_payment_received(contract_id: String, amount: int)
+## A large job's stage was signed off and paid (plan stage S6).
+signal stage_payment_received(contract_id: String, stage_id: String, amount: int)
 
 signal order_placed(order: PartsOrder)
 signal order_delayed(order: PartsOrder)
@@ -1117,6 +1119,41 @@ func on_contract_handed_over(contract_id: String, quality: float, open_snags: in
 	return result
 
 
+# --- Large jobs in stages (plan stage S6, flag contracts.stages) ---
+
+## Contracts gives a large job its stages, [{id, name, value (CR)}] in order, once it is
+## accepted (from a contract_staged(id, stages) signal when it has one). The job is priced
+## as the sum of its stages: the contract's value becomes that sum, and each stage is paid
+## when it is signed off, less its share of the deposit; the handover pays what is left
+## (penalties off). Planning again replaces the plan until a stage is paid.
+func on_contract_staged(contract_id: String, stages: Array) -> BusinessResult:
+	if not _is_authority():
+		return _not_host()
+	return _books.plan_stages(contract_id, stages)
+
+
+## Pays a stage when it is signed off (from a stage_signed_off(id, stage_id) signal when
+## Contracts has one). result.cost is what it paid. Each stage pays once.
+func on_stage_signed_off(contract_id: String, stage_id: String) -> BusinessResult:
+	if not _is_authority():
+		return _not_host()
+	return _books.sign_off_stage(contract_id, stage_id)
+
+
+## A large job's price: the sum of its stages' values, CR.
+static func staged_price(stages: Array) -> int:
+	var total := 0
+	for st: Variant in stages:
+		if st is Dictionary:
+			total += maxi(0, int((st as Dictionary).get("value", 0)))
+	return total
+
+
+## What signing off a stage would pay now, CR (0 once paid or for an unknown stage).
+func stage_payment(contract_id: String, stage_id: String) -> int:
+	return _books.stage_payment(contract_id, stage_id)
+
+
 # --- Testing ---
 
 func instant_deliveries() -> bool:
@@ -1513,9 +1550,9 @@ func _refresh_yard() -> void:
 
 # --- Internals ---
 
-## Contracts has no signals yet. When it adds contract_accepted(id, value, due_day),
-## contract_handed_over(id, quality, open_snags) and contract_cancelled(id, by_client),
-## Business picks them up with no change here.
+## Contracts' signals Business listens to, when it has them: contract_accepted(id, value,
+## due_day), contract_handed_over(id, quality, open_snags), contract_cancelled(id,
+## by_client), and for staged jobs contract_staged(id, stages), stage_signed_off(id, stage_id).
 func _listen_to_contracts() -> void:
 	var contracts := Modules.bus("contracts")
 	if contracts == null:
@@ -1524,6 +1561,8 @@ func _listen_to_contracts() -> void:
 		"contract_accepted": on_contract_accepted,
 		"contract_handed_over": on_contract_handed_over,
 		"contract_cancelled": on_contract_cancelled,
+		"contract_staged": on_contract_staged,
+		"stage_signed_off": on_stage_signed_off,
 	}
 	for sig in hooks:
 		if contracts.has_signal(sig) and not contracts.is_connected(sig, hooks[sig]):
