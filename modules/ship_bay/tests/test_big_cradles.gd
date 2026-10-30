@@ -8,6 +8,8 @@ const Dolly := preload("res://modules/ship_bay/internal/yard/dolly.gd")
 const Cradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 
 
+const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
+
 func run_tests() -> void:
 	(Modules.bus("ship_bay") as ShipBayBus).reset_data()
 	var was := [Flags.is_on("ship_bay.apron"), Flags.is_on("ship_bay.dolly")]
@@ -26,7 +28,7 @@ func run_tests() -> void:
 	crawler.speed_empty = 6.0
 	var big: Array = (apron.get("holding_cradles") as Array).filter(func(c: Cradle) -> bool: return c.size != "s")
 	big.append_array(apron.get("dock_cradles"))
-	check(big.size() == 3, "two medium cradles and a large one")
+	check(big.size() == 2 + Apron.dock_cradle_ids().size(), "two medium cradles and a large one per dock that has one (%s)" % [Apron.dock_cradle_ids()])
 	for c: Cradle in big:
 		var home := c.global_transform
 		# Start 2 m clear of the cradle's open end, facing in.
