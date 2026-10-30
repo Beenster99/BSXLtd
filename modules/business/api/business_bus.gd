@@ -1559,7 +1559,8 @@ func _on_shipyard_ready(yard: Node3D) -> void:
 func _on_delivery_arrived(order: PartsOrder, damaged: Array[OrderLine]) -> void:
 	var yard_bus := Modules.bus("ship_bay")
 	if yard_bus and yard_bus.has_method("receive_delivery"):
-		yard_bus.call("receive_delivery", order.id, delivery_lines(order, damaged))
+		# Frame packages go straight to the courtyard on a trolley (destination "courtyard").
+		yard_bus.call("receive_delivery", order.id, delivery_lines(order, damaged), order.destination, order.package_ref)
 	if _yard and is_instance_valid(_yard) and _yard.is_inside_tree():
 		var hall: AABB = yard_bus.shipyard_rooms().get("deliveries", {}).get("box", AABB()) if yard_bus else AABB()
 		Sfx.play("chime", hall.get_center() if hall.has_volume() else null)
