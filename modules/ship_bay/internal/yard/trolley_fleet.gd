@@ -258,6 +258,7 @@ func _physics_process(delta: float) -> void:
 	if _goods_in_clock <= 0.0:
 		_goods_in_clock = GOODS_IN_EVERY
 		_send_to_goods_in()
+		_send_to_courtyard()
 	_lead(delta)
 	for id: String in trolleys:
 		var t: Trolley = trolleys[id]
@@ -635,6 +636,14 @@ func _on_command(id: String, command: String, args: Dictionary) -> void:
 				t.show_status("TAKING THE PART")
 		"shelve":
 			jobs[id] = {"do": "shelve", "from": str(args.get("from", "")), "phase": "to_handoff"}
+		"courtyard":
+			var cid := str(args.get("crate", ""))
+			jobs[id] = {"do": "courtyard", "phase": "to_crate", "crate": cid, "package": str(args.get("package", ""))}
+			_reserved_crates[cid] = id
+			if not _go_under(t, _bus.crate_position(cid)) and not _go(t, _bus.crate_position(cid), NAN):
+				_fail(id, t, "NO ROUTE")
+				return
+			t.show_status("TO CRATE")
 		"deliver":
 			var lift := str(args.get("lift", "p"))
 			jobs[id] = {"do": "deliver", "phase": "to_lift", "crate": str(args.get("crate", "")), "to": args.get("to", Vector3.ZERO), "lift": lift}
@@ -681,6 +690,13 @@ func _run_job(id: String, t: Trolley) -> void:
 			_to_line(id, t, job)
 		"shelve":
 			_shelve(id, t, job)
+		"courtyard":
+			_to_courtyard(id, t, job)
+		"delivered":
+			if _bus.trolley_cargo(id) == "":
+				jobs[id] = {"do": "park"}
+				_go(t, PARKING[id][0], PARKING[id][1])
+				t.show_status("PARKING")
 
 
 ## Following a player: stays where it is while within a safe distance of them, else heads for
@@ -866,6 +882,8 @@ func destination_of(id: String) -> String:
 			return "To you"
 		"beam":
 			return "The ship"
+		"courtyard":
+			return "Courtyard" if str(job.get("phase", "")) == "bringing" else "Goods in"
 		"shelve":
 			return "Hand-in"
 		"park":
@@ -883,7 +901,7 @@ func _send_to_goods_in() -> void:
 	for cid: String in crates:
 		var c: Dictionary = crates[cid]
 		if str(c.get("carrier", "")) == "" and not c.has("line") and not _reserved_crates.has(cid) \
-				and _bus.place_for(str(c.get("item", ""))) != "":
+				and str(c.get("dest", "")) == "" and _bus.place_for(str(c.get("item", ""))) != "":
 			waiting.append(Layout.kind_for(float(c.get("mass", 0.0)), str(c.get("item", ""))))
 	if waiting.is_empty():
 		return
@@ -898,6 +916,112 @@ func _send_to_goods_in() -> void:
 		if waiting.any(func(k: String) -> bool: return t.carries(k)):
 			_bus.command_trolley(id, "put_away")
 			return   # one at a time: the next goes on the next round if goods are left
+
+
+## Packages ordered for the courtyard waiting on the goods-in floor (the host): each goes
+## on the smallest free yard trolley whose deck is as long as its longest item (6 m bars a
+## Medium, longer than any deck the Large), which takes the package's crates it has room for
+## to its bay in the courtyard (ShipBayBus.COURTYARD_DROPS) and waits there with them.
+func _send_to_courtyard() -> void:
+	if _bus == null or not _bus.line_runs_here():
+		return
+	var crates := _bus.delivered_crates()
+	for cid: String in crates:
+		var c: Dictionary = crates[cid]
+		if str(c.get("dest", "")) != "courtyard" or str(c.get("carrier", "")) != "" or _reserved_crates.has(cid):
+			continue
+		if yard and yard.get("trucks") and yard.get("trucks").call("is_arriving", cid):
+			continue
+		var id := _courtyard_trolley(str(c.get("item", "")), float(c.get("mass", 0.0)))
+		if id != "":
+			_bus.command_trolley(id, "courtyard", {"crate": cid, "package": str(c.get("package", ""))})
+			return   # one at a time: the rest of the package goes on the same trolley or the next round's
+
+
+## The yard trolley to bring `item` to the courtyard: the smallest free one whose deck is as
+## long as it is (else a larger one, the Large for anything longer than every deck); "" when
+## none of those is free.
+func _courtyard_trolley(item: String, mass: float) -> String:
+	var size := Layout.size_of(item)
+	var length := maxf(size.x, maxf(size.y, size.z))
+	var kind := Layout.kind_for(mass, item)
+	var fits := false
+	for id: String in YARD_TROLLEYS:
+		var t: Trolley = trolleys[id]
+		fits = fits or float((t.spec["deck"] as Vector2).y) >= length or id == "l"
+		if not fits or not t.carries(kind):
+			continue
+		if ["", "park"].has(str((jobs[id] as Dictionary).get("do", ""))) and _bus.trolley_cargo(id) == "" \
+				and id != remote_id and id != following and _drives(id) and _queue.get(id, []).is_empty():
+			return id
+	return ""
+
+
+## The courtyard job: to the crate, beam it aboard, the next of the same package it has room
+## for, then to its bay in the courtyard, where it waits with them until they are taken off.
+func _to_courtyard(id: String, t: Trolley, job: Dictionary) -> void:
+	match str(job.get("phase", "")):
+		"to_crate":
+			if _arrived(t):
+				job["phase"] = "loading"
+				job["wait"] = 0
+				_bus.carry_crate(str(job["crate"]), id)
+		"loading":
+			if beaming(id):
+				t.show_status("BEAMING UP")
+				return
+			job["wait"] = int(job.get("wait", 0)) + 1
+			var on := str(_bus.crate_info(str(job["crate"])).get("carrier", ""))
+			if on != id and int(job["wait"]) <= 120:
+				return
+			_reserved_crates.erase(str(job["crate"]))
+			var next := _package_crate(id, t, str(job.get("package", "")))
+			if next != "":
+				job["crate"] = next
+				_reserved_crates[next] = id
+				job["phase"] = "to_crate"
+				if not _go_under(t, _bus.crate_position(next)):
+					_go(t, _bus.crate_position(next), NAN)
+				return
+			if _bus.trolley_cargo(id) == "":
+				_release(id)
+				jobs[id] = {"do": "park"}
+				_go(t, PARKING[id][0], PARKING[id][1])
+				t.show_status("PARKING")
+				return
+			_head_to_courtyard(id, t, job)
+		"retry":
+			job["wait"] = float(job.get("wait", 0.0)) - get_physics_process_delta_time()
+			if float(job["wait"]) <= 0.0:
+				_head_to_courtyard(id, t, job)
+		"bringing":
+			if _arrived(t):
+				jobs[id] = {"do": "delivered", "package": str(job.get("package", ""))}
+				t.show_status("DELIVERED")
+				_bus.package_arrived(_bus.trolley_load(id), id)
+
+
+func _head_to_courtyard(id: String, t: Trolley, job: Dictionary) -> void:
+	job.erase("crate")
+	if not _go(t, ShipBayBus.COURTYARD_DROPS[id], 0.0):
+		job["phase"] = "retry"
+		job["wait"] = RETRY_AFTER
+		t.show_status("NO ROUTE")
+		return
+	job["phase"] = "bringing"
+	t.show_status("TO THE COURTYARD")
+
+
+## Another crate of package `ref` still on the goods-in floor that trolley `id` has room for.
+func _package_crate(id: String, t: Trolley, ref: String) -> String:
+	var crates := _bus.delivered_crates()
+	for cid: String in crates:
+		var c: Dictionary = crates[cid]
+		if str(c.get("dest", "")) == "courtyard" and str(c.get("package", "")) == ref and str(c.get("carrier", "")) == "" \
+				and not _reserved_crates.has(cid) and t.carries(Layout.kind_for(float(c.get("mass", 0.0)), str(c.get("item", "")))) \
+				and _bus.trolley_has_room(id, cid):
+			return cid
+	return ""
 
 
 ## The smallest trolley free to carry goods of this kind out (not busy with a job, not
@@ -1383,6 +1507,8 @@ func _next_crate(id: String, t: Trolley) -> String:
 		var c: Dictionary = crates[cid]
 		if str(c.get("carrier", "")) != "" or (_reserved_crates.has(cid) and _reserved_crates[cid] != id) or skip.has(cid):
 			continue
+		if str(c.get("dest", "")) != "":
+			continue   # a package for the courtyard: a yard trolley takes it (_send_to_courtyard)
 		if ["in", "crush"].has(str(c.get("line", ""))):
 			continue   # waiting in a line's intake bay or on the crusher's pad, not for the stores
 		if yard and yard.get("trucks") and yard.get("trucks").call("is_arriving", cid):
@@ -1625,7 +1751,7 @@ func crate_lifted(crate_id: String) -> void:
 	_reserved_crates.erase(crate_id)
 	for id: String in jobs:
 		var job: Dictionary = jobs[id]
-		if str(job.get("crate", "")) != crate_id:
+		if str(job.get("crate", "")) != crate_id or str(job.get("do", "")) == "courtyard":
 			continue
 		_release(id)
 		var t: Trolley = trolleys[id]
