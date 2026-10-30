@@ -629,12 +629,80 @@ func accept_contract(contract_id: String, value: int, due_day: int, materials :=
 	return BusinessResult.success()
 
 
+## A large job's stages (plan stage S6): [{id, name, value}] in order. The job is priced as
+## the sum of its stages, so the contract's value becomes that sum. Planning again before any
+## stage is paid replaces the plan.
+func plan_stages(contract_id: String, stages: Array) -> BusinessResult:
+	var c: Dictionary = contracts.get(contract_id, {})
+	if c.is_empty() or c.state != "open":
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no open contract %s" % contract_id)
+	if not c.get("stages_paid", {}).is_empty():
+		return BusinessResult.fail(ERR_ALREADY_IN_USE, "contract %s has stages paid already" % contract_id)
+	var plan: Array = []
+	var total := 0
+	for st: Variant in stages:
+		var d: Dictionary = st if st is Dictionary else {}
+		var id := str(d.get("id", ""))
+		var value := int(d.get("value", -1))
+		if id == "" or value < 0:
+			return BusinessResult.fail(ERR_INVALID_PARAMETER, "a stage needs an id and a value of 0 or more")
+		plan.append({"id": id, "name": str(d.get("name", id)), "value": value})
+		total += value
+	if plan.is_empty():
+		return BusinessResult.fail(ERR_INVALID_PARAMETER, "no stages")
+	c["stages"] = plan
+	c["stages_paid"] = {}
+	c.value = total
+	return BusinessResult.success()
+
+
+## What signing off a stage pays: its value less its share of the deposit already taken,
+## so the stages and the handover together pay the job's value once. 0 for an unknown or
+## paid stage.
+func stage_payment(contract_id: String, stage_id: String) -> int:
+	var c: Dictionary = contracts.get(contract_id, {})
+	if c.is_empty() or c.get("stages_paid", {}).has(stage_id):
+		return 0
+	for st: Dictionary in c.get("stages", []):
+		if st.id == stage_id:
+			var deposit_share := int(st.value) * int(c.deposit) / maxi(1, int(c.value))
+			return maxi(0, int(st.value) - deposit_share)
+	return 0
+
+
+## Pays a stage on sign-off. Each stage is paid once.
+func sign_off_stage(contract_id: String, stage_id: String) -> BusinessResult:
+	var c: Dictionary = contracts.get(contract_id, {})
+	if c.is_empty() or c.state != "open":
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no open contract %s" % contract_id)
+	if not c.get("stages", []).any(func(st: Dictionary) -> bool: return st.id == stage_id):
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "contract %s has no stage %s" % [contract_id, stage_id])
+	if c.stages_paid.has(stage_id):
+		return BusinessResult.fail(ERR_ALREADY_EXISTS, "stage %s of %s is paid already" % [stage_id, contract_id])
+	var amount := stage_payment(contract_id, stage_id)
+	c.stages_paid[stage_id] = amount
+	if amount > 0:
+		post(amount, LedgerEntry.PAYMENT, contract_id, "stage %s" % stage_id)
+	_bus.stage_payment_received.emit(contract_id, stage_id, amount)
+	var r := BusinessResult.success()
+	r.cost = amount
+	return r
+
+
+## What a contract's stages have paid so far, CR.
+func stages_paid(contract_id: String) -> int:
+	var total := 0
+	for amount: Variant in contracts.get(contract_id, {}).get("stages_paid", {}).values():
+		total += int(amount)
+	return total
+
+
 func hand_over(contract_id: String, quality: float, open_snags: int) -> BusinessResult:
 	var c: Dictionary = contracts.get(contract_id, {})
 	if c.is_empty() or c.state != "open":
 		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no open contract %s" % contract_id)
 	c.state = "done"
-	var payment: int = c.value - c.deposit - c.penalties
+	var payment: int = c.value - c.deposit - c.penalties - stages_paid(contract_id)
 	if payment != 0:
 		post(payment, LedgerEntry.PAYMENT, contract_id, "handover")
 	_bus.final_payment_received.emit(contract_id, payment)
@@ -667,8 +735,9 @@ func contract_balance(contract_id: String) -> Dictionary:
 	for o in orders.values():
 		if o.contract_id == contract_id and o.state != PartsOrder.State.CANCELLED:
 			parts += o.cost
-	var out := c.duplicate()
+	var out := c.duplicate(true)
 	out["parts"] = parts
+	out["stages_paid_total"] = stages_paid(contract_id)
 	out["margin"] = c.value - c.penalties - parts
 	return out
 
@@ -786,6 +855,12 @@ func load_data(d: Dictionary, from_version: int) -> void:
 			"state": str(c.get("state", "open")),
 			"materials": int(c.get("materials", -1)), "goodwill": int(c.get("goodwill", 0)),
 		}
+		if c.has("stages"):
+			contracts[id]["stages"] = (c.stages as Array).duplicate(true)
+			var paid := {}
+			for stage_id: Variant in c.get("stages_paid", {}):
+				paid[str(stage_id)] = int(c.stages_paid[stage_id])
+			contracts[id]["stages_paid"] = paid
 	for part in d.get("stock", {}):
 		var held: Variant = d.stock[part]
 		if from_version < 2 or not held is Dictionary:
