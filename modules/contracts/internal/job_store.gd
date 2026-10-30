@@ -15,7 +15,7 @@ static func to_save(job: ContractJob) -> Dictionary:
 	return {"order": job.order.raw, "state": job.state, "expires": job.expires, "change_status": job.change_status,
 			"installs": installs, "removals": job.removals, "recoveries": job.recoveries, "variations": job.variations,
 			"signed_by": job.signed_by, "tests": job.tests, "open_snags": job.open_snags,
-			"completed_at": job.completed_at}
+			"completed_at": job.completed_at, "stage": job.stage, "stages_done": job.stages_done}
 
 
 ## Rebuilds a job, or null if its work order no longer reads (the reason goes to errors).
@@ -48,5 +48,7 @@ static func from_save(d: Dictionary, errors: PackedStringArray) -> ContractJob:
 	job.signed_by.assign(d.get("signed_by", []))
 	job.tests.assign(d.get("tests", []))
 	job.open_snags = int(d.get("open_snags", 0))
+	job.stage = int(d.get("stage", 0))
+	job.stages_done.assign(d.get("stages_done", []))
 	job.completed_at = String(d.get("completed_at", ""))
 	return job

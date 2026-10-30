@@ -28,6 +28,33 @@ var part_exists: Callable
 const SCRAP_PER_TONNE := 400.0
 ## Whether BSX's own clients send whole ships and wrecks (contracts.wrecks, stage S3).
 var wrecks := false
+## Whether the Reserve and the insurer post large jobs worked in stages (contracts.stages, S6).
+var stages := false
+
+## Large jobs (S6): who posts them, at Preferred standing, and the hulk they send (the
+## Sentinel first; beenster, 30 Oct 2026).
+const LARGE_CLIENTS: PackedStringArray = ["tallow_reserve", "carrow_underwriters"]
+const LARGE_DESIGNS: PackedStringArray = ["vsw:sentinel"]
+## Damage a large hulk arrives with: enough to be a wreck, not enough to strip its weapons.
+const LARGE_EVENTS: PackedStringArray = ["weathered:2", "collision:2", "breach:2"]
+## The decommissioning plan, in the order the Reserve's rules set: weapons made safe
+## first, the reactor out before anything else comes off, then the engines, then the hull.
+## Each stage names the fittings it takes and the share of the price it pays.
+const WEAPON_PARTS: PackedStringArray = ["AssaultCannon", "PDC", "RailMuzzle", "Turret", "NavalTurret", "MissileLauncher", "RailBarrel", "Cannon", "MissileRack"]
+const REACTOR_PARTS: PackedStringArray = ["Reactor"]
+const ENGINE_PARTS: PackedStringArray = ["MainEngine", "Thruster", "IonThruster", "TurbineEngine", "HydrogenEngine", "Engine"]
+const STAGE_PLAN: Array = [
+	{"id": "weapons", "name": "Weapons made safe", "parts": WEAPON_PARTS, "disposition": "destroyed", "min_condition": 0.0, "share": 0.15,
+		"rule": "Every weapon destroyed and certified before any other work starts.", "checks": []},
+	{"id": "reactor", "name": "Reactor out", "parts": REACTOR_PARTS, "disposition": "returned", "min_condition": 0.3, "share": 0.25,
+		"rule": "The reactor comes out whole and goes back before the hull is opened.", "checks": ["weapons_destroyed"]},
+	{"id": "engines", "name": "Engines off", "parts": ENGINE_PARTS, "disposition": "returned", "min_condition": 0.4, "share": 0.25, "rule": "",
+		"checks": ["weapons_destroyed", "reactor_out"]},
+	{"id": "hull", "name": "Hull cut to frames", "material_share": 0.35, "share": 0.2, "rule": "Sections onto the dolly, frames to the cutting bay.",
+		"checks": ["weapons_destroyed", "reactor_out"]},
+	{"id": "bales", "name": "Bales out", "material_share": 0.55, "share": 0.15, "rule": "Pressed and weighed; the client's truck collects.",
+		"checks": ["weapons_destroyed", "reactor_out"]},
+]
 
 ## A whole ship or wreck is a medium job up to this mass, large above it (kg).
 const MEDIUM_MAX_KG := 400_000.0
@@ -63,6 +90,11 @@ func make(client_id: String, cycle: int, slot: int, tier: int) -> Dictionary:
 	if kinds.is_empty() or parts.is_empty():
 		return {}
 	var kind := String(kinds[rng.randi_range(0, kinds.size() - 1)])
+	# The Reserve and the insurer, at Preferred standing, post large hulks worked in stages.
+	if stages and wrecks and client_id in LARGE_CLIENTS and tier >= 3 and rng.randf() < 0.5:
+		var large := _large_job(client_id, client, cycle, slot, tier, rng)
+		if not large.is_empty():
+			return large
 	# BSX's own clients at tier two and up send whole ships and wrecks BSX makes itself.
 	if wrecks and String(client.get("game", "")) == "bsx_generated" and tier >= 2 and rng.randf() < 0.6:
 		return _whole_ship(client_id, client, cycle, slot, tier, kind, rng)
@@ -226,6 +258,77 @@ func _whole_ship(client_id: String, client: Dictionary, cycle: int, slot: int, t
 		"title": String(voice[0]) % name,
 		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier, "size": size},
 		"commercial": commercial(kind, size, t, wants, cycle + DUE_IN[clampi(tier, 1, 3)] + (6 if size == "medium" else 14)),
+	}
+
+
+## A large job (S6): one of LARGE_DESIGNS, broken in the stages STAGE_PLAN sets, each stage
+## with its own wants and pay. The order's wants are every stage's together, so the handover
+## check and the pay follow the same lines. {} when the hulk cannot be built.
+func _large_job(client_id: String, client: Dictionary, cycle: int, slot: int, tier: int, rng: RandomNumberGenerator) -> Dictionary:
+	var seed_value := int(hash("%s/%d/%d/large" % [client_id, cycle, slot])) & 0x7FFFFFFF
+	var design := String(LARGE_DESIGNS[rng.randi_range(0, LARGE_DESIGNS.size() - 1)])
+	var events := String(LARGE_EVENTS[rng.randi_range(0, LARGE_EVENTS.size() - 1)])
+	var file := design_source(design)
+	if file.is_empty():
+		return {}
+	var wreck := WreckMaker.make(file, seed_value, events)
+	if wreck.is_empty():
+		return {}
+	var facts := ship_facts(wreck)
+	var mass := float(facts.get("mass_kg", 0.0))
+	var holds: Array = facts.get("holds", [])
+	var material := String(facts.get("material", "steel"))
+	var t := clampf(0.5 + rng.randf_range(0.0, 0.4), 0.0, 1.0)
+	var price := price_for(WorkOrder.BREAK, "large", t)
+	var plan: Array = []
+	var share_total := 0.0
+	for spec: Dictionary in STAGE_PLAN:
+		var wants: Array = []
+		if spec.has("parts"):
+			for name: String in spec["parts"]:
+				var have := holds.count(name)
+				if have > 0 and listed(name):
+					wants.append({"what": "part", "component": {"id": name}, "qty": have, "min_condition": float(spec["min_condition"]),
+							"disposition": String(spec["disposition"])})
+		else:
+			wants.append({"what": "material", "material": material, "kg": roundf(mass * float(spec["material_share"]) / 1000.0) * 1000.0})
+		if wants.is_empty():
+			continue
+		plan.append({"id": String(spec["id"]), "name": String(spec["name"]), "wants": wants, "share": float(spec["share"]), "rule": String(spec["rule"]),
+				"checks": Array(spec.get("checks", []))})
+		share_total += float(spec["share"])
+	if plan.size() < 2:
+		return {}
+	var all_wants: Array = []
+	var paid := 0
+	for i in plan.size():
+		var st: Dictionary = plan[i]
+		var pay := int(roundf(float(price) * float(st["share"]) / share_total / 100.0) * 100.0) if i < plan.size() - 1 else price - paid
+		paid += pay
+		st["pay"] = pay
+		st.erase("share")
+		all_wants.append_array(st["wants"])
+	var hazards: Array = ["weapons", "power"]
+	for name: String in holds:
+		var h := String(HAZARD_FITTINGS.get(name, ""))
+		if h != "" and not h in hazards:
+			hazards.append(h)
+	var subject := {"type": "wreck", "design": design, "seed": seed_value, "events": events,
+			"name": String(wreck.get("ship", {}).get("name", "")), "condition": snappedf(float(facts.get("condition", 1.0)), 0.01),
+			"mass_kg": mass, "holds": holds, "parts_left": int(facts.get("parts_left", 0)), "parts_gone": int(facts.get("parts_gone", 0))}
+	var voice: Array = (client.get("voice", {}) as Dictionary).get("large", ["Decommission: %s", ""])
+	var name := String(wreck.get("ship", {}).get("name", design)).to_lower() + " wreck"
+	var id := "%s.g%d_%d" % [client_id, cycle, slot]
+	return {
+		"schema": WorkOrder.SCHEMA, "schema_version": WorkOrder.SCHEMA_VERSION,
+		"contract_id": id, "issued_at": "cycle %d" % cycle, "kind": WorkOrder.BREAK,
+		"client": {"company": client_id, "display_name": String(client.get("display_name", client_id)), "game": String(client.get("game", "bsx_generated"))},
+		"subject": subject, "wants": all_wants, "stages": plan, "keeps": String(client.get("keeps", "bsx")), "hazards": hazards,
+		"manifest": [], "spec_sheet": {"library": true, "overrides": []},
+		"notes": [{"text": String(voice[1])}],
+		"title": String(voice[0]) % name,
+		"offer": {"posted": cycle, "expires": cycle + OFFER_LIFE, "tier": tier, "size": "large", "stages": plan.size()},
+		"commercial": {"price": price, "currency": "cr", "deposit_pct": 30, "due_day": cycle + DUE_IN[clampi(tier, 1, 3)] + 21, "stage_payments": true},
 	}
 
 

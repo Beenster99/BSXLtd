@@ -160,8 +160,37 @@ func _read_wants(d: Dictionary, o: WorkOrder) -> void:
 	if list.is_empty() and not o.is_fit():
 		errors.append("a %s order needs at least one wants line (what comes back)." % o.kind)
 		return
+	o.wants.assign(_want_list(list, "wants"))
+	_read_stages(d, o)
+
+
+## A large job's stages (S6): each {id, title, wants, pay, rule}; every stage needs a line.
+func _read_stages(d: Dictionary, o: WorkOrder) -> void:
+	var list: Variant = d.get("stages", [])
+	if not list is Array:
+		errors.append("stages must be a list.")
+		return
 	for i in list.size():
-		var where := "wants[%d]" % i
+		var where := "stages[%d]" % i
+		var st: Variant = list[i]
+		if not st is Dictionary:
+			errors.append("%s must be an object." % where)
+			continue
+		var wants: Variant = st.get("wants", [])
+		if not wants is Array or wants.is_empty():
+			errors.append("%s: a stage needs at least one wants line." % where)
+			continue
+		var pay: Variant = st.get("pay", 0)
+		o.stages.append({"id": String(st.get("id", "s%d" % (i + 1))), "name": String(st.get("name", st.get("title", "Stage %d" % (i + 1)))),
+				"wants": _want_list(wants, where + ".wants"), "pay": int(pay) if pay is int or pay is float else 0,
+				"rule": String(st.get("rule", "")), "checks": Array(st.get("checks", [])) if st.get("checks", []) is Array else []})
+
+
+## Reads a list of wants lines ({what, ...}), noting what is wrong under `where`.
+func _want_list(list: Array, where_list: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for i in list.size():
+		var where := "%s[%d]" % [where_list, i]
 		var w: Variant = list[i]
 		if not w is Dictionary:
 			errors.append("%s must be an object." % where)
@@ -178,6 +207,11 @@ func _read_wants(d: Dictionary, o: WorkOrder) -> void:
 				if want["qty"] < 1:
 					errors.append("%s: qty must be a whole number from 1." % where)
 				want["min_condition"] = _fraction(w.get("min_condition", 0.0), where + ".min_condition")
+				var disposition := String(w.get("disposition", "returned"))
+				if not disposition in WorkOrder.WANT_DISPOSITIONS:
+					errors.append("%s: disposition must be one of %s." % [where, ", ".join(WorkOrder.WANT_DISPOSITIONS)])
+					disposition = "returned"
+				want["disposition"] = disposition
 			"material":
 				want["material"] = _text(w, "material", where)
 				want["kg"] = float(w.get("kg", 0.0)) if w.get("kg") is float or w.get("kg") is int else 0.0
@@ -187,7 +221,8 @@ func _read_wants(d: Dictionary, o: WorkOrder) -> void:
 				want["min_condition"] = _fraction(w.get("min_condition", 1.0), where + ".min_condition")
 			"gone":
 				pass
-		o.wants.append(want)
+		out.append(want)
+	return out
 
 
 func _fraction(v: Variant, where: String) -> float:

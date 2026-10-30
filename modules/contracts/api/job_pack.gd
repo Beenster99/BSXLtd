@@ -18,6 +18,7 @@ const MANIFEST := "manifest"
 const HAZARDS := "hazards"
 const NOTES := "notes"
 const PROGRESS := "progress"
+const STAGES := "stages"
 const AS_BUILT := "as_built"
 
 ## A colour per job kind, for every screen that paints them.
@@ -45,6 +46,8 @@ static func documents(job: ContractJob, specs: Callable) -> Array[Dictionary]:
 	else:
 		out.append(subject_spec_doc(job))
 		out.append(wants_doc(job))
+		if job.order.is_staged():
+			out.append(stages_doc(job))
 	if not job.order.hazards.is_empty():
 		out.append(hazards_doc(job))
 	if not job.order.notes.is_empty():
@@ -270,9 +273,41 @@ static func notes_doc(job: ContractJob) -> Dictionary:
 	return d
 
 
+## A large job's stage plan (S6): each stage with its pay and what it takes, the one being
+## worked marked NEXT, the signed ones DONE.
+static func stages_doc(job: ContractJob) -> Dictionary:
+	var o := job.order
+	var d := _doc(STAGES, STAGES, "Stage plan", "%d stages" % o.stages.size())
+	_tag(d, "paid by the stage", "info")
+	var working := job.state in [ContractJob.IN_BERTH, ContractJob.IN_PROGRESS, ContractJob.INSPECTION]
+	for i in o.stages.size():
+		var st: Dictionary = o.stages[i]
+		var lines := PackedStringArray()
+		for w: Dictionary in st.get("wants", []):
+			lines.append(want_line(w))
+		var rule := String(st.get("rule", ""))
+		if rule != "":
+			lines.append("Rule: " + rule)
+		var mark := ""
+		if i < job.stage:
+			mark = "  ·  DONE"
+			for done: Dictionary in job.stages_done:
+				if int(done.get("stage", -1)) == i:
+					mark += ", %d%%" % int(roundf(float(done.get("quality", 1.0)) * 100.0))
+		elif i == job.stage and working:
+			mark = "  ·  NEXT"
+			var missing := job.stage_missing()
+			if not missing.is_empty():
+				lines.append("Still to do: " + ", ".join(missing))
+		_section(d, "Stage %d of %d: %s  ·  CR %s%s" % [i + 1, o.stages.size(), String(st.get("name", "")), money(int(st.get("pay", 0))), mark], lines)
+	return d
+
+
 static func progress_doc(job: ContractJob) -> Dictionary:
 	var d := _doc(PROGRESS, PROGRESS, "Progress", job.state.replace("_", " ").to_upper())
 	var o := job.order
+	if job.is_staged():
+		_section(d, "Stage", PackedStringArray([job.stage_text().capitalize()]))
 	if o.is_fit():
 		var lines := PackedStringArray()
 		for c in o.changes:
@@ -314,7 +349,8 @@ static func want_line(w: Dictionary) -> String:
 	match String(w.get("what", "")):
 		"part":
 			var ref: ComponentRef = w.get("component")
-			var line := "%d × %s back" % [int(w.get("qty", 1)), words(ref.id) if ref else "part"]
+			var how := {"destroyed": "destroyed", "kept": "kept by BSX", "any": "out"}
+			var line := "%d × %s %s" % [int(w.get("qty", 1)), words(ref.id) if ref else "part", String(how.get(String(w.get("disposition", "returned")), "back"))]
 			if float(w.get("min_condition", 0.0)) > 0.0:
 				line += ", %d%% or better" % int(roundf(float(w.get("min_condition", 0.0)) * 100.0))
 			return line

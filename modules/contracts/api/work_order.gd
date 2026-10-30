@@ -23,6 +23,9 @@ const SUBJECT_TYPES: PackedStringArray = ["ship", "wreck", "part"]
 ## What a `wants` line asks for: a named part back (break), kilograms of a material
 ## (scrap), the subject back at a condition (refurbish), or the subject gone (dispose).
 const WANT_TYPES: PackedStringArray = ["part", "material", "condition", "gone"]
+## How a wanted part must end up: back with the client, destroyed (a decommissioning),
+## kept by BSX, or any of those.
+const WANT_DISPOSITIONS: PackedStringArray = ["returned", "destroyed", "kept", "any"]
 
 @export var contract_id := ""
 ## A title for the board, when the file gives one; else the board makes one from the job.
@@ -34,12 +37,19 @@ const WANT_TYPES: PackedStringArray = ["part", "material", "condition", "gone"]
 ## mass_kg, design (for a ship or wreck), file (a wreck file path, S3)}. A FIT order's
 ## subject is its ship.
 @export var subject: Dictionary = {}
-## Each {what (WANT_TYPES), component (ComponentRef)?, qty?, min_condition?, material?, kg?}.
+## Each {what (WANT_TYPES), component (ComponentRef)?, qty?, min_condition?, material?, kg?,
+## disposition? (a part want: "returned" to the client, the default; "destroyed" for a
+## decommissioning, "kept" by BSX; "any")}.
 @export var wants: Array[Dictionary] = []
 ## Who keeps whatever `wants` does not name: "bsx" or "client".
 @export var keeps := "bsx"
 ## Hazards the subject carries: "fuel", "coolant", "power", "weapons", "pressure".
 @export var hazards: PackedStringArray = PackedStringArray()
+## A large job's plan (plan stage S6): each {id, name, wants (lines as `wants`), pay (CR),
+## rule ("" or a note), checks (what Quality confirms first: "weapons_destroyed",
+## "reactor_out")}, worked and signed off in order; the order's `wants` is every
+## stage's together. Empty for a job done in one go.
+@export var stages: Array[Dictionary] = []
 ## {company, display_name, game ("void_salvage" or "bsx_generated")}.
 @export var client: Dictionary = {}
 ## "<company>/<design>", for example "rook_salvage/kestrel".
@@ -64,6 +74,11 @@ const WANT_TYPES: PackedStringArray = ["part", "material", "condition", "gone"]
 
 func is_fit() -> bool:
 	return kind == FIT
+
+
+## A large job worked in paid stages (S6).
+func is_staged() -> bool:
+	return not stages.is_empty()
 
 
 ## The part that arrives, for a part subject; null for a ship or wreck.
