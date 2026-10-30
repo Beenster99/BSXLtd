@@ -2,6 +2,7 @@ extends HBoxContainer
 ## Business's channels on the wrist holo screen, drawn on glass with UI's TerminalKit so they
 ## match the yard terminal. The wrist draws the header and tabs; this is only the body.
 ##   "orders":   BUY/SELL. Buy: the market by category (search, category chips, deals, +),
+##               frame packages from the Frame Builder (PACKAGES: ORDER buys one),
 ##               the purchase order with bulk prices, and the deliveries: what's on order
 ##               and what has come. Sell: everything in stock with what each company offers
 ##               for it today, sold to the best offer; and today's sales
@@ -54,7 +55,8 @@ var _side: VBoxContainer
 var _message := ""
 var _message_good := true
 var _dirty := false
-## The buy list as laid out: a category heading (String) or a MarketListing per entry, each
+## The buy list as laid out: a category heading (String), a frame package (Dictionary) or a
+## MarketListing per entry, each
 ## entry's top in the list (pixels, one more for the end), and the entries built now.
 var _entries: Array = []
 var _offsets := PackedFloat32Array()
@@ -62,6 +64,7 @@ var _counts := {}
 var _built := Vector2i(-1, -1)
 var _row_h := 0.0
 var _head_h := 0.0
+var _pkg_h := 0.0
 var _measured_in_tree := false
 ## The category and search the list was last drawn for: a new one starts at the top.
 var _list_key := ""
@@ -79,6 +82,7 @@ func _init(p_bus: BusinessBus, p_page := "orders", p_glass := true) -> void:
 	for sig: String in watch:
 		bus.connect(sig, _mark_dirty.unbind(watch[sig]) if watch[sig] > 0 else _mark_dirty)
 	bus.order_refused.connect(_on_order_refused)
+	bus.package_changed.connect(_mark_dirty.unbind(1))
 	bus.clock_changed.connect(func(_m: int) -> void: _tick_countdowns())
 
 
@@ -219,6 +223,8 @@ func _categories() -> PackedStringArray:
 	out.sort()
 	if deals:
 		out.insert(0, "deals")
+	if mode == "buy" and not bus.get_packages().is_empty():
+		out.insert(0, "packages")
 	return out
 
 
@@ -226,6 +232,8 @@ func _categories() -> PackedStringArray:
 ## category).
 func shown_listings() -> Array[MarketListing]:
 	var out: Array[MarketListing] = []
+	if category == "packages":
+		return out
 	for l in bus.get_listings("" if category == "deals" else category):
 		if l.available <= 0:
 			continue
@@ -269,6 +277,13 @@ func _refresh_list() -> void:
 			var na: String = names[a]
 			var nb: String = names[b]
 			return na < nb if na != nb else a.unit_price < b.unit_price)
+	# Frame packages first: under their own heading in ALL, alone under PACKAGES.
+	var packages := shown_packages()
+	if not packages.is_empty():
+		_counts["packages"] = packages.size()
+		if category == "":
+			_entries.append("packages")
+		_entries.append_array(packages)
 	var last: Variant = null
 	for l in shown:
 		var cat: String = cats[l]
@@ -277,8 +292,11 @@ func _refresh_list() -> void:
 			_entries.append(cat)
 			last = cat
 		_entries.append(l)
-	if shown.is_empty():
-		_list.add_child(T.label("Nothing matches." if query != "" else "Nothing on the market here today.", "body", 18, T.DIM))
+	if _entries.is_empty():
+		var none := "Nothing matches." if query != "" else "Nothing on the market here today."
+		if category == "packages":
+			none = "No packages. Commit a frame in the Frame Builder (O) to make one."
+		_list.add_child(T.label(none, "body", 18, T.DIM))
 		return
 	_lay_out()
 	_draw_window(keep)
@@ -288,14 +306,28 @@ func _refresh_list() -> void:
 ## Every line of the buy list is the same height, and every heading: measured once from a
 ## real one, then each entry's top follows.
 func _lay_out() -> void:
-	if not _measured_in_tree:
+	# Each kind of line is measured once (again once in the tree), when the list first has one.
+	var all := not _measured_in_tree
+	var measure: Array = []
+	if all or _head_h == 0.0:
+		measure.append(_entries[0] if _entries[0] is String else "")
+	if all or _row_h == 0.0:
+		measure.append(_first_listing())
+	if all or _pkg_h == 0.0:
+		measure.append(_first_package())
+	if all:
 		_measured_in_tree = _list.is_inside_tree()
-		for e: Variant in [_entries[0] if _entries[0] is String else "", _first_listing()]:
+	if not measure.is_empty():
+		for e: Variant in measure:
+			if e == null:
+				continue
 			var c := _entry(e, 0)
 			_list.add_child(c)
 			var h := c.get_combined_minimum_size().y
 			if e is String:
 				_head_h = h
+			elif e is Dictionary:
+				_pkg_h = h
 			else:
 				_row_h = h
 			_list.remove_child(c)
@@ -305,8 +337,16 @@ func _lay_out() -> void:
 	var y := 0.0
 	for i in _entries.size():
 		_offsets[i] = y
-		y += (_head_h if _entries[i] is String else _row_h) + sep
+		var e: Variant = _entries[i]
+		y += (_head_h if e is String else _pkg_h if e is Dictionary else _row_h) + sep
 	_offsets[_entries.size()] = y
+
+
+func _first_package() -> Variant:
+	for e: Variant in _entries:
+		if e is Dictionary:
+			return e
+	return null
 
 
 func _first_listing() -> MarketListing:
@@ -349,6 +389,8 @@ func _draw_window(at: float) -> void:
 func _entry(e: Variant, row: int) -> Control:
 	if e is String:
 		return _heading(e, int(_counts.get(e, 0)))
+	if e is Dictionary:
+		return _package_row(e, row % 2 == 1)
 	return _listing_row(e, row % 2 == 1)
 
 
@@ -450,6 +492,95 @@ func _click_to(row: Control, then: Callable) -> void:
 		var b := e as InputEventMouseButton
 		if b and b.pressed and b.button_index == MOUSE_BUTTON_LEFT:
 			then.call())
+
+
+## The frame packages the Buy list shows (ALL and PACKAGES), newest first, matching the search.
+func shown_packages() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if mode != "buy" or (category != "" and category != "packages"):
+		return out
+	for pkg in bus.get_packages():
+		if query == "" or ("%s %s package" % [pkg.title, pkg.ref]).to_lower().contains(query):
+			out.append(pkg)
+	return out
+
+
+## A package's line: its title, ref, size and who it would come from; PROPOSED ones show
+## today's best price and ORDER, ordered ones what was paid.
+func _package_row(pkg: Dictionary, alt: bool) -> Control:
+	var items := 0
+	for item: Dictionary in pkg.items:
+		items += int(item.qty)
+	var small := PackedStringArray([str(pkg.ref), "%d item%s" % [items, "" if items == 1 else "s"]])
+	var cost := int(pkg.cost)
+	var state: Control
+	var drop: Control = Control.new()
+	if pkg.state == "proposed":
+		var plan := bus.quote_package(pkg.ref)
+		cost = int(plan.cost)
+		var missing: Array = plan.missing
+		if missing.is_empty():
+			var names := PackedStringArray()
+			for sid: String in plan.suppliers:
+				var s := bus.supplier(sid)
+				names.append(s.display_name if s else sid)
+			small.append(", ".join(names))
+		else:
+			small.append("NOBODY HAS %s TODAY" % ", ".join(missing).to_upper())
+		var order := T.button("ORDER", true, 15, false, glass)
+		order.name = "Order_" + str(pkg.ref)
+		order.tooltip_text = "Buy every part in this package"
+		order.custom_minimum_size = Vector2(84, 24)
+		order.disabled = not missing.is_empty() or cost > bus.get_cash()
+		order.pressed.connect(order_package.bind(str(pkg.ref)))
+		state = _width(_centred(order), 92)
+		var x := T.button("✕", false, 15, false, glass)
+		x.name = "Drop_" + str(pkg.ref)
+		x.tooltip_text = "Remove this package"
+		x.custom_minimum_size = Vector2(30, 24)
+		x.pressed.connect(drop_package.bind(str(pkg.ref)))
+		drop = x
+	else:
+		small.append(", ".join(pkg.order_ids))
+		state = _width(T.tag("ORDERED", T.GOOD), 92)
+	if str(pkg.destination) == "courtyard":
+		small.append("TO THE COURTYARD")
+	var row := compact(T.row([
+		T.cell_text(str(pkg.title), "  ·  ".join(small)),
+		state,
+		T.cell(str(items), 52),
+		T.cell(T.money(cost), 96, T.ORANGE, "mono_bold"),
+		_width(_centred(drop), 46),
+	], alt, glass))
+	row.name = "Package_" + str(pkg.ref).validate_node_name()
+	return row
+
+
+## Buys a package (ORDER on its line).
+func order_package(ref: String) -> BusinessResult:
+	var r := bus.order_package(ref)
+	if r.is_ok():
+		if r.order_ids.is_empty():
+			_message = "Package %s sent to the host." % ref
+		else:
+			_message = "Ordered %s for %s CR. It comes straight to the courtyard." % [ref, T.money(r.cost)]
+		_message_good = true
+		Sfx.play("chime")
+	else:
+		Sfx.play("error")
+		_message = r.message.left(1).to_upper() + r.message.substr(1) + "."
+		_message_good = false
+	refresh()
+	_dirty = false
+	return r
+
+
+## Removes a package that hasn't been ordered (✕ on its line).
+func drop_package(ref: String) -> void:
+	bus.cancel_package(ref)
+	if category == "packages" and bus.get_packages().is_empty():
+		category = ""
+	refresh()
 
 
 ## The terms of the picked listing: today's deal, what each bulk quantity costs, the
@@ -628,7 +759,9 @@ func _refresh_side() -> void:
 func shown_deliveries() -> Array[PartsOrder]:
 	var on_order := deliveries == "on order"
 	var out: Array[PartsOrder] = bus.get_orders(PartsOrder.State.PLACED if on_order else PartsOrder.State.DELIVERED)
-	if category != "" and category != "deals":
+	if category == "packages":
+		out = out.filter(func(o: PartsOrder) -> bool: return o.package_ref != "")
+	elif category != "" and category != "deals":
 		out = out.filter(func(o: PartsOrder) -> bool:
 			return o.lines.any(func(line: OrderLine) -> bool: return _category_of(line.part) == category))
 	out.sort_custom(func(a: PartsOrder, b: PartsOrder) -> bool:
