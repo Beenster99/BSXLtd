@@ -17,8 +17,50 @@ const LONG_MM := 12000
 const SHORT_MM := 6000
 
 
-## The cut plan for a design's beams (rows: {a, b, section}).
-static func cut_plan(rows: Array) -> Dictionary:
+## The bar lengths the player can ask for (beenster, 0.3.32: "I added a cube of 3m length beams
+## in the frame builder and the order came in with 6m beams - I didn't seem to get a choice"):
+## 0 is the least waste, else every bar that length (mm; a beam longer than it still takes a
+## 12 m bar).
+const CHOICES: Array[int] = [0, SHORT_MM, LONG_MM]
+
+
+static func choice_word(mm: int) -> String:
+	return "least waste" if mm <= 0 else "%d m bars" % roundi(mm / 1000.0)
+
+
+## The cut plan for a design's beams (rows: {a, b, section}) on bars of `bar_mm` (CHOICES; 0:
+## whichever wastes least: the fewest metres of bar still to buy beyond `ordered` ({bar: n}, a
+## commit's bars bought already), then the fewest metres in all, then the fewest bars).
+static func cut_plan(rows: Array, bar_mm := 0, ordered: Dictionary = {}) -> Dictionary:
+	if bar_mm > 0:
+		return _plan(rows, bar_mm)
+	var best := {}
+	var best_cost := Vector3.INF
+	for mm: int in [SHORT_MM, LONG_MM]:
+		var p := _plan(rows, mm)
+		var cost := Vector3(_counts_m(still_to_buy(p.counts, ordered)), _counts_m(p.counts), (p.bars as Array).size())
+		if best.is_empty() or _less(cost, best_cost):
+			best = p
+			best_cost = cost
+	return best
+
+
+static func _less(a: Vector3, b: Vector3) -> bool:
+	for i in 3:
+		if absf(a[i] - b[i]) > 0.001:
+			return a[i] < b[i]
+	return false
+
+
+## Metres of bar in {bar: n}.
+static func _counts_m(counts: Dictionary) -> float:
+	var m := 0.0
+	for bar: String in counts:
+		m += float(StockBeams.item(bar).get("length", 0.0)) * int(counts[bar])
+	return m
+
+
+static func _plan(rows: Array, bar_mm: int) -> Dictionary:
 	var by_section := {}
 	var spliced := 0
 	for r: Dictionary in rows:
@@ -54,14 +96,14 @@ static func cut_plan(rows: Array) -> Dictionary:
 					break
 			if placed:
 				continue
-			var bar := bar_for(sec, SHORT_MM)
+			var bar := bar_for(sec, bar_mm)
 			if TradesBeamCuts.layout(TradesBeamCuts.bar_info(bar), [{"mm": mm, "a": 0.0, "b": 0.0}]).is_empty():
 				bar = bar_for(sec, LONG_MM)
 			open.append({"bar": bar, "lengths": [{"mm": mm, "a": 0.0, "b": 0.0}]})
 		for b: Dictionary in open:
 			bars.append(b)
 			counts[b.bar] = int(counts.get(b.bar, 0)) + 1
-	return {"bars": bars, "counts": counts, "pieces": pieces, "spliced": spliced}
+	return {"bars": bars, "counts": counts, "pieces": pieces, "spliced": spliced, "bar_mm": bar_mm}
 
 
 ## A section's steel stock bar of a length (mm).

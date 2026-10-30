@@ -30,6 +30,14 @@ func run_tests() -> void:
 	check(cut == 6 and int(plan.pieces) == 6 and int(plan.spliced) == 1, "every beam cut, the 14 m one in two to splice: %s" % [plan])
 	# 7 m and the 14 m one's two 7 m halves take a 12 m bar each; the 2.5 m beams go in what's left of them.
 	check(plan.counts == {bar12: 3}, "three 12 m bars and no more: %s" % [plan.counts])
+	# beenster 0.3.32: a cube of 3 m beams came as 6 m bars, one each. The least waste takes 12 m
+	# bars, three beams to a bar; 6 m bars stay a choice.
+	var cube: Array = []
+	for k in 12:
+		cube.append(_row(20 + k, 3.0))
+	check(TradesFrameOrder.cut_plan(cube).counts == {bar12: 4}, "a cube of 3 m beams: four 12 m bars: %s" % [TradesFrameOrder.cut_plan(cube).counts])
+	check(TradesFrameOrder.cut_plan(cube, 6000).counts == {bar6: 12}, "or twelve 6 m bars when asked")
+	check(TradesFrameOrder.cut_plan(cube, 12000).counts == {bar12: 4}, "and 12 m bars when asked")
 	check(TradesFrameOrder.still_to_buy(plan.counts, {bar6: 2, bar12: 1}) == {bar12: 2}, "only what isn't ordered yet")
 
 	# In the yard with the Frame Builder.
@@ -59,6 +67,15 @@ func run_tests() -> void:
 			"one bar from the shop, priced: %s" % [b])
 	check(d.order_line().contains("3 beams cut from 1 x 6 m bar") and d.order_line().contains("O again"), "the line says what and how: %s" % d.order_line())
 	check(shop.get_orders().size() == orders and shop.get_cash() == cash, "nothing bought yet")
+	# The wheel picks the bars: least waste, 6 m, 12 m, and round again.
+	check(d.order_line().contains("least waste, wheel to change"), "the line says the wheel picks the bars: %s" % d.order_line())
+	d.wheel(1)
+	check(d.bar_choice == 6000 and d.order_line().contains("1 x 6 m bar") and d.order_line().contains("6 m bars"), "wheel: 6 m bars: %s" % d.order_line())
+	d.wheel(1)
+	check(d.bar_choice == 12000 and d.order_line().contains("1 x 12 m bar"), "wheel: 12 m bars: %s" % d.order_line())
+	d.wheel(1)
+	check(d.bar_choice == 0 and not d.order_offer.is_empty(), "and back to the least waste")
+	b = d.order_offer.basket
 	# Right click cancels it.
 	d.hovered = -1
 	d.root_on = ""
