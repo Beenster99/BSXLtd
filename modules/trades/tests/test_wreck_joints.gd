@@ -59,7 +59,7 @@ func run_tests() -> void:
 			continue
 		if depth < 0.03 and seen[1] < 6:
 			seen[1] += 1
-			seen[0] += 1 if station.aimed == i else 0
+			seen[0] += 1 if _same_spot(station, station.aimed, i) else 0
 		elif depth > 0.3 and hidden[1] < 6 and rig.worker.right_hand.can_reach(station.points_world[i]):
 			hidden[1] += 1
 			hidden[0] += 1 if station.aimed != i else 0
@@ -76,8 +76,11 @@ func run_tests() -> void:
 		if not rig.worker.right_hand.can_reach(station.points_world[i]) or rig.aim_distance(station.points_world[i]) > 0.02:
 			continue
 		reached += 1
-		found += 1 if station.aimed == i else 0
-	check(reached > 0 and found == reached, "with the snap, the ones behind the skin on the aim line, in reach, are picked (%d of %d)" % [found, reached])
+		# The snap takes the nearest joint to the look: this one, or one no further from it (a
+		# rivet where the look lands on the skin can be as near as one on the line behind it).
+		var a := station.aimed
+		found += 1 if a == i or (a >= 0 and _snap_d(rig, station, a) <= _snap_d(rig, station, i) + TradesShipJoints.STICK_M) else 0
+	check(reached > 0 and found == reached, "with the snap, the ones behind the skin on the aim line, in reach, are picked or one as near (%d of %d)" % [found, reached])
 	Flags.set_flag("trades.vs_snap", was_snap)
 	Flags.set_flag("trades.aim_visible", was_vis)
 	ship_bus.debug_ship("restore_bay")
@@ -93,7 +96,11 @@ func _look_at(rig: TradesBay, station: TradesShipJoints, i: int) -> float:
 		return NAN
 	rig.worker.global_position = at + n * 0.9 - Vector3(0, 1.55, 0)
 	rig.worker.face(at)
+	# Physics steps too, not just a frame: the aim's surface ray reads the physics space, which
+	# lags the moved worker on a busy machine (CI) until a step has run.
 	await frames(1)
+	for k in 2:
+		await get_tree().physics_frame
 	station.update(0.0)
 	var o := rig.worker.aim_origin()
 	var q := PhysicsRayQueryParameters3D.create(o, o + (at - o).normalized() * 20.0)
@@ -102,6 +109,24 @@ func _look_at(rig: TradesBay, station: TradesShipJoints, i: int) -> float:
 	if hit.is_empty():
 		return NAN
 	return o.distance_to(at) - o.distance_to(hit.position)
+
+
+## How near joint i is to the look by the snap's own measure: to where the look lands, or to the
+## aim line when it's on it (TradesShipJoints._snap_aim).
+func _snap_d(rig: TradesBay, station: TradesShipJoints, i: int) -> float:
+	var p: Vector3 = station.call("_aim_point", i)
+	var o := rig.worker.aim_origin()
+	var q := PhysicsRayQueryParameters3D.create(o, o + rig.worker.aim_dir() * TradesShipJoints.POINTER_RAY_M)
+	q.exclude = [rig.worker.get_rid()]
+	var hit := rig.worker.get_world_3d().direct_space_state.intersect_ray(q)
+	var on_line := rig.aim_distance(p)
+	var d := on_line if on_line < TradesShipJoints.PICK_M else INF
+	return minf(d, p.distance_to(hit.position)) if not hit.is_empty() else d
+
+
+## The aimed joint is joint i, or one at the same spot (a bolt pair or a weld through one hole).
+func _same_spot(station: TradesShipJoints, aimed: int, i: int) -> bool:
+	return aimed == i or (aimed >= 0 and station.points_world[aimed].distance_to(station.points_world[i]) < 0.01)
 
 
 ## [worst distance between a joint's point and Ship and Bay's marker on it, joints compared].
