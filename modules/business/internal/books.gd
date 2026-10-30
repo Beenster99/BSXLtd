@@ -14,6 +14,9 @@ const MAX_DELIVERY_SECONDS := 60
 const WALLET_START := 1000
 ## The cheapest listing (credits) a supplier puts on a deal.
 const DEAL_MIN_PRICE := 100
+## What a supplier charges to cut a frame package's bars to length (beenster, 0.3.33: "uncut
+## bar lengths - cheaper and ready cut bars - more expensive"), CR per piece cut.
+const CUT_FEE_PER_PIECE := 4
 ## Standing with a supplier from what the company has sold it (beenster, 0.3.19: selling to
 ## a lower bidder can be worth it to build up a supplier): [CR sold to it, name, percent off
 ## everything bought from it].
@@ -547,14 +550,19 @@ func place_market_order(basket: Array, contract_id: String) -> BusinessResult:
 
 ## Notes a package of parts to buy later: nothing is bought. Returns its ref ("PKG-0007").
 ## A `key` already on a package not yet ordered replaces that package's parts (a frame
-## committed again) and keeps its ref.
-func propose_package(title: String, items: Array, contract_id: String, destination: String, key := "") -> String:
+## committed again) and keeps its ref. `cuts` ([{bar, mm: [lengths]}]) is the cut list, so
+## the package can be bought ready cut.
+func propose_package(title: String, items: Array, contract_id: String, destination: String, key := "", cuts := []) -> String:
 	var clean: Array = []
 	for item: Variant in items:
 		if item is Dictionary and str(item.get("part", "")) != "" and int(item.get("qty", 0)) > 0:
 			clean.append({"part": str(item.part), "qty": int(item.qty)})
 	if clean.is_empty():
 		return ""
+	var cut_list: Array = []
+	for c: Variant in cuts:
+		if c is Dictionary and str(c.get("bar", "")) != "":
+			cut_list.append({"bar": str(c.bar), "mm": Array(c.get("mm", [])).map(func(v: Variant) -> int: return int(v))})
 	if key != "":
 		for pkg: Dictionary in packages.values():
 			if pkg.get("key", "") == key and pkg.state == "proposed":
@@ -562,6 +570,7 @@ func propose_package(title: String, items: Array, contract_id: String, destinati
 				pkg.items = clean
 				pkg.contract_id = contract_id
 				pkg.destination = destination
+				pkg.cuts = cut_list
 				pkg.day = day
 				_bus.package_changed.emit(pkg.ref)
 				return pkg.ref
@@ -570,7 +579,7 @@ func propose_package(title: String, items: Array, contract_id: String, destinati
 	packages[ref] = {
 		"ref": ref, "key": key, "title": title if title != "" else "Parts package", "items": clean,
 		"contract_id": contract_id, "destination": destination, "state": "proposed",
-		"order_ids": [], "cost": 0, "day": day,
+		"order_ids": [], "cost": 0, "day": day, "cuts": cut_list, "ready_cut": false, "cut_fee": 0,
 	}
 	_bus.package_changed.emit(ref)
 	return ref
@@ -579,11 +588,13 @@ func propose_package(title: String, items: Array, contract_id: String, destinati
 ## How a package would be bought from today's market: {basket [{listing_id, qty}], cost,
 ## suppliers [ids], missing [part names]}. One supplier with every part when one has them
 ## (the cheapest such), else the cheapest listing of each part; new parts before used.
+## cut_fee is what cutting it to length adds (ready_cut_cost = cost + cut_fee).
 func package_basket(ref: String) -> Dictionary:
-	var out := {"basket": [], "cost": 0, "suppliers": [], "missing": []}
+	var out := {"basket": [], "cost": 0, "suppliers": [], "missing": [], "cut_fee": 0, "ready_cut_cost": 0}
 	var pkg: Dictionary = packages.get(ref, {})
 	if pkg.is_empty():
 		return out
+	out.cut_fee = cut_fee(pkg)
 	var wanted := {}
 	for item: Dictionary in pkg.items:
 		wanted[item.part] = int(wanted.get(item.part, 0)) + int(item.qty)
@@ -633,7 +644,24 @@ func package_basket(ref: String) -> Dictionary:
 		out.cost += line_cost(l, int(wanted[part]))
 		if not out.suppliers.has(l.supplier_id):
 			out.suppliers.append(l.supplier_id)
+	out.ready_cut_cost = int(out.cost) + int(out.cut_fee)
 	return out
+
+
+## What cutting a package's bars to length costs: CUT_FEE_PER_PIECE for every piece its cut
+## list makes from the bars in it (a bar without a cut list counts as one piece).
+func cut_fee(pkg: Dictionary) -> int:
+	var left := {}
+	for item: Dictionary in pkg.get("items", []):
+		left[item.part] = int(left.get(item.part, 0)) + int(item.qty)
+	var pieces := 0
+	for c: Dictionary in pkg.get("cuts", []):
+		if int(left.get(c.bar, 0)) > 0:
+			left[c.bar] = int(left[c.bar]) - 1
+			pieces += maxi(1, (c.mm as Array).size())
+	for part: String in left:
+		pieces += int(left[part])
+	return pieces * CUT_FEE_PER_PIECE
 
 
 ## Whether listing a beats b for qty of a part: new before used, then cheaper.
@@ -647,8 +675,9 @@ func _better(a: MarketListing, b: MarketListing, qty: int) -> bool:
 	return ca < cb or (ca == cb and a.id < b.id)
 
 
-## Buys a proposed package from today's market; its orders go to its destination.
-func order_package(ref: String) -> BusinessResult:
+## Buys a proposed package from today's market; its orders go to its destination. Ready cut,
+## the supplier cuts the bars to length for cut_fee more.
+func order_package(ref: String, ready_cut := false) -> BusinessResult:
 	var pkg: Dictionary = packages.get(ref, {})
 	if pkg.is_empty():
 		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no package %s" % ref)
@@ -657,12 +686,20 @@ func order_package(ref: String) -> BusinessResult:
 	var plan := package_basket(ref)
 	if not (plan.missing as Array).is_empty():
 		return BusinessResult.fail(ERR_UNAVAILABLE, "nobody has %s today" % ", ".join(plan.missing))
+	var fee := int(plan.cut_fee) if ready_cut else 0
+	if int(plan.cost) + fee > cash and not insolvent:
+		return BusinessResult.fail(ERR_UNAVAILABLE, "not enough cash (%d needed, %d held)" % [int(plan.cost) + fee, cash])
 	_order_tag = {"destination": pkg.destination, "package_ref": ref}
 	var r := place_market_order(plan.basket, str(pkg.contract_id))
 	_order_tag = {}
 	if r.is_ok():
 		pkg.state = "ordered"
 		pkg.order_ids = Array(r.order_ids)
+		pkg.ready_cut = ready_cut
+		pkg.cut_fee = fee
+		if fee > 0:
+			post(-fee, LedgerEntry.PARTS, ref, "cutting to length")
+			r.cost += fee
 		pkg.cost = r.cost
 		_bus.package_changed.emit(ref)
 	return r
@@ -1031,6 +1068,10 @@ func load_data(d: Dictionary, from_version: int) -> void:
 		pkg.items = items
 		pkg.cost = int(pkg.get("cost", 0))
 		pkg.day = int(pkg.get("day", 0))
+		pkg.cut_fee = int(pkg.get("cut_fee", 0))
+		pkg.ready_cut = bool(pkg.get("ready_cut", false))
+		pkg.cuts = Array(pkg.get("cuts", [])).map(func(c: Dictionary) -> Dictionary:
+			return {"bar": str(c.get("bar", "")), "mm": Array(c.get("mm", [])).map(func(v: Variant) -> int: return int(v))})
 		pkg.order_ids = Array(pkg.get("order_ids", [])).map(func(id: Variant) -> String: return str(id))
 		packages[str(ref)] = pkg
 	_next_package = int(d.get("next_package", packages.size() + 1))
