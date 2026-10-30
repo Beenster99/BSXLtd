@@ -383,7 +383,8 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	vp.size = SCREEN_PX
 	vp.disable_3d = true
 	vp.transparent_bg = false
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# Drawn only while its picture is on screen (it was redrawn every frame, seen or not).
+	vp.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	vp.gui_disable_input = false
 	vp.handle_input_locally = true
 	m.add_child(vp)

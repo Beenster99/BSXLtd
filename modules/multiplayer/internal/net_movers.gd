@@ -85,7 +85,11 @@ func play_back(render_t: float, is_mine: Callable) -> void:
 		var node: Node3D = _nodes.get(id)
 		if not is_instance_valid(node) or not node.is_inside_tree() or is_mine.call(id):
 			continue
-		node.global_transform = sample_at(_samples[id], render_t)
+		var at := sample_at(_samples[id], render_t)
+		# Held at its last sample it stops here: setting the same transform every frame still
+		# moves a body in the physics and notifies everything under it (a trolley, a hull).
+		if not node.global_transform.is_equal_approx(at):
+			node.global_transform = at
 
 
 func snapshot() -> Dictionary:

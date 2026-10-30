@@ -46,7 +46,8 @@ func _ready() -> void:
 	viewport.disable_3d = true
 	viewport.transparent_bg = false
 	viewport.handle_input_locally = true
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# Drawn only while its picture is on screen (it was redrawn every frame, seen or not).
+	viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	add_child(viewport)
 	viewport.add_child(panel)
 	_screen = Node3D.new()
