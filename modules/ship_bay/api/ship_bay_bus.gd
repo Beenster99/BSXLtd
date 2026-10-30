@@ -97,6 +97,9 @@ signal hulls_changed
 signal joint_changed(joint_id: String, made: bool)
 ## A yard trolley's organise scrap mode went on or off (every peer).
 signal organising_changed(trolley_id: String, on: bool)
+## A package ordered for the courtyard (receive_delivery's destination "courtyard") stands
+## there on the trolley that brought it: these crates, still on that trolley.
+signal package_delivered(order_id: String, package_ref: String, trolley_id: String, crate_ids: PackedStringArray)
 
 ## Router scene id of the bay (registered while the "ship_bay.bay_view" flag is on).
 const BAY_SCENE := "ship_bay.bay"
@@ -110,7 +113,7 @@ const SUBJECT_ORDER := "subject:"
 ## stores, the lines' "a" and "b", the goods-in picking lifts "p2" to "p6", and Store 2's picking lift "p7". Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
 const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6", "p7"]
-const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve", "auto"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve", "auto", "courtyard"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 ## The ship id of the random wreck in the bay (bay_wreck): a ship like the Kestrel, built from
@@ -337,6 +340,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.plug", _apply_plug, _check_plug)
 	_net.call("register_event", "ship_bay.debug_ship", _apply_debug_ship, _check_debug_ship)
 	_net.call("register_event", "ship_bay.crane", _apply_crane, _check_crane)
+	_net.call("register_event", "ship_bay.courtyard", _apply_courtyard, _host_only)
 	_net.call("register_event", "ship_bay.rig", _apply_rig, _check_rig)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
@@ -396,7 +400,7 @@ func unregister_module() -> void:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
 				"ship_bay.collect", "ship_bay.lift_off", "ship_bay.dispatch", "ship_bay.sale_ready", "ship_bay.dispatched", "ship_bay.hull", "ship_bay.organise", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
-				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig", "ship_bay.crane"]:
+				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig", "ship_bay.crane", "ship_bay.courtyard"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -835,8 +839,15 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 ## fastener id), qty, condition (0..1), name, grade, mass (kg a unit, 0 when unknown)}.
 ## The host sets a crate per line down in the Deliveries hall and every player sees it;
 ## delivery_landed follows. Other players' calls are ignored (the host's arrive for them).
-func receive_delivery(order_id: String, lines: Array) -> void:
+## `destination` "courtyard" (a Frame Builder package, `package_ref` "PKG-0007") skips the
+## stores: a hover trolley that fits the load (by the longest item: Small, Medium, Large)
+## picks the crates up and parks with them in its bay at COURTYARD_DROPS, and
+## package_delivered follows. Tools lifts them off with lift_off_trolley.
+func receive_delivery(order_id: String, lines: Array, destination := "", package_ref := "") -> void:
 	var payload := {"order_id": order_id, "lines": lines.duplicate(true)}
+	if destination != "":
+		payload["dest"] = destination
+		payload["package"] = package_ref
 	if _net == null:
 		_apply_delivery(payload)
 	elif bool(_net.call("is_host")):
@@ -1338,6 +1349,47 @@ func _apply_hull(payload: Dictionary) -> void:
 	else:
 		hulls[job] = hull.duplicate(true)
 	hulls_changed.emit()
+
+
+# --- Packages straight to the courtyard ------------------------------------------------------
+
+## Where the yard's hover trolleys park with a package they brought to the courtyard: one bay
+## each, just south of their parking, facing north (yaw 0). Yard space, floor points.
+const COURTYARD_DROPS := {"s": Vector3(-22.0, 0, 16.0), "m": Vector3(-18.5, 0, 16.0), "l": Vector3(-15.0, 0, 16.0)}
+
+
+## Crates ordered for the courtyard: crate id -> its record (order_id, package, item, qty,
+## carrier: the trolley it is on or "", arrived: true once it stands in the courtyard).
+func courtyard_packages() -> Dictionary:
+	var out := {}
+	for id: String in _stock.crates:
+		if str(_stock.crates[id].get("dest", "")) == "courtyard":
+			out[id] = (_stock.crates[id] as Dictionary).duplicate(true)
+	return out
+
+
+## The host: trolley `trolley_id` has parked in the courtyard with these package crates.
+func package_arrived(crate_ids: PackedStringArray, trolley_id: String) -> void:
+	var payload := {"crates": Array(crate_ids), "trolley": trolley_id}
+	if _net:
+		_net.call("request", "ship_bay.courtyard", payload)
+	else:
+		_apply_courtyard(payload)
+
+
+func _apply_courtyard(payload: Dictionary) -> void:
+	var ids := PackedStringArray()
+	var order := ""
+	var ref := ""
+	for id: Variant in payload.get("crates", []):
+		if _stock.crates.has(str(id)):
+			_stock.crates[str(id)]["arrived"] = true
+			ids.append(str(id))
+			order = str(_stock.crates[str(id)].get("order_id", ""))
+			ref = str(_stock.crates[str(id)].get("package", ""))
+	if not ids.is_empty():
+		stock_changed.emit()
+		package_delivered.emit(order, ref, str(payload.get("trolley", "")), ids)
 
 
 # --- Large hulls in sections (S6) ------------------------------------------------------------
@@ -2173,6 +2225,10 @@ func _host_only(sender: int, payload: Dictionary) -> Variant:
 
 func _apply_delivery(payload: Dictionary) -> void:
 	var ids := _stock.land(str(payload.get("order_id", "")), payload.get("lines", []))
+	if str(payload.get("dest", "")) != "":
+		for id in ids:
+			_stock.crates[id]["dest"] = str(payload["dest"])
+			_stock.crates[id]["package"] = str(payload.get("package", ""))
 	stock_changed.emit()
 	delivery_landed.emit(str(payload.get("order_id", "")), ids)
 
