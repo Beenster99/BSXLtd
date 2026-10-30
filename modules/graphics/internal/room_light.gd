@@ -101,7 +101,7 @@ static func bake(gi: VoxelGI) -> void:
 ## baking it: a bake voxelises every mesh in the scene and held the game up for seconds a room,
 ## the long stall after the yard loaded. A new build bakes afresh, as its halls may differ.
 const CACHE_DIR := "user://gi_cache"
-## Dev runs (no build_info.cfg) bake every time unless this is set (tests).
+## Dev runs (no build_info.cfg) bake every time unless this is set (tests); headless runs always do.
 static var cache_dev := false
 
 
@@ -109,6 +109,10 @@ static var cache_dev := false
 static func cache_path(gi: VoxelGI) -> String:
 	var commit := BuildInfo.commit()
 	if commit == "dev" and not cache_dev:
+		return ""
+	# No renderer (a headless run, the release build's tests): the bake is empty and can't be
+	# saved whole, and loading it back errors.
+	if DisplayServer.get_name() == "headless":
 		return ""
 	var room := gi.get_parent()
 	if room == null:
