@@ -432,6 +432,7 @@ func _make_monitor(hall: String, xf: Transform3D) -> Node3D:
 	glow.omni_range = 6.0
 	glow.position = Vector3(0, 0, 1.4)
 	glow.shadow_enabled = false
+	glow.set_meta("gfx_no_shadow", true)   # High shadows would turn it on: six screens drew the hall six times more
 	m.add_child(glow)
 
 	var prompt := Label3D.new()

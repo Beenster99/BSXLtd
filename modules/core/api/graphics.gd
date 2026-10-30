@@ -281,7 +281,9 @@ static func tune_light(l: Light3D) -> void:
 	var lamp_fog: float = float(node.get("lamp_fog_energy")) if node else 4.0
 	if l is DirectionalLight3D:
 		var sun := l as DirectionalLight3D
-		sun.shadow_enabled = sh > 0
+		# A fill light its maker marked (the gas giant's light at night) casts none: a second sun's
+		# shadows drew the whole yard twice more every frame.
+		sun.shadow_enabled = sh > 0 and not l.has_meta("gfx_no_shadow")
 		sun.directional_shadow_max_distance = SUN_SHADOW[dd]
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if sh >= 3 \
 				else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
