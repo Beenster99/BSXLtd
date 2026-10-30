@@ -86,6 +86,8 @@ func run_tests() -> void:
 	# When it lands, Ship and Bay is told to take it to the courtyard.
 	var yard := Modules.bus("ship_bay")
 	if yard and yard.has_method("courtyard_packages"):
+		# A supplier may hold an order up once; the second call always lands it.
+		(bus.get("_books") as Object).call("deliver_now")
 		(bus.get("_books") as Object).call("deliver_now")
 		var crates: Dictionary = yard.call("courtyard_packages")
 		check(not crates.is_empty() and crates.values().all(func(c: Dictionary) -> bool: return str(c.get("package", "")) == ref),
