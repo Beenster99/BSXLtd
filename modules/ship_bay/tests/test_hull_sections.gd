@@ -2,7 +2,8 @@ extends ModuleTest
 ## Ship and Bay, S6 (large jobs in stages; beenster, 30 Oct: "move to next stage S6 - large
 ## jobs"): a large wreck in Dock 2 or Dock 3 is cut into sections the dolly can carry, at its
 ## frame rings, and a section cut free stands beside the dock as its own body. Both docks hold
-## a large hull at once.
+## a large hull at once. The dock's mobile crane lifts a section off its stand into an empty
+## transport cradle within reach (one on the dolly, or on its pedestals).
 ##   tools/run_tests.sh ship_bay
 
 const HullSections := preload("res://modules/ship_bay/internal/hull_sections.gd")
@@ -66,15 +67,49 @@ func run_tests() -> void:
 	await frames(3)
 	var sb := _box(sec)
 	var hb := _box(rest)
-	check(not sb.intersects(hb) and absf(sb.position.y - 0.0) < 3.0 and sb.get_center().x < hb.get_center().x,
-			"it stands on its stand beside the hull, on the dock's outer side: %s vs %s" % [sb, hb])
+	check(not sb.intersects(hb) and absf(sb.position.y - 0.0) < 3.0 and sb.get_center().x > hb.get_center().x,
+			"it stands on its stand beside the hull, on the side towards the pad: %s vs %s" % [sb, hb])
 	bus.debug_ship("free_section", "", "2")
 	await frames(3)
 	check(bus.free_sections(j2) == [0, 1] and (ships.get("sections")[j2] as Dictionary).size() == 2, "and the next")
+
+	# The crane: nothing to lift into at first, then a medium cradle brought up beside it.
+	var cranes: Dictionary = ships.get("cranes")
+	var crane: Node3D = cranes.get("2")
+	check(cranes.size() == 2 and crane != null, "a mobile crane stands by each dock")
+	ships.call("crane_use", "2")
+	check(bus.lifted_sections(j2).is_empty() and str(crane.get("status")) == "NO EMPTY CRADLE IN REACH",
+			"with no empty cradle in reach it says so (%s)" % crane.get("status"))
+	var cradle: Node3D = yard.find_child("HoldingCradle2", true, false)
+	var stand_at := sec.global_position
+	cradle.global_transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-40.0, 1.6, stand_at.z + 6.0))
+	ships.call("crane_use", "2")
+	await frames(2)
+	check(str(bus.lifted_sections(j2).get("0", "")) == "HoldingCradle2" and bool(crane.get("busy")),
+			"F on the crane: it goes to lift the first section into that cradle (%s)" % [bus.lifted_sections(j2)])
+	check(not bus.free_cradle_for(1000.0, 10.0).begins_with("HoldingCradle2"), "and the cradle is spoken for")
+	var lifted_mid := false
+	for t in 300:
+		await get_tree().create_timer(0.5).timeout
+		if sec.global_position.y > stand_at.y + 3.0:
+			lifted_mid = true
+		if sec.get_parent() == cradle:
+			break
+	check(lifted_mid and sec.get_parent() == cradle and cradle.get("load_node") == sec,
+			"it swings the section up off its stand and sets it in the cradle (%s)" % crane.get("status"))
+	# Its lowest broad part (what stood on the trestles) sits on the saddles, centred.
+	var broad: AABB = sec.get_meta("broad_box")
+	var mid := sec.global_transform * broad.get_center()
+	var base := (sec.global_transform * broad.position).y
+	var cc := cradle.global_position
+	check(Vector2(mid.x - cc.x, mid.z - cc.z).length() < 0.1 and absf(base - (cc.y + float(cradle.get("saddle_top")))) < 0.1
+			and absf(float(cradle.get("load_t")) - float(plan[0]["mass_kg"]) / 1000.0) < 1.0,
+			"in its saddles, %.0f t on the cradle: %s, %.2f over %s" % [float(cradle.get("load_t")), mid, base, cc])
 	bus.debug_ship("dock_clear", "", "2")
 	bus.debug_ship("dock_clear", "", "3")
 	await frames(3)
-	check(not hulls.has(j2) and not (ships.get("sections") as Dictionary).has(j2), "Clear takes the wreck and its sections away")
+	check(not hulls.has(j2) and not (ships.get("sections") as Dictionary).has(j2) and cradle.get("load_node") == null,
+			"Clear takes the wreck and its sections away, the lifted one too")
 	Flags.set_flag("ship_bay.bay_cradle", was)
 	yard.queue_free()
 	await frames(2)
