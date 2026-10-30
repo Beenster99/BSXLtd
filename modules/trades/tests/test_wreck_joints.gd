@@ -53,10 +53,6 @@ func run_tests() -> void:
 	for i in station.points.size():
 		if seen[1] >= 6 and hidden[1] >= 6:
 			break
-		# A joint already taken out (a loose rivet with hands in, gone_rings) is out of the aim
-		# on purpose: not one to look for. Which of them the sweep met hung on timing.
-		if station.is_gone(i):
-			continue
 		var depth := await _look_at(rig, station, i)
 		# Only where the look lands on it (a joint high overhead is past the neck's reach).
 		if is_nan(depth) or rig.aim_distance(station.points_world[i]) > 0.02:
