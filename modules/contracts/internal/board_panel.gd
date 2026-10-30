@@ -300,7 +300,11 @@ static func want_text(w: Dictionary) -> String:
 	match String(w.get("what", "")):
 		"part":
 			var ref: ComponentRef = w.get("component")
-			var line := "%d × %s back" % [int(w.get("qty", 1)), part_name(ref.id) if ref else "part"]
+			# The disposition words the docket like the job pack does (S6: large jobs want
+			# weapons destroyed, not back).
+			var how := {"destroyed": "destroyed", "kept": "kept by BSX", "any": "out"}
+			var line := "%d × %s %s" % [int(w.get("qty", 1)), part_name(ref.id) if ref else "part",
+					String(how.get(String(w.get("disposition", "returned")), "back"))]
 			if float(w.get("min_condition", 0.0)) > 0.0:
 				line += ", %d%% or better" % int(round(float(w.get("min_condition", 0.0)) * 100.0))
 			return line
