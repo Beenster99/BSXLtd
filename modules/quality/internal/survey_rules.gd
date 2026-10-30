@@ -23,3 +23,8 @@ extends Resource
 @export var walk_speed := 1.4
 ## Reports kept in the save (oldest go first).
 @export var keep_reports := 30
+## Decommissioning (plan stage S6): a recovered component whose id holds one of these words
+## is the reactor, or a weapon. Weapons must be recorded "destroyed"; none leaves the yard.
+@export var reactor_words: PackedStringArray = PackedStringArray(["reactor"])
+@export var weapon_words: PackedStringArray = PackedStringArray(["turret", "gun", "cannon", "missile",
+		"laser", "torpedo", "weapon", "pdc", "railgun", "railmuzzle", "muzzle"])

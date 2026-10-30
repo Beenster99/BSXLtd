@@ -6,7 +6,8 @@ extends RefCounted
 
 ## The joint ids a visit scans, oldest work first. `records` are the job's records.
 ## RANDOM: random_sample of the work since the last visit. CALLED: all of it, newest
-## called_sample at most. FINAL: every joint on the job.
+## called_sample at most. FINAL: every joint on the job. STAGE: all the work since the last
+## visit.
 static func pick(records: Array[JointRecord], kind: StringName, rules: SurveyRules,
 		rng: RandomNumberGenerator) -> PackedStringArray:
 	var pool: Array[JointRecord] = []
@@ -58,13 +59,29 @@ static func write(id: String, kind: StringName, job_id: String, scanned: Array[J
 			total += r.score
 	rep.average = float(total) / graded if graded > 0 else 0.0
 	rep.grade = SurveyReport.letter(rep.average, rep.failed) if graded > 0 else "–"
-	rep.accepted = kind == SurveyReport.FINAL and rep.failed == 0
+	rep.accepted = kind in [SurveyReport.FINAL, SurveyReport.STAGE] and rep.failed == 0
 	return rep
+
+
+## Adds the rule checks (StageChecks.run) to a report: any failed check withholds acceptance
+## and, like a failed joint, holds the grade at D at best. With no joints graded the rules
+## alone grade it: A when all are met, F when any is not.
+static func add_checks(rep: SurveyReport, checks: Array[Dictionary]) -> void:
+	rep.checks = checks
+	if rep.failed_checks().is_empty():
+		if rep.grade == "–" and not checks.is_empty():
+			rep.grade = "A"
+		return
+	rep.accepted = false
+	if rep.grade == "–":
+		rep.grade = "F"
+	elif rep.grade < "D":
+		rep.grade = "D"
 
 
 ## How long a visit takes, seconds: getting there plus each surveyor's share of the joints.
 static func duration(joints: int, kind: StringName, rules: SurveyRules) -> float:
-	var crew := maxi(1, rules.final_crew if kind == SurveyReport.FINAL else rules.crew)
+	var crew := maxi(1, rules.final_crew if kind in [SurveyReport.FINAL, SurveyReport.STAGE] else rules.crew)
 	return rules.arrive_s + rules.per_joint_s * ceili(float(joints) / crew)
 
 
