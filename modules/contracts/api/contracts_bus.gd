@@ -36,6 +36,15 @@ signal recovery_recorded(job_id: String, line: Dictionary)
 ## offer left the board untaken. cycle_advanced: new offers were posted for a cycle.
 signal standing_changed(client_id: String, points: int, level: int)
 signal offer_expired(job_id: String)
+## A large job (S6) was accepted: its stages, each {id, name, value (CR)}, for Business to
+## price it by the stage. Follows contract_accepted.
+signal contract_staged(contract_id: String, stages: Array)
+## A large job's stage passed its sign-off: Business pays it (the stage's `pay`, the value
+## above). The sign-off's quality and snags are in the job's `stages_done`.
+signal stage_signed_off(contract_id: String, stage_id: String)
+## A stage opened ("open": work on it can start) or closed ("signed"), for whoever follows
+## the stage being worked.
+signal stage_changed(job_id: String, stage_id: String, state: String)
 signal cycle_advanced(cycle: int)
 ## The whole board came in from the host (a join, or any change there): panels redraw.
 signal board_changed
@@ -63,6 +72,8 @@ const CLIENTS_FLAG := "contracts.clients"
 ## BSX's own clients send whole ships and wrecks BSX generates itself (plan stage S3): the
 ## offer generator makes them with Shared Components' WreckMaker, seeded per offer.
 const WRECKS_FLAG := "contracts.wrecks"
+## Large jobs worked in paid stages (plan stage S6).
+const STAGES_FLAG := "contracts.stages"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -425,7 +436,94 @@ func subject_landed(job_id: String) -> bool:
 	var job := get_job(job_id)
 	if job == null or job.state != ContractJob.ARRIVING:
 		return false
-	return advance(job_id, ContractJob.PARTS_READY)
+	# A large job's hulk goes into a berth (an apron dock) and its stages start there.
+	return advance(job_id, ContractJob.IN_BERTH if job.is_staged() else ContractJob.PARTS_READY)
+
+
+## Ship and Bay: a large job's hulk is in its berth (S6). The same as landing for a staged
+## job; true once the job is in its berth or further on.
+func subject_berthed(job_id: String) -> bool:
+	var job := get_job(job_id)
+	if job == null:
+		return false
+	if job.state == ContractJob.ARRIVING:
+		return advance(job_id, ContractJob.IN_BERTH)
+	return job.state in [ContractJob.IN_BERTH, ContractJob.IN_PROGRESS, ContractJob.INSPECTION]
+
+
+# Staged jobs (S6)
+
+## The stage a large job is on: {id, name, wants, pay, rule, checks}, or {} (a job in one go, or
+## every stage signed off).
+func current_stage(job_id: String) -> Dictionary:
+	var job := get_job(job_id)
+	return job.current_stage() if job else {}
+
+
+## "stage 2 of 5: reactor out" for the board and the yard, "" for a job in one go.
+func stage_text(job_id: String) -> String:
+	var job := get_job(job_id)
+	return job.stage_text() if job else ""
+
+
+## What the stage being worked still needs before it can be signed off.
+func stage_missing(job_id: String) -> PackedStringArray:
+	var job := get_job(job_id)
+	return job.stage_missing() if job else PackedStringArray()
+
+
+## Quality: signs off the stage being worked (stage_id "" or its id; another stage is
+## refused). Refused while the stage's wants are unmet, unless `force` (then each unmet
+## line is a snag). `by` is who or what signed (a survey report id). Pays the stage
+## (stage_signed_off, for Business) and opens the next; a request through the host online.
+func sign_off_stage(job_id: String, stage_id := "", by := "surveyor", force := false) -> bool:
+	var job := get_job(job_id)
+	if job == null or not job.is_staged() or job.state != ContractJob.IN_PROGRESS or job.current_stage().is_empty():
+		return false
+	if stage_id != "" and String(job.current_stage().get("id", "")) != stage_id:
+		return false
+	if _online_client():
+		_net().call("request", ACTION_EVENT, {"op": "sign_stage", "job": job_id, "stage": stage_id, "by": by, "force": force})
+		return true
+	var missing := job.stage_missing()
+	if not missing.is_empty() and not force:
+		return false
+	var st := job.current_stage()
+	var wanted := maxi((st.get("wants", []) as Array).size(), 1)
+	var quality := clampf(job.returned_condition() * float(wanted - missing.size()) / float(wanted), 0.0, 1.0)
+	var pay := int(st.get("pay", 0))
+	var signed_id := String(st.get("id", ""))
+	job.open_snags += missing.size()
+	job.stages_done.append({"stage": job.stage, "id": signed_id, "by": by, "quality": quality, "pay": pay, "snags": missing.size()})
+	job.signed_by.append({"player_id": by, "role": "stage %d" % (job.stage + 1)})
+	job.stage += 1
+	stage_signed_off.emit(job_id, signed_id)
+	stage_changed.emit(job_id, signed_id, "signed")
+	var next := job.current_stage()
+	if not next.is_empty():
+		stage_changed.emit(job_id, String(next.get("id", "")), "open")
+	board_changed.emit()
+	return true
+
+
+## Business's shape of a job's plan: [{id, name, value}] in order.
+static func stage_values(job: ContractJob) -> Array:
+	var out: Array = []
+	for st: Dictionary in job.order.stages:
+		out.append({"id": String(st.get("id", "")), "name": String(st.get("name", "")), "value": int(st.get("pay", 0))})
+	return out
+
+
+## A recovery on a staged job that belongs to a later stage breaks the order the plan
+## sets (weapons made safe before the reactor comes out, the reactor before the rest):
+## it still counts, but as a snag the surveyor will see.
+func _note_stage_breach(job: ContractJob, part_id: String) -> void:
+	if not job.is_staged() or job.current_stage().is_empty():
+		return
+	var of := job.stage_of_part(part_id)
+	if of > job.stage:
+		job.open_snags += 1
+		push_warning("Contracts: %s came out of %s before stage %d (%s) was signed off" % [part_id, job.job_id, job.stage + 1, String(job.current_stage().get("name", ""))])
 
 
 # Clients and standing (S4)
@@ -604,6 +702,12 @@ func _validate_action(_sender: int, p: Dictionary) -> Variant:
 			return p if job.state == ContractJob.OFFERED else "that job is no longer on offer"
 		"activate":
 			return p if job.state != ContractJob.OFFERED else "accept the job first"
+		"sign_stage":
+			if not job.is_staged() or job.state != ContractJob.IN_PROGRESS or job.current_stage().is_empty():
+				return "no stage to sign off"
+			if str(p.get("stage", "")) != "" and str(p.get("stage", "")) != String(job.current_stage().get("id", "")):
+				return "that stage is not the one being worked"
+			return p if bool(p.get("force", false)) or job.stage_missing().is_empty() else "the stage is not finished"
 	return "unknown board action"
 
 
@@ -615,6 +719,8 @@ func _apply_action(p: Dictionary) -> void:
 			accept(str(p.get("job", "")))
 		"activate":
 			_set_active(str(p.get("job", "")))
+		"sign_stage":
+			sign_off_stage(str(p.get("job", "")), str(p.get("stage", "")), str(p.get("by", "surveyor")), bool(p.get("force", false)))
 
 
 ## Asks for an offer from a client at a tier (1 to 3), whatever BSX's standing with them:
@@ -769,6 +875,7 @@ func _post_generated(client_id: String, at_cycle: int, slot: int, tier := -1) ->
 	if tier < 0:
 		tier = maxi(1, level_of(client_id))
 	_generator.wrecks = Flags.is_on(WRECKS_FLAG)
+	_generator.stages = Flags.is_on(STAGES_FLAG) and Flags.is_on(WRECKS_FLAG)
 	var data := _generator.make(client_id, at_cycle, slot, tier)
 	if data.is_empty() or _jobs.has(String(data.get("contract_id", ""))):
 		return ""
@@ -805,7 +912,7 @@ func advance(job_id: String, to_state: String, by_client := false) -> bool:
 		# The subject (or the parts) are in the yard: the job is in the bay and under way,
 		# so the crew can work it and call the final survey when they are done.
 		advance(job_id, ContractJob.IN_BAY)
-	elif to_state == ContractJob.IN_BAY:
+	elif to_state in [ContractJob.IN_BAY, ContractJob.IN_BERTH]:
 		advance(job_id, ContractJob.IN_PROGRESS)
 	return true
 
@@ -820,6 +927,11 @@ func _emit_milestone(job: ContractJob, to_state: String, by_client: bool, from_s
 		ContractJob.ACCEPTED:
 			var c := job.order.commercial
 			contract_accepted.emit(job.job_id, int(c.get("price", 0)), int(c.get("due_day", NO_DUE_DAY)))
+			if job.is_staged():
+				contract_staged.emit(job.job_id, stage_values(job))
+		ContractJob.IN_PROGRESS:
+			if job.is_staged() and not job.current_stage().is_empty():
+				stage_changed.emit(job.job_id, String(job.current_stage().get("id", "")), "open")
 		ContractJob.HANDED_OVER:
 			# What the client wanted and never got back is a snag each and cuts the quality
 			# the pay follows; the job still closes, so a crew can always finish a contract.
@@ -877,6 +989,7 @@ func record_recovery(job_id: String, component: ComponentRef, condition: float, 
 		return false
 	var line := {"component": component.to_dict(), "kg": kg, "condition": clampf(condition, 0.0, 1.0),
 			"disposition": disposition}
+	_note_stage_breach(job, component.id)
 	job.recoveries.append(line)
 	recovery_recorded.emit(job_id, line)
 	return true

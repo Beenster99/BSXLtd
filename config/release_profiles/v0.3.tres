@@ -17,6 +17,7 @@ flags = {
 "contracts.clients": true,
 "contracts.debug": true,
 "contracts.wrecks": true,
+"contracts.stages": true,
 "core": true,
 "graphics": true,
 "graphics.gi": true,

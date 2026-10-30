@@ -9,6 +9,8 @@ const ACCEPTED := "accepted"
 const ARRIVING := "arriving"
 const PARTS_READY := "parts_ready"
 const IN_BAY := "in_bay"
+## A large job's hulk is in its berth (an apron dock) and its stages can start (S6).
+const IN_BERTH := "in_berth"
 const IN_PROGRESS := "in_progress"
 const INSPECTION := "inspection"
 const HANDED_OVER := "handed_over"
@@ -20,14 +22,15 @@ const CANCELLED := "cancelled"
 const NEXT: Dictionary = {
 	OFFERED: [ACCEPTED, DECLINED],
 	ACCEPTED: [PARTS_READY, ARRIVING],
-	ARRIVING: [PARTS_READY],
+	ARRIVING: [PARTS_READY, IN_BERTH],
 	PARTS_READY: [IN_BAY],
 	IN_BAY: [IN_PROGRESS],
+	IN_BERTH: [IN_PROGRESS],
 	IN_PROGRESS: [INSPECTION],
 	INSPECTION: [HANDED_OVER, IN_PROGRESS],
 	HANDED_OVER: [CLOSED],
 }
-const CANCELLABLE: PackedStringArray = [OFFERED, ACCEPTED, ARRIVING, PARTS_READY, IN_BAY, IN_PROGRESS, INSPECTION]
+const CANCELLABLE: PackedStringArray = [OFFERED, ACCEPTED, ARRIVING, PARTS_READY, IN_BAY, IN_BERTH, IN_PROGRESS, INSPECTION]
 
 @export var job_id := ""
 @export var order: WorkOrder
@@ -52,6 +55,10 @@ const CANCELLABLE: PackedStringArray = [OFFERED, ACCEPTED, ARRIVING, PARTS_READY
 @export var tests: Array[Dictionary] = []
 @export var open_snags := 0
 @export var completed_at := ""
+## A staged job (S6): the index of the stage being worked (order.stages), and each stage
+## signed off so far, {stage, by, quality (0 to 1), pay (CR), snags}.
+@export var stage := 0
+@export var stages_done: Array[Dictionary] = []
 
 
 static func can_move(from: String, to: String) -> bool:
@@ -75,40 +82,105 @@ func missing_installs() -> PackedStringArray:
 
 ## The wants lines a non-fit job has not met yet, as readable text (empty = ready to hand over).
 func missing_wants() -> PackedStringArray:
+	return missing_for(order.wants, recoveries)
+
+
+## The wants lines of a list that the recoveries have not met yet, as readable text.
+static func missing_for(wants: Array, recoveries: Array) -> PackedStringArray:
 	var out := PackedStringArray()
-	for w in order.wants:
+	for w: Dictionary in wants:
 		match String(w.get("what")):
 			"part":
 				var ref: ComponentRef = w.get("component")
+				var wanted := String(w.get("disposition", "returned"))
 				var have := 0
-				for r in recoveries:
+				for r: Dictionary in recoveries:
 					var c: Dictionary = r.get("component", {})
-					if ref and c.get("id") == ref.id and r.get("disposition") == "returned" \
+					if ref and c.get("id") == ref.id and disposition_fits(String(r.get("disposition", "")), wanted) \
 							and float(r.get("condition", 0.0)) >= float(w.get("min_condition", 0.0)):
 						have += 1
 				if have < int(w.get("qty", 1)):
-					out.append("%d of %d %s returned" % [have, int(w.get("qty", 1)), ref.id if ref else "part"])
+					out.append("%d of %d %s %s" % [have, int(w.get("qty", 1)), ref.id if ref else "part", disposition_word(wanted)])
 			"material":
 				var kg := 0.0
-				for r in recoveries:
+				for r: Dictionary in recoveries:
 					if r.get("material") == w.get("material") and r.get("disposition") in ["returned", "kept"]:
 						kg += float(r.get("kg", 0.0))
 				if kg < float(w.get("kg", 0.0)):
 					out.append("%.0f of %.0f kg %s" % [kg, float(w.get("kg", 0.0)), w.get("material")])
 			"condition":
 				var best := -1.0
-				for r in recoveries:
+				for r: Dictionary in recoveries:
 					if r.get("disposition") == "returned":
 						best = maxf(best, float(r.get("condition", 0.0)))
 				if best < float(w.get("min_condition", 1.0)):
 					out.append("subject returned at %.0f%% or better" % (float(w.get("min_condition", 1.0)) * 100.0))
 			"gone":
 				var gone := false
-				for r in recoveries:
+				for r: Dictionary in recoveries:
 					gone = gone or r.get("disposition") in ["scrapped", "destroyed"]
 				if not gone:
 					out.append("subject scrapped or destroyed")
 	return out
+
+
+## Whether a recovery's disposition meets what a part want asked for.
+static func disposition_fits(got: String, wanted: String) -> bool:
+	match wanted:
+		"any":
+			return true
+		"destroyed":
+			return got in ["destroyed", "scrapped"]
+	return got == wanted
+
+
+static func disposition_word(wanted: String) -> String:
+	match wanted:
+		"destroyed":
+			return "destroyed"
+		"kept":
+			return "kept"
+		"any":
+			return "out"
+	return "returned"
+
+
+## Staged jobs (S6).
+
+func is_staged() -> bool:
+	return order != null and order.is_staged()
+
+
+## The stage being worked, or {} once every stage is signed off (or for a job in one go).
+func current_stage() -> Dictionary:
+	return order.stages[stage] if is_staged() and stage < order.stages.size() else {}
+
+
+## What the stage being worked still needs, as readable text (empty: ready to sign off).
+func stage_missing() -> PackedStringArray:
+	var st := current_stage()
+	return missing_for(st.get("wants", []), recoveries) if not st.is_empty() else PackedStringArray()
+
+
+## "stage 2 of 5: reactor out", or "" for a job in one go; "stages done" once all are.
+func stage_text() -> String:
+	if not is_staged():
+		return ""
+	var st := current_stage()
+	if st.is_empty():
+		return "stages done"
+	return "stage %d of %d: %s" % [stage + 1, order.stages.size(), String(st.get("name", "")).to_lower()]
+
+
+## Whether a part belongs to a stage after the one being worked (the stage order is the
+## rule: weapons made safe before the reactor comes out, the reactor before the rest).
+func stage_of_part(part_id: String) -> int:
+	for i in order.stages.size():
+		for w: Dictionary in order.stages[i].get("wants", []):
+			var ref: ComponentRef = w.get("component")
+			if String(w.get("what", "")) == "part" and ref and ref.id == part_id:
+				return i
+	return -1
 
 
 ## Mean condition of what went back to the client, 0 to 1 (1 when nothing did): the

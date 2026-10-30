@@ -143,6 +143,8 @@ func _docket(job: ContractJob) -> Control:
 	var tier := int((o.raw.get("offer", {}) as Dictionary).get("tier", 0))
 	if tier > 0:
 		tags.add_child(T.tag("tier %d" % tier, T.CYAN, 12))
+	if o.is_staged():
+		tags.add_child(T.tag(job.stage_text() if job.state != ContractJob.OFFERED else "%d stages" % o.stages.size(), T.ORANGE, 12))
 	for h in o.hazards:
 		tags.add_child(T.tag(h, T.BAD, 12))
 	body.add_child(tags)
