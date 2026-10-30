@@ -877,6 +877,19 @@ func waiting_package() -> Dictionary:
 	return {}
 
 
+## The cut list of just the bars a package buys: the plan's last `need[bar]` bars of each kind
+## (those before them are bought already).
+static func package_cuts(cuts: Array, need: Dictionary) -> Array:
+	var left := need.duplicate()
+	var out: Array = []
+	for i in range(cuts.size() - 1, -1, -1):
+		var bar := str(cuts[i].bar)
+		if int(left.get(bar, 0)) > 0:
+			left[bar] = int(left[bar]) - 1
+			out.push_front(cuts[i])
+	return out
+
+
 ## Commits the frame and puts what it still needs in the Buy tab as one package (beenster,
 ## 0.3.32: "the order should appear in the buy tab as a package with unique reference (but not
 ## bought yet)"); bought there, it comes by trolley straight to the courtyard. "" when done,
@@ -889,6 +902,9 @@ func place_frame_order() -> String:
 	var done := committed()
 	var shop: Object = Modules.bus("business")
 	var ref := ""
+	var cuts: Array = []
+	for bar: Dictionary in (order_offer.plan as Dictionary).bars:
+		cuts.append({"bar": bar.bar, "mm": (bar.lengths as Array).map(func(e: Dictionary) -> int: return int(e.mm))})
 	if not need.is_empty():
 		if shop == null or not shop.has_method("propose_package"):
 			_play(&"clunk")
@@ -900,8 +916,9 @@ func place_frame_order() -> String:
 		var items: Array = []
 		for bar: String in need:
 			items.append({"part": bar, "qty": int(need[bar])})
+		# Its cut list too, so the Buy tab can sell the bars ready cut (Business, 0.3.33).
 		ref = str(shop.call("propose_package", "Frame for %s, version %s" % [_ship_title(), version()], items,
-				job.job_id if job else "", "courtyard", package_key()))
+				job.job_id if job else "", "courtyard", package_key(), package_cuts(cuts, need)))
 	else:
 		# Everything is bought already: a package still waiting for the old frame goes.
 		var old := waiting_package()
@@ -910,9 +927,6 @@ func place_frame_order() -> String:
 	var rows: Array = []
 	for row: Dictionary in beams():
 		rows.append(_row(row))
-	var cuts: Array = []
-	for bar: Dictionary in (order_offer.plan as Dictionary).bars:
-		cuts.append({"bar": bar.bar, "mm": (bar.lengths as Array).map(func(e: Dictionary) -> int: return int(e.mm))})
 	# Bars already cut for an earlier commit stay cut when the plan hasn't changed.
 	var cut_already := done_cuts(done, cuts)
 	_ask({"ship": ship_id(), "commit": {"version": version(), "rows": rows, "counts": (order_offer.plan as Dictionary).counts,

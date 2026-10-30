@@ -90,6 +90,11 @@ func run_tests() -> void:
 	var pkg := d.waiting_package()
 	check(not pkg.is_empty() and str(pkg.ref).begins_with("PKG-") and pkg.items == [{"part": bar6, "qty": 1}] and pkg.destination == "courtyard",
 			"a package waits in the Buy tab, for the courtyard: %s" % [pkg])
+	check((pkg.get("cuts", []) as Array).size() == 1 and str(pkg.cuts[0].bar) == bar6 and (pkg.cuts[0].mm as Array).size() == 3,
+			"the package carries its cut list, so it can be bought ready cut: %s" % [pkg.get("cuts")])
+	var some := [{"bar": "a", "mm": [1]}, {"bar": "b", "mm": [2]}, {"bar": "a", "mm": [3]}, {"bar": "a", "mm": [4]}]
+	check(TradesBeamDesigner.package_cuts(some, {"a": 2}) == [{"bar": "a", "mm": [3]}, {"bar": "a", "mm": [4]}],
+			"a package's cut list is only the bars it buys")
 	var c := bus.committed_frame(ship)
 	check(not c.is_empty() and (c.rows as Array).size() == 3 and str(c.package) == str(pkg.ref), "the frame is committed with its package: %s" % [c])
 	check(d.is_committed() and "\n".join(d.info_lines()).contains("Committed  version A, 3 beams, package %s waiting in the Buy tab (1 bar)" % pkg.ref),
