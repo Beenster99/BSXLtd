@@ -81,31 +81,53 @@ func run_tests() -> void:
 	d.root_on = ""
 	d.click(false)
 	check(d.order_offer.is_empty(), "right click cancels the offer")
-	# O, O: committed and ordered as one order.
+	# O, O: committed, and its bar waits in the Buy tab as a package, not bought yet (beenster,
+	# 0.3.32: "the order should appear in the buy tab as a package with unique reference").
 	d.key(TradesBus.KEY_ORDER)
 	d.key(TradesBus.KEY_ORDER)
 	await frames(2)
-	check(shop.get_orders().size() == orders + 1, "one order placed: %d" % (shop.get_orders().size() - orders))
-	check(shop.get_cash() == cash - int(b.cost), "paid for: %d CR" % (cash - shop.get_cash()))
+	check(shop.get_orders().size() == orders and shop.get_cash() == cash, "nothing bought yet")
+	var pkg := d.waiting_package()
+	check(not pkg.is_empty() and str(pkg.ref).begins_with("PKG-") and pkg.items == [{"part": bar6, "qty": 1}] and pkg.destination == "courtyard",
+			"a package waits in the Buy tab, for the courtyard: %s" % [pkg])
 	var c := bus.committed_frame(ship)
-	check(not c.is_empty() and (c.rows as Array).size() == 3 and int(c.ordered.get(bar6, 0)) == 1 and int(c.cost) == int(b.cost),
-			"the frame is committed with what was ordered: %s" % [c])
-	check(d.is_committed() and "\n".join(d.info_lines()).contains("Committed  version A, 3 beams, 1 bar ordered"), "the panel says so")
+	check(not c.is_empty() and (c.rows as Array).size() == 3 and str(c.package) == str(pkg.ref), "the frame is committed with its package: %s" % [c])
+	check(d.is_committed() and "\n".join(d.info_lines()).contains("Committed  version A, 3 beams, package %s waiting in the Buy tab (1 bar)" % pkg.ref),
+			"the panel says so: %s" % "\n".join(d.info_lines()))
+	# Committed again with a beam added before it's bought: the same package, its parts replaced.
+	bus.set_beam_design(ship, bus.beam_design(ship) + [_row(8, 3.0)])
+	d.key(TradesBus.KEY_ORDER)
+	d.key(TradesBus.KEY_ORDER)
+	var again := d.waiting_package()
+	check(str(again.ref) == str(pkg.ref) and again.items != pkg.items, "a re-commit replaces the waiting package's parts: %s" % [again])
+	bus.set_beam_design(ship, (bus.beam_design(ship) as Array).filter(func(r: Dictionary) -> bool: return int(r.id) != 8))
+	d.key(TradesBus.KEY_ORDER)
+	d.key(TradesBus.KEY_ORDER)
+	check(int(d.waiting_package().items[0].qty) == 1, "and back to one bar")
+	# ORDER in the Buy tab buys it, booked for the courtyard.
+	var r: BusinessResult = shop.order_package(str(pkg.ref))
+	await frames(2)
+	check(r.is_ok() and shop.get_orders().size() == orders + 1 and shop.get_cash() < cash, "ordered from the Buy tab: %s" % r.message)
 	var o: PartsOrder = shop.get_orders()[-1]
-	check(o.lines.size() == 1 and (o.lines[0] as OrderLine).part == bar6 and (o.lines[0] as OrderLine).qty == 1, "the order is the bar")
+	check(o.lines.size() == 1 and (o.lines[0] as OrderLine).part == bar6 and o.destination == "courtyard" and o.package_ref == str(pkg.ref),
+			"the order is the bar, to the courtyard")
+	check(d.bought() == {bar6: 1} and d.waiting_package().is_empty() and "\n".join(d.info_lines()).contains("1 bar bought"), "counted as bought")
 	# Committed again unchanged: nothing more to buy.
 	d.key(TradesBus.KEY_ORDER)
-	check((d.order_offer.need as Dictionary).is_empty() and d.order_line().contains("All on order"), "unchanged, nothing new to order")
+	check((d.order_offer.need as Dictionary).is_empty() and d.order_line().contains("All bought"), "unchanged, nothing new to order")
 	d.key(TradesBus.KEY_ORDER)
-	check(shop.get_orders().size() == orders + 1, "and nothing ordered")
-	# A beam added: changed since, and only the new bar is bought.
+	check(d.waiting_package().is_empty(), "and no package")
+	# A beam added: changed since, and only the new bar goes in a new package.
 	bus.set_beam_design(ship, bus.beam_design(ship) + [_row(9, 4.0)])
 	check(not d.is_committed() and "\n".join(d.info_lines()).contains("changed since"), "the panel says it changed since")
 	d.key(TradesBus.KEY_ORDER)
 	check(d.order_offer.need == {bar6: 1}, "only one more bar: %s" % [d.order_offer.need])
 	d.key(TradesBus.KEY_ORDER)
+	var pkg2 := d.waiting_package()
+	check(not pkg2.is_empty() and str(pkg2.ref) != str(pkg.ref), "a new package for it: %s" % [pkg2])
+	shop.order_package(str(pkg2.ref))
 	await frames(2)
-	check(shop.get_orders().size() == orders + 2 and int(bus.committed_frame(ship).ordered.get(bar6, 0)) == 2, "bought, and counted")
+	check(shop.get_orders().size() == orders + 2 and int(d.bought().get(bar6, 0)) == 2, "bought, and counted")
 	# The cutting bed takes the committed frame's cut lists bar by bar.
 	if rig.cutting_bed == null:
 		rig.build_cutting_bed(Transform3D(Basis(), Vector3(-20, 0, 0)))
@@ -137,7 +159,7 @@ func run_tests() -> void:
 	var data := bus.save_data()
 	bus.reset_data()
 	bus.load_data(data, TradesBus.SAVE_VERSION)
-	check(int(bus.committed_frame(ship).ordered.get(bar6, 0)) == 2, "the commit is saved with the design")
+	check(str(bus.committed_frame(ship).package) == str(pkg2.ref), "the commit is saved with the design")
 	# Flag off: O does nothing.
 	Flags.set_flag("trades.frame_order", false)
 	check(not d.key(TradesBus.KEY_ORDER), "with the flag off O does nothing")

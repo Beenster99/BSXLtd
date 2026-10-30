@@ -303,7 +303,9 @@ func restore_beam_design(ship_id: String, entry: Variant) -> void:
 
 ## trades.frame_order: the frame last committed on a ship ({} before one): {version, rows (the
 ## beams as committed), counts {bar: n} (the stock bars its cut plan needs), ordered {bar: n}
-## (bought for it so far), cost (CR spent on it), by (who committed it)}.
+## (bought for it straight from the market before packages; packages bought count too),
+## cost (CR spent that way), package (Business's ref for its parts, waiting in the Buy tab or
+## ordered; "" when none), by (who committed it)}.
 func committed_frame(ship_id: String) -> Dictionary:
 	return ((_beam_designs.get(ship_id, {}) as Dictionary).get("committed", {}) as Dictionary).duplicate(true)
 
@@ -316,7 +318,7 @@ func set_committed_frame(ship_id: String, entry: Dictionary) -> void:
 	else:
 		d["committed"] = {"version": str(entry.get("version", "A")), "rows": _beam_rows(entry.get("rows", [])),
 				"counts": _bar_counts(entry.get("counts", {})), "ordered": _bar_counts(entry.get("ordered", {})),
-				"cost": int(entry.get("cost", 0)), "by": str(entry.get("by", "")), "cuts": _frame_cuts(entry.get("cuts", [])),
+				"cost": int(entry.get("cost", 0)), "package": str(entry.get("package", "")), "by": str(entry.get("by", "")), "cuts": _frame_cuts(entry.get("cuts", [])),
 				"done": (entry.get("done", []) as Array).map(func(x: Variant) -> int: return int(x)) if entry.get("done") is Array else []}
 	_beam_designs[ship_id] = d
 	beam_design_changed.emit(ship_id)

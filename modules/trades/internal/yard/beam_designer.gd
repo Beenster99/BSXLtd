@@ -837,9 +837,10 @@ func offer_order() -> Dictionary:
 	if rows.is_empty():
 		_say("Nothing to commit: draw the frame's beams first.")
 		return {}
-	var done := committed()
-	var plan := TradesFrameOrder.cut_plan(rows, bar_choice, done.get("ordered", {}))
-	var need := TradesFrameOrder.still_to_buy(plan.counts, done.get("ordered", {}))
+	var have := bought()
+	var plan := TradesFrameOrder.cut_plan(rows, bar_choice, have)
+	var need := TradesFrameOrder.still_to_buy(plan.counts, have)
+	# Today's price, to show: the package is bought on the Buy tab, not here.
 	var b := TradesFrameOrder.basket(Modules.bus("business"), need) if not need.is_empty() else {}
 	order_offer = {"key": design_key(), "plan": plan, "need": need, "basket": b}
 	_play(&"tick")
@@ -847,35 +848,65 @@ func offer_order() -> Dictionary:
 	return order_offer
 
 
-## Commits the frame and places the offered order. "" when done, else why not.
+## The key of this ship's frame package with Business (a re-commit replaces one not bought yet).
+func package_key() -> String:
+	return "frame:" + ship_id()
+
+
+## The bars bought for this ship's frame so far ({bar: n}): its packages ordered on the Buy
+## tab, and what the first commits bought straight from the market.
+func bought() -> Dictionary:
+	var out: Dictionary = (committed().get("ordered", {}) as Dictionary).duplicate()
+	var shop: Object = Modules.bus("business")
+	if shop and shop.has_method("get_packages"):
+		for pkg: Dictionary in shop.call("get_packages"):
+			if str(pkg.get("key", "")) != package_key() or str(pkg.get("state", "")) != "ordered":
+				continue
+			for it: Dictionary in pkg.get("items", []):
+				out[str(it.part)] = int(out.get(str(it.part), 0)) + int(it.qty)
+	return out
+
+
+## This ship's frame package waiting in the Buy tab, not bought yet ({} when none).
+func waiting_package() -> Dictionary:
+	var shop: Object = Modules.bus("business")
+	if shop and shop.has_method("get_packages"):
+		for pkg: Dictionary in shop.call("get_packages"):
+			if str(pkg.get("key", "")) == package_key() and str(pkg.get("state", "")) == "proposed":
+				return pkg
+	return {}
+
+
+## Commits the frame and puts what it still needs in the Buy tab as one package (beenster,
+## 0.3.32: "the order should appear in the buy tab as a package with unique reference (but not
+## bought yet)"); bought there, it comes by trolley straight to the courtyard. "" when done,
+## else why not.
 func place_frame_order() -> String:
 	if order_offer.is_empty() or str(order_offer.key) != design_key():
 		offer_order()
 		return "changed"
 	var need: Dictionary = order_offer.need
-	var b: Dictionary = order_offer.basket
 	var done := committed()
-	var ordered: Dictionary = (done.get("ordered", {}) as Dictionary).duplicate()
-	var cost := int(done.get("cost", 0))
+	var shop: Object = Modules.bus("business")
+	var ref := ""
 	if not need.is_empty():
-		if not bool(b.get("ok", false)):
+		if shop == null or not shop.has_method("propose_package"):
 			_play(&"clunk")
-			_say("Can't order it: %s." % b.get("reason", "the shop said no"))
-			return str(b.get("reason", "refused"))
+			_say("Can't order it: there's no shop to order from.")
+			return "no shop"
 		# Booked against the job in hand, when there is one (Business: its contract_id).
 		var contracts := Modules.bus("contracts") as ContractsBus
 		var job := contracts.get_active_job() if contracts else null
-		var shop: Object = Modules.bus("business")
-		if shop == null:
-			return "no shop"
-		var r: Object = shop.call("place_market_order", b.basket, job.job_id if job else "")
-		if not bool(r.call("is_ok")):
-			_play(&"clunk")
-			_say("Can't order it: %s." % r.get("message"))
-			return str(r.get("message"))
+		var items: Array = []
 		for bar: String in need:
-			ordered[bar] = int(ordered.get(bar, 0)) + int(need[bar])
-		cost += int(b.cost)
+			items.append({"part": bar, "qty": int(need[bar])})
+		ref = str(shop.call("propose_package", "Frame for %s, version %s" % [_ship_title(), version()], items,
+				job.job_id if job else "", "courtyard", package_key()))
+	else:
+		# Everything is bought already: a package still waiting for the old frame goes.
+		var old := waiting_package()
+		if not old.is_empty():
+			shop.call("cancel_package", str(old.ref))
 	var rows: Array = []
 	for row: Dictionary in beams():
 		rows.append(_row(row))
@@ -885,17 +916,27 @@ func place_frame_order() -> String:
 	# Bars already cut for an earlier commit stay cut when the plan hasn't changed.
 	var cut_already := done_cuts(done, cuts)
 	_ask({"ship": ship_id(), "commit": {"version": version(), "rows": rows, "counts": (order_offer.plan as Dictionary).counts,
-			"ordered": ordered, "cost": cost, "by": str(_me()), "cuts": cuts, "done": cut_already}})
+			"ordered": done.get("ordered", {}), "cost": int(done.get("cost", 0)), "package": ref if ref != "" else str(done.get("package", "")),
+			"by": str(_me()), "cuts": cuts, "done": cut_already}})
 	var bars := 0
 	for bar: String in need:
 		bars += int(need[bar])
+	var price := int((order_offer.basket as Dictionary).get("cost", 0)) if order_offer.basket is Dictionary else 0
 	order_offer = {}
 	_play(&"click")
 	if bars > 0:
-		_say("Frame committed. %d bar%s ordered for %d CR: they come in with the deliveries." % [bars, "" if bars == 1 else "s", int(b.cost)])
+		var named := ("Package %s" % ref) if ref != "" else "A package"
+		_say("Frame committed. %s (%d bar%s%s) is waiting in the Buy tab: ORDER it there and a trolley brings it to the courtyard." % [
+				named, bars, "" if bars == 1 else "s", (", about %d CR" % price) if price > 0 else ""])
 	else:
-		_say("Frame committed. Its bars are on order already.")
+		_say("Frame committed. Its bars are bought already.")
 	return ""
+
+
+## The ship's name for a package's title.
+func _ship_title() -> String:
+	var def := _ship_def()
+	return str(def.get("display_name")) if def and def.get("display_name") else ship_id()
 
 
 ## Which of a new commit's bars count as cut already: one cut for the commit before with the
@@ -944,17 +985,32 @@ func order_line() -> String:
 	if int(plan.spliced) > 0:
 		head += " (%d spliced from two bars)" % plan.spliced
 	if need.is_empty():
-		return head + ". All on order already: O again to commit, right click cancel"
+		return head + ". All bought already: O again to commit, right click cancel"
 	var b: Dictionary = order_offer.basket
 	if not bool(b.get("ok", false)):
-		return "%s. Can't order: %s" % [head, b.get("reason", "")]
+		return "%s. O again to commit and put it in the Buy tab (%s), right click cancel" % [head, b.get("reason", "")]
 	var from := ""
 	var bb: Object = Modules.bus("business")
 	var who: Object = bb.call("supplier", str(b.supplier)) if bb and str(b.supplier) != "" else null
 	if who:
 		from = " from %s" % who.get("display_name")
 	var buying := "" if need.hash() == (plan.counts as Dictionary).hash() else " (buying %s)" % _bars_text(need)
-	return "%s%s%s, %d CR. O again to commit and order, right click cancel" % [head, buying, from, int(b.cost)]
+	return "%s%s%s, about %d CR. O again to commit and put it in the Buy tab, right click cancel" % [head, buying, from, int(b.cost)]
+
+
+## Where the committed frame's parts are: "package PKG-0007 waiting in the Buy tab", "4 bars bought".
+func committed_words() -> String:
+	var wait := waiting_package()
+	if not wait.is_empty():
+		var n := 0
+		for it: Dictionary in wait.get("items", []):
+			n += int(it.qty)
+		return "package %s waiting in the Buy tab (%d bar%s)" % [wait.ref, n, "" if n == 1 else "s"]
+	var n := 0
+	var have := bought()
+	for bar: String in have:
+		n += int(have[bar])
+	return "%d bar%s bought" % [n, "" if n == 1 else "s"]
 
 
 static func _bars_text(counts: Dictionary) -> String:
@@ -1773,11 +1829,8 @@ func info_lines() -> PackedStringArray:
 		if not order_offer.is_empty():
 			out.append("Order  " + order_line())
 		elif not c.is_empty():
-			var bars := 0
-			for bar: String in c.ordered:
-				bars += int(c.ordered[bar])
-			out.append("Committed  version %s, %d beams, %d bar%s ordered, %d CR%s" % [c.version, (c.rows as Array).size(), bars,
-					"" if bars == 1 else "s", int(c.cost), "" if is_committed() else ": changed since, O to commit again"])
+			out.append("Committed  version %s, %d beams, %s%s" % [c.version, (c.rows as Array).size(), committed_words(),
+					"" if is_committed() else ": changed since, O to commit again"])
 		elif n > 0:
 			out.append("Happy with it?  O commits the frame and orders its parts")
 	if not clashes.is_empty():
