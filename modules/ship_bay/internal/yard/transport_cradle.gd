@@ -94,29 +94,29 @@ func _build(size_id: String) -> void:
 	pedestal_z = spec.pedestal_z
 	var side_h: float = spec.side_h
 	var cross_h: float = spec.cross_h
-	var yellow := ShipSurface.of(ShipKit.paint(Color(0.95, 0.75, 0.1), 0.15, 0.5, "hazard_paint"))
-	var dark := ShipSurface.of(ShipKit.paint(Color(0.15, 0.16, 0.18), 0.5, 0.5, "gunmetal"))
-	var steel := ShipSurface.of(ShipKit.paint(Color(0.55, 0.57, 0.6), 0.85, 0.3, "chrome"))
-	var rubber := ShipSurface.of(ShipKit.paint(Color(0.07, 0.07, 0.075), 0.0, 0.9, "rubber"))
+	var yellow := _mat("yellow", func() -> Material: return ShipSurface.of(ShipKit.paint(Color(0.95, 0.75, 0.1), 0.15, 0.5, "hazard_paint")))
+	var dark := _mat("dark", func() -> Material: return ShipSurface.of(ShipKit.paint(Color(0.15, 0.16, 0.18), 0.5, 0.5, "gunmetal")))
+	var steel := _mat("steel", func() -> Material: return ShipSurface.of(ShipKit.paint(Color(0.55, 0.57, 0.6), 0.85, 0.3, "chrome")))
+	var rubber := _mat("rubber", func() -> Material: return ShipSurface.of(ShipKit.paint(Color(0.07, 0.07, 0.075), 0.0, 0.9, "rubber")))
 	var along_z := Basis(Vector3.UP, PI * 0.5)
 	var flange := 0.4 if size == "s" else (0.6 if size == "m" else 0.8)
 	for side: float in [-1.0, 1.0]:
-		_part(PartShapes.i_beam(length, flange, side_h, 0.04), Transform3D(along_z, Vector3(side * side_x, side_h * 0.5, 0)), yellow)
+		_part(_shape(["i_beam", length, flange, side_h], func() -> PartShapes.PartShape: return PartShapes.i_beam(length, flange, side_h, 0.04)), Transform3D(along_z, Vector3(side * side_x, side_h * 0.5, 0)), yellow)
 		_solid(Vector3(flange, side_h, length), Vector3(side * side_x, side_h * 0.5, 0))
 		# Lifting eyes on the beam ends, for the cranes.
 		for end: float in [-1.0, 1.0]:
-			_part(PartShapes.ring(0.08, 0.16, 0.05, 12), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(side * (side_x + flange * 0.5 + 0.025), side_h * 0.5, end * (length * 0.5 - 0.6))), steel)
+			_part(_shape(["eye"], func() -> PartShapes.PartShape: return PartShapes.ring(0.08, 0.16, 0.05, 12)), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(side * (side_x + flange * 0.5 + 0.025), side_h * 0.5, end * (length * 0.5 - 0.6))), steel)
 	var cross_len := side_x * 2.0 - flange - 0.02
 	for z: float in spec.cross_z:
-		_part(PartShapes.i_beam(cross_len, 0.4, cross_h, 0.04), Transform3D(Basis(), Vector3(0, cross_h * 0.5, z)), yellow)
+		_part(_shape(["cross", cross_len, cross_h], func() -> PartShapes.PartShape: return PartShapes.i_beam(cross_len, 0.4, cross_h, 0.04)), Transform3D(Basis(), Vector3(0, cross_h * 0.5, z)), yellow)
 		_solid(Vector3(cross_len, cross_h, 0.4), Vector3(0, cross_h * 0.5, z))
 		# Saddles along each beam, a steel block with a rubber pad on top; the outer ones
 		# stand a little higher, so the belly sits in a shallow V.
 		for x: float in spec.saddle_x:
 			var top := saddle_top + (0.0 if absf(x) < side_x * 0.5 else (side_x * 0.04))
 			var block := top - cross_h - 0.1
-			_part(PartShapes.chamfer_box(Vector3(1.4, block, 0.5), 0.04), Transform3D(Basis(), Vector3(x, cross_h + block * 0.5, z)), dark)
-			_part(PartShapes.chamfer_box(Vector3(1.5, 0.1, 0.6), 0.03), Transform3D(Basis(), Vector3(x, top - 0.05, z)), rubber)
+			_part(_shape(["block", block], func() -> PartShapes.PartShape: return PartShapes.chamfer_box(Vector3(1.4, block, 0.5), 0.04)), Transform3D(Basis(), Vector3(x, cross_h + block * 0.5, z)), dark)
+			_part(_shape(["pad"], func() -> PartShapes.PartShape: return PartShapes.chamfer_box(Vector3(1.5, 0.1, 0.6), 0.03)), Transform3D(Basis(), Vector3(x, top - 0.05, z)), rubber)
 			_solid(Vector3(1.5, top - cross_h, 0.6), Vector3(x, (cross_h + top) * 0.5, z))
 	if size != "s":
 		# Its size stencilled on the side beams' outer faces.
@@ -133,20 +133,20 @@ func _build(size_id: String) -> void:
 			add_child(tag)
 	# The pins: a housing on the beam's web with the pin hanging under the bottom flange.
 	for p: Vector3 in PINS:
-		_part(PartShapes.chamfer_box(Vector3(0.36, 0.3, 0.5), 0.03), Transform3D(Basis(), p + Vector3(0, 0.17, 0)), dark)
-		var pin := _part(WreckParts.pipe(0.07, 0.22, false), Transform3D(Basis(), p), steel)
+		_part(_shape(["housing"], func() -> PartShapes.PartShape: return PartShapes.chamfer_box(Vector3(0.36, 0.3, 0.5), 0.03)), Transform3D(Basis(), p + Vector3(0, 0.17, 0)), dark)
+		var pin := _part(_shape(["pin"], func() -> PartShapes.PartShape: return WreckParts.pipe(0.07, 0.22, false)), Transform3D(Basis(), p), steel)
 		_pin_meshes.append(pin)
 	# Each pin's lever on the side beam's outer face beside it: a dark box with a handle that
 	# shows green when the pin is in, red when it is drawn.
-	_in_mat = ShipKit.glow(Color(0.3, 1.0, 0.45), 2.0)
-	_out_mat = ShipKit.glow(Color(1.0, 0.25, 0.15), 2.0)
+	_in_mat = _mat("in", func() -> Material: return ShipKit.glow(Color(0.3, 1.0, 0.45), 2.0))
+	_out_mat = _mat("out", func() -> Material: return ShipKit.glow(Color(1.0, 0.25, 0.15), 2.0))
 	var fresh := levers.is_empty()
 	for i in PINS.size():
 		var p := PINS[i]
 		var out := signf(p.x) * (side_x + flange * 0.5)
 		var at := Vector3(out + signf(p.x) * 0.08, side_h * 0.5, p.z)
-		_part(PartShapes.chamfer_box(Vector3(0.16, 0.36, 0.3), 0.02), Transform3D(Basis(), at), dark)
-		_handles.append(_part(PartShapes.box(Vector3(0.06, 0.08, 0.22)), Transform3D(Basis(), at + Vector3(signf(p.x) * 0.11, 0.08, 0)), _out_mat))
+		_part(_shape(["lever"], func() -> PartShapes.PartShape: return PartShapes.chamfer_box(Vector3(0.16, 0.36, 0.3), 0.02)), Transform3D(Basis(), at), dark)
+		_handles.append(_part(_shape(["handle"], func() -> PartShapes.PartShape: return PartShapes.box(Vector3(0.06, 0.08, 0.22))), Transform3D(Basis(), at + Vector3(signf(p.x) * 0.11, 0.08, 0)), _out_mat))
 		if fresh:
 			var lever := CollisionShape3D.new()
 			var box := BoxShape3D.new()
@@ -196,6 +196,25 @@ func show_pins() -> void:
 
 func engaged_count() -> int:
 	return pins.count(true)
+
+
+## Every cradle of a size looks the same, so its meshes and paints are made once and shared
+## (the yard has a dozen cradles and the parts library's chamfered boxes are slow to build).
+static var _shapes := {}
+static var _mats := {}
+
+
+static func _shape(key: Array, make: Callable) -> PartShapes.PartShape:
+	var k := str(key)
+	if not _shapes.has(k):
+		_shapes[k] = make.call()
+	return _shapes[k]
+
+
+static func _mat(key: String, make: Callable) -> Material:
+	if not _mats.has(key):
+		_mats[key] = make.call()
+	return _mats[key]
 
 
 func _part(shape: PartShapes.PartShape, xform: Transform3D, mat: Material) -> MeshInstance3D:

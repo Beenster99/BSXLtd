@@ -251,19 +251,27 @@ func _refresh_list() -> void:
 	_counts.clear()
 	_built = Vector2i(-1, -1)
 	var shown := shown_listings()
+	# Each listing's category, read once (the market holds over a thousand lines and the sort
+	# below compared them by category and name thousands of times: a second's stall).
+	var cats := {}
+	for l in shown:
+		cats[l] = bus.listing_category(l)
 	if category == "":
 		# Every category: grouped under headings, in the catalogue's category order.
+		var names := {}
+		for l in shown:
+			names[l] = bus.part_name(l.part)
 		shown.sort_custom(func(a: MarketListing, b: MarketListing) -> bool:
-			var ca := bus.listing_category(a)
-			var cb := bus.listing_category(b)
+			var ca: String = cats[a]
+			var cb: String = cats[b]
 			if ca != cb:
 				return ca < cb
-			var na := bus.part_name(a.part)
-			var nb := bus.part_name(b.part)
+			var na: String = names[a]
+			var nb: String = names[b]
 			return na < nb if na != nb else a.unit_price < b.unit_price)
 	var last: Variant = null
 	for l in shown:
-		var cat := bus.listing_category(l)
+		var cat: String = cats[l]
 		_counts[cat] = int(_counts.get(cat, 0)) + 1
 		if category == "" and cat != last:
 			_entries.append(cat)

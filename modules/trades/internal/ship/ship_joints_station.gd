@@ -559,7 +559,7 @@ func status_line() -> String:
 	if bay.tool == &"tractor":
 		return tractor.status_line()
 	if aimed < 0:
-		var ship := points.filter(func(f: FastenerPoint) -> bool: return not is_practice(f)).size()
+		var ship := _ship_count()
 		return "Ship: %d joints, %d tight" % [ship, _tight_count()] if ship > 0 else ""
 	var f := points[aimed]
 	var line := "%s  %s %s  %s" % [f.joint_id.to_upper(), f.spec.to_upper(), f.kind.to_upper(), _state_word(f)]
@@ -2398,10 +2398,18 @@ func _update_aim() -> void:
 	var surface := _aim_surface() if Flags.is_on("trades.aim_visible") and not vs_snap() else INF
 	var o := bay.worker.aim_origin()
 	var dir := bay.worker.aim_dir()
+	# Every frame over every joint on the ship (hundreds): the flags are read once, and only
+	# welds can be anywhere but their point.
+	var gone := gone_rings()
 	for i in points_world.size():
-		if is_gone(i):
+		var kind := points[i].kind
+		if gone and (kind == "rivet" or kind == "bolt") and is_gone(i):
 			continue
-		var p := _aim_point(i)
+		var p := _aim_point(i) if kind == "weld" else points_world[i]
+		# The aim's own test first (aim_distance), as it is the cheap one.
+		var t := (p - o).dot(dir)
+		if t < 0.0 or t > 4.0:
+			continue
 		var d := bay.aim_distance(p)
 		if d < best_d and (p - o).dot(dir) > surface + HIDDEN_BEHIND_M:
 			continue
@@ -2633,11 +2641,40 @@ func _state_word(f: FastenerPoint) -> String:
 
 
 func _tight_count() -> int:
+	var practices := _practice_marks()
 	var n := 0
-	for f in points:
-		if not is_practice(f) and is_tight(f):
+	for i in points.size():
+		if practices[i] == 0 and _bus != null and _bus.is_joint_tight(points[i].joint_id):
 			n += 1
 	return n
+
+
+## The ship's own joints (not the test stand's or a unit's).
+func _ship_count() -> int:
+	return points.size() - _practice_marks().count(1)
+
+
+## 1 for each point Tools keeps the state of itself (is_practice), worked out once per list of
+## points: the status line asks every frame, and the slot names cost a string split each.
+var _practice_list: Array[FastenerPoint] = []
+var _practice_ids := PackedStringArray()
+var _practice := PackedByteArray()
+
+func _practice_marks() -> PackedByteArray:
+	var same := _practice.size() == points.size()
+	if same:
+		for i in points.size():
+			if points[i] != _practice_list[i] or points[i].joint_id != _practice_ids[i]:
+				same = false
+				break
+	if not same:
+		_practice_list = points.duplicate()
+		_practice_ids.resize(points.size())
+		_practice.resize(points.size())
+		for i in points.size():
+			_practice_ids[i] = points[i].joint_id
+			_practice[i] = 1 if is_practice(points[i]) else 0
+	return _practice
 
 
 func reset() -> void:

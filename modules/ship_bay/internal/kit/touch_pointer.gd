@@ -8,6 +8,7 @@ extends Node
 const GROUP := "ship_bay_touch"
 ## How far you can reach a screen from, metres.
 const REACH := 3.0
+const PENDING_META := &"ship_bay_touch_pointer"
 
 ## The screen the view is on, and where (viewport pixels).
 var aimed: Node3D
@@ -19,9 +20,14 @@ var _held_px := Vector2.ZERO
 ## The tree's pointer, made under the root if there is none yet.
 static func ensure(tree: SceneTree) -> Node:
 	var p := tree.root.get_node_or_null("ShipBayTouchPointer")
+	# One made this frame is still waiting to go in (added deferred): every screen built in the
+	# same frame made its own before, some thirty pointers each testing every screen each frame.
+	if p == null and tree.root.has_meta(PENDING_META) and is_instance_valid(tree.root.get_meta(PENDING_META)):
+		p = tree.root.get_meta(PENDING_META)
 	if p == null:
 		p = (load("res://modules/ship_bay/internal/kit/touch_pointer.gd") as GDScript).new()
 		p.name = "ShipBayTouchPointer"
+		tree.root.set_meta(PENDING_META, p)
 		tree.root.add_child.call_deferred(p)
 	return p
 
