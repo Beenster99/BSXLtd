@@ -43,6 +43,9 @@ const SURVEYS := "quality.surveys"
 const SCORE_CARD := "quality_score_card"
 const SURVEYS_CHANNEL := "quality.surveys"
 const RIG_TESTS := "quality.rig_tests"
+## Large jobs in stages (plan stage S6): Contracts' stage plans, signed off by stage surveys.
+const STAGES := "contracts.stages"
+const STAGE_SURVEYS := "quality.stage_surveys"
 const SAVE_VERSION := 2
 
 const CALL_EVENT := "quality.survey_call"
@@ -390,6 +393,14 @@ func why_not(kind: StringName) -> String:
 	if job == null:
 		return "No active job to survey"
 	var state := str(job.get("state"))
+	if kind == SurveyReport.STAGE:
+		if not stage_surveys_on():
+			return "Large jobs aren't signed off in stages yet"
+		if state != ContractJob.IN_PROGRESS:
+			return "The job isn't being worked on yet"
+		if current_stage().is_empty():
+			return "This job has no stage open for sign-off"
+		return ""
 	if kind == SurveyReport.FINAL:
 		return "" if state in [ContractJob.IN_PROGRESS, ContractJob.INSPECTION] else "The job isn't being worked on yet"
 	if state != ContractJob.IN_PROGRESS:
@@ -399,8 +410,27 @@ func why_not(kind: StringName) -> String:
 	return ""
 
 
-## Calls the surveyors in (CALLED), or marks the active job complete for its final survey
-## (FINAL). Any player may ask; the host decides. Refusals come back through Multiplayer's
+## Stage surveys run when both flags are on and Contracts can take a stage sign-off.
+func stage_surveys_on() -> bool:
+	return Flags.is_on(STAGES) and Flags.is_on(STAGE_SURVEYS) and _contracts != null \
+			and _contracts.has_method("sign_off_stage")
+
+
+## The active job's stage open for sign-off ({id, name, checks?}), {} when there is none.
+func current_stage() -> Dictionary:
+	var job := _active_job()
+	if job == null:
+		return {}
+	var job_id := str(job.get("job_id"))
+	if _contracts.has_method("current_stage"):
+		var st: Variant = _contracts.call("current_stage", job_id)
+		return st if st is Dictionary else {}
+	var signed: Variant = job.get("stages_signed")
+	return StageChecks.open_stage(job, PackedStringArray(signed) if signed is Array or signed is PackedStringArray else PackedStringArray())
+
+
+## Calls the surveyors in (CALLED), has them survey the active job's open stage for sign-off
+## (STAGE), or marks the active job complete for its final survey (FINAL). Any player may ask; the host decides. Refusals come back through Multiplayer's
 ## request_rejected, with why_not()'s reason.
 func request_survey(kind: StringName = SurveyReport.CALLED) -> void:
 	if _net:
@@ -441,10 +471,16 @@ func _begin(kind: StringName) -> void:
 	var job_id := str(job.get("job_id"))
 	var joints := SurveyDesk.pick(job_records(job_id), kind, survey_rules, _rng)
 	_count += 1
-	var crew := survey_rules.final_crew if kind == SurveyReport.FINAL else survey_rules.crew
-	_host_send(START_EVENT, {"id": "S-%03d" % _count, "kind": String(kind), "job_id": job_id,
+	var crew := survey_rules.final_crew if kind in [SurveyReport.FINAL, SurveyReport.STAGE] else survey_rules.crew
+	var p := {"id": "S-%03d" % _count, "kind": String(kind), "job_id": job_id,
 			"joints": Array(joints), "duration": SurveyDesk.duration(joints.size(), kind, survey_rules),
-			"crew": crew, "count": _count})
+			"crew": crew, "count": _count}
+	if kind == SurveyReport.STAGE:
+		var st := current_stage()
+		p["stage_id"] = str(st.get("id", ""))
+		p["stage_name"] = str(st.get("name", st.get("id", "")))
+		p["checks"] = Array(StageChecks.checks_for(job, st))
+	_host_send(START_EVENT, p)
 
 
 func _apply_start(p: Dictionary) -> void:
@@ -466,8 +502,20 @@ func _finish() -> void:
 		var r: JointRecord = _records.get(StringName(id))
 		if r:
 			scanned.append(r)
-	var rep := SurveyDesk.write(str(p.get("id", "")), StringName(p.get("kind", "")), job_id, scanned,
+	var kind := StringName(p.get("kind", ""))
+	var rep := SurveyDesk.write(str(p.get("id", "")), kind, job_id, scanned,
 			job_records(job_id).size(), int(_now()))
+	# The stage's rules, and a decommissioning job's at its final survey, are checked against
+	# what has come out of the job when the surveyors leave.
+	var job: Object = _contracts.call("get_job", job_id) if _contracts and _contracts.has_method("get_job") else null
+	var check_ids := PackedStringArray(p.get("checks", []))
+	if kind == SurveyReport.FINAL and stage_surveys_on() and StageChecks.decommissioning(job):
+		check_ids = StageChecks.ALL
+	if kind == SurveyReport.STAGE:
+		rep.stage_id = str(p.get("stage_id", ""))
+		rep.stage_name = str(p.get("stage_name", ""))
+	if job and not check_ids.is_empty():
+		SurveyDesk.add_checks(rep, StageChecks.run(job, check_ids, survey_rules))
 	_host_send(REPORT_EVENT, {"report": rep.to_dict()})
 
 
@@ -488,14 +536,18 @@ func _apply_report(p: Dictionary) -> void:
 	if not _is_host():
 		return
 	_random_left = _next_random()
-	if rep.kind == SurveyReport.FINAL and _contracts:
+	if rep.kind == SurveyReport.STAGE and _contracts:
+		_contracts.call("record_test", rep.job_id, "Stage survey: " + rep.stage_name, rep.accepted, rep.average, "score")
+		if rep.accepted and _contracts.has_method("sign_off_stage"):
+			_contracts.call("sign_off_stage", rep.job_id, rep.stage_id, rep.id)
+	elif rep.kind == SurveyReport.FINAL and _contracts:
 		_contracts.call("record_test", rep.job_id, "Independent final survey", rep.accepted, rep.average, "score")
 		if rep.accepted:
 			_contracts.call("sign_off", rep.job_id, "surveyor", SurveyReport.FIRM, 0)
 			_contracts.call("advance", rep.job_id, ContractJob.HANDED_OVER)
 		else:
 			_contracts.call("advance", rep.job_id, ContractJob.IN_PROGRESS)
-	elif _final_pending:
+	if _final_pending and rep.kind != SurveyReport.FINAL:
 		_final_pending = false
 		_begin(SurveyReport.FINAL)
 

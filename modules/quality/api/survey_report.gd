@@ -5,7 +5,7 @@ extends Resource
 ## never grade their own work; Quality runs the visits (QualityBus.request_survey) and keeps
 ## the reports. Other modules only read these.
 
-const VERSION := 1
+const VERSION := 2
 
 ## A spot check the surveyors turn up for on their own: some of the work done since the last
 ## visit, so problems are caught early.
@@ -14,7 +14,10 @@ const RANDOM := &"RANDOM"
 const CALLED := &"CALLED"
 ## The job was marked complete: every joint on it. Decides handover or rework.
 const FINAL := &"FINAL"
-const KINDS: Array[StringName] = [RANDOM, CALLED, FINAL]
+## A large job's stage is done (plan stage S6): the work since the last visit and the
+## stage's rules (reactor out first, weapons destroyed). Signs the stage off or holds it.
+const STAGE := &"STAGE"
+const KINDS: Array[StringName] = [RANDOM, CALLED, FINAL, STAGE]
 
 ## The consultancy BSX's customers insist on.
 const FIRM := "Kessler & Vane Surveyors"
@@ -37,8 +40,14 @@ const FIRM := "Kessler & Vane Surveyors"
 @export var average := 0.0
 ## "A" to "F" (see letter()).
 @export var grade := ""
-## FINAL only: true when the job can be handed over.
+## FINAL: true when the job can be handed over. STAGE: true when the stage is signed off.
 @export var accepted := false
+## STAGE: the stage surveyed.
+@export var stage_id := ""
+@export var stage_name := ""
+## The rules checked besides the joints, STAGE (and FINAL on a decommissioning job):
+## {id, label, passed, detail}.
+@export var checks: Array[Dictionary] = []
 
 
 ## The overall grade: A from 90, B from 80, C from 70, D from 50, F below; any failed joint
@@ -62,19 +71,34 @@ func scanned() -> int:
 	return lines.size()
 
 
+## The checks that failed.
+func failed_checks() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for c in checks:
+		if not bool(c.get("passed", false)):
+			out.append(c)
+	return out
+
+
 func kind_name() -> String:
 	match kind:
 		CALLED:
 			return "Called survey"
 		FINAL:
 			return "Final survey"
+		STAGE:
+			return "Stage survey"
 	return "Spot survey"
 
 
 ## One line for the report list and the notice: "Spot survey · 6 joints · B · 1 to fix".
 func summary() -> String:
 	var bits := PackedStringArray([kind_name(), "%d joint%s" % [scanned(), "" if scanned() == 1 else "s"], grade])
-	if kind == FINAL:
+	if kind == STAGE:
+		if stage_name != "":
+			bits.insert(1, stage_name)
+		bits.append("stage signed off" if accepted else "stage held")
+	elif kind == FINAL:
 		bits.append("accepted for handover" if accepted else "rework needed")
 	elif failed > 0:
 		bits.append("%d to fix" % failed)
@@ -90,6 +114,7 @@ func to_dict() -> Dictionary:
 		"version": version, "id": id, "kind": String(kind), "job_id": job_id, "time": time,
 		"lines": lines, "joints_on_job": joints_on_job, "passed": passed, "marginal": marginal,
 		"failed": failed, "average": average, "grade": grade, "accepted": accepted,
+		"stage_id": stage_id, "stage_name": stage_name, "checks": checks,
 	}
 
 
@@ -107,4 +132,7 @@ static func from_dict(d: Dictionary) -> SurveyReport:
 	r.average = float(d.get("average", 0.0))
 	r.grade = str(d.get("grade", ""))
 	r.accepted = bool(d.get("accepted", false))
+	r.stage_id = str(d.get("stage_id", ""))
+	r.stage_name = str(d.get("stage_name", ""))
+	r.checks.assign(d.get("checks", []))
 	return r
