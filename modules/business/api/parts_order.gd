@@ -17,6 +17,11 @@ var state := State.PLACED
 var delayed := false
 ## The contract the parts are for, or "" for stock.
 var contract_id := ""
+## Where it is taken when it lands: "" the stores, "courtyard" straight to the yard's
+## courtyard (a frame package).
+var destination := ""
+## The package it was ordered from (BusinessBus.propose_package), or "".
+var package_ref := ""
 
 
 ## Everything on the order, counted.
@@ -33,6 +38,7 @@ func to_dict() -> Dictionary:
 		"cost": cost, "placed_day": placed_day, "eta_day": eta_day, "placed_minute": placed_minute,
 		"eta_minute": eta_minute, "state": state,
 		"delayed": delayed, "contract_id": contract_id,
+		"destination": destination, "package_ref": package_ref,
 	}
 
 
@@ -51,4 +57,6 @@ static func from_dict(d: Dictionary) -> PartsOrder:
 	o.state = int(d.get("state", State.PLACED)) as State
 	o.delayed = bool(d.get("delayed", false))
 	o.contract_id = str(d.get("contract_id", ""))
+	o.destination = str(d.get("destination", ""))
+	o.package_ref = str(d.get("package_ref", ""))
 	return o

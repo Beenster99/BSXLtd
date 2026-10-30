@@ -65,6 +65,8 @@ signal owner_changed(player: String)
 signal company_refused(reason: String)
 ## The host turned down an order or cancellation a crew member sent from their terminal.
 signal order_refused(reason: String)
+## A frame package was proposed, ordered or dropped (get_packages).
+signal package_changed(ref: String)
 
 const SAVE_SECTION := "business"
 const DATA_DIR := "res://modules/business/internal/data"
@@ -820,7 +822,7 @@ func _offer_crew_books(net: Node) -> void:
 	if not net.is_connected("request_rejected", _on_request_rejected):
 		net.connect("request_rejected", _on_request_rejected)
 	for sig: Signal in [cash_changed, order_placed, order_cancelled, order_delayed, delivery_arrived,
-			stock_added, market_changed, day_closed, reputation_changed, wallet_changed]:
+			stock_added, market_changed, day_closed, reputation_changed, wallet_changed, package_changed]:
 		if not sig.get_connections().any(func(c: Dictionary) -> bool: return (c.callable as Callable).get_method() == &"_books_changed"):
 			var n := _arg_count(sig)
 			sig.connect(_books_changed.unbind(n) if n > 0 else _books_changed)
@@ -921,6 +923,26 @@ func _validate_order(sender: int, p: Dictionary) -> Variant:
 			if qty < 1 or int(_books.stock.get(part, {}).get(condition, 0)) < qty:
 				return "not that many in stock"
 			return {"kind": "sell", "supplier": s.id, "part": part, "condition": condition, "qty": qty}
+		"package":
+			var items: Array = p.get("items", [])
+			if items.is_empty():
+				return "the package is empty"
+			return {"kind": "package", "title": str(p.get("title", "")), "items": items,
+					"contract": str(p.get("contract", "")), "destination": str(p.get("destination", "courtyard")),
+					"key": str(p.get("key", ""))}
+		"order_package", "cancel_package":
+			var pkg: Dictionary = _books.packages.get(str(p.get("ref", "")), {})
+			if pkg.is_empty() or pkg.state != "proposed":
+				return "that package can't be changed"
+			if p.kind == "order_package":
+				var plan := _books.package_basket(pkg.ref)
+				if not (plan.missing as Array).is_empty():
+					return "nobody has %s today" % ", ".join(plan.missing)
+				if _books.insolvent:
+					return "the company is insolvent"
+				if int(plan.cost) > _books.cash:
+					return "not enough cash"
+			return {"kind": p.kind, "ref": pkg.ref}
 	return "unknown order"
 
 
@@ -934,6 +956,13 @@ func _apply_order(p: Dictionary) -> void:
 			r = _books.place_market_order(p.basket, str(p.contract))
 		"sell":
 			r = _sell_stock(str(p.supplier), str(p.part), str(p.condition), int(p.qty))
+		"package":
+			var ref := _books.propose_package(str(p.title), p.items, str(p.contract), str(p.destination), str(p.get("key", "")))
+			r = BusinessResult.success() if ref != "" else BusinessResult.fail(ERR_INVALID_PARAMETER, "the package is empty")
+		"order_package":
+			r = _books.order_package(str(p.ref))
+		"cancel_package":
+			r = _books.cancel_package(str(p.ref))
 		_:
 			r = _books.cancel_order(str(p.order))
 	if not r.is_ok():
@@ -995,6 +1024,63 @@ func _dispatch(supplier_id: String, part: String, condition: String, qty: int) -
 	var s := supplier(supplier_id)
 	_sales_out += 1
 	yard_bus.call("dispatch_stock", "SALE-%d-%d" % [_books.minute, _sales_out], part, 1.0 - PartCondition.wear_of(condition), qty, s.display_name if s else supplier_id)
+
+
+# --- Frame packages (beenster, 0.3.31: "When the frame builder idea has been committed
+# (pressing O), the order should appear in the buy tab as a package with unique reference
+# (but not bought yet)") ---
+
+## Notes a package of parts ([{part, qty}]) on the Buy tab without buying anything; the
+## player orders it there (or order_package). Its orders carry `destination` ("courtyard":
+## Ship and Bay brings them by trolley straight to the courtyard, not the stores) and the
+## package's ref. Returns the ref ("PKG-0007"); a crew member's goes to the host and
+## returns "" (it shows with the host's books). A `key` (say the ship's id) on a package not
+## yet ordered replaces that package's parts and keeps its ref: a frame committed again.
+func propose_package(title: String, items: Array, contract_id := "", destination := "courtyard", key := "") -> String:
+	if not _is_authority():
+		_send_order({"kind": "package", "title": title, "items": items, "contract": contract_id, "destination": destination, "key": key})
+		return ""
+	return _books.propose_package(title, items, contract_id, destination, key)
+
+
+## One package by ref (as get_packages lists them, with its `key`), or {}.
+func get_package(ref: String) -> Dictionary:
+	return (_books.packages.get(ref, {}) as Dictionary).duplicate(true)
+
+
+## Every package not dropped, newest first: {ref, title, items [{part, qty}], contract_id,
+## destination, state ("proposed", "ordered"), order_ids, cost (paid, once ordered), day}.
+func get_packages() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var refs := _books.packages.keys()
+	refs.sort()
+	refs.reverse()
+	for ref: String in refs:
+		var pkg: Dictionary = _books.packages[ref]
+		if pkg.state != "cancelled":
+			out.append(pkg.duplicate(true))
+	return out
+
+
+## How a proposed package would be bought today: {basket, cost, suppliers [ids], missing
+## [part names nobody has]}.
+func quote_package(ref: String) -> Dictionary:
+	return _books.package_basket(ref)
+
+
+## Buys a proposed package: one supplier with every part when one has them, else the
+## cheapest listing of each. A crew member's order goes to the host.
+func order_package(ref: String) -> BusinessResult:
+	if not _is_authority():
+		return _send_order({"kind": "order_package", "ref": ref})
+	return _books.order_package(ref)
+
+
+## Drops a proposed package.
+func cancel_package(ref: String) -> BusinessResult:
+	if not _is_authority():
+		return _send_order({"kind": "cancel_package", "ref": ref})
+	return _books.cancel_package(ref)
 
 
 func cancel_order(order_id: String) -> BusinessResult:

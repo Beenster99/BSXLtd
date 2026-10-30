@@ -57,6 +57,13 @@ var instant_deliveries := false
 
 var _bus: Node
 var _next_order := 1
+## Frame packages (beenster, 0.3.31): ref -> {ref, title, items [{part, qty}], contract_id,
+## destination, state "proposed"|"ordered"|"cancelled", order_ids, cost, day}. Proposed ones
+## buy nothing until ordered.
+var packages: Dictionary = {}
+var _next_package := 1
+## Stamped on the orders _open_order makes while a package is being ordered.
+var _order_tag := {}
 
 
 func _init(bus: Node, p_rules: BusinessRules, p_prices: PriceList, p_catalogue: MarketCatalogue, p_suppliers: Array) -> void:
@@ -85,6 +92,9 @@ func reset() -> void:
 	wallets = {}
 	company.reset()
 	_next_order = 1
+	packages = {}
+	_next_package = 1
+	_order_tag = {}
 	rng.randomize()
 	market_seed = rng.randi()
 	refresh_market()
@@ -196,6 +206,8 @@ func _open_order(supplier_id: String, lines: Array[OrderLine], cost: int, eta_mi
 	o.eta_minute = eta_minute
 	o.eta_day = eta_minute / MINUTES_PER_DAY
 	o.contract_id = contract_id
+	o.destination = str(_order_tag.get("destination", ""))
+	o.package_ref = str(_order_tag.get("package_ref", ""))
 	orders[o.id] = o
 	post(-o.cost, LedgerEntry.PARTS, o.id, suppliers[supplier_id].display_name)
 	_bus.order_placed.emit(o)
@@ -531,6 +543,143 @@ func place_market_order(basket: Array, contract_id: String) -> BusinessResult:
 	return result
 
 
+# --- Frame packages ---
+
+## Notes a package of parts to buy later: nothing is bought. Returns its ref ("PKG-0007").
+## A `key` already on a package not yet ordered replaces that package's parts (a frame
+## committed again) and keeps its ref.
+func propose_package(title: String, items: Array, contract_id: String, destination: String, key := "") -> String:
+	var clean: Array = []
+	for item: Variant in items:
+		if item is Dictionary and str(item.get("part", "")) != "" and int(item.get("qty", 0)) > 0:
+			clean.append({"part": str(item.part), "qty": int(item.qty)})
+	if clean.is_empty():
+		return ""
+	if key != "":
+		for pkg: Dictionary in packages.values():
+			if pkg.get("key", "") == key and pkg.state == "proposed":
+				pkg.title = title if title != "" else pkg.title
+				pkg.items = clean
+				pkg.contract_id = contract_id
+				pkg.destination = destination
+				pkg.day = day
+				_bus.package_changed.emit(pkg.ref)
+				return pkg.ref
+	var ref := "PKG-%04d" % _next_package
+	_next_package += 1
+	packages[ref] = {
+		"ref": ref, "key": key, "title": title if title != "" else "Parts package", "items": clean,
+		"contract_id": contract_id, "destination": destination, "state": "proposed",
+		"order_ids": [], "cost": 0, "day": day,
+	}
+	_bus.package_changed.emit(ref)
+	return ref
+
+
+## How a package would be bought from today's market: {basket [{listing_id, qty}], cost,
+## suppliers [ids], missing [part names]}. One supplier with every part when one has them
+## (the cheapest such), else the cheapest listing of each part; new parts before used.
+func package_basket(ref: String) -> Dictionary:
+	var out := {"basket": [], "cost": 0, "suppliers": [], "missing": []}
+	var pkg: Dictionary = packages.get(ref, {})
+	if pkg.is_empty():
+		return out
+	var wanted := {}
+	for item: Dictionary in pkg.items:
+		wanted[item.part] = int(wanted.get(item.part, 0)) + int(item.qty)
+	# part -> supplier -> its best listing for it (new first, then cheapest).
+	var best := {}
+	for l: MarketListing in listings.values():
+		if not wanted.has(l.part) or l.available < int(wanted[l.part]):
+			continue
+		var by: Dictionary = best.get(l.part, {})
+		var have: MarketListing = by.get(l.supplier_id)
+		if have == null or _better(l, have, int(wanted[l.part])):
+			by[l.supplier_id] = l
+		best[l.part] = by
+	var one := ""
+	var one_cost := -1
+	for sid: String in suppliers:
+		var total := 0
+		for part: String in wanted:
+			var l: MarketListing = best.get(part, {}).get(sid)
+			if l == null:
+				total = -1
+				break
+			total += line_cost(l, int(wanted[part]))
+		if total >= 0 and (one_cost < 0 or total < one_cost or (total == one_cost and sid < one)):
+			one = sid
+			one_cost = total
+	var picked := {}
+	for part: String in wanted:
+		var l: MarketListing = null
+		if one != "":
+			l = best[part][one]
+		else:
+			for c: MarketListing in best.get(part, {}).values():
+				if l == null or _better(c, l, int(wanted[part])):
+					l = c
+		if l == null:
+			out.missing.append(_name(part))
+			continue
+		picked[part] = l
+	var parts := wanted.keys()
+	parts.sort()
+	for part: String in parts:
+		if not picked.has(part):
+			continue
+		var l: MarketListing = picked[part]
+		out.basket.append({"listing_id": l.id, "qty": int(wanted[part])})
+		out.cost += line_cost(l, int(wanted[part]))
+		if not out.suppliers.has(l.supplier_id):
+			out.suppliers.append(l.supplier_id)
+	return out
+
+
+## Whether listing a beats b for qty of a part: new before used, then cheaper.
+func _better(a: MarketListing, b: MarketListing, qty: int) -> bool:
+	var a_new := a.condition == PartCondition.NEW
+	var b_new := b.condition == PartCondition.NEW
+	if a_new != b_new:
+		return a_new
+	var ca := line_cost(a, qty)
+	var cb := line_cost(b, qty)
+	return ca < cb or (ca == cb and a.id < b.id)
+
+
+## Buys a proposed package from today's market; its orders go to its destination.
+func order_package(ref: String) -> BusinessResult:
+	var pkg: Dictionary = packages.get(ref, {})
+	if pkg.is_empty():
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no package %s" % ref)
+	if pkg.state != "proposed":
+		return BusinessResult.fail(ERR_ALREADY_EXISTS, "package %s is already %s" % [ref, pkg.state])
+	var plan := package_basket(ref)
+	if not (plan.missing as Array).is_empty():
+		return BusinessResult.fail(ERR_UNAVAILABLE, "nobody has %s today" % ", ".join(plan.missing))
+	_order_tag = {"destination": pkg.destination, "package_ref": ref}
+	var r := place_market_order(plan.basket, str(pkg.contract_id))
+	_order_tag = {}
+	if r.is_ok():
+		pkg.state = "ordered"
+		pkg.order_ids = Array(r.order_ids)
+		pkg.cost = r.cost
+		_bus.package_changed.emit(ref)
+	return r
+
+
+## Drops a proposed package (an ordered one is cancelled through its orders).
+func cancel_package(ref: String) -> BusinessResult:
+	var pkg: Dictionary = packages.get(ref, {})
+	if pkg.is_empty():
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no package %s" % ref)
+	if pkg.state != "proposed":
+		return BusinessResult.fail(ERR_ALREADY_EXISTS, "package %s is already %s" % [ref, pkg.state])
+	pkg.state = "cancelled"
+	_bus.package_changed.emit(ref)
+	return BusinessResult.success()
+
+
 func _name(part: String) -> String:
 	return catalogue.display_name(part) if catalogue.has_part(part) else part
 
@@ -826,6 +975,7 @@ func save_data() -> Dictionary:
 		"days_in_debt": days_in_debt, "insolvent": insolvent, "next_order": _next_order,
 		"wallets": wallets.duplicate(),
 		"company": company.save_data(),
+		"packages": packages.duplicate(true), "next_package": _next_package,
 	}
 
 
@@ -873,6 +1023,17 @@ func load_data(d: Dictionary, from_version: int) -> void:
 	_next_order = int(d.get("next_order", orders.size() + 1))
 	market_seed = int(d.get("market_seed", market_seed))
 	company.load_data(d.get("company", {}))
+	for ref: Variant in d.get("packages", {}):
+		var pkg: Dictionary = (d.packages[ref] as Dictionary).duplicate(true)
+		var items: Array = []
+		for item: Dictionary in pkg.get("items", []):
+			items.append({"part": str(item.get("part", "")), "qty": int(item.get("qty", 0))})
+		pkg.items = items
+		pkg.cost = int(pkg.get("cost", 0))
+		pkg.day = int(pkg.get("day", 0))
+		pkg.order_ids = Array(pkg.get("order_ids", [])).map(func(id: Variant) -> String: return str(id))
+		packages[str(ref)] = pkg
+	_next_package = int(d.get("next_package", packages.size() + 1))
 	for player in d.get("wallets", {}):
 		wallets[str(player)] = int(d.wallets[player])
 	if d.has("listings"):

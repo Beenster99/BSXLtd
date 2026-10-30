@@ -55,11 +55,19 @@ func run_tests() -> void:
 			break
 		var depth := await _look_at(rig, station, i)
 		# Only where the look lands on it (a joint high overhead is past the neck's reach).
-		if is_nan(depth) or rig.aim_distance(station.points_world[i]) > 0.02:
+		# Nor a joint already out (trades.gone_rings: a loose rivet the hands can't work is out of the
+		# aim). Which are out follows the wreck's state, so it differs run to run.
+		if is_nan(depth) or rig.aim_distance(station.points_world[i]) > 0.02 or station.is_gone(i):
 			continue
-		if depth < 0.03 and seen[1] < 6:
+		# In the hand's reach too, as the aim only picks what the hand reaches.
+		if depth < 0.03 and seen[1] < 6 and rig.worker.right_hand.can_reach(station.points_world[i]):
 			seen[1] += 1
-			seen[0] += 1 if _same_spot(station, station.aimed, i) else 0
+			# The aim picks the nearest to its line: this one, or one as near (two a few mm apart).
+			var a := station.aimed
+			var ok := _same_spot(station, a, i) or (a >= 0 and rig.aim_distance(station.points_world[a]) <= rig.aim_distance(station.points_world[i]) + 0.002)
+			seen[0] += 1 if ok else 0
+			if not ok:
+				print("joint %d not picked: aimed %d, %.3f m off the line, depth %.3f" % [i, a, rig.aim_distance(station.points_world[i]), depth])
 		elif depth > 0.3 and hidden[1] < 6 and rig.worker.right_hand.can_reach(station.points_world[i]):
 			hidden[1] += 1
 			hidden[0] += 1 if station.aimed != i else 0
