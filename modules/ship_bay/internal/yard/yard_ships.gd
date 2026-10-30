@@ -21,6 +21,8 @@ const HullSections := preload("res://modules/ship_bay/internal/hull_sections.gd"
 const TRESTLE_TOP := 1.0
 const STAND_GAP := 1.5
 const SWING_TIME := 4.0
+## A part a section stands on is at least this wide both ways, metres.
+const STAND_ON := 1.0
 var _bus: ShipBayBus
 
 
@@ -195,8 +197,6 @@ func _build_sections(job: String, h: Dictionary, hull: Node3D) -> void:
 	var belly: Vector3 = hull.get_meta("belly", Vector3.ZERO)
 	var from := hull.global_transform
 	var side := -1.0 if from.origin.x < 0.0 else 1.0   # Dock 2 is west of the pad, Dock 3 east
-	var to := from
-	to.origin += Vector3(side * (width + STAND_GAP), TRESTLE_TOP - (from * belly).y, 0)
 	for i: int in free:
 		if built.has(i) or i >= plan.size():
 			continue
@@ -212,8 +212,16 @@ func _build_sections(job: String, h: Dictionary, hull: Node3D) -> void:
 		body.set_meta("look_hint", {"title": "Section %d of %d (%s)" % [i + 1, plan.size(), str(h.get("name", "hull")).capitalize()],
 				"text": "Cut free of the hull, %.0f t, on its stand: ready for the crane." % (float(sec["mass_kg"]) / 1000.0), "keys": []})
 		add_child(body)
+		# On its stand by its own lowest broad part (a section of a hull's middle can sit
+		# metres over the keel it was cut from; a ladder or aerial hanging under it doesn't
+		# count).
+		body.global_transform = Transform3D.IDENTITY
+		var low := _mesh_box(body, STAND_ON)
+		var to := from
+		to.origin += Vector3(side * (width + STAND_GAP), 0, 0)
+		to.origin.y = TRESTLE_TOP - low.position.y
 		body.global_transform = to
-		_trestles(body, float(sec["z0"]), float(sec["z1"]), width, belly)
+		_trestles(body, float(sec["z0"]), float(sec["z1"]), width, Vector3(belly.x, low.position.y, belly.z))
 		built[i] = body
 		if _live and int(free.back()) == i:
 			_swing(body, from, to)
@@ -236,6 +244,22 @@ func _swing(body: Node3D, from: Transform3D, to: Transform3D) -> void:
 	tw.tween_property(body, "global_position", from.origin + up, SWING_TIME * 0.3)
 	tw.tween_property(body, "global_position", Vector3(to.origin.x, from.origin.y + up.y, to.origin.z), SWING_TIME * 0.4)
 	tw.tween_property(body, "global_position", to.origin, SWING_TIME * 0.3)
+
+
+## The box round a body's visible meshes at least `broad` metres across both ways
+## (flat), world space.
+static func _mesh_box(body: Node3D, broad := 0.0) -> AABB:
+	var out := AABB()
+	var first := true
+	for mi: MeshInstance3D in body.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null or not mi.visible:
+			continue
+		var b := mi.global_transform * mi.mesh.get_aabb()
+		if b.size.x < broad or b.size.z < broad:
+			continue
+		out = b if first else out.merge(b)
+		first = false
+	return out
 
 
 ## A pair of steel trestles under a section at its ends, in the section's own space.
