@@ -336,6 +336,7 @@ func _hook_net() -> void:
 	_net.call("register_event", "ship_bay.slot", _apply_slot_move, _stamp)
 	_net.call("register_event", "ship_bay.plug", _apply_plug, _check_plug)
 	_net.call("register_event", "ship_bay.debug_ship", _apply_debug_ship, _check_debug_ship)
+	_net.call("register_event", "ship_bay.crane", _apply_crane, _check_crane)
 	_net.call("register_event", "ship_bay.rig", _apply_rig, _check_rig)
 	_net.call("register_snapshot_provider", "ship_bay", self)
 
@@ -395,7 +396,7 @@ func unregister_module() -> void:
 		for e: String in ["ship_bay.delivery", "ship_bay.store_crate", "ship_bay.take_stock",
 				"ship_bay.trolley_carry", "ship_bay.trolley", "ship_bay.pick", "ship_bay.hand",
 				"ship_bay.collect", "ship_bay.lift_off", "ship_bay.dispatch", "ship_bay.sale_ready", "ship_bay.dispatched", "ship_bay.hull", "ship_bay.organise", "ship_bay.kit", "ship_bay.beamed", "ship_bay.line", "ship_bay.transporter", "ship_bay.cradle", "ship_bay.ship_door",
-				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig"]:
+				"ship_bay.joint", "ship_bay.slot", "ship_bay.plug", "ship_bay.debug_ship", "ship_bay.rig", "ship_bay.crane"]:
 			_net.call("unregister_event", e)
 		_net.call("unregister_snapshot_provider", "ship_bay")
 		_net = null
@@ -1270,9 +1271,7 @@ static func cradle_size_for(mass_kg: float, length_m: float) -> String:
 func free_cradle_for(mass_kg: float, length_m: float) -> String:
 	var need := cradle_size_for(mass_kg, length_m)
 	var rank := {"s": 0, "m": 1, "l": 2}
-	var taken := {}
-	for h: Dictionary in hulls.values():
-		taken[str(h.get("cradle", ""))] = true
+	var taken := cradles_in_use()
 	for c: Array in hull_cradles():
 		if int(rank[c[1]]) >= int(rank[need]) and not taken.has(str(c[0])):
 			return str(c[0])
@@ -1386,6 +1385,59 @@ func free_section(job_id: String, index: int) -> bool:
 	h["free"] = free
 	_send_hull({"job": job_id, "hull": h})
 	return true
+
+
+## Where a hull's free sections were lifted to by a mobile crane: section index (a string)
+## -> the transport cradle that carries it now.
+func lifted_sections(job_id: String) -> Dictionary:
+	return (hulls.get(job_id, {}) as Dictionary).get("lifted", {})
+
+
+## The cradles carrying a hull or a lifted section.
+func cradles_in_use() -> Dictionary:
+	var taken := {}
+	for h: Dictionary in hulls.values():
+		taken[str(h.get("cradle", ""))] = true
+		for c: String in (h.get("lifted", {}) as Dictionary).values():
+			taken[c] = true
+	return taken
+
+
+## A mobile crane lifts free section `index` of the hull of `job_id` off its stand into
+## transport cradle `cradle` (any player; the host sends the hull's new state and every
+## player's crane runs the lift). The crane checks it reaches both first.
+func lift_section(job_id: String, index: int, cradle: String) -> void:
+	var payload := {"job": job_id, "index": index, "cradle": cradle}
+	if _net:
+		_net.call("request", "ship_bay.crane", payload)
+	elif _check_crane(0, payload) is Dictionary:
+		_apply_crane(payload)
+
+
+func _check_crane(_sender: int, payload: Dictionary) -> Variant:
+	var job := str(payload.get("job", ""))
+	var i := int(payload.get("index", -1))
+	var cradle := str(payload.get("cradle", ""))
+	if not Flags.is_on("ship_bay.sections") or not hulls.has(job):
+		return "no such hull"
+	if not free_sections(job).has(i) or lifted_sections(job).has(str(i)):
+		return "that section isn't on its stand"
+	if cradle == "" or cradles_in_use().has(cradle):
+		return "that cradle is taken"
+	return payload
+
+
+func _apply_crane(payload: Dictionary) -> void:
+	if _net != null and not bool(_net.call("is_host")):
+		return
+	var job := str(payload.get("job", ""))
+	if not (_check_crane(0, payload) is Dictionary):
+		return
+	var h: Dictionary = (hulls[job] as Dictionary).duplicate(true)
+	var lifted: Dictionary = h.get("lifted", {})
+	lifted[str(int(payload["index"]))] = str(payload["cradle"])
+	h["lifted"] = lifted
+	_send_hull({"job": job, "hull": h})
 
 
 ## The job id of the debug hull in dock `id` ("2", "3").
