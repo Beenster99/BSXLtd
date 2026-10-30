@@ -110,6 +110,36 @@ func run_tests() -> void:
 			"committing the same frame again replaces its package and keeps the ref")
 	check(bus.propose_package("Ordered one", items, "", "courtyard", "") != ref, "an ordered package is never replaced")
 
+	# Ready cut (beenster, 0.3.33): the same package cut to length costs a little more.
+	bus.reset()
+	var cuts: Array = []
+	for item: Dictionary in items:
+		for n in int(item.qty):
+			cuts.append({"bar": item.part, "mm": [3000, 2000, 900]})
+	var cut_ref := bus.propose_package("Cut frame", items, "", "courtyard", "cutship", cuts)
+	var q := bus.quote_package(cut_ref)
+	check(int(q.cut_fee) == 6 * 3 * 4 and int(q.ready_cut_cost) == int(q.cost) + int(q.cut_fee),
+			"ready cut adds the cutting, piece by piece: %d + %d" % [int(q.cost), int(q.cut_fee)])
+	wrist.category = "packages"
+	wrist.refresh()
+	await frames(2)
+	var bars_b := wrist.find_child("Order_" + cut_ref, true, false) as Button
+	var cut_b := wrist.find_child("OrderCut_" + cut_ref, true, false) as Button
+	check(bars_b != null and cut_b != null and not cut_b.disabled, "the package offers whole bars and ready cut")
+	check(cut_b != null and cut_b.text.contains(T_money(int(q.ready_cut_cost))) and bars_b.text.contains(T_money(int(q.cost))),
+			"each with its price: %s / %s" % [bars_b.text if bars_b else "", cut_b.text if cut_b else ""])
+	var cash2 := bus.get_cash()
+	var rc := wrist.order_package(cut_ref, true)
+	check(rc.is_ok() and rc.cost == int(q.ready_cut_cost) and cash2 - bus.get_cash() == rc.cost, "bought ready cut for that price: %d" % rc.cost)
+	var cut_pkg := bus.get_package(cut_ref)
+	check(cut_pkg.ready_cut and int(cut_pkg.cut_fee) == int(q.cut_fee) and (cut_pkg.cuts as Array).size() == 6, "the package says it comes cut, with its cut list")
+	var data2 := bus.save_data()
+	bus.reset()
+	bus.load_data(data2, bus.save_version())
+	check(bus.get_package(cut_ref).ready_cut and (bus.get_package(cut_ref).cuts as Array).size() == 6, "ready cut comes back from a save")
+	var plain := bus.propose_package("Plain frame", items)
+	check(int(bus.quote_package(plain).cut_fee) == 6 * 4, "without a cut list each bar counts as one piece")
+
 	wrist.queue_free()
 	bus.reset()
 	Flags.use(saved)
@@ -141,3 +171,7 @@ static func _one_supplier(bus: BusinessBus, items: Array) -> String:
 			best = s.id
 			best_cost = total
 	return best
+
+
+static func T_money(n: int) -> String:
+	return (load("res://modules/ui/api/terminal_kit.gd") as GDScript).call("money", n)

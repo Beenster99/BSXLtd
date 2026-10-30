@@ -929,7 +929,7 @@ func _validate_order(sender: int, p: Dictionary) -> Variant:
 				return "the package is empty"
 			return {"kind": "package", "title": str(p.get("title", "")), "items": items,
 					"contract": str(p.get("contract", "")), "destination": str(p.get("destination", "courtyard")),
-					"key": str(p.get("key", ""))}
+					"key": str(p.get("key", "")), "cuts": Array(p.get("cuts", []))}
 		"order_package", "cancel_package":
 			var pkg: Dictionary = _books.packages.get(str(p.get("ref", "")), {})
 			if pkg.is_empty() or pkg.state != "proposed":
@@ -940,9 +940,9 @@ func _validate_order(sender: int, p: Dictionary) -> Variant:
 					return "nobody has %s today" % ", ".join(plan.missing)
 				if _books.insolvent:
 					return "the company is insolvent"
-				if int(plan.cost) > _books.cash:
+				if int(plan.cost) + (int(plan.cut_fee) if bool(p.get("cut", false)) else 0) > _books.cash:
 					return "not enough cash"
-			return {"kind": p.kind, "ref": pkg.ref}
+			return {"kind": p.kind, "ref": pkg.ref, "cut": bool(p.get("cut", false))}
 	return "unknown order"
 
 
@@ -957,10 +957,10 @@ func _apply_order(p: Dictionary) -> void:
 		"sell":
 			r = _sell_stock(str(p.supplier), str(p.part), str(p.condition), int(p.qty))
 		"package":
-			var ref := _books.propose_package(str(p.title), p.items, str(p.contract), str(p.destination), str(p.get("key", "")))
+			var ref := _books.propose_package(str(p.title), p.items, str(p.contract), str(p.destination), str(p.get("key", "")), p.get("cuts", []))
 			r = BusinessResult.success() if ref != "" else BusinessResult.fail(ERR_INVALID_PARAMETER, "the package is empty")
 		"order_package":
-			r = _books.order_package(str(p.ref))
+			r = _books.order_package(str(p.ref), bool(p.get("cut", false)))
 		"cancel_package":
 			r = _books.cancel_package(str(p.ref))
 		_:
@@ -1036,11 +1036,13 @@ func _dispatch(supplier_id: String, part: String, condition: String, qty: int) -
 ## package's ref. Returns the ref ("PKG-0007"); a crew member's goes to the host and
 ## returns "" (it shows with the host's books). A `key` (say the ship's id) on a package not
 ## yet ordered replaces that package's parts and keeps its ref: a frame committed again.
-func propose_package(title: String, items: Array, contract_id := "", destination := "courtyard", key := "") -> String:
+## `cuts` is the frame's cut list ([{bar, mm: [lengths]}], one entry per bar) so the Buy tab
+## can offer it ready cut as well as in whole bars (beenster, 0.3.33).
+func propose_package(title: String, items: Array, contract_id := "", destination := "courtyard", key := "", cuts := []) -> String:
 	if not _is_authority():
-		_send_order({"kind": "package", "title": title, "items": items, "contract": contract_id, "destination": destination, "key": key})
+		_send_order({"kind": "package", "title": title, "items": items, "contract": contract_id, "destination": destination, "key": key, "cuts": cuts})
 		return ""
-	return _books.propose_package(title, items, contract_id, destination, key)
+	return _books.propose_package(title, items, contract_id, destination, key, cuts)
 
 
 ## One package by ref (as get_packages lists them, with its `key`), or {}.
@@ -1049,7 +1051,8 @@ func get_package(ref: String) -> Dictionary:
 
 
 ## Every package not dropped, newest first: {ref, title, items [{part, qty}], contract_id,
-## destination, state ("proposed", "ordered"), order_ids, cost (paid, once ordered), day}.
+## destination, state ("proposed", "ordered"), order_ids, cost (paid, once ordered), day,
+## cuts, ready_cut (bought cut to length: its bars come as the cut list's pieces), cut_fee}.
 func get_packages() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var refs := _books.packages.keys()
@@ -1062,18 +1065,19 @@ func get_packages() -> Array[Dictionary]:
 	return out
 
 
-## How a proposed package would be bought today: {basket, cost, suppliers [ids], missing
-## [part names nobody has]}.
+## How a proposed package would be bought today: {basket, cost (whole bars), suppliers [ids],
+## missing [part names nobody has], cut_fee, ready_cut_cost (cut to length)}.
 func quote_package(ref: String) -> Dictionary:
 	return _books.package_basket(ref)
 
 
 ## Buys a proposed package: one supplier with every part when one has them, else the
-## cheapest listing of each. A crew member's order goes to the host.
-func order_package(ref: String) -> BusinessResult:
+## cheapest listing of each. Ready cut, the supplier cuts the bars to the package's cut list
+## for its cut_fee more. A crew member's order goes to the host.
+func order_package(ref: String, ready_cut := false) -> BusinessResult:
 	if not _is_authority():
-		return _send_order({"kind": "order_package", "ref": ref})
-	return _books.order_package(ref)
+		return _send_order({"kind": "order_package", "ref": ref, "cut": ready_cut})
+	return _books.order_package(ref, ready_cut)
 
 
 ## Drops a proposed package.

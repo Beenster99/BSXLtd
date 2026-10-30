@@ -527,13 +527,25 @@ func _package_row(pkg: Dictionary, alt: bool) -> Control:
 			small.append(", ".join(names))
 		else:
 			small.append("NOBODY HAS %s TODAY" % ", ".join(missing).to_upper())
-		var order := T.button("ORDER", true, 15, false, glass)
-		order.name = "Order_" + str(pkg.ref)
-		order.tooltip_text = "Buy every part in this package"
-		order.custom_minimum_size = Vector2(84, 24)
-		order.disabled = not missing.is_empty() or cost > bus.get_cash()
-		order.pressed.connect(order_package.bind(str(pkg.ref)))
-		state = _width(_centred(order), 92)
+		# Two ways to buy it (beenster, 0.3.33): whole bars, or cut to length for a little more.
+		var buy := HBoxContainer.new()
+		buy.add_theme_constant_override("separation", 4)
+		var bars := T.button("BARS  %s" % T.money(cost), true, 13, false, glass)
+		bars.name = "Order_" + str(pkg.ref)
+		bars.tooltip_text = "Buy it as whole bars, to cut in the yard"
+		bars.custom_minimum_size = Vector2(118, 24)
+		bars.disabled = not missing.is_empty() or cost > bus.get_cash()
+		bars.pressed.connect(order_package.bind(str(pkg.ref), false))
+		buy.add_child(bars)
+		var cut_cost := int(plan.ready_cut_cost)
+		var cut := T.button("CUT  %s" % T.money(cut_cost), false, 13, false, glass)
+		cut.name = "OrderCut_" + str(pkg.ref)
+		cut.tooltip_text = "Buy it ready cut to length (%s CR for the cutting)" % T.money(int(plan.cut_fee))
+		cut.custom_minimum_size = Vector2(118, 24)
+		cut.disabled = not missing.is_empty() or cut_cost > bus.get_cash()
+		cut.pressed.connect(order_package.bind(str(pkg.ref), true))
+		buy.add_child(cut)
+		state = _width(buy, 240)
 		var x := T.button("✕", false, 15, false, glass)
 		x.name = "Drop_" + str(pkg.ref)
 		x.tooltip_text = "Remove this package"
@@ -542,28 +554,28 @@ func _package_row(pkg: Dictionary, alt: bool) -> Control:
 		drop = x
 	else:
 		small.append(", ".join(pkg.order_ids))
-		state = _width(T.tag("ORDERED", T.GOOD), 92)
+		small.append("PAID %s CR" % T.money(cost))
+		state = _width(T.tag("ORDERED, READY CUT" if bool(pkg.get("ready_cut", false)) else "ORDERED, WHOLE BARS", T.GOOD), 240)
 	if str(pkg.destination) == "courtyard":
 		small.append("TO THE COURTYARD")
+	# The buy buttons carry the prices, so they take the condition, count and price columns.
 	var row := compact(T.row([
 		T.cell_text(str(pkg.title), "  ·  ".join(small)),
 		state,
-		T.cell(str(items), 52),
-		T.cell(T.money(cost), 96, T.ORANGE, "mono_bold"),
 		_width(_centred(drop), 46),
 	], alt, glass))
 	row.name = "Package_" + str(pkg.ref).validate_node_name()
 	return row
 
 
-## Buys a package (ORDER on its line).
-func order_package(ref: String) -> BusinessResult:
-	var r := bus.order_package(ref)
+## Buys a package (BARS or CUT on its line).
+func order_package(ref: String, ready_cut := false) -> BusinessResult:
+	var r := bus.order_package(ref, ready_cut)
 	if r.is_ok():
 		if r.order_ids.is_empty():
 			_message = "Package %s sent to the host." % ref
 		else:
-			_message = "Ordered %s for %s CR. It comes straight to the courtyard." % [ref, T.money(r.cost)]
+			_message = "Ordered %s %s for %s CR. It comes straight to the courtyard." % [ref, "ready cut" if ready_cut else "in whole bars", T.money(r.cost)]
 		_message_good = true
 		Sfx.play("chime")
 	else:
