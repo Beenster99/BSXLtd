@@ -130,6 +130,9 @@ var draft: Dictionary = {}
 ## {key (design_key when made), plan (TradesFrameOrder.cut_plan), need {bar: n}, basket
 ## (TradesFrameOrder.basket)}.
 var order_offer: Dictionary = {}
+## The bars asked for (TradesFrameOrder.CHOICES; 0 the least waste): the wheel turns it while an
+## order is offered.
+var bar_choice := 0
 ## trades.beam_copy: the beam G copied, to grow from the next root clicked ({dir (ship space),
 ## length (m), section}), {} while none.
 var copying: Dictionary = {}
@@ -698,6 +701,12 @@ func pick_up(id: int, push := true) -> void:
 
 ## One wheel notch: true when it changed a section (else the bay changes tools).
 func wheel(step: int) -> bool:
+	# With an order offered the wheel picks the bars it is cut from.
+	if order_on() and not order_offer.is_empty() and grabbed < 0 and draft.is_empty():
+		var choices := TradesFrameOrder.CHOICES
+		bar_choice = choices[posmod(choices.find(bar_choice) + step, choices.size())]
+		offer_order()
+		return true
 	var id := grabbed if grabbed >= 0 else hovered
 	if grow_on():
 		var shift := _held(KEY_SHIFT)
@@ -828,8 +837,8 @@ func offer_order() -> Dictionary:
 	if rows.is_empty():
 		_say("Nothing to commit: draw the frame's beams first.")
 		return {}
-	var plan := TradesFrameOrder.cut_plan(rows)
 	var done := committed()
+	var plan := TradesFrameOrder.cut_plan(rows, bar_choice, done.get("ordered", {}))
 	var need := TradesFrameOrder.still_to_buy(plan.counts, done.get("ordered", {}))
 	var b := TradesFrameOrder.basket(Modules.bus("business"), need) if not need.is_empty() else {}
 	order_offer = {"key": design_key(), "plan": plan, "need": need, "basket": b}
@@ -930,7 +939,8 @@ func order_line() -> String:
 		return ""
 	var plan: Dictionary = order_offer.plan
 	var need: Dictionary = order_offer.need
-	var head := "%d beam%s cut from %s" % [int(plan.pieces), "" if int(plan.pieces) == 1 else "s", _bars_text(plan.counts)]
+	var head := "%d beam%s cut from %s (%s, wheel to change)" % [int(plan.pieces), "" if int(plan.pieces) == 1 else "s",
+			_bars_text(plan.counts), TradesFrameOrder.choice_word(bar_choice)]
 	if int(plan.spliced) > 0:
 		head += " (%d spliced from two bars)" % plan.spliced
 	if need.is_empty():
