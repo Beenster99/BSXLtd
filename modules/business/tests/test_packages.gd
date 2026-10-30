@@ -93,8 +93,12 @@ func run_tests() -> void:
 	var back := bus.get_packages()
 	check(back.size() == 1 and back[0].ref == ref and back[0].state == "ordered" and int(back[0].cost) == r.cost, "packages come back from a save")
 	check(bus.get_order(r.order_ids[0]).destination == "courtyard", "and their orders still go to the courtyard")
-	var ref3 := bus.propose_package("Third", items)
+	var ref3 := bus.propose_package("Third", items, "", "courtyard", "kestrel")
 	check(ref3 != ref and ref3 != ref2, "refs aren't reused after a save: %s" % ref3)
+	var again := bus.propose_package("Third, again", [items[0]], "", "courtyard", "kestrel")
+	check(again == ref3 and bus.get_package(ref3).items.size() == 1 and bus.get_package(ref3).title == "Third, again",
+			"committing the same frame again replaces its package and keeps the ref")
+	check(bus.propose_package("Ordered one", items, "", "courtyard", "") != ref, "an ordered package is never replaced")
 
 	wrist.queue_free()
 	bus.reset()

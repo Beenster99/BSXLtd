@@ -546,17 +546,29 @@ func place_market_order(basket: Array, contract_id: String) -> BusinessResult:
 # --- Frame packages ---
 
 ## Notes a package of parts to buy later: nothing is bought. Returns its ref ("PKG-0007").
-func propose_package(title: String, items: Array, contract_id: String, destination: String) -> String:
+## A `key` already on a package not yet ordered replaces that package's parts (a frame
+## committed again) and keeps its ref.
+func propose_package(title: String, items: Array, contract_id: String, destination: String, key := "") -> String:
 	var clean: Array = []
 	for item: Variant in items:
 		if item is Dictionary and str(item.get("part", "")) != "" and int(item.get("qty", 0)) > 0:
 			clean.append({"part": str(item.part), "qty": int(item.qty)})
 	if clean.is_empty():
 		return ""
+	if key != "":
+		for pkg: Dictionary in packages.values():
+			if pkg.get("key", "") == key and pkg.state == "proposed":
+				pkg.title = title if title != "" else pkg.title
+				pkg.items = clean
+				pkg.contract_id = contract_id
+				pkg.destination = destination
+				pkg.day = day
+				_bus.package_changed.emit(pkg.ref)
+				return pkg.ref
 	var ref := "PKG-%04d" % _next_package
 	_next_package += 1
 	packages[ref] = {
-		"ref": ref, "title": title if title != "" else "Parts package", "items": clean,
+		"ref": ref, "key": key, "title": title if title != "" else "Parts package", "items": clean,
 		"contract_id": contract_id, "destination": destination, "state": "proposed",
 		"order_ids": [], "cost": 0, "day": day,
 	}

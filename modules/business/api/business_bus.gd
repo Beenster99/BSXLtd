@@ -928,7 +928,8 @@ func _validate_order(sender: int, p: Dictionary) -> Variant:
 			if items.is_empty():
 				return "the package is empty"
 			return {"kind": "package", "title": str(p.get("title", "")), "items": items,
-					"contract": str(p.get("contract", "")), "destination": str(p.get("destination", "courtyard"))}
+					"contract": str(p.get("contract", "")), "destination": str(p.get("destination", "courtyard")),
+					"key": str(p.get("key", ""))}
 		"order_package", "cancel_package":
 			var pkg: Dictionary = _books.packages.get(str(p.get("ref", "")), {})
 			if pkg.is_empty() or pkg.state != "proposed":
@@ -956,7 +957,7 @@ func _apply_order(p: Dictionary) -> void:
 		"sell":
 			r = _sell_stock(str(p.supplier), str(p.part), str(p.condition), int(p.qty))
 		"package":
-			var ref := _books.propose_package(str(p.title), p.items, str(p.contract), str(p.destination))
+			var ref := _books.propose_package(str(p.title), p.items, str(p.contract), str(p.destination), str(p.get("key", "")))
 			r = BusinessResult.success() if ref != "" else BusinessResult.fail(ERR_INVALID_PARAMETER, "the package is empty")
 		"order_package":
 			r = _books.order_package(str(p.ref))
@@ -1033,12 +1034,18 @@ func _dispatch(supplier_id: String, part: String, condition: String, qty: int) -
 ## player orders it there (or order_package). Its orders carry `destination` ("courtyard":
 ## Ship and Bay brings them by trolley straight to the courtyard, not the stores) and the
 ## package's ref. Returns the ref ("PKG-0007"); a crew member's goes to the host and
-## returns "" (it shows with the host's books).
-func propose_package(title: String, items: Array, contract_id := "", destination := "courtyard") -> String:
+## returns "" (it shows with the host's books). A `key` (say the ship's id) on a package not
+## yet ordered replaces that package's parts and keeps its ref: a frame committed again.
+func propose_package(title: String, items: Array, contract_id := "", destination := "courtyard", key := "") -> String:
 	if not _is_authority():
-		_send_order({"kind": "package", "title": title, "items": items, "contract": contract_id, "destination": destination})
+		_send_order({"kind": "package", "title": title, "items": items, "contract": contract_id, "destination": destination, "key": key})
 		return ""
-	return _books.propose_package(title, items, contract_id, destination)
+	return _books.propose_package(title, items, contract_id, destination, key)
+
+
+## One package by ref (as get_packages lists them, with its `key`), or {}.
+func get_package(ref: String) -> Dictionary:
+	return (_books.packages.get(ref, {}) as Dictionary).duplicate(true)
 
 
 ## Every package not dropped, newest first: {ref, title, items [{part, qty}], contract_id,
