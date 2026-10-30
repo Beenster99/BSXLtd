@@ -61,7 +61,9 @@ func run_tests() -> void:
 	var n_rest := _parts(rest)
 	check(n_sec == (plan[0]["parts"] as Array).size() and n_sec + n_rest == whole,
 			"the section is its own body with its parts (%d), the hull keeps the rest (%d of %d)" % [n_sec, n_rest, whole])
-	await frames(int(Engine.physics_ticks_per_second * 5))
+	# The swing across is a tween on the clock: wait it out in real time.
+	await get_tree().create_timer(ships.SWING_TIME + 1.0).timeout
+	await frames(3)
 	var sb := _box(sec)
 	var hb := _box(rest)
 	check(not sb.intersects(hb) and absf(sb.position.y - 0.0) < 3.0 and sb.get_center().x < hb.get_center().x,
