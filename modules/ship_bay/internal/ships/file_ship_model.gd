@@ -33,6 +33,10 @@ func _init(f: Dictionary = {}, node_name := "Wreck") -> void:
 		return
 	_find_access()
 	_build_power_socket()
+	# Rivet, bolt and weld heads (thousands, batched) cast no shadows: too small to see in one,
+	# and each shadowed light and sun split drew every batch again (the Patience: 89 batches).
+	for mm: Node in find_children("*", "MultiMeshInstance3D", true, false):
+		(mm as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Where the bay's stairs and power cable meet the ship (ship space).
