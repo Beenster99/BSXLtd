@@ -1,4 +1,6 @@
 extends ModuleTest
+
+const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 ## Ship and Bay: a package ordered for the courtyard (beenster's Frame Builder playtest, 30
 ## Oct: "when ordered, the delivery should be picked up by Small, Medium or Large trolley and
 ## brought to the courtyard directly (not taken to stores)"). receive_delivery's destination
@@ -24,7 +26,7 @@ func run_tests() -> void:
 		t.set("turn_rate", 8.0)
 		t.set("lift_speed", 6.0)
 	var bar := _beam_of(6000)
-	check(bar != "" and StorageLayout.size_of(bar).x > 5.9, "a 6 m bar to order: %s" % bar)
+	check(bar != "" and Layout.size_of(bar).z > 5.9, "a 6 m bar to order: %s" % bar)
 	var got: Array = []
 	var on_delivered := func(order: String, ref: String, by: String, ids: PackedStringArray) -> void:
 		got.append([order, ref, by, ids])

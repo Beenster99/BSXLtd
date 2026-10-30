@@ -113,7 +113,7 @@ const SUBJECT_ORDER := "subject:"
 ## stores, the lines' "a" and "b", the goods-in picking lifts "p2" to "p6", and Store 2's picking lift "p7". Their Multiplayer mover ids are "trolley:<id>"; claim one to drive it by remote
 ## control.
 const TROLLEYS: PackedStringArray = ["s", "m", "l", "p", "h", "a", "b", "p2", "p3", "p4", "p5", "p6", "p7"]
-const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve", "auto"]
+const TROLLEY_COMMANDS: PackedStringArray = ["come", "follow", "put_away", "park", "stop", "deck", "fast", "fetch", "deliver", "beam", "shelve", "auto", "courtyard"]
 ## Ship id -> its folder (layout, fasteners, model).
 const SHIPS := {"vs_kestrel": "res://modules/ship_bay/internal/ships/kestrel"}
 ## The ship id of the random wreck in the bay (bay_wreck): a ship like the Kestrel, built from

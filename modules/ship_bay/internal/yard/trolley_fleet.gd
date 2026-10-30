@@ -925,10 +925,17 @@ func _send_to_goods_in() -> void:
 func _send_to_courtyard() -> void:
 	if _bus == null or not _bus.line_runs_here():
 		return
+	# A package a trolley is still loading waits for it: it takes all it has room for.
+	var loading := {}
+	for id: String in jobs:
+		var job: Dictionary = jobs[id]
+		if str(job.get("do", "")) == "courtyard" and ["to_crate", "loading"].has(str(job.get("phase", ""))):
+			loading[str(job.get("package", ""))] = true
 	var crates := _bus.delivered_crates()
 	for cid: String in crates:
 		var c: Dictionary = crates[cid]
-		if str(c.get("dest", "")) != "courtyard" or str(c.get("carrier", "")) != "" or _reserved_crates.has(cid):
+		if str(c.get("dest", "")) != "courtyard" or str(c.get("carrier", "")) != "" or _reserved_crates.has(cid) \
+				or loading.has(str(c.get("package", ""))):
 			continue
 		if yard and yard.get("trucks") and yard.get("trucks").call("is_arriving", cid):
 			continue
