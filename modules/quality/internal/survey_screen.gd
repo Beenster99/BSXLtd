@@ -2,7 +2,8 @@ extends HBoxContainer
 ## The wrist screen's Surveys channel (and the TVs'): the independent surveyors' reports.
 ## The list is every report, newest first, with its overall grade; the docket on the right
 ## is the chosen report in full, joint by joint. REQUEST SURVEY calls the surveyors in;
-## MARK JOB COMPLETE sends the job for its final survey. Built with TerminalKit to match
+## SIGN OFF STAGE (large jobs in stages) has them survey the open stage; MARK JOB COMPLETE
+## sends the job for its final survey. Built with TerminalKit to match
 ## the yard terminal.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
@@ -26,6 +27,8 @@ func _init(p_bus: QualityBus, p_glass := true) -> void:
 	if _contracts:
 		_contracts.job_state_changed.connect(_on_job_state)
 		_contracts.active_job_changed.connect(_on_active_job)
+		if _contracts.has_signal("stage_changed"):
+			_contracts.connect("stage_changed", _on_stage_changed)
 	refresh()
 
 
@@ -36,6 +39,10 @@ func pick(id: String) -> void:
 
 func request() -> void:
 	bus.request_survey(SurveyReport.CALLED)
+
+
+func sign_stage() -> void:
+	bus.request_survey(SurveyReport.STAGE)
 
 
 func complete() -> void:
@@ -62,6 +69,11 @@ func refresh() -> void:
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 8)
 	buttons.add_child(_action("REQUEST SURVEY", "Request", SurveyReport.CALLED, false, request))
+	if bus.stage_surveys_on() and not bus.current_stage().is_empty():
+		var st := bus.current_stage()
+		var b := _action("SIGN OFF STAGE", "SignStage", SurveyReport.STAGE, false, sign_stage)
+		b.tooltip_text = b.tooltip_text if b.disabled else "Survey stage: " + str(st.get("name", st.get("id", "")))
+		buttons.add_child(b)
 	buttons.add_child(_action("MARK JOB COMPLETE", "Complete", SurveyReport.FINAL, true, complete))
 	col.add_child(buttons)
 	col.add_child(T.columns([["REPORT", 0], ["JOINTS", 80], ["GRADE", 80]]))
@@ -131,7 +143,8 @@ func _action(text: String, node_name: String, kind: StringName, filled: bool, on
 
 func _row(rep: SurveyReport, alt: bool) -> Control:
 	var when := "%s  ·  %s" % [rep.id, rep.job_id] if rep.job_id != "" else rep.id
-	var r := T.row([T.cell_text(rep.kind_name(), when), T.cell(str(rep.scanned()), 80, T.TEXT),
+	var title := rep.kind_name() + (": " + rep.stage_name if rep.stage_name != "" else "")
+	var r := T.row([T.cell_text(title, when), T.cell(str(rep.scanned()), 80, T.TEXT),
 			T.cell(rep.grade, 80, grade_colour(rep.grade), "mono_bold")], alt, glass)
 	r.name = "Row_" + rep.id.validate_node_name()
 	if rep.id == selected:
@@ -170,6 +183,14 @@ func _docket(rep: SurveyReport) -> Control:
 	body.add_child(verdict)
 	body.add_child(T.label("%d PASS  ·  %d MARGINAL  ·  %d FAIL" % [rep.passed, rep.marginal, rep.failed],
 			"mono_medium", 15, dim))
+	if not rep.checks.is_empty():
+		body.add_child(T.label("RULES CHECKED", "display_medium", 15, dim))
+		var checks := VBoxContainer.new()
+		checks.name = "Checks"
+		checks.add_theme_constant_override("separation", 2)
+		for c in rep.checks:
+			checks.add_child(_check(c, ink, dim))
+		body.add_child(checks)
 	body.add_child(T.label("JOINTS SCANNED", "display_medium", 15, dim))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -189,6 +210,19 @@ func _docket(rep: SurveyReport) -> Control:
 
 ## The docket's verdict sentence.
 static func verdict_text(rep: SurveyReport) -> String:
+	var rules := rep.failed_checks().size()
+	if rep.kind == SurveyReport.STAGE:
+		if rep.accepted:
+			return "Stage \"%s\" signed off. The client pays it and the next stage opens." % rep.stage_name
+		var why := PackedStringArray()
+		if rep.failed > 0:
+			why.append("%d joint%s failed" % [rep.failed, "" if rep.failed == 1 else "s"])
+		for c in rep.failed_checks():
+			why.append(str(c.get("detail", c.get("label", ""))).to_lower())
+		return "Stage \"%s\" not signed off: %s." % [rep.stage_name, "; ".join(why)]
+	if rep.kind == SurveyReport.FINAL and rules > 0 and rep.failed == 0:
+		return "Work not accepted: %d decommissioning rule%s not met. The job is back in progress." % [
+				rules, "" if rules == 1 else "s"]
 	if rep.kind == SurveyReport.FINAL:
 		if rep.accepted:
 			return "Work accepted. The job is cleared for handover to the client."
@@ -221,6 +255,22 @@ func _line(line: Dictionary, ink: Color, dim: Color) -> Control:
 	return box
 
 
+func _check(c: Dictionary, ink: Color, dim: Color) -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 0)
+	var top := HBoxContainer.new()
+	var what := T.label(str(c.get("label", c.get("id", ""))), "body", 15, ink)
+	what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(what)
+	var ok := bool(c.get("passed", false))
+	top.add_child(T.tag("MET" if ok else "NOT MET", T.GOOD if ok else T.BAD, 13))
+	box.add_child(top)
+	var l := T.label("  ·  " + str(c.get("detail", "")), "body", 14, dim)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(l)
+	return box
+
+
 func _on_started(_kind: StringName, _job_id: String, _joints: Array) -> void:
 	refresh()
 
@@ -235,4 +285,8 @@ func _on_job_state(_id: String, _a: String, _b: String) -> void:
 
 
 func _on_active_job(_id: String) -> void:
+	refresh()
+
+
+func _on_stage_changed(_job_id: Variant, _stage_id: Variant, _state: Variant) -> void:
 	refresh()

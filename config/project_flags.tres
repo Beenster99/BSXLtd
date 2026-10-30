@@ -43,6 +43,7 @@ flags = {
 "quality.scores": true,
 "quality.surveys": true,
 "quality.rig_tests": true,
+"quality.stage_surveys": true,
 "ship_bay": true,
 "ship_bay.apron": true,
 "ship_bay.clean_up": true,
