@@ -192,8 +192,9 @@ func _check_apron(yard: Node3D) -> void:
 	var holding: Array = apron.get("holding_cradles")
 	check(holding.size() == 3, "three cradles in the holding lane")
 	var docked: Array = apron.get("dock_cradles")
-	check(holding.map(func(c: Node3D) -> String: return str(c.get("size"))) == ["s", "m", "m"] and docked.size() == 1 and str(docked[0].get("size")) == "l",
-			"a small and two medium cradles wait in the holding lane, a large one in Dock 3")
+	check(holding.map(func(c: Node3D) -> String: return str(c.get("size"))) == ["s", "m", "m"] and docked.size() == Apron.dock_cradle_ids().size()
+			and docked.all(func(c: Node3D) -> bool: return str(c.get("size")) == "l"),
+			"a small and two medium cradles wait in the holding lane, a large one in Dock 3 (and Dock 2 for large jobs in sections)")
 	check(float(docked[0].get("length")) > 70.0 and float(holding[1].get("length")) > 25.0, "the big ones are much longer than the Kestrel's")
 	for c: Node3D in holding + docked + [pad]:
 		for foot: Vector3 in c.call("pedestal_points"):

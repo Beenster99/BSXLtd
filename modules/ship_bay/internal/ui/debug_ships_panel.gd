@@ -55,6 +55,25 @@ func _init(p_bus: ShipBayBus) -> void:
 		put.tooltip_text = "Puts the wreck picked on the left on the courtyard bay's cradle instead of the Kestrel, for everyone."
 		row.add_child(put)
 		add_child(row)
+		if Flags.is_on("ship_bay.sections"):
+			# Large jobs in sections (S6): the picked wreck on Dock 2's or Dock 3's cradle, a
+			# section cut free at a time, or the dock cleared.
+			for dock: String in ["2", "3"]:
+				var docks := HBoxContainer.new()
+				docks.add_theme_constant_override("separation", 6)
+				var b := BsxTheme.button("Put it in Dock " + dock, func() -> void: _dock("dock_hull", dock))
+				b.name = "DockHull" + dock
+				b.tooltip_text = "Stands the wreck picked above on Dock %s's large cradle, to be cut into sections, for everyone." % dock
+				docks.add_child(b)
+				b = BsxTheme.button("Free a section", func() -> void: _dock("free_section", dock))
+				b.name = "FreeSection" + dock
+				b.tooltip_text = "Cuts the next section of Dock %s's wreck free and sets it on a stand beside the dock." % dock
+				docks.add_child(b)
+				b = BsxTheme.button("Clear", func() -> void: _dock("dock_clear", dock))
+				b.name = "DockClear" + dock
+				b.tooltip_text = "Takes the wreck and its sections out of Dock %s." % dock
+				docks.add_child(b)
+				add_child(docks)
 	bus.bay_wreck_changed.connect(_show)
 	bus.yard_ships_changed.connect(func(_s: PackedStringArray) -> void: _show())
 	bus.ship_loaded.connect(func(_id: String) -> void: _show())
@@ -65,6 +84,11 @@ func _init(p_bus: ShipBayBus) -> void:
 func _put_named() -> void:
 	if _pick and _pick.selected >= 0 and _pick.selected < _pick_ids.size():
 		bus.debug_ship("named_wreck", _pick_ids[_pick.selected])
+
+
+func _dock(action: String, dock: String) -> void:
+	var design := _pick_ids[_pick.selected] if _pick and _pick.selected >= 0 and _pick.selected < _pick_ids.size() else ""
+	bus.debug_ship(action, design, dock)
 
 
 func _toggle_manta() -> void:

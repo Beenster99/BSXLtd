@@ -138,6 +138,7 @@ const StorageStock := preload("res://modules/ship_bay/internal/storage/storage_s
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 const CrusherPlant := preload("res://modules/ship_bay/internal/yard/crusher_plant.gd")
 const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
+const HullSections := preload("res://modules/ship_bay/internal/hull_sections.gd")
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 
 ## The ship in the bay, or null.
@@ -1248,7 +1249,7 @@ static func hull_cradles() -> Array:
 	var out: Array = [["PadCradle", "s"]]
 	for i in Apron.HOLDING_SIZES.size():
 		out.append(["HoldingCradle%d" % (i + 1), Apron.HOLDING_SIZES[i]])
-	for id: String in Apron.DOCK_CRADLES:
+	for id: String in Apron.dock_cradle_ids():
 		out.append(["DockCradle" + id, "l"])
 	var rank := {"s": 0, "m": 1, "l": 2}
 	out.sort_custom(func(a: Array, b: Array) -> bool: return int(rank[a[1]]) < int(rank[b[1]]))
@@ -1338,6 +1339,75 @@ func _apply_hull(payload: Dictionary) -> void:
 	else:
 		hulls[job] = hull.duplicate(true)
 	hulls_changed.emit()
+
+
+# --- Large hulls in sections (S6) ------------------------------------------------------------
+
+## The file a contract hull is built from (its design, rolled with its seed and events), {}
+## for none.
+static func hull_file(h: Dictionary) -> Dictionary:
+	var f := WreckMaker.for_design(str(h.get("design", "")), int(h.get("seed", 0)), h.get("events", []))
+	return f if not f.is_empty() else VsShipImport.design_source(str(h.get("design", "")))
+
+
+static var _plans: Dictionary = {}
+
+
+## The sections of a contract hull, front to back (HullSections.plan: {index, z0, z1, parts,
+## mass_kg, cut_joints}), worked out once per design, seed and events. [] without the hull.
+func section_plan(job_id: String) -> Array:
+	var h: Dictionary = hulls.get(job_id, {})
+	if h.is_empty():
+		return []
+	var key := "%s|%d|%s" % [h.get("design", ""), int(h.get("seed", 0)), str(h.get("events", []))]
+	if not _plans.has(key):
+		_plans[key] = HullSections.plan(hull_file(h))
+	return _plans[key]
+
+
+## Which of a hull's sections are cut free of it (indices).
+func free_sections(job_id: String) -> Array:
+	return (hulls.get(job_id, {}) as Dictionary).get("free", [])
+
+
+## Section `index` of the hull of `job_id` comes free and goes onto its stand beside the dock
+## (the host; everyone sees it through the hull's state). False when it can't.
+func free_section(job_id: String, index: int) -> bool:
+	if not Flags.is_on("ship_bay.sections") or not hulls.has(job_id):
+		return false
+	if _net != null and not bool(_net.call("is_host")):
+		return false
+	var plan := section_plan(job_id)
+	var free: Array = free_sections(job_id).duplicate()
+	if index < 0 or index >= plan.size() or free.has(index) or free.size() >= plan.size() - 1:
+		return false   # the last section left stays on the cradle as the hull
+	free.append(index)
+	var h: Dictionary = (hulls[job_id] as Dictionary).duplicate(true)
+	h["free"] = free
+	_send_hull({"job": job_id, "hull": h})
+	return true
+
+
+## The job id of the debug hull in dock `id` ("2", "3").
+static func debug_dock_job(id: String) -> String:
+	return "debug_dock" + id
+
+
+## Settings > Debug > Ship: wreck `design` on dock `id`'s cradle as a hull in for sections
+## (the host), in place of any debug hull there.
+func _debug_dock_hull(id: String, design: String) -> void:
+	var job := debug_dock_job(id)
+	if hulls.has(job):
+		_send_hull({"job": job, "hull": {}})
+	var f := VsShipImport.design_source(design)
+	if f.is_empty():
+		return
+	var mass := 0.0
+	for p: Dictionary in f.get("parts", []):
+		mass += float(p.get("mass", 0.0))
+	var info := VsWreckLibrary.info(design)
+	_send_hull({"job": job, "hull": {"design": design, "seed": 1, "events": [], "type": "wreck", "mass_kg": mass,
+			"name": str(info.get("name", design)), "cradle": "DockCradle" + id, "free": []}})
 
 
 # --- Selling stock to other companies (Business) --------------------------------------------
@@ -2125,13 +2195,17 @@ func send_cradle(payload: Dictionary) -> void:
 ## design standing on the apron (YARD_SHIP_DESIGNS), "clear_bay" takes the ship out of the
 ## bay, "restore_bay" brings the Kestrel back, "random_wreck" puts a random wreck in the bay
 ## in place of the Kestrel (rolled here, built the same on every machine).
-## For "random_wreck", `design` is its size (WRECK_SIZES; "" for small).
+## For "random_wreck", `design` is its size (WRECK_SIZES; "" for small). With large jobs in
+## sections (ship_bay.sections), "dock_hull" puts wreck `design` on dock `dock`'s cradle,
+## "dock_clear" takes it away and "free_section" cuts its next section free.
 ## The roll the debug random wreck uses: -1 a fresh one each press (tests pin it).
 var wreck_seed := -1
 
 
-func debug_ship(action: String, design := "") -> void:
+func debug_ship(action: String, design := "", dock := "") -> void:
 	var payload := {"action": action, "design": design}
+	if dock != "":
+		payload["dock"] = dock
 	if action == "random_wreck":
 		payload["wreck"] = random_wreck(wreck_seed, design if WRECK_SIZES.has(design) else "S")
 	elif action == "named_wreck":
@@ -2376,6 +2450,12 @@ func _check_debug_ship(_sender: int, payload: Dictionary) -> Variant:
 		var w: Variant = payload.get("wreck", {})
 		var d := str((w as Dictionary).get("design", "")) if w is Dictionary else ""
 		return payload if ShipGenerator.is_generated(d) or (VsWreckLibrary.is_vs_wreck(d) and not VsWreckLibrary.info(d).is_empty()) else "no wreck rolled"
+	if action in ["dock_hull", "dock_clear", "free_section"]:
+		if not Flags.is_on("ship_bay.sections") or not str(payload.get("dock", "")) in ["2", "3"]:
+			return "no such dock"
+		if action == "dock_hull" and VsShipImport.design_source(str(payload.get("design", ""))).is_empty():
+			return "no such wreck"
+		return payload
 	return payload if action in ["clear_bay", "restore_bay"] else "unknown debug action"
 
 
@@ -2405,6 +2485,20 @@ func _apply_debug_ship(payload: Dictionary) -> void:
 				bay_wreck_changed.emit()
 			if ship == null:
 				load_ship("vs_kestrel")
+		"dock_hull", "dock_clear", "free_section":
+			if _net != null and not bool(_net.call("is_host")):
+				return
+			var dock := str(payload.get("dock", ""))
+			var job := debug_dock_job(dock)
+			if str(payload["action"]) == "dock_hull":
+				_debug_dock_hull(dock, design)
+			elif str(payload["action"]) == "dock_clear":
+				if hulls.has(job):
+					_send_hull({"job": job, "hull": {}})
+			else:
+				for i in section_plan(job).size():
+					if not free_sections(job).has(i) and free_section(job, i):
+						break
 		"random_wreck", "named_wreck":
 			bay_cleared = true
 			unload_ship()

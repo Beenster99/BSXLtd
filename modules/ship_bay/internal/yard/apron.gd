@@ -28,8 +28,13 @@ const HOLDING: Array[Rect2] = [Rect2(137, 42, 36, 32), Rect2(137, 78, 36, 32), R
 const HOLDING_SIZES: PackedStringArray = ["s", "m", "m"]
 ## The holding cradles' heading: their ends face west (the apron) and east, radians.
 const HOLDING_YAW := -PI * 0.5
-## The docks that start with a large cradle on their pedestals.
+## The docks that start with a large cradle on their pedestals: Dock 3, and Dock 2 too with
+## large jobs in sections (flag ship_bay.sections: two large jobs at once).
 const DOCK_CRADLES: PackedStringArray = ["3"]
+
+
+static func dock_cradle_ids() -> PackedStringArray:
+	return PackedStringArray(["2", "3"]) if Flags.is_on("ship_bay.sections") else DOCK_CRADLES
 ## The pad's cradle (empty).
 var pad_cradle: Node3D
 ## The holding lane's cradles, H1 to H3 (one small, two medium: HOLDING_SIZES).
@@ -124,7 +129,7 @@ func _build_docks() -> void:
 		for z: float in DOCK_PEDESTAL_Z:
 			for side: float in [-1.0, 1.0]:
 				_pedestal(c + Vector3(side * DOCK_PEDESTAL_X, 0, z))
-		if DOCK_CRADLES.has(id):
+		if dock_cradle_ids().has(id):
 			dock_cradles.append(_cradle("DockCradle" + id, c, "l"))
 		for x: float in [r.position.x + 4.0, r.end.x - 4.0]:
 			for k in 5:
