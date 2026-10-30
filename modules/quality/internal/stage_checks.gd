@@ -6,6 +6,8 @@ extends RefCounted
 ## so the bus and the tests share it.
 
 const REACTOR_OUT := "reactor_out"
+## Not a decommissioning rule: the stage's own wants (Contracts' stage_missing) are met.
+const STAGE_WORK := "stage_work"
 const WEAPONS_DESTROYED := "weapons_destroyed"
 const ALL: PackedStringArray = [REACTOR_OUT, WEAPONS_DESTROYED]
 
@@ -54,7 +56,37 @@ static func run(job: Object, ids: PackedStringArray, rules: SurveyRules) -> Arra
 			REACTOR_OUT:
 				out.append(_reactor_out(lines, rules))
 			WEAPONS_DESTROYED:
-				out.append(_weapons_destroyed(lines, rules))
+				out.append(_weapons_destroyed(lines, rules, weapon_ids(job)))
+	return out
+
+
+## The stage's own work: what Contracts says it still lacks (stage_missing).
+static func work_done(missing: PackedStringArray) -> Dictionary:
+	if missing.is_empty():
+		return {"id": STAGE_WORK, "label": "Stage work done", "passed": true, "detail": "Everything the stage asks for is done"}
+	return {"id": STAGE_WORK, "label": "Stage work done", "passed": false, "detail": "Still to do: " + ", ".join(missing)}
+
+
+## The parts the client wants destroyed (part wants with disposition "destroyed", in the
+## stage plan or the order), lower case: the job's own list of its weapons.
+static func weapon_ids(job: Object) -> PackedStringArray:
+	var out := PackedStringArray()
+	var order: Variant = job.get("order") if job else null
+	if not order is Object:
+		return out
+	var lists: Array = [order.get("wants")]
+	for st: Variant in stages(job):
+		if st is Dictionary:
+			lists.append(st.get("wants"))
+	for wants: Variant in lists:
+		if not wants is Array:
+			continue
+		for w: Variant in wants:
+			if w is Dictionary and str(w.get("disposition", "")) == "destroyed":
+				var comp: Variant = w.get("component")
+				var id := str(comp.get("id")) if comp is Object or comp is Dictionary else ""
+				if id != "" and id != "<null>" and not out.has(id.to_lower()):
+					out.append(id.to_lower())
 	return out
 
 
@@ -77,14 +109,15 @@ static func _reactor_out(lines: Array, rules: SurveyRules) -> Dictionary:
 	return c
 
 
-## At least one weapon is recorded destroyed, and none has gone any other way.
-static func _weapons_destroyed(lines: Array, rules: SurveyRules) -> Dictionary:
+## At least one weapon is recorded destroyed, and none has gone any other way. A weapon is a
+## part the client wants destroyed, or one whose id names a weapon.
+static func _weapons_destroyed(lines: Array, rules: SurveyRules, wanted: PackedStringArray) -> Dictionary:
 	var c := {"id": WEAPONS_DESTROYED, "label": "Weapons destroyed", "passed": false, "detail": ""}
 	var destroyed := 0
 	var astray := PackedStringArray()
 	for line: Dictionary in lines:
 		var id := _component_id(line)
-		if not _matches(id, rules.weapon_words):
+		if id == "" or not (wanted.has(id) or _matches(id, rules.weapon_words)):
 			continue
 		if str(line.get("disposition", "")) == "destroyed":
 			destroyed += 1

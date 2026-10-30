@@ -7,6 +7,7 @@ extends ModuleTest
 
 class FakeOrder extends RefCounted:
 	var stages: Array = []
+	var wants: Array = []
 	var hazards := PackedStringArray()
 
 
@@ -26,6 +27,10 @@ class FakeContracts extends Node:
 	var job := FakeJob.new()
 	var tests: Array = []
 	var stage_signs: Array = []
+	var missing := PackedStringArray()
+
+	func stage_missing(_job_id: String) -> PackedStringArray:
+		return missing
 
 	func get_active_job() -> Object:
 		return job
@@ -107,6 +112,24 @@ func _rules() -> void:
 	c = StageChecks.run(job, PackedStringArray([StageChecks.WEAPONS_DESTROYED]), rules)
 	check(not c[0]["passed"] and c[0]["detail"].contains("rail gun kept"), "a weapon kept fails the rule: " + c[0]["detail"])
 
+	var sentinel := FakeJob.new()
+	var ref := ComponentRef.new()
+	ref.id = "SlugLoader"
+	sentinel.order.stages = [{"id": "weapons", "name": "Weapons out", "wants": [
+			{"what": "part", "component": ref, "disposition": "destroyed"},
+			{"what": "part", "component": {"id": "CapacitorBank"}, "disposition": "destroyed"}]}]
+	check(StageChecks.weapon_ids(sentinel) == PackedStringArray(["slugloader", "capacitorbank"]),
+			"the parts the client wants destroyed are the job's weapons: %s" % [StageChecks.weapon_ids(sentinel)])
+	sentinel.recoveries.append(_part("PDC", "destroyed"))
+	sentinel.recoveries.append(_part("CapacitorBank", "destroyed"))
+	c = StageChecks.run(sentinel, PackedStringArray([StageChecks.WEAPONS_DESTROYED]), rules)
+	check(c[0]["passed"] and c[0]["detail"] == "2 weapons destroyed", "a PDC and a wanted capacitor bank count: " + c[0]["detail"])
+	sentinel.recoveries.append(_part("SlugLoader", "kept"))
+	c = StageChecks.run(sentinel, PackedStringArray([StageChecks.WEAPONS_DESTROYED]), rules)
+	check(not c[0]["passed"], "a wanted-destroyed part kept fails the rule")
+	check(StageChecks.work_done(PackedStringArray()).passed and not StageChecks.work_done(PackedStringArray(["Reactor"])).passed,
+			"the stage's own work is a check")
+
 	var cut_first := FakeJob.new()
 	cut_first.recoveries.append(_cut("steel"))
 	cut_first.recoveries.append(_part("reactor_core", "scrapped"))
@@ -175,18 +198,26 @@ func _visits(bus: QualityBus) -> void:
 	check(started == [SurveyReport.STAGE] and bus.current_survey().get("stage_id") == "weapons", "the surveyors come for the stage")
 	bus.finish_survey_now()
 	var rep: SurveyReport = finished.back() if not finished.is_empty() else SurveyReport.new()
-	check(rep.kind == SurveyReport.STAGE and rep.stage_name == "Weapons out" and rep.checks.size() == 2, "the report checks the stage's rules")
+	check(rep.kind == SurveyReport.STAGE and rep.stage_name == "Weapons out" and rep.checks.size() == 3,
+			"the report checks the stage's work and rules")
 	check(not rep.accepted and fake.stage_signs.is_empty(), "nothing out yet: the stage is held")
 	check(fake.tests.back() == ["Stage survey: Weapons out", false], "the held stage is on record")
 	await frames(1)
 	var checks := screen.find_child("Checks", true, false)
-	check(checks != null and checks.get_child_count() == 2, "the detailed report lists the rules")
+	check(checks != null and checks.get_child_count() == 3, "the detailed report lists the work and the rules")
 	var verdict := screen.find_child("Verdict", true, false) as Label
 	check(verdict != null and verdict.text.contains("not signed off") and verdict.text.contains("reactor"),
 			"the report says what is missing: " + (verdict.text if verdict else ""))
 
 	fake.job.recoveries.append(_part("twin_turret", "destroyed"))
 	fake.job.recoveries.append(_part("reactor_cabinet", "kept"))
+	fake.missing = PackedStringArray(["AssaultCannon destroyed"])
+	bus.request_survey(SurveyReport.STAGE)
+	bus.finish_survey_now()
+	rep = finished.back()
+	check(not rep.accepted and rep.failed_checks().size() == 1 and rep.failed_checks()[0]["detail"].contains("AssaultCannon"),
+			"the stage's own work still to do holds it")
+	fake.missing = PackedStringArray()
 	bus.request_survey(SurveyReport.STAGE)
 	bus.finish_survey_now()
 	rep = finished.back()

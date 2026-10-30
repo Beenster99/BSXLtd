@@ -514,8 +514,13 @@ func _finish() -> void:
 	if kind == SurveyReport.STAGE:
 		rep.stage_id = str(p.get("stage_id", ""))
 		rep.stage_name = str(p.get("stage_name", ""))
+	var checks: Array[Dictionary] = []
+	if kind == SurveyReport.STAGE and _contracts.has_method("stage_missing"):
+		checks.append(StageChecks.work_done(_contracts.call("stage_missing", job_id)))
 	if job and not check_ids.is_empty():
-		SurveyDesk.add_checks(rep, StageChecks.run(job, check_ids, survey_rules))
+		checks.append_array(StageChecks.run(job, check_ids, survey_rules))
+	if not checks.is_empty():
+		SurveyDesk.add_checks(rep, checks)
 	_host_send(REPORT_EVENT, {"report": rep.to_dict()})
 
 

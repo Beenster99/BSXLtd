@@ -27,4 +27,4 @@ extends Resource
 ## is the reactor, or a weapon. Weapons must be recorded "destroyed"; none leaves the yard.
 @export var reactor_words: PackedStringArray = PackedStringArray(["reactor"])
 @export var weapon_words: PackedStringArray = PackedStringArray(["turret", "gun", "cannon", "missile",
-		"laser", "torpedo", "weapon"])
+		"laser", "torpedo", "weapon", "pdc", "railgun", "railmuzzle", "muzzle"])

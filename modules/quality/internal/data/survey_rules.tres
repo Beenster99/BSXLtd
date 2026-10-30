@@ -17,4 +17,4 @@ scan_s = 4.0
 walk_speed = 1.4
 keep_reports = 30
 reactor_words = PackedStringArray("reactor")
-weapon_words = PackedStringArray("turret", "gun", "cannon", "missile", "laser", "torpedo", "weapon")
+weapon_words = PackedStringArray("turret", "gun", "cannon", "missile", "laser", "torpedo", "weapon", "pdc", "railgun", "railmuzzle", "muzzle")
