@@ -10,7 +10,7 @@ extends ModuleTest
 func run_tests() -> void:
 	var saved := Flags.all()
 	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true,
-			"contracts.clients": true, "shared_components": true})
+			"contracts.clients": true, "contracts.vs_orders": true, "shared_components": true})
 	Modules.load_all()
 	var bus := Modules.bus("contracts") as ContractsBus
 	check(bus != null, "contracts loads")

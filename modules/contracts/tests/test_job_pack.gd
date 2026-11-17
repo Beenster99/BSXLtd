@@ -9,7 +9,7 @@ const FIXTURE := "res://modules/contracts/tests/fixtures/kestrel_coil_fit.workor
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.clients": false})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.clients": false, "contracts.vs_orders": true})
 	Modules.load_all()
 	var bus := Modules.bus("contracts") as ContractsBus
 	check(bus != null, "contracts loads")

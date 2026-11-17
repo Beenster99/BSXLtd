@@ -8,7 +8,7 @@ const BoardPanel := preload("res://modules/contracts/internal/board_panel.gd")
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": false})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": false, "contracts.vs_orders": true})
 	Modules.load_all()
 	var bus := Modules.bus("contracts") as ContractsBus
 	check(bus != null, "contracts loads")

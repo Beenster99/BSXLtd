@@ -6,6 +6,8 @@ extends HBoxContainer
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const TABS: PackedStringArray = ["void salvage", "local work", "accepted"]
+## The tabs on show: the Void Salvage one only while orders from that game are on.
+const LOCAL_TABS: PackedStringArray = ["local work", "accepted"]
 
 var bus: ContractsBus
 var glass := true
@@ -19,6 +21,7 @@ func _init(p_bus: ContractsBus, p_glass := true) -> void:
 	bus = p_bus
 	glass = p_glass
 	name = "ContractsBoard"
+	tab = tabs()[0]
 	add_theme_constant_override("separation", 14)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -34,8 +37,12 @@ func jobs() -> Array[ContractJob]:
 	return bus.board(_tab_key(tab))
 
 
+static func tabs() -> PackedStringArray:
+	return TABS if Flags.is_on(ContractsBus.VS_ORDERS_FLAG) else LOCAL_TABS
+
+
 func pick_tab(t: String) -> void:
-	tab = t if t in TABS else TABS[0]
+	tab = t if t in tabs() else tabs()[0]
 	selected = ""
 	refresh()
 
@@ -46,7 +53,7 @@ func pick(job_id: String) -> void:
 	selected = job_id
 	var job := bus.get_job(job_id)
 	if job != null:
-		for t in TABS:
+		for t in tabs():
 			if bus.board(_tab_key(t)).has(job):
 				tab = t
 				break
@@ -82,7 +89,7 @@ func refresh() -> void:
 	col.add_theme_constant_override("separation", 8)
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	col.size_flags_stretch_ratio = 1.7
-	col.add_child(T.chips(TABS, tab, pick_tab, glass, false))
+	col.add_child(T.chips(tabs(), tab, pick_tab, glass, false))
 	col.add_child(T.columns([["JOB  /  CLIENT", 0], ["SHIP", 120], ["DUE", 80], ["PAYS CR", 110]]))
 	var list := T.list()
 	col.add_child(list.get_parent())
