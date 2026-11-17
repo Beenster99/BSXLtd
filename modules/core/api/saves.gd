@@ -15,6 +15,11 @@ extends Node
 ## slot the current game; continue_game(slot) loads one; while a game is current it saves
 ## itself every AUTOSAVE_SECONDS, on going back to the main menu and when the window closes.
 ## games() lists them newest first for the menu; delete(slot) removes one.
+##
+## Eras: the game was rebuilt from the ground up as a ship builder (Nov 2026), and games
+## from before then do not carry over. With the flag "core.fresh_saves" on, games are
+## written with era ERA and games from an older era are neither listed nor continued.
+## Their files stay on disk untouched.
 
 signal saved(slot: String)
 signal loaded(slot: String)
@@ -24,6 +29,9 @@ signal deleted(slot: String)
 const DIR := "user://saves"
 const FORMAT := 1
 const AUTOSAVE_SECONDS := 60.0
+## The ship builder's saves. Era 1 is everything before it (files without "era").
+const ERA := 2
+const FRESH_SAVES_FLAG := "core.fresh_saves"
 ## Router scene ids where autosave holds off and which count as "back at the menu".
 const MENU_SCENES := ["main_menu", "settings", "boot", ""]
 
@@ -78,6 +86,7 @@ func save(slot: String) -> Error:
 		sections[id] = {"version": p.save_version(), "data": p.save_data()}
 	var doc := {
 		"format": FORMAT,
+		"era": current_era(),
 		"game_version": str(ProjectSettings.get_setting("application/config/version", "")),
 		"saved_at": int(Time.get_unix_time_from_system()),
 		"sections": sections,
@@ -138,8 +147,10 @@ func new_game(game_name: String) -> String:
 	return current_slot
 
 
-## Loads a saved game and makes it the current one.
+## Loads a saved game and makes it the current one. A game from an older era is refused.
 func continue_game(slot: String) -> Error:
+	if exists(slot) and not _playable(JSON.parse_string(FileAccess.get_file_as_string(path_for(slot)))):
+		return ERR_FILE_UNRECOGNIZED
 	var err := load_slot(slot)
 	if err == OK:
 		var doc: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path_for(slot)))
@@ -163,6 +174,8 @@ func games() -> Array[Dictionary]:
 		var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(path_for(slot)))
 		if not doc is Dictionary or not doc.has("name"):
 			continue  # not a player's game (tests, old files)
+		if not _playable(doc):
+			continue  # from before the ship builder
 		out.append({"slot": slot, "name": str(doc.name), "saved_at": int(doc.get("saved_at", 0)),
 				"created_at": int(doc.get("created_at", 0)), "game_version": str(doc.get("game_version", ""))})
 	out.sort_custom(func(a, b): return a.saved_at > b.saved_at)
@@ -187,6 +200,19 @@ func close_game() -> void:
 	_autosave()
 	current_slot = ""
 	current_name = ""
+
+
+## The era new saves are written in: ERA with "core.fresh_saves" on, else 1.
+func current_era() -> int:
+	var flags := get_node_or_null("/root/Flags")
+	return ERA if flags and flags.is_on(FRESH_SAVES_FLAG) else 1
+
+
+## Whether a saved game's era can be played in this build.
+func _playable(doc: Variant) -> bool:
+	if not doc is Dictionary:
+		return false
+	return int(doc.get("era", 1)) >= current_era()
 
 
 func _free_slot(game_name: String) -> String:
