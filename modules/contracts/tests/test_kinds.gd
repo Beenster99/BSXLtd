@@ -25,7 +25,7 @@ func run_tests() -> void:
 		return
 	check(bus.get_job(BREAK) == null, "no break jobs on offer with contracts.kinds off")
 
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.vs_orders": true})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true, "contracts.vs_orders": true})
 	Modules.load_all()
 	bus = Modules.bus("contracts") as ContractsBus
 	_test_reading()

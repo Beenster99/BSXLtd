@@ -10,7 +10,7 @@ const Generator := preload("res://modules/contracts/internal/offer_generator.gd"
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.clients": false, "contracts.vs_orders": true})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true, "contracts.clients": false, "contracts.vs_orders": true})
 	Modules.load_all()
 	var bus := Modules.bus("contracts") as ContractsBus
 	check(bus != null, "contracts loads")
@@ -20,7 +20,7 @@ func run_tests() -> void:
 		return
 	check(bus.cycle() == 0 and _generated(bus).is_empty(), "no cycle and no generated offers with contracts.clients off")
 
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.clients": true, "contracts.vs_orders": true})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true, "contracts.clients": true, "contracts.vs_orders": true})
 	Modules.load_all()
 	bus = Modules.bus("contracts") as ContractsBus
 	_test_table()

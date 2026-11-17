@@ -7,7 +7,7 @@ extends ModuleTest
 
 const Generator := preload("res://modules/contracts/internal/offer_generator.gd")
 const Board := preload("res://modules/contracts/internal/board_panel.gd")
-const FLAGS := {"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true,
+const FLAGS := {"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true,
 		"contracts.clients": true, "contracts.wrecks": true, "contracts.debug": true}
 
 

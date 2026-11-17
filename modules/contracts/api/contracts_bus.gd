@@ -80,6 +80,10 @@ const STAGES_FLAG := "contracts.stages"
 ## import_text itself still reads any order (the host's replay to guests, and tests). The code
 ## stays for the optional link back (sending our ships to VS).
 const VS_ORDERS_FLAG := "contracts.vs_orders"
+## The bundled fit (upgrade) jobs from local yards (Wave 0: dropped with the upgrade hall;
+## off, the board seeds none). With KINDS_FLAG and VS_ORDERS_FLAG off too the board is empty
+## until Wave 4 posts demands for new ships.
+const FIT_JOBS_FLAG := "contracts.fit_jobs"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -116,7 +120,7 @@ func register_module() -> void:
 			Modules.modules_ready.connect(_hook_clock)
 		if _cycle == 0:
 			advance_cycle(1)
-	if Flags.is_on(DEBUG_FLAG) and Flags.is_on(CLIENTS_FLAG):
+	if Flags.is_on(DEBUG_FLAG) and Flags.is_on(CLIENTS_FLAG) and Flags.is_on(KINDS_FLAG):
 		Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Contracts", _debug_section, 30)
 	if not Modules.modules_ready.is_connected(_hook_net):
 		Modules.modules_ready.connect(_hook_net)
@@ -403,6 +407,9 @@ func seed_board() -> void:
 			continue
 		if parsed is Dictionary and String(parsed.get("kind", WorkOrder.FIT)) != WorkOrder.FIT \
 				and not Flags.is_on(KINDS_FLAG):
+			continue
+		if parsed is Dictionary and String(parsed.get("kind", WorkOrder.FIT)) == WorkOrder.FIT \
+				and not Flags.is_on(FIT_JOBS_FLAG):
 			continue
 		if parsed is Dictionary and String((parsed.get("client", {}) as Dictionary).get("game", "")) == "void_salvage" \
 				and not Flags.is_on(VS_ORDERS_FLAG):
@@ -768,6 +775,8 @@ func _validate_call_in(_sender: int, p: Dictionary) -> Variant:
 	var client_id := str(p.get("client", ""))
 	if not ContractClients.has(client_id) or not client_posts(client_id):
 		return "no such client"
+	if not Flags.is_on(KINDS_FLAG):
+		return "part jobs are switched off"
 	var tier := int(p.get("tier", 0))
 	if tier < 1 or tier > 3:
 		return "tier must be 1 to 3"
@@ -781,7 +790,7 @@ func _apply_call_in(p: Dictionary) -> void:
 ## Posts a generated offer from the client at the tier now, in the first free call-in slot
 ## (so the same call on every machine makes the same offer). The new job's id, or "".
 func call_in(client_id: String, tier: int) -> String:
-	if not ContractClients.has(client_id) or not client_posts(client_id):
+	if not ContractClients.has(client_id) or not client_posts(client_id) or not Flags.is_on(KINDS_FLAG):
 		return ""
 	for slot in range(CALL_IN_SLOT, CALL_IN_SLOT + 100):
 		if _jobs.has("%s.g%d_%d" % [client_id, _cycle, slot]):

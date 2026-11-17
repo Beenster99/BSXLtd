@@ -15,7 +15,7 @@ const BREAK := "tpa.sb301"
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true,
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true, "contracts.vs_orders": true,
 			"contracts.clients": true, "contracts.wrecks": true, "shared_components": true})
 	Modules.load_all()
 	var bus := Modules.bus("contracts") as ContractsBus
