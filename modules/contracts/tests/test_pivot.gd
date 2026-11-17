@@ -20,9 +20,11 @@ func run_tests() -> void:
 	check(not bool(project.get("contracts.wrecks", true)), "project flags: wreck contracts are off")
 	check(not bool(project.get("contracts.kinds", true)) and not bool(project.get("contracts.fit_jobs", true)),
 			"project flags: part jobs and fit jobs are off")
-	var release := load("res://config/release_profiles/v0.3.tres").flags as Dictionary
-	check(not bool(release.get("contracts.vs_orders", true)) and not bool(release.get("contracts.wrecks", true)),
-			"release profile: both off")
+	for profile in ["v0.3", "v0.4"]:
+		var release := load("res://config/release_profiles/%s.tres" % profile).flags as Dictionary
+		check(not bool(release.get("contracts.vs_orders", true)) and not bool(release.get("contracts.wrecks", true))
+				and not bool(release.get("contracts.kinds", true)) and not bool(release.get("contracts.fit_jobs", true)),
+				"release profile %s: the dropped systems are off" % profile)
 
 	Flags.use(OFF)
 	Modules.load_all()
