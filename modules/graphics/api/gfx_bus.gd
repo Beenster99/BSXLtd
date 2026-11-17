@@ -231,6 +231,7 @@ func led_screen(glass: MeshInstance3D, kind: String, text: String) -> Node3D:
 ## to, its top the water: slow swells, the sky's reflection by the hour, deeper colour further
 ## out and foam where it laps against anything solid. No collision. Off, a plain dark-blue
 ## plane, so the call always gives water. Lay the shore, quay walls and the seabed yourself.
+## The flag is off since the orbital-yard pivot (Wave 0): the sea yard is dropped.
 ##   yard.add_child(Modules.bus("graphics").sea(Vector2(2000, 2000)))
 func sea(size: Vector2) -> MeshInstance3D:
 	return SeaLook.make(size, Flags.is_on(SEA))
