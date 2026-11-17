@@ -32,6 +32,9 @@ class Runner:
 			await Modules.modules_ready
 		var bus := Modules.bus("design") as DesignBus
 		bus.open_sample()
+		if "--station" in OS.get_cmdline_user_args():
+			await _station(bus, out)
+			return
 		Router.goto("design.room")
 		await _frames(20)
 		var room: Node = get_tree().current_scene
@@ -55,6 +58,36 @@ class Runner:
 		var img: Image = tv.viewport.get_texture().get_image()
 		img.save_png(out.path_join("tv_plan.png"))
 		print("DesignCapture: ", out.path_join("tv_plan.png"))
+		get_tree().quit()
+
+	## The furnished design room inside the orbital yard's station.
+	func _station(bus: DesignBus, out: String) -> void:
+		for f in ["yard", "yard.station", "yard.dock"]:
+			Flags.set_flag(f, true)
+		var yard := Modules.bus("yard")
+		if yard == null:
+			yard = (load("res://modules/yard/api/yard_bus.gd") as GDScript).new()
+			yard.name = "yard"
+			Modules.add_child(yard)
+			yard.call("register_module")
+		if not yard.is_connected("station_ready", bus.furnish_station):
+			yard.connect("station_ready", bus.furnish_station)
+		var station := (load("res://modules/yard/internal/station.tscn") as PackedScene).instantiate() as Node3D
+		get_tree().root.add_child(station)
+		await _frames(20)
+		for view in ["design_room", "design_window"]:
+			station.call("show_view", view)
+			await _frames(20)
+			await _save(out, "station_" + view)
+		var cam: Camera3D = station.get("view_camera")
+		cam.position = Vector3(3.2, 2.6, -9.5)
+		cam.look_at(Vector3(0, 1.5, -13))
+		await _frames(20)
+		await _save(out, "station_table")
+		var f: Node = station.get_node("DesignRoomRoot/DesignFurnishing")
+		f.call("open_console")
+		await _frames(20)
+		await _save(out, "station_console")
 		get_tree().quit()
 
 	func _frames(n: int) -> void:
