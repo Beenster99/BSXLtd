@@ -2,6 +2,8 @@ extends Node
 ## Screenshots of the design room for the screenshots page (run under a display):
 ##   xvfb-run -s "-screen 0 1920x1080x24" godot --path . \
 ##       res://modules/design/internal/tools/design_capture.tscn -- --flags=design.room=on --out=/abs/dir
+## With --station (and --flags=yard=on,yard.station=on,design.room=on) it shoots the design
+## room furnished inside the orbital yard's station instead.
 ## Saves console.png (the design console), room.png (the room with its TVs and table),
 ## holo_cut.png (the holotable cut through deck 1) and tv_plan.png (a wall TV's plan).
 
@@ -32,6 +34,9 @@ class Runner:
 			await Modules.modules_ready
 		var bus := Modules.bus("design") as DesignBus
 		bus.open_sample()
+		if "--station" in OS.get_cmdline_user_args():
+			await _station(bus, out)
+			return
 		Router.goto("design.room")
 		await _frames(20)
 		var room: Node = get_tree().current_scene
@@ -55,6 +60,31 @@ class Runner:
 		var img: Image = tv.viewport.get_texture().get_image()
 		img.save_png(out.path_join("tv_plan.png"))
 		print("DesignCapture: ", out.path_join("tv_plan.png"))
+		get_tree().quit()
+
+	## The furnished design room inside the orbital yard's station.
+	func _station(bus: DesignBus, out: String) -> void:
+		# Needs the yard on: -- --flags=yard=on,yard.station=on,design.room=on --station
+		if Router.goto("yard.station") != OK:
+			printerr("DesignCapture: the yard station is off; pass --flags=yard=on,yard.station=on")
+			get_tree().quit(1)
+			return
+		await _frames(5)
+		var station: Node = get_tree().current_scene
+		await _frames(20)
+		for view in ["design_room", "design_window"]:
+			station.call("show_view", view)
+			await _frames(20)
+			await _save(out, "station_" + view)
+		var cam: Camera3D = station.get("view_camera")
+		cam.position = Vector3(3.2, 2.6, -9.5)
+		cam.look_at(Vector3(0, 1.5, -13))
+		await _frames(20)
+		await _save(out, "station_table")
+		var f: Node = station.get_node("DesignRoomRoot/DesignFurnishing")
+		f.call("open_console")
+		await _frames(20)
+		await _save(out, "station_console")
 		get_tree().quit()
 
 	func _frames(n: int) -> void:

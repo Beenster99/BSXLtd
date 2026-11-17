@@ -33,6 +33,7 @@ func _init() -> void:
 
 const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
 const Samples := preload("res://modules/design/internal/sample_designs.gd")
+const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
 
 
 func register_module() -> void:
@@ -44,6 +45,40 @@ func register_module() -> void:
 		Shots.register("design_room", ROOM_SCENE, _shot_setup.bind(true), 40)
 		Menu.register_settings_section(Menu.DEBUG, "design.debug", "Design room",
 				_debug_panel, 30)
+		# The station is optional (its module may be off), so it is reached by name only,
+		# once every module has registered.
+		if Modules.ready_done:
+			_hook_yard()
+		else:
+			Modules.modules_ready.connect(_hook_yard, CONNECT_ONE_SHOT)
+
+
+func _hook_yard() -> void:
+	var yard := Modules.bus("yard")
+	if yard and yard.has_signal("station_ready") and not yard.is_connected("station_ready", furnish_station):
+		yard.connect("station_ready", furnish_station)
+
+
+## The design room's wall spots: the station's (the yard module's design_room_mounts), or
+## the stand-in's when the yard module is off. {id, transform (-Z into the room), size}.
+func room_mounts() -> Array[Dictionary]:
+	var yard := Modules.bus("yard")
+	if yard and yard.has_method("design_room_mounts"):
+		var out: Array[Dictionary] = []
+		out.assign(yard.call("design_room_mounts"))
+		return out
+	return Furnishing.stand_in_mounts()
+
+
+## Puts the holotable, wall TVs and console into the station's design room.
+func furnish_station(_station: Node3D = null) -> void:
+	var yard := Modules.bus("yard")
+	var root: Node3D = yard.call("design_room_root") if yard and yard.has_method("design_room_root") else null
+	if root == null or root.has_node("DesignFurnishing"):
+		return
+	var f: Node3D = Furnishing.new()
+	root.add_child(f)
+	f.call("setup", self, room_mounts())
 
 
 func unregister_module() -> void:
