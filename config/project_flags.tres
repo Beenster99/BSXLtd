@@ -156,5 +156,9 @@ flags = {
 "trades.unit_mounts": true,
 "trades.cutting_bed": true,
 "ui": true,
-"ui.debug_tab": true
+"ui.debug_tab": true,
+"yard": false,
+"yard.dock": true,
+"yard.racking": true,
+"yard.station": true
 }
