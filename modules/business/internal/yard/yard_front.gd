@@ -70,6 +70,9 @@ func setup(p_bus: BusinessBus, yard: Node3D) -> void:
 	bus = p_bus
 	_yard = yard
 	for hall: String in HALLS:
+		# No crusher house in the shipbuilder yard (wave 0): no TV for it.
+		if hall == "crusher" and not Flags.is_on("ship_bay.crusher"):
+			continue
 		var xf := wall_spot(hall)
 		if xf != Transform3D.IDENTITY:
 			monitors.append(_make_monitor(hall, xf.translated_local(Vector3(0, float(RAISED.get(hall, CENTRE_Y)), 0))))
