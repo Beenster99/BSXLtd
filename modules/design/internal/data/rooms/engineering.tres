@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignRoomType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_room_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "engineering"
+display_name = "Engineering"
+short = "ENG"
+colour = Color(1.0, 0.5, 0.25, 1)
+min_size = Vector2(3, 3)
+default_size = Vector2(6, 5)
+cost_per_m2 = 1100.0
+mass_per_m2 = 120.0
+hours_per_m2 = 2.2
+power_per_m2 = 0.08
+crew_per_m2 = 0.0
+cargo_share = 0.0
+fuel_share = 0.0
+needs_access = true
+required = false
+is_airlock = false

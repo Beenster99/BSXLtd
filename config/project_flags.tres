@@ -20,6 +20,8 @@ flags = {
 "contracts.stages": true,
 "core": true,
 "core.fresh_saves": true,
+"design": true,
+"design.room": false,
 "graphics": true,
 "graphics.gi": true,
 "graphics.hover": true,

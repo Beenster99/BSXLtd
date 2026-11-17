@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignRoomType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_room_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "fuel"
+display_name = "Fuel tank"
+short = "FUL"
+colour = Color(0.7, 0.45, 0.85, 1)
+min_size = Vector2(2, 2)
+default_size = Vector2(4, 3)
+cost_per_m2 = 300.0
+mass_per_m2 = 45.0
+hours_per_m2 = 0.8
+power_per_m2 = 0.0
+crew_per_m2 = 0.0
+cargo_share = 0.0
+fuel_share = 0.85
+needs_access = false
+required = false
+is_airlock = false
