@@ -2,6 +2,8 @@ extends Node
 ## Screenshots of the design room for the screenshots page (run under a display):
 ##   xvfb-run -s "-screen 0 1920x1080x24" godot --path . \
 ##       res://modules/design/internal/tools/design_capture.tscn -- --flags=design.room=on --out=/abs/dir
+## With --station (and --flags=yard=on,yard.station=on,design.room=on) it shoots the design
+## room furnished inside the orbital yard's station instead.
 ## Saves console.png (the design console), room.png (the room with its TVs and table),
 ## holo_cut.png (the holotable cut through deck 1) and tv_plan.png (a wall TV's plan).
 
@@ -62,18 +64,13 @@ class Runner:
 
 	## The furnished design room inside the orbital yard's station.
 	func _station(bus: DesignBus, out: String) -> void:
-		for f in ["yard", "yard.station", "yard.dock"]:
-			Flags.set_flag(f, true)
-		var yard := Modules.bus("yard")
-		if yard == null:
-			yard = (load("res://modules/yard/api/yard_bus.gd") as GDScript).new()
-			yard.name = "yard"
-			Modules.add_child(yard)
-			yard.call("register_module")
-		if not yard.is_connected("station_ready", bus.furnish_station):
-			yard.connect("station_ready", bus.furnish_station)
-		var station := (load("res://modules/yard/internal/station.tscn") as PackedScene).instantiate() as Node3D
-		get_tree().root.add_child(station)
+		# Needs the yard on: -- --flags=yard=on,yard.station=on,design.room=on --station
+		if Router.goto("yard.station") != OK:
+			printerr("DesignCapture: the yard station is off; pass --flags=yard=on,yard.station=on")
+			get_tree().quit(1)
+			return
+		await _frames(5)
+		var station: Node = get_tree().current_scene
 		await _frames(20)
 		for view in ["design_room", "design_window"]:
 			station.call("show_view", view)

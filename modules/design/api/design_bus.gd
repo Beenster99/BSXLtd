@@ -45,10 +45,18 @@ func register_module() -> void:
 		Shots.register("design_room", ROOM_SCENE, _shot_setup.bind(true), 40)
 		Menu.register_settings_section(Menu.DEBUG, "design.debug", "Design room",
 				_debug_panel, 30)
-		# The station is optional (its module may be off), so it is reached by name only.
-		var yard := Modules.bus("yard")
-		if yard and yard.has_signal("station_ready"):
-			yard.connect("station_ready", furnish_station)
+		# The station is optional (its module may be off), so it is reached by name only,
+		# once every module has registered.
+		if Modules.ready_done:
+			_hook_yard()
+		else:
+			Modules.modules_ready.connect(_hook_yard, CONNECT_ONE_SHOT)
+
+
+func _hook_yard() -> void:
+	var yard := Modules.bus("yard")
+	if yard and yard.has_signal("station_ready") and not yard.is_connected("station_ready", furnish_station):
+		yard.connect("station_ready", furnish_station)
 
 
 ## The design room's wall spots: the station's (the yard module's design_room_mounts), or
