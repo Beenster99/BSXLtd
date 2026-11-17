@@ -23,7 +23,8 @@ modules/<id>/          one folder per module, one project thread per module
   module.tres          id, depends_on, flag, bus script
 shared/void_salvage/   Void Salvage files synced at a pinned commit (never edited by hand)
 config/project_flags.tres        the active feature flags
-config/release_profiles/v0.1.tres what each release switches on
+config/release_profiles/v0.1.tres what each release switches on (v0.3: the yard by the sea,
+                                 v0.4: the ship builder, from Nov 2026)
 tools/run_tests.sh               every module's tests
 tools/check_boundaries.py        the module dependency rules
 tools/build/release.sh           the release build
@@ -77,7 +78,10 @@ ready.
 ## Releases
 
 1. Merge what's ready, make sure `config/release_profiles/v<major.minor>.tres` switches on
-   what this release exposes, and push a tag `v0.1.0`.
+   what this release exposes, and push a tag `v0.1.0`. The ship builder releases are
+   0.4.x (`v0.4.tres`); each module thread sets its own lines there, switching off what
+   the ship builder drops. With `core.fresh_saves` on, games saved before the ship
+   builder are not listed or loaded (their files stay on disk).
 2. GitHub Actions (`release.yml`) runs `tools/build/release.sh`: tests, boundary check,
    Windows/Linux/macOS exports zipped as `bsx-v0.1.0-<platform>.zip`, screenshots from
    the tour, a what's new draft from merged PRs (grouped by `module:<id>` labels) and
