@@ -252,25 +252,27 @@ func register_module() -> void:
 				"dock", "launch_towers", "crusher_house", "crusher"] + (["city", "downtown"] if Flags.is_on("ship_bay.city") else []):
 			Shots.register("shipyard_" + view, SHIPYARD_SCENE,
 					func(scene: Node) -> void: scene.call("show_view", view))
-		# The lift up at the side door, and the power unit's plug clipped on the hull.
-		Shots.register("shipyard_lift_at_door", SHIPYARD_SCENE, func(scene: Node) -> void:
-			var access: Node = (scene.get("bay") as Node).get("access")
-			access.call("set_lift_height", 1.6)
-			scene.call("show_view", "kestrel_lift"))
-		Shots.register("shipyard_power_plugged", SHIPYARD_SCENE, func(scene: Node) -> void:
-			(scene.get("bay") as Node).get("access").call("set_power", true)
-			scene.call("show_view", "kestrel_power"))
-		# The two scaffold rigs parked, then driven to the starboard flank and joined end to
-		# end into one 10 m floor at the roof's edge.
-		Shots.register("shipyard_scaffolds", SHIPYARD_SCENE, func(scene: Node) -> void:
-			scene.call("show_view", "scaffolds"))
-		Shots.register("shipyard_scaffold_floor", SHIPYARD_SCENE, func(scene: Node) -> void:
-			var rigs: Array = ((scene.get("bay") as Node).get("access") as Node).get("scaffolds")
-			rigs[0].call("configure", 2, 2, 1)
-			rigs[1].call("configure", 2, 2, 2)
-			rigs[0].global_position = Vector3(3.42, 0, -1.0)
-			rigs[1].global_position = Vector3(3.42, 0, 4.03)
-			scene.call("show_view", "scaffolds"))
+		# The bay kit (ship_bay.lifts) and the trolleys (ship_bay.trolleys) may be switched off.
+		if Flags.is_on("ship_bay.lifts"):
+			# The lift up at the side door, and the power unit's plug clipped on the hull.
+			Shots.register("shipyard_lift_at_door", SHIPYARD_SCENE, func(scene: Node) -> void:
+				var access: Node = (scene.get("bay") as Node).get("access")
+				access.call("set_lift_height", 1.6)
+				scene.call("show_view", "kestrel_lift"))
+			Shots.register("shipyard_power_plugged", SHIPYARD_SCENE, func(scene: Node) -> void:
+				(scene.get("bay") as Node).get("access").call("set_power", true)
+				scene.call("show_view", "kestrel_power"))
+			# The two scaffold rigs parked, then driven to the starboard flank and joined end to
+			# end into one 10 m floor at the roof's edge.
+			Shots.register("shipyard_scaffolds", SHIPYARD_SCENE, func(scene: Node) -> void:
+				scene.call("show_view", "scaffolds"))
+			Shots.register("shipyard_scaffold_floor", SHIPYARD_SCENE, func(scene: Node) -> void:
+				var rigs: Array = ((scene.get("bay") as Node).get("access") as Node).get("scaffolds")
+				rigs[0].call("configure", 2, 2, 1)
+				rigs[1].call("configure", 2, 2, 2)
+				rigs[0].global_position = Vector3(3.42, 0, -1.0)
+				rigs[1].global_position = Vector3(3.42, 0, 4.03)
+				scene.call("show_view", "scaffolds"))
 		Shots.register("shipyard_night", SHIPYARD_SCENE, func(scene: Node) -> void:
 			scene.call("set_time_of_day", 22.0)
 			scene.call("show_view", "courtyard"))
@@ -288,24 +290,26 @@ func register_module() -> void:
 				if not id.ends_with("/1"):
 					store_crate(id)
 			scene.call("show_view", "storage_aisle_d"))
-		Shots.register("shipyard_trolleys", SHIPYARD_SCENE, func(scene: Node) -> void:
-			_sample_delivery()
-			scene.call("show_view", "trolleys"))
-		# The medium trolley in aisle C with a crate raised to the third shelf.
-		Shots.register("shipyard_trolley_lift", SHIPYARD_SCENE, func(scene: Node) -> void:
-			var fleet: Node = scene.get("trolleys")
-			var m: Node = (fleet.get("trolleys") as Dictionary)["m"]
-			m.call("set_cargo", {"crate_id": "shot", "kind": "pallet", "mass": 311.0, "name": "Ion thruster"})
-			m.call("pose", Vector3(StorageLayout.aisle_x("C"), 0, -33.95), 0.0, StorageLayout.level_y(3))
-			scene.call("show_view", "trolley_lift"))
-		# The picking lift in aisle B reaching into the top shelf.
-		Shots.register("shipyard_picking_lift", SHIPYARD_SCENE, func(scene: Node) -> void:
-			var lift: Node = ((scene.get("trolleys") as Node).get("trolleys") as Dictionary)["p"]
-			lift.call("set_cargo", {"crate_id": "shot", "kind": "pallet", "mass": 250.0, "name": "Gyroscope"})
-			lift.call("pose", Vector3(StorageLayout.aisle_x("B"), 0, StorageLayout.bay_z(2)), 0.0, StorageLayout.level_y(StorageLayout.LEVELS))
-			lift.call("reach", true, signf(StorageLayout.rack_x("B1") - StorageLayout.aisle_x("B")))
-			lift.set("fork_out", 0.99)
-			scene.call("show_view", "picking_lift"))
+		# The trolleys and the picking lift, with ship_bay.trolleys on.
+		if Flags.is_on("ship_bay.trolleys"):
+			Shots.register("shipyard_trolleys", SHIPYARD_SCENE, func(scene: Node) -> void:
+				_sample_delivery()
+				scene.call("show_view", "trolleys"))
+			# The medium trolley in aisle C with a crate raised to the third shelf.
+			Shots.register("shipyard_trolley_lift", SHIPYARD_SCENE, func(scene: Node) -> void:
+				var fleet: Node = scene.get("trolleys")
+				var m: Node = (fleet.get("trolleys") as Dictionary)["m"]
+				m.call("set_cargo", {"crate_id": "shot", "kind": "pallet", "mass": 311.0, "name": "Ion thruster"})
+				m.call("pose", Vector3(StorageLayout.aisle_x("C"), 0, -33.95), 0.0, StorageLayout.level_y(3))
+				scene.call("show_view", "trolley_lift"))
+			# The picking lift in aisle B reaching into the top shelf.
+			Shots.register("shipyard_picking_lift", SHIPYARD_SCENE, func(scene: Node) -> void:
+				var lift: Node = ((scene.get("trolleys") as Node).get("trolleys") as Dictionary)["p"]
+				lift.call("set_cargo", {"crate_id": "shot", "kind": "pallet", "mass": 250.0, "name": "Gyroscope"})
+				lift.call("pose", Vector3(StorageLayout.aisle_x("B"), 0, StorageLayout.bay_z(2)), 0.0, StorageLayout.level_y(StorageLayout.LEVELS))
+				lift.call("reach", true, signf(StorageLayout.rack_x("B1") - StorageLayout.aisle_x("B")))
+				lift.set("fork_out", 0.99)
+				scene.call("show_view", "picking_lift"))
 		Shots.register("shipyard_hover_truck", SHIPYARD_SCENE, func(scene: Node) -> void:
 			scene.call("show_view", "hover_truck"))
 
@@ -2231,6 +2235,10 @@ func _apply_delivery(payload: Dictionary) -> void:
 			_stock.crates[id]["package"] = str(payload.get("package", ""))
 	stock_changed.emit()
 	delivery_landed.emit(str(payload.get("order_id", "")), ids)
+	# With no trolleys (ship_bay.trolleys off, the shipbuilder's Wave 0) a courtyard package is
+	# there as soon as it lands.
+	if str(payload.get("dest", "")) == "courtyard" and not Flags.is_on("ship_bay.trolleys") and not ids.is_empty():
+		_apply_courtyard({"crates": Array(ids), "trolley": ""})
 
 
 func _check_store(_sender: int, payload: Dictionary) -> Variant:
@@ -2552,8 +2560,12 @@ func _pass(_sender: int, payload: Dictionary) -> Variant:
 
 func _check_debug_ship(_sender: int, payload: Dictionary) -> Variant:
 	var action := str(payload.get("action", ""))
+	if action in ["spawn", "remove"] and not Flags.is_on("ship_bay.apron"):
+		return "no apron"
 	if action in ["spawn", "remove"]:
 		return payload if YARD_SHIP_DESIGNS.has(str(payload.get("design", ""))) else "no such ship to stand on the apron"
+	if action in ["random_wreck", "named_wreck", "dock_hull", "free_section"] and not Flags.is_on("ship_bay.teardown"):
+		return "wrecks are switched off"
 	if action in ["random_wreck", "named_wreck"]:
 		var w: Variant = payload.get("wreck", {})
 		var d := str((w as Dictionary).get("design", "")) if w is Dictionary else ""
