@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "bunk"
+display_name = "Crew bunk"
+short = "BNK"
+colour = Color(0.55, 0.85, 0.55, 1)
+size = Vector3(1.0, 1.0, 2.1)
+cost = 900.0
+mass = 90.0
+build_hours = 1.5
+power = -0.3
+thrust = 0.0
+crew = 1
+rooms = PackedStringArray("quarters")
+access = 0.6
+lead_days = 1

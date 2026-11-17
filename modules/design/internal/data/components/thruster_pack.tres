@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "thruster_pack"
+display_name = "Manoeuvring thruster pack"
+short = "THR"
+colour = Color(0.95, 0.75, 0.3, 1)
+size = Vector3(0.8, 0.8, 0.8)
+cost = 4200.0
+mass = 260.0
+build_hours = 3.0
+power = -6.0
+thrust = 12.0
+crew = 0
+rooms = PackedStringArray()
+access = 0.5
+lead_days = 2

@@ -19,6 +19,8 @@ flags = {
 "contracts.wrecks": true,
 "contracts.stages": true,
 "core": true,
+"design": true,
+"design.room": false,
 "graphics": true,
 "graphics.gi": true,
 "graphics.hover": true,
