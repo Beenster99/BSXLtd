@@ -84,6 +84,9 @@ func place(at: Vector3, target: Vector3) -> void:
 func _physics_process(delta: float) -> void:
 	in_gravity = _gravity_here()
 	var input := Vector2(_held(Keys.RIGHT) - _held(Keys.LEFT), _held(Keys.BACK) - _held(Keys.FORWARD))
+	# A screen that has the mouse (a console, the wrist) keeps your hands off the controls.
+	if HudSlots.pointer_claimed():
+		input = Vector2.ZERO
 	if in_gravity:
 		_walk(input, delta)
 	else:
@@ -97,7 +100,7 @@ func _walk(input: Vector2, delta: float) -> void:
 	velocity.x = move.x
 	velocity.z = move.z
 	if is_on_floor():
-		if Input.is_action_just_pressed(Keys.JUMP):
+		if not HudSlots.pointer_claimed() and Input.is_action_just_pressed(Keys.JUMP):
 			velocity.y = jump_speed
 	else:
 		velocity.y -= gravity * delta
@@ -106,13 +109,13 @@ func _walk(input: Vector2, delta: float) -> void:
 
 func _fly(input: Vector2, delta: float) -> void:
 	var view := camera.global_basis
-	var up_down := _held("yard.up") - _held("yard.down")
+	var up_down := 0.0 if HudSlots.pointer_claimed() else _held("yard.up") - _held("yard.down")
 	var push := view * Vector3(input.x, 0.0, input.y) + Vector3.UP * up_down
 	if push.length() > 1.0:
 		push = push.normalized()
 	var accel := boost_thrust if _held(Keys.RUN) > 0.0 else thrust
 	velocity += push * accel * delta
-	var damping := brake_damping if _held("yard.brake") > 0.0 else drift_damping
+	var damping := brake_damping if _held("yard.brake") > 0.0 and not HudSlots.pointer_claimed() else drift_damping
 	velocity *= maxf(0.0, 1.0 - damping * delta)
 	velocity = velocity.limit_length(max_fly_speed)
 	move_and_slide()
