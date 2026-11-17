@@ -7,7 +7,7 @@ extends ModuleTest
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.kinds": true, "ship_bay": true,
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.kinds": true, "contracts.vs_orders": true, "contracts.fit_jobs": true, "business.scrap": true, "ship_bay": true,
 			"multiplayer": true, "business": true, "business.market": true, "business.wallets": true,
 			"business.economy": true})
 	Modules.load_all()
