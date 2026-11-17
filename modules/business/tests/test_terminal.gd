@@ -11,7 +11,7 @@ const Tv := preload("res://modules/business/internal/ui/yard_tv.gd")
 func run_tests() -> void:
 	var saved := Flags.all()
 	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "ship_bay.shipyard": true,
-			"business": true, "business.market": true})
+			"ship_bay.crusher": true, "business": true, "business.market": true})
 	Modules.load_all()
 	var bus := Modules.bus("business") as BusinessBus
 	var yard_bus := Modules.bus("ship_bay") as ShipBayBus

@@ -704,11 +704,18 @@ func get_stock_detail() -> Dictionary:
 
 ## Stock id for a raw material held by the kilo ("raw_steel": kg of steel).
 const RAW_PREFIX := "raw_"
+## The teardown side of the business (shipbuilder plan, wave 0: "wreck teardown, scrapyard,
+## crusher, smelter, refurb hall, upgrade hall: switched off"): the recycler's kilos coming
+## into stock, selling them to the metal broker and a broken-up job's recoveries. Off in the
+## shipbuilder game; suppliers, deals and deliveries stay.
+const SCRAP_FLAG := "business.scrap"
 
 
 ## Ship and Bay's recycler turned an item into materials (Void Salvage material id -> kg).
 ## Every peer hears it; the host puts the kilos into stock as "raw_<material>".
 func _on_scrap_recycled(item_id: String, _qty: int, materials: Dictionary) -> void:
+	if not Flags.is_on(SCRAP_FLAG):
+		return
 	if not _is_authority():
 		return
 	for material: String in materials:
@@ -1204,7 +1211,7 @@ func on_contract_handed_over(contract_id: String, quality: float, open_snags: in
 	if not _is_authority():
 		return _not_host()
 	var result := _books.hand_over(contract_id, quality, open_snags)
-	if result.is_ok() and Flags.is_on("contracts.kinds"):
+	if result.is_ok() and Flags.is_on("contracts.kinds") and Flags.is_on(SCRAP_FLAG):
 		_take_recoveries(contract_id, recoveries if not recoveries.is_empty() else job_recoveries(contract_id))
 	return result
 
@@ -1452,6 +1459,8 @@ func recovery_value(part: String, condition: float) -> int:
 func sell_scrap(material: String, kg: int, form := "bale") -> BusinessResult:
 	if not _is_authority():
 		return _not_host()
+	if not Flags.is_on(SCRAP_FLAG):
+		return BusinessResult.fail(ERR_UNAVAILABLE, "the metal broker is closed")
 	var value := scrap_value(material, kg, form)
 	if value <= 0:
 		return BusinessResult.fail(ERR_INVALID_PARAMETER, "nobody buys %s" % material)

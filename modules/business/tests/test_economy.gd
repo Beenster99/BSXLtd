@@ -10,7 +10,7 @@ const CompanyPanel := preload("res://modules/business/internal/ui/company_panel.
 func run_tests() -> void:
 	var saved := Flags.all()
 	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "multiplayer": true,
-			"business": true, "business.market": true, "business.wallets": true, "business.economy": true})
+			"business": true, "business.market": true, "business.wallets": true, "business.economy": true, "business.scrap": true})
 	Modules.load_all()
 	var bus := Modules.bus("business") as BusinessBus
 	check(bus != null, "business loads")
