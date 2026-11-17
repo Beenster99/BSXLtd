@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: parts beamed off the ship go to a hover trolley (Tools' tractor beam asks
 ## beam_to_trolley): the smallest free trolley (the nearest of a size) drives over, raises its deck to the
 ## part, the part lands on it as a crate (part_beamed) and it puts it away in the stores.
@@ -6,7 +7,14 @@ extends ModuleTest
 ##   tools/run_tests.sh ship_bay
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var yard := (load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene).instantiate() as Node3D

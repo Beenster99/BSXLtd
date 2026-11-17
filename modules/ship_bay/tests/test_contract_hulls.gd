@@ -1,11 +1,19 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: every hull or wreck a contract brings in arrives on a transport cradle
 ## (beenster, 0.3.19), so a transporter can move it about: the smallest free cradle that fits
 ## it (the pad's, the holding lane's, a dock's); with none free it waits for a job to close.
 ##   tools/run_tests.sh ship_bay
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	check(ShipBayBus.cradle_size_for(25000.0, 12.0) == "s" and ShipBayBus.cradle_size_for(120000.0, 26.0) == "m"

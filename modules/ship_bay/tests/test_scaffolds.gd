@@ -1,11 +1,19 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: the mobile scaffold rigs: their posts add and take away bays and lifts and
 ## open their ends, a change that would grow into something is refused, they drive in to the
 ## hull sideways and stop at it, and the ladder takes you up onto the top deck.
 ##   tools/run_tests.sh ship_bay
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	var scene := load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene
 	var yard := scene.instantiate() as Node3D

@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: CLEAN UP on the wrist's Machines channel (beenster, 0.3.8). Parts off the
 ## ship lie loose in the yard (Tools tells the bus, note_loose); CLEAN UP sends trolleys to
 ## collect them and sort each by its condition: good ones into the stores, worn ones to the
@@ -10,7 +11,14 @@ extends ModuleTest
 const RefurbLine := preload("res://modules/ship_bay/internal/yard/refurb_line.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var was_on := Flags.is_on("ship_bay.clean_up")

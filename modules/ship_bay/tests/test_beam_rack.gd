@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: the beam rack (Business and Tools, 0.3.28). The stock beam bars BSX buys
 ## (Shared Components' StockBeams, 6 and 12 m) each have a home on the cantilever rack M2 in
 ## the plate hall, across aisle M from M1 and backed onto P1: the 12 m bars low, a lane each,
@@ -10,7 +11,14 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var layout := Layout.get_layout()
