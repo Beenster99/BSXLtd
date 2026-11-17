@@ -7,14 +7,14 @@ const Generator := preload("res://modules/contracts/internal/offer_generator.gd"
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true,
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true,
 			"contracts.clients": true, "contracts.wrecks": true, "contracts.debug": true, "shared_components": true})
 	Modules.load_all()
 	var bus := Modules.bus("contracts") as ContractsBus
 	check(bus != null, "contracts loads")
 	if bus:
 		_test_call_in(bus)
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true,
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true,
 			"contracts.clients": true, "shared_components": true})
 	Modules.load_all()
 	bus = Modules.bus("contracts") as ContractsBus

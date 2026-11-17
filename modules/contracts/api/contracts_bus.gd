@@ -74,6 +74,16 @@ const CLIENTS_FLAG := "contracts.clients"
 const WRECKS_FLAG := "contracts.wrecks"
 ## Large jobs worked in paid stages (plan stage S6).
 const STAGES_FLAG := "contracts.stages"
+## Orders from Void Salvage crews (the shipbuilder pivot, Wave 0: dropped, replaced by BSX's
+## own clients). Off, the bundled Void Salvage work orders stay off the board, the Void Salvage
+## clients post nothing, a work order file is refused and the board has no VOID SALVAGE tab.
+## import_text itself still reads any order (the host's replay to guests, and tests). The code
+## stays for the optional link back (sending our ships to VS).
+const VS_ORDERS_FLAG := "contracts.vs_orders"
+## The bundled fit (upgrade) jobs from local yards (Wave 0: dropped with the upgrade hall;
+## off, the board seeds none). With KINDS_FLAG and VS_ORDERS_FLAG off too the board is empty
+## until Wave 4 posts demands for new ships.
+const FIT_JOBS_FLAG := "contracts.fit_jobs"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -110,7 +120,7 @@ func register_module() -> void:
 			Modules.modules_ready.connect(_hook_clock)
 		if _cycle == 0:
 			advance_cycle(1)
-	if Flags.is_on(DEBUG_FLAG) and Flags.is_on(CLIENTS_FLAG):
+	if Flags.is_on(DEBUG_FLAG) and Flags.is_on(CLIENTS_FLAG) and Flags.is_on(KINDS_FLAG):
 		Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Contracts", _debug_section, 30)
 	if not Modules.modules_ready.is_connected(_hook_net):
 		Modules.modules_ready.connect(_hook_net)
@@ -243,7 +253,9 @@ func _prune_unlisted() -> void:
 
 func import_work_order(path: String) -> ImportResult:
 	var result := ImportResult.new()
-	if not FileAccess.file_exists(path):
+	if not Flags.is_on(VS_ORDERS_FLAG):
+		result.errors.append(VS_ORDERS_OFF)
+	elif not FileAccess.file_exists(path):
 		result.errors.append("No file at %s." % path)
 	else:
 		result = import_text(FileAccess.get_file_as_string(path))
@@ -276,6 +288,21 @@ func import_text(text: String) -> ImportResult:
 	if _active == "":
 		set_active_job(job.job_id)
 	return result
+
+
+## The reason a Void Salvage order is refused while VS_ORDERS_FLAG is off.
+const VS_ORDERS_OFF := "Orders from Void Salvage are switched off (contracts.vs_orders)."
+
+
+## An order from a Void Salvage crew: the client's game is "void_salvage".
+static func is_vs_order(order: WorkOrder) -> bool:
+	return String(order.client.get("game", "")) == "void_salvage"
+
+
+## A client whose offers the board takes now: Void Salvage crews only while VS_ORDERS_FLAG is on.
+static func client_posts(client_id: String) -> bool:
+	var game := String((ContractClients.TABLE.get(client_id, {}) as Dictionary).get("game", ""))
+	return game != "void_salvage" or Flags.is_on(VS_ORDERS_FLAG)
 
 
 # Reading jobs
@@ -342,9 +369,9 @@ func document(job_id: String, doc_id: String) -> Dictionary:
 	return ContractJobPack.document(job, doc_id, get_spec)
 
 
-## The contracts board: offered Void Salvage jobs (VOID_SALVAGE), offered local yard jobs
-## (LOCAL), or jobs taken on and not yet handed over (TAKEN). Void Salvage first, then by
-## due day.
+## The contracts board: offered Void Salvage jobs (VOID_SALVAGE; empty while VS_ORDERS_FLAG
+## is off), offered local yard jobs (LOCAL), or jobs taken on and not yet handed over
+## (TAKEN). Void Salvage first, then by due day.
 func board(tab: String) -> Array[ContractJob]:
 	var out: Array[ContractJob] = []
 	for job: ContractJob in _jobs.values():
@@ -380,6 +407,12 @@ func seed_board() -> void:
 			continue
 		if parsed is Dictionary and String(parsed.get("kind", WorkOrder.FIT)) != WorkOrder.FIT \
 				and not Flags.is_on(KINDS_FLAG):
+			continue
+		if parsed is Dictionary and String(parsed.get("kind", WorkOrder.FIT)) == WorkOrder.FIT \
+				and not Flags.is_on(FIT_JOBS_FLAG):
+			continue
+		if parsed is Dictionary and String((parsed.get("client", {}) as Dictionary).get("game", "")) == "void_salvage" \
+				and not Flags.is_on(VS_ORDERS_FLAG):
 			continue
 		# A bundled job that wants a part off the parts list (a ship module nobody can buy
 		# yet) stays off the board until the list carries it.
@@ -592,7 +625,8 @@ func advance_cycle(to_cycle := -1) -> void:
 			offer_expired.emit(id)
 	if Flags.is_on(CLIENTS_FLAG) and Flags.is_on(KINDS_FLAG):
 		for client_id: String in ContractClients.TABLE:
-			if not Generator.posts(client_id, _cycle) or _open_offers(client_id) >= OFFERS_PER_CLIENT:
+			if not client_posts(client_id) or not Generator.posts(client_id, _cycle) \
+					or _open_offers(client_id) >= OFFERS_PER_CLIENT:
 				continue
 			_post_generated(client_id, _cycle, 0)
 	_prune_unlisted()
@@ -739,8 +773,10 @@ func _validate_call_in(_sender: int, p: Dictionary) -> Variant:
 	if not Flags.is_on(DEBUG_FLAG):
 		return "debug tools are off"
 	var client_id := str(p.get("client", ""))
-	if not ContractClients.has(client_id):
+	if not ContractClients.has(client_id) or not client_posts(client_id):
 		return "no such client"
+	if not Flags.is_on(KINDS_FLAG):
+		return "part jobs are switched off"
 	var tier := int(p.get("tier", 0))
 	if tier < 1 or tier > 3:
 		return "tier must be 1 to 3"
@@ -754,7 +790,7 @@ func _apply_call_in(p: Dictionary) -> void:
 ## Posts a generated offer from the client at the tier now, in the first free call-in slot
 ## (so the same call on every machine makes the same offer). The new job's id, or "".
 func call_in(client_id: String, tier: int) -> String:
-	if not ContractClients.has(client_id):
+	if not ContractClients.has(client_id) or not client_posts(client_id) or not Flags.is_on(KINDS_FLAG):
 		return ""
 	for slot in range(CALL_IN_SLOT, CALL_IN_SLOT + 100):
 		if _jobs.has("%s.g%d_%d" % [client_id, _cycle, slot]):
@@ -808,6 +844,8 @@ func _debug_section() -> Control:
 	var names := PackedStringArray()
 	var by_name := {}
 	for id: String in ContractClients.TABLE:
+		if not client_posts(id):
+			continue
 		var name := ContractClients.display_name(id)
 		names.append(name)
 		by_name[name] = id
@@ -822,7 +860,7 @@ func _debug_section() -> Control:
 	var tier_row := HBoxContainer.new()
 	tier_row.add_child(TerminalKit.label("Level", "mono_medium", 13, TerminalKit.DIM))
 	col.add_child(tier_row)
-	var picked := {"client": String(ContractClients.TABLE.keys()[0]), "tier": "1", "names": names, "by_name": by_name,
+	var picked := {"client": String(by_name[names[0]]) if not names.is_empty() else "", "tier": "1", "names": names, "by_name": by_name,
 			"tier_names": tier_names, "client_row": client_row, "tier_row": tier_row}
 	_debug_refresh(picked)
 	var button := Button.new()
