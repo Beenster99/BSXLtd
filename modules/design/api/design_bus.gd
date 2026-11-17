@@ -31,12 +31,46 @@ func _init() -> void:
 	library.list_changed.connect(func() -> void: design_changed.emit())
 
 
+const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
+const Samples := preload("res://modules/design/internal/sample_designs.gd")
+
+
 func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, library)
+	if Flags.is_on(ROOM_FLAG):
+		Router.register_scene(ROOM_SCENE, ROOM_PATH)
+		Menu.register_entry(ROOM_SCENE, "Design room", ROOM_SCENE, 30)
+		Shots.register("design_console", ROOM_SCENE, _shot_setup.bind(false), 40)
+		Shots.register("design_room", ROOM_SCENE, _shot_setup.bind(true), 40)
+		Menu.register_settings_section(Menu.DEBUG, "design.debug", "Design room",
+				_debug_panel, 30)
 
 
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
+	Menu.unregister_entry(ROOM_SCENE)
+	Menu.unregister_settings_section(Menu.DEBUG, "design.debug")
+
+
+## Opens a new design holding the sample skiff (Debug tab, tests, screenshots).
+func open_sample() -> DesignRecord:
+	var rec := library.create("Sample skiff")
+	Samples.skiff(rec)
+	library.save_current()
+	return rec
+
+
+func _shot_setup(scene: Node, room_view: bool) -> void:
+	open_sample()
+	if scene.has_method("set_room_view"):
+		scene.set_room_view(room_view)
+
+
+func _debug_panel() -> Control:
+	var b := Button.new()
+	b.text = "Open the sample skiff"
+	b.pressed.connect(func() -> void: open_sample())
+	return b
 
 
 ## The open design's numbers, or null with nothing open.
