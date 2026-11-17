@@ -26,16 +26,20 @@ enum Power { NONE, SOURCE, CONDUCTOR, SWITCH, CONSUMER }
 ##   KINKED        a pipe shoved in at `kink` by a dent: bent, still carrying its fluid
 ##   DOOR_HANGING  a door leaf (a locker's) hanging open by one of its two hinge welds
 ##   DOOR_OFF      a door leaf torn off both hinge welds, adrift
+##   ALIGHT        a breached fuel line still burning at its breach, fed by a tank (VX28: a
+##                 jet of flame out of `breach`; put out, it is BREACHED alone)
 enum Fault { DEAD_LAMP = 1, BREACHED = 2, BLOWN_SCREEN = 4, CRACKED = 8, KINKED = 16,
-	DOOR_HANGING = 32, DOOR_OFF = 64 }
+	DOOR_HANGING = 32, DOOR_OFF = 64, ALIGHT = 128 }
 ## What each fault takes off the condition (0..1), by flag.
 const FAULT_CONDITION := {Fault.BLOWN_SCREEN: 0.1, Fault.CRACKED: 0.2, Fault.KINKED: 0.15}
 
-## How a part came off the wreck (docs/ECONOMY_PLAN.md 3.4), worst so far:
+## How a part came off the wreck (docs/ECONOMY_PLAN.md 3.4), worst so far. A part is marked by
+## its own breaks (SF5): what rides off on a piece without a joint of its own broken is INTACT,
+## and graded again when it comes off that piece.
 ##   ATTACHED  still on it (or never off anything)
-##   INTACT    every joint holding it was undone with a tool
-##   FORCED    the last joint broke under load (a blast, wreck events)
-##   CUT       a torch slice went through it, or through what it came off on
+##   INTACT    every joint of its own that broke was undone with a tool (or none broke)
+##   FORCED    a joint of its own broke under load (a blast, a rip, a tear, wreck events)
+##   CUT       a torch slice went through it
 ## Also the source a joint break passes (SalvageStructure.damage_connection).
 enum Removal { ATTACHED, INTACT, FORCED, CUT }
 ## Value kept per removal (ATTACHED, INTACT, FORCED, CUT): torched parts are scrap stock.
@@ -64,7 +68,8 @@ var material: String = Materials.BUILT
 var removal: Removal = Removal.ATTACHED
 ## Electrical role; NONE for most parts.
 var power: Power = Power.NONE
-## For SWITCH parts: closed (conducting) or open. Shared between players by the World.
+## For SWITCH parts: closed (conducting) or open. For SOURCE parts other than cells: running
+## (true) or shut down, when it puts out nothing (`source_level`). Shared between players by the World.
 var switch_closed: bool = true
 ## For SOURCE parts: how much it puts out, 0 (dead) to 1 (live). A wreck's reactor and
 ## generators get the contract roll's power state (WreckEvents.residual); the grid passes
@@ -175,9 +180,18 @@ func is_intact() -> bool:
 	return removal <= Removal.INTACT and not has_fault(Fault.BLOWN_SCREEN)
 
 
-## The level a SOURCE puts into the grid (0..1): its output times its cell's charge.
+## The level a SOURCE puts into the grid (0..1): its output times its cell's charge, none
+## while it is shut down (`switch_closed` false; a cell never is).
 func source_level() -> float:
+	if power == Power.SOURCE and not switch_closed and not cell:
+		return 0.0
 	return clampf(output * charge, 0.0, 1.0)
+
+
+## A SOURCE the crew can shut down and start (F on it): a reactor, a generator, a battery
+## rack; not a lamp's own cell.
+func is_switchable_source() -> bool:
+	return power == Power.SOURCE and not cell
 
 
 func has_fault(f: Fault) -> bool:

@@ -14,7 +14,13 @@ extends RefCounted
 ##
 ## Wall space: it stands across the ship at z = `z`, `thickness` thick; x across, y up (ship
 ## space). `outline` is the cross-section it fills (convex, x and y; the caller keeps it the
-## gap off the linings round it), cut off at `floor_y` (the deck's top).
+## gap off the linings round it), cut off at `floor_y` (the deck's top). A wall along the ship
+## (or anywhere else) is built in its own wall space and set down by `frame` (wall space to ship
+## space: `along(x)` stands one at x, its wall-space x running aft); `floor` and `anchor` are
+## asked in ship space. With `sloped_feet` on, where its sides slope in to the floor (a hull's
+## lower chamfers, wider above the deck than on it) the sill spans the floor's width and a foot
+## rail runs up each sloping edge, bolted to what is beside it, with the studs beyond the sill
+## standing on it.
 ##
 ## Paths (4.7), "wall:<name>/...": sill (sill/0 per piece; a split piece's two halves sill/1/f
 ## and sill/1/b, the fore and aft face), head/0.., stud/3 (split stud/3/f and stud/3/b; a
@@ -31,6 +37,14 @@ var outline := PackedVector2Array()
 var floor_y: float = 0.0
 ## Doorways and windows through it (x, y).
 var openings: Array[Rect2] = []
+## Openings with a pane of glass in them (x, y): framed like any opening (a lintel over it, a
+## sill under it, jamb studs either side) and glazed with a pane in the middle of the wall's
+## depth, bolted to its lintel and its sill. Two side by side keep a mullion between them
+## (the caller leaves the stud's room).
+var windows: Array[Rect2] = []
+## A pane's thickness, metres, and its glass.
+var pane: float = 0.015
+var glass_mat: Material
 ## Where a sliding leaf runs inside the wall (x, y): studs and sill split to the faces there.
 var pockets: Array[Rect2] = []
 ## The clear middle a pocket keeps for its leaf, metres.
@@ -52,6 +66,10 @@ var bolt_share: float = 1.0
 var min_bolts: int = 1
 ## Inside the wall: between a panel and the frame behind it, metres.
 var gap: float = 0.01
+## Sloping lower sides (see above): the sill spans the floor's width and foot rails carry the
+## studs beyond it. Off (as the player ships' walls are built), the sill spans the outline's
+## whole width and every stud stands on it.
+var sloped_feet: bool = false
 var panel_mat: Material
 var frame_mat: Material
 var bolt_head: int = FrameStyle.SUBTLE
@@ -62,13 +80,19 @@ var floor := Callable()
 ## Optional `anchor(p: Vector3) -> PartData`: what the head rails and the end studs bolt to
 ## (the linings round the wall).
 var anchor := Callable()
+## Wall space to ship space (identity: a wall across the ship, as it always was).
+var frame := Transform3D.IDENTITY
 
 ## What was built.
 var sills: Array[PartData] = []
 var heads: Array[PartData] = []
+## Foot rails up the sloping edges (none on a wall with upright sides).
+var feet: Array[PartData] = []
 var studs: Array[PartData] = []
 var lintels: Array[PartData] = []
 var panels: Array[PartData] = []
+## The windows' panes (one per window, in order).
+var panes: Array[PartData] = []
 var welds: Array[ConnectionData] = []
 var bolts: Array[ConnectionData] = []
 ## Every member a panel may be bolted to: {part, a, b (x, y: its centre line), key}.
@@ -95,6 +119,46 @@ func _path(rest: String) -> String:
 	return "wall:%s/%s" % [name, rest]
 
 
+## The frame that stands a wall along the ship at `x`: its wall-space x runs aft (+z), its -z face
+## looks to starboard (+x), its +z face to port.
+static func along(x: float) -> Transform3D:
+	return Transform3D(Basis(Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0)), Vector3(x, 0, 0))
+
+
+func _turned() -> bool:
+	return frame != Transform3D.IDENTITY
+
+
+## A point, a direction and a transform from wall space to ship space.
+func _to(p: Vector3) -> Vector3:
+	return frame * p if _turned() else p
+
+
+func _dir(v: Vector3) -> Vector3:
+	return frame.basis * v if _turned() else v
+
+
+func _xf(x: Transform3D) -> Transform3D:
+	return frame * x if _turned() else x
+
+
+## A built part's visual bounds in wall space.
+func _wall_box(p: PartData) -> AABB:
+	var b := p.local_transform * target.parts_model().part_visual(p.id).get_aabb()
+	return frame.affine_inverse() * b if _turned() else b
+
+
+## A joint made in wall space.
+func _join(a: PartData, b: PartData, kind: ConnectionData.Kind, at: Vector3, normal: Vector3, seam_up: Vector3,
+		seam: Vector2, path: String) -> ConnectionData:
+	return target.join(a, b, kind, _to(at), _dir(normal), _dir(seam_up), seam, path)
+
+
+## What stands at a wall-space point (`anchor`, asked in ship space).
+func _anchor_at(p: Vector3) -> PartData:
+	return anchor.call(_to(p)) if anchor.is_valid() else null
+
+
 ## The depth of a full stud (between the panels), metres.
 func depth() -> float:
 	return thickness - 2.0 * (panel + gap)
@@ -112,11 +176,18 @@ func build() -> void:
 ## pockets, the faces' names, the members' and panels' sizes and pitches, the materials. What its
 ## sill welds to and its head bolts to are the design's (`floor`, `anchor`): the derived joints say.
 func recipe() -> Dictionary:
-	return {"name": name, "seq": _built_seq, "z": z, "thickness": thickness, "outline": outline, "floor_y": floor_y,
+	var r := {"name": name, "seq": _built_seq, "z": z, "thickness": thickness, "outline": outline, "floor_y": floor_y,
 			"openings": openings, "pockets": pockets, "pocket_clear": pocket_clear, "faces": faces, "panel": panel,
 			"stud_width": stud_width, "rail_height": rail_height, "spacing": spacing, "jamb_clear": jamb_clear,
 			"bolt_pitch": bolt_pitch, "bolt_share": bolt_share, "min_bolts": min_bolts, "gap": gap, "bolt_head": bolt_head, "bead": bead, "groove": groove,
 			"panel_mat": panel_mat, "frame_mat": frame_mat}
+	if _turned():
+		r["frame"] = frame
+	if not windows.is_empty():
+		r["windows"] = windows
+		r["pane"] = pane
+		r["glass_mat"] = glass_mat
+	return r
 
 
 var _built_seq: int = 0
@@ -129,6 +200,7 @@ func _build_now() -> void:
 	target.parts_model().head_style = bead
 	outline = _clip_floor(outline)
 	_sill()
+	_feet()
 	_heads()
 	_openings()
 	_all_studs()
@@ -136,6 +208,7 @@ func _build_now() -> void:
 	target.parts_model().head_style = bolt_head
 	for f in 2:
 		_panels(f)
+	_glaze()
 	target.parts_model().head_style = head_was
 	target.phase = phase_was
 
@@ -168,6 +241,24 @@ func _top_at(poly: PackedVector2Array, x: float, half: float = 0.0) -> float:
 	return top
 
 
+## The floor's width under the wall: the outline's across the sill's height (narrower than
+## `_x_range` where the sides slope in to the floor).
+func _floor_range() -> Vector2:
+	if not sloped_feet:
+		return _x_range()
+	var a := _span_x(outline, floor_y + 0.001)
+	var b := _span_x(outline, floor_y + rail_height)
+	return Vector2(maxf(a.x, b.x), minf(a.y, b.y))
+
+
+## Where a horizontal line at `y` crosses a convex polygon ([min x, max x]).
+static func _span_x(poly: PackedVector2Array, y: float) -> Vector2:
+	var swapped := PackedVector2Array()
+	for p in poly:
+		swapped.append(Vector2(p.y, p.x))
+	return _span_y(swapped, y)
+
+
 ## Where a vertical line at `x` crosses a convex polygon ([min y, max y]).
 static func _span_y(poly: PackedVector2Array, x: float) -> Vector2:
 	var lo := INF
@@ -190,7 +281,7 @@ static func _span_y(poly: PackedVector2Array, x: float) -> Vector2:
 
 func _bar(part_name: String, path: String, lo: Vector3, hi: Vector3) -> PartData:
 	var size := hi - lo
-	return target.part(part_name, PartData.Kind.FRAME, PartShapes.box(size), Transform3D(Basis(), (lo + hi) * 0.5), frame_mat,
+	return target.part(part_name, PartData.Kind.FRAME, PartShapes.box(size), _xf(Transform3D(Basis(), (lo + hi) * 0.5)), frame_mat,
 			"", 0.5, null, path)
 
 
@@ -212,12 +303,12 @@ func _in_pocket(x0: float, x1: float, y: float) -> bool:
 
 
 func _sill() -> void:
-	var r := _x_range()
+	var r := _floor_range()
 	var a := r.x + gap
 	var b := r.y - gap
 	# Pieces between the floor-level openings, split again at the pockets' ends.
 	var cuts: Array[float] = [a, b]
-	for o in openings:
+	for o in _holes():
 		if o.position.y <= floor_y + 0.01:
 			cuts.append(o.position.x)
 			cuts.append(o.end.x)
@@ -233,7 +324,7 @@ func _sill() -> void:
 			continue
 		var mid := (x0 + x1) * 0.5
 		var in_door := false
-		for o in openings:
+		for o in _holes():
 			in_door = in_door or (o.position.y <= floor_y + 0.01 and mid > o.position.x and mid < o.end.x)
 		if in_door:
 			continue
@@ -257,7 +348,8 @@ func _weld_to_floor(p: PartData, x0: float, x1: float, at_z: float) -> void:
 	var runs: Array = []
 	var x := x0
 	while x <= x1 + 0.0001:
-		var under: PartData = floor.call(x, at_z)
+		var at := _to(Vector3(x, floor_y, at_z))
+		var under: PartData = floor.call(at.x, at.z)
 		if under:
 			if runs.is_empty() or runs[-1][0] != under:
 				runs.append([under, x, x])
@@ -267,7 +359,7 @@ func _weld_to_floor(p: PartData, x0: float, x1: float, at_z: float) -> void:
 	for run: Array in runs:
 		var under: PartData = run[0]
 		var mid := (float(run[1]) + float(run[2])) * 0.5
-		welds.append(target.join(p, under, ConnectionData.Kind.WELD, Vector3(mid, floor_y, at_z), Vector3.UP, Vector3.RIGHT,
+		welds.append(_join(p, under, ConnectionData.Kind.WELD, Vector3(mid, floor_y, at_z), Vector3.UP, Vector3.RIGHT,
 				Vector2(maxf(float(run[2]) - float(run[1]), 0.05), 0.0), "%s/weld:%s" % [p.path, under.path]))
 
 
@@ -310,9 +402,9 @@ func _heads() -> void:
 			var k := 0
 			for t: float in [0.15, 0.5, 0.85]:
 				var at2 := p0.lerp(p1, t) - inward * (rail_height * 0.5)
-				var holder: PartData = anchor.call(Vector3(at2.x, at2.y, z))
+				var holder: PartData = _anchor_at(Vector3(at2.x, at2.y, z))
 				if holder:
-					bolts.append(target.join(made_rail, holder, ConnectionData.Kind.BOLT, Vector3(at2.x, at2.y, z),
+					bolts.append(_join(made_rail, holder, ConnectionData.Kind.BOLT, Vector3(at2.x, at2.y, z),
 							Vector3(-inward.x, -inward.y, 0.0), Vector3.ZERO, Vector2.ZERO,
 							"%s/bolt:%s/%d" % [made_rail.path, holder.path, k]))
 					k += 1
@@ -322,27 +414,161 @@ func _heads() -> void:
 		var b: Array = made[i + 1]
 		var at2 := ((a[2] as Vector2) + (b[1] as Vector2)) * 0.5
 		var along := ((b[1] as Vector2) - (a[2] as Vector2)).normalized()
-		welds.append(target.join(b[0], a[0], ConnectionData.Kind.WELD, Vector3(at2.x, at2.y, z), Vector3(along.x, along.y, 0.0),
+		welds.append(_join(b[0], a[0], ConnectionData.Kind.WELD, Vector3(at2.x, at2.y, z), Vector3(along.x, along.y, 0.0),
 				Vector3.BACK, Vector2(depth(), rail_height), "%s/weld:%s" % [(b[0] as PartData).path,
 				(a[0] as PartData).path.trim_prefix("wall:%s/" % name)]))
 
 
+## Foot rails up the outline's edges that face down (its sides sloping in to the floor), from a
+## rail's height off the floor, bolted to the anchor beside them.
+func _feet() -> void:
+	if not sloped_feet:
+		return
+	var n := outline.size()
+	var centre := Vector2.ZERO
+	for p in outline:
+		centre += p
+	centre /= float(n)
+	for e in n:
+		var a := outline[e]
+		var b := outline[(e + 1) % n]
+		if a.y < floor_y + 0.001 and b.y < floor_y + 0.001:
+			continue   # the floor
+		var d := b - a
+		var nrm := Vector2(d.y, -d.x).normalized()
+		if nrm.dot((a + b) * 0.5 - centre) < 0.0:
+			nrm = -nrm
+		if nrm.y > -0.3:
+			continue   # a side or a top edge
+		var inward := -nrm
+		var u := d.normalized()
+		# Clear of the sill at the floor and of the side rail's corner at the top: pulled in from
+		# both ends by a rail's height and the gap past where the rail's inner face leaves the sill.
+		var lift := (rail_height + gap) / maxf(absf(u.y), 0.2)
+		var trim := rail_height + gap
+		var p0 := a + u * (lift if a.y < b.y else trim) + inward * (rail_height * 0.5 + gap * 0.5)
+		var p1 := b - u * (lift if b.y < a.y else trim) + inward * (rail_height * 0.5 + gap * 0.5)
+		if p0.distance_to(p1) < 0.1:
+			continue
+		var rail := _rail_between(p0, p1, inward, _path("foot/%d" % feet.size()), "StudFoot")
+		feet.append(rail)
+		var key := "foot:%d" % (feet.size() - 1)
+		_members.append({"part": rail, "a": p0, "b": p1, "key": key})
+		_rails.append({"lo": minf(p0.y, p1.y) - rail_height * 0.5, "hi": maxf(p0.y, p1.y) + rail_height * 0.5,
+				"x0": minf(p0.x, p1.x), "x1": maxf(p0.x, p1.x), "part": rail, "key": key, "foot": true, "a": p0, "b": p1})
+		if anchor.is_valid():
+			var k := 0
+			for t: float in [0.2, 0.8]:
+				var at2 := p0.lerp(p1, t) - inward * (rail_height * 0.5)
+				var holder: PartData = _anchor_at(Vector3(at2.x, at2.y, z))
+				if holder:
+					bolts.append(_join(rail, holder, ConnectionData.Kind.BOLT, Vector3(at2.x, at2.y, z),
+							Vector3(-inward.x, -inward.y, 0.0), Vector3.ZERO, Vector2.ZERO,
+							"%s/bolt:%s/%d" % [rail.path, holder.path, k]))
+					k += 1
+		# Its low end welded to the sill's end beside it.
+		var low := p0 if p0.y < p1.y else p1
+		for r: Dictionary in _rails:
+			if String(r["key"]) != "sill" or String(r.get("face", "")) == "/b":
+				continue
+			var end := float(r["x0"]) if absf(float(r["x0"]) - low.x) < absf(float(r["x1"]) - low.x) else float(r["x1"])
+			if absf(end - low.x) < 0.3:
+				welds.append(_join(rail, r["part"], ConnectionData.Kind.WELD, Vector3(end, floor_y + rail_height, z),
+						Vector3.UP, Vector3.BACK, Vector2(depth(), rail_height), "%s/weld:sill" % rail.path))
+				break
+
+
+## The foot rail under x (the nearest along x on that side of the wall's middle), or {}.
+func _foot_under(x: float) -> Dictionary:
+	var mid := (_x_range().x + _x_range().y) * 0.5
+	var best: Dictionary = {}
+	var best_d := INF
+	for rail: Dictionary in _rails:
+		if not rail.get("foot", false) or (float(rail["x0"]) + float(rail["x1"]) - 2.0 * mid) * (x - mid) < 0.0:
+			continue
+		var d := maxf(0.0, maxf(float(rail["x0"]) - x, x - float(rail["x1"])))
+		if d < best_d:
+			best_d = d
+			best = rail
+	return best
+
+
+static func _x_range_of(poly: PackedVector2Array) -> Vector2:
+	var lo := INF
+	var hi := -INF
+	for p in poly:
+		lo = minf(lo, p.x)
+		hi = maxf(hi, p.x)
+	return Vector2(lo, hi)
+
+
 ## A rail of the wall's depth from p0 to p1 (x, y), its height facing `up` (x, y).
-func _rail_between(p0: Vector2, p1: Vector2, up: Vector2, path: String) -> PartData:
+func _rail_between(p0: Vector2, p1: Vector2, up: Vector2, path: String, part_name: String = "StudHead") -> PartData:
 	var a := Vector3(p0.x, p0.y, z)
 	var b := Vector3(p1.x, p1.y, z)
 	var xf := FrameParts.along(a, b, Vector3(up.x, up.y, 0.0))
 	var length := a.distance_to(b)
 	var shape := PartShapes.box(Vector3(length, rail_height, depth()))
-	var p := target.part("StudHead", PartData.Kind.FRAME, shape, xf, frame_mat, "", 0.5, null, path)
+	var p := target.part(part_name, PartData.Kind.FRAME, shape, _xf(xf), frame_mat, "", 0.5, null, path)
 	return p
+
+
+## The openings and the windows: what the frame is built round.
+func _holes() -> Array[Rect2]:
+	if windows.is_empty():
+		return openings
+	var all: Array[Rect2] = openings.duplicate()
+	all.append_array(windows)
+	return all
+
+
+## A pane of glass in each window, in the middle of the wall's depth, `gap` clear of its frame, bolted
+## to the lintel over it and the sill under it (paths "pane/<i>", "pane/<i>/bolt:lintel", ".../bolt:sill").
+func _glaze() -> void:
+	for i in windows.size():
+		var o := windows[i]
+		var size := Vector3(o.size.x - 2.0 * gap, o.size.y - 2.0 * gap, pane)
+		if size.x < 0.1 or size.y < 0.1:
+			continue
+		var mid := Vector3(o.get_center().x, o.get_center().y, z)
+		var path := _path("pane/%d" % i)
+		var shape := PartShapes.box(size)
+		# Glass, not steel: a part's mass is its volume at steel's density times `fill`.
+		var p := target.part("WindowPane", PartData.Kind.GLASS, shape, _xf(Transform3D(Basis(), mid)),
+				glass_mat if glass_mat else Glazing.material(Glazing.Kind.CLEAR), "",
+				GLASS_DENSITY / FrameTarget.STEEL, null, path)
+		panes.append(p)
+		var lintel := _rail_at(o, true)
+		var sill := _rail_at(o, false)
+		for end: Array in [[lintel, 1.0, "lintel"], [sill, -1.0, "sill"]]:
+			var holder: PartData = end[0]
+			if holder == null:
+				continue
+			var up := float(end[1])
+			bolts.append(_join(p, holder, ConnectionData.Kind.BOLT, mid + Vector3(0.0, up * size.y * 0.5, 0.0),
+					Vector3(0.0, up, 0.0), Vector3.ZERO, Vector2.ZERO, "%s/bolt:%s" % [path, end[2]]))
+
+
+## Glass, kg per cubic metre.
+const GLASS_DENSITY: float = 2500.0
+
+
+## The lintel over an opening (`over`) or the sill under it: the rail along its edge.
+func _rail_at(o: Rect2, over: bool) -> PartData:
+	var y := o.end.y if over else o.position.y
+	for rail: Dictionary in _rails:
+		var at := float(rail["lo"]) if over else float(rail["hi"])
+		if absf(at - y) < 0.002 and float(rail["x0"]) <= o.position.x + 0.01 and float(rail["x1"]) >= o.end.x - 0.01:
+			return rail["part"]
+	return null
 
 
 ## Lintels over the openings (running on over a pocket beside one) and sills under those that
 ## start above the floor.
 func _openings() -> void:
-	for i in openings.size():
-		var o := openings[i]
+	var holes := _holes()
+	for i in holes.size():
+		var o := holes[i]
 		var x0 := o.position.x - jamb_clear
 		var x1 := o.end.x + jamb_clear
 		for p in pockets:
@@ -371,7 +597,7 @@ func _all_studs() -> void:
 	var r := _x_range()
 	var w := stud_width
 	var xs: Array[float] = [r.x + gap + w * 0.5, r.y - gap - w * 0.5]
-	for o in openings:
+	for o in _holes():
 		xs.append(o.position.x - jamb_clear - w * 0.5)
 		xs.append(o.end.x + jamb_clear + w * 0.5)
 	var x := r.x + spacing
@@ -383,8 +609,13 @@ func _all_studs() -> void:
 			xs.append(x)
 		x += spacing
 	xs.sort()
-	for i in xs.size():
-		_stud(xs[i], "stud/%d" % i)
+	# A jamb close to the wall's end shares the end stud (two would overlap).
+	var kept: Array[float] = []
+	for s in xs:
+		if kept.is_empty() or s - kept[-1] >= w + gap:
+			kept.append(s)
+	for i in kept.size():
+		_stud(kept[i], "stud/%d" % i)
 
 
 ## One stud at x: its pieces between the rails and openings it meets, each welded to the rail
@@ -397,17 +628,27 @@ func _stud(x: float, key: String) -> Array[PartData]:
 	# What it may not cross, as y intervals with what bounds it there.
 	var blocks: Array = []
 	for rail: Dictionary in _rails:
-		if x1 > float(rail["x0"]) and x0 < float(rail["x1"]) and not rail.get("head", false):
+		if x1 > float(rail["x0"]) and x0 < float(rail["x1"]) and not rail.get("head", false) and not rail.get("foot", false):
 			blocks.append([float(rail["lo"]), float(rail["hi"]), rail])
-	for o in openings:
+	for o in _holes():
 		if x1 > o.position.x - 0.001 and x0 < o.end.x + 0.001:
 			blocks.append([o.position.y, o.end.y, null])
 	var top := _top_at(_head_line(), x, w * 0.5) - gap
 	var bottom := floor_y
+	var below: Variant = null
+	var fr := _floor_range()
+	if not feet.is_empty() and (x0 < fr.x + gap or x1 > fr.y - gap):
+		# Beyond the sill: standing on the foot rail there (the outline brought up by the rails).
+		var line := _head_line()
+		var lr := _x_range_of(line)
+		for xx: float in [x0, x, x1]:
+			bottom = maxf(bottom, _span_y(line, clampf(xx, lr.x + 0.001, lr.y - 0.001)).x + gap)
+		var foot := _foot_under(x)
+		if not foot.is_empty():
+			below = foot
 	blocks.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	var spans: Array = []
 	var cursor := bottom
-	var below: Variant = null
 	for b: Array in blocks:
 		if float(b[1]) <= cursor:
 			if b[2] != null:
@@ -446,7 +687,7 @@ func _stud(x: float, key: String) -> Array[PartData]:
 					rail_part = _head_over(x)
 					role = "head"
 				if rail_part:
-					welds.append(target.join(p, rail_part, ConnectionData.Kind.WELD, at, Vector3.UP, Vector3.RIGHT,
+					welds.append(_join(p, rail_part, ConnectionData.Kind.WELD, at, Vector3.UP, Vector3.RIGHT,
 							Vector2(w, float(d[1]) - float(d[0])), "%s/weld:%s" % [path, role]))
 		piece += 1
 	_stud_x.append(x)
@@ -458,11 +699,11 @@ func _stud(x: float, key: String) -> Array[PartData]:
 			var p: PartData = made[0]
 			var k := 0
 			for t: float in [0.3, 0.7]:
-				var y := lerpf(floor_y, top, t)
+				var y := lerpf(bottom, top, t)
 				var at := Vector3(x + side * w * 0.5, y, z)
-				var holder: PartData = anchor.call(at + Vector3(side * 0.05, 0.0, 0.0))
+				var holder: PartData = _anchor_at(at + Vector3(side * 0.05, 0.0, 0.0))
 				if holder:
-					bolts.append(target.join(p, holder, ConnectionData.Kind.BOLT, at, Vector3(side, 0.0, 0.0), Vector3.ZERO,
+					bolts.append(_join(p, holder, ConnectionData.Kind.BOLT, at, Vector3(side, 0.0, 0.0), Vector3.ZERO,
 							Vector2.ZERO, "%s/bolt:%s/%d" % [p.path, holder.path, k]))
 					k += 1
 	return made
@@ -478,7 +719,7 @@ func _tie_lintels() -> void:
 				held += 1
 		if held >= 2:
 			continue
-		var box := lintel.local_transform * target.parts_model().part_visual(lintel.id).get_aabb()
+		var box := _wall_box(lintel)
 		var y := box.get_center().y
 		for end in 2:
 			var x := box.position.x if end == 0 else box.end.x
@@ -490,8 +731,8 @@ func _tie_lintels() -> void:
 				if absf(a.x - x) > stud_width * 0.5 + gap + 0.02 or y < minf(a.y, b.y) or y > maxf(a.y, b.y):
 					continue
 				var stud: PartData = mem["part"]
-				var sb := stud.local_transform * target.parts_model().part_visual(stud.id).get_aabb()
-				welds.append(target.join(lintel, stud, ConnectionData.Kind.WELD, Vector3(x, y, sb.get_center().z),
+				var sb := _wall_box(stud)
+				welds.append(_join(lintel, stud, ConnectionData.Kind.WELD, Vector3(x, y, sb.get_center().z),
 						Vector3(-1.0 if end == 0 else 1.0, 0.0, 0.0), Vector3.UP, Vector2(rail_height, sb.size.z),
 						"%s/weld:%s" % [lintel.path, mem["key"]]))
 				break
@@ -554,7 +795,8 @@ func _panels(f: int) -> void:
 ## A stud bay's column of the outline, less the openings, as convex strips (x, y).
 func _strips(a: float, b: float) -> Array:
 	var cuts: Array[float] = [a, b]
-	for o in openings:
+	var holes := _holes()
+	for o in holes:
 		if o.end.x > a and o.position.x < b:
 			cuts.append(clampf(o.position.x, a, b))
 			cuts.append(clampf(o.end.x, a, b))
@@ -566,7 +808,7 @@ func _strips(a: float, b: float) -> Array:
 		if c1 - c0 < 0.02:
 			continue
 		var spans: Array = [[-100.0, 100.0]]
-		for o in openings:
+		for o in holes:
 			if (c0 + c1) * 0.5 <= o.position.x or (c0 + c1) * 0.5 >= o.end.x:
 				continue
 			var next: Array = []
@@ -607,7 +849,7 @@ func _panel(poly: PackedVector2Array, face_z: float, normal: Vector3, path: Stri
 	var look := FrameParts.plate(local, panel, groove, 0.0)
 	var held := FrameParts.plate(FrameParts.inset(local, gap * 0.5), panel, 0.0, 0.0)
 	var xform := Transform3D(basis, Vector3(0.0, 0.0, face_z))
-	var p := target.part("WallPanel", PartData.Kind.HULL, DeckFrame._looks_held(look, held), xform, panel_mat, "", 1.0, null, path)
+	var p := target.part("WallPanel", PartData.Kind.HULL, DeckFrame._looks_held(look, held), _xf(xform), panel_mat, "", 1.0, null, path)
 	panels.append(p)
 	var lo := Vector2(INF, INF)
 	var hi := -lo
@@ -631,6 +873,19 @@ func _panel(poly: PackedVector2Array, face_z: float, normal: Vector3, path: Stri
 			continue
 		rows.append([seg, mem])
 		counts.append(maxi(1, int(ceil((seg[0] as Vector2).distance_to(seg[1]) / bolt_pitch))))
+	if target.seam_plates:
+		# FS1: two bolts, top of one end member and foot of the other (docs/review/19_FASTENERS.md).
+		var ends: Array = []
+		for r: Array in rows:
+			ends.append(r[0])
+		var k := 0
+		for pick: Array in FrameTarget.two_apart(ends):
+			var at: Vector2 = pick[1]
+			var mem: Dictionary = rows[pick[0]][1]
+			bolts.append(_join(p, mem["part"], ConnectionData.Kind.BOLT, Vector3(at.x, at.y, face_z), normal,
+					Vector3.ZERO, Vector2.ZERO, "%s/bolt:%s/%d" % [path, mem["key"], k]))
+			k += 1
+		return
 	var kept := FrameTarget.share_rows(counts, bolt_share, min_bolts)
 	for r in rows.size():
 		var seg: Array = rows[r][0]
@@ -641,11 +896,17 @@ func _panel(poly: PackedVector2Array, face_z: float, normal: Vector3, path: Stri
 			var at2 := (seg[0] as Vector2).lerp(seg[1], t)
 			var holder: PartData = mem["part"]
 			# A split member: bolt to its half on this face.
-			bolts.append(target.join(p, holder, ConnectionData.Kind.BOLT, Vector3(at2.x, at2.y, face_z), normal,
+			bolts.append(_join(p, holder, ConnectionData.Kind.BOLT, Vector3(at2.x, at2.y, face_z), normal,
 					Vector3.ZERO, Vector2.ZERO, "%s/bolt:%s/%d" % [path, mem["key"], k]))
 
 
-## A stud behind a fitting fixed to this wall at x, y0..y1 (ship space): one already within
+## The stud behind a point on the wall given in ship space (a turned wall's too).
+func stud_behind_at(p: Vector3) -> PartData:
+	var w := frame.affine_inverse() * p if _turned() else p
+	return stud_behind(w.x, w.y)
+
+
+## A stud behind a fitting fixed to this wall at x, y0..y1 (wall space): one already within
 ## reach, or a new one (stud/b<k>) put in the bay there if it fits between its neighbours, else
 ## the nearest. What a fitting's spot welds through the panel are taken by.
 func stud_behind(x: float, y: float) -> PartData:
@@ -707,10 +968,9 @@ func _stud_behind(x: float, y: float) -> PartData:
 ## between them. Call after `build` and the hull's and deck's `add_lanes`.
 func add_lanes(graph: FrameGraph) -> void:
 	var off := FrameGraph.OFF_FACE
-	var model := target.parts_model()
 	var boxes: Dictionary = {}
 	for st in studs:
-		boxes[st] = st.local_transform * model.part_visual(st.id).get_aabb()
+		boxes[st] = _wall_box(st)
 	var ends: Array = []   # [point, stud, top?]
 	for st: PartData in boxes:
 		var b: AABB = boxes[st]
@@ -719,14 +979,15 @@ func add_lanes(graph: FrameGraph) -> void:
 			var x := b.position.x - off if side < 0.0 else b.end.x + off
 			var lo := Vector3(x, b.position.y, zc)
 			var hi := Vector3(x, b.end.y, zc)
-			graph.add_lane("stud", lo, hi, Vector3(side, 0.0, 0.0), Vector3.BACK, st)
+			var lane := graph.add_lane("stud", _to(lo), _to(hi), _dir(Vector3(side, 0.0, 0.0)), _dir(Vector3.BACK), st)
+			lane.across = _across(b)
 			ends.append([lo, st, false])
 			ends.append([hi, st, true])
 	for rail: Dictionary in _rails:
 		var part: PartData = rail["part"]
-		if rail.get("head", false):
+		if rail.get("head", false) or rail.get("foot", false):
 			continue
-		var rb := part.local_transform * model.part_visual(part.id).get_aabb()
+		var rb := _wall_box(part)
 		var y := rb.end.y + off
 		var zc := rb.get_center().z
 		var on: Array = []   # [x from, x to, stud]
@@ -743,18 +1004,20 @@ func add_lanes(graph: FrameGraph) -> void:
 		xs.append(rb.end.x)
 		for k in range(0, xs.size() - 1, 2):
 			if xs[k + 1] - xs[k] > 0.03:
-				graph.add_lane("stud", Vector3(xs[k], y, zc), Vector3(xs[k + 1], y, zc), Vector3.UP, Vector3.BACK, part)
+				var lane := graph.add_lane("stud", _to(Vector3(xs[k], y, zc)), _to(Vector3(xs[k + 1], y, zc)), Vector3.UP,
+						_dir(Vector3.BACK), part)
+				lane.across = _across(rb)
 		for o: Array in on:
 			var exempt: Array[int] = [(o[2] as PartData).id]
-			graph.add_step(Vector3(o[0], y, zc), Vector3(o[1], y, zc), false, exempt)
+			graph.add_step(_to(Vector3(o[0], y, zc)), _to(Vector3(o[1], y, zc)), false, exempt)
 	var rails: Array = []   # [box, part]
 	for rail: Dictionary in _rails:
-		if not rail.get("head", false):
+		if not rail.get("head", false) and not rail.get("foot", false):
 			var rp: PartData = rail["part"]
-			rails.append([rp.local_transform * model.part_visual(rp.id).get_aabb(), rp])
+			rails.append([_wall_box(rp), rp])
 	for e: Array in ends:
 		var p: Vector3 = e[0]
-		graph.link_nearest(p, ["stud"], [], false, 2, 0.06)
+		graph.link_nearest(_to(p), ["stud"], [], false, 2, 0.06)
 		# Stopping at a lintel or an opening's sill: through it onto the studs beyond.
 		var stop: PartData = null
 		for rb: Array in rails:
@@ -765,7 +1028,7 @@ func add_lanes(graph: FrameGraph) -> void:
 				stop = rb[1]
 		if stop:
 			var past: Array[int] = [stop.id]
-			graph.link_nearest(p, ["stud"], past, false, 2, 0.15)
+			graph.link_nearest(_to(p), ["stud"], past, false, 2, 0.15)
 			continue
 		if e[2]:
 			# Out of the top: through the head rail and the linings over the wall and either side.
@@ -780,15 +1043,22 @@ func add_lanes(graph: FrameGraph) -> void:
 			if anchor.is_valid():
 				for probe: Vector3 in [Vector3(0.0, 0.12, 0.0), Vector3(0.0, 0.2, 0.0), Vector3(0.0, 0.12, -0.15),
 						Vector3(0.0, 0.12, 0.15)]:
-					var over: PartData = anchor.call(p + probe)
+					var over: PartData = _anchor_at(p + probe)
 					if over and not through.has(over.id):
 						through.append(over.id)
-			graph.link_nearest(p, ["ring", "stringer", "loom"], through, true, 2)
+			graph.link_nearest(_to(p), ["ring", "stringer", "loom"], through, true, 2)
 		elif absf(p.y - floor_y - rail_height - gap) < 0.03:
 			# Out of the foot: through the sill and the deck under it.
 			var through: Array[int] = []
 			for sill in sills:
-				var sb := sill.local_transform * model.part_visual(sill.id).get_aabb()
+				var sb := _wall_box(sill)
 				if p.x >= sb.position.x - 0.1 and p.x <= sb.end.x + 0.1:
 					through.append(sill.id)
-			graph.link_nearest(p, ["deck"], through, true, 2)
+			graph.link_nearest(_to(p), ["deck"], through, true, 2)
+
+
+## A bundle in the wall's cavity keeps between the panels: the leads beside a member of depth
+## `box` lie across it at most this far from its middle, more in rows out from its face
+## (`FrameGraph.Lane.across`); stacked across, a lamp breaker's sixteen came out through a panel.
+func _across(box: AABB) -> float:
+	return maxf(0.0, box.size.z * 0.5 - FrameGraph.LEAD_RADIUS)

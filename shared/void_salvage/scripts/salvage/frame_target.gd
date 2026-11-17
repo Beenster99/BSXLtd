@@ -55,6 +55,37 @@ static func _shared(heads: int, share: float) -> int:
 	return floori(float(heads) * share + 0.0001)
 
 
+## FS1 (docs/review/19_FASTENERS.md): of the rows under a plate or panel (each [from, to] in its own plane), the
+## two places furthest apart to hold it by: [[row, point], [row, point]], two rows' ends where it has more than one
+## row (opposite corners, as a deck plate on its beams or a wall panel top and foot of its end studs), else the
+## two ends of its one row, else the middle of a row too short for two. [] with no rows.
+static func two_apart(rows: Array) -> Array:
+	var best: Array = []
+	var far := -1.0
+	for i in rows.size():
+		for j in range(i + 1, rows.size()):
+			for pa: Vector2 in [rows[i][0], rows[i][1]]:
+				for pb: Vector2 in [rows[j][0], rows[j][1]]:
+					var d := pa.distance_squared_to(pb)
+					if d > far:
+						far = d
+						best = [[i, pa], [j, pb]]
+	if not best.is_empty() and far > 0.0025:
+		return best
+	var longest := -1
+	for i in rows.size():
+		if longest < 0 or (rows[i][0] as Vector2).distance_squared_to(rows[i][1]) \
+				> (rows[longest][0] as Vector2).distance_squared_to(rows[longest][1]):
+			longest = i
+	if longest < 0:
+		return []
+	var a: Vector2 = rows[longest][0]
+	var b: Vector2 = rows[longest][1]
+	if a.distance_to(b) < 0.05:
+		return [[longest, (a + b) * 0.5]]
+	return [[longest, a], [longest, b]]
+
+
 ## The parts and joints being built (a builder that reaches its model another way leaves it
 ## null and overrides `parts_model`).
 var model: PartModel
@@ -78,6 +109,18 @@ var builders: Array[String] = []
 var build_seq: int = 0
 ## Loom span part id -> [span transform, WiringLoom], so leads can plug onto the real curve.
 var _loom_curves: Dictionary = {}
+## FS1, fewer fasteners (docs/review/19_FASTENERS.md): the builders on this target hold a hull plate by two seam
+## welds along its long sides, a deck plate and a wall panel by two bolts, a lining by two rivets (FrameHull,
+## DeckFrame, StudWall). Off: every row of heads as before. A wreck design turns it on; the crew's ships never do.
+var seam_plates: bool = false
+## Seam mode: every hull plate's edges ({plate, a, b, out}, ship space) and the long sides that found no member under
+## them ({plate, a, b, out, rows}: the plate's member rows to fall back on), for `FrameHull.close_seams` to weld to
+## the plate across them once every hull is built.
+var seam_edges: Array[Dictionary] = []
+var seam_open: Array[Dictionary] = []
+## Seam mode's tally: plates seamed, seams to a member, seams plate to plate, sides fallen back to a member's row,
+## plates left on rivets (none should be).
+var seam_counts: Dictionary = {"plates": 0, "member": 0, "plate": 0, "fallback": 0, "riveted": 0}
 
 
 ## The parts and joints being built.
@@ -283,7 +326,10 @@ func loom_extent(span: PartData) -> Vector2:
 
 ## Plugs a device into a loom span with a lead: a CONNECTOR joint (the plug, at the last
 ## point, on the loom; named `path`) and a twisted lead running through `points` (body space,
-## from the device to the loom) that hangs on the device and leaves with it.
+## from the device to the loom) that hangs on the device and leaves with it. The plug keeps the
+## lead's points (ConnectionData.lead), so a tool on the wire anywhere bites it, and the lead's
+## look carries meta "lead_joint" (the plug's id) and "lead_points" (device space) to be cut
+## back when the plug goes (PartModel.cut_lead).
 func power_lead(device: PartData, span: PartData, points: PackedVector3Array, path: String = "") -> ConnectionData:
 	lead_count += 1
 	var last := points[points.size() - 1]
@@ -298,5 +344,11 @@ func power_lead(device: PartData, span: PartData, points: PackedVector3Array, pa
 		local.append(to_device * p)
 	lead.mesh = WiringLoom.lead_mesh(local)
 	lead.material_override = WiringLoom.material()
+	JointBatch.fit_fine(lead, WiringLoom.LEAD_SIZE)
 	parts_model().attach_to_part(device, lead)
+	if plug:
+		plug.lead = points.duplicate()
+		parts_model().refile_joint(plug)
+		lead.set_meta("lead_joint", plug.id)
+		lead.set_meta("lead_points", local)
 	return plug

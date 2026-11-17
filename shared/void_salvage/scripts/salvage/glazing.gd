@@ -26,6 +26,12 @@ const LOOKS: Dictionary = {
 	Kind.SOLAR: [Color(0.1, 0.14, 0.24, 0.5), 0.5, 0.04],
 }
 
+## The kinds you look out through from inside. A lamp's highlight on glass this smooth is a
+## tiny disc bright enough to bloom, mirrored onto the pane wherever you look, so these take
+## no highlight from lamps or the sun (`SPECULAR_DISABLED`); they keep their tint and still
+## reflect the sky and the scene.
+const WINDOWS: Array[int] = [Kind.CLEAR, Kind.TINTED, Kind.ARMOURED]
+
 static var _materials: Dictionary = {}
 
 
@@ -39,6 +45,8 @@ static func material(kind: int) -> StandardMaterial3D:
 		m.metallic = float(look[1])
 		m.roughness = float(look[2])
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		if WINDOWS.has(kind):
+			m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 		_materials[kind] = m
 	return _materials[kind]
 
@@ -50,13 +58,21 @@ static func display_name(kind: int) -> String:
 
 ## Most crack points a cracked pane draws (the shader's array).
 const MAX_CRACKS: int = 8
+## The thickest glass a crack runs through, m (a curved pane's box is deeper than its glass).
+const MAX_THICKNESS: float = 0.1
+## How brightly a crack's broken faces glint in a light (0 none), and how much light coming
+## from behind the pane a crack scatters toward you.
+static var crack_glint: float = 1.6
+static var crack_back_scatter: float = 0.9
 static var _cracked_shader: Shader
 
 
-## A crazed copy of the glass `base` (docs/DAMAGE_PLAN.md 9.3.3): radial lines and broken
-## rings spreading from each of `cracks` ([[point in the mesh's space, radius m], ...]),
-## milky near each point. One per pane (a wreck has tens, not thousands).
-static func cracked(base: Material, cracks: Array) -> ShaderMaterial:
+## A crazed copy of the glass `base` (docs/DAMAGE_PLAN.md 9.3.3): a spider web of radial
+## and concentric cracks round each of `cracks` ([[point in the mesh's space, radius m], ...]),
+## crushed milky at each point. `pane` is the mesh's box: its thinnest side is the glass's
+## thickness, which the cracks run through (empty: the faces' main axis, 2 cm). One per pane
+## (a wreck has tens, not thousands).
+static func cracked(base: Material, cracks: Array, pane := AABB()) -> ShaderMaterial:
 	if _cracked_shader == null:
 		_cracked_shader = load("res://shared/void_salvage/shaders/glass_cracked.gdshader")
 	var colour := Color(0.5, 0.72, 0.9, 0.28)
@@ -79,4 +95,13 @@ static func cracked(base: Material, cracks: Array) -> ShaderMaterial:
 	m.set_shader_parameter("crack_count", points.size())
 	points.resize(MAX_CRACKS)
 	m.set_shader_parameter("cracks", points)
+	if pane.size != Vector3.ZERO:
+		var thin := pane.size.min_axis_index()
+		var normal := Vector3.ZERO
+		normal[thin] = 1.0
+		m.set_shader_parameter("pane_normal", normal)
+		# A curved pane's box is deeper than its glass: no glass is thicker than this.
+		m.set_shader_parameter("pane_thickness", minf(pane.size[thin], MAX_THICKNESS))
+	m.set_shader_parameter("glint", crack_glint)
+	m.set_shader_parameter("back_scatter", crack_back_scatter)
 	return m

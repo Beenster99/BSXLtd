@@ -32,14 +32,26 @@ extends RefCounted
 ##   flake      metal flakes that glint (metallic paints, spangle), temper (heat colours),
 ##              iridescence (an oil film), each 0 .. 1
 ##   swatch     the colour the contact sheet paints its block
+##   effect     a finish's own mark (Effect, LK3): SPARKLE (anodising's glints), SMUDGE (chrome's
+##              smudges and prints), PATINA (copper's green, at its edges and in its hollows as
+##              it ages), SPECKLE (cast iron's grain)
+##   raise      tread plate (LK3): how much lighter its raised pattern is than the plate (0 .. 1)
+##   raise_rough how much smoother (negative) its raised pattern is: worn by boots
 ## Metals sit at 0.6 .. 0.85 metallic, never 1: a fully metallic surface has no colour of its
 ## own, and in space there is mostly black to reflect.
 ## Codes: CODES lists the ids in order; a finish's code is its index + 1 (0 = "as built":
 ## the part's own paint from the shader's albedo, metallic and roughness uniforms). Add a
-## finish at the END of CODES: the codes are baked into every part's vertex colours.
+## finish at the END of CODES: the codes are baked into every part's vertex colours. Only the
+## first ZONE_CODES fit a zone (a vertex colour's alpha); the rest (the tread plates) go on a
+## whole part, as its material's finish or by `finished` (SalvageStructure.set_part_finish).
+## Tread plate (LK3): the raised pattern (Pattern TREAD_*) is a bump and a shade, never
+## geometry; each pattern comes dark (grey matte, the pattern lighter), steel (bare, low
+## shine) and paint (the part's own paint, worn to steel on the raised tops).
 
-enum Pattern { SMOOTH, BRUSHED, CAST, CELLS, WEAVE, PEBBLE, TILES, SPANGLE, RIBS, GRAIN }
+enum Pattern { SMOOTH, BRUSHED, CAST, CELLS, WEAVE, PEBBLE, TILES, SPANGLE, RIBS, GRAIN,
+		TREAD_DIAMOND, TREAD_BARS, TREAD_SQUARES, TREAD_PERFORATED }
 enum Wear { PAINT, METAL, PLASTIC, RUBBER, FABRIC, CERAMIC, WOOD, NONE }
+enum Effect { NONE, SPARKLE, SMUDGE, PATINA, SPECKLE, STRIPES }
 
 ## Every finish id in code order (code = index + 1). Never reorder; only append.
 const CODES: Array[String] = [
@@ -52,10 +64,26 @@ const CODES: Array[String] = [
 	"metallic_paint", "hazard_paint", "plastic_gloss", "plastic_textured", "nylon",
 	"rubber_tread", "foam", "ceramic_glazed", "ceramic_tile", "canvas", "upholstery", "leather",
 	"carbon", "silicon", "braid", "veil",
+	# 42..53: tread plate (LK3), whole parts only (past ZONE_CODES but the first).
+	"tread_diamond", "tread_diamond_steel", "tread_diamond_paint",
+	"tread_bars", "tread_bars_steel", "tread_bars_paint",
+	"tread_squares", "tread_squares_steel", "tread_squares_paint",
+	"tread_perforated", "tread_perforated_steel", "tread_perforated_paint",
+	# 54..55: hazard plates (LK4), whole parts only: stripes painted on a plate and on a tread plate.
+	"hazard_stripes", "hazard_tread",
 ]
 
-## Fewer than this many codes fit an 8-bit alpha at STEP apart: 42.
-const MAX_CODES: int = 42
+## The codes a zone can carry: fewer than this many fit an 8-bit alpha at STEP apart (42).
+const ZONE_CODES: int = 42
+## The codes the table has rows for (row 0 is "as built").
+const MAX_CODES: int = 63
+
+## The tread patterns and their three looks, for the tread finishes below:
+## [pattern, its name].
+const TREADS: Dictionary = {
+	"diamond": [Pattern.TREAD_DIAMOND, "diamond"], "bars": [Pattern.TREAD_BARS, "five-bar"],
+	"squares": [Pattern.TREAD_SQUARES, "raised square"], "perforated": [Pattern.TREAD_PERFORATED, "perforated"],
+}
 
 const FINISHES: Dictionary = {
 	# --- Metals -------------------------------------------------------------------------
@@ -73,16 +101,16 @@ const FINISHES: Dictionary = {
 			"rust": 0.0, "tint": 0, "swatch": Color(0.72, 0.73, 0.74)},
 	"chrome": {"name": "Chrome", "group": "metal", "metallic": 0.85, "roughness": 0.08,
 			"pattern": Pattern.SMOOTH, "scale": 1.0, "bump": 0.0, "relief": 0.02, "wear": Wear.METAL,
-			"rust": 0.0, "tint": 0, "swatch": Color(0.9, 0.9, 0.92)},
+			"rust": 0.0, "tint": 0, "effect": Effect.SMUDGE, "swatch": Color(0.9, 0.9, 0.92)},
 	"brushed_alloy": {"name": "Brushed alloy", "group": "metal", "metallic": 0.72, "roughness": 0.4,
 			"pattern": Pattern.BRUSHED, "scale": 0.5, "bump": 0.05, "relief": 0.08, "wear": Wear.METAL,
 			"rust": 0.0, "tint": 1, "swatch": Color(0.74, 0.75, 0.77)},
 	"anodised": {"name": "Anodised alloy", "group": "metal", "metallic": 0.6, "roughness": 0.55,
 			"pattern": Pattern.SMOOTH, "scale": 0.3, "bump": 0.03, "relief": 0.05, "wear": Wear.METAL,
-			"rust": 0.0, "tint": 0, "swatch": Color(0.5, 0.52, 0.55)},
+			"rust": 0.0, "tint": 1, "effect": Effect.SPARKLE, "swatch": Color(0.5, 0.52, 0.55)},
 	"cast_iron": {"name": "Cast iron", "group": "metal", "metallic": 0.6, "roughness": 0.8,
 			"pattern": Pattern.CAST, "scale": 0.25, "bump": 0.35, "relief": 0.3, "wear": Wear.METAL,
-			"rust": 1.0, "tint": 0, "swatch": Color(0.3, 0.3, 0.31)},
+			"rust": 1.0, "tint": 0, "effect": Effect.SPECKLE, "swatch": Color(0.3, 0.3, 0.31)},
 	"galvanised": {"name": "Galvanised steel", "group": "metal", "metallic": 0.72, "roughness": 0.5,
 			"pattern": Pattern.SPANGLE, "scale": 0.4, "bump": 0.02, "relief": 0.25, "wear": Wear.METAL,
 			"rust": 0.2, "tint": 0, "flake": 0.5, "swatch": Color(0.66, 0.68, 0.7)},
@@ -91,13 +119,13 @@ const FINISHES: Dictionary = {
 			"rust": 0.0, "tint": 0, "swatch": Color(0.78, 0.62, 0.3)},
 	"copper": {"name": "Copper", "group": "metal", "metallic": 0.8, "roughness": 0.38,
 			"pattern": Pattern.SMOOTH, "scale": 0.4, "bump": 0.02, "relief": 0.05, "wear": Wear.METAL,
-			"rust": 0.0, "tint": 0, "swatch": Color(0.85, 0.6, 0.25)},
+			"rust": 0.0, "tint": 0, "effect": Effect.PATINA, "swatch": Color(0.85, 0.6, 0.25)},
 	"gold": {"name": "Gold", "group": "metal", "metallic": 0.82, "roughness": 0.25,
 			"pattern": Pattern.SMOOTH, "scale": 0.5, "bump": 0.0, "relief": 0.03, "wear": Wear.NONE,
 			"rust": 0.0, "tint": 0, "swatch": Color(0.85, 0.62, 0.16)},
 	"titanium": {"name": "Titanium", "group": "metal", "metallic": 0.75, "roughness": 0.45,
 			"pattern": Pattern.BRUSHED, "scale": 0.5, "bump": 0.05, "relief": 0.08, "wear": Wear.METAL,
-			"rust": 0.0, "tint": 1, "temper": 0.6, "swatch": Color(0.6, 0.63, 0.7)},
+			"rust": 0.0, "tint": 1, "swatch": Color(0.6, 0.63, 0.7)},
 	"blued_steel": {"name": "Heat-blued steel", "group": "metal", "metallic": 0.7, "roughness": 0.4,
 			"pattern": Pattern.BRUSHED, "scale": 0.5, "bump": 0.04, "relief": 0.08, "wear": Wear.METAL,
 			"rust": 0.3, "tint": 0, "temper": 0.9, "swatch": Color(0.3, 0.31, 0.33)},
@@ -126,6 +154,15 @@ const FINISHES: Dictionary = {
 	"hazard_paint": {"name": "Hazard paint", "group": "paint", "metallic": 0.0, "roughness": 0.55,
 			"pattern": Pattern.SMOOTH, "scale": 0.6, "bump": 0.02, "relief": 0.04, "wear": Wear.PAINT,
 			"rust": 1.0, "tint": 0, "swatch": Color(0.92, 0.72, 0.12)},
+	# LK4's hazard plates: diagonal yellow and black stripes (the shader's STRIPE_BAND), painted on a plate
+	# and on a diamond tread plate (the raised diamonds worn lighter). Whole parts only.
+	"hazard_stripes": {"name": "Hazard stripes", "group": "paint", "metallic": 0.0, "roughness": 0.55,
+			"pattern": Pattern.SMOOTH, "scale": 0.6, "bump": 0.02, "relief": 0.04, "wear": Wear.PAINT,
+			"rust": 1.0, "tint": 0, "effect": Effect.STRIPES, "swatch": Color(0.92, 0.72, 0.12)},
+	"hazard_tread": {"name": "Hazard tread plate", "group": "paint", "metallic": 0.1, "roughness": 0.6,
+			"pattern": Pattern.TREAD_DIAMOND, "scale": 0.3, "bump": 0.6, "relief": 0.4, "wear": Wear.PAINT,
+			"rust": 1.0, "tint": 0, "raise": 0.2, "raise_rough": -0.15, "effect": Effect.STRIPES,
+			"swatch": Color(0.92, 0.72, 0.12)},
 	# --- Plastics and rubber ------------------------------------------------------------
 	"plastic": {"name": "Matte plastic", "group": "plastic", "metallic": 0.0, "roughness": 0.6,
 			"pattern": Pattern.SMOOTH, "scale": 0.5, "bump": 0.02, "relief": 0.04, "wear": Wear.PLASTIC,
@@ -194,7 +231,41 @@ const DEFAULTS: Dictionary = {
 	"metallic": 0.0, "roughness": 0.5, "specular": 0.5, "clearcoat": 0.0, "pattern": Pattern.SMOOTH,
 	"scale": 0.5, "bump": 0.1, "relief": 0.1, "wear": Wear.NONE, "rust": 0.0, "tint": 0, "flake": 0.0,
 	"temper": 0.0, "iridescence": 0.0, "swatch": Color(0.5, 0.5, 0.5), "name": "As built", "group": "paint",
+	"effect": Effect.NONE, "raise": 0.0, "raise_rough": 0.0,
 }
+
+## The three looks of every tread pattern: dark grey matte with the pattern lighter and worn
+## smoother, bare steel with a low shine, and the part's own paint.
+const TREAD_LOOKS: Dictionary = {
+	"": {"metallic": 0.5, "roughness": 0.82, "wear": Wear.METAL, "rust": 0.5, "tint": 0,
+			"raise": 1.4, "raise_rough": -0.35, "swatch": Color(0.05, 0.05, 0.055), "look": "dark"},
+	"_steel": {"metallic": 0.7, "roughness": 0.55, "wear": Wear.METAL, "rust": 1.0, "tint": 1,
+			"raise": 0.15, "raise_rough": -0.2, "swatch": Color(0.3, 0.31, 0.32), "look": "steel"},
+	"_paint": {"metallic": 0.05, "roughness": 0.6, "wear": Wear.PAINT, "rust": 1.0, "tint": 0,
+			"raise": 0.2, "raise_rough": -0.15, "swatch": Color(0.24, 0.3, 0.38), "look": "painted"},
+}
+
+static var _all: Dictionary = {}
+
+
+## Every finish by id: FINISHES and the tread plates made from TREADS x TREAD_LOOKS.
+static func all() -> Dictionary:
+	if _all.is_empty():
+		_all = FINISHES.duplicate()
+		for t: String in TREADS:
+			for suffix: String in TREAD_LOOKS:
+				var look: Dictionary = TREAD_LOOKS[suffix]
+				var f := look.duplicate()
+				f.erase("look")
+				f["name"] = "Tread plate, %s, %s" % [TREADS[t][1], look["look"]]
+				f["group"] = "tread"
+				f["pattern"] = TREADS[t][0]
+				# A tile holds several cells (pattern_tap's TREAD_CELLS): 0.3 m.
+				f["scale"] = 0.3
+				f["bump"] = 0.6
+				f["relief"] = 0.4
+				_all["tread_" + t + suffix] = f
+	return _all
 
 ## The lookup texture: one row per code (row 0 = as built), TEXELS pixels across.
 const TEXELS: int = 5
@@ -219,25 +290,32 @@ static func id_of(code_: int) -> String:
 
 static func info(id: String) -> Dictionary:
 	var out := DEFAULTS.duplicate()
-	out.merge(FINISHES.get(id, {}), true)
+	out.merge(all().get(id, {}), true)
 	return out
 
 
 static func display_name(id: String) -> String:
-	return String(FINISHES.get(id, {}).get("name", "As built"))
+	return String(all().get(id, {}).get("name", "As built"))
 
 
 ## A value of finish `id`, with the defaults filled in.
 static func value(id: String, key: String) -> Variant:
-	return FINISHES.get(id, {}).get(key, DEFAULTS[key])
+	return all().get(id, {}).get(key, DEFAULTS[key])
+
+
+## Whether finish `id` is drawn in the part's own paint (a painted tread plate): `finished`
+## then leaves the paint showing unless it is given a colour.
+static func in_paint(id: String) -> bool:
+	return id.ends_with("_paint") and String(value(id, "group")) == "tread"
 
 
 ## The lookup texture, baked once: row = code, texels
 ##   0 (metallic, roughness, specular, clearcoat)
 ##   1 (pattern, scale m, bump, relief)
 ##   2 (wear, rust, tint, flake)
-##   3 (temper, iridescence, 0, 0)
-##   4 (swatch rgb, 0): the finish's own colour, for a material showing through its paint
+##   3 (temper, iridescence, raise, raise_rough)
+##   4 (swatch rgb, effect): the finish's own colour, for a material showing through its paint,
+##     and its own mark (Effect)
 ## Row 0 is a sentinel the shader reads as "the part's own paint" (SMOOTH, PAINT wear, rusts).
 static func table() -> ImageTexture:
 	if _table == null:
@@ -253,9 +331,9 @@ static func table() -> ImageTexture:
 			img.set_pixel(0, row, Color(float(f["metallic"]), float(f["roughness"]), float(f["specular"]), float(f["clearcoat"])))
 			img.set_pixel(1, row, Color(float(int(f["pattern"])), float(f["scale"]), float(f["bump"]), float(f["relief"])))
 			img.set_pixel(2, row, Color(float(int(f["wear"])), float(f["rust"]), float(f["tint"]), float(f["flake"])))
-			img.set_pixel(3, row, Color(float(f["temper"]), float(f["iridescence"]), 0.0, 0.0))
+			img.set_pixel(3, row, Color(float(f["temper"]), float(f["iridescence"]), float(f["raise"]), float(f["raise_rough"])))
 			var sw: Color = f["swatch"]
-			img.set_pixel(4, row, Color(sw.r, sw.g, sw.b, 0.0))
+			img.set_pixel(4, row, Color(sw.r, sw.g, sw.b, float(int(f["effect"]))))
 		_table = ImageTexture.create_from_image(img)
 	return _table
 
@@ -266,13 +344,39 @@ static func apply(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("finish_count", CODES.size())
 
 
-## Every id in a group ("metal", "paint"...), in code order.
+## Every id in a group ("metal", "paint", "tread"...), in code order.
 static func in_group(group: String) -> Array[String]:
 	var out: Array[String] = []
 	for id in CODES:
-		if String(FINISHES[id]["group"]) == group:
+		if String(all()[id]["group"]) == group:
 			out.append(id)
 	return out
+
+
+static var _finished: Dictionary = {}
+
+
+## A copy of salvage surface `base` drawn all over in finish `id` (LK3: a tread plate, an
+## anodised plate of any colour), cached per base, finish and colour. `colour` (alpha 0 =
+## none) is the finish's own colour on this part in place of its swatch; with none a painted
+## finish (`in_paint`) keeps the part's paint and any other shows its swatch. Look only.
+static func finished(base: ShaderMaterial, id: String, colour := Color(0, 0, 0, 0)) -> ShaderMaterial:
+	var key := "%d:%s:%s" % [base.get_instance_id(), id, colour.to_html()]
+	if not _finished.has(key):
+		var m := copy_surface(base)
+		set_finish(m, id, colour)
+		_finished[key] = m
+	return _finished[key]
+
+
+## Sets finish `id` (and its colour, as `finished` takes it) on a salvage surface in place.
+static func set_finish(m: ShaderMaterial, id: String, colour := Color(0, 0, 0, 0)) -> void:
+	m.set_shader_parameter("material_finish", code(id))
+	var own := colour.a > 0.0
+	# The shader takes colours linear, as the surfaces' albedo is.
+	var lin := colour.srgb_to_linear()
+	m.set_shader_parameter("finish_colour", Vector4(lin.r, lin.g, lin.b, 1.0 if own else 0.0))
+	m.set_shader_parameter("material_blend", 0.0 if in_paint(id) and not own else 1.0)
 
 
 ## A copy of a salvage surface with its paint (colour, metal, roughness...), made fresh:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copies the shared part of Void Salvage into shared/void_salvage/ at a pinned commit.
 # Owned by the Shared Components thread. Never edit the copies: change Void Salvage, re-sync.
-# The only change made on the way in: res://shaders/ includes are re-pointed at the copies.
+# The only change made on the way in: res://shaders/ and res://assets/parts/ paths are re-pointed at the copies.
 # Usage:  tools/sync_void_salvage.sh <path to a void-salvage checkout> [commit]
 #   commit defaults to the checkout's HEAD; the checkout must have no local changes.
 set -euo pipefail
@@ -16,6 +16,7 @@ DEST=shared/void_salvage
 FILES=(
 	scripts/parts/frame_parts.gd
 	scripts/parts/mesh_kit.gd
+	scripts/parts/part_asset.gd
 	scripts/parts/part_shapes.gd
 	scripts/parts/ship_parts.gd
 	scripts/parts/wreck_parts.gd
@@ -33,11 +34,15 @@ FILES=(
 	scripts/salvage/part_data.gd
 	scripts/salvage/part_model.gd
 	scripts/salvage/pipe_router.gd
+	scripts/salvage/power_grid.gd
 	scripts/salvage/stud_wall.gd
 	scripts/salvage/surface_detail.gd
 	scripts/salvage/surface_finish.gd
+	scripts/salvage/surface_scans.gd
 	scripts/salvage/surface_zones.gd
 	scripts/salvage/wiring_loom.gd
+	scripts/ship/frame_mounts.gd
+	scripts/ship/frame_services.gd
 	scripts/ship/json_schema.gd
 	scripts/ship/ship_kit.gd
 	scripts/ship/ship_recorder.gd
@@ -47,7 +52,16 @@ FILES=(
 	data/wreck_format/vswreck-1.schema.json
 	shaders/salvage_surface.gdshader
 	shaders/joint_head.gdshader
+	shaders/joint_halo.gdshader
+	shaders/joint_hint_xray.gdshader
+	shaders/scan_layers.gdshaderinc
 	shaders/survey_glass.gdshaderinc
+)
+# Folders copied whole: the components modelled in Blender that PartAsset reads (WreckParts and
+# ShipParts swap them in for their drawn shapes). The scanned materials SurfaceScans can load
+# (assets/materials, 139 MB) are left out: only a Void Salvage wreck it lists draws them.
+DIRS=(
+	assets/parts
 )
 
 if [ -n "$(git -C "$SRC" status --porcelain)" ]; then
@@ -64,8 +78,13 @@ for f in "${FILES[@]}"; do
 		git -C "$SRC" show "$COMMIT:$f.uid" > "$DEST/$f.uid"
 	fi
 done
+for d in "${DIRS[@]}"; do
+	mkdir -p "$DEST/$d"
+	git -C "$SRC" archive "$COMMIT" "$d" | tar -x -C "$DEST"
+done
 # The one change a sync makes: Void Salvage paths inside the copies point at the copies.
-grep -rl 'res://shaders/' "$DEST" | xargs -r sed -i "s#res://shaders/#res://$DEST/shaders/#g"
+grep -rl 'res://shaders/' "$DEST" --include='*.gd' --include='*.gdshader*' | xargs -r sed -i "s#res://shaders/#res://$DEST/shaders/#g"
+grep -rl 'res://assets/parts/' "$DEST" --include='*.gd' | xargs -r sed -i "s#res://assets/parts/#res://$DEST/assets/parts/#g"
 git -C "$SRC" rev-parse "$COMMIT" > "$DEST/SOURCE_COMMIT"
 git -C "$SRC" show -s --format=%ci "$COMMIT" > "$DEST/SOURCE_DATE"
-echo "Synced ${#FILES[@]} files from Void Salvage $(cut -c1-7 "$DEST/SOURCE_COMMIT")."
+echo "Synced ${#FILES[@]} files and ${#DIRS[@]} folders from Void Salvage $(cut -c1-7 "$DEST/SOURCE_COMMIT")."

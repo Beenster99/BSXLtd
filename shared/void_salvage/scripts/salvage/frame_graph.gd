@@ -42,6 +42,8 @@ const OFF_FACE: float = LEAD_STANDOFF + LEAD_RADIUS
 ## "stringer", "under", "passage"); the frame builders add "node" (round a node block),
 ## "deck" (under a deck, on its beams and girders) and "stud" (inside a stud wall).
 const LANE_KINDS: Array[String] = ["ring", "wall", "stringer", "under", "passage"]
+## The lane index's cell, m.
+const LANE_CELL: float = 1.0
 
 
 ## A straight line a cable can lie on. `exempt` parts don't block it (a conduit through
@@ -56,6 +58,10 @@ class Lane:
 	var up: Vector3
 	## Across the lane in the face's plane: bundle slots stack this way (unit).
 	var side: Vector3
+	## How far a slot may lie either side of the lane along `side`, m (INF: no limit, the slots
+	## stack along `side` from the lane). Finite (a lane in a narrow cavity, a stud wall's), the
+	## slots fill across it about the lane (0, +1, -1, +2 ...) and further rows lie along `up`.
+	var across: float = INF
 	## What straps are drawn on (null = no straps).
 	var member: PartData
 	var exempt: Array[int] = []
@@ -78,6 +84,21 @@ class Lane:
 	## Metres along the lane of the point nearest `p`, clamped to the lane.
 	func nearest_t(p: Vector3) -> float:
 		return clampf((p - a).dot(dir()), 0.0, length())
+
+	## Slots side by side across the lane before a row is full (0: no limit).
+	func columns() -> int:
+		if across == INF:
+			return 0
+		return 2 * maxi(0, floori(across / SLOT_PITCH + 0.001)) + 1
+
+	## Where slot `slot` lies off the lane: [along `side`, along `up`], m.
+	func slot_offset(slot: int) -> Vector2:
+		var n := columns()
+		if n == 0:
+			return Vector2(SLOT_PITCH * float(slot), 0.0)
+		var c := slot % n
+		var across_k := float((c + 1) >> 1) * (1.0 if c % 2 == 1 else -1.0)
+		return Vector2(SLOT_PITCH * across_k, SLOT_PITCH * float(floori(float(slot) / float(n))))
 
 
 ## One lead to route.
@@ -131,7 +152,10 @@ var _steps: Array = []
 ## Obstacles: [inverse transform, shrunk AABB (part space), AABB (body space), part id, name,
 ## its index].
 var _obstacles: Array = []
+## Obstacles by the 1 m cells their boxes touch (body space).
 var _slabs: Dictionary = {}
+## Lane ids by the LANE_CELL cells their boxes touch (`lanes_near`).
+var _lane_cells: Dictionary = {}
 
 static var _strap_meshes: Dictionary = {}
 static var _strap_material: StandardMaterial3D
@@ -157,7 +181,36 @@ func add_lane(kind: String, a: Vector3, c: Vector3, up: Vector3, side: Vector3, 
 	l.cost = cost
 	l.params = [0.0, l.length()]
 	lanes.append(l)
+	var lo := _lane_cell(a.min(c))
+	var hi := _lane_cell(a.max(c))
+	for x in range(lo.x, hi.x + 1):
+		for y in range(lo.y, hi.y + 1):
+			for z in range(lo.z, hi.z + 1):
+				(_lane_cells.get_or_add(Vector3i(x, y, z), []) as Array).append(l.id)
 	return l
+
+
+static func _lane_cell(p: Vector3) -> Vector3i:
+	return Vector3i(floori(p.x / LANE_CELL), floori(p.y / LANE_CELL), floori(p.z / LANE_CELL))
+
+
+## Every lane whose box comes within `reach` of `p` (all those with a point that close, and some
+## more), in lane order: a loop over these finds what a loop over `lanes` would, in the same order.
+func lanes_near(p: Vector3, reach: float) -> Array[Lane]:
+	var lo := _lane_cell(p - Vector3.ONE * reach)
+	var hi := _lane_cell(p + Vector3.ONE * reach)
+	var seen: Dictionary = {}
+	for x in range(lo.x, hi.x + 1):
+		for y in range(lo.y, hi.y + 1):
+			for z in range(lo.z, hi.z + 1):
+				for id: int in _lane_cells.get(Vector3i(x, y, z), []):
+					seen[id] = true
+	var ids: Array = seen.keys()
+	ids.sort()
+	var out: Array[Lane] = []
+	for id: int in ids:
+		out.append(lanes[id])
+	return out
 
 
 ## A framed connector from `from` to `to` that lies on no lane. `through_deck`: it may pass a
@@ -173,7 +226,7 @@ func add_step(from: Vector3, to: Vector3, through_deck: bool = false, exempt: Ar
 func link_nearest(p: Vector3, kinds: Array = [], exempt: Array[int] = [], through_deck: bool = false,
 		count: int = 3, reach: float = TAIL_MAX) -> void:
 	var found: Array = []
-	for l in lanes:
+	for l in lanes_near(p, reach):
 		if not kinds.is_empty() and not kinds.has(l.kind):
 			continue
 		var t := l.nearest_t(p)
@@ -199,8 +252,9 @@ static func debug_near(z: float) -> bool:
 ## `p`: [distance, point, lane].
 func nearest_on(p: Vector3, count: int, kinds: Array) -> Array:
 	var found: Array = []
-	for li in count:
-		var other := lanes[li]
+	for other in lanes_near(p, TAIL_MAX):
+		if other.id >= count:
+			break
 		if not kinds.is_empty() and not kinds.has(other.kind):
 			continue
 		var q := other.point(other.nearest_t(p))
@@ -216,7 +270,7 @@ func nearest_on(p: Vector3, count: int, kinds: Array) -> Array:
 func register_on_lanes(p: Vector3, kinds: Array) -> Vector3:
 	var snapped := p
 	var best := INF
-	for l in lanes:
+	for l in lanes_near(p, 0.01):
 		if not kinds.has(l.kind):
 			continue
 		var t := l.nearest_t(p)
@@ -280,7 +334,9 @@ func _register_near(p: Vector3, cells: Dictionary) -> Vector3:
 	return snapped
 
 
-## A lead from `device` to `target` (a part, or an Array of loom spans), routed by `route_all`.
+## A lead from `device` to `target` (a part, or an Array of loom spans), routed by `route_all`. `hints`:
+## "stud" (where it starts, a point), "goal" (where it ends), "through" (part ids it may pass on its hops),
+## "stud_lane_member" (a part id: it leaves its stud only by that part's lanes), "path".
 func lead(device: PartData, target: Variant, hints: Dictionary = {}) -> Route:
 	if device == null or target == null:
 		return null
@@ -299,34 +355,10 @@ func lead(device: PartData, target: Variant, hints: Dictionary = {}) -> Route:
 func route_all() -> void:
 	if routes.is_empty():
 		return
-	collect_obstacles()
-	var ends: Array = []
-	for r in routes:
-		var studs := studs_of(r.device, r.hints.get("stud"))
-		var goals: Array = []
-		if r.hints.get("goal") is Vector3:
-			goals = [[r.hints["goal"], r.target]]
-		elif r.target is PartData:
-			goals = studs_of(r.target)
-		else:
-			for span: PartData in r.target:
-				goals.append_array(_span_goals(span, r.device))
-		for s: Array in studs:
-			register_feet(s[0])
-		for g: Array in goals:
-			register_feet(g[0])
-		ends.append([studs, goals])
-	var kinds: Array = []
-	for l in lanes:
-		if not kinds.has(l.kind):
-			kinds.append(l.kind)
-	register_steps(kinds)
-	build_graph()
+	var ends := begin_routing()
 	for i in routes.size():
 		route(i, ends[i][0], ends[i][1])
-	draw_straps()
-	for l in lanes:
-		lanes_drawn.append([l.a, l.b, l.kind])
+	end_routing()
 
 
 ## Where a lead may land on loom span `span` (a part whose look runs along its local Y): its
@@ -357,6 +389,8 @@ func studs_of(part: PartData, hint: Variant = null) -> Array:
 	var half := aabb.size * 0.5
 	var xf := part.local_transform
 	var inv := xf.affine_inverse()
+	var box := xf * aabb
+	var near := lanes_near(box.get_center(), box.size.length() * 0.5 + TAIL_MAX)
 	for axis in 3:
 		for sgn: float in [-1.0, 1.0]:
 			var centre := c
@@ -366,7 +400,7 @@ func studs_of(part: PartData, hint: Variant = null) -> Array:
 			var normal := (xf.basis * n).normalized()
 			var found: Array = []
 			found.append([0.0, xf * centre])
-			for l in lanes:
+			for l in near:
 				# Pull the lane's nearest point onto the face, twice, so the stud sits
 				# where the face is closest to the lane.
 				var p := centre
@@ -402,7 +436,7 @@ func studs_of(part: PartData, hint: Variant = null) -> Array:
 ## The nearest few lane points within TAIL_MAX of `p` become nodes.
 func register_feet(p: Vector3) -> void:
 	var found: Array = []
-	for l in lanes:
+	for l in lanes_near(p, TAIL_MAX):
 		var t := l.nearest_t(p)
 		var d := l.point(t).distance_to(p)
 		if d <= TAIL_MAX:
@@ -416,7 +450,7 @@ func register_feet(p: Vector3) -> void:
 ## [node index, hop length, lane] for the feet of `p` (registered earlier).
 func feet(p: Vector3, exempt: Array[int]) -> Array:
 	var out: Array = []
-	for l in lanes:
+	for l in lanes_near(p, TAIL_MAX):
 		var t := l.nearest_t(p)
 		var q := l.point(t)
 		var d := q.distance_to(p)
@@ -574,12 +608,12 @@ func _add_obstacle(entry: Array) -> void:
 	entry.append(_obstacles.size())
 	_obstacles.append(entry)
 	var world: AABB = entry[2]
-	var z0 := floori(world.position.z)
-	var z1 := floori(world.end.z)
-	for z in range(z0, z1 + 1):
-		if not _slabs.has(z):
-			_slabs[z] = []
-		(_slabs[z] as Array).append(entry)
+	var lo := Vector3i(world.position.floor())
+	var hi := Vector3i(world.end.floor())
+	for x in range(lo.x, hi.x + 1):
+		for y in range(lo.y, hi.y + 1):
+			for z in range(lo.z, hi.z + 1):
+				(_slabs.get_or_add(Vector3i(x, y, z), []) as Array).append(entry)
 
 
 ## The name of the first part the line p-q passes through (debugging), or "".
@@ -604,30 +638,44 @@ func blocker(p: Vector3, q: Vector3, exempt: Array[int]) -> String:
 ## `through_deck` lets it pass deck plates (a hop from floor kit down into the void).
 func blocked(p: Vector3, q: Vector3, exempt: Array[int], through_deck: bool) -> bool:
 	var seg := AABB(p, Vector3.ZERO).expand(q).grow(0.001)
+	var lo := Vector3i(seg.position.floor())
+	var hi := Vector3i(seg.end.floor())
+	var one := lo == hi
 	var seen: Dictionary = {}
-	for z in range(floori(seg.position.z), floori(seg.end.z) + 1):
-		if not _slabs.has(z):
-			continue
-		for o: Array in _slabs[z]:
-			var pid: int = o[3]
-			# An obstacle spans several slabs: test it once (a part may have several, one per shape).
-			if seen.has(o[5]):
-				continue
-			seen[o[5]] = true
-			if pid >= 0 and exempt.has(pid):
-				continue
-			if through_deck and (o[4] as String) in ["DeckPlate", "FloorGrating"]:
-				continue
-			var world: AABB = o[2]
-			if not world.intersects(seg):
-				continue
-			var inv: Transform3D = o[0]
-			var box: AABB = o[1]
-			var n := maxi(int(ceil(p.distance_to(q) / SAMPLE)), 1)
-			for i in n + 1:
-				var s := p.lerp(q, float(i) / float(n))
-				if box.has_point(inv * s):
+	for cell_x in range(lo.x, hi.x + 1):
+		for cell_y in range(lo.y, hi.y + 1):
+			for cell_z in range(lo.z, hi.z + 1):
+				if _blocked_in(_slabs.get(Vector3i(cell_x, cell_y, cell_z), []), p, q, seg, exempt, through_deck,
+						null if one else seen):
 					return true
+	return false
+
+
+## `blocked` over the obstacles of one cell; `seen` (null: the line is in one cell) keeps an obstacle
+## spanning several cells to one test.
+func _blocked_in(cell: Array, p: Vector3, q: Vector3, seg: AABB, exempt: Array[int], through_deck: bool,
+		seen: Variant) -> bool:
+	for o: Array in cell:
+		var pid: int = o[3]
+		# An obstacle spans several cells: test it once (a part may have several, one per shape).
+		if seen != null:
+			if (seen as Dictionary).has(o[5]):
+				continue
+			(seen as Dictionary)[o[5]] = true
+		if pid >= 0 and exempt.has(pid):
+			continue
+		if through_deck and (o[4] as String) in ["DeckPlate", "FloorGrating"]:
+			continue
+		var world: AABB = o[2]
+		if not world.intersects(seg):
+			continue
+		var inv: Transform3D = o[0]
+		var box: AABB = o[1]
+		var n := maxi(int(ceil(p.distance_to(q) / SAMPLE)), 1)
+		for i in n + 1:
+			var s := p.lerp(q, float(i) / float(n))
+			if box.has_point(inv * s):
+				return true
 	return false
 
 
@@ -635,8 +683,56 @@ func blocked(p: Vector3, q: Vector3, exempt: Array[int], through_deck: bool) -> 
 
 ## Routes lead `index` from the first of `studs` it can reach to the cheapest of `goals`
 ## ([point, part, normal?] each), and has `plug_maker` plug and draw it (straight, and
-## counted in `unrouted`, if no frame route reaches).
+## counted in `unrouted`, if no frame route reaches). `search_route` then `take_route`.
 func route(index: int, studs: Array, goals: Array) -> void:
+	take_route(index, search_route(index, studs, goals), studs, goals)
+
+
+## `route_all` a step at a time (a builder that hands each lead's search to a worker thread):
+## `begin_routing` (the obstacles, every end's feet, the graph; returns each lead's [studs, goals]),
+## then for each lead in order `search_route` (reads only the graph: nothing of the body, so it may
+## run on another thread while nothing else touches her) and `take_route` (its slots on the lanes, its
+## points, its plug), then `end_routing` (the straps). The same routes as `route_all`.
+func begin_routing() -> Array:
+	var ends: Array = []
+	if routes.is_empty():
+		return ends
+	collect_obstacles()
+	for r in routes:
+		var studs := studs_of(r.device, r.hints.get("stud"))
+		var goals: Array = []
+		if r.hints.get("goal") is Vector3:
+			goals = [[r.hints["goal"], r.target]]
+		elif r.target is PartData:
+			goals = studs_of(r.target)
+		else:
+			for span: PartData in r.target:
+				goals.append_array(_span_goals(span, r.device))
+		for s: Array in studs:
+			register_feet(s[0])
+		for g: Array in goals:
+			register_feet(g[0])
+		ends.append([studs, goals])
+	var kinds: Array = []
+	for l in lanes:
+		if not kinds.has(l.kind):
+			kinds.append(l.kind)
+	register_steps(kinds)
+	build_graph()
+	return ends
+
+
+func end_routing() -> void:
+	if routes.is_empty():
+		return
+	draw_straps()
+	for l in lanes:
+		lanes_drawn.append([l.a, l.b, l.kind])
+
+
+## Lead `index`'s cheapest way over the graph from `studs` to `goals`, as `take_route` takes it:
+## {} when none reaches. Changes nothing (the lanes' users count as they stand: leads go in order).
+func search_route(index: int, studs: Array, goals: Array) -> Dictionary:
 	var r := routes[index]
 	var exempt: Array[int] = [r.device.id]
 	if r.target is PartData:
@@ -657,9 +753,15 @@ func route(index: int, studs: Array, goals: Array) -> void:
 	var start: Dictionary = {}    # node -> [stud point, hop]
 	var open: Array = []   # a binary heap of [cost, order pushed, node]
 	var pushed := 0
+	# A lead that starts inside a part (a door's control post) leaves only by the lanes on that part.
+	var only_member: int = int(r.hints.get("stud_lane_member", -1))
 	for s: Array in studs:
 		var normal: Vector3 = s[2] if s.size() > 2 else Vector3.ZERO
 		for f: Array in feet(s[0], exempt):
+			if only_member >= 0:
+				var fl: Lane = f[2]
+				if fl.member == null or fl.member.id != only_member:
+					continue
 			var idx: int = f[0]
 			var c: float = HOP_COST * float(f[1])
 			if normal != Vector3.ZERO and float(f[1]) > 0.001:
@@ -725,8 +827,7 @@ func route(index: int, studs: Array, goals: Array) -> void:
 			for i in _nodes.size():
 				if on_passage(_nodes[i]) and _nodes[i].distance_to(r.device.local_transform.origin) < 12.0:
 					dump_node(i, 3, done, {})
-		_straight(r, studs, goals)
-		return
+		return {}
 	# Walk back.
 	var chain: Array = []   # [node, lane used to reach it]
 	var u := best_goal
@@ -736,6 +837,19 @@ func route(index: int, studs: Array, goals: Array) -> void:
 		if pr == null:
 			break
 		u = int((pr as Array)[0])
+	return {"chain": chain, "start": start[chain[0][0]], "goal": best_goal, "goal_foot": goal_feet[best_goal]}
+
+
+## Lays lead `index` along `found` (`search_route`'s): its slots on the lanes it uses, its points
+## and its plug; drawn straight when `found` is empty.
+func take_route(index: int, found: Dictionary, studs: Array, goals: Array) -> void:
+	var r := routes[index]
+	if found.is_empty():
+		_straight(r, studs, goals)
+		return
+	var chain: Array = found["chain"]
+	var start_of: Array = found["start"]
+	var best_goal: int = found["goal"]
 	# Slots on each lane this route uses.
 	var slots: Dictionary = {}
 	for i in range(1, chain.size()):
@@ -748,10 +862,10 @@ func route(index: int, studs: Array, goals: Array) -> void:
 	# Points: stud, the lane nodes offset into their slot, the goal.
 	var first: int = chain[0][0]
 	var pts := PackedVector3Array()
-	pts.append(start[first][0])
-	r.free = float(start[first][1])
+	pts.append(start_of[0])
+	r.free = float(start_of[1])
 	r.hop = r.free
-	r.segments.append([start[first][0], _nodes[first], false])
+	r.segments.append([start_of[0], _nodes[first], false])
 	for i in chain.size():
 		var node_i: int = chain[i][0]
 		var p := _nodes[node_i]
@@ -763,8 +877,8 @@ func route(index: int, studs: Array, goals: Array) -> void:
 					pts.append(p)
 				continue
 			var l := lanes[lane_id]
-			var slot: int = slots[lane_id]
-			pts.append(p + l.side * SLOT_PITCH * float(slot))
+			var off := l.slot_offset(slots[lane_id])
+			pts.append(p + l.side * off.x + l.up * off.y)
 			var t := l.nearest_t(p)
 			if r.uses.has(lane_id):
 				var u2: Array = r.uses[lane_id]
@@ -775,7 +889,7 @@ func route(index: int, studs: Array, goals: Array) -> void:
 			var q := _nodes[chain[i - 1][0]]
 			r.framed += p.distance_to(q)
 			r.segments.append([q, p, true])
-	var gf: Array = goal_feet[best_goal]
+	var gf: Array = found["goal_foot"]
 	var goal_hop: float = gf[0]
 	r.free += goal_hop
 	r.hop = maxf(r.hop, goal_hop)
@@ -901,24 +1015,33 @@ func draw_straps() -> void:
 				if t >= float(use[0]) - 0.02 and t <= float(use[1]) + 0.02:
 					n += 1
 			if n > 0:
-				var thick := LEAD_STANDOFF + LEAD_RADIUS * 2.0 + 0.004
-				var width := SLOT_PITCH * float(n) + 0.008
-				var centre := l.point(t) + l.side * SLOT_PITCH * float(n - 1) * 0.5 \
+				# Round the slots the first n take: across from lo to hi, `rows` deep.
+				var lo := INF
+				var hi := -INF
+				var deep := 0.0
+				for k in n:
+					var off := l.slot_offset(k)
+					lo = minf(lo, off.x)
+					hi = maxf(hi, off.x)
+					deep = maxf(deep, off.y)
+				var thick := LEAD_STANDOFF + LEAD_RADIUS * 2.0 + 0.004 + deep
+				var width := hi - lo + SLOT_PITCH + 0.008
+				var centre := l.point(t) + l.side * (lo + hi) * 0.5 \
 						+ l.up * (thick * 0.5 - OFF_FACE)
 				var x := l.dir()
 				var y := l.up
 				var z := x.cross(y).normalized()
-				model.add_decor(l.member.id, _strap_mesh(width), _strap_mat(),
+				model.add_decor(l.member.id, _strap_mesh(width, thick), _strap_mat(),
 						Transform3D(Basis(x, y, z), centre))
 			t += CLIP_SPACING
 
 
-static func _strap_mesh(width: float) -> Mesh:
-	var k := roundi(width * 1000.0)
+static func _strap_mesh(width: float, thick: float = LEAD_STANDOFF + LEAD_RADIUS * 2.0 + 0.004) -> Mesh:
+	var k := Vector2i(roundi(width * 1000.0), roundi(thick * 1000.0))
 	if not _strap_meshes.has(k):
 		var kit := MeshKit.new()
 		kit.color = Color(0.5, 0.52, 0.55)
-		kit.box(Vector3(0.014, LEAD_STANDOFF + LEAD_RADIUS * 2.0 + 0.004, width))
+		kit.box(Vector3(0.014, thick, width))
 		_strap_meshes[k] = kit.finish()
 	return _strap_meshes[k]
 

@@ -24,6 +24,7 @@
 				"reference": {"type": "object", "properties": {"name": {"type": "string"}, "author": {"type": "string"}, "url": {"type": "string"}}},
 				"cargo_role": {"type": "string"},
 				"rollable": {"type": "boolean"},
+				"rev": {"type": "integer", "minimum": 1, "description": "The revision of her design she was built at (WD0): a rebuilt design keeps its older revisions for wrecks already rolled."},
 				"events": {"type": "array", "items": {"$ref": "#/$defs/event"}},
 				"event_names": {"type": "array", "items": {"type": "string"}},
 				"material_seed": {"type": "integer"},
@@ -83,7 +84,18 @@
 			"leaves": {"type": "array", "items": {"type": "object", "required": ["id", "closed", "open_offset"], "properties": {
 				"id": {"type": "integer"}, "closed": {"$ref": "#/$defs/xform"}, "open_offset": {"$ref": "#/$defs/vec3"}}}},
 			"open": {"type": "boolean"}, "amount": {"type": "number", "minimum": 0, "maximum": 1}, "travel_s": {"type": "number", "minimum": 0},
-			"powered": {"type": "boolean"}}}},
+			"powered": {"type": "boolean"},
+			"pressure": {"type": "boolean", "description": "A pressure door (WD6a's kit: engineering, a hold, a bridge): it shuts 3 s after no panel has power. A cabin door stays open once opened."},
+			"jam": {"enum": ["", "ajar", "shut"], "description": "How her events left it (WD6a): stuck part open at amount, or shut against the battery; empty, free to move."},
+			"machine": {"type": "object", "required": ["kind"], "description": "One of her own machines (WD25) on the door kit: a lift or elevator (its car carries what stands in it), a bay door or ramp (a hinged leaf swings swing_rad about its hinge from closed to open; its open_offset is zero), a conveyor (open = running; what lies in carry is carried along belt) or a crane (its hoist and hook run the rail; the hook takes a piece under its eye). It runs only on full power at a panel or with the battery held on one.",
+				"properties": {"kind": {"enum": ["lift", "elevator", "bay_door", "ramp", "conveyor", "crane"]},
+				"hinge": {"type": "object", "properties": {"at": {"$ref": "#/$defs/vec3"}, "axis": {"$ref": "#/$defs/vec3"}, "swing_rad": {"type": "number"}}},
+				"carry": {"type": "object", "description": "The space over the first leaf's surface whose loose pieces it carries, in that leaf's space.", "properties": {"position": {"$ref": "#/$defs/vec3"}, "size": {"$ref": "#/$defs/vec3"}}},
+				"belt": {"$ref": "#/$defs/vec3"},
+				"hook": {"type": "object", "properties": {"part": {"type": "integer"}, "eye": {"$ref": "#/$defs/vec3"}, "hooked": {"type": "boolean"}}}}},
+			"sealed": {"type": "boolean", "description": "(WD11a) A sealed room behind this pressure door still holds its air: neither its panels nor the battery open it till the room is bled by one of its valves or opened."},
+			"valve": {"type": "object", "required": ["door"], "description": "(WD11a) A bleed valve, not a door: its panel and one leaf are the hand wheel, turning turns times round axis through centre as it opens (open = bleeding); body is the part it turns on; door the main panel of the pressure door whose sealed room it bleeds.",
+				"properties": {"door": {"type": "integer"}, "body": {"type": "integer"}, "centre": {"$ref": "#/$defs/vec3"}, "axis": {"$ref": "#/$defs/vec3"}, "turns": {"type": "number"}}}}}},
 		"fluids": {
 			"type": "object",
 			"required": ["tanks", "lines", "left_l"],
@@ -276,7 +288,7 @@
 					"output": {"type": "number", "minimum": 0, "maximum": 1, "description": "a source's output, 0 dead, 0.15 low, 1 live"}}},
 				"cell": {"type": "object", "required": ["charge"], "description": "a battery cell of its own (a lamp's, an emergency backup's)", "properties": {
 					"charge": {"type": "number", "minimum": 0, "maximum": 1}}},
-				"faults": {"type": "integer", "minimum": 0, "description": "fault bit flags: 1 dead lamp, 2 breached (a tank or line holed: empty after a rupture, venting at `breach` after an event), 4 blown screen, 8 cracked pane, 16 kinked pipe, 32 door hanging by one hinge weld, 64 door torn off"},
+				"faults": {"type": "integer", "minimum": 0, "description": "fault bit flags: 1 dead lamp, 2 breached (a tank or line holed: empty after a rupture, venting at `breach` after an event), 4 blown screen, 8 cracked pane, 16 kinked pipe, 32 door hanging by one hinge weld, 64 door torn off, 128 alight (a breached fuel line still burning at its breach)"},
 				"breach": {"type": "object", "description": "a breached tank or line: the hole (part space) and which way it faces; it vents while there is fluid behind it", "required": ["at", "out"], "properties": {
 					"at": {"$ref": "#/$defs/vec3"}, "out": {"$ref": "#/$defs/vec3"}}},
 				"kink": {"type": "object", "description": "a kinked pipe: the point on its axis (part space) and the push (direction and length, m)", "required": ["at", "push"], "properties": {
@@ -312,7 +324,7 @@
 				"health": {"type": "number", "minimum": 0},
 				"max_health": {"type": "number", "minimum": 0},
 				"seam": {"type": "object", "required": ["up", "size"], "properties": {"up": {"$ref": "#/$defs/vec3"}, "size": {"$ref": "#/$defs/vec2"}}},
-				"head": {"type": "integer", "minimum": 0, "maximum": 1},
+				"head": {"type": "integer", "minimum": 0, "maximum": 5, "description": "what the head looks like (ConnectionData.head): 0 classic, 1 flush, 2 machine bead, 3 ground bead, 4 subtle, 5 a fitting's foot bolt"},
 				"seized": {"type": "boolean"},
 				"tier": {"type": "integer", "minimum": 1, "maximum": 5}
 			}

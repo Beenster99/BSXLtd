@@ -43,6 +43,10 @@ var z1: float = INF
 var openings: Array[Rect2] = []
 ## Spot welds along a member under a plate, metres apart.
 var spot_pitch: float = 0.5
+## Of the spots at the pitch, the share each plate keeps (`FrameTarget.share_rows`; 1 keeps all,
+## laid end to end along each row as before), and never fewer than `min_spots` on a plate.
+var spot_share: float = 1.0
+var min_spots: int = 1
 ## How far a trimmer stands off an opening's end, metres (room for its well's lining).
 var trimmer_clear: float = 0.06
 ## Optional `half_width(z) -> float`: the deck's half width at z when narrower than the
@@ -50,9 +54,28 @@ var trimmer_clear: float = 0.06
 var half_width := Callable()
 ## Plate bevel where neighbours meet (0: edge to edge).
 var groove: float = 0.0
+## On a node style, hold the plates' sides inside each ring they reach as the mitred style always
+## does (a tapered bay's rings stand deeper where their faces slope across the stations): a
+## wreck built on a frame asks for it (`WreckInterior.frame_floor`); the player ships' decks keep
+## the straight edge.
+var hold_to_rings: bool = false
 ## A second deck on the same hull names itself in its paths ("body/deck:upper/st:holds/beam");
 ## "" for the hull's main deck ("body/st:holds/beam").
 var level: String = ""
+## A beam's end is welded to the ring only where a ring member stands within this of it, metres
+## (INF: to the ring's nearest member, as always). On a hull that leaves ring members out
+## (`FrameHull.frame_skip`: an open bay, a face that lies on another hull) set it: the ends that
+## found no ring go into `loose_ends` for whoever builds the deck to hold (a post, a tie).
+var ring_reach: float = INF
+## With `ring_reach`: the beam ends welded to nothing, as {beam, station, end (0 the -X end, 1 the
+## +X), at (the end's middle, ship space)}.
+var loose_ends: Array[Dictionary] = []
+## No girder in a bay where it would stand outside the deck's reach at either end of the bay (a
+## hull that narrows along the deck: the lanes there are fewer, as the plates' already are).
+var trim_girders: bool = false
+## How far the plates stay in from the hull's inner line, metres (0: up to it, as always). A hull with a
+## stringer at a corner at the deck's own height sets it: the stringer stands a little inside that line.
+var edge_clear: float = 0.0
 
 ## What was built: beams per station index ([] where none), girders[bay][i] (null where one is
 ## left out round an opening), trimmers, the plates (every strip), and every weld and spot.
@@ -105,7 +128,7 @@ func who() -> String:
 func recipe() -> Dictionary:
 	return {"name": who(), "hull": hull.name, "level": level if level != "" else "main", "seq": _built_seq, "top": top,
 			"plate": plate, "beam": beam, "girder": girder, "girder_x": girder_x, "z0": z0, "z1": z1,
-			"openings": openings, "spot_pitch": spot_pitch, "trimmer_clear": trimmer_clear, "groove": groove,
+			"openings": openings, "spot_pitch": spot_pitch, "spot_share": spot_share, "min_spots": min_spots, "trimmer_clear": trimmer_clear, "groove": groove,
 			"plate_mat": plate_mat, "frame_mat": frame_mat, "half_width": _half_built if not _half_built.is_empty() else null}
 
 
@@ -234,10 +257,12 @@ func _beam(i: int, y0: float, y1: float) -> void:
 			var seam := Vector2(beam.y, beam.x)
 			if g >= 0:
 				continue   # welded once its girder exists (`_girders`)
-			var ring := hull.ring_near(i, at)
+			var ring: PartData = hull.ring_near(i, at) if ring_reach == INF else hull.ring_within(i, at, ring_reach)
 			if ring:
 				welds.append(target.join(p, ring, ConnectionData.Kind.WELD, at, Vector3.RIGHT, Vector3.UP, seam,
 						"%s/weld:%s" % [name, ring.path.get_slice("/", ring.path.get_slice_count("/") - 1)]))
+			elif ring_reach != INF:
+				loose_ends.append({"beam": p, "station": i, "end": end, "at": at})
 	beams[i] = made
 
 
@@ -252,7 +277,7 @@ func _girders(s0: int, s1: int, y0: float, y1: float, final: bool = false) -> vo
 		var x := girder_x[g]
 		var a := za
 		var b := zb
-		if _through_opening(x, za, zb):
+		if _through_opening(x, za, zb) or (trim_girders and not _in_reach(x, hull.ring_z(s0), hull.ring_z(s1), y0, y1)):
 			row.append(null)
 			continue
 		# Through a split station the girders run on and meet end to end over it.
@@ -299,6 +324,22 @@ func _girders(s0: int, s1: int, y0: float, y1: float, final: bool = false) -> vo
 			var gx := girder_x[g] + (-1.0 if k == 0 else 1.0) * (girder.x * 0.5 + FrameHull.GAP * 0.5)
 			welds.append(target.join(stub, row[g], ConnectionData.Kind.WELD, Vector3(gx, y, hull.ring_z(s)), Vector3.RIGHT,
 					Vector3.UP, Vector2(beam.y, beam.x), "%s/weld:girder:%d" % [stub.path, g]))
+
+
+## Whether a girder at `x` stands inside the deck's reach at both ends of a bay (`trim_girders`):
+## the plates' own test of a lane edge (`_plates`), and inside the beams it is welded to.
+func _in_reach(x: float, za: float, zb: float, y0: float, y1: float) -> bool:
+	var ra := reach_at(za, top - plate, top)
+	var rb := reach_at(zb, top - plate, top)
+	if x <= maxf(ra.x, rb.x) + 0.1 or x >= minf(ra.y, rb.y) - 0.1:
+		return false
+	for s in hull.stations.size():
+		var z := hull.ring_z(s)
+		if absf(z - za) < 0.001 or absf(z - zb) < 0.001:
+			var r := reach(s, y0, y1)
+			if x - girder.x * 0.5 < r.x + FrameHull.GAP or x + girder.x * 0.5 > r.y - FrameHull.GAP:
+				return false
+	return true
 
 
 ## The bay index before station `s` that has girders (the girders' row keys are their bays).
@@ -403,16 +444,66 @@ func _plates(seg: int) -> void:
 		if x > maxf(ra.x, rb.x) + 0.1 and x < minf(ra.y, rb.y) - 0.1 and not _through_opening(x, za, zb):
 			inner_x.append(x)
 	var lanes := inner_x.size() + 1
+	var left := _hull_edge(seg, za, zb, y0, -1.0)
+	var right := _hull_edge(seg, za, zb, y0, 1.0)
 	for lane in lanes:
-		var l0 := ra.x if lane == 0 else inner_x[lane - 1]
-		var l1 := rb.x if lane == 0 else inner_x[lane - 1]
-		var r0 := ra.y if lane == lanes - 1 else inner_x[lane]
-		var r1 := rb.y if lane == lanes - 1 else inner_x[lane]
-		var outline := PackedVector2Array([Vector2(l0, za), Vector2(r0, za), Vector2(r1, zb), Vector2(l1, zb)])
+		# Round the lane: its left edge's fore end, up its right edge, back down its left edge.
+		var ls: Array[Vector2] = left
+		if lane > 0:
+			ls = [Vector2(inner_x[lane - 1], za), Vector2(inner_x[lane - 1], zb)]
+		var rs: Array[Vector2] = right
+		if lane < lanes - 1:
+			rs = [Vector2(inner_x[lane], za), Vector2(inner_x[lane], zb)]
+		var outline := PackedVector2Array([ls[0]])
+		for v in rs:
+			outline.append(v)
+		for k in range(ls.size() - 1, 0, -1):
+			outline.append(ls[k])
 		var pieces := _cut(outline)
 		var base := "%s/deck/%d" % [_bay(seg), lane]
 		for k in pieces.size():
 			_plate(pieces[k], base if pieces.size() == 1 else "%s/s%d" % [base, k], seg)
+
+
+## The hull side of bay `seg`'s plates from `za` to `zb` on `side` (-1, +1), as (x, z) points
+## from za: straight from `reach_at` there to `reach_at` at zb. On the mitred style (a wreck's
+## frame, or any with `hold_to_rings`) a tapered bay's ring members stand inside that line (each ring sits deeper where its
+## skin slopes, across its whole width), so the edge runs straight through the points a ring's
+## width in from each end, both held inside the ring there, and turns in at an end where that
+## line would pass outside the ring: still convex.
+func _hull_edge(seg: int, za: float, zb: float, y0: float, side: float) -> Array[Vector2]:
+	var at := func(z: float) -> float:
+		var r := reach_at(z, y0, top)
+		return r.y if side > 0.0 else r.x
+	var a := Vector2(at.call(za), za)
+	var b := Vector2(at.call(zb), zb)
+	var w := hull.ring_width * 0.5 + FrameHull.GAP
+	if (hull.spec["corners"] != "mitre" and not hold_to_rings) or zb - za < 2.0 * w + 0.05:
+		return [a, b]
+	# Held inside the ring at a station within its width (the deck's ends between stations hold
+	# to no ring).
+	var held := func(x: float, z: float) -> float:
+		for i: int in [seg, seg + 1]:
+			if absf(z - hull.ring_z(i)) <= w + 0.001:
+				var r := reach(i, y0, top)
+				x = minf(x, r.y) if side > 0.0 else maxf(x, r.x)
+		return x
+	var p := Vector2(held.call(at.call(za + w), za + w), za + w)
+	var q := Vector2(held.call(at.call(zb - w), zb - w), zb - w)
+	var slope := (q.x - p.x) / (q.y - p.y)
+	var la := p.x + slope * (za - p.y)
+	var lb := q.x + slope * (zb - q.y)
+	var ea: float = held.call(a.x, za)
+	var eb: float = held.call(b.x, zb)
+	var xa := minf(la, ea) if side > 0.0 else maxf(la, ea)
+	var xb := minf(lb, eb) if side > 0.0 else maxf(lb, eb)
+	var out: Array[Vector2] = [Vector2(xa, za)]
+	if absf(xa - la) > 0.001:
+		out.append(p)
+	if absf(xb - lb) > 0.001:
+		out.append(q)
+	out.append(Vector2(xb, zb))
+	return out
 
 
 ## How far the deck may reach either side at z, heights y0..y1 ([-x, +x]): the hull's outline
@@ -441,24 +532,27 @@ func reach_at(z: float, y0: float, y1: float) -> Vector2:
 		var hw: float = half_width.call(z)
 		lo = maxf(lo, -hw)
 		hi = minf(hi, hw)
-	return Vector2(lo, hi)
+	return Vector2(lo + edge_clear, hi - edge_clear)
 
 
 ## A lane's outline (x, z) less the openings, as convex pieces (cut in strips across the
-## openings' x, then rows).
+## openings' x, then rows). Only the openings that reach the lane cut it: an opening further
+## along the deck would slice strips too thin to weld beside one that does (the Manta's lift
+## beside its hatch, HP3a).
 func _cut(outline: PackedVector2Array) -> Array:
 	var lo := Vector2(INF, INF)
 	var hi := -lo
 	for p in outline:
 		lo = lo.min(p)
 		hi = hi.max(p)
-	var hit := false
+	var hits: Array[Rect2] = []
 	for o in openings:
-		hit = hit or o.intersects(Rect2(lo, hi - lo))
-	if not hit:
+		if o.intersects(Rect2(lo, hi - lo)):
+			hits.append(o)
+	if hits.is_empty():
 		return [outline]
 	var cuts: Array[float] = [lo.x - 1.0, hi.x + 1.0]
-	for o in openings:
+	for o in hits:
 		cuts.append(o.position.x)
 		cuts.append(o.end.x)
 	cuts.sort()
@@ -469,7 +563,7 @@ func _cut(outline: PackedVector2Array) -> Array:
 		if b - a < 0.02:
 			continue
 		var spans: Array = [[lo.y - 1.0, hi.y + 1.0]]
-		for o in openings:
+		for o in hits:
 			if (a + b) * 0.5 <= o.position.x or (a + b) * 0.5 >= o.end.x:
 				continue
 			var next: Array = []
@@ -512,7 +606,10 @@ func _plate(outline: PackedVector2Array, path: String, bay: int) -> void:
 	var p := target.part("DeckPlate", PartData.Kind.HULL, _looks_held(look, held), Transform3D(Basis(), Vector3(c.x, top, c.y)),
 			plate_mat, "", 1.0, null, path)
 	plates.append(p)
-	# Spots along every member under it, on its top face, a margin in from its edges.
+	# Spots along every member under it, on its top face, a margin in from its edges: only
+	# `spot_share` of them kept on the plate (all of them laid end to end along each row at 1).
+	var rows: Array = []   # [s0, s1, member, name]
+	var counts: Array[int] = []
 	for u: Dictionary in _under:
 		var a3: Vector3 = u["a"]
 		var b3: Vector3 = u["b"]
@@ -528,18 +625,33 @@ func _plate(outline: PackedVector2Array, path: String, bay: int) -> void:
 			seg = clip_segment(a2 + shift, b2 + shift, outline, 0.01)
 		if seg.is_empty():
 			continue
-		var s0: Vector2 = seg[0]
-		var s1: Vector2 = seg[1]
 		# A beam at the bay's own stations is its fore or aft (a station inserted behind it
 		# renames nothing here).
 		var under: String = u["name"]
 		if u.has("station"):
 			under = "fore" if int(u["station"]) == bay else ("aft" if int(u["station"]) == bay + 1 else under)
-		var n := maxi(1, int(ceil(s0.distance_to(s1) / spot_pitch))) + 1
+		rows.append([seg[0], seg[1], u, under])
+		counts.append(maxi(1, int(ceil((seg[0] as Vector2).distance_to(seg[1]) / spot_pitch))) + 1)
+	if target.seam_plates:
+		# FS1: two bolts, at opposite corners onto the members under it (docs/review/19_FASTENERS.md).
+		var k := 0
+		for pick: Array in FrameTarget.two_apart(rows):
+			var at: Vector2 = pick[1]
+			spots.append(target.join(p, rows[pick[0]][2]["part"], ConnectionData.Kind.BOLT, Vector3(at.x, top, at.y), Vector3.UP,
+					Vector3.ZERO, Vector2.ZERO, "%s/bolt:%s/%d" % [path, rows[pick[0]][3], k]))
+			k += 1
+		return
+	var kept := FrameTarget.share_rows(counts, spot_share, min_spots)
+	for r in rows.size():
+		var s0: Vector2 = rows[r][0]
+		var s1: Vector2 = rows[r][1]
+		var n: int = kept[r]
+		var ends := n == counts[r]   # every spot at the pitch: end to end, as laid
 		for k in n:
-			var at := s0.lerp(s1, float(k) / float(n - 1)) if n > 1 else (s0 + s1) * 0.5
-			spots.append(target.join(p, u["part"], ConnectionData.Kind.SPOT, Vector3(at.x, top, at.y), Vector3.UP, Vector3.ZERO,
-					Vector2.ZERO, "%s/spot:%s/%d" % [path, under, k]))
+			var t := (float(k) / float(n - 1) if n > 1 else 0.5) if ends else (float(k) + 0.5) / float(n)
+			var at := s0.lerp(s1, t)
+			spots.append(target.join(p, rows[r][2]["part"], ConnectionData.Kind.SPOT, Vector3(at.x, top, at.y), Vector3.UP,
+					Vector3.ZERO, Vector2.ZERO, "%s/spot:%s/%d" % [path, rows[r][3], k]))
 
 
 ## The part of segment a..b inside convex `poly` brought in by `m`, as [from, to], or [] if none

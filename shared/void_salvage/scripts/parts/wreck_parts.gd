@@ -97,6 +97,10 @@ extends RefCounted
 ##   machine_unit  an industrial cabinet (refinery, assembler, gas generator): a collared
 ##                 hopper and feed pipes on top, a control panel with a lit screen and LEDs,
 ##                 a hinged service door, louvred sides (front -Z)
+##   machine_block an SE2 machine block filling its box, flat to every face (a hull's own skin
+##                 where it sits in one): edge rails, cast corners, panels with vents, hatches
+##                 and seams, the front by style (assembler, smelter, gravity, gyroscope, tank,
+##                 generator, battery, container, conveyor)
 ##   railing       a handrail along X: round posts on bolted flanges, round top and mid
 ##                 rails, a clamped dark kick plate with hazard bars
 ##   shelf_rack    open shelves on slotted uprights with braces and orange beams, coloured
@@ -420,6 +424,15 @@ extends RefCounted
 ##                 guards, lid seams, latches, a handle, ribs and hazard tabs, a retaining bar
 ##                 under each (stands on -Y, front -Z)
 ##   (name_board also draws L now: "SENTINAL")
+##   hull_lettering name_board's letters on their own, painted on a hull (base on -Y, reads +X)
+##   (name_board also draws H and a stop now: "T.A.S.C.")
+## Landing craft parts (v2, the Scabbard; the block at the end of this file):
+##   troop_rack    drop seats along a wall: arched tube cradles on a yellow tread plate, padded
+##                 backboards and headrests, fold-down pans, harnesses, a header with a lit
+##                 status lamp per seat (stands on -Y, faces -Z, back +Z on the wall)
+##   holo_table    a map table: a dark plinth, a cut-cornered body widening to a bright rim
+##                 round a dark glass well with a glowing map in it, lit strips under it, a
+##                 sloped key panel at +X (stands on -Y)
 ## Story props (CS3b, the block at the end of this file; Carryables, not parts: StoryProp):
 ##   flight_recorder  an orange recorder box: ribs, bolted end caps, a handle, a strobe
 ##   distress_beacon  a red cylinder on a weighted foot, a whip antenna, a red lamp dome
@@ -464,6 +477,7 @@ const GOLD := Color(0.85, 0.62, 0.16, SurfaceZones.GOLD_A)
 const BENCH_STEEL := Color(0.62, 0.63, 0.64, SurfaceZones.BARE_A)
 const GUN_STEEL := Color(0.5, 0.51, 0.53, SurfaceZones.BARE_A)        # the bare barrels
 const BANK_FRAME := Color(0.3, 0.31, 0.33, SurfaceZones.GUNMETAL_A)   # gunmetal cabinet frame
+const BANK_HAZARD := PartShapes.ACCENT                                 # the capacitor bank's kick plate and high-voltage plate (hazard paint)
 const BENCH_VISE := Color(0.24, 0.3, 0.42, SurfaceZones.CAST_IRON_A)
 const BOSS := Color(0.42, 0.43, 0.45, SurfaceZones.CAST_IRON_A)       # the motor bosses
 const HUB := Color(0.3, 0.31, 0.33, SurfaceZones.CAST_IRON_A)         # hub caps
@@ -494,8 +508,14 @@ const ENG_NOZZLE := Color(0.62, 0.57, 0.5, SurfaceZones.HEAT_A)      # heat-tint
 const ENG_FRAME := Color(0.4, 0.41, 0.44, SurfaceZones.GUNMETAL_A)    # gunmetal machine frames (the gyroscope's cage)
 const LIT_CLIP := Color(0.55, 0.56, 0.58, SurfaceZones.GALVANISED_A) # galvanised loom clip straps (the spans' strap tone)
 const LIT_RAIL := Color(0.38, 0.39, 0.42, SurfaceZones.GUNMETAL_A)  # gunmetal stud-light rails, lifted to read on dark hulls
+const MINE_DRUM := Color(0.56, 0.57, 0.59, SurfaceZones.BARE_A)       # a cutter drum's and rock wheel's bare steel (BP13)
+const MINE_PICK := Color(0.66, 0.67, 0.69, SurfaceZones.BARE_A)       # light pick shanks and teeth, hardened steel
+const MINE_PICK_DARK := Color(0.4, 0.41, 0.43, SurfaceZones.CAST_IRON_A) # dark pick shanks and teeth
 # --- Paints and enamels ---------------------------------------------------------------------
 const PLATE := Color(0.8, 0.78, 0.7, SurfaceZones.ENAMEL_A)           # pale enamel name and maker's plates
+const MINE_HOUSING := Color(0.32, 0.33, 0.35, SurfaceZones.SATIN_PAINT_A) # a spike drill's dark steel drive housing (BP13)
+const MINE_ORANGE := Color(0.9, 0.48, 0.12, SurfaceZones.SATIN_PAINT_A)  # a cutter drum's orange drive housing
+const MINE_HAZARD := Color(1.0, 0.62, 0.15, SurfaceZones.HAZARD_PAINT_A) # the drills' orange hazard bands (PartShapes.ACCENT)
 const CHEVRON := Color(0.82, 0.83, 0.84, SurfaceZones.ENAMEL_A)       # the pale chevrons on the side panels
 const POST := Color(0.78, 0.76, 0.7, SurfaceZones.ENAMEL_A)
 const PANEL_GREY := Color(0.3, 0.31, 0.33, SurfaceZones.ENAMEL_A)     # gas panels' graphite enamel
@@ -529,6 +549,8 @@ const ENG_PANEL := Color(0.7, 0.71, 0.72, SurfaceZones.ENAMEL_A)    # pale grey 
 const PLASTIC_DARK := Color(0.14, 0.14, 0.15, SurfaceZones.PLASTIC_TEXTURED_A) # housings, bezels, keyboards
 const PLASTIC_PALE := Color(0.7, 0.7, 0.68, SurfaceZones.PLASTIC_A)   # keys, switch faces, pale casings
 const RUBBER := Color(0.12, 0.12, 0.13, SurfaceZones.RUBBER_A)        # feet, seals, grips
+const ANTENNA_LEAST_DISH := 0.1  # m: a dish smaller than this keeps the drawn antenna (BP10)
+const PAD_ACCENT := PartShapes.ACCENT                                  # a landing clamp's orange pad (BP10)
 const TREAD := Color(0.13, 0.13, 0.14, SurfaceZones.RUBBER_TREAD_A)   # ribbed soles, kick plates, mats
 const CELL := Color(0.25, 0.27, 0.3, SurfaceZones.PLASTIC_TEXTURED_A) # battery cell casings
 const TERMINAL_RED := Color(0.72, 0.16, 0.12, SurfaceZones.PLASTIC_GLOSS_A) # positive terminal caps
@@ -555,6 +577,10 @@ const WPN_RADOME := Color(0.84, 0.83, 0.79, SurfaceZones.CERAMIC_A)    # ceramic
 const ENG_LINER := Color(0.56, 0.51, 0.43, SurfaceZones.CERAMIC_A)   # sooted ceramic liners in thruster bores and throats
 # --- Fabrics, leather, wood -----------------------------------------------------------------
 const SEAT_LEATHER := Color(0.2, 0.18, 0.18, SurfaceZones.LEATHER_A)  # seat cushions
+## The colour names the modelled bench, stool and armchair give their cushions (docs/BLENDER_PARTS.md):
+## each call paints them in the cushion it is given, as upholstery and as leather.
+const CUSHION := Color(0.65, 0.12, 0.14, SurfaceZones.UPHOLSTERY_A)
+const CUSHION_LEATHER := Color(0.65, 0.12, 0.14, SurfaceZones.LEATHER_A)
 const SEAT_ARM := Color(0.14, 0.14, 0.15, SurfaceZones.RUBBER_A)      # armrest pads
 const STRAP := Color(0.85, 0.55, 0.15, SurfaceZones.NYLON_A)          # webbing straps and buckles' belts
 const ALCOVE_BLANKET := Color(0.28, 0.36, 0.42, SurfaceZones.CANVAS_A)
@@ -596,6 +622,25 @@ const PLANTER_SOIL := Color(0.22, 0.16, 0.11)
 ## cast iron hub under a chrome spinner, and dark anodised stator vanes holding the cast
 ## motor nacelle at the exhaust end (-Y).
 static func ducted_fan(radius: float, length: float, blades: int = 7) -> PartShapes.PartShape:
+	var model := "ducted_fan_%d" % blades
+	# A squat duct (shorter than 0.65 of its radius) keeps the drawn look: the model's bands can't
+	# take up that much.
+	if length < radius * 0.65 or not PartAsset.has(model):
+		return _ducted_fan_drawn(radius, length, blades)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(radius * 2.0, length, radius * 2.0), [0, 2])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = PI * radius * radius * length * 0.5
+	var col := CylinderShape3D.new()
+	col.radius = radius
+	col.height = length
+	shape.collision = col
+	return shape
+
+
+## The code-drawn ducted fan: the fallback without its Blender file, and for squat ducts and blade
+## counts with no model (docs/BLENDER_PARTS.md).
+static func _ducted_fan_drawn(radius: float, length: float, blades: int = 7) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var wall := radius * 0.12
 	var h := length * 0.5
@@ -671,7 +716,41 @@ static func _hullkit_vane(k: MeshKit, a: float, r0: float, r1: float, y0: float,
 	k.loft(ring.call(r0), ring.call(r1))
 
 
+## A welded pressure vessel along Y, `radius` round and `length` long: domed ends with bolted
+## valve bosses, weld beads and a rippled seam, two galvanised straps on rubber pads with T-bolt
+## tensioners on +X, lifting lugs and a brass relief valve on the top dome, an earthing boss and a
+## riveted maker's plate on -X. Modelled in Blender (tools/blender/parts/tank.py) at radius 1 m,
+## 2.4 m long, scaled by the radius and stretched along its barrel; its box is the code-drawn
+## one's (FluidSystem measures its litres from it). Collision is a cylinder.
 static func tank(radius: float, length: float) -> PartShapes.PartShape:
+	if not PartAsset.has("tank"):
+		return _tank_drawn(radius, length)
+	var shape := PartShapes.PartShape.new()
+	PartAsset.fill(shape, "tank", PartAsset.palette_of(WreckParts, Color.WHITE), radius,
+			Vector3(0.0, length - PartAsset.box_of("tank").y * radius, 0.0))
+	_keep_drawn_box(shape, ["tank", radius, length], func() -> PartShapes.PartShape: return _tank_drawn(radius, length))
+	var rc := radius * 1.04
+	shape.volume = PI * rc * rc * length * 0.5
+	var col := CylinderShape3D.new()
+	col.radius = radius * 1.04
+	col.height = length
+	shape.collision = col
+	return shape
+
+
+static var _drawn_boxes := {}
+
+## Notes the code-drawn twin's box on a modelled part's mesh (meta "drawn_box"): a tank's litres,
+## and where FluidSystem stands its cap, are measured from it (FluidSystem.tank_box), so a modelled
+## vessel holds what the drawn one did. Worked out once per call.
+static func _keep_drawn_box(shape: PartShapes.PartShape, key: Array, make: Callable) -> void:
+	if not _drawn_boxes.has(key):
+		_drawn_boxes[key] = (make.call() as PartShapes.PartShape).mesh.get_aabb()
+	shape.mesh.set_meta("drawn_box", _drawn_boxes[key])
+
+
+## The code-drawn tank: the fallback without its Blender file.
+static func _tank_drawn(radius: float, length: float) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var sides := 24
 	var body := length - radius * 0.9
@@ -863,6 +942,86 @@ static func _sensors_rect_ring(hx: float, hz: float, y: float, c: float) -> Pack
 ## 0.5 m square (fewer, bigger cells on very big panels) with two bright busbars down each
 ## column of cells.
 static func solar_panel(width: float, length: float, thickness: float = 0.05) -> PartShapes.PartShape:
+	if not PartAsset.has("solar_panel"):
+		return _solar_panel_drawn(width, length, thickness)
+	# The model's frame scales with the thickness (built at 0.05 m): its rails, hinge rail and the
+	# cells' height go with it, and the cells, busbars, knuckles and glass are laid inside them here.
+	var sc := thickness / 0.05
+	var f := 0.03 * sc
+	var hinge := 0.045 * sc
+	var y_cell := 0.0175 * sc
+	var k := MeshKit.new()
+	var inner := _solar_cells(k, width, length, thickness, f, hinge, y_cell)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("solar_panel", Vector3(width, thickness + 0.012, length), [1])
+	PartAsset.fill(shape, "solar_panel", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1], Vector3.ZERO,
+			Vector3.ZERO, k)
+	shape.volume = width * length * thickness
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, thickness + 0.01, length)
+	shape.collision = col
+	var gk := MeshKit.new()
+	gk.color = Color.WHITE
+	var gy := y_cell + 0.009 * sc
+	var x0 := -width * 0.5 + f
+	var z0 := -length * 0.5 + hinge
+	gk.quad(Vector3(x0, gy, z0), Vector3(x0 + inner.x, gy, z0), Vector3(x0 + inner.x, gy, z0 + inner.y),
+			Vector3(x0, gy, z0 + inner.y), Vector3.UP)
+	shape.glass = gk.finish()
+	shape.glass_kind = Glazing.Kind.SOLAR
+	return shape
+
+
+## A modelled solar panel's cells, busbars and hinge knuckles, drawn into `k` inside its frame (rails
+## `f` wide, the hinge rail `hinge` deep, the cells' top at `y_cell`), as the drawn one lays them.
+## Returns the cells' area's size (x along the width, y along the length).
+static func _solar_cells(k: MeshKit, width: float, length: float, thickness: float, f: float, hinge: float,
+		y_cell: float) -> Vector2:
+	var hw := width * 0.5
+	var hl := length * 0.5
+	var sc := thickness / 0.05
+	var inner_w := width - 2.0 * f
+	var inner_l := length - f - hinge
+	var cells_x := maxi(1, int(inner_w / 0.5))
+	var cells_z := maxi(1, int(inner_l / 0.5))
+	while cells_x * cells_z > 120:
+		cells_x = maxi(1, cells_x - 1)
+		cells_z = maxi(1, cells_z - 1)
+	var cw := inner_w / float(cells_x)
+	var cl := inner_l / float(cells_z)
+	var gap := clampf(minf(cw, cl) * 0.05, 0.01, 0.03)
+	var x_left := -hw + f
+	var z_front := -hl + hinge
+	k.color = SOLAR_CELL
+	for i in cells_x:
+		for j in cells_z:
+			var c := Vector3(x_left + cw * (float(i) + 0.5), y_cell + 0.003 * sc, z_front + cl * (float(j) + 0.5))
+			var hx := cw * 0.5 - gap * 0.5
+			var hz := cl * 0.5 - gap * 0.5
+			k.quad(c + Vector3(-hx, 0, -hz), c + Vector3(hx, 0, -hz), c + Vector3(hx, 0, hz), c + Vector3(-hx, 0, hz), Vector3.UP)
+	k.color = TRIM
+	var bw := clampf(cw * 0.025, 0.006, 0.014)
+	var yb := y_cell + 0.006 * sc
+	for i in cells_x:
+		for s: float in [-1.0, 1.0]:
+			var x := x_left + cw * (float(i) + 0.5) + s * cw * 0.22
+			k.quad(Vector3(x - bw * 0.5, yb, z_front + gap), Vector3(x + bw * 0.5, yb, z_front + gap),
+					Vector3(x + bw * 0.5, yb, hl - f - gap), Vector3(x - bw * 0.5, yb, hl - f - gap), Vector3.UP)
+	# The hinge knuckles along the hinge rail, alternately bright and the frame's, as the drawn one's.
+	var kr := thickness * 0.38
+	var ky := thickness * 0.1
+	var kz := -hl + hinge * 0.5
+	var knuckles := clampi(int(width / 0.4), 3, 9) | 1
+	for i in knuckles:
+		var x0 := -inner_w * 0.5 + inner_w * float(i) / float(knuckles) + 0.004
+		var x1 := -inner_w * 0.5 + inner_w * float(i + 1) / float(knuckles) - 0.004
+		k.color = CHROME if i % 2 == 0 else SOLAR_FRAME
+		_tube(k, Vector3(x0, ky, kz), Vector3(x1, ky, kz), kr, 12)
+	return Vector2(inner_w, inner_l)
+
+
+## The code-drawn solar panel: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _solar_panel_drawn(width: float, length: float, thickness: float = 0.05) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hw := width * 0.5
 	var hl := length * 0.5
@@ -1062,6 +1221,22 @@ static func landing_leg(height: float, pad: float = 0.6) -> PartShapes.PartShape
 ## rolled pale lip, a ceramic liner down to an injector floor with a boss and a ring, and a
 ## glowing floor between them (PartShape.glow).
 static func engine_bell(radius: float, length: float, glow := Color(1.0, 0.72, 0.4)) -> PartShapes.PartShape:
+	if not PartAsset.has("engine_bell"):
+		return _engine_bell_drawn(radius, length, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("engine_bell", Vector3(radius * 2.08, length, radius * 2.08), [0, 2])
+	PartAsset.fill(shape, "engine_bell", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	var rr := radius * 1.05
+	shape.volume = PI * rr * rr * length * 0.5
+	var col := CylinderShape3D.new()
+	col.radius = rr
+	col.height = length
+	shape.collision = col
+	return shape
+
+
+## The code-drawn engine bell: the fallback without its Blender file.
+static func _engine_bell_drawn(radius: float, length: float, glow := Color(1.0, 0.72, 0.4)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var r := radius
 	var h := length * 0.5
@@ -1435,8 +1610,41 @@ static func container(size: Vector3, stripe := Color(0, 0, 0, 0)) -> PartShapes.
 ## top: a chamfered bolted foot, a round anodised mast with galvanised collars and a plastic
 ## junction box, the dish (anodised rim, galvanised ribs under it) on a galvanised hub, a
 ## ceramic feed horn held over it on three galvanised struts, and a red aviation light on a
-## rubber gasket on the feed (the glow) at the very top.
+## rubber gasket on the feed (the glow) at the very top. Modelled in Blender (tools/blender/parts/antenna.py) at
+## 1.6 m with a 0.4 m dish; a mast with no dish to speak of (under `ANTENNA_LEAST_DISH`) keeps the drawn look.
 static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) -> PartShapes.PartShape:
+	if not PartAsset.has("antenna") or dish < ANTENNA_LEAST_DISH:
+		return _antenna_drawn(height, dish, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("antenna", Vector3(2.0 * dish * 1.01, height + 0.02, 2.0 * dish * 1.01), [0, 2])
+	PartAsset.fill(shape, "antenna", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = _drawn_volume(["antenna", height, dish], _antenna_drawn.bind(height, dish, glow))
+	shape.collision = _antenna_hull(height, dish)
+	return shape
+
+
+## The antenna's collision, the drawn one's: its foot, the dish's rim and the light's tip.
+static func _antenna_hull(height: float, dish: float) -> ConvexPolygonShape3D:
+	var y0 := -height * 0.5
+	var top := height * 0.5 + 0.02
+	var t := clampf(dish * 0.04, 0.008, 0.02)
+	var lr := clampf(dish * 0.09, 0.025, 0.045)
+	var yr := top - (lr * 1.05 + 0.012 + dish * 0.14 + dish * 0.18)
+	var col := ConvexPolygonShape3D.new()
+	var hull := PackedVector3Array()
+	for p in _chamfer_ring(0.15, y0, 0.03):
+		hull.append(p)
+	for i in 12:
+		var a := TAU * float(i) / 12.0
+		hull.append(Vector3(cos(a) * dish, yr + t, sin(a) * dish))
+		hull.append(Vector3(cos(a) * dish, yr - t, sin(a) * dish))
+	hull.append(Vector3(0.0, top, 0.0))
+	col.points = hull
+	return col
+
+
+## The code-drawn antenna: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _antenna_drawn(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var y0 := -height * 0.5
 	var top := height * 0.5 + 0.02             # the light's tip (the old dish lip's height), m
@@ -1510,17 +1718,7 @@ static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) 
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = k.volume()
-	var col := ConvexPolygonShape3D.new()
-	var hull := PackedVector3Array()
-	for p in _chamfer_ring(0.15, y0, 0.03):
-		hull.append(p)
-	for i in 12:
-		var a := TAU * float(i) / 12.0
-		hull.append(Vector3(cos(a) * dish, yr + t, sin(a) * dish))
-		hull.append(Vector3(cos(a) * dish, yr - t, sin(a) * dish))
-	hull.append(Vector3(0.0, top, 0.0))
-	col.points = hull
-	shape.collision = col
+	shape.collision = _antenna_hull(height, dish)
 	# The red aviation light: a domed lens.
 	var g := MeshKit.new()
 	var yl := yf + fh + 0.012
@@ -1538,7 +1736,18 @@ static func antenna(height: float, dish: float, glow := Color(1.0, 0.12, 0.08)) 
 ## out of a bolted cast mantlet, each in a ribbed rubber boot at the root, with a collar, a
 ## recoil sleeve, a clamp and a slotted muzzle brake. Stands on -Y, barrels toward -Z,
 ## reaching `barrel` past the housing's front.
+## Modelled in Blender (tools/blender/parts/turret.py, BP12): scaled to the ring, the barrels' reach
+## taken up down them; the drawn one's box, collision and volume (`_as_drawn`).
 static func turret(radius: float, barrel: float, glow := Color(1.0, 0.18, 0.1)) -> PartShapes.PartShape:
+	if not PartAsset.has("turret"):
+		return _turret_drawn(radius, barrel, glow)
+	return _as_drawn("turret", _drawn_twin(["turret", radius, barrel],
+			_turret_drawn.bind(radius, barrel, glow)), glow, [0, 1])
+
+
+## The code-drawn turret: the fallback without its Blender file, and the box, collision and volume
+## the model keeps.
+static func _turret_drawn(radius: float, barrel: float, glow := Color(1.0, 0.18, 0.1)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var r := radius
@@ -1706,7 +1915,59 @@ static func _weapons_hazard(k: MeshKit, c: Vector3, w: float, h: float, facing: 
 ## pale nosing lip, and a sloped face carrying one dark-bezelled screen per metre of width
 ## (the lit screen and a row of status LEDs are the glow), seams down the side panels and
 ## vent slats on the flat top. Stands on -Y, the operator at -Z.
+## Modelled in Blender (tools/blender/parts/_console.py: "console" one section, "console_2"
+## two) at 1.0 m tall and 0.6 m deep: grown evenly to `height`, its width and depth taken up in
+## its bands; adds a bezel and readouts, a trackball, guarded toggles, knobs, a screwed access
+## panel, a louvre and a cable gland. Narrower than 0.45 m, the drawn one.
 static func console(width: float, height: float = 1.0, depth: float = 0.7,
+		glow := Color(0.25, 0.7, 0.85)) -> PartShapes.PartShape:
+	var model := "console" if width < 1.5 else "console_2"
+	if width < 0.45 or not PartAsset.has(model):
+		return _console_drawn(width, height, depth, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(width, height, depth), [1])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = _console_volume(width, height, depth)
+	shape.collision = _console_hull(width, height, depth)
+	return shape
+
+
+## The console's volume: its body, the slope and the plinth (m³).
+static func _console_volume(width: float, height: float, depth: float) -> float:
+	var h := height * 0.5
+	var d := depth * 0.5
+	var kick_h := minf(0.08, height * 0.08)
+	var kick := minf(0.05, depth * 0.1)
+	var shelf := depth * 0.2
+	var y_desk := h - height * 0.35
+	var zt := d * 0.15
+	var y_body := -h + kick_h
+	var area := depth * (y_desk - y_body) + (h - y_desk) * ((2.0 * d - shelf) + (d - zt)) * 0.5
+	return width * area + (width - 0.03) * kick_h * (depth - kick)
+
+
+## The console's collision: its side profile (plinth set back, shelf, slope, top) across its width.
+static func _console_hull(width: float, height: float, depth: float) -> ConvexPolygonShape3D:
+	var h := height * 0.5
+	var d := depth * 0.5
+	var w := width * 0.5
+	var kick := minf(0.05, depth * 0.1)
+	var shelf := depth * 0.2
+	var y_desk := h - height * 0.35
+	var zt := d * 0.15
+	var y_body := -h + minf(0.08, height * 0.08)
+	var pts := PackedVector3Array()
+	for p: Vector2 in [Vector2(-d + kick, -h), Vector2(d, -h), Vector2(d, h), Vector2(zt, h),
+			Vector2(-d + shelf, y_desk), Vector2(-d, y_desk), Vector2(-d, y_body)]:
+		pts.append(Vector3(-w, p.y, p.x))
+		pts.append(Vector3(w, p.y, p.x))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	return col
+
+
+## The code-drawn console: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _console_drawn(width: float, height: float = 1.0, depth: float = 0.7,
 		glow := Color(0.25, 0.7, 0.85)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
@@ -1772,16 +2033,8 @@ static func console(width: float, height: float = 1.0, depth: float = 0.7,
 			_seating_pad(leds, at, Vector3.RIGHT, v, nrm, 0.012, 0.01, 0.004)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
-	var area := depth * (y_desk - y_body) + (h - y_desk) * ((2.0 * d - shelf) + (d - zt)) * 0.5
-	shape.volume = width * area + (width - 0.03) * kick_h * (depth - kick)
-	var pts := PackedVector3Array()
-	for p: Vector2 in [Vector2(-d + kick, -h), Vector2(d, -h), Vector2(d, h), Vector2(zt, h),
-			Vector2(-d + shelf, y_desk), Vector2(-d, y_desk), Vector2(-d, y_body)]:
-		pts.append(Vector3(-w, p.y, p.x))
-		pts.append(Vector3(w, p.y, p.x))
-	var col := ConvexPolygonShape3D.new()
-	col.points = pts
-	shape.collision = col
+	shape.volume = _console_volume(width, height, depth)
+	shape.collision = _console_hull(width, height, depth)
 	PartShapes.emissive(shape, "screen", g.finish(), glow)
 	PartShapes.emissive(shape, "led", leds.finish(), glow)
 	return shape
@@ -1791,7 +2044,24 @@ static func console(width: float, height: float = 1.0, depth: float = 0.7,
 ## collar, a frame in the material colour carrying dark chamfered cushions (seat, back with
 ## side bolsters, a separate headrest on a narrower top), and armrests with dark pads.
 ## Stands on -Y, faces -Z (the backrest is at +Z).
+## Modelled in Blender (tools/blender/parts/seat.py) at 0.6 m across and 1.2 m tall: grown
+## evenly to `width`, its height taken up in its bands; adds a four-point harness, stitched
+## channels, a bellows on the pedestal and a recline lever.
 static func seat(width: float = 0.6, height: float = 1.2) -> PartShapes.PartShape:
+	if not PartAsset.has("seat"):
+		return _seat_drawn(width, height)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("seat", Vector3(width, height, width * 0.89), [0, 2])
+	PartAsset.fill(shape, "seat", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = _drawn_volume(["seat", width, height], _seat_drawn.bind(width, height))
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, width * 0.9)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn seat: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _seat_drawn(width: float = 0.6, height: float = 1.2) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var w := width * 0.5
@@ -1877,7 +2147,23 @@ static func _seating_base(k: MeshKit, at: Vector3, half: float, rise: float, pos
 ## chamfered mattress with a pillow at the -Z end and a folded blanket at the foot, a guard
 ## rail along both sides of the upper bunk's head half, and ladder rungs between the +Z end
 ## posts. Stands on -Y.
+## Modelled in Blender (tools/blender/parts/bunk.py, with slatted bases, quilted mattresses, a
+## flat-runged ladder, a drawer, a curtain and a shelf), grown evenly to `width`, its height and length
+## in its bands; under 1.4 m tall it is the code-drawn one.
 static func bunk(length: float = 2.0, width: float = 0.9, height: float = 1.9) -> PartShapes.PartShape:
+	if height < 1.4 or not PartAsset.has("bunk"):
+		return _bunk_drawn(length, width, height)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("bunk", Vector3(width, height, length), [0])
+	PartAsset.fill(shape, "bunk", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = width * length * 0.12 * 2.0 + 0.07 * 0.07 * height * 4.0
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, length)
+	shape.collision = col
+	return shape
+
+
+static func _bunk_drawn(length: float, width: float, height: float) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var hw := width * 0.5
@@ -1935,7 +2221,23 @@ static func bunk(length: float = 2.0, width: float = 0.9, height: float = 1.9) -
 ## with chamfered corners and a rubber bumper band round its edge, a galvanised mounting
 ## plate under it, an eight-sided stainless pedestal with brushed steel collars, on a
 ## chamfered cast foot plate with a blackened bolt in each corner. Stands on -Y.
+## Modelled in Blender (tools/blender/parts/table.py, with an inlaid top, cup holders, rails under
+## it and a round column with a strut's boot), grown evenly to `depth`, its width and height in its
+## bands.
 static func table(width: float = 1.8, depth: float = 0.9, height: float = 0.75) -> PartShapes.PartShape:
+	if not PartAsset.has("table"):
+		return _table_drawn(width, depth, height)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("table", Vector3(width, height, depth), [2])
+	PartAsset.fill(shape, "table", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = width * depth * 0.06 + 0.03
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, depth)
+	shape.collision = col
+	return shape
+
+
+static func _table_drawn(width: float, depth: float, height: float) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var top_t := 0.045                                        # top slab, m
@@ -2020,7 +2322,38 @@ static func _galley_arc(k: MeshKit, r0: float, r1: float, a0: float, a1: float, 
 		k.quad(d * r0 + lo, d * r1 + lo, d * r1 + hi, d * r0 + hi, Vector3(cos(t), 0.0, sin(t)) * float(e[1]))
 
 
+## A crew locker `width` across, `height` tall, `depth` deep, its two door leaves to -Z: a bevelled
+## carcass with pressed side ribs and vents, an overhanging cap, a plinth with a kick strip and feet;
+## each leaf a pressed panel with louvres, hinge knuckles, a paddle handle, lock, hasp and name card.
+## Modelled in Blender (tools/blender/parts/_locker.py), grown evenly to `width`, its height and depth
+## in its bands. With `leaves` on the right leaf comes as PartShape.leaf (the carcass and the leaf are
+## separate models in the locker's space).
 static func locker(width: float = 0.8, height: float = 1.9, depth: float = 0.5) -> PartShapes.PartShape:
+	var model := "locker_carcass" if leaves else "locker"
+	if width < 0.4 or not PartAsset.has(model) or (leaves and not PartAsset.has("locker_leaf")):
+		return _locker_drawn(width, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(width, height, depth), [0])
+	var palette := PartAsset.palette_of(WreckParts, Color.WHITE)
+	PartAsset.fill(shape, model, palette, fit[0], fit[1])
+	shape.volume = width * height * depth * 0.15
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, depth)
+	shape.collision = col
+	if leaves:
+		var lc := PartAsset.point("locker_leaf", "leaf", fit[0], fit[1])
+		var lk := PartShapes.PartShape.new()
+		PartAsset.fill(lk, "locker_leaf", palette, fit[0], fit[1], Vector3.ZERO, -lc)
+		var sc: float = fit[0]
+		var leaf_h := height - (0.08 + 0.04 + 0.06) * sc
+		var dw := (width - (0.05 + 0.012) * sc) * 0.5
+		_leaf_of(shape, lk, Vector3(dw, leaf_h, 0.02), lc,
+				[PartAsset.point("locker_leaf", "hinge_low", fit[0], fit[1]),
+				PartAsset.point("locker_leaf", "hinge_high", fit[0], fit[1])], Vector3.FORWARD)
+	return shape
+
+
+static func _locker_drawn(width: float, height: float, depth: float) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var d := depth * 0.5
@@ -2084,6 +2417,12 @@ static func _leaf(shape: PartShapes.PartShape, kit: MeshKit, size: Vector3, at: 
 		out: Vector3) -> void:
 	var leaf := PartShapes.PartShape.new()
 	leaf.mesh = kit.finish()
+	_leaf_of(shape, leaf, size, at, hinge, out)
+
+
+## As `_leaf`, the door already a shape (its mesh drawn about its middle `at`).
+static func _leaf_of(shape: PartShapes.PartShape, leaf: PartShapes.PartShape, size: Vector3, at: Vector3,
+		hinge: Array, out: Vector3) -> void:
 	leaf.volume = size.x * size.y * size.z * 0.7
 	var col := BoxShape3D.new()
 	col.size = size
@@ -2098,8 +2437,29 @@ static func _leaf(shape: PartShapes.PartShape, kit: MeshKit, size: Vector3, at: 
 ## the X sides (anodised), pale enamel panels screwed on the Z sides (status lamps in a
 ## plastic bezel on -Z), blackened corner bolts, and a hollow nozzle: a heat-tinted rim, a
 ## sooted ceramic liner stepped down the bore, a crossed titanium ion grid over a glowing
-## floor and a lit ring on the step (PartShape.glow).
+## floor and a lit ring on the step (PartShape.glow). Modelled in Blender
+## (tools/blender/parts/ion_thruster.py), grown evenly to `width` with its length in its bands.
 static func ion_thruster(width: float, length: float, glow := Color(0.35, 0.65, 1.0)) -> PartShapes.PartShape:
+	if not PartAsset.has("ion_thruster"):
+		return _ion_thruster_drawn(width, length, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("ion_thruster", Vector3(width, length, width), [0, 2])
+	PartAsset.fill(shape, "ion_thruster", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	var h := length * 0.5
+	var y0 := -h + length * 0.78
+	var r_in := width * 0.32
+	var r_base := width * 0.42
+	var y_low := -h + length * 0.36 - clampf(length * 0.03, 0.006, 0.03)
+	shape.volume = (width * width * (y0 + h) * 0.96 - PI * r_in * r_in * (y0 - y_low)) \
+			+ PI * (r_base * r_base - r_in * r_in) * (h - y0)
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, length, width)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn ion thruster: the fallback without its Blender file.
+static func _ion_thruster_drawn(width: float, length: float, glow := Color(0.35, 0.65, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var w := width
 	var h := length * 0.5
@@ -2237,6 +2597,22 @@ static func _thrusters_holed_face(k: MeshKit, half: float, c: float, y: float, h
 ## a dark bolted foot, a visor leaning over the lamps from +Z, each lamp a dark bezel round a
 ## reflector sloping down to a lit lens.
 static func headlamp_bar(length: float, lamps: int = 4, glow := Color(1.0, 0.97, 0.9)) -> PartShapes.PartShape:
+	var model := "headlamp_bar_%d" % lamps
+	if not PartAsset.has(model):
+		return _headlamp_bar_drawn(length, lamps, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(length, 0.268, 0.31), [1])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = _drawn_volume(["headlamp_bar", length, lamps], _headlamp_bar_drawn.bind(length, lamps, glow))
+	var col := BoxShape3D.new()
+	col.size = Vector3(length, 0.26, 0.31)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn headlamp bar: the fallback without its Blender file, and for lamp counts with no
+## model (docs/BLENDER_PARTS.md).
+static func _headlamp_bar_drawn(length: float, lamps: int = 4, glow := Color(1.0, 0.97, 0.9)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hl := length * 0.5
 	var y_base := -0.11
@@ -2523,12 +2899,105 @@ static func grating(width: float, length: float, thickness: float = 0.05) -> Par
 	return shape
 
 
+## A crane's hook block (WD25) hanging `cable` m under its hoist: a yellow block round a sheave, a forged
+## hook under it and the wire rope up to the trolley. The origin is the block's middle; collision is the
+## block alone (the rope and hook are look). The hook's eye is `hook_eye(cable)` under it.
+static func crane_hook(cable: float) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var size := Vector3(0.42, 0.46, 0.3)
+	k.color = HAZARD_YELLOW
+	k.box(size)
+	k.color = CAST
+	k.box(Vector3(0.12, 0.3, 0.34), Vector3(0.0, 0.02, 0.0))   # the sheave's hub through the cheeks
+	k.color = DETAIL
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(0.03, 0.03, 0.32), Vector3(sx * 0.15, -0.16, 0.0))   # the cheek bolts
+	# The hook: a shank, the bow and the point.
+	k.color = GUNMETAL
+	k.box(Vector3(0.07, 0.14, 0.07), Vector3(0.0, -size.y * 0.5 - 0.07, 0.0))
+	k.strut(Vector3(0.0, -size.y * 0.5 - 0.14, 0.0), Vector3(0.09, -size.y * 0.5 - 0.3, 0.0), 0.06)
+	k.strut(Vector3(0.09, -size.y * 0.5 - 0.3, 0.0), Vector3(-0.05, -size.y * 0.5 - 0.36, 0.0), 0.06)
+	k.strut(Vector3(-0.05, -size.y * 0.5 - 0.36, 0.0), Vector3(-0.1, -size.y * 0.5 - 0.24, 0.0), 0.05)
+	# Two falls of wire rope up to the trolley.
+	k.color = CHROME
+	for sx: float in [-1.0, 1.0]:
+		k.strut(Vector3(sx * 0.05, size.y * 0.5, 0.0), Vector3(sx * 0.05, size.y * 0.5 + cable, 0.0), 0.022)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = size.x * size.y * size.z
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return PartShapes.stamp(shape, "crane_hook", [cable])
+
+
+## Where a `crane_hook`'s eye is, in its own space: under the block, in the hook's bow.
+static func hook_eye() -> Vector3:
+	return Vector3(0.0, -0.23 - 0.3, 0.0)
+
+
+## A belt conveyor (WD25) `width` x `length` (along Z), `height` tall, lying on a deck: two yellow side
+## channels on short legs, a rubber belt over the rollers between them (its top the carrying face),
+## the drums at each end, a guard over each. The origin is its middle; collision is its box.
+static func belt_conveyor(width: float, length: float, height: float = 0.3) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var hx := width * 0.5
+	var hz := length * 0.5
+	var hy := height * 0.5
+	var ch := 0.05   # the side channels' width
+	k.color = HAZARD_YELLOW
+	for sx: float in [-1.0, 1.0]:
+		k.box(Vector3(ch, 0.12, length), Vector3(sx * (hx - ch * 0.5), hy - 0.07, 0.0))
+	k.color = GALVANISED
+	var legs := maxi(2, int(ceil(length / 1.2)) + 1)
+	for i in legs:
+		var z := -hz + 0.08 + (length - 0.16) * float(i) / float(legs - 1)
+		for sx: float in [-1.0, 1.0]:
+			k.box(Vector3(0.05, height - 0.12, 0.05), Vector3(sx * (hx - ch * 0.5), -0.06, z))
+		k.box(Vector3(width - ch * 2.0, 0.03, 0.04), Vector3(0.0, -hy + 0.04, z))   # a cross tie at the foot
+	# The belt: its top face, the return under it, and the rollers between.
+	k.color = Color(0.1, 0.1, 0.11, SurfaceZones.RUBBER_A)
+	k.box(Vector3(width - ch * 2.0 - 0.01, 0.02, length - 0.04), Vector3(0.0, hy - 0.03, 0.0))
+	k.box(Vector3(width - ch * 2.0 - 0.01, 0.015, length - 0.3), Vector3(0.0, hy - 0.13, 0.0))
+	k.color = CHROME
+	var rollers := maxi(2, int(round(length / 0.4)))
+	for i in range(1, rollers):
+		var z := -hz + length * float(i) / float(rollers)
+		k.box(Vector3(width - ch * 2.0 - 0.02, 0.05, 0.05), Vector3(0.0, hy - 0.07, z))
+	k.color = CAST
+	for sz: float in [-1.0, 1.0]:
+		k.box(Vector3(width - ch * 2.0 - 0.02, 0.12, 0.12), Vector3(0.0, hy - 0.08, sz * (hz - 0.08)))   # the drums
+		k.box(Vector3(width + 0.02, 0.04, 0.16), Vector3(0.0, hy + 0.01, sz * (hz - 0.08)))   # the guards over them
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = width * length * 0.06
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, length)
+	shape.collision = col
+	return PartShapes.stamp(shape, "belt_conveyor", [width, length, height])
+
+
 ## A power plant: a block `size` (x, y, z) on two galvanised skids standing on rubber
 ## anti-vibration pads (on steel shoes) at their ends, with anodised cooling
 ## fin packs down both sides, a bolted access panel on top, a cast flange with stainless
 ## bolts round a gunmetal coupling hub on its back (+Z) and, on its front (-Z), a galvanised
-## intake grille and a status strip of lit segments in a plastic bezel (glow).
+## intake grille and a status strip of lit segments in a plastic bezel (glow). Modelled in Blender
+## (tools/blender/parts/generator.py), fitted to `size` by PartAsset.fit_box.
 static func generator(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
+	if not PartAsset.has("generator"):
+		return _generator_drawn(size, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("generator", size)
+	PartAsset.fill(shape, "generator", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = size.x * size.y * size.z * 0.7
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return shape
+
+
+## The code-drawn generator: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _generator_drawn(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := size.y * 0.5
 	var front := -size.z * 0.46
@@ -2647,6 +3116,20 @@ static func _electrical_xform(k: MeshKit, from: int, t: Transform3D) -> void:
 ## dark seam with two hinges, a handle, a louvre, a hazard label between two indicator
 ## lamps (glow) and a big red lever (up = closed) between two guard cheeks.
 static func switch_cabinet(size: Vector3 = Vector3(0.7, 1.4, 0.35), glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
+	if not PartAsset.has("switch_cabinet"):
+		return _switch_cabinet_drawn(size, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("switch_cabinet", size)
+	PartAsset.fill(shape, "switch_cabinet", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = size.x * size.y * size.z * 0.3
+	var col := BoxShape3D.new()
+	col.size = size + Vector3(0.0, 0.0, 0.2)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn breaker cabinet: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _switch_cabinet_drawn(size: Vector3 = Vector3(0.7, 1.4, 0.35), glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := size.y * 0.5
 	var front := -size.z * 0.5
@@ -2729,6 +3212,23 @@ static func switch_cabinet(size: Vector3 = Vector3(0.7, 1.4, 0.35), glow := Colo
 ## (-) terminal, a copper strap to the next cell and a charge lamp on its front (glow).
 static func battery_rack(width: float = 1.2, height: float = 1.4, depth: float = 0.5,
 		rows: int = 3, cells: int = 3, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
+	if rows != 3 or cells != 3 or not PartAsset.has("battery_rack"):
+		return _battery_rack_drawn(width, height, depth, rows, cells, glow)
+	var shape := PartShapes.PartShape.new()
+	var size := Vector3(width, height, depth)
+	var fit := PartAsset.fit_box("battery_rack", size, [1])
+	PartAsset.fill(shape, "battery_rack", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = width * height * depth * 0.4
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return shape
+
+
+## The code-drawn battery rack: the fallback without its Blender file, and any other count of
+## shelves or cells (docs/BLENDER_PARTS.md).
+static func _battery_rack_drawn(width: float = 1.2, height: float = 1.4, depth: float = 0.5,
+		rows: int = 3, cells: int = 3, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var post := 0.05
 	for sx: float in [-1.0, 1.0]:
@@ -2784,7 +3284,36 @@ static func battery_rack(width: float = 1.2, height: float = 1.4, depth: float =
 ## upholstered seat and back cushions in `cushion` (one per ~0.65 m, seams between them; an
 ## untagged colour becomes upholstery, a zoned one keeps its finish) and leather pads in the
 ## same tone on the arms. Stands on -Y, back at +Z.
+## Modelled in Blender (tools/blender/parts/_bench.py) as bench_2 to bench_6, one a cushion count
+## (one a ~0.65 m), so a longer bench gets more cushions, not wider ones: grown evenly to `height`,
+## its length and depth taken up in its bands; adds piped seat cushions with buttons, channelled back
+## cushions with a lumbar roll, a stitched apron, a chrome cap rail and a screwed rear panel.
 static func bench(length: float = 2.0, depth: float = 0.8, height: float = 0.95,
+		cushion := Color(0.65, 0.12, 0.14)) -> PartShapes.PartShape:
+	var n := maxi(1, roundi((length - 0.14) / 0.65))
+	var model := "bench_%d" % n
+	if not PartAsset.has(model):
+		return _bench_drawn(length, depth, height, cushion)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(length, height, depth), [1])
+	PartAsset.fill(shape, model, _cushioned(cushion), fit[0], fit[1])
+	var back_h := height - 0.36 - 0.14
+	shape.volume = length * depth * 0.36 * 0.4 + length * back_h * 0.16 * 0.3
+	var col := BoxShape3D.new()
+	col.size = Vector3(length, height, depth)
+	shape.collision = col
+	return shape
+
+
+## The palette for a modelled seat with cushions in `cushion`: as upholstery ("CUSHION") and as
+## leather ("CUSHION_LEATHER"); a zoned colour keeps its finish (as the drawn ones' `_furn_zoned`).
+static func _cushioned(cushion: Color) -> Dictionary:
+	var p := PartAsset.palette_of(WreckParts, Color.WHITE)
+	p["CUSHION"] = _furn_zoned(cushion, "upholstery")
+	p["CUSHION_LEATHER"] = _furn_zoned(cushion, "leather")
+	return p
+
+static func _bench_drawn(length: float = 2.0, depth: float = 0.8, height: float = 0.95,
 		cushion := Color(0.65, 0.12, 0.14)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
@@ -2914,7 +3443,23 @@ static func bar_counter(length: float = 3.0, height: float = 1.1, depth: float =
 ## a rubber-gripped foot ring on three chrome spokes, a dark plastic seat pan and a round
 ## leather cushion with a rounded edge in `cushion` (an untagged colour becomes leather, a
 ## zoned one keeps its finish).
+## Modelled in Blender (tools/blender/parts/stool.py) at 0.75 m: its height taken up in two bands up
+## the column; adds bolts into the deck, a gas lift's bellows, a clamp on the foot ring, a seat pan
+## with a height lever and a piped, buttoned cushion.
 static func stool(height: float = 0.75, cushion := Color(0.65, 0.12, 0.14)) -> PartShapes.PartShape:
+	if not PartAsset.has("stool"):
+		return _stool_drawn(height, cushion)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("stool", Vector3(0.4, height, 0.4), [0, 2])
+	PartAsset.fill(shape, "stool", _cushioned(cushion), fit[0], fit[1])
+	shape.volume = PI * 0.2 * 0.2 * height * 0.5
+	var col := CylinderShape3D.new()
+	col.radius = 0.2
+	col.height = height
+	shape.collision = col
+	return shape
+
+static func _stool_drawn(height: float = 0.75, cushion := Color(0.65, 0.12, 0.14)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var y_pan := h - 0.1                      # underside of the cushion, m
@@ -2956,6 +3501,18 @@ static func _furn_zoned(c: Color, id: String) -> Color:
 ## back, against a wall) with a chamfered top edge, a lid seam and a stainless flush plate
 ## with two chrome buttons on its front.
 static func toilet() -> PartShapes.PartShape:
+	if not PartAsset.has("toilet"):
+		return _toilet_drawn()
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("toilet", Vector3(0.42, 0.78, 0.57), [0, 1, 2])
+	PartAsset.fill(shape, "toilet", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = 0.06
+	var col := BoxShape3D.new()
+	col.size = Vector3(0.44, 0.78, 0.7)
+	shape.collision = col
+	return shape
+
+static func _toilet_drawn() -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	# The floor plate and its bolts.
 	k.color = CAST
@@ -3010,6 +3567,18 @@ static func toilet() -> PartShapes.PartShape:
 ## and a chrome tap on a stainless boss at the back with a lever, its spout reaching over
 ## the bowl.
 static func basin() -> PartShapes.PartShape:
+	if not PartAsset.has("basin"):
+		return _basin_drawn()
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("basin", Vector3(0.64, 0.94, 0.5), [0, 1, 2])
+	PartAsset.fill(shape, "basin", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = 0.08
+	var col := BoxShape3D.new()
+	col.size = Vector3(0.64, 0.9, 0.5)
+	shape.collision = col
+	return shape
+
+static func _basin_drawn() -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	# Toe recess, cabinet, door seams and handles.
 	k.color = DARK
@@ -3158,6 +3727,329 @@ static func portal_lintel(width: float = 1.5, height: float = 0.35, depth: float
 	col.points = pts
 	shape.collision = col
 	return shape
+
+
+## A framed kit door's header (WD6b), `width` across X, `height` tall, `depth` along Z with its front (+Z) to
+## the room: a bar with its lower corners cut by `cut`, a dark seam round a raised panel, the drive's cast
+## housing at `drive_x` (a hex boss, a hub cap, four bolts, vent slats beside it), a bezelled status lamp
+## (an "led") at `lamp_x`, a hazard band along its front's foot on a `pressure` door, and under it a dark
+## anodised track channel at each of `slots` (the leaves' z, header space) and a lit amber strip toward the
+## front (a "strip"). The leaves hang from it and run in the channels into the pocket. `plate` (x its middle,
+## y its width; zero none): a name plate on the front over the doorway, a dark field in a polished bezel with a
+## screw at each corner, in the band `door_plate_band` gives; its field's face stands `DOOR_PLATE_RAISE` proud
+## of the front, `DOOR_PLATE_BORDER` in from the bezel's edge (a room's name goes on it).
+static func door_header(width: float = 2.4, height: float = 0.3, depth: float = 0.25, cut: float = 0.1,
+		drive_x: float = 0.6, lamp_x: float = -0.9, slots: PackedFloat32Array = PackedFloat32Array(),
+		pressure: bool = false, glow := Color(1.0, 0.72, 0.25), plate := Vector2.ZERO) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var w := width * 0.5
+	var h := height * 0.5
+	var hd := depth * 0.5
+	var c := minf(cut, minf(w, height) * 0.6)
+	var outline := _doors_lintel_outline(w, h, c)
+	k.color = Color.WHITE
+	k.extrude(outline, depth)
+	var volume := k.volume()
+	var i1 := minf(0.03, h * 0.22)
+	var i2 := i1 + minf(0.015, h * 0.1)
+	k.color = DARK
+	k.extrude(_doors_lintel_outline(w - i1, h - i1, clampf(c - i1 * 0.414, 0.0, (h - i1) * 1.8)), depth + 0.006)
+	k.color = Color.WHITE
+	k.extrude(_doors_lintel_outline(w - i2, h - i2, clampf(c - i2 * 0.414, 0.0, (h - i2) * 1.8)), depth + 0.01)
+	var front := hd + 0.005
+	var n := Vector3(0.0, 0.0, 1.0)
+	if pressure:
+		var haz := minf(0.05, height * 0.18)
+		_gear_hazard(k, Vector3(0.0, -h + i2 + haz * 0.5, front), Vector3.RIGHT, Vector3.UP, n,
+				Vector2(2.0 * (w - c) - 0.06, haz), haz * 0.5)
+	# The drive's housing: a cast cover, a hex boss and hub cap, four bolts, vent slats on its open side.
+	var dw := minf(0.36, width * 0.25)
+	var dh := height * 0.66
+	k.color = CAST
+	k.box(Vector3(dw, dh, 0.026), Vector3(drive_x, 0.0, front + 0.013))
+	k.color = BOSS
+	_gear_bolt(k, Vector3(drive_x, 0.0, front + 0.026), n, minf(0.055, dh * 0.3), 0.016)
+	k.color = FLANGE_BOLT
+	_gear_bolt(k, Vector3(drive_x, 0.0, front + 0.042), n, minf(0.024, dh * 0.13), 0.012)
+	for sx: float in [-1.0, 1.0]:
+		for sy: float in [-1.0, 1.0]:
+			_gear_bolt(k, Vector3(drive_x + sx * (dw * 0.5 - 0.025), sy * (dh * 0.5 - 0.022), front + 0.026), n,
+					0.009, 0.005)
+	k.color = DARK
+	var vent_x := drive_x - signf(drive_x if absf(drive_x) > 0.01 else 1.0) * (dw * 0.5 + 0.09)
+	for j in 4:
+		k.box(Vector3(0.12, 0.012, 0.01), Vector3(vent_x, -dh * 0.3 + float(j) * dh * 0.2, front + 0.004))
+	# The status lamp in a polished bezel over the control post.
+	k.color = TRIM
+	k.box(Vector3(0.1, 0.055, 0.014), Vector3(lamp_x, 0.0, front + 0.007))
+	# The name plate over the doorway.
+	if plate.y > 0.0:
+		var band := door_plate_band(height, pressure)
+		var b := DOOR_PLATE_BORDER
+		k.color = TRIM
+		k.box(Vector3(plate.y, band.y, DOOR_PLATE_RAISE - 0.004), Vector3(plate.x, band.x, front + (DOOR_PLATE_RAISE - 0.004) * 0.5))
+		k.color = DARK
+		k.box(Vector3(plate.y - 2.0 * b, band.y - 2.0 * b, 0.004), Vector3(plate.x, band.x, front + DOOR_PLATE_RAISE - 0.002))
+		k.color = FLANGE_BOLT
+		for sx: float in [-1.0, 1.0]:
+			for sy: float in [-1.0, 1.0]:
+				_gear_bolt(k, Vector3(plate.x + sx * (plate.y * 0.5 - b * 0.5), band.x + sy * (band.y * 0.5 - b * 0.5),
+						front + DOOR_PLATE_RAISE - 0.004), n, b * 0.32, 0.003)
+	var shape := PartShapes.PartShape.new()
+	var led := MeshKit.new()
+	led.box(Vector3(0.07, 0.028, 0.006), Vector3(lamp_x, 0.0, front + 0.016))
+	# Under the bar: a track channel for each slot and the lit strip toward the front.
+	var run := 2.0 * (w - c) - 0.05
+	if run > 0.1:
+		k.color = RAIL_DARK
+		for z: float in slots:
+			k.box(Vector3(run, 0.01, 0.045), Vector3(0.0, -h - 0.005, z))
+		var g := MeshKit.new()
+		g.box(Vector3(run - 0.06, 0.004, 0.02), Vector3(0.0, -h - 0.003, hd - 0.035))
+		PartShapes.emissive(shape, "strip", g.finish(), glow)
+	PartShapes.emissive(shape, "led", led.finish(), Color(0.3, 0.95, 1.0))
+	shape.mesh = k.finish()
+	shape.volume = volume
+	var pts := PackedVector3Array()
+	for p in outline:
+		pts.append(Vector3(p.x, p.y, -hd))
+		pts.append(Vector3(p.x, p.y, hd))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	shape.collision = col
+	return shape
+
+
+## A framed kit door header's name plate: how far its field's face stands proud of the header's front, and its
+## bezel's width round the field.
+const DOOR_PLATE_RAISE := 0.012
+const DOOR_PLATE_BORDER := 0.012
+## The least height a name plate keeps clear of a pressure door's hazard band (less, it goes over the band).
+const DOOR_PLATE_LEAST := 0.13
+
+
+## The band a `door_header`'s name plate fills (x its middle, y its height, header space): the raised panel
+## clear of its seam and, on a `pressure` door, of the hazard band along its foot where that leaves the plate
+## `DOOR_PLATE_LEAST` (on a shorter header the plate is bolted over the band's middle), at most 0.15 m tall.
+static func door_plate_band(height: float, pressure: bool) -> Vector2:
+	var h := height * 0.5
+	var i1 := minf(0.03, h * 0.22)
+	var i2 := i1 + minf(0.015, h * 0.1)
+	var lo := -h + i2 + 0.01
+	var hi := h - i2 - 0.01
+	var haz := minf(0.05, height * 0.18)
+	if pressure and hi - (lo + haz) >= DOOR_PLATE_LEAST:
+		lo += haz
+	var tall := minf(hi - lo, 0.15)
+	return Vector2((lo + hi) * 0.5, tall)
+
+
+## A framed kit door's casing (WD6b): the cover over the leaf's pocket, `width` across X, `height` tall,
+## `depth` along Z with its front (+Z) to the room. A painted panel with chamfered upright edges on a rubber
+## kick block under a cast head cap; on its front a dark seam round a raised panel, louvre slats low down and
+## four blackened bolts.
+static func door_casing(width: float = 0.6, height: float = 2.1, depth: float = 0.13) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var hw := width * 0.5
+	var hh := height * 0.5
+	var hd := depth * 0.5
+	var c := minf(0.02, minf(hw, hd) * 0.3)
+	var base_h := minf(0.14, height * 0.08)
+	var cap_h := minf(0.06, height * 0.04)
+	k.color = Color.WHITE
+	k.loft(_doors_ring(hw, hd, c, -hh + base_h - 0.01), _doors_ring(hw, hd, c, hh - cap_h + 0.01))
+	k.color = RUBBER
+	k.box(Vector3(width + 0.012, base_h, depth + 0.012), Vector3(0.0, -hh + base_h * 0.5, 0.0))
+	k.color = CAST
+	k.box(Vector3(width + 0.008, cap_h, depth + 0.008), Vector3(0.0, hh - cap_h * 0.5, 0.0))
+	var pw := width - 2.0 * c - 0.05
+	if pw > 0.08:
+		var lo := -hh + base_h + 0.04
+		var louvre_top := lo + minf(0.42, height * 0.2)
+		var top := hh - cap_h - 0.05
+		k.color = DARK
+		k.box(Vector3(pw, top - louvre_top - 0.02, 0.006), Vector3(0.0, (top + louvre_top + 0.02) * 0.5, hd + 0.002))
+		k.color = Color.WHITE
+		k.box(Vector3(pw - 0.03, top - louvre_top - 0.05, 0.008), Vector3(0.0, (top + louvre_top + 0.02) * 0.5, hd + 0.004))
+		k.color = DARK
+		var y := lo + 0.03
+		while y < louvre_top - 0.02:
+			k.box(Vector3(pw - 0.02, 0.014, 0.012), Vector3(0.0, y, hd + 0.004))
+			y += 0.055
+		k.color = FLANGE_BOLT
+		for by: float in [lo - 0.012, top + 0.022]:
+			for sx: float in [-1.0, 1.0]:
+				_gear_bolt(k, Vector3(sx * (pw * 0.5 - 0.01), by, hd), Vector3(0.0, 0.0, 1.0), 0.01, 0.006)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = width * height * depth * 0.5
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, depth)
+	shape.collision = col
+	return shape
+
+
+## A framed kit door's leaf (WD6b), `width` across X, `height` tall, `thick` along Z (its bolts' face +Z):
+## a painted slab with a dark seam round a raised field split by a rib, a vision slot in a polished bezel
+## and a pull channel toward its leading edge (`edge`: +1 its +X side), hanger plates over its two bolts,
+## a carriage rail along its top and a rubber sweep along its foot, a hazard band low on a `pressure` door.
+## Leave room at `edge` for the lit edge strip (WreckInterior.powered_door).
+static func door_leaf(width: float = 0.9, height: float = 2.0, thick: float = 0.06, edge: float = 1.0,
+		pressure: bool = false) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var hw := width * 0.5
+	var hh := height * 0.5
+	var hd := thick * 0.5
+	var e := 1.0 if edge >= 0.0 else -1.0
+	k.color = Color.WHITE
+	k.box(Vector3(width, height, thick), Vector3.ZERO)
+	var m := 0.07
+	var f_lo := -hh + m
+	if pressure:
+		var haz := minf(0.18, height * 0.09)
+		for s: float in [-1.0, 1.0]:
+			_gear_hazard(k, Vector3(0.0, -hh + 0.05 + haz * 0.5, s * hd), Vector3.RIGHT, Vector3.UP,
+					Vector3(0.0, 0.0, s), Vector2(width - 2.0 * m, haz), haz * 0.45)
+		f_lo = -hh + 0.08 + haz
+	var f_hi := hh - m - 0.06
+	var fw := width - 2.0 * m
+	if fw > 0.1 and f_hi - f_lo > 0.3:
+		var fy := (f_lo + f_hi) * 0.5
+		k.color = DARK
+		k.box(Vector3(fw, f_hi - f_lo, thick + 0.006), Vector3(0.0, fy, 0.0))
+		k.color = Color.WHITE
+		k.box(Vector3(fw - 0.03, f_hi - f_lo - 0.03, thick + 0.01), Vector3(0.0, fy, 0.0))
+		k.color = DARK
+		k.box(Vector3(fw - 0.03, 0.012, thick + 0.014), Vector3(0.0, f_lo + (f_hi - f_lo) * 0.42, 0.0))
+		# The vision slot high up toward the leading edge, the pull channel below it.
+		var vw := minf(0.1, fw * 0.3)
+		var vh := minf(0.42, (f_hi - f_lo) * 0.3)
+		var vx := e * maxf(0.0, hw - m - 0.05 - vw * 0.5 - 0.05)
+		var vy := f_hi - 0.06 - vh * 0.5
+		k.color = TRIM
+		k.box(Vector3(vw + 0.03, vh + 0.03, thick + 0.018), Vector3(vx, vy, 0.0))
+		k.color = WINDOW
+		k.box(Vector3(vw, vh, thick + 0.022), Vector3(vx, vy, 0.0))
+		k.color = RAIL_DARK
+		var gx := e * maxf(0.0, hw - m - 0.045)
+		k.box(Vector3(0.035, minf(0.34, (f_hi - f_lo) * 0.25), thick + 0.02), Vector3(gx, f_lo + (f_hi - f_lo) * 0.3, 0.0))
+	# Hanger plates where the leaf is bolted to the header, its carriage rail and rollers, the sweep.
+	k.color = CAST
+	for dx: float in [-0.3, 0.3]:
+		var bx := clampf(dx * width, -hw + 0.08, hw - 0.08)
+		k.box(Vector3(0.1, 0.07, thick + 0.024), Vector3(bx, hh - 0.08, 0.0))
+		k.box(Vector3(0.06, 0.01, 0.03), Vector3(bx, hh + 0.005, 0.0))
+	k.color = RAIL_DARK
+	k.box(Vector3(width * 0.84, 0.007, 0.018), Vector3(0.0, hh + 0.0035, 0.0))
+	k.color = RUBBER
+	k.box(Vector3(width - 0.02, 0.008, thick + 0.004), Vector3(0.0, -hh - 0.004, 0.0))
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = width * height * thick
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, thick)
+	shape.collision = col
+	return shape
+
+
+## The body of a pressure door's bleed valve (WD11a), `depth` along Z (its back on -Z against the wall, its
+## face +Z): a round cast flange `radius` across with two bolt bosses (the bolts are its joints), a brass valve
+## block standing off it with a spindle out of its face for the wheel, and an outlet stub out of its -Y side
+## with a dark mouth. The wheel (`valve_wheel`) is its own part, turning on the spindle.
+static func valve_body(radius: float = 0.085, depth: float = 0.06) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var hd := depth * 0.5
+	var flange := 0.012
+	k.color = CAST
+	_tube(k, Vector3(0.0, 0.0, -hd), Vector3(0.0, 0.0, -hd + flange), radius, 16)
+	for sx: float in [-1.0, 1.0]:
+		_tube(k, Vector3(sx * radius * 0.73, 0.0, -hd + flange), Vector3(sx * radius * 0.73, 0.0, -hd + flange + 0.004), 0.014, 8)
+	# The block: a brass barrel out of the flange's face, a collar where the spindle leaves it.
+	k.color = BRASS
+	var block := radius * 0.42
+	_tube(k, Vector3(0.0, 0.0, -hd + flange), Vector3(0.0, 0.0, hd - 0.012), block, 12)
+	k.color = TRIM
+	_tube(k, Vector3(0.0, 0.0, hd - 0.012), Vector3(0.0, 0.0, hd - 0.004), block * 0.62, 12)
+	k.color = CHROME
+	_tube(k, Vector3(0.0, 0.0, hd - 0.004), Vector3(0.0, 0.0, hd), block * 0.3, 8)
+	# The outlet: a stub down out of the block's side, a dark mouth at its end.
+	var oz := -hd + flange + (depth - flange) * 0.42
+	k.color = BRASS
+	_tube(k, Vector3(0.0, -block * 0.6, oz), Vector3(0.0, -radius * 0.92, oz), block * 0.45, 10)
+	k.color = DARK
+	_tube(k, Vector3(0.0, -radius * 0.92, oz), Vector3(0.0, -radius * 0.98, oz), block * 0.32, 10)
+	# A tab up off the flange over the wheel, a dark bezel on it for the pressure lamp (`valve_lamp`).
+	k.color = CAST
+	k.box(Vector3(0.05, VALVE_TAB, flange), Vector3(0.0, radius + VALVE_TAB * 0.5 - 0.02, -hd + flange * 0.5))
+	k.color = DARK
+	var lamp := valve_lamp(radius, depth)
+	_tube(k, lamp - Vector3(0.0, 0.0, 0.004), lamp, 0.016, 12)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = PI * radius * radius * flange + PI * block * block * depth
+	var col := ConvexPolygonShape3D.new()
+	var pts := PackedVector3Array()
+	for x: float in [-radius, radius]:
+		for y: float in [-radius, radius + VALVE_TAB - 0.02]:
+			for z: float in [-hd, hd]:
+				pts.append(Vector3(x, y, z))
+	col.points = pts
+	shape.collision = col
+	return shape
+
+
+## How tall `valve_body`'s lamp tab is, m.
+const VALVE_TAB: float = 0.075
+
+
+## Where `valve_body`'s pressure lamp sits (its part space): on its tab over the wheel, on the tab's face.
+static func valve_lamp(radius: float = 0.085, depth: float = 0.06) -> Vector3:
+	return Vector3(0.0, radius + VALVE_TAB * 0.5 - 0.005, -depth * 0.5 + 0.012 + 0.004)
+
+
+## Where `valve_body`'s outlet mouth is and which way it blows (its part space): [point, direction].
+static func valve_outlet(radius: float = 0.085, depth: float = 0.06) -> Array:
+	var oz := -depth * 0.5 + 0.012 + (depth - 0.012) * 0.42
+	return [Vector3(0.0, -radius * 0.98, oz), Vector3(0.0, -1.0, 0.35).normalized()]
+
+
+## A bleed valve's hand wheel (WD11a), `radius` to the rim's middle, `depth` along Z (its face +Z): a rim of a
+## round bar in the part's paint (a valve's red, WD11a's) on four spokes to a cast hub with a nut on its face, a
+## knob on the rim to turn it by. Round about Z, so it turns on its spindle without its collision changing.
+static func valve_wheel(radius: float = 0.095, depth: float = 0.03) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var bar := 0.011
+	var sides := 16
+	k.color = Color.WHITE
+	for i in sides:
+		var a := TAU * float(i) / float(sides)
+		var b := TAU * float(i + 1) / float(sides)
+		_tube(k, Vector3(cos(a) * radius, sin(a) * radius, 0.0), Vector3(cos(b) * radius, sin(b) * radius, 0.0), bar, 6)
+	for i in 4:
+		var a := TAU * float(i) / 4.0 + PI * 0.25
+		_tube(k, Vector3(cos(a) * 0.016, sin(a) * 0.016, -0.004), Vector3(cos(a) * (radius - bar * 0.5), sin(a) * (radius - bar * 0.5), 0.0),
+				bar * 0.6, 6)
+	k.color = CAST
+	_tube(k, Vector3(0.0, 0.0, -depth * 0.5), Vector3(0.0, 0.0, depth * 0.3), 0.022, 10)
+	k.color = CHROME
+	_tube(k, Vector3(0.0, 0.0, depth * 0.3), Vector3(0.0, 0.0, depth * 0.5), 0.011, 6)
+	# The knob, standing off the rim's face.
+	k.color = PLASTIC_DARK
+	_tube(k, Vector3(radius, 0.0, 0.0), Vector3(radius, 0.0, depth * 0.5), bar * 0.9, 8)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = TAU * radius * PI * bar * bar + PI * 0.022 * 0.022 * depth
+	var col := ConvexPolygonShape3D.new()
+	var pts := PackedVector3Array()
+	var r := radius + bar
+	for i in sides:
+		var a := TAU * float(i) / float(sides)
+		for z: float in [-depth * 0.5, depth * 0.5]:
+			pts.append(Vector3(cos(a) * r, sin(a) * r, z))
+	col.points = pts
+	shape.collision = col
+	return shape
+
 
 # --- Services: tees, bends, boxes -------------------------------------------------------
 
@@ -3371,7 +4263,23 @@ static func junction_box(size: Vector3 = Vector3(0.4, 0.3, 0.2), glow := Color(0
 ## edge cut away and a seam down their outer faces, a back with its rear top edge cut),
 ## chamfered leather cushions in `cushion` (an untagged colour becomes leather, a zoned one
 ## keeps its finish): the seat, a back cushion, a head pillow over it and a pad on each arm.
+## Modelled in Blender (tools/blender/parts/armchair.py) at 0.85 x 0.95 x 0.85 m: grown evenly to
+## `width`, its height and depth taken up in its bands; adds turned feet, piped arms with brass
+## studs, a welted seat, a tufted back with a lumbar roll and a maker's plate behind.
 static func armchair(width: float = 0.85, depth: float = 0.85, height: float = 0.95,
+		cushion := Color(0.82, 0.82, 0.8)) -> PartShapes.PartShape:
+	if not PartAsset.has("armchair"):
+		return _armchair_drawn(width, depth, height, cushion)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("armchair", Vector3(width, height, depth), [0])
+	PartAsset.fill(shape, "armchair", _cushioned(cushion), fit[0], fit[1])
+	shape.volume = width * depth * height * 0.25
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, depth)
+	shape.collision = col
+	return shape
+
+static func _armchair_drawn(width: float = 0.85, depth: float = 0.85, height: float = 0.95,
 		cushion := Color(0.82, 0.82, 0.8)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
@@ -3619,6 +4527,22 @@ static func docking_port(radius: float = 0.8, depth: float = 0.3) -> PartShapes.
 ## (PartShape.glow). Turn it with `Basis(Vector3.RIGHT, PI / 2)` to blow aft (+Z) from a
 ## stern face.
 static func thruster_pod(width: float, height: float, depth: float, glow := Color(0.35, 0.65, 1.0)) -> PartShapes.PartShape:
+	# Two models: the long pod (over twice as wide as tall) and the big one.
+	var model := "thruster_pod" if width > height * 2.0 else "thruster_pod_big"
+	if not PartAsset.has(model):
+		return _thruster_pod_drawn(width, height, depth, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(width, depth + 0.04, height), [2])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = width * height * depth * 0.6
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, depth + 0.1, height)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn thruster pod: the fallback without its Blender file.
+static func _thruster_pod_drawn(width: float, height: float, depth: float, glow := Color(0.35, 0.65, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var h := depth * 0.5
@@ -3853,6 +4777,17 @@ static func _engines_twin_housing(k: MeshKit, g: MeshKit, ring: Callable, depth:
 				[RIM, DETAIL, TRIM] as Array[Color], Vector3(0.94, 0.82, 0.86), nr >= 0.2, hub)
 
 
+## A housing's collision: its outline (x, z) as a prism `depth` along Y about the middle.
+static func _engines_prism(outline: PackedVector2Array, depth: float) -> ConvexPolygonShape3D:
+	var pts := PackedVector3Array()
+	for p in outline:
+		pts.append(Vector3(p.x, -depth * 0.5, p.y))
+		pts.append(Vector3(p.x, depth * 0.5, p.y))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	return col
+
+
 ## A band round a housing from y0 to y1 in `color`: its outside on the outline `outer`
 ## and its top and bottom faces in to `inner` (x, z, the same count of points, under the
 ## housing's skin), nothing inside it.
@@ -3947,13 +4882,66 @@ static func light_strip(length: float, width: float = 0.14, thickness: float = 0
 	return shape
 
 
+## The volume a code-drawn part measured from its mesh, kept per call: a part modelled in Blender
+## keeps its drawn twin's volume, so its mass (and the economy bench's numbers) stay as they were.
+static var _drawn_volumes: Dictionary = {}
+static var _drawn_twins: Dictionary = {}
+
+
+## A code-drawn part kept by `key` (its function and sizes): a modelled one's box, collision and
+## volume, built once a size.
+static func _drawn_twin(key: Array, make: Callable) -> PartShapes.PartShape:
+	if not _drawn_twins.has(key):
+		_drawn_twins[key] = make.call()
+	return _drawn_twins[key]
+
+
+## The Blender model `name` in its drawn twin's place: fitted to the twin's box (scaled evenly on the
+## `even` axes, the rest taken up in its bands), its middle on the twin's, the twin's collision and volume.
+static func _as_drawn(name: String, drawn: PartShapes.PartShape, glow: Color, even: Array) -> PartShapes.PartShape:
+	var box := drawn.mesh.get_aabb()
+	var fit := PartAsset.fit_box(name, box.size, even)
+	var aabb: Array = PartAsset.head(name)["aabb"]
+	var mid := (Vector3(aabb[0][0], aabb[0][1], aabb[0][2]) + Vector3(aabb[1][0], aabb[1][1], aabb[1][2])) * 0.5 * float(fit[0])
+	var shape := PartShapes.PartShape.new()
+	PartAsset.fill(shape, name, PartAsset.palette_of(WreckParts, glow), fit[0], fit[1], Vector3.ZERO,
+			box.get_center() - mid)
+	shape.volume = drawn.volume
+	shape.collision = drawn.collision.duplicate()
+	return shape
+
+
+static func _drawn_volume(key: Array, make: Callable) -> float:
+	if not _drawn_volumes.has(key):
+		_drawn_volumes[key] = (make.call() as PartShapes.PartShape).volume
+	return _drawn_volumes[key]
+
+
 ## A reactor: a drum `radius` round and `height` tall on a dark chamfered plinth (-Y) with
-## a bolt at each corner, a bolted base flange, a band of yellow and dark hazard checks,
+## a bolt at each corner, a bolted base flange, a band of yellow and dark hazard stripes,
 ## ribs, two clamp bands with tensioners on +X, a dark viewing band at its waist behind
-## mullions with glowing window slots, a lit gauge strip on its -Z side, a bolted top
-## flange under a stepped cap with a boss and four flanged pipe stubs. Collision is a
-## cylinder round the plinth.
+## mullions with glowing window slots, a lit gauge strip on its -Z side with a conduit down
+## to the plinth, a data plate on -X, a bolted top flange under a stepped cap with a boss, a
+## brass relief valve and four flanged pipe stubs. Modelled in Blender
+## (tools/blender/parts/reactor.py, PartAsset) at radius 0.6 m and 1.9 m tall, scaled by the
+## radius and stretched to the height (a squat one a little narrower); `_reactor_drawn` is the code-drawn one it replaced.
+## Collision is a cylinder round the plinth.
 static func reactor(radius: float, height: float, glow := Color(1.0, 0.25, 0.2)) -> PartShapes.PartShape:
+	if not PartAsset.has("reactor"):
+		return _reactor_drawn(radius, height, glow)
+	var shape := PartShapes.PartShape.new()
+	var scale := PartAsset.scale_to_fit("reactor", 1, height, radius / 0.6)
+	PartAsset.fill(shape, "reactor", PartAsset.palette_of(WreckParts, glow), scale,
+			Vector3(0.0, height - 1.9 * scale, 0.0))
+	shape.volume = PI * radius * radius * height * 0.6
+	var col := CylinderShape3D.new()
+	col.radius = radius * 1.2
+	col.height = height
+	shape.collision = col
+	return shape
+
+
+static func _reactor_drawn(radius: float, height: float, glow := Color(1.0, 0.25, 0.2)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var r := radius
 	var h := height * 0.5
@@ -4093,6 +5081,20 @@ static func reactor(radius: float, height: float, glow := Color(1.0, 0.25, 0.2))
 ## door with a handle and a louvre; each side a louvred grille under a bolted service
 ## plate, and a conduit runs up the back corner at +X. `glow` lights the screen and LEDs.
 static func machine_unit(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
+	if not PartAsset.has("machine_unit"):
+		return _machine_unit_drawn(size, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("machine_unit", size)
+	PartAsset.fill(shape, "machine_unit", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = size.x * size.y * size.z * 0.5
+	var col := BoxShape3D.new()
+	col.size = size + Vector3(0.0, 0.0, 0.04)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn machine unit: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _machine_unit_drawn(size: Vector3, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := size.y * 0.5
 	var hx := size.x * 0.5
@@ -4261,6 +5263,306 @@ static func _cabinets_louvre(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: 
 	for i in slats:
 		var p := c + v * (-hv + pitch * (float(i) + 0.5)) + n * (0.004 + th * 0.5)
 		k.strut(p - u * hu * 0.94, p + u * hu * 0.94, th)
+
+
+## An SE2 machine block filling `size` (x, y, z) to its faces with nothing standing proud of them, so it can sit in a
+## hull as its own skin (the Cei-Rigotti's machines: docs/se2/cei_rigotti/INTERIOR.md): dark anodised edge rails and
+## cast corner blocks frame panels in the material colour set a little in, and every face carries detail set into
+## that depth. The front (-Z) shows what the machine is (`style`), the sides (+-X) a louvred vent under a bolted
+## service plate, the top (+Y) an access hatch, the back (+Z) and bottom (-Y) panel seams; `glow` lights its lamps.
+## Styles: "assembler" (a long dark viewing window over a lit strip, a control pad with a screen), "smelter" (a heavy
+## furnace door with a lit port, a hazard band), "gravity" (a ring of lit emitter segments round a dark disc and hub),
+## "gyroscope" (a band across it with a lit slot and a hub), "tank" (straps all round, a valve boss with a bolt ring,
+## a lit gauge), "generator" (an intake grille over a lit strip), "battery" (a column of lit charge bars, a red and a
+## copper terminal), "container" (corrugated all round, door seams and lock bars), "conveyor" (a port on every face),
+## "" (seams only).
+static func machine_block(size: Vector3, style: String = "", glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var g := MeshKit.new()
+	var hs := size * 0.5
+	var m := minf(size.x, minf(size.y, size.z))
+	var e := clampf(m * 0.07, 0.04, 0.12)     # edge rail width, m
+	var r := clampf(m * 0.02, 0.014, 0.03)    # how far the panels sit in from the box's faces, m
+	# The body, its faces r in; the rails along every edge and the corner blocks flush with the box.
+	k.color = Color.WHITE
+	k.box(size - Vector3.ONE * r * 2.0)
+	for a in 3:
+		var b := (a + 1) % 3
+		var c := (a + 2) % 3
+		for sb: float in [-1.0, 1.0]:
+			for sc: float in [-1.0, 1.0]:
+				var at := Vector3.ZERO
+				at[b] = sb * (hs[b] - e * 0.5)
+				at[c] = sc * (hs[c] - e * 0.5)
+				var rail := Vector3.ONE * e
+				rail[a] = size[a] - e * 2.0
+				k.color = RAIL_DARK
+				k.box(rail, at)
+	k.color = CAST
+	for sx: float in [-1.0, 1.0]:
+		for sy: float in [-1.0, 1.0]:
+			for sz: float in [-1.0, 1.0]:
+				k.box(Vector3.ONE * e, Vector3(sx * (hs.x - e * 0.5), sy * (hs.y - e * 0.5), sz * (hs.z - e * 0.5)))
+	# Each face: n out of it, u to a viewer's right and v up as they face it, half sizes between the rails.
+	for f: Array in [[2, -1.0], [2, 1.0], [0, -1.0], [0, 1.0], [1, 1.0], [1, -1.0]]:
+		var a: int = f[0]
+		var n := Vector3.ZERO
+		n[a] = float(f[1])
+		var v := Vector3.UP if a != 1 else Vector3.FORWARD * float(f[1])
+		var u := v.cross(n)
+		var ua := 0 if absf(u.x) > 0.5 else (1 if absf(u.y) > 0.5 else 2)
+		var va := 0 if absf(v.x) > 0.5 else (1 if absf(v.y) > 0.5 else 2)
+		var fc := n * (hs[a] - r)
+		var hu := hs[ua] - e
+		var hv := hs[va] - e
+		var role := "front" if a == 2 and f[1] < 0.0 else ("back" if a == 2 else ("side" if a == 0 else
+				("top" if f[1] > 0.0 else "bottom")))
+		_mb_face(k, g, style, role, fc, u, v, n, hu, hv, r)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	PartShapes.emissive(shape, "strip", g.finish(), glow)
+	shape.volume = size.x * size.y * size.z
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return shape
+
+
+## A machine block's face (`role` front, back, side, top or bottom of a `style`): the panel's middle `c`, `u` and `v`
+## along it, `n` out, `hu` and `hv` its half sizes between the rails, `r` the depth its detail may rise to.
+static func _mb_face(k: MeshKit, g: MeshKit, style: String, role: String, c: Vector3, u: Vector3, v: Vector3,
+		n: Vector3, hu: float, hv: float, r: float) -> void:
+	var th := r - 0.003       # the most anything here stands off the panel, m
+	if style == "conveyor":
+		_mb_port(k, c, u, v, n, minf(hu, hv) * 0.62, th)
+		_mb_bolts(k, c, u, v, n, hu - 0.06, hv - 0.06, th)
+		return
+	if style == "container" and role != "top" and role != "bottom":
+		_mb_ribs(k, c, u, v, n, hu, hv, th)
+		if role == "front":
+			k.color = DARK
+			k.box(_mb_size(u, v, n, 0.012, hv * 2.0, th * 0.9), c + n * th * 0.45)
+			k.color = GALVANISED
+			for s: float in [-0.55, -0.25, 0.25, 0.55]:
+				k.box(_mb_size(u, v, n, 0.025, hv * 1.7, th), c + u * hu * s + n * th * 0.5)
+		return
+	if style == "tank" and role != "top" and role != "bottom":
+		k.color = DARK
+		for t: float in [-0.62, 0.0, 0.62]:
+			k.box(_mb_size(u, v, n, hu * 2.0, minf(0.08, hv * 0.1), th * 0.6), c + v * hv * t + n * th * 0.3)
+	match role:
+		"front":
+			_mb_front(k, g, style, c, u, v, n, hu, hv, th)
+		"side":
+			_cabinets_louvre(k, c - v * hv * 0.4, u, v, n, hu * 0.7, hv * 0.35, maxi(4, int(hv * 4.0)), th - 0.004)
+			k.color = Color.WHITE
+			var sp := c + v * hv * 0.45
+			_cabinets_pad(k, sp, u, v, n, hu * 0.55, hv * 0.3, th * 0.5, th * 0.3)
+			_mb_bolts(k, sp, u, v, n, hu * 0.55 - 0.04, hv * 0.3 - 0.04, th)
+		"top":
+			k.color = Color.WHITE
+			_cabinets_pad(k, c, u, v, n, hu * 0.5, hv * 0.5, th * 0.5, th * 0.3)
+			k.color = DETAIL
+			k.box(_mb_size(u, v, n, hu * 0.4, 0.03, th * 0.4), c + v * hv * 0.3 + n * (th * 0.5 + th * 0.2))
+			_mb_bolts(k, c, u, v, n, hu * 0.5 - 0.04, hv * 0.5 - 0.04, th)
+			_mb_seams(k, c, u, v, n, hu, hv, 0.0)
+		_:
+			_mb_seams(k, c, u, v, n, hu, hv, 0.5)
+			_mb_bolts(k, c, u, v, n, hu - 0.06, hv - 0.06, th)
+
+
+## A machine block's front by `style` (see machine_block).
+static func _mb_front(k: MeshKit, g: MeshKit, style: String, c: Vector3, u: Vector3, v: Vector3, n: Vector3,
+		hu: float, hv: float, th: float) -> void:
+	match style:
+		"assembler":
+			var wc := c + v * hv * 0.3
+			k.color = TRIM
+			_cabinets_pad(k, wc, u, v, n, hu * 0.8, hv * 0.32, th * 0.4, th * 0.2)
+			k.color = GUN_BORE
+			_cabinets_pad(k, wc + n * th * 0.4, u, v, n, hu * 0.76, hv * 0.27, th * 0.3)
+			k.color = DARK
+			_cabinets_pad(k, c - v * hv * 0.12, u, v, n, hu * 0.8, hv * 0.05, th * 0.3)
+			g.box(_mb_size(u, v, n, hu * 1.5, hv * 0.05, 0.004), c - v * hv * 0.12 + n * (th * 0.3 + 0.002))
+			_mb_control(k, g, c + u * hu * 0.55 - v * hv * 0.6, u, v, n, minf(hu * 0.3, 0.5), minf(hv * 0.25, 0.4), th)
+			_mb_label(k, c - u * hu * 0.55 - v * hv * 0.6, u, v, n, minf(hu * 0.25, 0.35), th)
+		"smelter":
+			var dc := c + v * hv * 0.08
+			var dhu := hu * 0.6
+			var dhv := hv * 0.62
+			k.color = CAST
+			_cabinets_pad(k, dc, u, v, n, dhu, dhv, th * 0.55, th * 0.25)
+			var pc := dc + v * dhv * 0.35
+			var pr := minf(dhu, dhv) * 0.28
+			k.color = TRIM
+			_mb_disc(k, pc, u, v, n, pr * 1.25, th * 0.75, 16)
+			g.color = Color.WHITE
+			_mb_disc(g, pc + n * th * 0.75, u, v, n, pr, 0.003, 16)
+			k.color = DETAIL
+			for s: float in [-1.0, 1.0]:
+				k.box(_mb_size(u, v, n, 0.06, dhv * 0.3, th * 0.8), dc - u * dhu * 0.98 + v * dhv * 0.5 * s + n * th * 0.4)
+			k.box(_mb_size(u, v, n, 0.04, dhv * 0.4, th * 0.4), dc + u * dhu * 0.75 - v * dhv * 0.2 + n * (th * 0.55 + th * 0.2))
+			_mb_hazard(k, c - v * hv * 0.82, u, v, n, hu * 0.9, hv * 0.08, th)
+		"gravity":
+			var rad := minf(hu, hv) * 0.8
+			k.color = DARK
+			_mb_disc(k, c, u, v, n, rad, th * 0.25, 24)
+			k.color = TRIM
+			_mb_disc(k, c, u, v, n, rad * 0.42, th * 0.55, 16)
+			k.color = CAST
+			_mb_disc(k, c, u, v, n, rad * 0.32, th * 0.85, 12)
+			g.box(_mb_size(u, v, n, rad * 0.12, rad * 0.12, 0.003), c + n * (th * 0.85 + 0.0015))
+			var seg := 20
+			for i in seg:
+				var t := TAU * (float(i) + 0.5) / float(seg)
+				var dir := u * cos(t) + v * sin(t)
+				var tan := u * -sin(t) + v * cos(t)
+				_cabinets_pad(g, c + dir * rad * 0.7 + n * th * 0.25, tan, dir, n, rad * 0.09, rad * 0.05, 0.004)
+			_mb_bolts(k, c, u, v, n, hu - 0.06, hv - 0.06, th)
+		"gyroscope":
+			k.color = ANODISED
+			_cabinets_pad(k, c, u, v, n, hu, hv * 0.2, th * 0.45)
+			k.color = DARK
+			k.box(_mb_size(u, v, n, hu * 1.8, hv * 0.06, th * 0.5), c + n * th * 0.45)
+			g.box(_mb_size(u, v, n, hu * 1.7, hv * 0.035, 0.004), c + n * (th * 0.7 + 0.002))
+			k.color = CAST
+			_mb_disc(k, c, u, v, n, minf(hu, hv) * 0.3, th * 0.9, 16)
+			k.color = TRIM
+			_mb_disc(k, c, u, v, n, minf(hu, hv) * 0.12, th, 12)
+			_mb_seams(k, c, u, v, n, hu, hv, 0.0)
+		"tank":
+			var bc := c + v * hv * 0.31
+			var br := minf(hu, hv) * 0.22
+			k.color = CAST
+			_mb_disc(k, bc, u, v, n, br, th * 0.6, 16)
+			k.color = BRASS
+			_mb_disc(k, bc, u, v, n, br * 0.35, th * 0.95, 8)
+			k.color = DETAIL
+			for i in 8:
+				var t := TAU * float(i) / 8.0
+				k.box(_mb_size(u, v, n, 0.025, 0.025, 0.01), bc + (u * cos(t) + v * sin(t)) * br * 0.75 + n * (th * 0.6 + 0.005))
+			var gc := bc + u * (br + 0.15)
+			k.color = DARK
+			_cabinets_pad(k, gc, u, v, n, 0.08, 0.05, th * 0.5)
+			g.box(_mb_size(u, v, n, 0.12, 0.025, 0.004), gc + n * (th * 0.5 + 0.002))
+			k.color = PLATE
+			_cabinets_pad(k, c - v * hv * 0.31 - u * hu * 0.4, u, v, n, minf(0.25, hu * 0.3), 0.08, th * 0.7)
+		"generator":
+			_cabinets_louvre(k, c + v * hv * 0.25, u, v, n, hu * 0.7, hv * 0.45, maxi(5, int(hv * 5.0)), th - 0.004)
+			k.color = DARK
+			_cabinets_pad(k, c - v * hv * 0.45, u, v, n, hu * 0.6, hv * 0.06, th * 0.4)
+			g.box(_mb_size(u, v, n, hu * 1.1, hv * 0.06, 0.004), c - v * hv * 0.45 + n * (th * 0.4 + 0.002))
+			_mb_label(k, c - v * hv * 0.75, u, v, n, minf(hu * 0.25, 0.3), th)
+		"battery":
+			var bc := c - u * hu * 0.25
+			var bh := hv * 0.75
+			k.color = DARK
+			_cabinets_pad(k, bc, u, v, n, hu * 0.3, bh, th * 0.4, th * 0.2)
+			var bars := 6
+			for i in bars:
+				var y := -bh + bh * 2.0 * (float(i) + 0.5) / float(bars)
+				g.box(_mb_size(u, v, n, hu * 0.42, bh * 2.0 / float(bars) * 0.55, 0.004), bc + v * y * 0.9 + n * (th * 0.4 + 0.002))
+			for t: Array in [[TERMINAL_RED, 0.3], [COPPER, 0.65]]:
+				k.color = t[0]
+				k.box(_mb_size(u, v, n, minf(0.12, hu * 0.12), minf(0.1, hv * 0.12), th),
+						c + u * hu * float(t[1]) + v * hv * 0.6 + n * th * 0.5)
+			_mb_label(k, c + u * hu * 0.48 - v * hv * 0.3, u, v, n, minf(hu * 0.3, 0.25), th)
+		_:
+			_mb_seams(k, c, u, v, n, hu, hv, 0.5)
+			_mb_bolts(k, c, u, v, n, hu - 0.06, hv - 0.06, th)
+
+
+## A box sized along a face's `u`, `v` and `n` (sizes `su`, `sv`, `sn`), in the block's axes.
+static func _mb_size(u: Vector3, v: Vector3, n: Vector3, su: float, sv: float, sn: float) -> Vector3:
+	return (u * su + v * sv + n * sn).abs()
+
+
+## A flat disc on a face: a `sides`-gon of radius `rad` at `c`, `t` thick out along `n`.
+static func _mb_disc(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, rad: float, t: float, sides: int) -> void:
+	var a := PackedVector3Array()
+	var b := PackedVector3Array()
+	for i in sides:
+		var ang := TAU * float(i) / float(sides)
+		var p := c + (u * cos(ang) + v * sin(ang)) * rad
+		a.append(p)
+		b.append(p + n * t)
+	k.loft(a, b)
+
+
+## Dark seams across a face: one down its middle (`split` 0 none) and one across at `split` of the way up.
+static func _mb_seams(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, hu: float, hv: float, split: float) -> void:
+	k.color = DARK
+	k.box(_mb_size(u, v, n, 0.014, hv * 2.0, 0.003), c + n * 0.0015)
+	if split > 0.0:
+		k.box(_mb_size(u, v, n, hu * 2.0, 0.014, 0.003), c + v * hv * (split * 2.0 - 1.0) * 0.5 + n * 0.0015)
+
+
+## Four bolt heads at the corners of a rectangle `hu` x `hv` about `c`.
+static func _mb_bolts(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, hu: float, hv: float, th: float) -> void:
+	k.color = DETAIL
+	var t := minf(0.01, th)
+	for s: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		k.box(_mb_size(u, v, n, 0.03, 0.03, t), c + u * s.x * maxf(hu, 0.0) + v * s.y * maxf(hv, 0.0) + n * t * 0.5)
+
+
+## A conveyor port on a face: a cast plate, a yellow ring and a dark mouth, `half` its half size.
+static func _mb_port(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, half: float, th: float) -> void:
+	k.color = CAST
+	_cabinets_pad(k, c, u, v, n, half, half, th * 0.4, th * 0.15)
+	k.color = PORT_YELLOW
+	_cabinets_pad(k, c + n * th * 0.4, u, v, n, half * 0.8, half * 0.8, th * 0.3)
+	k.color = DARK
+	_cabinets_pad(k, c + n * th * 0.7, u, v, n, half * 0.62, half * 0.62, th * 0.3)
+	k.color = GALVANISED
+	_mb_bolts(k, c + n * th * 0.4, u, v, n, half * 0.9, half * 0.9, th * 0.5)
+
+
+## A control pad on a face: a dark bezel `hu` x `hv`, a lit screen in its top half, four buttons under it.
+static func _mb_control(k: MeshKit, g: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, hu: float, hv: float,
+		th: float) -> void:
+	k.color = DARK
+	_cabinets_pad(k, c, u, v, n, hu, hv, th * 0.5, th * 0.2)
+	g.box(_mb_size(u, v, n, hu * 1.4, hv * 0.8, 0.004), c + v * hv * 0.3 + n * (th * 0.5 + 0.002))
+	k.color = DETAIL
+	for i in 4:
+		k.box(_mb_size(u, v, n, hu * 0.22, hv * 0.22, th * 0.3),
+				c + u * hu * (-0.75 + 0.5 * float(i)) - v * hv * 0.55 + n * (th * 0.5 + th * 0.15))
+
+
+## A pale maker's plate `half` wide on a face.
+static func _mb_label(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, half: float, th: float) -> void:
+	k.color = PLATE
+	_cabinets_pad(k, c, u, v, n, half, half * 0.3, th * 0.4)
+	k.color = DARK
+	for i in 3:
+		k.box(_mb_size(u, v, n, half * (1.2 - 0.3 * float(i)), 0.012, 0.002), c + v * half * (0.12 - 0.12 * float(i)) + n * th * 0.42)
+
+
+## A hazard band on a face: slanted dark bars over hazard paint.
+static func _mb_hazard(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, hu: float, hv: float, th: float) -> void:
+	k.color = PartShapes.ACCENT
+	_cabinets_pad(k, c, u, v, n, hu, hv, th * 0.3)
+	k.color = DARK
+	var bars := maxi(3, int(hu * 4.0))
+	for i in bars:
+		var x := -hu + hu * 2.0 * (float(i) + 0.5) / float(bars)
+		var p := c + u * x + n * th * 0.3
+		var w := u * minf(0.035, hu / float(bars) * 0.3)
+		var a := PackedVector3Array([p - u * hv * 0.6 - v * hv * 0.9 - w, p - u * hv * 0.6 - v * hv * 0.9 + w,
+				p + u * hv * 0.6 + v * hv * 0.9 + w, p + u * hv * 0.6 + v * hv * 0.9 - w])
+		var b := PackedVector3Array()
+		for q in a:
+			b.append(q + n * th * 0.3)
+		k.loft(a, b)
+
+
+## A container's corrugation across a face: ribs up it every 0.16 m between the rails.
+static func _mb_ribs(k: MeshKit, c: Vector3, u: Vector3, v: Vector3, n: Vector3, hu: float, hv: float, th: float) -> void:
+	k.color = Color.WHITE
+	var ribs := maxi(2, int(hu * 2.0 / 0.16))
+	for i in ribs:
+		var x := -hu + hu * 2.0 * (float(i) + 0.5) / float(ribs)
+		k.box(_mb_size(u, v, n, 0.05, hv * 2.0, th * 0.7), c + u * x + n * th * 0.35)
 
 
 ## A handrail `length` along X: a round post at each end and every 1.2 m on a square base
@@ -4637,6 +5939,12 @@ static func catalogue() -> Array:
 		["light strip", light_strip(2.0)],
 		["reactor", reactor(0.9, 3.0)],
 		["machine unit", machine_unit(Vector3(1.4, 2.4, 1.2))],
+		["machine block assembler", machine_block(Vector3(5.5, 2.75, 4.95), "assembler")],
+		["machine block smelter", machine_block(Vector3(2.75, 2.75, 2.75), "smelter", GLOWING)],
+		["machine block gravity", machine_block(Vector3(2.2, 4.1, 2.75), "gravity", Color(0.35, 0.75, 1.0))],
+		["machine block tank", machine_block(Vector3(2.75, 2.75, 5.5), "tank")],
+		["machine block battery", machine_block(Vector3(1.65, 1.1, 1.65), "battery")],
+		["machine block conveyor", machine_block(Vector3(2.2, 2.2, 2.2), "conveyor")],
 		["railing 2", railing(2.0)],
 		["shelf rack", shelf_rack()],
 		["ladder 3", ladder(3.0)],
@@ -4727,7 +6035,7 @@ static func catalogue() -> Array:
 		["name board CMS-01A", name_board("CMS-01A", 4.0, 1.0)],
 		["landing pad", landing_pad()],
 		["name board PORPOISE", name_board("PORPOISE", 4.0, 1.0)],
-		["fin blade", fin_blade()],
+		["fin blade", fin_blade(3.0, 1.6, 0.22)],
 		["spoke beam", spoke_beam()],
 		["sleep pod", sleep_pod()],
 		["shingle panel", shingle_panel()],
@@ -4735,6 +6043,8 @@ static func catalogue() -> Array:
 		["corner sofa", corner_sofa()],
 		["name board NOVARIS", name_board("NOVARIS", 4.0, 1.0)],
 		["garage door", garage_door()],
+		["valve body", valve_body()],
+		["valve wheel", valve_wheel()],
 		["racer hull", racer_hull()],
 		["name board DARKSPOT", name_board("DARKSPOT", 4.0, 1.0)],
 		["rail barrel", rail_barrel()],
@@ -4750,6 +6060,9 @@ static func catalogue() -> Array:
 		["name board EVEREST", name_board("EVEREST", 4.0, 1.0)],
 		["copper vent", copper_vent()],
 		["case stack", case_stack()],
+		["troop rack 4", troop_rack(4)],
+		["holo table", holo_table()],
+		["hull lettering", hull_lettering("T.A.S.C. ECHO 4-19", 0.6)],
 		["name board SENTINAL", name_board("SENTINAL", 4.4, 1.0)],
 		["flight recorder", flight_recorder()],
 		["distress beacon", distress_beacon()],
@@ -4770,7 +6083,22 @@ static func catalogue() -> Array:
 ## harness (shoulder straps and a crotch strap meeting at a buckle). Stands on -Y, faces
 ## -Z (the backrest is at +Z). The body takes the material colour; pedestal and pads are
 ## dark, straps pale.
+## Modelled in Blender (tools/blender/parts/crash_seat.py) at 0.65 x 1.9 x 0.6 m: grown evenly to
+## `width`, its height and depth taken up in its bands; adds a bolted deck plate, shock struts on the
+## pedestal, quilted pads, a harness with adjusters, a grab handle and a seat number.
 static func crash_seat(width: float = 0.65, height: float = 1.9, depth: float = 0.6) -> PartShapes.PartShape:
+	if not PartAsset.has("crash_seat"):
+		return _crash_seat_drawn(width, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("crash_seat", Vector3(width, height, depth), [0])
+	PartAsset.fill(shape, "crash_seat", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = width * (height * 0.12 + depth * 0.1) + 0.04
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, depth)
+	shape.collision = col
+	return shape
+
+static func _crash_seat_drawn(width: float = 0.65, height: float = 1.9, depth: float = 0.6) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var w := width * 0.5
@@ -4889,6 +6217,20 @@ static func grab_bar(height: float = 0.9, reach: float = 0.16) -> PartShapes.Par
 ## bevelled yellow magnetic pad with a slanted dark hazard border and corner bolts on its
 ## face. Two status lamps in a dark bezel on the base's -Z face are the glow.
 static func landing_clamp(size: float = 0.9, depth: float = 0.45, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
+	if not PartAsset.has("landing_clamp"):
+		return _landing_clamp_drawn(size, depth, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("landing_clamp", Vector3(size, depth + 0.016, size), [0, 2])
+	PartAsset.fill(shape, "landing_clamp", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = size * size * depth * 0.6
+	var col := BoxShape3D.new()
+	col.size = Vector3(size, depth + 0.03, size)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn landing clamp: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _landing_clamp_drawn(size: float = 0.9, depth: float = 0.45, glow := Color(0.3, 1.0, 0.45)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var s := size
 	var h := depth * 0.5
@@ -5914,6 +7256,21 @@ static func lattice_rail(length: float, height: float, bays: int = 4, depth: flo
 ## with steel rails top and bottom and a steel retaining bar across the front on dark end
 ## brackets. Back +Z (against the hull), face -Z.
 static func canister_pack(count: int = 3, cell: float = 0.45, height: float = 0.9, depth: float = 0.45) -> PartShapes.PartShape:
+	if count != 3 or not PartAsset.has("canister_pack"):
+		return _canister_pack_drawn(count, cell, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var size := Vector3(cell * float(count), height, depth + 0.015)
+	var fit := PartAsset.fit_box("canister_pack", size, [0, 2])
+	PartAsset.fill(shape, "canister_pack", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	shape.volume = cell * float(count) * height * depth * 0.3
+	var col := BoxShape3D.new()
+	col.size = Vector3(size.x, height, depth + 0.04)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn canister pack: the fallback without its Blender file, and any count but three.
+static func _canister_pack_drawn(count: int = 3, cell: float = 0.45, height: float = 0.9, depth: float = 0.45) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var width := cell * float(count)
 	var hh := height * 0.5
@@ -5997,6 +7354,20 @@ static func canister_pack(count: int = 3, cell: float = 0.45, height: float = 0.
 ## in each corner. Back +Z (against the hull), fins toward -Z. Fins take the material
 ## colour (dark in the reference).
 static func heat_sink(fins: int = 6, height: float = 1.0, depth: float = 0.32, pitch: float = 0.14) -> PartShapes.PartShape:
+	var model := "heat_sink_%d" % fins
+	if not PartAsset.has(model):
+		return _heat_sink_drawn(fins, height, depth, pitch)
+	var shape := PartShapes.PartShape.new()
+	var width := pitch * float(fins) + 0.06
+	var fit := PartAsset.fit_box(model, Vector3(width, height, depth), [0, 2])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	_heat_sink_body(shape, width, height, depth)
+	return shape
+
+
+## The code-drawn heat sink: the fallback without its Blender file, and for fin counts with no
+## model (docs/BLENDER_PARTS.md).
+static func _heat_sink_drawn(fins: int = 6, height: float = 1.0, depth: float = 0.32, pitch: float = 0.14) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var width := pitch * float(fins) + 0.06
 	var hw := width * 0.5
@@ -6052,11 +7423,16 @@ static func heat_sink(fins: int = 6, height: float = 1.0, depth: float = 0.32, p
 			k.box(Vector3(0.022, 0.022, 0.012), Vector3(sx * (hw - 0.024), sy * (hy - 0.024), zp - 0.004))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
+	_heat_sink_body(shape, width, height, depth)
+	return shape
+
+
+## The heat sink's volume and collision, the drawn one's and the model's alike.
+static func _heat_sink_body(shape: PartShapes.PartShape, width: float, height: float, depth: float) -> void:
 	shape.volume = width * height * depth * 0.25
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, height, depth)
 	shape.collision = col
-	return shape
 
 
 ## A cluster of `count` small round thruster nozzles side by side along X on a mount
@@ -6066,6 +7442,25 @@ static func heat_sink(fins: int = 6, height: float = 1.0, depth: float = 0.32, p
 ## pale rim round a ceramic throat down to a glowing floor (PartShape.glow), exhausting
 ## toward +Y. Mount face -Y.
 static func nozzle_cluster(count: int = 3, radius: float = 0.15, length: float = 0.4,
+		glow := Color(0.4, 0.7, 1.0)) -> PartShapes.PartShape:
+	var model := "nozzle_cluster_%d" % count
+	if not PartAsset.has(model):
+		return _nozzle_cluster_drawn(count, radius, length, glow)
+	var pitch := radius * 2.3
+	var width := pitch * float(count)
+	var block := 0.16
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(width, length, radius * 2.6), [0, 2])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = width * radius * 2.6 * block + PI * radius * radius * length * 0.3 * float(count)
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, length, radius * 2.6)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn nozzle cluster: the fallback for a count with no Blender file.
+static func _nozzle_cluster_drawn(count: int = 3, radius: float = 0.15, length: float = 0.4,
 		glow := Color(0.4, 0.7, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
@@ -6275,8 +7670,21 @@ static func conveyor_junction(size: float = 0.6, glow := Color(0.3, 1.0, 0.45)) 
 ## bolts on its eight corners, cast bearing housings top and bottom on a chrome axle, and a
 ## drum in the material colour on it with polished end caps, a brushed steel centre band and
 ## two lit rings round it (the glow, with a status lamp in a plastic bezel on the base's -Z
-## edge).
+## edge). Modelled in Blender (tools/blender/parts/gyroscope.py), scaled evenly to `size`.
 static func gyroscope(size: float = 1.0, glow := Color(0.3, 0.75, 1.0)) -> PartShapes.PartShape:
+	if not PartAsset.has("gyroscope"):
+		return _gyroscope_drawn(size, glow)
+	var shape := PartShapes.PartShape.new()
+	PartAsset.fill(shape, "gyroscope", PartAsset.palette_of(WreckParts, glow), size)
+	shape.volume = size * size * size * 0.3
+	var col := BoxShape3D.new()
+	col.size = Vector3(size, size, size)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn gyroscope: the fallback without its Blender file.
+static func _gyroscope_drawn(size: float = 1.0, glow := Color(0.3, 0.75, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hs := size * 0.5
 	var bar := size * 0.08
@@ -6651,7 +8059,28 @@ static func _furnish_xform(k: MeshKit, from: int, t: Transform3D) -> void:
 ## dark filter, a shelf on brackets with canisters, a coffee machine with a small display
 ## and a bezelled screen between them. The cooktop rings, the screen's readout and the
 ## machine's display are the glow (`glow`). Front -Z, stands on -Y.
+## Modelled in Blender (tools/blender/parts/_galley.py) as galley_<bays><s|m|l>, one a bay count and
+## layout (what stands between sink and cooktop: s the screen, m the coffee machine beside it, l the two
+## apart), so it keeps the drawn one's bays and layout at every length, taken up in its bands; adds a
+## stainless sink with a drain and strainer, a gooseneck tap, a glass cooktop in a trim with knurled
+## knobs, a hood with a grille and lamp, lidded canisters, the machine's tray, spout and buttons.
 static func galley_counter(length: float = 3.0, height: float = 0.95, depth: float = 0.65,
+		glow := Color(1.0, 0.4, 0.15)) -> PartShapes.PartShape:
+	var doors := maxi(2, roundi(length / 0.6))
+	var gap := length - 1.26
+	var model := "galley_%d%s" % [doors, "s" if gap < 0.4 else ("m" if gap < 1.0 else "l")]
+	if not PartAsset.has(model):
+		return _galley_counter_drawn(length, height, depth, glow)
+	var shape := PartShapes.PartShape.new()
+	var size := Vector3(length, height + 1.0, depth)
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, glow), 1.0, size - PartAsset.box_of(model))
+	shape.volume = length * depth * height * 0.4 + length * 1.0 * 0.06
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return shape
+
+static func _galley_counter_drawn(length: float = 3.0, height: float = 0.95, depth: float = 0.65,
 		glow := Color(1.0, 0.4, 0.15)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
@@ -6915,6 +8344,21 @@ static func med_bed(length: float = 2.2, width: float = 0.9, height: float = 2.0
 ## and a glowing ring (exhaust -Y). `radius` is the lower drum's,
 ## `height` the whole drum's. The drums take the material colour.
 static func hover_drum(radius: float = 0.6, height: float = 1.3, glow := Color(0.85, 0.9, 1.0)) -> PartShapes.PartShape:
+	if not PartAsset.has("hover_drum"):
+		return _hover_drum_drawn(radius, height, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("hover_drum", Vector3(radius * 2.0, height, radius * 2.0), [0, 2])
+	PartAsset.fill(shape, "hover_drum", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = PI * radius * radius * height * 0.35
+	var col := CylinderShape3D.new()
+	col.radius = radius
+	col.height = height
+	shape.collision = col
+	return shape
+
+
+## The code-drawn hover drum: the fallback without its Blender file.
+static func _hover_drum_drawn(radius: float = 0.6, height: float = 1.3, glow := Color(0.85, 0.9, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var plate_t := 0.08
@@ -7136,7 +8580,16 @@ static func lit_post(height: float = 2.6, size: float = 0.3, glow := Color(0.45,
 ## a bright carbide point each) leaning out and forward, a pointed bit at the tip.
 ## `radius` is the crown's base (the housing is a little wider), `length` the whole part.
 ## Collision is the hull of the housing, the teeth's tips and the bit.
+## Modelled in Blender (tools/blender/parts/bore_drill.py, PartAsset) at radius 1.0 m and 2.4 m long, scaled evenly across and stretched in a band round the housing; `_bore_drill_drawn` is the code-drawn one: the fallback, and the box,
+## collision and volume the model keeps).
 static func bore_drill(radius: float = 1.0, length: float = 2.4) -> PartShapes.PartShape:
+	if not PartAsset.has("bore_drill"):
+		return _bore_drill_drawn(radius, length)
+	return _as_drawn("bore_drill", _drawn_twin(["bore_drill", radius, length], _bore_drill_drawn.bind(radius, length)), GLOWING, [0, 2])
+
+
+## The code-drawn bore drill.
+static func _bore_drill_drawn(radius: float = 1.0, length: float = 2.4) -> PartShapes.PartShape:
 	const TOOTH_LIGHT := Color(0.32, 0.33, 0.35)   # the light picks' shanks and the bit
 	var k := MeshKit.new()
 	var g := MeshKit.new()
@@ -7452,8 +8905,25 @@ static func ore_hatch(width: float = 2.0, length: float = 3.0, thickness: float 
 ## hollow tapered drum in the material colour with a gunmetal band and two galvanised ribs,
 ## a stepped heat-tinted lip at +Y and a sooted ceramic funnel throat with a heat-blued ring
 ## part-way down to a glowing floor. Exhaust +Y.
-## `radius` is the lip's.
+## `radius` is the lip's. Modelled in Blender (tools/blender/parts/cup_thruster.py), grown evenly
+## to `radius` and stretched along Y to `length`.
 static func cup_thruster(radius: float = 0.45, length: float = 0.7, glow := Color(0.4, 0.7, 1.0)) -> PartShapes.PartShape:
+	if not PartAsset.has("cup_thruster"):
+		return _cup_thruster_drawn(radius, length, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("cup_thruster", Vector3(radius * 2.0, length, radius * 2.0), [0, 2])
+	PartAsset.fill(shape, "cup_thruster", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = _drawn_volume(["cup_thruster", radius, length],
+			func() -> PartShapes.PartShape: return _cup_thruster_drawn(radius, length, glow))
+	var col := CylinderShape3D.new()
+	col.radius = radius
+	col.height = length
+	shape.collision = col
+	return shape
+
+
+## The code-drawn cup thruster: the fallback without its Blender file.
+static func _cup_thruster_drawn(radius: float = 0.45, length: float = 0.7, glow := Color(0.4, 0.7, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var r := radius
 	var h := length * 0.5
@@ -7522,7 +8992,16 @@ static func cup_thruster(radius: float = 0.45, length: float = 0.7, glow := Colo
 ## hazard bars on its outer faces, a dark slide gate in the -Z end between steel guides
 ## with a pull bar over it, and a heap of grey, slate and rust ore lumps (turned every
 ## which way) on an ore bed inside, highest in the middle. Unlit. Stands on -Y.
+## Modelled in Blender (tools/blender/parts/ore_bin.py, PartAsset) at 1.4 x 1.4 x 2.0 m, scaled evenly to its least side and stretched in plain bands to the rest; `_ore_bin_drawn` is the code-drawn one: the fallback, and the box,
+## collision and volume the model keeps).
 static func ore_bin(size: Vector3 = Vector3(1.4, 1.4, 2.0)) -> PartShapes.PartShape:
+	if not PartAsset.has("ore_bin"):
+		return _ore_bin_drawn(size)
+	return _as_drawn("ore_bin", _drawn_twin(["ore_bin", size], _ore_bin_drawn.bind(size)), Color.WHITE, [0, 1, 2])
+
+
+## The code-drawn ore bin.
+static func _ore_bin_drawn(size: Vector3 = Vector3(1.4, 1.4, 2.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := size * 0.5
 	var wall := 0.06
@@ -7641,6 +9120,15 @@ static func _stowage_lump(k: MeshKit, c: Vector3, size: Vector3, n: int, colours
 ## wider), `length` the whole part, barrels toward +Y. Collision is the hull of the housing
 ## and the muzzle ring.
 static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(1.0, 0.6, 0.15)) -> PartShapes.PartShape:
+	if not PartAsset.has("gatling_gun"):
+		return _gatling_gun_drawn(radius, length, glow)
+	return _as_drawn("gatling_gun", _drawn_twin(["gatling_gun", radius, length],
+			_gatling_gun_drawn.bind(radius, length, glow)), glow, [0, 2])
+
+
+## The code-drawn gatling gun: the fallback without its Blender file, and the box, collision and volume
+## the model keeps.
+static func _gatling_gun_drawn(radius: float = 0.2, length: float = 1.2, glow := Color(1.0, 0.6, 0.15)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var y0 := -length * 0.5
@@ -7738,6 +9226,18 @@ static func gatling_gun(radius: float = 0.2, length: float = 1.2, glow := Color(
 ## down to injector floors glowing inside a steel ring (PartShape.glow). Exhaust +Y;
 ## `depth` the whole part.
 static func octagon_thruster(width: float = 1.6, depth: float = 0.8, glow := Color(0.35, 0.65, 1.0)) -> PartShapes.PartShape:
+	if not PartAsset.has("octagon_thruster"):
+		return _octagon_thruster_drawn(width, depth, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("octagon_thruster", Vector3(width, depth, width), [0, 2])
+	PartAsset.fill(shape, "octagon_thruster", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = width * width * depth * 0.45
+	shape.collision = _engines_prism(PartShapes._chamfer_rect(width, width, width * 0.29), depth)
+	return shape
+
+
+## The code-drawn octagon thruster: the fallback without its Blender file.
+static func _octagon_thruster_drawn(width: float = 1.6, depth: float = 0.8, glow := Color(0.35, 0.65, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var h := depth * 0.5
@@ -7765,6 +9265,25 @@ static func octagon_thruster(width: float = 1.6, depth: float = 0.8, glow := Col
 ## glowing lens on the +Y face, sealed by a rubber gasket ring under a clear lens face
 ## (PartShape.glass). `pitch` is stud to stud; base on -Y.
 static func stud_lights(count: int = 4, pitch: float = 0.3, radius: float = 0.09,
+		glow := Color(0.3, 0.55, 1.0)) -> PartShapes.PartShape:
+	var model := "stud_lights_%d" % count
+	if not PartAsset.has(model):
+		return _stud_lights_drawn(count, pitch, radius, glow)
+	var shape := PartShapes.PartShape.new()
+	var length := pitch * float(count)
+	var w := radius * 2.6
+	var fit := PartAsset.fit_box(model, Vector3(length, 0.069, w + 0.006), [2])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = length * w * (0.01 + 0.03) * 0.95
+	var col := BoxShape3D.new()
+	col.size = Vector3(length, 0.06, w)
+	shape.collision = col
+	return shape
+
+
+## The code-drawn stud lights: the fallback without their Blender file, and for stud counts with no
+## model (docs/BLENDER_PARTS.md).
+static func _stud_lights_drawn(count: int = 4, pitch: float = 0.3, radius: float = 0.09,
 		glow := Color(0.3, 0.55, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var length := pitch * float(count)
@@ -7925,6 +9444,17 @@ static func stick_seat(width: float = 0.7, height: float = 1.3, glow := Color(0.
 ## bolts, and a galvanised mounting plate (a bolt in each corner) with two cheeks at -Y
 ## carrying rubber pivot bushes. Mount it by its plate (-Y).
 static func grille_drum(radius: float = 0.4, length: float = 0.7) -> PartShapes.PartShape:
+	if not PartAsset.has("grille_drum"):
+		return _grille_drum_drawn(radius, length)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("grille_drum", Vector3(radius * 2.1, length, radius * 2.1), [0, 2])
+	PartAsset.fill(shape, "grille_drum", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	_grille_drum_body(shape, radius, length)
+	return shape
+
+
+## The code-drawn grille drum: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _grille_drum_drawn(radius: float = 0.4, length: float = 0.7) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := length * 0.5
 	var plate := 0.06
@@ -7985,6 +9515,15 @@ static func grille_drum(radius: float = 0.4, length: float = 0.7) -> PartShapes.
 		k.box(Vector3(0.024, 0.016, cz * 2.0), Vector3(sx * r * 0.5, h - 0.03, 0.0))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
+	_grille_drum_body(shape, radius, length)
+	return shape
+
+
+## The grille drum's volume and collision, the drawn one's and the model's alike.
+static func _grille_drum_body(shape: PartShapes.PartShape, radius: float, length: float) -> void:
+	var h := length * 0.5
+	var plate := 0.06
+	var y0 := -h + plate
 	shape.volume = PI * radius * radius * length * 0.35 + radius * radius * 4.4 * plate
 	var pts := PackedVector3Array()
 	var hw := radius * 1.05
@@ -7998,7 +9537,6 @@ static func grille_drum(radius: float = 0.4, length: float = 0.7) -> PartShapes.
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	return shape
 
 
 ## A small roof hatch (the two on the Scout N-S1's spine): a raised square coaming `size`
@@ -8090,6 +9628,15 @@ static func roof_hatch(size: float = 0.9, height: float = 0.14) -> PartShapes.Pa
 ## collar, a recoil sleeve, a clamp and a slotted muzzle brake. Stands on -Y, barrels toward
 ## -Z; `barrel` is how far they reach past the housing.
 static func twin_turret(radius: float = 1.0, barrel: float = 2.2, glow := Color(1.0, 0.18, 0.1)) -> PartShapes.PartShape:
+	if not PartAsset.has("twin_turret"):
+		return _twin_turret_drawn(radius, barrel, glow)
+	return _as_drawn("twin_turret", _drawn_twin(["twin_turret", radius, barrel],
+			_twin_turret_drawn.bind(radius, barrel, glow)), glow, [0, 1])
+
+
+## The code-drawn twin turret: the fallback without its Blender file, and the box, collision and volume
+## the model keeps.
+static func _twin_turret_drawn(radius: float = 1.0, barrel: float = 2.2, glow := Color(1.0, 0.18, 0.1)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var r := radius
@@ -8202,6 +9749,15 @@ static func twin_turret(radius: float = 1.0, barrel: float = 2.2, glow := Color(
 ## one gunmetal barrel out of a round cast mantlet with a ringed sleeve and a slotted muzzle
 ## brake. Stands on -Y, barrel toward -Z.
 static func dome_turret(radius: float = 0.6, barrel: float = 1.3, glow := Color(1.0, 0.6, 0.15)) -> PartShapes.PartShape:
+	if not PartAsset.has("dome_turret"):
+		return _dome_turret_drawn(radius, barrel, glow)
+	return _as_drawn("dome_turret", _drawn_twin(["dome_turret", radius, barrel],
+			_dome_turret_drawn.bind(radius, barrel, glow)), glow, [0, 1])
+
+
+## The code-drawn dome turret: the fallback without its Blender file, and the box, collision and volume
+## the model keeps.
+static func _dome_turret_drawn(radius: float = 0.6, barrel: float = 1.3, glow := Color(1.0, 0.6, 0.15)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var r := radius
@@ -8560,8 +10116,25 @@ static func gravity_generator(size: float = 1.4, height: float = 1.8, glow := Co
 ## dark mount plate at -Y, a ribbed drum in the material colour with two fuel feeds rising
 ## from the plate into it and a heat-shield band, a stepped dark rim at +Y with a bolt ring
 ## round a pale beige liner that narrows to an injector ring and a glowing floor. Exhaust +Y.
-## `radius` is the rim's.
+## `radius` is the rim's. Modelled in Blender (tools/blender/parts/hydrogen_engine.py), grown evenly
+## to `radius` and its drum stretched to `length`.
 static func hydrogen_engine(radius: float = 1.6, length: float = 2.2, glow := Color(1.0, 0.72, 0.4)) -> PartShapes.PartShape:
+	if not PartAsset.has("hydrogen_engine"):
+		return _hydrogen_engine_drawn(radius, length, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("hydrogen_engine", Vector3(radius * 2.0, length, radius * 2.0), [0, 2])
+	PartAsset.fill(shape, "hydrogen_engine", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = _drawn_volume(["hydrogen_engine", radius, length],
+			func() -> PartShapes.PartShape: return _hydrogen_engine_drawn(radius, length, glow))
+	var col := CylinderShape3D.new()
+	col.radius = radius
+	col.height = length
+	shape.collision = col
+	return shape
+
+
+## The code-drawn hydrogen engine: the fallback without its Blender file.
+static func _hydrogen_engine_drawn(radius: float = 1.6, length: float = 2.2, glow := Color(1.0, 0.72, 0.4)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var r := radius
 	var h := length * 0.5
@@ -8668,7 +10241,26 @@ static func hydrogen_engine(radius: float = 1.6, length: float = 2.2, glow := Co
 ## shelf on two gussets at its top with bins on it and a lit strip in a dark housing under
 ## its front edge. Front -Z, stands on -Y; `height` is the top's, the board rises `board`
 ## above it.
+## Modelled in Blender (tools/blender/parts/_workbench.py) as workbench_<tools>, one a tool count, its
+## depth and the board's height taken up in its bands; adds drawers with recessed pulls, levelling feet,
+## a toolbox with catches and a handle, a ribbed mat, a swivel vise with serrated jaws, a pegboard, tools
+## with grips and fluted handles, bins with scoop lips.
 static func workbench(width: float = 2.0, depth: float = 0.8, height: float = 0.95, board: float = 1.0) -> PartShapes.PartShape:
+	var model := "workbench_%d" % maxi(3, int(width / 0.35))
+	if not PartAsset.has(model):
+		return _workbench_drawn(width, depth, height, board)
+	var shape := PartShapes.PartShape.new()
+	var size := Vector3(width, height + board, depth)
+	var full := PartAsset.box_of(model)
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, Color(1.0, 0.9, 0.7)), size.x / full.x,
+			size - full * (size.x / full.x))
+	shape.volume = width * 0.3 * height * depth * 0.5 + width * depth * 0.06 + width * board * 0.05
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return shape
+
+static func _workbench_drawn(width: float = 2.0, depth: float = 0.8, height: float = 0.95, board: float = 1.0) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var total := height + board
@@ -8886,6 +10478,19 @@ static func talon_intake(width: float = 1.6, length: float = 2.8, depth: float =
 ## ceramic liners down to injector floors with a grey hub and a glowing ring
 ## (PartShape.glow). Exhaust +Y; `depth` the whole part.
 static func oval_engine(width: float = 2.6, height: float = 1.5, depth: float = 1.0,
+		glow := Color(0.45, 0.75, 1.0)) -> PartShapes.PartShape:
+	if not PartAsset.has("oval_engine"):
+		return _oval_engine_drawn(width, height, depth, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("oval_engine", Vector3(width, depth, height), [2])
+	PartAsset.fill(shape, "oval_engine", PartAsset.palette_of(WreckParts, glow), fit[0], fit[1])
+	shape.volume = width * height * depth * 0.4
+	shape.collision = _engines_prism(PartShapes._stadium(width, height, 8), depth)
+	return shape
+
+
+## The code-drawn oval engine: the fallback without its Blender file.
+static func _oval_engine_drawn(width: float = 2.6, height: float = 1.5, depth: float = 1.0,
 		glow := Color(0.45, 0.75, 1.0)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
@@ -9437,7 +11042,16 @@ static func cell_cage(width: float = 1.2, height: float = 2.1, depth: float = 0.
 ## dark with a ring of long picks leaning out, a dark coolant ring with nozzles and a
 ## pointed hub. Bit toward +Y; `length` is the whole part. Collision is the hull of the
 ## housing, the drum's teeth and the hub.
+## Modelled in Blender (tools/blender/parts/cutter_drum.py, PartAsset) at the Geo Golem's radius 1.65 m and 4.8 m long, scaled evenly across and stretched in a band round the housing; `_cutter_drum_drawn` is the code-drawn one: the fallback, and the box,
+## collision and volume the model keeps).
 static func cutter_drum(radius: float = 1.45, length: float = 4.2) -> PartShapes.PartShape:
+	if not PartAsset.has("cutter_drum"):
+		return _cutter_drum_drawn(radius, length)
+	return _as_drawn("cutter_drum", _drawn_twin(["cutter_drum", radius, length], _cutter_drum_drawn.bind(radius, length)), GLOWING, [0, 2])
+
+
+## The code-drawn cutter drum.
+static func _cutter_drum_drawn(radius: float = 1.45, length: float = 4.2) -> PartShapes.PartShape:
 	const HOUSING := Color(0.9, 0.48, 0.12)        # the orange drive housing
 	const DRUM_STEEL := Color(0.56, 0.57, 0.59)    # the drum
 	const PICK_LIGHT := Color(0.66, 0.67, 0.69)    # light pick shanks
@@ -9819,6 +11433,22 @@ static func detector_head(radius: float = 0.45, height: float = 0.9) -> PartShap
 ## outlets, and a green sign with a white cross in a pale frame. Front -Z, back +Z against
 ## the wall, stands on -Y.
 static func med_station(width: float = 1.6, height: float = 2.2, depth: float = 0.55) -> PartShapes.PartShape:
+	if not PartAsset.has("med_station"):
+		return _med_station_drawn(width, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var size := Vector3(width, height, depth + 0.04)
+	PartAsset.fill(shape, "med_station", PartAsset.palette_of(WreckParts, Color(0.4, 0.85, 1.0)), 1.0,
+			size - PartAsset.box_of("med_station"))
+	var back := depth * 0.35
+	var cab_w := (width - 0.12) * 0.5 - 0.01
+	var cab_h := height * 0.38
+	shape.volume = width * height * back + 2.0 * cab_w * cab_h * (depth - back) * 0.6
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return shape
+
+static func _med_station_drawn(width: float = 1.6, height: float = 2.2, depth: float = 0.55) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hx := width * 0.5
 	var hy := height * 0.5
@@ -10336,6 +11966,24 @@ static func _hullfit_clip_x(outline: PackedVector2Array, xa: float, xb: float) -
 ## +Y; turn it with `Basis(Vector3.RIGHT, PI / 2)` to blow aft from a stern face.
 static func turbine_engine(radius: float = 1.1, length: float = 1.6, body := Color(0.2, 0.42, 0.85),
 		glow := Color(1.0, 0.45, 0.15)) -> PartShapes.PartShape:
+	if not PartAsset.has("turbine_engine"):
+		return _turbine_engine_drawn(radius, length, body, glow)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("turbine_engine", Vector3(radius * 2.0, length, radius * 2.0), [0, 2])
+	var palette := PartAsset.palette_of(WreckParts, glow)
+	palette["PAINT"] = body
+	PartAsset.fill(shape, "turbine_engine", palette, fit[0], fit[1])
+	shape.volume = PI * radius * radius * length * 0.3
+	var col := CylinderShape3D.new()
+	col.radius = radius
+	col.height = length
+	shape.collision = col
+	return shape
+
+
+## The code-drawn turbine engine: the fallback without its Blender file.
+static func _turbine_engine_drawn(radius: float = 1.1, length: float = 1.6, body := Color(0.2, 0.42, 0.85),
+		glow := Color(1.0, 0.45, 0.15)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var r := radius
 	var h := length * 0.5
@@ -10677,6 +12325,21 @@ static func pod_boom(length: float = 12.0, width: float = 1.4, height: float = 0
 ## grooves and four bolt heads on each side, a steel-framed slatted vent on top near the
 ## back, a hazard tab low on the slope and a pale panel on its back face (+Z). Base on -Y.
 static func armour_cowl(size: Vector3 = Vector3(1.6, 1.8, 3.0), slope: float = 0.8) -> PartShapes.PartShape:
+	var s := minf(slope, minf(size.y * 0.8, size.z * 0.6))
+	# The model is scaled to its slope; a cowl too narrow or short for it keeps the drawn look.
+	if size.x < s * 1.3 or size.z < s * 2.55 or not PartAsset.has("armour_cowl"):
+		return _armour_cowl_drawn(size, slope)
+	var shape := PartShapes.PartShape.new()
+	var scale := s / 0.8
+	PartAsset.fill(shape, "armour_cowl", PartAsset.palette_of(WreckParts, Color.WHITE), scale,
+			size - PartAsset.box_of("armour_cowl") * scale)
+	_armour_cowl_body(shape, size, s)
+	return shape
+
+
+## The code-drawn armour cowl: the fallback without its Blender file, and for cowls the model's
+## bands can't reach (docs/BLENDER_PARTS.md).
+static func _armour_cowl_drawn(size: Vector3 = Vector3(1.6, 1.8, 3.0), slope: float = 0.8) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := size * 0.5
 	var s := minf(slope, minf(size.y * 0.8, size.z * 0.6))
@@ -10734,6 +12397,16 @@ static func armour_cowl(size: Vector3 = Vector3(1.6, 1.8, 3.0), slope: float = 0
 	k.box(Vector3(size.x * 0.6, size.y * 0.45, 0.012), Vector3(0.0, -h.y * 0.1, h.z + 0.006))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
+	_armour_cowl_body(shape, size, s)
+	return shape
+
+
+## The armour cowl's volume and collision (its outline across its width), the drawn one's and the
+## model's alike.
+static func _armour_cowl_body(shape: PartShapes.PartShape, size: Vector3, s: float) -> void:
+	var h := size * 0.5
+	var outline := PackedVector2Array([Vector2(-h.z, -h.y), Vector2(h.z, -h.y), Vector2(h.z, h.y), Vector2(-h.z + s, h.y),
+			Vector2(-h.z, h.y - s)])
 	shape.volume = size.x * (size.y * size.z - s * s * 0.5)
 	var pts := PackedVector3Array()
 	for p in outline:
@@ -10742,7 +12415,6 @@ static func armour_cowl(size: Vector3 = Vector3(1.6, 1.8, 3.0), slope: float = 0
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	return shape
 
 
 ## A convex outline with each edge moved in by its own amount (`offsets[i]` for the edge
@@ -10781,7 +12453,41 @@ static func _armour_inset(outline: PackedVector2Array, offsets: Array) -> Packed
 ## and a long seam down one flat, three dark straps with a tensioner block and bolt each on
 ## the (-X, -Z) flat, and a pale maker's plate with rivets and dark lettering on its +Z
 ## side. Lies along Y; turn it with `Basis(Vector3.RIGHT, PI / 2)` to lie along the ship.
+## Modelled in Blender (tools/blender/parts/octo_tank.py) at radius 1 m, 2.8 m long, scaled by the
+## radius and stretched along its body (bolted corner rails, flanged nozzles on the caps' facets,
+## T-bolt tensioners, a rippled seam); its box is the code-drawn one's (FluidSystem.tank_box).
+## Its plugs stand 2 cm proud of the ends as the drawn one's do (`length` + 0.04 along Y), so its box's
+## foot is the drawn one's: `WreckInterior.place` stands a part on its box, and the pipes follow it.
 static func octo_tank(radius: float = 0.9, length: float = 2.6) -> PartShapes.PartShape:
+	if not PartAsset.has("octo_tank"):
+		return _octo_tank_drawn(radius, length)
+	var shape := PartShapes.PartShape.new()
+	PartAsset.fill(shape, "octo_tank", PartAsset.palette_of(WreckParts, Color.WHITE), radius,
+			Vector3(0.0, length + 0.04 - PartAsset.box_of("octo_tank").y * radius, 0.0))
+	_keep_drawn_box(shape, ["octo_tank", radius, length], func() -> PartShapes.PartShape: return _octo_tank_drawn(radius, length))
+	var drawn := _octo_tank_drawn_collision(radius, length)
+	shape.volume = drawn[0]
+	shape.collision = drawn[1]
+	return shape
+
+
+## The code-drawn octagonal tank's volume and collision, which the modelled one keeps.
+static func _octo_tank_drawn_collision(radius: float, length: float) -> Array:
+	var h := length * 0.5
+	var cap := minf(radius * 0.35, length * 0.2)
+	var rc := radius / cos(PI / 8.0)
+	var pts := PackedVector3Array()
+	for ring: Vector2 in [Vector2(rc, -h + cap), Vector2(rc, h - cap), Vector2(rc * 0.62, -h), Vector2(rc * 0.62, h)]:
+		for i in 8:
+			var a := TAU * (float(i) + 0.5) / 8.0
+			pts.append(Vector3(cos(a) * ring.x, ring.y, sin(a) * ring.x))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	return [8.0 * radius * radius * tan(PI / 8.0) * (length - cap), col]
+
+
+## The code-drawn octagonal tank: the fallback without its Blender file.
+static func _octo_tank_drawn(radius: float = 0.9, length: float = 2.6) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := length * 0.5
 	var cap := minf(radius * 0.35, length * 0.2)
@@ -10904,7 +12610,16 @@ static func _vessels_box(k: MeshKit, centre: Vector3, size: Vector3, basis: Basi
 ## square steel holders, a blunt tooth on the tip. `length` is the whole part; the housing
 ## takes what the collar and the ball leave (at least 0.15 m). Collision is the hull of the
 ## housing, the ball and the teeth's tips.
+## Modelled in Blender (tools/blender/parts/spike_drill.py, PartAsset) at radius 0.85 m and 2.1 m long, scaled evenly across and stretched in a band round the housing; `_spike_drill_drawn` is the code-drawn one: the fallback, and the box,
+## collision and volume the model keeps).
 static func spike_drill(radius: float = 0.75, length: float = 2.0) -> PartShapes.PartShape:
+	if not PartAsset.has("spike_drill"):
+		return _spike_drill_drawn(radius, length)
+	return _as_drawn("spike_drill", _drawn_twin(["spike_drill", radius, length], _spike_drill_drawn.bind(radius, length)), GLOWING, [0, 2])
+
+
+## The code-drawn spike drill.
+static func _spike_drill_drawn(radius: float = 0.75, length: float = 2.0) -> PartShapes.PartShape:
 	const HOUSING := Color(0.32, 0.33, 0.35)       # the drive housing's dark steel
 	const TOOTH_LIGHT := Color(0.5, 0.51, 0.53)    # the light teeth
 	var k := MeshKit.new()
@@ -11345,7 +13060,13 @@ const _GLYPHS := {
 	"K": [[0, 0, 1, 6], [[1, 2.5], [4, 6], [3, 6], [1, 3.7]], [[1.9, 3.55], [3, 0], [4, 0], [2.6, 4.37]]],
 	# Frigate (Sentinel): L ("SENTINAL").
 	"L": [[0, 0, 1, 6], [1, 0, 4, 1]],
+	# Landing craft (Scabbard): H and a stop ("T.A.S.C.", "ECHO 4-19"); a stop is one unit wide.
+	"H": [[0, 0, 1, 6], [3, 0, 4, 6], [1, 2.5, 3, 3.5]],
+	".": [[0, 0, 1, 1]],
 }
+
+
+const NAME_BOARD_GLOW := Color(0.92, 0.95, 1.0)   # the name board's edge lights
 
 
 ## A ship's name sign (the Forge's lit FORGE boards down the pods): a dark board `length`
@@ -11356,6 +13077,20 @@ const _GLYPHS := {
 ## on a ship's side turn it with a basis whose X runs the reading way, Y out of the hull
 ## and Z down.
 static func name_board(text: String = "FORGE", length: float = 7.0, height: float = 1.6, depth: float = 0.18) -> PartShapes.PartShape:
+	if not PartAsset.has("name_board"):
+		return _name_board_drawn(text, length, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var letters := MeshKit.new()
+	_name_board_letters(letters, text, length, height, depth)
+	var fit := PartAsset.fit_box("name_board", Vector3(length, depth, height), [2])
+	PartAsset.fill(shape, "name_board", PartAsset.palette_of(WreckParts, NAME_BOARD_GLOW), fit[0], fit[1], Vector3.ZERO,
+			Vector3.ZERO, letters)
+	_name_board_body(shape, length, height, depth)
+	return shape
+
+
+## The code-drawn name board: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _name_board_drawn(text: String, length: float, height: float, depth: float) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hl := length * 0.5
 	var hh := height * 0.5
@@ -11398,7 +13133,23 @@ static func name_board(text: String = "FORGE", length: float = 7.0, height: floa
 	k.color = PartShapes.GASKET
 	for sx: float in [-1.0, 1.0]:
 		k.box(Vector3(0.07, 0.014, 2.0 * lamp_h), Vector3(sx * (hl - 0.06), d + 0.007, 0.0))
-	# The letters, spaced evenly between the vents.
+	_name_board_letters(k, text, length, height, depth)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	_name_board_body(shape, length, height, depth)
+	var g := MeshKit.new()
+	for sx: float in [-1.0, 1.0]:
+		g.box(Vector3(0.04, 0.008, 2.0 * lamp_h - 0.024), Vector3(sx * (hl - 0.06), d + 0.018, 0.0))
+	shape.glow = g.finish()
+	shape.glow_color = NAME_BOARD_GLOW
+	return shape
+
+
+## The name board's letters: `text` in pale block capitals standing proud of the face, spaced evenly
+## between the vents (drawn in code on the modelled board too).
+static func _name_board_letters(k: MeshKit, text: String, length: float, height: float, depth: float) -> void:
+	var d := depth * 0.5
+	var vent_w := height * 0.62
 	var room := length - 2.0 * (0.24 + vent_w)
 	var cap := height * 0.62
 	var unit := cap / 6.0
@@ -11426,8 +13177,14 @@ static func name_board(text: String = "FORGE", length: float = 7.0, height: floa
 				lo.append(p + Vector3(0.0, d, 0.0))
 				hi.append(p + Vector3(0.0, d + letter_t, 0.0))
 			k.loft(lo, hi)
-	var shape := PartShapes.PartShape.new()
-	shape.mesh = k.finish()
+
+
+## The name board's volume and collision, the drawn one's and the model's alike.
+static func _name_board_body(shape: PartShapes.PartShape, length: float, height: float, depth: float) -> void:
+	var hl := length * 0.5
+	var hh := height * 0.5
+	var d := depth * 0.5
+	var letter_t := 0.08
 	shape.volume = length * depth * height
 	var pts := PackedVector3Array()
 	for sx: float in [-1.0, 1.0]:
@@ -11437,11 +13194,62 @@ static func name_board(text: String = "FORGE", length: float = 7.0, height: floa
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	var g := MeshKit.new()
+
+
+## Lettering painted on a hull (the Scabbard's T.A.S.C. and ECHO 4-19 across her wings, the
+## "4-19" under her nose): `name_board`'s block capitals and digits `height` tall, standing
+## `depth` proud of their base with no board behind them, each `pitch` x `height` along the
+## line (a stop and a space take less). Base on -Y at y 0, face +Y; the text reads along +X,
+## centred on the origin, with the letters' tops toward -Z. Collision one thin slab under it
+## all.
+static func hull_lettering(text: String, height: float = 1.0, depth: float = 0.02, pitch: float = 0.85,
+		colour := Color(0.92, 0.93, 0.92)) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	k.color = colour
+	var unit := height / 6.0
+	var advance := func(ch: String) -> float:
+		if ch == ".":
+			return height * 0.35
+		if ch == " ":
+			return height * 0.5
+		return height * pitch
+	var total := 0.0
+	for i in text.length():
+		total += advance.call(text[i])
+	var x := -total * 0.5
+	for i in text.length():
+		var ch := text[i]
+		var room: float = advance.call(ch)
+		if ch != " ":
+			var x0 := x + (room - (1.0 if ch == "." else 4.0) * unit) * 0.5
+			var parts: Array = _GLYPHS.get(ch, _DIGITS.get(ch, [[0, 0, 4, 6]]))
+			for piece: Array in parts:
+				var outline := PackedVector2Array()
+				if piece[0] is Array:
+					for q: Array in piece:
+						outline.append(Vector2(float(q[0]), float(q[1])))
+				else:
+					outline = PackedVector2Array([Vector2(piece[0], piece[1]), Vector2(piece[2], piece[1]),
+							Vector2(piece[2], piece[3]), Vector2(piece[0], piece[3])])
+				var lo := PackedVector3Array()
+				var hi := PackedVector3Array()
+				for q in outline:
+					var p := Vector3(x0 + q.x * unit, 0.0, height * 0.5 - q.y * unit)
+					lo.append(p)
+					hi.append(p + Vector3(0.0, depth, 0.0))
+				k.loft(lo, hi)
+		x += room
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = total * height * depth * 0.4
+	var pts := PackedVector3Array()
 	for sx: float in [-1.0, 1.0]:
-		g.box(Vector3(0.04, 0.008, 2.0 * lamp_h - 0.024), Vector3(sx * (hl - 0.06), d + 0.018, 0.0))
-	shape.glow = g.finish()
-	shape.glow_color = Color(0.92, 0.95, 1.0)
+		for sz: float in [-1.0, 1.0]:
+			for y: float in [0.0, depth]:
+				pts.append(Vector3(sx * total * 0.5, y, sz * height * 0.5))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	shape.collision = col
 	return shape
 
 
@@ -11455,6 +13263,19 @@ static func name_board(text: String = "FORGE", length: float = 7.0, height: floa
 ## round the frame and a small yellow warning tab on it. Face +Y (lay it on a hull side with
 ## X along the hull and Y out of it).
 static func louvre_panel(length: float = 3.0, height: float = 1.6, depth: float = 0.1) -> PartShapes.PartShape:
+	# The model's slats run along its length: a panel taller than it is long keeps the drawn look.
+	if height > length or not PartAsset.has("louvre_panel"):
+		return _louvre_panel_drawn(length, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("louvre_panel", Vector3(length, depth, height), [2])
+	PartAsset.fill(shape, "louvre_panel", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	_louvre_panel_body(shape, length, height, depth)
+	return shape
+
+
+## The code-drawn louvre panel: the fallback without its Blender file, and for a panel taller than it
+## is long (docs/BLENDER_PARTS.md).
+static func _louvre_panel_drawn(length: float = 3.0, height: float = 1.6, depth: float = 0.1) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hl := length * 0.5
 	var hh := height * 0.5
@@ -11513,6 +13334,15 @@ static func louvre_panel(length: float = 3.0, height: float = 1.6, depth: float 
 	k.box(Vector3(rim * 2.0, 0.015, rim * 0.5), Vector3(-hl + rim * 2.2, d + 0.0075, -hh + rim * 0.5))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
+	_louvre_panel_body(shape, length, height, depth)
+	return shape
+
+
+## The louvre panel's volume and collision, the drawn one's and the model's alike.
+static func _louvre_panel_body(shape: PartShapes.PartShape, length: float, height: float, depth: float) -> void:
+	var hl := length * 0.5
+	var hh := height * 0.5
+	var d := depth * 0.5
 	shape.volume = length * height * depth * 0.45
 	var pts := PackedVector3Array()
 	for sx: float in [-1.0, 1.0]:
@@ -11522,7 +13352,6 @@ static func louvre_panel(length: float = 3.0, height: float = 1.6, depth: float 
 	var col := ConvexPolygonShape3D.new()
 	col.points = pts
 	shape.collision = col
-	return shape
 
 
 # --- Hex-drive cruiser parts (0.60) ------------------------------------------------------
@@ -11534,6 +13363,21 @@ static func louvre_panel(length: float = 3.0, height: float = 1.6, depth: float 
 ## chamfered lip round the mouth, a polished reflector bowl sloping down inside to a domed
 ## glowing lens (PartShape.glow) and dark slats across the mouth. Light out of +Y.
 static func searchlight(radius: float = 0.5, length: float = 0.9) -> PartShapes.PartShape:
+	if not PartAsset.has("searchlight"):
+		return _searchlight_drawn(radius, length)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("searchlight", Vector3(2.0 * (radius * 1.1 + 0.014), length, radius * 2.2), [2])
+	PartAsset.fill(shape, "searchlight", PartAsset.palette_of(WreckParts, Color(1.0, 0.97, 0.9)), fit[0], fit[1])
+	shape.volume = PI * radius * radius * length * 0.5
+	var col := CylinderShape3D.new()
+	col.radius = radius * 1.1
+	col.height = length
+	shape.collision = col
+	return shape
+
+
+## The code-drawn searchlight: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _searchlight_drawn(radius: float = 0.5, length: float = 0.9) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := length * 0.5
 	var seg := 20
@@ -11738,7 +13582,43 @@ const _DIGITS := {
 ## +Y, a weld seam down the lower flank, a maker's plate on -X, and two dark straps along
 ## the -Z side with end clamps and a bolted valve boss between them (the top once it is
 ## turned with `Basis(Vector3.RIGHT, PI / 2)` to lie along +Z). Fit it with the hull's paint.
+## Modelled in Blender (tools/blender/parts/banded_tank.py) at radius 1 m, 4 m long, scaled by the
+## radius and stretched along its barrel (hex heads round the flanges, a T-bolt on the collar, girth
+## and long seams, a riveted plate, bolted strap clamps, a blind-flanged valve); its box is the
+## code-drawn one's (FluidSystem.tank_box).
 static func banded_tank(radius: float = 1.2, length: float = 5.0) -> PartShapes.PartShape:
+	if not PartAsset.has("banded_tank"):
+		return _banded_tank_drawn(radius, length)
+	var shape := PartShapes.PartShape.new()
+	PartAsset.fill(shape, "banded_tank", PartAsset.palette_of(WreckParts, Color.WHITE), radius,
+			Vector3(0.0, length - PartAsset.box_of("banded_tank").y * radius, 0.0))
+	_keep_drawn_box(shape, ["banded_tank", radius, length], func() -> PartShapes.PartShape: return _banded_tank_drawn(radius, length))
+	shape.volume = PI * radius * radius * length * 0.9
+	shape.collision = _banded_tank_collision(radius, length)
+	return shape
+
+
+## The code-drawn banded tank's collision, which the modelled one keeps.
+static func _banded_tank_collision(radius: float, length: float) -> ConvexPolygonShape3D:
+	var h := length * 0.5
+	var flange_t := 0.08
+	var flange_r := radius * 0.62
+	var body0 := -h + flange_t + radius * 0.42
+	var body1 := h - flange_t - radius * 0.42
+	var cr := radius * 1.03
+	var pts := PackedVector3Array()
+	for i in 16:
+		var t := TAU * float(i) / 16.0
+		var c := Vector2(cos(t), sin(t))
+		for p: Vector2 in [Vector2(flange_r, -h), Vector2(cr, body0), Vector2(cr, body1), Vector2(flange_r, h)]:
+			pts.append(Vector3(c.x * p.x, p.y, c.y * p.x))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	return col
+
+
+## The code-drawn banded tank: the fallback without its Blender file.
+static func _banded_tank_drawn(radius: float = 1.2, length: float = 5.0) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := length * 0.5
 	var flange_t := 0.08
@@ -11939,7 +13819,16 @@ static func nose_probe(length: float = 1.6, radius: float = 0.14) -> PartShapes.
 ## dark coolant spray bar along its front edge, and a square mount plate bolted above and
 ## below it. The axle runs along X, the bit faces -Z and the mount plate is the +Z face, so
 ## fit it unturned on the front of an arm. Collision is the hull of the wheel and the fork.
+## Modelled in Blender (tools/blender/parts/rock_wheel.py, PartAsset) at the Titan's radius 0.95 m and 1.1 m wide, scaled evenly; `_rock_wheel_drawn` is the code-drawn one: the fallback, and the box,
+## collision and volume the model keeps).
 static func rock_wheel(radius: float = 0.95, width: float = 1.1) -> PartShapes.PartShape:
+	if not PartAsset.has("rock_wheel"):
+		return _rock_wheel_drawn(radius, width)
+	return _as_drawn("rock_wheel", _drawn_twin(["rock_wheel", radius, width], _rock_wheel_drawn.bind(radius, width)), GLOWING, [0, 1, 2])
+
+
+## The code-drawn rock wheel.
+static func _rock_wheel_drawn(radius: float = 0.95, width: float = 1.1) -> PartShapes.PartShape:
 	const DRUM_STEEL := Color(0.52, 0.53, 0.55)    # the wheel's drum
 	const PICK_LIGHT := Color(0.68, 0.69, 0.71)    # light pick shanks
 	const PICK_DARK := Color(0.38, 0.39, 0.41)     # dark pick shanks
@@ -12184,6 +14073,43 @@ static func drill_arm(length: float = 4.2, width: float = 1.3, height: float = 0
 ## cast iron raised hub with a bolt ring round a ceramic sensor window and a yellow lit ring
 ## (PartShape.glow). Stands on -Y; `height` the whole part.
 static func ore_detector(radius: float = 1.3, height: float = 0.9) -> PartShapes.PartShape:
+	if not PartAsset.has("ore_detector"):
+		return _ore_detector_drawn(radius, height)
+	var shape := PartShapes.PartShape.new()
+	var pr := radius * 1.04 + 0.006
+	var fit := PartAsset.fit_box("ore_detector", Vector3(2.0 * pr, height + 0.016, 2.0 * pr), [0, 2])
+	PartAsset.fill(shape, "ore_detector", PartAsset.palette_of(WreckParts, Color(1.0, 0.8, 0.25)), fit[0], fit[1])
+	var plinth_r := radius * 1.04
+	var plinth_t := height * 0.28
+	var dr := radius * 0.86
+	var d0 := -height * 0.5 + plinth_t
+	var d1 := height * 0.5 - height * 0.16
+	shape.volume = PI * plinth_r * plinth_r * plinth_t + PI * dr * dr * (d1 - d0)
+	shape.collision = _ore_detector_hull(radius, height)
+	return shape
+
+
+## The ore detector's collision, the drawn one's: the plinth, the drum's rim and the hub's crown.
+static func _ore_detector_hull(radius: float, height: float) -> ConvexPolygonShape3D:
+	var h := height * 0.5
+	var plinth_r := radius * 1.04
+	var d0 := -h + height * 0.28
+	var d1 := h - height * 0.16
+	var pts := PackedVector3Array()
+	for i in 16:
+		var a := TAU * float(i) / 16.0
+		var c := Vector2(cos(a), sin(a))
+		pts.append(Vector3(c.x * plinth_r * 1.01, -h, c.y * plinth_r * 1.01))
+		pts.append(Vector3(c.x * plinth_r * 1.01, d0, c.y * plinth_r * 1.01))
+		pts.append(Vector3(c.x * radius * 1.01, d1 + 0.05, c.y * radius * 1.01))
+		pts.append(Vector3(c.x * radius * 0.32, h, c.y * radius * 0.32))
+	var col := ConvexPolygonShape3D.new()
+	col.points = pts
+	return col
+
+
+## The code-drawn ore detector: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _ore_detector_drawn(radius: float = 1.3, height: float = 0.9) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var h := height * 0.5
 	var plinth_t := height * 0.28
@@ -12239,17 +14165,7 @@ static func ore_detector(radius: float = 1.3, height: float = 0.9) -> PartShapes
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
 	shape.volume = PI * plinth_r * plinth_r * plinth_t + PI * dr * dr * (d1 - d0)
-	var pts := PackedVector3Array()
-	for i in 16:
-		var a := TAU * float(i) / 16.0
-		var c := Vector2(cos(a), sin(a))
-		pts.append(Vector3(c.x * plinth_r * 1.01, -h, c.y * plinth_r * 1.01))
-		pts.append(Vector3(c.x * plinth_r * 1.01, d0, c.y * plinth_r * 1.01))
-		pts.append(Vector3(c.x * radius * 1.01, d1 + 0.05, c.y * radius * 1.01))
-		pts.append(Vector3(c.x * radius * 0.32, h, c.y * radius * 0.32))
-	var col := ConvexPolygonShape3D.new()
-	col.points = pts
-	shape.collision = col
+	shape.collision = _ore_detector_hull(radius, height)
 	var g := MeshKit.new()
 	g.lathe(PackedVector2Array([Vector2(radius * 0.33, d1 + 0.01), Vector2(radius * 0.4, d1 + 0.01),
 			Vector2(radius * 0.4, d1 + 0.04), Vector2(radius * 0.33, d1 + 0.04)]), 16)
@@ -12618,6 +14534,19 @@ static func bunk_rack(length: float = 2.0, width: float = 0.9, height: float = 2
 ## LEDs below; the lower cabinet has a hinged door with a flush pull, a name plate and a louvre,
 ## louvred grilles on its sides and vent slots on top. Front -Z, stands on -Y.
 static func refill_station(width: float = 0.8, height: float = 1.9, depth: float = 0.5) -> PartShapes.PartShape:
+	if not PartAsset.has("refill_station"):
+		return _refill_station_drawn(width, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var size := Vector3(width, height, depth)
+	PartAsset.fill(shape, "refill_station", PartAsset.palette_of(WreckParts, Color(0.85, 1.0, 0.3)), 1.0,
+			size - PartAsset.box_of("refill_station"))
+	shape.volume = width * height * depth * 0.6
+	var col := BoxShape3D.new()
+	col.size = size
+	shape.collision = col
+	return shape
+
+static func _refill_station_drawn(width: float = 0.8, height: float = 1.9, depth: float = 0.5) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hw := width * 0.5
 	var hh := height * 0.5
@@ -13052,8 +14981,32 @@ static func landing_pad(width: float = 6.0, length: float = 4.0, height: float =
 ## doubler strip along the foot on both faces, a rubber root seal filleting the foot on both
 ## faces, a panel line, and a red-lit navigation lamp (PartShape.glow) in a moulded plastic
 ## housing at the top aft corner under a faceted red lens (PartShape.glass).
-## Stands on -Y.
+## Stands on -Y. Modelled in Blender (tools/blender/parts/fin_blade.py) at the Endeavor's
+## 3.0 x 1.6 x 0.22 m, scaled evenly; another shape keeps the drawn one.
 static func fin_blade(length: float = 2.4, height: float = 1.6, thickness: float = 0.22) -> PartShapes.PartShape:
+	if not PartAsset.has("fin_blade") or absf(length / height - 3.0 / 1.6) > 0.02 \
+			or absf(thickness / height - 0.22 / 1.6) > 0.002:
+		return _fin_blade_drawn(length, height, thickness)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("fin_blade", Vector3(thickness, height, length), [0, 1, 2])
+	PartAsset.fill(shape, "fin_blade", PartAsset.palette_of(WreckParts, Color(1.0, 0.18, 0.12)), fit[0], fit[1])
+	shape.volume = length * height * 0.5 * thickness
+	var hl := length * 0.5
+	var hh := height * 0.5
+	var ht := thickness * 0.5
+	var col := ConvexPolygonShape3D.new()
+	var pts := PackedVector3Array()
+	for p: Vector3 in [Vector3(0.0, -hh, -hl), Vector3(0.0, -hh, hl), Vector3(0.0, hh, hl)]:
+		pts.append(p + Vector3(-ht, 0.0, 0.0))
+	for p: Vector3 in [Vector3(0.0, -hh, -hl), Vector3(0.0, -hh, hl), Vector3(0.0, hh, hl)]:
+		pts.append(p + Vector3(ht, 0.0, 0.0))
+	col.points = pts
+	shape.collision = col
+	return shape
+
+
+## The code-drawn fin blade: the fallback without its Blender file, and any other shape.
+static func _fin_blade_drawn(length: float = 2.4, height: float = 1.6, thickness: float = 0.22) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hl := length * 0.5
 	var hh := height * 0.5
@@ -14122,7 +16075,26 @@ static func rail_muzzle(width: float = 1.4, length: float = 1.2, glow := Color(1
 ## row, a copper terminal bar and a high-voltage plate along the top front, louvres on the
 ## ends and a status panel with a lit readout and three LEDs on the +X end. Stands on -Y,
 ## front -Z.
+## Modelled in Blender (tools/blender/parts/capacitor_bank.py, PartAsset): one model a can count (four cans a
+## row at 1.6 m wide, three at 1.4 m, and a low one for a bank under 1.4 m tall, the Tiburon's beam breech),
+## fitted to the drawn twin's box, its collision and volume kept; its bands, readout and lamps one "led" face
+## as the drawn one's glow (WD15a's charge reads on it). Another can count keeps `_capacitor_bank_drawn`.
 static func capacitor_bank(width: float = 1.6, height: float = 1.9, depth: float = 0.7) -> PartShapes.PartShape:
+	var model := "capacitor_bank_%d%s" % [_bank_cans(width), "_low" if height < 1.4 else ""]
+	if not PartAsset.has(model):
+		return _capacitor_bank_drawn(width, height, depth)
+	return _as_drawn(model, _drawn_twin(["capacitor_bank", width, height, depth],
+			_capacitor_bank_drawn.bind(width, height, depth)), Color(0.3, 0.6, 1.0), [0])
+
+
+## Cans a row in a bank `width` wide (the drawn one's count).
+static func _bank_cans(width: float) -> int:
+	return maxi(2, int((width - 0.16) / 0.36))
+
+
+## The code-drawn capacitor bank: the fallback without its Blender file, and the box, collision and volume
+## the model keeps.
+static func _capacitor_bank_drawn(width: float = 1.6, height: float = 1.9, depth: float = 0.7) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var hw := width * 0.5
@@ -14161,7 +16133,7 @@ static func capacitor_bank(width: float = 1.6, height: float = 1.9, depth: float
 	k.color = DETAIL
 	k.box(Vector3(width - 0.16 - 0.1, 0.03, 0.02), Vector3(0.0, mid_y, -hd + 0.03))
 	# The cans: upright cylinders, two rows, banded.
-	var cols := maxi(2, int((width - 0.16) / 0.36))
+	var cols := _bank_cans(width)
 	var pitch := (width - 0.16) / float(cols)
 	var r := minf(pitch * 0.4, (depth - 0.12) * 0.42)
 	var can_h := inner_h * 0.5 - 0.1
@@ -14235,6 +16207,15 @@ static func capacitor_bank(width: float = 1.6, height: float = 1.9, depth: float
 ## the barrel and a muzzle block with side slots and a dark muzzle slot. Stands on -Y,
 ## barrels toward -Z; `barrel` is how far they reach past the gun house's front.
 static func naval_turret(width: float = 3.0, barrel: float = 5.0, glow := Color(1.0, 0.18, 0.1)) -> PartShapes.PartShape:
+	if not PartAsset.has("naval_turret"):
+		return _naval_turret_drawn(width, barrel, glow)
+	return _as_drawn("naval_turret", _drawn_twin(["naval_turret", width, barrel],
+			_naval_turret_drawn.bind(width, barrel, glow)), glow, [0, 1])
+
+
+## The code-drawn naval turret: the fallback without its Blender file, and the box, collision and volume
+## the model keeps.
+static func _naval_turret_drawn(width: float = 3.0, barrel: float = 5.0, glow := Color(1.0, 0.18, 0.1)) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var hw := width * 0.5
@@ -14549,6 +16530,17 @@ static func _launchers_lathe(k: MeshKit, profile: PackedVector2Array, segments: 
 ## them (PartShape.glow). Face +Y (lay it on a hull side with X along the hull and Y out of
 ## it).
 static func radiator_grille(length: float = 4.0, height: float = 1.6, depth: float = 0.16) -> PartShapes.PartShape:
+	if not PartAsset.has("radiator_grille"):
+		return _radiator_grille_drawn(length, height, depth)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("radiator_grille", Vector3(length, depth, height), [2])
+	PartAsset.fill(shape, "radiator_grille", PartAsset.palette_of(WreckParts, RADIATOR_GLOW), fit[0], fit[1])
+	_radiator_grille_body(shape, length, height, depth)
+	return shape
+
+
+## The code-drawn radiator grille: the fallback without its Blender file (docs/BLENDER_PARTS.md).
+static func _radiator_grille_drawn(length: float = 4.0, height: float = 1.6, depth: float = 0.16) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var hl := length * 0.5
@@ -14606,13 +16598,22 @@ static func radiator_grille(length: float = 4.0, height: float = 1.6, depth: flo
 			Vector2(rim * 2.4, mid * 0.7), mid * 0.25)
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
+	shape.glow = g.finish()
+	shape.glow_color = RADIATOR_GLOW
+	_radiator_grille_body(shape, length, height, depth)
+	return shape
+
+
+## The radiator grille's red-orange glow between its fins.
+const RADIATOR_GLOW := Color(1.0, 0.32, 0.12)
+
+
+## The radiator grille's volume and collision, the drawn one's and the model's alike.
+static func _radiator_grille_body(shape: PartShapes.PartShape, length: float, height: float, depth: float) -> void:
 	shape.volume = length * height * depth * 0.4
 	var col := BoxShape3D.new()
 	col.size = Vector3(length, depth + 0.012, height)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = Color(1.0, 0.32, 0.12)
-	return shape
 
 
 ## A slab of layered hull armour (the Devastator's pale armour plating): a dark backing
@@ -14623,6 +16624,18 @@ static func radiator_grille(length: float = 4.0, height: float = 1.6, depth: flo
 ## of each tile, a bigger bolt at each row's ends and a pale stencil tab with dark lettering
 ## on one tile of the middle row. Face +Y.
 static func armour_slab(width: float = 3.0, length: float = 4.0, thickness: float = 0.18, rows: int = 3) -> PartShapes.PartShape:
+	if rows != 3 or not PartAsset.has("armour_slab"):
+		return _armour_slab_drawn(width, length, thickness, rows)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box("armour_slab", Vector3(width, thickness, length), [1])
+	PartAsset.fill(shape, "armour_slab", PartAsset.palette_of(WreckParts, Color.WHITE), fit[0], fit[1])
+	_armour_slab_body(shape, width, length, thickness)
+	return shape
+
+
+## The code-drawn armour slab: the fallback without its Blender file, and any slab of other than three
+## rows (docs/BLENDER_PARTS.md).
+static func _armour_slab_drawn(width: float, length: float, thickness: float, rows: int) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var hw := width * 0.5
 	var hl := length * 0.5
@@ -14691,11 +16704,16 @@ static func armour_slab(width: float = 3.0, length: float = 4.0, thickness: floa
 		k.color = Color.WHITE
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
+	_armour_slab_body(shape, width, length, thickness)
+	return shape
+
+
+## The armour slab's volume and collision, the drawn one's and the model's alike.
+static func _armour_slab_body(shape: PartShapes.PartShape, width: float, length: float, thickness: float) -> void:
 	shape.volume = width * length * thickness * 0.7
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, thickness + 0.06, length)
 	shape.collision = col
-	return shape
 
 
 # --- Destroyer parts (v2, the Everest) -------------------------------------------------
@@ -15065,6 +17083,19 @@ static func _heroes_arch(k: MeshKit, c: Vector3, r0: float, r1: float, x0: float
 ## clamps, an orange glow behind the gaps between them (PartShape.glow); a small dark
 ## data plate on the frame. Face +Y, back on -Y against the hull.
 static func copper_vent(length: float = 4.0, height: float = 1.2, depth: float = 0.24, slats: int = 8) -> PartShapes.PartShape:
+	var model := "copper_vent_%d" % slats
+	if not PartAsset.has(model):
+		return _copper_vent_drawn(length, height, depth, slats)
+	var shape := PartShapes.PartShape.new()
+	var fit := PartAsset.fit_box(model, Vector3(length, depth, height), [2])
+	PartAsset.fill(shape, model, PartAsset.palette_of(WreckParts, COPPER_VENT_GLOW), fit[0], fit[1])
+	_copper_vent_body(shape, length, height, depth)
+	return shape
+
+
+## The code-drawn copper vent: the fallback without its Blender file, and for slat counts with no
+## model (docs/BLENDER_PARTS.md).
+static func _copper_vent_drawn(length: float = 4.0, height: float = 1.2, depth: float = 0.24, slats: int = 8) -> PartShapes.PartShape:
 	var k := MeshKit.new()
 	var g := MeshKit.new()
 	var hl := length * 0.5
@@ -15136,13 +17167,22 @@ static func copper_vent(length: float = 4.0, height: float = 1.2, depth: float =
 	k.box(Vector3(cut * 0.9, 0.01, mid * 0.6), Vector3(plate_x, d + 0.005, bz))
 	var shape := PartShapes.PartShape.new()
 	shape.mesh = k.finish()
+	shape.glow = g.finish()
+	shape.glow_color = COPPER_VENT_GLOW
+	_copper_vent_body(shape, length, height, depth)
+	return shape
+
+
+## The copper vent's orange glow between its bars.
+const COPPER_VENT_GLOW := Color(1.0, 0.45, 0.15)
+
+
+## The copper vent's volume and collision, the drawn one's and the model's alike.
+static func _copper_vent_body(shape: PartShapes.PartShape, length: float, height: float, depth: float) -> void:
 	shape.volume = length * height * depth * 0.35
 	var col := BoxShape3D.new()
 	col.size = Vector3(length, depth + 0.02, height)
 	shape.collision = col
-	shape.glow = g.finish()
-	shape.glow_color = Color(1.0, 0.45, 0.15)
-	return shape
 
 
 ## Hard cases stacked in a wall frame (the Sentinel's bunk room, shot 12: three black kit
@@ -15215,6 +17255,210 @@ static func case_stack(width: float = 0.95, height: float = 2.0, depth: float = 
 	var col := BoxShape3D.new()
 	col.size = Vector3(width, height, depth + 0.04)
 	shape.collision = col
+	return shape
+
+
+# --- Landing craft parts (v2, the Scabbard) ------------------------------------------------
+
+## A row of drop seats along a troop bay's wall (the Scabbard's troop bay, shots 3 and 4: an
+## arched tubular cradle round each seat): `count` seats `pitch` apart along X on a yellow
+## foot plate with tread strips; each an arch of bent tube rising from the plate at the front
+## (stayed back to the wall rails at knee and shoulder height), a padded backboard with a
+## headrest and shoulder pads, a fold-down seat pan on a hinge block and a harness to a buckle;
+## over them a header rail with a status lamp per seat (PartShape.glow, "led"), two mount
+## rails along the back. The pan, the header and the backboards' frames take the material
+## colour. Stands on -Y, faces -Z, back +Z on the wall.
+static func troop_rack(count: int = 4, pitch: float = 0.8, height: float = 2.2, depth: float = 0.55) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var g := MeshKit.new()
+	var n := maxi(count, 1)
+	var width := pitch * float(n)
+	var hw := width * 0.5
+	var h := height * 0.5
+	var d := depth * 0.5
+	var foot := 0.03                       # the foot plate, m
+	var tube := 0.028                      # the cradles' tube radius, m
+	var front := -d + tube + 0.03          # the arches' plane (z)
+	var header := 0.14
+	# The foot plate, yellow, with tread strips across it and a bright edge at the front.
+	k.color = HAZARD_YELLOW
+	k.box(Vector3(width, foot, depth), Vector3(0.0, -h + foot * 0.5, 0.0))
+	k.color = TREAD
+	var strips := maxi(2, int(width / 0.18))
+	for i in strips:
+		var x := -hw + 0.09 + (width - 0.18) * float(i) / float(strips - 1)
+		k.box(Vector3(0.05, 0.008, depth - 0.12), Vector3(x, -h + foot + 0.004, 0.02))
+	k.color = TRIM
+	k.box(Vector3(width, 0.012, 0.03), Vector3(0.0, -h + foot + 0.006, -d + 0.015))
+	# The mount rails along the back, and the header over the seats with its dark face.
+	var knee := -h + 0.55
+	var shoulder := h - header - 0.42
+	k.color = DETAIL
+	for y: float in [knee, shoulder]:
+		k.box(Vector3(width, 0.06, 0.04), Vector3(0.0, y, d - 0.02))
+	k.color = Color.WHITE
+	k.box(Vector3(width, header, 0.26), Vector3(0.0, h - header * 0.5, d - 0.13))
+	k.color = DARK
+	k.box(Vector3(width - 0.04, header * 0.5, 0.01), Vector3(0.0, h - header * 0.5, d - 0.265))
+	for i in n:
+		var x := -hw + pitch * (float(i) + 0.5)
+		var ra := pitch * 0.5 - tube - 0.05   # the arch's radius
+		var top := h - header - 0.03 - tube   # its crown, clear of the header
+		var spring := top - ra
+		# The arch: two uprights from the plate and a bend over the top, stayed back to the rails.
+		k.color = ANODISED
+		for sx: float in [-1.0, 1.0]:
+			_tube(k, Vector3(x + sx * ra, -h + foot, front), Vector3(x + sx * ra, spring, front), tube, 8)
+			for y: float in [knee, shoulder]:
+				_tube(k, Vector3(x + sx * ra, y, front), Vector3(x + sx * ra, y, d - 0.04), tube * 0.7, 6)
+		var bends := 8
+		for j in bends:
+			var a0 := PI * float(j) / float(bends)
+			var a1 := PI * float(j + 1) / float(bends)
+			_tube(k, Vector3(x + cos(a0) * ra, spring + sin(a0) * ra, front), Vector3(x + cos(a1) * ra, spring + sin(a1) * ra, front),
+					tube, 8)
+		# Feet: a bolted shoe under each upright.
+		k.color = DETAIL
+		for sx: float in [-1.0, 1.0]:
+			k.box(Vector3(0.08, 0.025, 0.08), Vector3(x + sx * ra, -h + foot + 0.0125, front))
+		# The backboard: a frame in the material colour, padded, headrest over it.
+		var bw := ra * 2.0 - 0.1
+		var b0 := knee - 0.05
+		var b1 := shoulder + 0.3
+		k.color = Color.WHITE
+		k.box(Vector3(bw, b1 - b0, 0.04), Vector3(x, (b0 + b1) * 0.5, d - 0.06))
+		k.color = SEAT_LEATHER
+		_seating_pad(k, Vector3(x, (b0 + shoulder) * 0.5, d - 0.08), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD,
+				bw * 0.36, (shoulder - b0) * 0.42, 0.05, 0.015)
+		_seating_pad(k, Vector3(x, shoulder + 0.2, d - 0.08), Vector3.RIGHT, Vector3.UP, Vector3.FORWARD,
+				bw * 0.22, 0.08, 0.05, 0.015)
+		# Shoulder pads either side of the headrest, the harness down to the buckle.
+		var buckle := Vector3(x, knee + 0.12, d - 0.32)
+		for sx: float in [-1.0, 1.0]:
+			k.color = SEAT_LEATHER
+			_seating_pad(k, Vector3(x + sx * bw * 0.27, shoulder + 0.02, d - 0.1), Vector3.RIGHT, Vector3.BACK, Vector3.UP,
+					0.06, 0.07, 0.05, 0.012)
+			k.color = STRAP
+			k.strut(Vector3(x + sx * bw * 0.25, shoulder + 0.03, d - 0.14), buckle + Vector3(sx * 0.04, 0.0, 0.0), 0.03)
+		k.color = PartShapes.ACCENT
+		k.box(Vector3(0.09, 0.07, 0.03), buckle)
+		# The seat pan, folded down on its hinge block.
+		k.color = DETAIL
+		k.box(Vector3(bw * 0.5, 0.05, 0.05), Vector3(x, knee - 0.05, d - 0.1))
+		k.color = Color.WHITE
+		k.box(Vector3(bw, 0.05, 0.36), Vector3(x, knee - 0.02, d - 0.31))
+		k.color = SEAT_LEATHER
+		_seating_pad(k, Vector3(x, knee + 0.005, d - 0.31), Vector3.RIGHT, Vector3.BACK, Vector3.UP, bw * 0.42, 0.15, 0.04, 0.012)
+		# The seat's status lamp on the header's face.
+		g.box(Vector3(0.1, 0.03, 0.01), Vector3(x, h - header * 0.5, d - 0.272))
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = width * height * depth * 0.12
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, depth)
+	shape.collision = col
+	PartShapes.emissive(shape, "led", g.finish(), Color(0.3, 1.0, 0.55))
+	return shape
+
+
+## A briefing room's map table (the Scabbard's briefing room, shot 5: a white table with a
+## lit map in its top): a dark plinth with a tread kick plate, a body `width` by `depth` with
+## its corners cut that widens up to the top (material colour), a bright rim round a dark
+## glass well set into the top with a glowing map in it (a grid, coast lines and a marker,
+## PartShape.glow "screen"), glowing strips under the body's lower edge ("strip") and a sloped
+## control panel with keys and two lamps at the +X end. Stands on -Y.
+static func holo_table(width: float = 2.2, depth: float = 1.3, height: float = 1.0) -> PartShapes.PartShape:
+	var k := MeshKit.new()
+	var screen := MeshKit.new()
+	var strip := MeshKit.new()
+	var hw := width * 0.5
+	var hd := depth * 0.5
+	var h := height * 0.5
+	var cut := minf(width, depth) * 0.12
+	var panel := 0.22                      # the control panel's run past the body at +X, m
+	var bx := hw - panel                   # the body's half width
+	var oct := func(x: float, z: float, c: float, y: float) -> PackedVector3Array:
+		return PackedVector3Array([Vector3(-x + c, y, -z), Vector3(x - c, y, -z), Vector3(x, y, -z + c), Vector3(x, y, z - c),
+				Vector3(x - c, y, z), Vector3(-x + c, y, z), Vector3(-x, y, z - c), Vector3(-x, y, -z + c)])
+	# The plinth and its kick plate.
+	var plinth := height * 0.45
+	k.color = FURN_PLINTH
+	k.box(Vector3(bx * 1.2, plinth, hd * 1.0), Vector3(-panel * 0.5, -h + plinth * 0.5, 0.0))
+	k.color = TREAD
+	k.box(Vector3(bx * 1.2 + 0.02, 0.06, hd * 1.0 + 0.02), Vector3(-panel * 0.5, -h + 0.03, 0.0))
+	# The body: from a narrower foot to the full top, corners cut.
+	var y0 := -h + plinth
+	var y1 := h - 0.05
+	var shift := Vector3(-panel * 0.5, 0.0, 0.0)
+	var lower: PackedVector3Array = oct.call(bx * 0.82, hd * 0.82, cut * 0.8, y0)
+	var upper: PackedVector3Array = oct.call(bx, hd, cut, y1)
+	for i in lower.size():
+		lower[i] += shift
+		upper[i] += shift
+	k.color = Color.WHITE
+	k.loft(lower, upper)
+	# The rim round the top and the well's dark glass inside it.
+	var rim := 0.08
+	var top_out: PackedVector3Array = oct.call(bx, hd, cut, y1)
+	var top_in: PackedVector3Array = oct.call(bx - rim, hd - rim, cut * 0.7, y1)
+	for i in top_out.size():
+		top_out[i] += shift
+		top_in[i] += shift
+	k.color = TRIM
+	for i in top_out.size():
+		var j := (i + 1) % top_out.size()
+		k.loft(PackedVector3Array([top_in[i], top_out[i], top_out[j], top_in[j]]),
+				PackedVector3Array([top_in[i] + Vector3.UP * 0.05, top_out[i] + Vector3.UP * 0.05, top_out[j] + Vector3.UP * 0.05,
+						top_in[j] + Vector3.UP * 0.05]))
+	k.color = WINDOW
+	var well := PackedVector3Array()
+	for p in top_in:
+		well.append(p + Vector3.UP * 0.02)
+	k.poly(well, Vector3.UP)
+	# The map: a grid, a coast line and a marker, just over the glass.
+	var gy := y1 + 0.025
+	var gx0 := -bx + rim + cut * 0.5 - panel * 0.5
+	var gx1 := bx - rim - cut * 0.5 - panel * 0.5
+	var gz := hd - rim - cut * 0.5
+	var cells := 8
+	for i in cells + 1:
+		var x := lerpf(gx0, gx1, float(i) / float(cells))
+		screen.box(Vector3(0.008, 0.004, gz * 2.0), Vector3(x, gy, 0.0))
+	for i in 6:
+		var z := lerpf(-gz, gz, float(i) / 5.0)
+		screen.box(Vector3(gx1 - gx0, 0.004, 0.008), Vector3((gx0 + gx1) * 0.5, gy, z))
+	var coast := [Vector2(-0.8, -0.3), Vector2(-0.45, -0.1), Vector2(-0.2, -0.25), Vector2(0.1, 0.05), Vector2(0.35, -0.05),
+			Vector2(0.6, 0.3), Vector2(0.75, 0.2)]
+	for i in coast.size() - 1:
+		var a: Vector2 = coast[i]
+		var c: Vector2 = coast[i + 1]
+		var mx := (gx0 + gx1) * 0.5
+		var sx := (gx1 - gx0) * 0.5
+		screen.strut(Vector3(mx + a.x * sx, gy + 0.002, a.y * gz), Vector3(mx + c.x * sx, gy + 0.002, c.y * gz), 0.016)
+	screen.box(Vector3(0.07, 0.008, 0.07), Vector3((gx0 + gx1) * 0.5 + 0.2 * (gx1 - gx0), gy + 0.004, gz * 0.25))
+	# The lit strips under the body's lower edge, front and back.
+	for sz: float in [-1.0, 1.0]:
+		strip.box(Vector3(bx * 1.4, 0.02, 0.02), Vector3(-panel * 0.5, y0 + 0.05, sz * hd * 0.84))
+	# The control panel at +X: a sloped face on a block, keys and two lamps.
+	var px := bx - panel * 0.5 + 0.01
+	k.color = PLASTIC_DARK
+	k.box(Vector3(panel, height * 0.3, hd * 1.2), Vector3(px + panel * 0.5, y1 - height * 0.15 - 0.04, 0.0))
+	k.color = BEZEL
+	k.box(Vector3(panel - 0.04, 0.02, hd * 1.1), Vector3(px + panel * 0.5, y1 - 0.03, 0.0))
+	k.color = PLASTIC_PALE
+	for r in 2:
+		for c in 4:
+			k.box(Vector3(0.04, 0.02, 0.06), Vector3(px + 0.07 + float(r) * 0.07, y1 - 0.01, -hd * 0.4 + float(c) * hd * 0.22))
+	for sz: float in [-1.0, 1.0]:
+		strip.box(Vector3(0.03, 0.012, 0.03), Vector3(px + 0.16, y1 - 0.012, sz * hd * 0.45))
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = k.finish()
+	shape.volume = width * depth * height * 0.4
+	var col := BoxShape3D.new()
+	col.size = Vector3(width, height, depth)
+	shape.collision = col
+	PartShapes.emissive(shape, "screen", screen.finish(), Color(0.3, 0.85, 1.0))
+	PartShapes.emissive(shape, "strip", strip.finish(), Color(0.35, 0.8, 1.0))
 	return shape
 
 
@@ -15293,7 +17537,16 @@ static func _prop_shape(k: MeshKit, g: MeshKit, size: Vector3, glow: Color) -> P
 
 ## A flight recorder: an orange box on a dark base with ribbed sides, dark end caps with
 ## bolts, a carry handle on standoffs, a reflective stripe and a strobe lens on top (glow).
+## Modelled in Blender (tools/blender/parts/flight_recorder.py, PartAsset) at the drawn size; `_flight_recorder_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func flight_recorder() -> PartShapes.PartShape:
+	if not PartAsset.has("flight_recorder"):
+		return _flight_recorder_drawn()
+	return _as_drawn("flight_recorder", _drawn_twin(["flight_recorder"], _flight_recorder_drawn), Color(1.0, 0.85, 0.6), [0, 1, 2])
+
+
+## The code-drawn flight recorder.
+static func _flight_recorder_drawn() -> PartShapes.PartShape:
 	var size := Vector3(0.3, 0.22, 0.42)
 	var h := size * 0.5
 	var k := MeshKit.new()
@@ -15331,7 +17584,16 @@ static func flight_recorder() -> PartShapes.PartShape:
 
 ## A distress beacon: a red cylinder on a dark weighted foot, a pale band with a dark
 ## grip, a whip antenna up from a chrome collar and a red lamp dome on top (glow).
+## Modelled in Blender (tools/blender/parts/distress_beacon.py, PartAsset) at the drawn size; `_distress_beacon_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func distress_beacon() -> PartShapes.PartShape:
+	if not PartAsset.has("distress_beacon"):
+		return _distress_beacon_drawn()
+	return _as_drawn("distress_beacon", _drawn_twin(["distress_beacon"], _distress_beacon_drawn), Color(1.0, 0.2, 0.15), [0, 1, 2])
+
+
+## The code-drawn distress beacon.
+static func _distress_beacon_drawn() -> PartShapes.PartShape:
 	var r := 0.11
 	var body := 0.42
 	var size := Vector3(r * 2.4, body + 0.62, r * 2.4)
@@ -15358,7 +17620,16 @@ static func distress_beacon() -> PartShapes.PartShape:
 
 ## A lockbox: a heavy steel box with a lid seam, a combination dial and a handle on the
 ## front (-Z), two hinge knuckles at the back, rubber feet and a pale name plate.
+## Modelled in Blender (tools/blender/parts/lockbox.py, PartAsset) at the drawn size; `_lockbox_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func lockbox() -> PartShapes.PartShape:
+	if not PartAsset.has("lockbox"):
+		return _lockbox_drawn()
+	return _as_drawn("lockbox", _drawn_twin(["lockbox"], _lockbox_drawn), Color.WHITE, [0, 1, 2])
+
+
+## The code-drawn lockbox.
+static func _lockbox_drawn() -> PartShapes.PartShape:
 	var size := Vector3(0.42, 0.24, 0.32)
 	var h := size * 0.5
 	var k := MeshKit.new()
@@ -15389,7 +17660,16 @@ static func lockbox() -> PartShapes.PartShape:
 
 ## A manifest case: a flat document case with rounded-off edges, a handle on the long top
 ## edge, two latches, a ribbed face and a red customs seal tag on a wire.
+## Modelled in Blender (tools/blender/parts/manifest_case.py, PartAsset) at the drawn size; `_manifest_case_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func manifest_case() -> PartShapes.PartShape:
+	if not PartAsset.has("manifest_case"):
+		return _manifest_case_drawn()
+	return _as_drawn("manifest_case", _drawn_twin(["manifest_case"], _manifest_case_drawn), Color.WHITE, [0, 1, 2])
+
+
+## The code-drawn manifest case.
+static func _manifest_case_drawn() -> PartShapes.PartShape:
 	var size := Vector3(0.48, 0.36, 0.11)
 	var h := size * 0.5
 	var k := MeshKit.new()
@@ -15417,7 +17697,16 @@ static func manifest_case() -> PartShapes.PartShape:
 
 ## A registry plate: a pale enamel plate with a raised steel border, a bolt in each corner
 ## and a dark backing, lying on its back (face +Y); the name is a label on it (StoryProp).
+## Modelled in Blender (tools/blender/parts/registry_plate.py, PartAsset) at the drawn size; `_registry_plate_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func registry_plate() -> PartShapes.PartShape:
+	if not PartAsset.has("registry_plate"):
+		return _registry_plate_drawn()
+	return _as_drawn("registry_plate", _drawn_twin(["registry_plate"], _registry_plate_drawn), Color.WHITE, [0, 1, 2])
+
+
+## The code-drawn registry plate.
+static func _registry_plate_drawn() -> PartShapes.PartShape:
 	var size := Vector3(0.7, 0.03, 0.28)
 	var h := size * 0.5
 	var k := MeshKit.new()
@@ -15439,7 +17728,16 @@ static func registry_plate() -> PartShapes.PartShape:
 
 ## A log module: a ruggedised data unit pulled from a console, a dark rubber-cornered
 ## housing with a lit green screen on its front (-Z, glow), a card slot, two pull tabs.
+## Modelled in Blender (tools/blender/parts/log_module.py, PartAsset) at the drawn size; `_log_module_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func log_module() -> PartShapes.PartShape:
+	if not PartAsset.has("log_module"):
+		return _log_module_drawn()
+	return _as_drawn("log_module", _drawn_twin(["log_module"], _log_module_drawn), Color(0.4, 1.0, 0.5), [0, 1, 2])
+
+
+## The code-drawn log module.
+static func _log_module_drawn() -> PartShapes.PartShape:
 	var size := Vector3(0.28, 0.18, 0.22)
 	var h := size * 0.5
 	var k := MeshKit.new()
@@ -15466,7 +17764,16 @@ static func log_module() -> PartShapes.PartShape:
 
 ## A sample case: a white insulated case with a pale grey lid seam, chrome latches and a
 ## handle, a frosted window over a cyan-lit rack (glow) and hazard tabs on its ends.
+## Modelled in Blender (tools/blender/parts/sample_case.py, PartAsset) at the drawn size; `_sample_case_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func sample_case() -> PartShapes.PartShape:
+	if not PartAsset.has("sample_case"):
+		return _sample_case_drawn()
+	return _as_drawn("sample_case", _drawn_twin(["sample_case"], _sample_case_drawn), Color(0.4, 0.85, 1.0), [0, 1, 2])
+
+
+## The code-drawn sample case.
+static func _sample_case_drawn() -> PartShapes.PartShape:
 	var size := Vector3(0.5, 0.3, 0.34)
 	var h := size * 0.5
 	var k := MeshKit.new()
@@ -15496,7 +17803,16 @@ static func sample_case() -> PartShapes.PartShape:
 
 ## An unregistered component: a faceted dark housing in an iridescent shell, banded with
 ## violet-lit seams (glow) that match nothing in the catalogue, on a cast foot.
+## Modelled in Blender (tools/blender/parts/unregistered_core.py, PartAsset) at the drawn size; `_unregistered_core_drawn` is the code-drawn one: the
+## fallback, and the box, collision and volume the model keeps.
 static func unregistered_core() -> PartShapes.PartShape:
+	if not PartAsset.has("unregistered_core"):
+		return _unregistered_core_drawn()
+	return _as_drawn("unregistered_core", _drawn_twin(["unregistered_core"], _unregistered_core_drawn), Color(0.7, 0.35, 1.0), [0, 1, 2])
+
+
+## The code-drawn unregistered core.
+static func _unregistered_core_drawn() -> PartShapes.PartShape:
 	var size := Vector3(0.42, 0.46, 0.42)
 	var h := size * 0.5
 	var k := MeshKit.new()

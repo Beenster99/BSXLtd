@@ -502,6 +502,7 @@
 						"canopy_panel",
 						"girder_corner",
 						"node",
+						"node_box",
 						"plate",
 						"square",
 						"rect",
@@ -751,7 +752,17 @@
 						"junction_box",
 						"lamp_driver",
 						"jump_tank",
-						"heat_exchanger"
+						"heat_exchanger",
+						"main_engine",
+						"engine_catwalk",
+						"gauge_panel",
+						"service_box",
+						"ingot_rack",
+						"mount_plate",
+						"port_plate",
+						"chute",
+						"wash_unit",
+						"pipe_header"
 					]
 				},
 				"frame": {
@@ -810,7 +821,9 @@
 						"door_panel",
 						"cockpit_screen",
 						"nav_display",
-						"map_screen"
+						"map_screen",
+						"holo_table",
+						"holo_report"
 					]
 				},
 				"key": {
@@ -999,6 +1012,13 @@
 				},
 				"group": {
 					"$ref": "#/$defs/group"
+				},
+				"ports": {
+					"description": "The units whose ports are this slot's service stubs (their paths), for a module to plug into.",
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
 				},
 				"fasteners": {
 					"type": "array",
@@ -1309,7 +1329,7 @@
 				{
 					"type": "object",
 					"maxProperties": 0,
-					"description": "none: a unit's part (its fitting or system record is its look)"
+					"description": "none: not written by the game (every part, a unit's too, carries its recipe); a reader may still meet it"
 				}
 			]
 		},
@@ -1644,6 +1664,12 @@
 				"spot_pitch": {
 					"type": "number"
 				},
+				"spot_share": {
+					"type": "number"
+				},
+				"min_spots": {
+					"type": "integer"
+				},
 				"trimmer_clear": {
 					"type": "number"
 				},
@@ -1741,6 +1767,10 @@
 						},
 						"frame_mat": {
 							"$ref": "#/$defs/mat"
+						},
+						"frame": {
+							"$ref": "#/$defs/xform",
+							"description": "wall space to ship space (a wall along the ship); absent: across it at z"
 						}
 					}
 				}

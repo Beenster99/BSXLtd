@@ -110,6 +110,12 @@ static func node(size: float = 0.26) -> PartShapes.PartShape:
 	return PartShapes.stamp(PartShapes.chamfer_box(Vector3.ONE * size, size * 0.22), "node", [size])
 
 
+## A slim joint block: a box `size` (x across the corner, y out of the hull, z along the ship)
+## with `bevel` on its edges, just over the members welded to it (FrameHull's `slim_nodes`).
+static func node_box(size: Vector3, bevel: float) -> PartShapes.PartShape:
+	return PartShapes.stamp(PartShapes.chamfer_box(size, bevel), "node_box", [size, bevel])
+
+
 # --- Plates ---------------------------------------------------------------------------
 
 ## A plate cut to a convex outline (points in order round the edge, in the XZ plane). Its
@@ -356,3 +362,104 @@ static func inset_edges(outline: PackedVector2Array, dists: Array[float]) -> Pac
 		var v := Vector2((d1 * n2.y - n1.y * d2) / det, (n1.x * d2 - n2.x * d1) / det)
 		out.append(outline[i] + v)
 	return out
+
+
+# --- Mitred frames (the ribbed frame, wreck pipeline v5) ----------------------------------
+
+## A box girder `w` by `h` from `pa` to `pb` (its frame `along`, `up` its height) with each end
+## cut on a plane ([a point, its normal into the girder], ship space): the look to the cuts, the collision
+## `gap` short of each. Null when the cuts cross (too short for its joints).
+static func cut_girder(pa: Vector3, pb: Vector3, up: Vector3, w: float, h: float, ca: Array, cb: Array,
+		gap: float) -> PartShapes.PartShape:
+	var xf := along(pa, pb, up)
+	var inv := xf.affine_inverse()
+	var loops: Array = []
+	for g: float in [0.0, gap]:
+		var ends: Array = []
+		for c: Array in [ca, cb]:
+			var nn: Vector3 = (inv.basis * (c[1] as Vector3)).normalized()
+			if absf(nn.x) < 0.2:
+				return null
+			var pt: Vector3 = inv * ((c[0] as Vector3) + (c[1] as Vector3).normalized() * g)
+			var loop := PackedVector3Array()
+			for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				var o := Vector3(0.0, corner.y * h * 0.5, corner.x * w * 0.5)
+				loop.append(o + Vector3(nn.dot(pt - o) / nn.x, 0.0, 0.0))
+			ends.append(loop)
+		for i in 4:
+			if (ends[0][i] as Vector3).x >= (ends[1][i] as Vector3).x - 0.02:
+				return null
+		loops.append(ends)
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = solid_between(loops[0][0], loops[0][1])
+	var col := ConvexPolygonShape3D.new()
+	col.points = (loops[1][0] as PackedVector3Array) + (loops[1][1] as PackedVector3Array)
+	shape.collision = col
+	var length := 0.0
+	for i in 4:
+		length += ((loops[0][1] as PackedVector3Array)[i].x - (loops[0][0] as PackedVector3Array)[i].x) * 0.25
+	shape.volume = w * h * length
+	return PartShapes.stamp(shape, "cut_girder", [pa, pb, up, w, h, ca, cb, gap])
+
+
+## The convex solid between two corner loops (corner for corner), flat shaded, wound as Godot draws front faces.
+static func solid_between(la: PackedVector3Array, lb: PackedVector3Array) -> ArrayMesh:
+	var n := la.size()
+	var middle := Vector3.ZERO
+	for p in la + lb:
+		middle += p
+	middle /= float(2 * n)
+	var tris: Array = []
+	for i in range(1, n - 1):
+		tris.append([la[0], la[i], la[i + 1]])
+		tris.append([lb[0], lb[i + 1], lb[i]])
+	for i in n:
+		var j := (i + 1) % n
+		tris.append([la[i], lb[i], lb[j]])
+		tris.append([la[i], lb[j], la[j]])
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for t: Array in tris:
+		var nrm: Vector3 = ((t[1] as Vector3) - (t[0] as Vector3)).cross((t[2] as Vector3) - (t[0] as Vector3)).normalized()
+		if nrm.dot((t[0] as Vector3) - middle) > 0.0:
+			t = [t[0], t[2], t[1]]
+			nrm = -nrm
+		for v in t:
+			st.set_color(Color.WHITE)
+			st.set_normal(-nrm)
+			st.add_vertex(v)
+	var arrays := st.commit_to_arrays()
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	MeshKit.keep(mesh, arrays)            # the shadow merge reads its corners here, not off the GPU
+	return mesh
+
+
+## A bar lofted from section `a` (XY) at z `za` to section `b` (corner for corner) at `zb`, ship space: the
+## look (caps and sides, flat shaded) and a convex collision of its corners (an edge bar down a lip).
+static func loft_bar(a: PackedVector2Array, za: float, b: PackedVector2Array, zb: float) -> PartShapes.PartShape:
+	if absf(zb - za) < 0.05:
+		return null
+	var n := a.size()
+	var pa := PackedVector3Array()
+	var pb := PackedVector3Array()
+	for i in n:
+		pa.append(Vector3(a[i].x, a[i].y, za))
+		pb.append(Vector3(b[i].x, b[i].y, zb))
+	var shape := PartShapes.PartShape.new()
+	shape.mesh = solid_between(pa, pb)
+	var col := ConvexPolygonShape3D.new()
+	col.points = pa + pb
+	shape.collision = col
+	shape.volume = absf(_area2(a) + _area2(b)) * 0.5 * absf(zb - za)
+	return PartShapes.stamp(shape, "loft_bar", [a, za, b, zb])
+
+
+## A flat outline's signed area.
+static func _area2(pts: PackedVector2Array) -> float:
+	var s := 0.0
+	for i in pts.size():
+		var a := pts[i]
+		var b := pts[(i + 1) % pts.size()]
+		s += a.x * b.y - b.x * a.y
+	return s * 0.5

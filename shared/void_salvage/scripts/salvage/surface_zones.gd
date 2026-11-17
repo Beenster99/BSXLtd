@@ -70,8 +70,11 @@ static func tag(c: Color, id: String) -> Color:
 	return tagged(c, SurfaceFinish.code(id))
 
 
-## `c` carrying `code_` (0 = no zone).
+## `c` carrying `code_` (0 = no zone). A code past SurfaceFinish.ZONE_CODES (a tread plate:
+## whole parts only) has no alpha to carry it: the colour stays untagged.
 static func tagged(c: Color, code_: int) -> Color:
+	if code_ > SurfaceFinish.ZONE_CODES:
+		return Color(c.r, c.g, c.b, 1.0)
 	return Color(c.r, c.g, c.b, 1.0 - float(code_) * STEP)
 
 
@@ -79,7 +82,7 @@ static func tagged(c: Color, code_: int) -> Color:
 static func zone_of(c: Color) -> int:
 	var z := (1.0 - c.a) / STEP
 	var n := roundi(z)
-	if n <= 0 or n > SurfaceFinish.CODES.size() or absf(z - float(n)) > 0.34:
+	if n <= 0 or n > mini(SurfaceFinish.CODES.size(), SurfaceFinish.ZONE_CODES) or absf(z - float(n)) > 0.34:
 		return 0
 	return n
 

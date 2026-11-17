@@ -66,6 +66,11 @@ var _unit_paths: Dictionary = {}
 ## Steel's density for a part's mass from its volume, kg/m^3 (the parts' masses are for BSX's
 ## pricing; the ship flies at its tuned `ship_mass`).
 const PART_DENSITY: float = 7800.0
+## While on, pieces are built as ever (recorded, solid, weighed, tagged) but draw nothing: a
+## fitting modelled in Blender (PartAsset) keeps its drawn shape for the ship file, its
+## collision and its mass, and puts its modelled look on with `look`.
+var ghost: bool = false
+static var _ghosts: Dictionary = {}
 
 
 func _init(target: RigidBody3D) -> void:
@@ -82,12 +87,13 @@ func add(shape: PartShapes.PartShape, xform: Transform3D, mat: Material, tag: St
 	if recorder:
 		recorder.on_piece(shape, xform, mat, tag, glass_mat, solid, group)
 	var mi := MeshInstance3D.new()
-	mi.mesh = shape.mesh
+	mi.mesh = _drawn(shape)
+	_ghosted(mi)
 	mi.material_override = ShipSurface.of(mat)
 	var vis := _inset(shape.mesh.get_aabb(), xform)
 	mi.transform = xform * vis
 	body.add_child(mi)
-	if shape.glass and glass_mat:
+	if shape.glass and glass_mat and not ghost:
 		var g := MeshInstance3D.new()
 		g.mesh = shape.glass
 		g.material_override = glass_mat
@@ -132,14 +138,16 @@ func part(part_name: String, kind: PartData.Kind, shape: PartShapes.PartShape, x
 					"path": path, "fill": fill}
 			recorder.on_piece(shape, xform, mat, tag, glass_mat, true, group, true, info)
 	var made := model.add_part(part_name, kind, maxf(shape.volume * PART_DENSITY * fill, 0.1), 0.0, xform,
-			shape.mesh, shape.collision, ShipSurface.of(mat))
+			_drawn(shape), shape.collision, ShipSurface.of(mat))
 	made.path = path
 	groups[made.id] = group
+	if ghost:
+		_ghosted(model.part_visual(made.id))
 	if recorder:
 		recorder.on_part(made.id, shape, mat, glass_mat, by)
 	if not shape.extra_collision.is_empty():
 		model.add_extra_collision(made, shape.extra_collision)
-	if shape.glass and glass_mat:
+	if shape.glass and glass_mat and not ghost:
 		_glass_on(model.part_visual(made.id), shape, glass_mat, Transform3D.IDENTITY)
 	volume += shape.volume
 	_tag_part(made, tag)
@@ -248,9 +256,10 @@ func _add_to_part(shape: PartShapes.PartShape, xform: Transform3D, mat: Material
 			if recorder:
 				recorder.on_piece(shape, xform, mat, tag, glass_mat, solid, group)
 			var held := MeshInstance3D.new()
-			held.mesh = shape.mesh
+			held.mesh = _drawn(shape)
+			_ghosted(held)
 			held.material_override = ShipSurface.of(mat)
-			if shape.glass and glass_mat:
+			if shape.glass and glass_mat and not ghost:
 				_glass_on(held, shape, glass_mat, Transform3D.IDENTITY)
 			var entry := {"mesh": held, "xform": xform, "vis": Transform3D.IDENTITY}
 			_pending.append([held, xform, tag, entry, shape.volume])
@@ -272,11 +281,12 @@ func _add_to_part(shape: PartShapes.PartShape, xform: Transform3D, mat: Material
 		recorder.on_piece(shape, xform, mat, tag, glass_mat, solid, group)
 	var offset := _open_part.local_transform.affine_inverse() * xform
 	var mi := MeshInstance3D.new()
-	mi.mesh = shape.mesh
+	mi.mesh = _drawn(shape)
+	_ghosted(mi)
 	mi.material_override = ShipSurface.of(mat)
 	mi.transform = offset
 	model.attach_to_part(_open_part, mi)
-	if shape.glass and glass_mat:
+	if shape.glass and glass_mat and not ghost:
 		_glass_on(mi, shape, glass_mat, Transform3D.IDENTITY)
 	var own: CollisionShape3D = null
 	if solid:
@@ -295,6 +305,52 @@ func _add_to_part(shape: PartShapes.PartShape, xform: Transform3D, mat: Material
 	if tag != "" and not _part_tagged(_open_part, tag):
 		(tagged.get_or_add(tag, []) as Array).append(entry)
 	return entry
+
+
+## What a piece draws: its mesh, or while `ghost` is on a mesh of one flat triangle across its
+## box, which draws nothing but keeps the look's bounds for whatever reads them (the pipe router
+## keeps clear of a part's look).
+func _drawn(shape: PartShapes.PartShape) -> Mesh:
+	if not ghost:
+		return shape.mesh
+	var box := shape.mesh.get_aabb()
+	var key := str(box)
+	if not _ghosts.has(key):
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([box.position, box.end, box.position])
+		arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP])
+		var m := ArrayMesh.new()
+		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		m.set_meta(MeshKit.ARRAYS_META, arrays)
+		_ghosts[key] = m
+	return _ghosts[key]
+
+
+## A ghost piece's node casts nothing and is left out of the merged looks ("own_look").
+func _ghosted(mi: GeometryInstance3D) -> void:
+	if ghost and mi:
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.set_meta("own_look", true)
+
+
+## A look only (a modelled fitting's colour, PartAsset.split): `mesh` at `xform` (ship space) in
+## `mat`, on the part being folded (or held for it), else on the body. Not recorded, weighed or
+## solid, and no piece: the ship file, collision and mass are the ghost pieces'.
+func look(mesh: Mesh, xform: Transform3D, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = ShipSurface.of(mat)
+	if _opened and model:
+		if _open_part:
+			mi.transform = _open_part.local_transform.affine_inverse() * xform
+			model.attach_to_part(_open_part, mi)
+		else:
+			_pending.append([mi, xform, "", {}, 0.0])
+		return mi
+	mi.transform = xform
+	body.add_child(mi)
+	return mi
 
 
 func _part_tagged(made: PartData, tag: String) -> bool:
@@ -373,10 +429,14 @@ func _finish(unit: Dictionary) -> PartData:
 		# Looks only (a lamp, a name board, a screen): they ride on the part the design finds
 		# them fixed to (`mount` with no part sets unit["onto"]).
 		var box := AABB()
-		for i in _pending.size():
-			var held: Array = _pending[i]
-			var b := (held[1] as Transform3D) * (held[0] as MeshInstance3D).mesh.get_aabb()
-			box = b if i == 0 else box.merge(b)
+		var first := true
+		for held: Array in _pending:
+			var drawn := (held[0] as MeshInstance3D).mesh
+			if drawn == null:
+				continue   # a ghost piece (its look comes in `look`'s meshes)
+			var b := (held[1] as Transform3D) * drawn.get_aabb()
+			box = b if first else box.merge(b)
+			first = false
 		unit["box"] = box
 		unit["path"] = _unit_path(unit)
 		mount.call(null, unit)
@@ -670,12 +730,17 @@ static func glow(color: Color, energy: float) -> StandardMaterial3D:
 	return m
 
 
+## Window glass for ships and stations: faintly blue, smooth. It takes no highlight from lamps
+## or the sun: on glass this smooth a lamp's highlight is a tiny disc bright enough to bloom,
+## mirrored onto the canopy wherever you look (the cockpit's lamps did it to the Kestrel's).
+## The tint stays, and it still reflects the sky and the scene.
 static func glass() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.45, 0.65, 0.85, 0.28)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.metallic = 0.4
 	m.roughness = 0.04
+	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
 

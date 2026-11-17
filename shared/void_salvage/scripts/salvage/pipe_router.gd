@@ -51,8 +51,21 @@ var heuristic: float = 1.0
 var hug: float = 0.07
 ## How far a clip reaches to its holder, metres (beyond the pipe's surface).
 var clip_reach: float = 0.16
+## The shortest span that takes fluid bands, m.
+var band_least: float = 0.45
+## A span shorter than band_least but this long, m, wears one band in its middle.
+var band_one: float = 0.15
 ## Give up a run after this many search steps.
 var max_steps: int = 3000000
+## Guide the search by a map of the cost left: each grid point's cheapest way to the run's end
+## through points not blocked, at the search's own costs (`_cost_to_go`), plus the bends it
+## still owes (`_turns_left`), stands in for the straight line in its guess of the cost left.
+## The guess never runs over, so it finds as cheap a path, but it no longer fills the grid where
+## pipes cost more than the straight line's metre (over `low_y`, round a wall, for the bends):
+## the Patience's fuel lines searched 3 million points for a 6 m run, 60 s, and now 27,000 in
+## 1 s. A run walled off from its end fails at once. Wrecks lay theirs so
+## (WreckDesign.pipe_router); off, the player ships' routes are kept as they were.
+var guided: bool = false
 
 var model: PartModel
 var target: FrameTarget
@@ -81,6 +94,13 @@ class Run:
 	var to: Dictionary
 	## Parts it may pass near its ends (the lining behind a spigot, the plate under it).
 	var through: Array[int] = []
+	## Parts it may pass anywhere (a panel with a gland let into it for the pipe).
+	var glands: Array[int] = []
+	## Points it passes on its way, in order: [position, direction it heads through, and
+	## optionally the part ids it may pass within pass_reach of the point (a deck plate it rises
+	## through there)] each (body space). A long run is searched a leg at a time between them,
+	## each leg's grid only round it.
+	var via: Array = []
 	## The centre line's corners, port to port (body space).
 	var points := PackedVector3Array()
 	var ok: bool = false
@@ -96,6 +116,8 @@ class Run:
 	var missed: Array[String] = []
 	var steps: int = 0
 	var msec: int = 0
+	## `search_run` found its centre line (built by `build_run`).
+	var found: bool = false
 
 
 func _init(into: FrameTarget = null) -> void:
@@ -105,11 +127,14 @@ func _init(into: FrameTarget = null) -> void:
 
 
 ## Asks for a run named `run_name` of `fluid` and `radius` from `from` to `to` ({part,
-## position, direction}: a port in body space on its part), passing `through` near its ends.
-## Laid in the order asked, each clear of those before it, by `lay_all`.
+## position, direction}: a port in body space on its part), passing `through` near its ends,
+## `glands` anywhere and the points `via` in order ([position, direction, parts passed near it?]
+## each, square to the body's axes). Laid in the order asked, each clear of those before it, by `lay_all`.
 func run(run_name: String, fluid: String, radius: float, from: Dictionary, to: Dictionary,
-		mat: Material, through: Array[int] = []) -> Run:
+		mat: Material, through: Array[int] = [], glands: Array[int] = [], via: Array = []) -> Run:
 	var r := Run.new()
+	r.glands = glands
+	r.via = via
 	r.name = run_name
 	r.fluid = fluid
 	r.radius = radius
@@ -123,19 +148,45 @@ func run(run_name: String, fluid: String, radius: float, from: Dictionary, to: D
 
 ## Searches and builds every run asked for, in order (each sees the parts of those before it).
 func lay_all() -> void:
+	begin_laying()
+	for r in runs:
+		prepare_run(r)
+		search_run(r)
+		build_run(r)
+	end_laying()
+
+
+## Laying a step at a time (a builder that hands each run's search to a worker thread): `begin_laying`,
+## then for each run in order `prepare_run` (files the parts so far), `search_run` (reads only this
+## router's own data and what `prepare_run` filed: nothing of the body, so it may run on another
+## thread while nothing else touches her) and `build_run` (makes the parts), then `end_laying`.
+## `lay_all` is these in order: the same runs either way.
+func begin_laying() -> void:
 	if target:
 		target.begin_builder("pipes")
-	_lay_all()
+
+
+func prepare_run(r: Run) -> void:
+	r.msec = 0
+	_part_index()
+
+
+func search_run(r: Run) -> void:
+	var t := Time.get_ticks_msec()
+	r.found = _search(r)
+	r.msec += Time.get_ticks_msec() - t
+
+
+func build_run(r: Run) -> void:
+	var t := Time.get_ticks_msec()
+	if r.found:
+		_build(r)
+	r.msec += Time.get_ticks_msec() - t
+
+
+func end_laying() -> void:
 	if target:
 		target.end_builder()
-
-
-func _lay_all() -> void:
-	for r in runs:
-		var t := Time.get_ticks_msec()
-		if _search(r):
-			_build(r)
-		r.msec = Time.get_ticks_msec() - t
 
 
 ## A union's length for run `r`, metres.
@@ -175,6 +226,16 @@ var _ax: Array = [PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array
 var _n := Vector3i.ZERO
 ## Per grid point: bit 1 blocked, 2 beside a member, 4 in a room.
 var _cells := PackedByteArray()
+var _index: Array = []
+var _indexed := {}   # part id -> its entry in _index ([] for a part with no look)
+var _index_seen := -1
+var _index_cells := {}   # Vector3i (INDEX_CELL cells) -> the index's positions of the entries there
+const INDEX_CELL: float = 1.0
+## The cost left from each grid point to the leg's end in TOGO_UNITs, -1 none (the guided
+## search's, `_cost_to_go`); empty when not guided.
+var _dist := PackedInt32Array()
+## The cost left's step, metres at a cost of 1 a metre.
+const TOGO_UNIT: float = 0.0005
 
 
 static func dir_index(v: Vector3) -> int:
@@ -195,6 +256,61 @@ func _search(r: Run) -> bool:
 	var p1: Vector3 = r.to["position"]
 	var a := p0 + Vector3(DIRS[d0]) * s
 	var b := p1 + Vector3(DIRS[d1]) * s
+	# The legs: the start spigot's end, each via point, the end spigot's end.
+	var marks: Array = [[a, d0, []]]
+	for v: Array in r.via:
+		var dv := dir_index(v[1])
+		if dv < 0:
+			r.why = "a via point's heading is not square to the body's axes"
+			return false
+		marks.append([v[0], dv, v[2] if v.size() > 2 else []])
+	var pts := PackedVector3Array([p0])
+	var k := -1
+	r.steps = 0
+	for i in marks.size():
+		var last := i == marks.size() - 1
+		# The parts passable round this leg's via points.
+		var near: Array = []
+		for m: Array in ([marks[i]] if last else [marks[i], marks[i + 1]]):
+			if not (m[2] as Array).is_empty():
+				near.append([m[0], m[2]])
+		var leg := _leg(r, marks[i][0], marks[i][1], k, b if last else marks[i + 1][0], d1 ^ 1 if last else int(marks[i + 1][1]),
+				d1 if last else -1, "" if marks.size() == 1 else " (leg %d of %d)" % [i + 1, marks.size()], near)
+		if leg.is_empty():
+			return false
+		pts.append_array(leg["points"])
+		k = leg["k"]
+	pts.append(p1)
+	r.points = _straighten(pts)
+	return true
+
+
+## One leg of run `r`'s search: from `a` heading `d0` (`k0` steps straight behind it; -1 a
+## spigot's end, as straight as it needs) to `b`, arriving heading `arrive`; `end_dir` is the end
+## spigot's direction on the last leg (a bend at `b` into the spigot then allowed), -1 on a leg to
+## a via point (passed straight through); `near` the via points' passable parts ([point, part ids]
+## each). Returns {points: a, the bends, b; k: steps straight at `b`}, or {} with `r.why` set.
+func _leg(r: Run, a: Vector3, d0: int, k0: int, b: Vector3, arrive: int, end_dir: int, which: String,
+		near: Array = []) -> Dictionary:
+	# A leg straight on between two via points heading its way is taken as it is when nothing is
+	# in its way (a long run's long stretches: no grid to fill).
+	var k_line := ceili((2.0 * bend_radius(r) + 0.012) / RUN_STEP)
+	if end_dir < 0 and d0 == arrive and (b - a).length() > cell and (b - a).normalized().dot(Vector3(DIRS[d0])) > 0.9999 \
+			and _clear_line(r, a, b, near):
+		return {"points": PackedVector3Array([a, b]), "k": mini((k_line if k0 < 0 else k0) + floori(a.distance_to(b) / RUN_STEP), k_line)}
+	# And one square bend between two via points (round a corner the run was given) the same way.
+	if end_dir < 0 and (d0 >> 1) != (arrive >> 1):
+		var u0 := Vector3(DIRS[d0])
+		var u1 := Vector3(DIRS[arrive])
+		var corner := a + u0 * (b - a).dot(u0)
+		var first := corner.distance_to(a)
+		var then := (b - corner).dot(u1)
+		var k_at := (k_line if k0 < 0 else k0) + floori(first / RUN_STEP + 0.001)
+		if (b - corner - u1 * then).length() < 0.0005 and (corner - a).dot(u0) > 0.0 and then > 0.0 \
+				and k_at >= k_line and then >= bend_radius(r) + 0.006 \
+				and not (_along_z(d0, arrive) and _near_station(corner.z, bend_radius(r) + union_length(r) * 0.5 + 0.015)) \
+				and _clear_line(r, a, corner, near) and _clear_line(r, corner, b, near):
+			return {"points": PackedVector3Array([a, corner, b]), "k": mini(floori(then / RUN_STEP + 0.001), k_line)}
 	var region := AABB(a, Vector3.ZERO).expand(b).grow(margin)
 	for i in 3:
 		_ax[i] = _axis(region.position[i], region.end[i], [a[i], b[i]])
@@ -205,18 +321,23 @@ func _search(r: Run) -> bool:
 	region = AABB(lo, hi - lo).grow(0.001)
 	_cells = PackedByteArray()
 	_cells.resize(_n.x * _n.y * _n.z)
-	_raster(r, region)
+	_raster(r, region, near)
 	var ia := _index_of(a)
 	var ib := _index_of(b)
 	var start := _flat(ia)
 	var goal := _flat(ib)
 	if _cells[start] & 1 or _cells[goal] & 1:
 		var at := a if _cells[start] & 1 else b
-		r.why = "a spigot's end is blocked (%s, at %s, by %s)" % ["start" if _cells[start] & 1 else "end", at, _blocker(r, at)]
-		return false
+		r.why = "a spigot's end is blocked (%s, at %s, by %s)%s" % ["start" if _cells[start] & 1 else "end", at, _blocker(r, at), which]
+		return {}
+	_dist = PackedInt32Array()
+	if guided:
+		_dist = _cost_to_go(goal)
+		if _dist[start] < 0:
+			r.why = "no way through (the ends are walled apart)%s" % which
+			return {}
 	var bend := bend_radius(r)
 	var k_max := ceili((2.0 * bend + 0.012) / RUN_STEP)
-	var arrive := d1 ^ 1   # heading into the end spigot: opposite its direction
 	# A*: state = (cell * 6 + heading) * (k_max + 1) + metres-since-bend steps.
 	var ks := k_max + 1
 	# No bend into or out of a run along the body where its union at a station would not fit.
@@ -225,17 +346,17 @@ func _search(r: Run) -> bool:
 	var parent := {}
 	var heap_f := PackedFloat64Array()
 	var heap_s := PackedInt64Array()
-	var s0 := (start * 6 + d0) * ks + k_max
+	var s0 := (start * 6 + d0) * ks + (k_max if k0 < 0 else mini(k0, k_max))
 	g[s0] = 0.0
 	parent[s0] = -1
-	_push(heap_f, heap_s, _h(ia, ib), s0)
+	_push(heap_f, heap_s, _h(ia, ib, start, d0), s0)
 	var found := -1
 	var steps := 0
 	while not heap_s.is_empty():
 		var top := _pop(heap_f, heap_s)
 		var st: int = top[1]
 		var gs: float = g[st]
-		if float(top[0]) > gs + _h(_unflat(st / ks / 6), ib) + 1e-6:
+		if float(top[0]) > gs + _h(_unflat(st / ks / 6), ib, st / ks / 6, (st / ks) % 6) + 1e-6:
 			continue
 		steps += 1
 		if steps > max_steps:
@@ -243,7 +364,7 @@ func _search(r: Run) -> bool:
 		var k := st % ks
 		var heading := (st / ks) % 6
 		var c := st / ks / 6
-		if c == goal and (heading == arrive or (k == k_max and heading != d1
+		if c == goal and (heading == arrive or (end_dir >= 0 and k == k_max and heading != end_dir
 				and not (_along_z(heading, arrive) and _near_station(_pos(_unflat(c)).z, union_room)))):
 			found = st
 			break
@@ -271,17 +392,16 @@ func _search(r: Run) -> bool:
 			if not g.has(ns) or ng < float(g[ns]) - 1e-9:
 				g[ns] = ng
 				parent[ns] = st
-				_push(heap_f, heap_s, ng + _h(nxt, ib), ns)
-	r.steps = steps
+				_push(heap_f, heap_s, ng + _h(nxt, ib, nc, d2), ns)
+	r.steps += steps
 	if found < 0:
-		r.why = "no way through (%d steps)" % steps
+		r.why = "no way through (%d steps)%s" % [steps, which]
 		if OS.has_environment("PIPE_DEBUG"):
 			var reached := AABB(_pos(ia), Vector3.ZERO)
 			for key: int in g:
 				reached = reached.expand(_pos(_unflat(key / ks / 6)))
-			print("PipeRouter: %s from %s to %s reached %s .. %s" % [r.name, a, b, reached.position, reached.end])
+			print("PipeRouter: %s from %s to %s reached %s .. %s%s" % [r.name, a, b, reached.position, reached.end, which])
 			for d2 in 6:
-				var q := ib + DIRS[d2]
 				for step in 4:
 					var qq := ib + DIRS[d2] * (step + 1)
 					if qq.x < 0 or qq.y < 0 or qq.z < 0 or qq.x >= _n.x or qq.y >= _n.y or qq.z >= _n.z:
@@ -289,14 +409,14 @@ func _search(r: Run) -> bool:
 					if _cells[_flat(qq)] & 1:
 						print("  from the end %s: blocked at %s by %s" % [DIRS[d2], _pos(qq), _blocker(r, _pos(qq))])
 						break
-		return false
+		return {}
 	# Back from the end: the grid points, and where the heading changes, the bends.
 	var chain: Array[int] = []
 	var u := found
 	while u >= 0:
 		chain.push_front(u)
 		u = parent[u]
-	var pts := PackedVector3Array([p0])
+	var pts := PackedVector3Array()
 	var last := d0
 	for i in chain.size():
 		var st: int = chain[i]
@@ -312,9 +432,7 @@ func _search(r: Run) -> bool:
 				pts.append(before)
 			last = heading
 	pts.append(b)
-	pts.append(p1)
-	r.points = _straighten(pts)
-	return true
+	return {"points": pts, "k": found % ks}
 
 
 ## Grid values from `lo` to `hi` every `cell`, with `must` among them (a regular value too
@@ -378,10 +496,148 @@ func _cost(flags: int, y: float) -> float:
 	return c
 
 
-func _h(i: Vector3i, goal: Vector3i) -> float:
+## The search's guess of the cost left from grid point `i` (flat index `c`, heading `heading`)
+## to `goal`: the straight line's metres, or guided the map's cost left and the bends owed.
+func _h(i: Vector3i, goal: Vector3i, c: int = -1, heading: int = -1) -> float:
+	if not _dist.is_empty() and c >= 0 and _dist[c] >= 0:
+		return (float(_dist[c]) * TOGO_UNIT + turn_cost * _turns_left(i, goal, heading)) * heuristic
 	var p := _pos(i)
 	var q := _pos(goal)
 	return (absf(p.x - q.x) + absf(p.y - q.y) + absf(p.z - q.z)) * heuristic
+
+
+## The fewest bends a run at grid point `i` heading `heading` makes on its way to `goal`: one
+## onto each other axis it must travel along, one more to come back along its own.
+static func _turns_left(i: Vector3i, goal: Vector3i, heading: int) -> int:
+	if heading < 0:
+		return 0
+	var axis := heading >> 1
+	var turns := 0
+	for a in 3:
+		if a != axis and i[a] != goal[a]:
+			turns += 1
+	var ahead: int = goal[axis] - i[axis]
+	if ahead != 0 and (ahead > 0) != (heading & 1 == 0):
+		turns += 1 if turns > 0 else 2
+	return turns
+
+
+## The cost from every grid point to grid point `goal` the cheapest way through points not
+## blocked (six ways, each point entered at the search's own cost a metre, turns aside), in
+## steps of `TOGO_UNIT`; -1 where it can't get. Dial's buckets: the costs are small whole steps.
+func _cost_to_go(goal: int) -> PackedInt32Array:
+	var cells := _cells
+	var total := cells.size()
+	var nx := _n.x
+	var ny := _n.y
+	var nz := _n.z
+	var nxy := nx * ny
+	var ys: PackedFloat64Array = _ax[1]
+	# A point's cost a metre to enter by its flags (beside a member 2, in a room 4) and whether
+	# it is above low_y (1), in steps of TOGO_UNIT.
+	var per_m := PackedFloat32Array()
+	per_m.resize(8)
+	for k in 8:
+		var c := hug_cost if k & 2 else 1.0
+		if k & 1:
+			c *= high_cost
+		if k & 4:
+			c *= room_cost
+		per_m[k] = c / TOGO_UNIT
+	var high := PackedByteArray()
+	high.resize(ny)
+	for y in ny:
+		high[y] = 1 if ys[y] > low_y else 0
+	var gaps: Array = []
+	var widest := cell
+	for i in 3:
+		var axis: PackedFloat64Array = _ax[i]
+		var gap_i := PackedFloat32Array()
+		gap_i.resize(maxi(axis.size() - 1, 0))
+		for j in axis.size() - 1:
+			gap_i[j] = axis[j + 1] - axis[j]
+			widest = maxf(widest, gap_i[j])
+		gaps.append(gap_i)
+	var gx: PackedFloat32Array = gaps[0]
+	var gy: PackedFloat32Array = gaps[1]
+	var gz: PackedFloat32Array = gaps[2]
+	var dearest := 0.0
+	for k in 8:
+		dearest = maxf(dearest, per_m[k])
+	# Buckets by cost, round as many as the dearest single step needs.
+	var count := ceili(widest * dearest) + 2
+	var buckets: Array = []
+	buckets.resize(count)
+	for i in count:
+		buckets[i] = []
+	var dist := PackedInt32Array()
+	dist.resize(total)
+	dist.fill(-1)
+	var done := PackedByteArray()
+	done.resize(total)
+	dist[goal] = 0
+	(buckets[0] as Array).append(goal)
+	var left := 1
+	var at := 0
+	while left > 0:
+		var bucket: Array = buckets[at % count]
+		if bucket.is_empty():
+			at += 1
+			continue
+		var v: int = bucket.pop_back()
+		left -= 1
+		if done[v] or dist[v] != at:
+			continue
+		done[v] = 1
+		var x := v % nx
+		var y := (v / nx) % ny
+		var z := v / nxy
+		# Entering v from a neighbour u costs the step's length at v's own cost.
+		var f := per_m[(cells[v] & 6) | high[y]]
+		var u := v - 1
+		var du := 0
+		if x > 0 and not done[u] and not (cells[u] & 1):
+			du = at + maxi(1, floori(gx[x - 1] * f))
+			if dist[u] < 0 or du < dist[u]:
+				dist[u] = du
+				(buckets[du % count] as Array).append(u)
+				left += 1
+		u = v + 1
+		if x < nx - 1 and not done[u] and not (cells[u] & 1):
+			du = at + maxi(1, floori(gx[x] * f))
+			if dist[u] < 0 or du < dist[u]:
+				dist[u] = du
+				(buckets[du % count] as Array).append(u)
+				left += 1
+		u = v - nx
+		if y > 0 and not done[u] and not (cells[u] & 1):
+			du = at + maxi(1, floori(gy[y - 1] * f))
+			if dist[u] < 0 or du < dist[u]:
+				dist[u] = du
+				(buckets[du % count] as Array).append(u)
+				left += 1
+		u = v + nx
+		if y < ny - 1 and not done[u] and not (cells[u] & 1):
+			du = at + maxi(1, floori(gy[y] * f))
+			if dist[u] < 0 or du < dist[u]:
+				dist[u] = du
+				(buckets[du % count] as Array).append(u)
+				left += 1
+		u = v - nxy
+		if z > 0 and not done[u] and not (cells[u] & 1):
+			du = at + maxi(1, floori(gz[z - 1] * f))
+			if dist[u] < 0 or du < dist[u]:
+				dist[u] = du
+				(buckets[du % count] as Array).append(u)
+				left += 1
+		u = v + nxy
+		if z < nz - 1 and not done[u] and not (cells[u] & 1):
+			du = at + maxi(1, floori(gz[z] * f))
+			if dist[u] < 0 or du < dist[u]:
+				dist[u] = du
+				(buckets[du % count] as Array).append(u)
+				left += 1
+	return dist
 
 
 static func _push(keys: PackedFloat64Array, vals: PackedInt64Array, key: float, val: int) -> void:
@@ -429,23 +685,119 @@ static func _pop(keys: PackedFloat64Array, vals: PackedInt64Array) -> Array:
 	return out
 
 
-## Marks the grid: blocked near every part (and lead), beside a member, inside a room.
-func _raster(r: Run, region: AABB) -> void:
+## Whether run `r` may lie straight from `a` to `b`: clear of every part (but its glands, and
+## those it may pass near its ends and `near`'s via points) and every lead, as the grid would be.
+func _clear_line(r: Run, a: Vector3, b: Vector3, near: Array) -> bool:
+	var clear := maxf(r.radius + gap, r.radius * ShipParts.UNION_FLARE + 0.006)
+	var ends: Array[Vector3] = [r.from["position"], r.to["position"]]
+	var near_ends: Array[int] = [(r.from["part"] as PartData).id, (r.to["part"] as PartData).id]
+	near_ends.append_array(r.through)
+	for n: Array in near:
+		ends.append(n[0])
+		for id: int in n[1]:
+			near_ends.append(id)
+	var line := AABB(a, Vector3.ZERO).expand(b)
+	var steps := maxi(1, ceili(a.distance_to(b) / (cell * 0.5)))
+	# A turned part's box grown in its own space reaches up to sqrt(3) times as far past its
+	# placed box: these boxes only pass parts on to the exact test, so they are grown twice.
+	for e: Array in _entries_near(line.grow(clear * 2.0)):
+		if not (e[4] as AABB).grow(clear * 2.0).intersects(line):
+			continue
+		var id: int = e[0]
+		if r.glands.has(id):
+			continue
+		var box: AABB = (e[1] as AABB).grow(clear)
+		var inv: Transform3D = e[3]
+		var passable := near_ends.has(id)
+		var placed := (e[4] as AABB).grow(clear * 2.0)
+		for i in steps + 1:
+			var p := a.lerp(b, float(i) / float(steps))
+			if placed.has_point(p) and box.has_point(inv * p) and not (passable and _near_any(p, ends)):
+				return false
+	for lead: Array in avoid:
+		var pts: PackedVector3Array = lead[0]
+		var reach: float = float(lead[1]) + clear
+		for i in pts.size() - 1:
+			var q := Geometry3D.get_closest_points_between_segments(a, b, pts[i], pts[i + 1])
+			if q[0].distance_to(q[1]) < reach:
+				return false
+	return true
+
+
+## Every part with a look: [id, its look's box (part space), its transform, the inverse, the box
+## placed (body space)], kept as the runs add theirs (parts are only added while pipes are laid).
+func _part_index() -> Array:
+	if model.parts.size() != _index_seen:
+		for p: PartData in model.parts.values():
+			if _indexed.has(p.id):
+				continue
+			_indexed[p.id] = []
+			var vis := model.part_visual(p.id) as MeshInstance3D
+			if vis == null or vis.mesh == null:
+				continue
+			var box: AABB = vis.mesh.get_aabb()
+			var entry := [p.id, box, p.local_transform, p.local_transform.affine_inverse(), p.local_transform * box]
+			_indexed[p.id] = entry
+			_index.append(entry)
+			# Filed in the 1 m cells its placed box covers.
+			var placed: AABB = entry[4]
+			var c0 := Vector3i((placed.position / INDEX_CELL).floor())
+			var c1 := Vector3i((placed.end / INDEX_CELL).floor())
+			for x in range(c0.x, c1.x + 1):
+				for y in range(c0.y, c1.y + 1):
+					for z in range(c0.z, c1.z + 1):
+						var key := Vector3i(x, y, z)
+						if not _index_cells.has(key):
+							_index_cells[key] = []
+						(_index_cells[key] as Array).append(_index.size() - 1)
+		_index_seen = model.parts.size()
+	return _index
+
+
+## The index's entries whose placed boxes may meet `box` (body space), in the index's order.
+func _entries_near(box: AABB) -> Array:
+	_part_index()
+	var c0 := Vector3i((box.position / INDEX_CELL).floor())
+	var c1 := Vector3i((box.end / INDEX_CELL).floor())
+	var picked := {}
+	for x in range(c0.x, c1.x + 1):
+		for y in range(c0.y, c1.y + 1):
+			for z in range(c0.z, c1.z + 1):
+				for i: int in _index_cells.get(Vector3i(x, y, z), []):
+					picked[i] = true
+	var order: Array = picked.keys()
+	order.sort()
+	var out: Array = []
+	for i: int in order:
+		out.append(_index[i])
+	return out
+
+
+## Marks the grid: blocked near every part (and lead), beside a member, inside a room; `near`
+## ([point, part ids] each) the parts passable within pass_reach of a via point, as at the ends.
+func _raster(r: Run, region: AABB, near: Array = []) -> void:
 	# Clear of the pipe and of its unions' flanges.
 	var clear := maxf(r.radius + gap, r.radius * ShipParts.UNION_FLARE + 0.006)
 	var ends: Array[Vector3] = [r.from["position"], r.to["position"]]
 	var near_ends: Array[int] = [(r.from["part"] as PartData).id, (r.to["part"] as PartData).id]
 	near_ends.append_array(r.through)
-	for p: PartData in model.parts.values():
-		var vis := model.part_visual(p.id) as MeshInstance3D
-		if vis == null or vis.mesh == null:
+	for n: Array in near:
+		ends.append(n[0])
+		for id: int in n[1]:
+			near_ends.append(id)
+	var near_region := region.grow((clear + hug) * 2.0)   # turned parts: see _clear_line
+	for e: Array in _entries_near(near_region):
+		if not (e[4] as AABB).intersects(near_region):
 			continue
-		var box: AABB = vis.mesh.get_aabb()
-		var xf := p.local_transform
-		var inv := xf.affine_inverse()
-		var passable := near_ends.has(p.id)
+		var id: int = e[0]
+		if r.glands.has(id):
+			continue
+		var box: AABB = e[1]
+		var xf: Transform3D = e[2]
+		var inv: Transform3D = e[3]
+		var passable := near_ends.has(id)
 		_mark_box(box.grow(clear), xf, inv, region, 1, passable, ends)
-		if members.has(p.id):
+		if members.has(id):
 			_mark_box(box.grow(clear + hug), xf, inv, region, 2, false, ends)
 	for line: Array in avoid:
 		var pts: PackedVector3Array = line[0]
@@ -464,8 +816,9 @@ func _raster(r: Run, region: AABB) -> void:
 				for x in range(rx.x, rx.y + 1):
 					var i := Vector3i(x, y, z)
 					var p := _pos(i)
-					# A spigot may stand in a room: its way out costs nothing extra.
-					if p.distance_to(ends[0]) < pass_reach or p.distance_to(ends[1]) < pass_reach:
+					# A spigot may stand in a room: its way out costs nothing extra (nor a via
+					# point's way through a floor beside it).
+					if _near_any(p, ends):
 						continue
 					var c := _flat(i)
 					_cells[c] = _cells[c] | 4
@@ -491,9 +844,16 @@ func _mark_box(box: AABB, xf: Transform3D, inv: Transform3D, region: AABB, bit: 
 				var p := _pos(i)
 				if not box.has_point(inv * p):
 					continue
-				if passable and (p.distance_to(ends[0]) < pass_reach or p.distance_to(ends[1]) < pass_reach):
+				if passable and _near_any(p, ends):
 					continue
 				_cells[c] = _cells[c] | bit
+
+
+func _near_any(p: Vector3, ends: Array[Vector3]) -> bool:
+	for e in ends:
+		if p.distance_to(e) < pass_reach:
+			return true
+	return false
 
 
 func _mark_segment(a: Vector3, b: Vector3, reach: float, region: AABB) -> void:
@@ -574,7 +934,16 @@ func _build(r: Run) -> void:
 		r.elbows.append(elbow)
 		elbow_at.append([elbow, t_in, pts[i] + d_out * bend])
 	var through_ids: Array[int] = r.through.duplicate()
+	through_ids.append_array(r.glands)
+	for v: Array in r.via:
+		for id: int in (v[2] if v.size() > 2 else []):
+			through_ids.append(id)
 	var end_ids: Array[int] = [(r.from["part"] as PartData).id, (r.to["part"] as PartData).id]
+	var passes: Array[int] = []   # what the run passes through anywhere: its glands, the floors at its via points
+	passes.append_array(r.glands)
+	for v: Array in r.via:
+		for id: int in (v[2] if v.size() > 2 else []):
+			passes.append(id)
 	for leg in n - 1:
 		var d := (pts[leg + 1] - pts[leg]).normalized()
 		var a: Vector3 = pts[leg] if leg == 0 else (elbow_at[leg - 1][2] as Vector3)
@@ -596,7 +965,21 @@ func _build(r: Run) -> void:
 				if t < lo - 0.005 or t > length - lo + 0.005:
 					r.missed.append(String(st[1]))
 					continue
-				cuts.append([clampf(t, lo, length - lo), String(st[1])])
+				var ct := clampf(t, lo, length - lo)
+				# A union is no gland: one in a member the run passes through (a station's beam it
+				# crosses) slides along it till it clears.
+				if not passes.is_empty() and _union_hits(a + d * ct, d, union_len, r.radius, passes):
+					for k in range(1, 31):
+						var moved := -1.0
+						for sgn: float in [1.0, -1.0]:
+							var tt := ct + sgn * 0.02 * k
+							if tt >= lo and tt <= length - lo and not _union_hits(a + d * tt, d, union_len, r.radius, passes):
+								moved = tt
+								break
+						if moved >= 0.0:
+							ct = moved
+							break
+				cuts.append([ct, String(st[1])])
 		cuts.sort_custom(func(p: Array, q: Array) -> bool: return float(p[0]) < float(q[0]))
 		var from_t := 0.0
 		for cut: Array in cuts:
@@ -656,6 +1039,28 @@ func _build(r: Run) -> void:
 	target.phase = phase_was
 
 
+## Whether a union of `length` on a pipe of `radius` at `at` (heading `d`) runs into a part of
+## `ids` (their looks, sampled at its ends, middle and flange's corners).
+func _union_hits(at: Vector3, d: Vector3, length: float, radius: float, ids: Array[int]) -> bool:
+	_part_index()
+	var basis := _along(d)
+	var fr := radius * ShipParts.UNION_FLARE + 0.006
+	var half := length * 0.5 + 0.006
+	var reach := AABB(at, Vector3.ZERO).grow(half + fr)
+	for id: int in ids:
+		var e: Array = _indexed.get(id, [])
+		if e.is_empty() or not (e[4] as AABB).intersects(reach):
+			continue
+		var box: AABB = e[1]
+		var inv: Transform3D = e[3]
+		for ty: float in [-half, 0.0, half]:
+			for tx: float in [-fr, 0.0, fr]:
+				for tz: float in [-fr, 0.0, fr]:
+					if box.has_point(inv * (at + basis * Vector3(tx, ty, tz))):
+						return true
+	return false
+
+
 ## A span from `a` to `b` (heading `d`) of run `r`: its collision only where it clears every
 ## part it passes (the parts near its ends), collars where it goes through a panel.
 func _span(r: Run, a: Vector3, b: Vector3, d: Vector3, through: Array[int], end_ids: Array[int]) -> PartData:
@@ -663,8 +1068,14 @@ func _span(r: Run, a: Vector3, b: Vector3, d: Vector3, through: Array[int], end_
 	var mid := (a + b) * 0.5
 	# Sample along it: where it lies in a part it passes, no collision (and a collar at each face).
 	var passed: Array[int] = []
-	passed.append_array(through)
-	passed.append_array(end_ids)
+	# Only what reaches the span (the samples below test each part at every centimetre).
+	_part_index()
+	var reach := AABB(a, Vector3.ZERO).expand(b).grow((r.radius + 0.006) * 2.0)   # turned parts: see _clear_line
+	for list: Array[int] in [through, end_ids]:
+		for id: int in list:
+			var e: Array = _indexed.get(id, [])
+			if not e.is_empty() and (e[4] as AABB).intersects(reach):
+				passed.append(id)
 	var steps := maxi(2, ceili(length / 0.01))
 	var solid: Array = []   # [y0, y1] part space (Y along it, from -length/2)
 	var collars: Array[float] = []
@@ -717,11 +1128,49 @@ func _span(r: Run, a: Vector3, b: Vector3, d: Vector3, through: Array[int], end_
 	var span := target.pipe_part("PipeSpan", shape, Transform3D(_along(d), mid), r.mat,
 			"pipe:%s/span/%d" % [r.name, r.spans.size()])
 	r.spans.append(span)
+	if span:
+		_bands(r, span, length, solid, collars)
 	return span
 
 
+## Paints span `span` of run `r` with its fluid's band (an arrow on it the way the fluid runs)
+## BAND_IN from each end of a span `band_least` long or more, else (or where neither end is in
+## the open) once in its middle if it is `band_one` long: only where the span is in the open and
+## clear of a collar. Marks, looks only.
+func _bands(r: Run, span: PartData, length: float, solid: Array, collars: Array[float]) -> void:
+	if length < band_one:
+		return
+	var fluid := "jump" if r.name.begins_with("jump") else r.fluid
+	var band := ShipParts.pipe_band_mesh(r.radius)
+	var arrows := ShipParts.pipe_arrow_mesh(r.radius)
+	var paint := ShipParts.pipe_band_material(fluid)
+	var half := ShipParts.BAND_WIDTH * 0.5 + 0.01
+	var spots: Array[float] = [0.0]
+	if length >= band_least:
+		spots = [-length * 0.5 + ShipParts.BAND_IN, length * 0.5 - ShipParts.BAND_IN]
+	var laid := 0
+	for pass_ in 2:
+		for y: float in spots:
+			var open := false
+			for seg: Array in solid:
+				if y - half >= float(seg[0]) and y + half <= float(seg[1]):
+					open = true
+			for c: float in collars:
+				if absf(c - y) < half + 0.015:
+					open = false
+			if open:
+				laid += 1
+				var at := span.local_transform * Transform3D(Basis(), Vector3(0.0, y, 0.0))
+				model.add_decor(span.id, band, paint, at)
+				model.add_decor(span.id, arrows, ShipParts.pipe_arrow_material(), at)
+		if laid > 0 or spots.size() == 1:
+			return
+		spots = [0.0]
+
+
 ## Clips span `span` of run `r` every clip_pitch to the member beside it, else the panel: a
-## BOLT from the span to the holder, a band and a stem drawn on the span.
+## BOLT from the span to the holder, a band and a stem drawn on the span (a mark, so in the
+## body's space like every mark, never the span's own).
 func _clip(r: Run, span: PartData) -> void:
 	var length := _length_of(span)
 	if length < 0.2:
@@ -737,26 +1186,27 @@ func _clip(r: Run, span: PartData) -> void:
 	for m in count:
 		var t := -length * 0.5 + length * (float(m) + 0.5) / float(count)
 		var at := mid + axis * t
+		var index := _entries_near(AABB(at, Vector3.ZERO).grow(r.radius + clip_reach))
 		var best: PartData = null
 		var best_d := INF
 		var best_point := Vector3.ZERO
 		for pass_members: bool in [true, false]:
-			for p: PartData in model.parts.values():
-				if own.has(p.id) or (members.has(p.id) != pass_members) or p.kind == PartData.Kind.GLASS:
+			for e: Array in index:
+				if not (e[4] as AABB).grow(r.radius + clip_reach).has_point(at):
+					continue
+				var p: PartData = model.parts.get(e[0])
+				if p == null or own.has(p.id) or (members.has(p.id) != pass_members) or p.kind == PartData.Kind.GLASS:
 					continue
 				if not pass_members and p.kind == PartData.Kind.CONDUIT:
 					continue
-				var vis := model.part_visual(p.id) as MeshInstance3D
-				if vis == null or vis.mesh == null:
-					continue
-				var box: AABB = vis.mesh.get_aabb()
-				var local := p.local_transform.affine_inverse() * at
+				var box: AABB = e[1]
+				var local: Vector3 = (e[3] as Transform3D) * at
 				var near := local.clamp(box.position, box.end)
 				var dist := near.distance_to(local)
 				if dist < best_d and dist <= r.radius + clip_reach:
 					best_d = dist
 					best = p
-					best_point = p.local_transform * near
+					best_point = (e[2] as Transform3D) * near
 			if best:
 				break
 		if best == null:
@@ -772,7 +1222,7 @@ func _clip(r: Run, span: PartData) -> void:
 			r.clips.append([c, span, best])
 		var stem := maxf(toward.length() - r.radius, 0.0)
 		model.add_decor(span.id, ShipParts.pipe_clip_mesh(r.radius, stem), ShipParts.mat("steel"),
-				span.local_transform.affine_inverse() * Transform3D(Basis(axis.cross(normal).normalized(), axis, normal), at))
+				Transform3D(Basis(axis.cross(normal).normalized(), axis, normal), at))
 
 
 ## A basis whose Y runs along `d`.
