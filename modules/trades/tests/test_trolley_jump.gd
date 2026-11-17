@@ -6,7 +6,7 @@ extends ModuleTest
 
 func run_tests() -> void:
 	var saved := {}
-	for flag: String in ["trades.shipyard", "trades.jump"]:
+	for flag: String in ["trades.shipyard", "trades.jump", "ship_bay.trolleys"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus

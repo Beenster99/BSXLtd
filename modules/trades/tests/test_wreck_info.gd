@@ -9,6 +9,9 @@ func run_tests() -> void:
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus
 	var was := Flags.is_on("trades.wreck_info")
 	Flags.set_flag("trades.wreck_info", true)
+	# Wrecks come in only with Ship and Bay's teardown on (off since the shipbuilder pivot).
+	var had_teardown := Flags.is_on("ship_bay.teardown")
+	Flags.set_flag("ship_bay.teardown", true)
 
 	# The sheet from an answer, on its own.
 	var info := {"slot_id": "", "display_name": "Hull plate", "kind": "hull", "material": "steel", "mass_kg": 84.0,
@@ -32,6 +35,7 @@ func run_tests() -> void:
 	check(rig != null, "the tools are in the yard")
 	if rig == null:
 		Flags.set_flag("trades.wreck_info", was)
+		Flags.set_flag("ship_bay.teardown", had_teardown)
 		return
 	ship_bus.wreck_seed = 9
 	ship_bus.debug_ship("random_wreck", "S")
@@ -75,6 +79,7 @@ func run_tests() -> void:
 	check(station.aim_info().is_empty(), "without the flag, nothing new")
 	Flags.set_flag("trades.wreck_info", was)
 	ship_bus.debug_ship("restore_bay")
+	Flags.set_flag("ship_bay.teardown", had_teardown)
 
 
 func _wreck_body(n: Node) -> CollisionObject3D:

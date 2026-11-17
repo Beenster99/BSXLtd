@@ -9,6 +9,7 @@ func run_tests() -> void:
 	for flag: String in ["trades.shipyard", "trades.hover_board"]:
 		saved[flag] = Flags.is_on(flag)
 		Flags.set_flag(flag, true)
+	(Modules.bus("trades") as TradesBus).register_board_keys()
 	check(InputMap.has_action(TradesBus.KEY_BOARD) and InputMap.has_action(TradesBus.KEY_BOARD_UP),
 			"the board's keys are bound (B, the up and down arrows)")
 	var ship_bus := Modules.bus("ship_bay") as ShipBayBus

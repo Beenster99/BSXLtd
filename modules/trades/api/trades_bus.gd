@@ -95,9 +95,7 @@ func register_module() -> void:
 	if Flags.is_on("trades.frame_order"):
 		Keys.register(KEY_ORDER, "Frame Builder: commit the frame and order its parts", KEY_O, KEY_GROUP)
 	if Flags.is_on("trades.hover_board"):
-		Keys.register(KEY_BOARD, "Hover board out / away", KEY_B, KEY_GROUP)
-		Keys.register(KEY_BOARD_UP, "Hover board higher (hold)", KEY_SPACE, KEY_GROUP)
-		Keys.register(KEY_BOARD_DOWN, "Hover board lower (hold)", KEY_CTRL, KEY_GROUP)
+		register_board_keys()
 	if Flags.is_on(SPECS_CHANNEL):
 		HudSlots.register_holo_channel(SPECS_CHANNEL, "Specs",
 				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
@@ -478,3 +476,11 @@ func note_unit(rig_id: String, state: Dictionary) -> void:
 func remove_joint(joint_id: StringName) -> void:
 	if _results.erase(joint_id):
 		joint_removed.emit(joint_id)
+
+
+## The hover board's keys (B, and the up and down keys). Bound at start only with
+## "trades.hover_board" on (off since the shipbuilder pivot, 17 Nov), so its test binds them.
+func register_board_keys() -> void:
+	Keys.register(KEY_BOARD, "Hover board out / away", KEY_B, KEY_GROUP)
+	Keys.register(KEY_BOARD_UP, "Hover board higher (hold)", KEY_SPACE, KEY_GROUP)
+	Keys.register(KEY_BOARD_DOWN, "Hover board lower (hold)", KEY_CTRL, KEY_GROUP)
