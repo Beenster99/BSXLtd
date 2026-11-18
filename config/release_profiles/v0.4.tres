@@ -24,7 +24,7 @@ flags = {
 "core": true,
 "core.fresh_saves": true,
 "design": true,
-"design.room": false,
+"design.room": true,
 "graphics": true,
 "graphics.gi": true,
 "graphics.hover": true,
