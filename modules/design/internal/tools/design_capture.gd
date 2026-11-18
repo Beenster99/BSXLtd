@@ -131,8 +131,8 @@ class Runner:
 		await _save(out, "hull_holo")
 		room.furnishing.open_walk()
 		var walk: Node3D = room.furnishing.walk
-		for shot in [["walk_hull_bow", Vector3(-4.5, 1.0, -6.5), 0.75, 0.05],
-				["walk_hull_outside", Vector3(-12, 1.0, -16), -2.45, -0.05]]:
+		for shot in [["walk_hull_bow", Vector3(-2.6, 1.0, -6.3), 0.95, 0.2],
+				["walk_hull_outside", Vector3(15, 1.0, -2), 1.3, 0.05]]:
 			walk.body.position = shot[1]
 			walk.body.rotation.y = shot[2]
 			walk.set("_pitch", shot[3])

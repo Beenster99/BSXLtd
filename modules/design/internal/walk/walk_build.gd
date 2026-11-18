@@ -290,7 +290,7 @@ func _open_deck(deck: int) -> void:
 	if not bed_seen.is_empty():
 		body.add_child(_tri_mesh(bed_seen, paint(Color(0.5, 0.52, 0.55), "brushed_alloy"), 1 | EXTERIOR))
 	if not roof.is_empty():
-		var rm := _tri_mesh(roof, paint(Color(0.5, 0.52, 0.55), "brushed_alloy"), 1 | EXTERIOR)
+		var rm := _tri_mesh(roof, paint(Color(0.62, 0.64, 0.65), "satin_paint"), 1 | EXTERIOR)
 		rm.name = "OpenDeckRoof_%d" % deck
 		root.add_child(rm)
 	# A lamp over every 5 m block of open deck.
@@ -307,8 +307,8 @@ func _open_deck(deck: int) -> void:
 		var lamp := OmniLight3D.new()
 		lamp.name = "Lamp_open_%d_%d_%d" % [deck, k.x, k.y]
 		lamp.position = Vector3(at.x, top - 0.3, at.y)
-		lamp.omni_range = 6.5
-		lamp.light_energy = 0.6
+		lamp.omni_range = 8.0
+		lamp.light_energy = 0.85
 		lamp.light_color = Color(1.0, 0.95, 0.88)
 		root.add_child(lamp)
 		lamps += 1
