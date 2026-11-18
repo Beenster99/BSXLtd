@@ -133,7 +133,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			Menu.open_pause()
 			return
 		_walk_again()
-		if event.is_action_pressed(Keys.INTERACT):
+		if event.is_action_pressed(Keys.INTERACT) and not HudSlots.pointer_claimed():
 			mover.call("use")
 
 

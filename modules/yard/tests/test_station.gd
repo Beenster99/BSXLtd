@@ -89,6 +89,14 @@ func _gravity_and_walking(station: Node3D) -> void:
 	await frames(40)
 	Input.action_release(Keys.FORWARD)
 	check(mover.position.x - start.x > 0.5 and absf(mover.position.y) < 0.1, "walked along the corridor (%.2f m)" % (mover.position.x - start.x))
+	# A screen holding the mouse (a console) keeps you still.
+	HudSlots.claim_pointer("yard.test")
+	var held_at := mover.position
+	Input.action_press(Keys.FORWARD)
+	await frames(30)
+	Input.action_release(Keys.FORWARD)
+	HudSlots.release_pointer("yard.test")
+	check(mover.position.distance_to(held_at) < 0.05, "no walking while a screen has the mouse")
 	var wall_test := mover.position
 	mover.call("place", Vector3(4.0, 0.0, -1.5), Vector3(4.0, 1.5, 10.0))
 	Input.action_press(Keys.FORWARD)
