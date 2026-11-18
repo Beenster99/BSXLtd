@@ -67,8 +67,8 @@ class Runner:
 		room.furnishing.open_walk()
 		var walk: Node3D = room.furnishing.walk
 		for shot in [["walk_corridor", Vector3(0, 1.0, 3.0), 0.0, -0.05],
-				["walk_engineering", Vector3(1.8, 1.0, 3.3), -0.9, -0.25],
-				["walk_stairs", Vector3(-1.4, 1.0, 3.6), 0.6, 0.15],
+				["walk_engineering", Vector3(6.2, 1.0, -1.3), 2.36, -0.2],
+				["walk_stairs", Vector3(-1.5, 1.0, 1.0), PI * 0.5, 0.45],
 				["walk_outside", Vector3(9, 1.0, 12), 0.62, 0.0]]:
 			walk.body.position = shot[1]
 			walk.body.rotation.y = shot[2]
@@ -76,6 +76,17 @@ class Runner:
 			walk.camera.rotation.x = shot[3]
 			await _frames(20)
 			await _save(out, shot[0])
+		# Designing from inside: a fuel pump in your hands in engineering, showing where it fits.
+		walk.body.position = Vector3(2.0, 1.0, -1.2)
+		walk.body.rotation.y = PI
+		walk.set("_pitch", -0.7)
+		walk.camera.rotation.x = -0.7
+		walk.call("take_new", "fuel_pump")
+		await _frames(20)
+		await _save(out, "walk_design")
+		walk.call("toggle_palette")
+		await _frames(10)
+		await _save(out, "walk_palette")
 		room.furnishing.close_walk()
 		get_tree().quit()
 
