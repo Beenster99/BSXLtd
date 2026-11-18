@@ -1,7 +1,7 @@
 class_name DesignBus
 extends Node
 ## The Design Room module's bus (Modules.bus("design")): the ship designs the crew draws up
-## in the design room, and the views onto them (plans, the holotable, the TV channels).
+## in the design room, and the views onto them (plans, the holotable, the walls).
 ##
 ## Other modules read designs through here:
 ##   var bus := Modules.bus("design") as DesignBus
@@ -59,18 +59,19 @@ func _hook_yard() -> void:
 		yard.connect("station_ready", furnish_station)
 
 
-## The design room's wall spots: the station's (the yard module's design_room_mounts), or
-## the stand-in's when the yard module is off. {id, transform (-Z into the room), size}.
-func room_mounts() -> Array[Dictionary]:
+## The design room's wall planes: the station's (the yard module's design_room_walls), or
+## the stand-in planes (the same ids and convention) while it has none.
+func room_walls() -> Array[Dictionary]:
 	var yard := Modules.bus("yard")
-	if yard and yard.has_method("design_room_mounts"):
+	if yard and yard.has_method("design_room_walls"):
 		var out: Array[Dictionary] = []
-		out.assign(yard.call("design_room_mounts"))
-		return out
-	return Furnishing.stand_in_mounts()
+		out.assign(yard.call("design_room_walls"))
+		if not out.is_empty():
+			return out
+	return Furnishing.stand_in_walls()
 
 
-## Puts the holotable, wall TVs and console into the station's design room.
+## Puts the holotable, the interactive walls and the console into the station's design room.
 func furnish_station(_station: Node3D = null) -> void:
 	var yard := Modules.bus("yard")
 	var root: Node3D = yard.call("design_room_root") if yard and yard.has_method("design_room_root") else null
@@ -78,7 +79,7 @@ func furnish_station(_station: Node3D = null) -> void:
 		return
 	var f: Node3D = Furnishing.new()
 	root.add_child(f)
-	f.call("setup", self, room_mounts())
+	f.call("setup", self, room_walls())
 
 
 func unregister_module() -> void:

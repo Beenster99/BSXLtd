@@ -1,6 +1,6 @@
 extends ModuleTest
-## Design Room in the orbital yard's station: the holotable, wall TVs and console go into the
-## station's design room on its mounts, and using the table opens the console.
+## Design Room in the orbital yard's station: the holotable, the interactive walls and the console go into the
+## station's design room on its wall planes, and using the table opens the console.
 ##   tools/run_tests.sh design
 
 const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
@@ -29,20 +29,37 @@ func run_tests() -> void:
 	check(f != null, "the design room is furnished")
 	if f == null:
 		return
-	var tvs: Dictionary = f.get("tvs")
-	check(tvs.size() == 6, "six wall TVs: %s" % [tvs.keys()])
-	var mounts := {}
-	for m in YardBus.design_room_mounts():
-		mounts[m.id] = m
-	for id: String in tvs:
-		var tv: Node3D = tvs[id]
-		var spot: Transform3D = mounts[id].transform
-		check(tv.position.distance_to(spot.origin) < 0.1, "%s sits on its mount" % id)
-		# The screen's face (+Z) points into the room, the way the mount's -Z does.
-		check(tv.basis.z.dot(-spot.basis.z) > 0.99, "%s faces into the room" % id)
+	# The walls themselves are the screens (beenster, 18 Nov), one per wall plane.
+	var walls: Dictionary = f.get("walls")
+	var planes := {}
+	for w in bus.room_walls():
+		planes[w.id] = w
+	check(walls.size() == planes.size() and walls.size() >= 4, "every wall plane is a screen: %s" % [walls.keys()])
+	for id: String in ["wall_left", "wall_right"]:
+		check(walls.has(id), "%s is a screen" % id)
+	for id: String in walls:
+		var screen: Node3D = walls[id]
+		var plane: Transform3D = planes[id].transform
+		check(screen.position.distance_to(plane.origin) < 0.1, "%s covers its plane" % id)
+		# The screen's face (+Z) points into the room, the way the plane's -Z does.
+		check(screen.basis.z.dot(-plane.basis.z) > 0.99, "%s faces into the room" % id)
+		var sz: Vector2 = planes[id].size
+		check(is_equal_approx((screen.get("size_m") as Vector2).x, sz.x), "%s spans the whole wall (%.1f m)" % [id, sz.x])
+	var board: Node = (walls["wall_left"] as Node).get("content")
+	var first := str(board.get("panels")[0].view)
+	board.call("step", 0, 1)
+	var second := str(board.get("panels")[0].view)
+	check(second != first and board.call("content", 0) != null, "> on a panel changes what it shows (%s to %s)" % [first, second])
+	board.call("set_view", 0, "data")
+	check(board.call("content", 0).get_class() == "PanelContainer", "a panel can show the parts and cost channel")
+	board.call("step", 0, 1)
+	check(str(board.get("panels")[0].view) == "plan:0", "stepping on from the last view comes round to deck 1")
 	var holo: Node3D = f.get("holo")
-	check(Vector2(holo.position.x, holo.position.z).length() < 0.01 and HoloTable.TABLE_RADIUS <= YardBus.DESIGN_CLEAR_RADIUS,
-			"the holotable stands in the clear circle")
+	# The yard keeps a 10 x 6 m rectangle clear (DESIGN_CLEAR_SIZE; read by name until it lands).
+	var clear: Vector2 = (YardBus as Script).get_script_constant_map().get("DESIGN_CLEAR_SIZE", Vector2(10, 6))
+	check(Vector2(holo.position.x, holo.position.z).length() < 0.01 and HoloTable.TABLE_SIZE.x <= clear.x - 2.0
+			and HoloTable.TABLE_SIZE.y <= clear.y - 2.0, "the holotable stands in the clear rectangle with room to walk round")
+	check(HoloTable.TABLE_SIZE.x > HoloTable.TABLE_SIZE.y and HoloTable.TABLE_SIZE.x >= 6.0, "the table is long and rectangular")
 	var use := holo.get_node_or_null("TableUse")
 	check(use != null and use.has_meta("yard_use") and str((use.get_meta("yard_hint") as Callable).call()).contains("holotable"),
 			"the table can be used: E Design at the holotable")

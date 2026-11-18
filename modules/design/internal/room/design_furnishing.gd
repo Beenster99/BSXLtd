@@ -1,19 +1,28 @@
 extends Node3D
 ## Everything the design module puts in the design room: the holotable in the middle, the
-## wall TVs on the room's mounts, and the design console that opens when you use the table.
+## walls as interactive screens (each a WallBoard of panels over the whole wall plane), and the
+## design console that opens when you use the table.
 ## Added under YardBus.design_room_root() in the station, or under the stand-in room in the
 ## design.room scene. Node space is the room's: floor centre, +X right, -Z to the window.
 
 const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
-const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
-const DataChannel := preload("res://modules/design/internal/views/data_channel.gd")
+const WallBoard := preload("res://modules/design/internal/room/wall_board.gd")
 const DesignConsole := preload("res://modules/design/internal/console/design_console.gd")
 
-## What each wall TV shows: mount id -> [view, deck].
-const TV_VIEWS := {
-	"tv_left_1": ["plan", 0], "tv_left_2": ["side", 0], "tv_left_3": ["end", 0],
-	"tv_right_1": ["data", 0], "tv_right_2": ["plan", 1], "tv_right_3": ["side", 0],
+## What each wall's panels show at first: wall id -> [[view, share of the width], ...].
+## Anyone can change a panel with its < and > (WallBoard.views()).
+const WALL_LAYOUT := {
+	"wall_left": [["plan:0", 0.45], ["side", 0.33], ["end", 0.22]],
+	"wall_right": [["data", 0.3], ["plan:1", 0.4], ["side", 0.3]],
+	"wall_back_low_left": [["plan:0", 0.6], ["end", 0.4]],
+	"wall_back_low_right": [["data", 1.0]],
+	"wall_back_high": [["side", 0.6], ["plan:1", 0.4]],
 }
+## Pixels per metre on the walls (an 18 m wall is 2,700 px across).
+const WALL_PX_PER_M := 150.0
+## How far from a wall it can be used, m (the room is 24 m across).
+const WALL_REACH := 12.0
+
 ## The mouse claim while the console is open (HudSlots).
 const POINTER := "design.console"
 
@@ -26,11 +35,11 @@ signal console_closed
 var bus: DesignBus
 var holo: HoloTable
 var console: DesignConsole
-var tvs: Dictionary = {}  # mount id -> TouchScreen
+var walls: Dictionary = {}  # wall id -> TouchScreen (its content a WallBoard)
 var _layer: CanvasLayer
 
 
-func setup(design_bus: DesignBus, mounts: Array[Dictionary]) -> void:
+func setup(design_bus: DesignBus, wall_planes: Array[Dictionary]) -> void:
 	bus = design_bus
 	name = "DesignFurnishing"
 	holo = HoloTable.new()
@@ -38,8 +47,8 @@ func setup(design_bus: DesignBus, mounts: Array[Dictionary]) -> void:
 	add_child(holo)
 	holo.setup(bus)
 	_add_use_body()
-	for m in mounts:
-		_add_tv(m)
+	for w in wall_planes:
+		_add_wall(w)
 	_layer = CanvasLayer.new()
 	_layer.name = "ConsoleLayer"
 	_layer.layer = 5
@@ -52,20 +61,28 @@ func setup(design_bus: DesignBus, mounts: Array[Dictionary]) -> void:
 	console.visible = false
 
 
-## The station's wall spots, for the stand-in room when the yard module is off. Same ids and
-## convention as the yard's: origin on the wall face, -Z into the room.
-static func stand_in_mounts() -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
+## The design room's wall planes, for when the yard module has none (the stand-in room, or a
+## station from before its creative shell). Same ids and convention as YardBus's
+## design_room_walls(): origin at the plane's middle on the wall face, -Z into the room, size
+## in m. The corridor door is at room x 5 to 7.5 in the back wall; the mezzanine at 3.4 m.
+static func stand_in_walls() -> Array[Dictionary]:
 	var half := ROOM_SIZE * 0.5
-	for i in 3:
-		var z := -5.0 + 4.5 * i
-		out.append({"id": "tv_left_%d" % (i + 1), "size": Vector2(2.4, 1.4),
-				"transform": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-half.x + 0.06, 2.2, z))})
-		out.append({"id": "tv_right_%d" % (i + 1), "size": Vector2(2.4, 1.4),
-				"transform": Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(half.x - 0.06, 2.2, z))})
-	out.append({"id": "whiteboard", "size": Vector2(10, 3),
-			"transform": Transform3D(Basis.IDENTITY, Vector3(-4.0, 2.2, half.z - 0.06))})
-	return out
+	var face := 0.06
+	var side := Vector2(ROOM_SIZE.z - 1.0, 5.2)
+	var low_l := Vector2(4.6 - (-half.x + 0.5), 3.0)
+	var low_r := Vector2((half.x - 0.5) - 7.9, 3.0)
+	return [
+		{"id": "wall_left", "size": side,
+				"transform": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-half.x + face, 0.4 + side.y * 0.5, 0))},
+		{"id": "wall_right", "size": side,
+				"transform": Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(half.x - face, 0.4 + side.y * 0.5, 0))},
+		{"id": "wall_back_low_left", "size": low_l,
+				"transform": Transform3D(Basis.IDENTITY, Vector3(-half.x + 0.5 + low_l.x * 0.5, 0.3 + low_l.y * 0.5, half.z - face))},
+		{"id": "wall_back_low_right", "size": low_r,
+				"transform": Transform3D(Basis.IDENTITY, Vector3(7.9 + low_r.x * 0.5, 0.3 + low_r.y * 0.5, half.z - face))},
+		{"id": "wall_back_high", "size": Vector2(ROOM_SIZE.x - 1.0, 2.2),
+				"transform": Transform3D(Basis.IDENTITY, Vector3(0, 3.6 + 1.1, half.z - face))},
+	] as Array[Dictionary]
 
 
 func is_console_open() -> bool:
@@ -105,15 +122,14 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## A body round the table that the player's view finds: "E  Use the holotable".
+## A body over the table that the player's view finds: "E  Design at the holotable".
 func _add_use_body() -> void:
 	var body := StaticBody3D.new()
 	body.name = "TableUse"
 	var shape := CollisionShape3D.new()
-	var cyl := CylinderShape3D.new()
-	cyl.radius = HoloTable.TABLE_RADIUS
-	cyl.height = HoloTable.TABLE_HEIGHT
-	shape.shape = cyl
+	var box := BoxShape3D.new()
+	box.size = Vector3(HoloTable.TABLE_SIZE.x, HoloTable.TABLE_HEIGHT, HoloTable.TABLE_SIZE.y)
+	shape.shape = box
 	shape.position.y = HoloTable.TABLE_HEIGHT * 0.5
 	body.add_child(shape)
 	body.set_meta("yard_use", open_console)
@@ -124,27 +140,18 @@ func _add_use_body() -> void:
 	holo.add_child(body)
 
 
-## A wall TV on a room mount. Mounts face into the room along their -Z; a TouchScreen faces
-## its +Z, so it is turned round.
-func _add_tv(m: Dictionary) -> void:
-	var spec: Array = TV_VIEWS.get(str(m.id), [])
-	if spec.is_empty():
-		return  # the whiteboard comes in Wave 3
-	var sz: Vector2 = m.size
-	var px := Vector2i(1280, int(1280.0 * sz.y / sz.x))
-	var content: Control
-	if spec[0] == "data":
-		var dc := DataChannel.new()
-		dc.setup(bus, false)
-		content = dc
-	else:
-		var pv := PlanView.new()
-		pv.setup(bus, spec[0], false)
-		pv.deck = spec[1]
-		pv.auto_frame = true
-		content = pv
-	var tv := TouchScreen.new(content, px, sz)
-	tv.name = "TV_" + str(m.id)
-	tv.transform = (m.transform as Transform3D) * Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0, -0.08))
-	add_child(tv)
-	tvs[m.id] = tv
+## A wall plane as one screen. Planes face into the room along their -Z; a TouchScreen faces
+## its +Z, so it is turned round, and stands 8 cm off the wall's face.
+func _add_wall(w: Dictionary) -> void:
+	var layout: Array = WALL_LAYOUT.get(str(w.id), [["plan:0", 0.5], ["data", 0.5]])
+	var sz: Vector2 = w.size
+	var px := Vector2i(int(sz.x * WALL_PX_PER_M), int(sz.y * WALL_PX_PER_M))
+	var board := WallBoard.new()
+	board.setup(bus, str(w.id), layout, WALL_PX_PER_M)
+	var screen := TouchScreen.new(board, px, sz)
+	screen.name = "Wall_" + str(w.id)
+	screen.reach = WALL_REACH
+	screen.hint = {"title": "Design wall", "keys": [["LMB", "Press < or > to change a panel"]]}
+	screen.transform = (w.transform as Transform3D) * Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0, -0.08))
+	add_child(screen)
+	walls[w.id] = screen
