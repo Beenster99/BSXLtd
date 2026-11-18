@@ -25,7 +25,7 @@ func build(kit) -> void:
 	_kit = kit
 	var k = kit
 	var wall: Material = k.paint(Color(0.7, 0.72, 0.75), 0.1, 0.7)
-	var hazard: Material = k.paint(Color(1.0, 0.78, 0.1), 0.1, 0.6)
+	var hazard: Material = k.paint(Color(1.0, 0.78, 0.1), 0.1, 0.6, "hazard_stripes")
 	var z0 := YardLayout.AIRLOCK_DOOR_Z.x
 	var z1 := YardLayout.AIRLOCK_DOOR_Z.y
 	var h := YardLayout.AIRLOCK_DOOR_H
@@ -34,7 +34,7 @@ func build(kit) -> void:
 	for x: float in [YardLayout.AIRLOCK_INNER_X, YardLayout.AIRLOCK_OUTER_X]:
 		k.wall(false, x, -5.0, 1.0, 0.0, 3.2, wall, [[z0, z1, h]], 0.3)
 		k.box(Vector3(0.34, 0.12, z1 - z0 + 0.24), Vector3(x, h + 0.06, (z0 + z1) * 0.5), hazard, false)
-	k.span(Vector3(-39.5, 0.002, -4.5), Vector3(-34.5, 0.012, 0.5), k.paint(Color(0.25, 0.26, 0.28), 0.5, 0.5), false)
+	k.span(Vector3(-39.5, 0.002, -4.5), Vector3(-34.5, 0.012, 0.5), k.paint(Color(0.25, 0.26, 0.28), 0.6, 0.5, "tread_diamond_steel"), false)
 	k.ceiling_lamp(Vector3(-37.0, 3.2, -2.0), Vector2(1.2, 1.2), 0.8, 6.0)
 	inner_door = _door(YardLayout.AIRLOCK_INNER_X, "InnerDoor")
 	outer_door = _door(YardLayout.AIRLOCK_OUTER_X, "OuterDoor")

@@ -261,19 +261,46 @@ func _build_hud() -> void:
 
 func _build_station() -> void:
 	var k = kit
-	var hull: Material = k.paint(Kit.HULL, 0.15, 0.55)
-	var wall: Material = k.paint(Kit.WALL, 0.1, 0.7)
-	var deck: Material = k.paint(Kit.DECK, 0.0, 0.8)
-	var dark: Material = k.paint(Kit.DARK, 0.4, 0.5)
-	var orange: Material = k.paint(Kit.ORANGE, 0.1, 0.45)
+	# Void Salvage's finishes (stage 1.5): gloss white hull, satin walls, steel tread decks.
+	var hull: Material = k.paint(Kit.HULL, 0.15, 0.4, "gloss_paint")
+	var wall: Material = k.paint(Kit.WALL, 0.1, 0.6, "satin_paint")
+	var deck: Material = k.paint(Color(0.5, 0.52, 0.55), 0.2, 0.55, "tread_diamond_paint")
+	var dark: Material = k.paint(Kit.DARK, 0.7, 0.45, "gunmetal")
+	var orange: Material = k.paint(Kit.ORANGE, 0.1, 0.4, "enamel")
+	var ceiling: Material = k.paint(Color(0.84, 0.86, 0.88), 0.05, 0.7, "plastic_textured")
 	var pane: Material = k.glass()
 
-	# Floors and ceilings, room by room (floor top at y = 0, 0.3 m thick).
+	# Floors and ceilings, room by room (floor top at y = 0, 0.3 m thick), each room tagged so
+	# the graphics module lights it with bounce light and a reflection probe.
 	for id: String in YardLayout.ROOMS:
 		var b: AABB = YardLayout.ROOMS[id].box
-		var floor_mat: Material = k.paint(Color(0.28, 0.3, 0.35), 0.0, 0.7) if id == "design" else deck
-		k.span(Vector3(b.position.x, -0.3, b.position.z), Vector3(b.end.x, 0.0, b.end.z), floor_mat)
+		var floor_mat: Material = k.paint(Color(0.34, 0.38, 0.44), 0.0, 0.5, "plastic_textured") if id == "design" else deck
+		k.slab(Vector3(b.position.x, -0.3, b.position.z), Vector3(b.end.x, 0.0, b.end.z), floor_mat)
 		k.span(Vector3(b.position.x - 0.1, b.end.y, b.position.z - 0.1), Vector3(b.end.x + 0.1, b.end.y + 0.3, b.end.z + 0.1), hull)
+		k.slab(Vector3(b.position.x, b.end.y - 0.02, b.position.z), Vector3(b.end.x, b.end.y, b.end.z), ceiling, 6.0, false)
+		var room := Node3D.new()
+		room.name = "Room_%s" % id
+		room.add_to_group("gfx_room")
+		room.set_meta("gfx_box", AABB(Vector3(b.position.x, 0.0, b.position.z), Vector3(b.size.x, b.end.y, b.size.z)))
+		add_child(room)
+		# The light the room's pale walls and ceiling throw back: a soft, broad fill with no
+		# highlight of its own (the graphics module's bounce light adds to it where it runs).
+		# Split into cells about 12 m across, so no floor tile carries more lights than the
+		# compatibility renderer draws on one mesh (8).
+		var nx := maxi(1, ceili(b.size.x / 12.0))
+		var nz := maxi(1, ceili(b.size.z / 12.0))
+		var cell := Vector2(b.size.x / nx, b.size.z / nz)
+		for ix in nx:
+			for iz in nz:
+				var bounce := OmniLight3D.new()
+				bounce.name = "Bounce_%d_%d" % [ix, iz]
+				bounce.position = Vector3(b.position.x + cell.x * (ix + 0.5), b.end.y * 0.55, b.position.z + cell.y * (iz + 0.5))
+				bounce.omni_range = cell.length() * 0.6 + b.end.y * 0.6
+				bounce.omni_attenuation = 0.35
+				bounce.light_energy = 0.32
+				bounce.light_specular = 0.0
+				bounce.light_color = Color(0.92, 0.95, 1.0)
+				room.add_child(bounce)
 
 	# Design room (x -12..12, z -22..-4, 6 m high): the window wall faces the dock.
 	k.wall(true, -22.0, -12.1, 12.1, 0.0, 6.0, wall, [[-10.0, 10.0, 5.2, 0.9]], 0.2, pane)
@@ -302,6 +329,19 @@ func _build_station() -> void:
 		k.ceiling_lamp(Vector3(x, 3.2, -2.0), Vector2(1.6, 0.4), 0.7, 6.0)
 	for z: float in [-3.85, -0.15]:
 		k.span(Vector3(-34.0, 0.0, z - 0.04), Vector3(46.0, 0.012, z + 0.04), orange, false)
+	# Along both walls: a dark skirting, a lower wall in darker satin with an orange line along
+	# its top, and a cove light strip under the ceiling (stage 1.5).
+	var lower: Material = k.paint(Color(0.46, 0.5, 0.56), 0.15, 0.55, "satin_paint")
+	var strip: Material = k.glow(Color(0.75, 0.9, 1.0), 1.6)
+	var north_gaps := [[5.0, 7.5, 2.6], [28.0, 32.0, 3.0]]
+	var south_gaps := [[-7.0, -5.0, 2.4], [9.0, 11.0, 2.4]]
+	for side: Array in [[-4.0, 0.11, north_gaps], [0.0, -0.11, south_gaps]]:
+		var at: float = side[0]
+		var out: float = side[1]
+		k.trim(true, at, -34.0, 46.0, 0.0, 0.12, out, dark, side[2])
+		k.trim(true, at, -34.0, 46.0, 0.12, 0.98, out * 0.95, lower, side[2])
+		k.trim(true, at, -34.0, 46.0, 1.1, 0.05, out * 1.1, orange, side[2])
+		k.trim(true, at, -34.0, 46.0, 3.02, 0.04, out * 1.1, strip, side[2])
 	_door_frame(k, true, -4.0, 5.0, 7.5, 2.6, orange)
 	_door_frame(k, true, -4.0, 28.0, 32.0, 3.0, orange)
 	_door_frame(k, true, 0.0, -7.0, -5.0, 2.4, orange)

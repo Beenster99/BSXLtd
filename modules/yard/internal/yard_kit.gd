@@ -11,6 +11,8 @@ const ORANGE := Color(1.0, 0.5, 0.12)
 const STEEL := Color(0.55, 0.57, 0.6)
 const LAMP := Color(1.0, 0.96, 0.88)
 
+const SURFACE := preload("res://shared/void_salvage/shaders/salvage_surface.gdshader")
+
 var root: Node3D
 var body: StaticBody3D
 var _paints: Dictionary = {}
@@ -23,14 +25,28 @@ func _init(parent: Node3D, body_name := "Body") -> void:
 	parent.add_child(body)
 
 
-## A plain paint (cached by its settings).
-func paint(c: Color, metal := 0.2, rough := 0.6) -> StandardMaterial3D:
-	var key := "%s/%s/%s" % [c.to_html(), metal, rough]
+## A surface in Void Salvage's finish (stage 1.5): the shared salvage surface shader with a
+## SurfaceFinish ("satin_paint", "brushed_steel", "tread_diamond_steel"...), in colour `c`. With
+## no finish given, a metal over 0.6 is brushed steel tinted `c` and anything else satin paint.
+## New and clean: no wear (the finish's wear chips paint to primer). Cached.
+func paint(c: Color, metal := 0.2, rough := 0.6, finish := "") -> ShaderMaterial:
+	if finish == "":
+		finish = "brushed_steel" if metal >= 0.6 else "satin_paint"
+	var key := "%s/%s/%s/%s" % [c.to_html(), metal, rough, finish]
 	if not _paints.has(key):
-		var m := StandardMaterial3D.new()
-		m.albedo_color = c
-		m.metallic = metal
-		m.roughness = rough
+		var m := ShaderMaterial.new()
+		m.shader = SURFACE
+		# The albedo uniform is a source_color: Godot takes it as sRGB, like a StandardMaterial3D.
+		m.set_shader_parameter("albedo", Color(c.r, c.g, c.b))
+		m.set_shader_parameter("metallic", metal)
+		m.set_shader_parameter("roughness", rough)
+		m.set_shader_parameter("survey_skip", true)
+		SurfaceFinish.apply(m)
+		# Drawn in our colour (the albedo), never the finish's own swatch: the finish gives the
+		# surface its grain, sheen and roughness. A finish colour is linearised by hand, which
+		# the compatibility renderer converts once more (orange came out red), so none is used.
+		SurfaceFinish.set_finish(m, finish, Color(c.r, c.g, c.b, 1.0))
+		m.set_shader_parameter("material_blend", 0.0)
 		_paints[key] = m
 	return _paints[key]
 
@@ -82,6 +98,21 @@ func box(size: Vector3, centre: Vector3, mat: Material, solid := true, parent: N
 	return mi
 
 
+## A solid slab from corner `a` to corner `b` drawn as tiles at most `tile` m across (a long
+## floor drawn whole takes only the first eight lamps over it on the compatibility renderer).
+func slab(a: Vector3, b: Vector3, mat: Material, tile := 6.0, solid := true) -> void:
+	var lo := Vector3(minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z))
+	var hi := Vector3(maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z))
+	if solid:
+		span(lo, hi, mat).visible = false
+	var nx := maxi(1, ceili((hi.x - lo.x) / tile))
+	var nz := maxi(1, ceili((hi.z - lo.z) / tile))
+	var step := Vector3((hi.x - lo.x) / nx, hi.y - lo.y, (hi.z - lo.z) / nz)
+	for i in nx:
+		for j in nz:
+			box(step, lo + Vector3((i + 0.5) * step.x, step.y * 0.5, (j + 0.5) * step.z), mat, false)
+
+
 ## A box from corner `a` to corner `b` (station space).
 func span(a: Vector3, b: Vector3, mat: Material, solid := true) -> MeshInstance3D:
 	var lo := Vector3(minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z))
@@ -121,22 +152,57 @@ func _wall_piece(along_x: bool, at: float, a: float, b: float, y0: float, y1: fl
 	if b - a < 0.001 or y1 - y0 < 0.001:
 		return
 	if along_x:
-		span(Vector3(a, y0, at - thick * 0.5), Vector3(b, y1, at + thick * 0.5), mat)
+		slab(Vector3(a, y0, at - thick * 0.5), Vector3(b, y1, at + thick * 0.5), mat)
 	else:
-		span(Vector3(at - thick * 0.5, y0, a), Vector3(at + thick * 0.5, y1, b), mat)
+		slab(Vector3(at - thick * 0.5, y0, a), Vector3(at + thick * 0.5, y1, b), mat)
 
 
-## A room-light: an emissive ceiling panel and an omni light under it.
-func ceiling_lamp(at: Vector3, panel: Vector2, energy := 1.2, light_range := 9.0, shadow := false) -> OmniLight3D:
-	box(Vector3(panel.x, 0.05, panel.y), at + Vector3(0, -0.03, 0), glow(LAMP, 2.5), false)
-	var l := OmniLight3D.new()
-	l.position = at + Vector3(0, -0.5, 0)
-	l.light_color = Color(1.0, 0.97, 0.92)
-	l.light_energy = energy
-	l.omni_range = light_range
-	l.shadow_enabled = shadow
-	root.add_child(l)
-	return l
+## A room-light (stage 1.5): a lit panel in a dark steel bezel, a spot under it throwing a
+## soft pool down the room and a faint omni round it for the ceiling and the walls' tops.
+## Returns the spot (its energy is the lamp's).
+func ceiling_lamp(at: Vector3, panel: Vector2, energy := 1.2, light_range := 9.0, shadow := false) -> SpotLight3D:
+	box(Vector3(panel.x + 0.12, 0.06, panel.y + 0.12), at + Vector3(0, -0.04, 0), paint(DARK, 0.7, 0.45, "gunmetal"), false)
+	box(Vector3(panel.x, 0.02, panel.y), at + Vector3(0, -0.075, 0), glow(LAMP, 3.0), false)
+	var spot := SpotLight3D.new()
+	spot.position = at + Vector3(0, -0.12, 0)
+	spot.rotation = Vector3(-PI * 0.5, 0, 0)
+	spot.light_color = Color(1.0, 0.97, 0.92)
+	spot.light_energy = energy * 2.2
+	spot.spot_range = light_range * 1.2
+	spot.spot_angle = 68.0
+	spot.spot_angle_attenuation = 0.7
+	spot.shadow_enabled = shadow
+	# Our own pool: the graphics module's reflector profile (a projector) draws black on the
+	# compatibility renderer.
+	spot.set_meta("gfx_fixed", true)
+	root.add_child(spot)
+	return spot
+
+
+## A strip along a wall: along X (the wall at z = `at`) or Z (at x = `at`), from `from` to `to`
+## at height `y`, `height` tall, standing `out` off the wall's middle (signed: which face),
+## broken at the wall's `gaps` (as `wall` takes them) where they reach above it.
+func trim(along_x: bool, at: float, from: float, to: float, y: float, height: float, out: float,
+		mat: Material, gaps: Array = []) -> void:
+	var pos := from
+	var cuts: Array = gaps.duplicate()
+	cuts.sort_custom(func(p: Array, q: Array) -> bool: return p[0] < q[0])
+	for g: Array in cuts:
+		var sill: float = g[3] if g.size() > 3 else 0.0
+		if y + height <= sill or y >= float(g[2]):
+			continue
+		_trim_piece(along_x, at + out, pos, g[0], y, height, mat)
+		pos = g[1]
+	_trim_piece(along_x, at + out, pos, to, y, height, mat)
+
+
+func _trim_piece(along_x: bool, at: float, a: float, b: float, y: float, height: float, mat: Material) -> void:
+	if b - a < 0.01:
+		return
+	if along_x:
+		slab(Vector3(a, y, at - 0.01), Vector3(b, y + height, at + 0.01), mat, 6.0, false)
+	else:
+		slab(Vector3(at - 0.01, y, a), Vector3(at + 0.01, y + height, b), mat, 6.0, false)
 
 
 ## Flat lettering on a wall: `normal` is the way the text faces.
