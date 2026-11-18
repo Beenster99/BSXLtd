@@ -8,11 +8,12 @@ extends PanelContainer
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
 const DataChannel := preload("res://modules/design/internal/views/data_channel.gd")
+const Whiteboard := preload("res://modules/design/internal/views/whiteboard.gd")
 
 ## Every view a panel can show, in the order < and > step through. "plan:<deck>" for decks.
-const BASE_VIEWS: PackedStringArray = ["side", "end", "data", "modules"]
+const BASE_VIEWS: PackedStringArray = ["side", "end", "data", "modules", "whiteboard"]
 const VIEW_NAMES := {"side": "SIDE ELEVATION", "end": "END ELEVATION", "data": "PARTS, COST AND CHECKS",
-		"modules": "READY-MADE MODULES"}
+		"modules": "READY-MADE MODULES", "whiteboard": "WHITEBOARD"}
 ## Decks offered even before the design has them (so a panel can wait on deck 2).
 const MIN_DECKS := 2
 
@@ -79,7 +80,7 @@ func set_view(i: int, view: String) -> void:
 	_fill(i)
 
 
-## The control panel `i` shows now (a PlanView or a DataChannel).
+## The control panel `i` shows now (a PlanView, a DataChannel, a Whiteboard or the modules).
 func content(i: int) -> Control:
 	var slot := _slots[i]
 	return slot.get_child(1) as Control if slot.get_child_count() > 1 else null
@@ -114,6 +115,10 @@ func _fill(i: int) -> void:
 	var body: Control
 	if view == "modules":
 		body = _modules_list(font)
+	elif view == "whiteboard":
+		var wb := Whiteboard.new()
+		wb.setup(bus, font)
+		body = wb
 	elif view == "data":
 		var dc := DataChannel.new()
 		dc.setup(bus, false)

@@ -55,6 +55,8 @@ func run_tests() -> void:
 	board.call("step", 0, 1)
 	check(str(board.get("panels")[0].view) == "modules", "after the parts channel comes the modules list")
 	board.call("step", 0, 1)
+	check(str(board.get("panels")[0].view) == "whiteboard", "then the whiteboard")
+	board.call("step", 0, 1)
 	check(str(board.get("panels")[0].view) == "plan:0", "stepping on from the last view comes round to deck 1")
 	# Pick a module up on one wall panel, drop it on a wall plan.
 	bus.open_sample()

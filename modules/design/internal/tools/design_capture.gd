@@ -62,6 +62,23 @@ class Runner:
 			var img: Image = wall.viewport.get_texture().get_image()
 			img.save_png(out.path_join(id + ".png"))
 			print("DesignCapture: ", out.path_join(id + ".png"))
+		# The whiteboard on the back wall: a sketch over the deck plan.
+		var wall: Node = room.walls["wall_back_low_left"]
+		var wb: Node = wall.content.call("content", 0)
+		wb.call("toggle_plan")
+		var sketch := [["box", "ff9a4d", 7.0, [[520, 300], [760, 520]]],
+				["pen", "f2f2ee", 3.0, [[770, 410], [830, 380], [900, 360], [960, 350]]],
+				["line", "f2f2ee", 3.0, [[960, 350], [935, 335]]], ["line", "f2f2ee", 3.0, [[960, 350], [938, 368]]],
+				["marker", "e8c25a", 15.0, [[380, 640], [600, 650], [820, 640]]],
+				["pen", "6fc8e8", 3.0, [[1000, 300], [1040, 330], [1010, 380], [1060, 420], [1030, 470]]]]
+		var lay: String = room.bus.library.current.peek_id("l")
+		room.bus.editor.do({"op": "add_layer", "layer": {"id": lay, "name": "Bigger hold?"}})
+		for k in sketch:
+			room.bus.editor.do({"op": "add_stroke", "stroke": {"layer": lay, "tool": k[0], "colour": k[1], "width": k[2], "points": k[3]}})
+		(wall.viewport as SubViewport).render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		await _frames(10)
+		(wall.viewport.get_texture().get_image() as Image).save_png(out.path_join("whiteboard.png"))
+		print("DesignCapture: ", out.path_join("whiteboard.png"))
 		# Walk-inside: in the corridor looking to the bow, then in engineering, then outside.
 		room.console._set_view("plan")
 		room.furnishing.open_walk()
