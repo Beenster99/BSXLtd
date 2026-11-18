@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignRoomType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_room_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "lift"
+display_name = "Lift"
+short = "LFT"
+colour = Color(0.6, 0.85, 0.95, 1)
+min_size = Vector2(2, 2)
+default_size = Vector2(2.5, 2.5)
+cost_per_m2 = 2400.0
+mass_per_m2 = 160.0
+hours_per_m2 = 3.0
+power_per_m2 = 0.8
+crew_per_m2 = 0.0
+cargo_share = 0.0
+fuel_share = 0.0
+needs_access = true
+required = false
+is_airlock = false
+links_decks = true

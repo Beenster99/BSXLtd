@@ -24,6 +24,9 @@ const LINING := 0.025
 const FLOOR := 0.1
 ## A doorway: width and height, m.
 const DOOR_W := 1.2
+## How fast a lift platform rides, m/s, and how long you stand on it before it goes, s.
+const LIFT_SPEED := 1.6
+const LIFT_DWELL := 1.0
 const DOOR_H := 2.2
 ## Stairs: the flight's width at most, and the landing at its top, m.
 const RAMP_W := 1.2
@@ -45,6 +48,8 @@ var wall_pieces: Array[Dictionary] = []  # {deck, a, b, y0, y1, outer}
 var ramps: PackedStringArray = []
 ## Sliding doors: {id, centre (Vector3), left, right (Node3D), dir (Vector3), half (m), open (0..1)}.
 var doors: Array[Dictionary] = []
+## Each lift shaft: {id, body (the platform), rect, decks, rooms (deck -> room id), gates, at, target}.
+var lifts: Array[Dictionary] = []
 var lamps := 0
 var ribs := 0
 var _paints: Dictionary = {}
@@ -65,6 +70,7 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	wall_pieces.clear()
 	ramps.clear()
 	doors.clear()
+	lifts.clear()
 	_outline.clear()
 	lamps = 0
 	ribs = 0
@@ -73,7 +79,7 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	var stairs := stairwells(rec, catalog)
 	for r: Dictionary in rec.rooms.values():
 		_floor(r, stairs)
-		_ceiling(r, (ramp_plan(r).rect as Rect2) if stairs.has(str(r.id)) else Rect2())
+		_ceiling(r, shaft(r, rec.rooms[stairs[str(r.id)]]) if stairs.has(str(r.id)) else Rect2())
 	for deck in rec.decks():
 		if rec.hull_outline(deck).size() >= 3:
 			_open_deck(deck)
@@ -85,7 +91,10 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	for e in st.inner_edges:
 		_wall(e, false)
 	for low_id: String in stairs:
+		if str(rec.rooms[low_id].type) == "lift":
+			continue
 		_stairs(rec.rooms[low_id], rec.rooms[stairs[low_id]])
+	_lifts(stairs)
 	_components()
 	_services()
 	_draw_outline()
@@ -103,10 +112,18 @@ static func stairwells(d: DesignRecord, cat: DesignCatalog) -> Dictionary:
 		var rect := Rect2(r.x, r.z, r.w, r.d)
 		for u: Dictionary in d.rooms_on(int(r.deck) + 1):
 			var ut := cat.room(str(u.type))
-			if ut and ut.links_decks and Rect2(u.x, u.z, u.w, u.d).intersects(rect):
+			if ut and ut.links_decks and ut.id == rt.id and Rect2(u.x, u.z, u.w, u.d).intersects(rect):
 				out[str(r.id)] = str(u.id)
 				break
 	return out
+
+
+## The opening between a deck-linking room and the one over it: the stairs' flight, or a
+## lift's whole shaft.
+static func shaft(low: Dictionary, upper: Dictionary) -> Rect2:
+	if str(low.type) == "lift":
+		return Rect2(low.x, low.z, low.w, low.d).intersection(Rect2(upper.x, upper.z, upper.w, upper.d))
+	return ramp_plan(low).rect
 
 
 ## The flight in a stairs room: along its long side, against its start wall, climbing to a
@@ -146,7 +163,7 @@ func _floor(r: Dictionary, stairs: Dictionary) -> void:
 	var hole := Rect2()
 	for low_id: String in stairs:
 		if stairs[low_id] == str(r.id):
-			hole = (ramp_plan(rec.rooms[low_id]).rect as Rect2).intersection(rect)
+			hole = shaft(rec.rooms[low_id], r).intersection(rect)
 	var covered := DesignStructure.on_deck(rec, int(r.deck) - 1, rect.get_center())
 	var bed := paint(Color(0.2, 0.21, 0.23), "gunmetal")
 	var plate := paint(Color(0.46, 0.48, 0.5), "bare_steel")
@@ -553,11 +570,132 @@ func update_doors(near: Array[Vector3], delta: float) -> void:
 		for p in near:
 			if p.distance_to(d.centre) < 2.4:
 				want = 1.0
+		# A lift's doors stay shut on every deck but the one it stands at.
+		if d.has("lift") and (int(d.lift.at) != int(d.deck) or int(d.lift.at) != int(d.lift.target)):
+			want = 0.0
 		d.open = move_toward(float(d.open), want, delta * 2.5)
 		var s := smoothstep(0.0, 1.0, float(d.open))
 		var half: float = d.half
 		(d.left as Node3D).position.x = -half * 0.5 - s * half * 0.95
 		(d.right as Node3D).position.x = half * 0.5 + s * half * 0.95
+
+
+# Lifts
+
+## Each lift shaft: a platform that rides between the decks its lift rooms stack over, a gate
+## across the shaft on every deck it isn't at, and the shaft's doors only open where it is.
+func _lifts(stairs: Dictionary) -> void:
+	var h := rec.deck_height
+	for low_id: String in stairs:
+		var low: Dictionary = rec.rooms[low_id]
+		if str(low.type) != "lift" or stairs.values().has(low_id):
+			continue  # only from the bottom of each stack
+		var stack: Array = [low]
+		var next := low_id
+		while stairs.has(next):
+			next = stairs[next]
+			stack.append(rec.rooms[next])
+		var rect := Rect2(low.x, low.z, low.w, low.d)
+		for r in stack:
+			rect = rect.intersection(Rect2(r.x, r.z, r.w, r.d))
+		var decks: Array[int] = []
+		var rooms := {}
+		for r in stack:
+			decks.append(int(r.deck))
+			rooms[int(r.deck)] = str(r.id)
+		var plat := AnimatableBody3D.new()
+		plat.name = "Lift_" + low_id
+		plat.collision_layer = LAYER
+		plat.collision_mask = 0
+		plat.sync_to_physics = false
+		plat.set_meta("walk", {"kind": "floor", "room": low_id, "deck": decks[0]})
+		var size := Vector3(rect.size.x - 0.08, FLOOR, rect.size.y - 0.08)
+		_box_in(plat, size, paint(Color(0.46, 0.48, 0.5), "bare_steel"))
+		(plat.get_child(0) as Node3D).position.y = -FLOOR * 0.5
+		_shape_in(plat, size, Vector3(0, -FLOOR * 0.5, 0))
+		var edge := MeshInstance3D.new()
+		edge.mesh = _box_mesh(Vector3(size.x, 0.012, size.z))
+		edge.material_override = paint(Color(0.9, 0.7, 0.1), "hazard_stripes")
+		edge.position.y = 0.006
+		edge.scale = Vector3(1, 1, 1)
+		plat.add_child(edge)
+		var inner := MeshInstance3D.new()
+		inner.mesh = _box_mesh(Vector3(size.x - 0.3, 0.014, size.z - 0.3))
+		inner.material_override = paint(Color(0.46, 0.48, 0.5), "bare_steel")
+		inner.position.y = 0.007
+		plat.add_child(inner)
+		plat.position = Vector3(rect.get_center().x, decks[0] * h, rect.get_center().y)
+		root.add_child(plat, true)
+		_outline_box(Transform3D(Basis.IDENTITY, plat.position + Vector3(0, 0.03, 0)), Vector3(size.x, 0.06, size.z))
+		var gates := {}
+		for k in decks:
+			var gate := _body({"kind": "lift_gate", "room": rooms[k], "deck": k})
+			gate.name = "LiftGate_%s_%d" % [low_id, k]
+			gate.position = Vector3(rect.get_center().x, k * h + 1.2, rect.get_center().y)
+			_shape_in(gate, Vector3(rect.size.x - 0.1, 2.2, rect.size.y - 0.1), Vector3.ZERO)
+			gates[k] = gate
+		var lift := {"id": low_id, "body": plat, "rect": rect, "decks": decks, "rooms": rooms, "gates": gates,
+				"at": decks[0], "target": decks[0], "dwell": 0.0}
+		lifts.append(lift)
+		_set_gates(lift)
+	# The shaft's doors belong to their lift.
+	for d in doors:
+		var door: Dictionary = rec.doors.get(str(d.id), {})
+		for lift in lifts:
+			for k: int in lift.rooms:
+				if str(door.get("a", "")) == lift.rooms[k] or str(door.get("b", "")) == lift.rooms[k]:
+					d["lift"] = lift
+					d["deck"] = k
+
+
+func _set_gates(lift: Dictionary) -> void:
+	var moving: bool = int(lift.at) != int(lift.target)
+	for k: int in lift.gates:
+		var off := moving or k == int(lift.at)
+		for c in (lift.gates[k] as Node).get_children():
+			(c as CollisionShape3D).disabled = off
+
+
+## Rides each lift: someone standing on it for a moment sends it to the other end of its shaft;
+## someone by its door on another deck calls it. `near`: the walkers' positions (capsule middles).
+func update_lifts(near: Array[Vector3], delta: float) -> void:
+	var h := rec.deck_height if rec else 3.0
+	for lift in lifts:
+		var plat: AnimatableBody3D = lift.body
+		if not is_instance_valid(plat):
+			continue
+		var rect: Rect2 = lift.rect
+		var decks: Array = lift.decks
+		if int(lift.at) != int(lift.target):
+			var y := move_toward(plat.position.y, int(lift.target) * h, LIFT_SPEED * delta)
+			plat.position.y = y
+			if is_equal_approx(y, int(lift.target) * h):
+				lift.at = lift.target
+				lift.hold = true  # you step off before it goes again
+				_set_gates(lift)
+			continue
+		var riding := false
+		var called := -1
+		for p in near:
+			var feet := p.y - 0.9
+			var on := rect.has_point(Vector2(p.x, p.z))
+			if on and absf(feet - plat.position.y) < 0.4:
+				riding = true
+			elif rect.grow(1.6).has_point(Vector2(p.x, p.z)):
+				for k: int in decks:
+					if k != int(lift.at) and absf(feet - k * h) < 0.6:
+						called = k
+		if not riding:
+			lift.hold = false
+		lift.dwell = float(lift.dwell) + delta if riding and not lift.get("hold", false) else 0.0
+		if riding and float(lift.dwell) > LIFT_DWELL:
+			var i := decks.find(int(lift.at))
+			lift.target = decks[i + 1] if i + 1 < decks.size() else decks[0]
+			lift.dwell = 0.0
+		elif called >= 0 and not riding:
+			lift.target = called
+		if int(lift.target) != int(lift.at):
+			_set_gates(lift)
 
 
 # Stairs
