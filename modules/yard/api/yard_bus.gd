@@ -1,7 +1,7 @@
 class_name YardBus
 extends Node
 ## Orbital yard module bus (Modules.bus("yard")). The place the game happens: a station with
-## gravity (design room, contracts desk, racking hall for stock, crew room, airlock) and,
+## gravity (design room, contracts desk, stores hall, crew room, airlock) and,
 ## outside its windows, the weightless dock with one build berth and two holding berths over
 ## a planet. Master plan Wave 1, stages 1.1 (station) and 1.2 (dock).
 ##
@@ -67,8 +67,9 @@ func register_module() -> void:
 	for i in names.size():
 		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, "Orbital yard")
 	Keys.register("yard.holster", "Put the tool away", KEY_H, "Orbital yard")
-	for view: String in ["station_outside", "corridor", "design_room", "design_vault", "design_mezzanine", "design_window", "design_lock", "racking_front",
-			"racking_aisle", "contracts", "crew", "airlock"]:
+	for view: String in ["station_outside", "corridor", "design_room", "design_vault", "design_mezzanine", "design_window", "design_lock", "stores_hall",
+			"stores_long", "stores_components", "stores_heavy", "stores_goods_in", "stores_yard_side",
+			"stores_deliveries", "stores_put_away", "stores_to_yard", "contracts", "crew", "airlock"]:
 		Shots.register("yard_" + view, SCENE, func(scene: Node) -> void: scene.call("show_view", view))
 	if Flags.is_on(DOCK):
 		for view: String in ["dock", "build_berth", "holding_berths", "station_from_berth"]:
@@ -82,6 +83,26 @@ func unregister_module() -> void:
 ## The open station scene, or null.
 func station() -> Node3D:
 	return _station if is_instance_valid(_station) else null
+
+
+## Buys parts for the stores: [{part, qty}...] (YardRackStore.PARTS ids). Haulers bring them
+## to goods in and bots put them away. Nothing happens while no station is open.
+func order_parts(items: Array) -> void:
+	var t := _traffic()
+	if t:
+		t.call("order", items)
+
+
+## Asks for parts at the yard side: bots take them off the racks and out to the build berth.
+func send_to_yard(items: Array) -> void:
+	var t := _traffic()
+	if t:
+		t.call("send_to_yard", items)
+
+
+func _traffic() -> Node:
+	var s := station()
+	return s.get("traffic") as Node if s else null
 
 
 ## Where the design room's contents go (see the header), or null while no station is open.

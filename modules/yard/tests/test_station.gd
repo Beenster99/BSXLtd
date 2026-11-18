@@ -2,7 +2,7 @@ extends ModuleTest
 ## The orbital yard's station and dock (Wave 1, stages 1.1 and 1.2): the rooms are there and
 ## walkable, the design room's shell is what the Design Room module builds on (its root, size,
 ## clear circle and stable wall spots), gravity holds inside and the dock is weightless, the
-## airlock never opens both doors, the racking cranes bring a load to a port and take it back,
+## airlock never opens both doors, the stores hall holds real parts on solid racks, open to the yard,
 ## and the dock has one build berth and two holding berths.
 ##   tools/run_tests.sh yard
 
@@ -283,29 +283,62 @@ func _design_lock(station: Node3D) -> void:
 
 func _racking(station: Node3D) -> void:
 	var hall := station.get("racking") as Node3D
-	check(hall != null, "the racking hall is built")
+	check(hall != null, "the stores hall is built")
 	var store := hall.get("store") as YardRackStore
 	var bus := Modules.bus("yard") as YardBus
 	check(bus.rack_store == store, "the bus holds the hall's store")
-	for size in 3:
-		check((hall.get("load_meshes")[size] as MultiMeshInstance3D).multimesh.instance_count == store.slot_count(size),
-				"a drawn place for every %s slot" % YardRackStore.SIZE_NAMES[size])
-	var size := YardRackStore.SMALL
-	check(hall.call("use_port", size) == "fetching", "F at the small port calls the crane")
-	check(hall.call("use_port", size) == "busy", "and it is busy until done")
-	var waited := 0.0
-	while hall.call("busy") and waited < 15.0:
-		await get_tree().create_timer(0.25).timeout
-		waited += 0.25
-	check(not hall.call("busy"), "the crane finished (%.1f s)" % waited)
-	var box := hall.get("port_boxes")[size] as Node3D
-	check(box != null and box.position.distance_to(YardRackStore.PORTS[size]) < 0.6, "a tote stands at the port")
-	check(hall.call("use_port", size) == "storing", "F again puts it away")
-	waited = 0.0
-	while hall.call("busy") and waited < 15.0:
-		await get_tree().create_timer(0.25).timeout
-		waited += 0.25
-	check(store.ports[size].is_empty() and hall.get("port_boxes")[size] == null, "the port is clear again")
+	# Real parts, not crates: every filled place drawn as its part, all of it inside its place.
+	var expected := 0
+	var fits := true
+	var worst := ""
+	for i in store.slots.size():
+		if store.slots[i].part == "":
+			continue
+		var xforms: Array[Transform3D] = hall.call("item_transforms", i)
+		expected += xforms.size()
+		var room: AABB = (hall.call("slot_box", i) as AABB).grow(0.06)
+		var look: Dictionary = (load("res://modules/yard/internal/yard_stock_look.gd")).look(store.slots[i].part)
+		for t: Transform3D in xforms:
+			var drawn: AABB = t * (look.mesh as Mesh).get_aabb()
+			if not room.encloses(drawn):
+				fits = false
+				worst = "%s in place %d: %s outside %s" % [store.slots[i].part, i, drawn, room]
+	check(expected > 400 and hall.call("drawn_count") == expected, "every part on the racks is drawn (%d)" % expected)
+	check(fits, "every part lies inside its place %s" % worst)
+	var kinds := {}
+	for part: String in (hall.get("part_meshes") as Dictionary):
+		kinds[YardRackStore.kind_of(part)] = true
+	check(kinds.size() == 4, "long stock, plates, components and heavy parts are all on show")
+	# No counters: nothing in the hall to press for a load.
+	var uses := hall.find_children("Use_*", "Area3D", true, false)
+	check(uses.is_empty(), "no ordering counters")
+	# Five times the old hall (32 x 26 m), and open to the yard along its whole dock side.
+	var box: AABB = YardLayout.ROOMS.racking.box
+	check(box.size.x * box.size.z >= 5.0 * 32.0 * 26.0, "the hall is five times the old one (%.0f m2)" % (box.size.x * box.size.z))
+	var space := station.get_world_3d().direct_space_state
+	var open := true
+	for x: float in [20.0, 40.0, 58.0, 76.0]:
+		for y: float in [1.0, 6.0, 12.0]:
+			var q := PhysicsRayQueryParameters3D.create(Vector3(x, y, -58.0), Vector3(x, y, -69.0))
+			if not space.intersect_ray(q).is_empty():
+				open = false
+	check(open, "the yard side is open from the floor to 12 m")
+	check(YardLayout.has_gravity(Vector3(40, 1, -60)) and not YardLayout.has_gravity(Vector3(40, 1, -66)), "gravity stops at the open face")
+	var q2 := PhysicsRayQueryParameters3D.create(Vector3(76, 3, -34), Vector3(110, 3, -34))
+	check(space.intersect_ray(q2).is_empty(), "goods in opens to the haulers' berths")
+	# The racks are solid: walking into one stops at its face.
+	var q3 := PhysicsRayQueryParameters3D.create(Vector3(33.5, 1.0, -30), Vector3(42.5, 1.0, -30))
+	var hit := space.intersect_ray(q3)
+	check(not hit.is_empty() and absf((hit.position as Vector3).x - 35.65) < 0.1, "a plate rack stops you at its face")
+	# Putting away and taking out redraws the racks.
+	var before := int(hall.call("drawn_count"))
+	var slot := store.store("reactor", 1)
+	check(slot >= 0, "a delivered reactor goes on a heavy cradle")
+	await frames(2)
+	check(int(hall.call("drawn_count")) == before + 1, "and is drawn there")
+	check(store.take(slot, 1) == 1, "a bot takes it out")
+	await frames(2)
+	check(int(hall.call("drawn_count")) == before, "and it is gone from the rack")
 
 
 func _dock(station: Node3D) -> void:
