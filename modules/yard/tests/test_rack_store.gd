@@ -56,6 +56,24 @@ func run_tests() -> void:
 	for p: Vector3 in YardRackStore.HAULER_BERTHS:
 		check(not YardLayout.HULL_BOX.has_point(p), "a hauler berths outside the station")
 
+	# Two storeys (0.4.1): the upper deck holds the same racks again, over the ground floor's.
+	var upper := 0
+	var on_deck := true
+	for i in store.slots.size():
+		var p := store.slot_position(i)
+		if YardRackStore.storey_of(p.y) == 1:
+			upper += 1
+			on_deck = on_deck and p.y >= YardRackStore.UPPER_FLOOR_Y and p.x < YardRackStore.UPPER_EDGE_X
+	check(upper * 2 == store.slots.size(), "half the places are on the upper deck: capacity doubled (%d of %d)" % [upper, store.slots.size()])
+	check(on_deck, "every upper place stands on the deck, west of the well")
+	var filling := YardRackStore.new()
+	var storeys := {}
+	for n in 12:
+		var at := filling.reserve("box_beam_6", 6)
+		if at >= 0:
+			storeys[YardRackStore.storey_of(filling.slot_position(at).y)] = true
+	check(storeys.size() == 2, "deliveries are put away on both storeys")
+
 	# Deliveries are put away; bots take parts out.
 	var empty := YardRackStore.new()
 	var slot := empty.store("hull_plate", 6)

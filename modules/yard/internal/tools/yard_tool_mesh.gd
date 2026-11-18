@@ -24,6 +24,11 @@ const STOCK := {
 	"trim": [Role.TRIM, Color.WHITE, 0.3, 0.4],
 	"cyan": [Role.LIGHT, Color(0.35, 0.9, 1.0), 0.0, 0.3],
 	"glass": [Role.FIXED, Color(0.02, 0.03, 0.04), 0.1, 0.08],
+	# The livery's own paint and lamps (the bots' and ships' accent colour).
+	"accent": [Role.ACCENT_PAINT, Color.WHITE, 0.25, 0.4],
+	"accent_light": [Role.ACCENT_LIGHT, Color.WHITE, 0.0, 0.3],
+	"lamp": [Role.LIGHT, Color(1.0, 0.95, 0.85), 0.0, 0.3],
+	"red_lamp": [Role.LIGHT, Color(1.0, 0.12, 0.08), 0.0, 0.3],
 }
 
 var _groups: Dictionary = {}

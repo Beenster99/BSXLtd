@@ -332,6 +332,26 @@ func _racking(station: Node3D) -> void:
 	check(YardLayout.has_gravity(Vector3(40, 1, -60)) and not YardLayout.has_gravity(Vector3(40, 1, -66)), "gravity stops at the open face")
 	var q2 := PhysicsRayQueryParameters3D.create(Vector3(76, 3, -34), Vector3(110, 3, -34))
 	check(space.intersect_ray(q2).is_empty(), "goods in opens to the haulers' berths")
+	# Two storeys (0.4.1): a deck you stand on over the racks, open to the yard too, a well
+	# over goods in from floor to roof, and a stair up beside it.
+	var deck_y := YardRackStore.UPPER_FLOOR_Y
+	var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(33.5, deck_y + 3.0, -30), Vector3(33.5, deck_y - 3.0, -30)))
+	check(not down.is_empty() and absf((down.position as Vector3).y - deck_y) < 0.02, "the upper deck is a floor at %.0f m" % deck_y)
+	check(YardLayout.has_gravity(Vector3(33.5, deck_y + 1.0, -30)), "with the station's gravity on it")
+	var open_up := true
+	for x: float in [20.0, 40.0, 58.0]:
+		for y: float in [1.0, 6.0, 12.0]:
+			open_up = open_up and space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(x, deck_y + y, -58.0), Vector3(x, deck_y + y, -69.0))).is_empty()
+	check(open_up, "the upper storey is open to the yard as well")
+	var well := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(74, 30.0, -34), Vector3(74, 0.5, -34)))
+	check(well.is_empty(), "the well over goods in is open floor to roof")
+	var stair_x := YardRackStore.UPPER_EDGE_X + 0.12 + 0.8
+	var heights: Array[float] = []
+	for z: float in [-8.0, -20.0, -32.0]:
+		var h := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(stair_x, 20.0, z), Vector3(stair_x, -0.5, z)))
+		heights.append((h.position as Vector3).y if not h.is_empty() else -1.0)
+	check(heights[0] > 0.3 and heights[1] > heights[0] + 4.0 and heights[2] > heights[1] + 4.0 and heights[2] < deck_y,
+			"a stair climbs to the deck beside the well %s" % str(heights))
 	# The racks are solid: walking into one stops at its face.
 	var q3 := PhysicsRayQueryParameters3D.create(Vector3(33.5, 1.0, -30), Vector3(42.5, 1.0, -30))
 	var hit := space.intersect_ray(q3)

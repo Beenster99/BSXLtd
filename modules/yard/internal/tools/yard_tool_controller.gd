@@ -415,7 +415,15 @@ func _update_fastening(tool: YardFastener, hit: Dictionary, body: YardWorkpiece,
 		plan_body = null
 	var on_plan := trigger and not plan.is_empty()
 	if tool is YardWelder:
+		# Which seam the torch is on (the one being run, else the nearest), for its guides.
+		var aim_body: YardWorkpiece = plan_body if on_plan else body
+		var aim_plan: Dictionary = plan if on_plan else {}
+		if aim_plan.is_empty() and body and touching:
+			aim_plan = body.planned_near(hit.position, tool.plan_snap * 2.5, tool.fasten_kind)
 		_update_welding(tool as YardWelder, hit, on_plan, delta)
+		if not aim_plan.is_empty() and touching and is_instance_valid(aim_body):
+			var welder := tool as YardWelder
+			aim_body.show_aim(aim_plan, hit.position, welder.ideal_speed, welder.pace if on_plan else "")
 	else:
 		_update_riveting(tool as YardRiveter, on_plan, delta)
 

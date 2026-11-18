@@ -12,6 +12,10 @@ extends Node3D
 ## build berth. All presentation over a YardRackStore: the stores change as a load lands.
 
 const Look := preload("res://modules/yard/internal/yard_stock_look.gd")
+const StoresShellRef := preload("res://modules/yard/internal/stores_shell.gd")
+const BotLook := preload("res://modules/yard/internal/yard_bot_look.gd")
+const HaulerLook := preload("res://modules/yard/internal/yard_hauler_look.gd")
+const FreighterLook := preload("res://modules/yard/internal/yard_freighter_look.gd")
 
 signal delivered(part: String, qty: int)
 signal sent(part: String, qty: int)
@@ -26,6 +30,16 @@ signal sent(part: String, qty: int)
 @export var yard_bots := 4
 ## Loads one hauler carries at most.
 @export var hauler_loads := 6
+## Each hauler's own bots, in its freight line's livery, that help unload it (0.4.1).
+@export var hauler_crew := 2
+## The bulk freighter (0.4.1): a big order (this many loads waiting or more) brings her
+## instead of the haulers; she carries up to `ship_loads`, with her own crew of bots.
+@export var ship_threshold := 30
+@export var ship_loads := 36
+@export var ship_crew := 6
+@export var ship_speed := 18.0   # m/s
+## Where she berths, alongside goods in (station space: the middle of her hold floor).
+const SHIP_BERTH := Vector3(84.0 + 12.0 + 15.0, 0.0, -34.0)
 
 ## Bots cruise over the racks at this height (m), each a little apart.
 const CRUISE_Y := 13.0
@@ -53,6 +67,8 @@ var _berth_used := 0
 var _hauler_free: Array[bool] = []
 var _mats: Dictionary = {}
 var _next_id := 0
+var _next_brand := 0
+var _ship: Dictionary = {}
 
 
 func build(rack_store: YardRackStore) -> void:
@@ -118,7 +134,10 @@ func _process(delta: float) -> void:
 ## Moves everything on by `delta` seconds (tests call it directly).
 func step(delta: float) -> void:
 	_step_haulers(delta)
-	for b in bots:
+	for b in bots.duplicate():
+		if b.has("hauler") and bool(b.aboard) and b.hauler.state != "open":
+			BotLook.animate(b.node, delta, false)
+			continue
 		if (b.job as Array).is_empty():
 			_next_job(b)
 		_step_bot(b, delta)
@@ -127,6 +146,11 @@ func step(delta: float) -> void:
 # --- Haulers -------------------------------------------------------------------------------
 
 func _call_haulers() -> void:
+	if not _ship.is_empty():
+		return   # she has the berths
+	if backlog.size() >= ship_threshold and not _hauler_free.has(false):
+		_call_ship()
+		return
 	for i in _hauler_free.size():
 		if backlog.is_empty():
 			return
@@ -137,10 +161,14 @@ func _call_haulers() -> void:
 		while not backlog.is_empty() and cargo.size() < hauler_loads:
 			cargo.append(backlog.pop_front())
 		var berth: Vector3 = YardRackStore.HAULER_BERTHS[i]
-		var node := _make_hauler(i)
+		var brand: Dictionary = BotLook.BRANDS[_next_brand % BotLook.BRANDS.size()]
+		_next_brand += 1
+		var node := _make_hauler(i, brand)
 		node.position = berth + Vector3(hauler_approach + 30.0 * i, 6.0, 0)
 		add_child(node)
-		var h := {"node": node, "berth": i, "state": "in", "loads": [], "t": 0.0}
+		var h := {"node": node, "berth": i, "kind": "hauler", "state": "in", "loads": [], "t": 0.0, "brand": brand, "crew": []}
+		for k in hauler_crew:
+			_add_crew(h, brand, Vector3(3.0 + k * 2.6, 1.2, -1.9 + k * 3.8), k)
 		for k in cargo.size():
 			var l := _new_load(cargo[k].part, int(cargo[k].qty))
 			l.where = "hauler"
@@ -151,35 +179,151 @@ func _call_haulers() -> void:
 		haulers.append(h)
 
 
+## The bulk freighter comes in with the next `ship_loads` loads, her crew aboard.
+func _call_ship() -> void:
+	var brand: Dictionary = BotLook.BRANDS[_next_brand % BotLook.BRANDS.size()]
+	_next_brand += 1
+	var node := _make_freighter(brand)
+	node.position = SHIP_BERTH + Vector3(hauler_approach + 120.0, 0.0, 0.0)
+	add_child(node)
+	var h := {"node": node, "berth": -1, "kind": "ship", "state": "in", "loads": [], "t": 0.0, "brand": brand, "crew": []}
+	var k := 0
+	while not backlog.is_empty() and k < ship_loads:
+		var it: Dictionary = backlog.pop_front()
+		var l := _new_load(it.part, int(it.qty))
+		l.where = "hauler"
+		l.hold = k
+		node.add_child(l.node)
+		l.node.position = _ship_spot(k)
+		(h.loads as Array).append(l)
+		k += 1
+	for c in ship_crew:
+		var park := Vector3(-6.0 + float(c % 2) * 8.0, 11.0, -20.0 + float(c / 2) * 20.0)
+		_add_crew(h, brand, park, c)
+	haulers.append(h)
+	_ship = h
+
+
+## Where a load stands in her hold (her space): three rows across, twelve along.
+func _ship_spot(k: int) -> Vector3:
+	return Vector3(-9.0 + float(k % 3) * 6.0, 0.0, -26.0 + float(k / 3) * 4.7)
+
+
+## One of a delivery's own bots, parked aboard at `park` (its ship's space).
+func _add_crew(h: Dictionary, brand: Dictionary, park: Vector3, k: int) -> void:
+	var node: Node3D = h.node
+	var crew := BotLook.make(brand, "%s %d" % [String(brand.name).get_slice(" ", 0).left(3), k + 1])
+	crew.name = "CrewBot%d" % k
+	crew.position = park
+	node.add_child(crew)
+	var grip := YardFieldGrip.new()
+	grip.tethers = 3
+	grip.tether_width = 0.05
+	add_child(grip)
+	var b := {"node": crew, "grip": grip, "yard": false, "job": [], "carrying": {}, "home": park,
+			"index": (maxi(int(h.berth), 0) * 2 + k) % maxi(store_bots, 1), "hauler": h, "park": park, "aboard": true}
+	(h.crew as Array).append(b)
+	bots.append(b)
+
+
 func _step_haulers(delta: float) -> void:
 	for h in haulers.duplicate():
 		var node: Node3D = h.node
-		var berth: Vector3 = YardRackStore.HAULER_BERTHS[int(h.berth)]
+		var ship: bool = h.kind == "ship"
+		var berth: Vector3 = SHIP_BERTH if ship else YardRackStore.HAULER_BERTHS[int(h.berth)]
+		var top_speed := ship_speed if ship else hauler_speed
 		match h.state:
 			"in":
 				var d := node.position.distance_to(berth)
-				var speed := clampf(d * 0.6, 3.0, hauler_speed)
+				var speed := clampf(d * (0.35 if ship else 0.6), 2.0, top_speed)
 				node.position = node.position.move_toward(berth, speed * delta)
 				if node.position.distance_to(berth) < 0.02:
 					h.state = "open"
 			"open":
-				var ramp: Node3D = node.get_node("Ramp")
-				ramp.rotation.z = move_toward(ramp.rotation.z, 1.45, delta * 0.8)
+				var open := _open_by(h, delta, true)
 				var left := (h.loads as Array).filter(func(l: Dictionary) -> bool: return l.where == "hauler")
-				if left.is_empty() and ramp.rotation.z >= 1.44:
+				var away := (h.crew as Array).filter(func(b: Dictionary) -> bool: return not bool(b.aboard))
+				if left.is_empty() and away.is_empty() and open >= 0.99:
 					h.t += delta
 					if h.t > 1.5:
 						h.state = "out"
 			"out":
-				var ramp: Node3D = node.get_node("Ramp")
-				ramp.rotation.z = move_toward(ramp.rotation.z, 0.0, delta * 1.2)
-				if ramp.rotation.z < 0.01:
-					node.position.x += minf(hauler_speed, 4.0 + (node.position.x - berth.x) * 0.5) * delta
+				if _open_by(h, delta, false) <= 0.01:
+					node.position.x += minf(top_speed, 4.0 + (node.position.x - berth.x) * 0.5) * delta
 				if node.position.x > berth.x + hauler_approach:
+					for b: Dictionary in h.crew:
+						(b.grip as Node).queue_free()
+						bots.erase(b)
 					node.queue_free()
 					haulers.remove_at(haulers.find_custom(func(x: Dictionary) -> bool: return x.node == node))
-					_hauler_free[int(h.berth)] = true
+					if ship:
+						_ship = {}
+					else:
+						_hauler_free[int(h.berth)] = true
 					_call_haulers()
+
+
+## Opens (or closes) a delivery: a hauler's ramp lowers, the freighter's door slides up into
+## her hull. How far open it is now, 0..1.
+func _open_by(h: Dictionary, delta: float, opening: bool) -> float:
+	var node: Node3D = h.node
+	if h.kind == "ship":
+		var top: Node3D = node.get_node("DoorTop")
+		var bottom: Node3D = node.get_node("DoorBottom")
+		var travel := FreighterLook.DOOR.y * 0.5 + 0.6
+		top.position.y = move_toward(top.position.y, travel if opening else 0.0, delta * (1.2 if opening else 1.6))
+		bottom.position.y = -top.position.y
+		return top.position.y / travel
+	var ramp: Node3D = node.get_node("Ramp")
+	ramp.rotation.z = move_toward(ramp.rotation.z, 1.45 if opening else 0.0, delta * (0.8 if opening else 1.2))
+	return ramp.rotation.z / 1.45
+
+
+## The bulk freighter in a freight line's livery (YardFreighterLook): her door's leaves
+## "DoorTop" and "DoorBottom", her
+## hold lit, her line's name along her side over the door and on her bow.
+func _make_freighter(brand: Dictionary) -> Node3D:
+	var n := Node3D.new()
+	n.name = "Freighter"
+	var livery := BotLook.livery(brand)
+	var fm := FreighterLook.meshes()
+	var hull := MeshInstance3D.new()
+	hull.name = "Hull"
+	hull.mesh = fm.hull
+	hull.material_override = livery
+	n.add_child(hull)
+	for leaf: String in ["door_top", "door_bottom"]:
+		var door := Node3D.new()
+		door.name = "DoorTop" if leaf == "door_top" else "DoorBottom"
+		n.add_child(door)
+		var dm := MeshInstance3D.new()
+		dm.mesh = fm[leaf]
+		dm.material_override = livery
+		door.add_child(dm)
+	for lz: float in [-20.0, 0.0, 20.0]:
+		var light := OmniLight3D.new()
+		light.position = Vector3(-2.0, 11.0, lz)
+		light.omni_range = 22.0
+		light.light_energy = 1.4
+		light.light_color = Color(1.0, 0.94, 0.84)
+		n.add_child(light)
+	var tag := Label3D.new()
+	tag.text = String(brand.name)
+	tag.font_size = 128
+	tag.pixel_size = 0.06
+	tag.modulate = brand.trim
+	tag.outline_size = 0
+	tag.position = Vector3(FreighterLook.DOOR_X - 0.6, 21.0, 0)
+	tag.rotation.y = -PI * 0.5
+	n.add_child(tag)
+	var bow := tag.duplicate() as Label3D
+	bow.pixel_size = 0.03
+	bow.position = Vector3(0, 13.0, -FreighterLook.HALF.z - 6.6)
+	bow.rotation.y = PI
+	bow.modulate = brand.trim
+	n.add_child(bow)
+	n.set_meta("brand", brand.id)
+	return n
 
 
 ## Where a load stands in a hauler's hold (the hauler's own space): two rows down the hold.
@@ -190,6 +334,9 @@ func _hold_spot(k: int) -> Vector3:
 # --- Jobs ----------------------------------------------------------------------------------
 
 func _next_job(b: Dictionary) -> void:
+	if b.has("hauler"):
+		_crew_job(b)
+		return
 	if b.yard:
 		# A load waiting at the yard side goes out to the build berth.
 		for l in loads:
@@ -230,23 +377,58 @@ func _next_job(b: Dictionary) -> void:
 			(_dispatch_spots[int(spot.bay)] as Array)[int(spot.i)] = l.id
 			b.job = _fetch_steps(l, store.pick_point(slot)) + _carry_steps(l, spot.at, func() -> void: _to_dispatch(l), false)
 			return
-		# A load in a hauler's hold comes out to goods in.
+		# A load in a delivery's hold comes out to goods in.
 		for h in haulers:
-			if h.state != "open":
-				continue
-			for l: Dictionary in h.loads:
-				if l.where == "hauler" and not l.claimed:
-					var spot := _free_spot([_bay_spots[int(h.berth)]], [YardRackStore.GOODS_IN_BAYS[int(h.berth)]])
-					if spot.is_empty():
-						return
-					l.claimed = true
-					(_bay_spots[int(h.berth)] as Array)[int(spot.i)] = l.id
-					var mouth := (h.node as Node3D).position + Vector3(-11.0, 1.0, (l.node as Node3D).position.z)
-					b.job = _fetch_steps(l, mouth) + _carry_steps(l, spot.at, func() -> void: _to_bay(l), false)
-					return
+			if h.state == "open" and _unload_job(b, h):
+				return
 	# Nothing to do: home.
 	if (b.node as Node3D).position.distance_to(b.home) > 0.1:
 		b.job = _fly_steps(b.node.position, b.home, b)
+
+
+## A hauler's own bot: out of the hold to carry its loads to goods in, then back aboard.
+func _crew_job(b: Dictionary) -> void:
+	var h: Dictionary = b.hauler
+	var hn: Node3D = h.node
+	var waiting := (h.loads as Array).filter(func(l: Dictionary) -> bool: return l.where == "hauler" and not l.claimed)
+	if bool(b.aboard):
+		if waiting.is_empty():
+			return
+		var node: Node3D = b.node
+		node.reparent(self)
+		b.aboard = false
+	if _unload_job(b, h):
+		return
+	if (h.loads as Array).any(func(l: Dictionary) -> bool: return l.where == "hauler"):
+		b.job = [{"fly": hn.position + Vector3(-10.0, 3.0 + float(b.index % 2) * 1.5, (b.park as Vector3).z)}]   # wait at the ramp
+		return
+	b.job = [{"fly": hn.position + (b.park as Vector3)}, {"board": h}]
+
+
+## Gives bot `b` the next load waiting in delivery `h`'s hold, out to a free spot at goods in
+## (a hauler's own bay; the freighter fills all four): true if it took one.
+func _unload_job(b: Dictionary, h: Dictionary) -> bool:
+	for l: Dictionary in h.loads:
+		if l.where != "hauler" or l.claimed:
+			continue
+		var bay := int(h.berth)
+		var spot: Dictionary
+		if h.kind == "ship":
+			spot = _free_spot(_bay_spots, YardRackStore.GOODS_IN_BAYS)
+			if not spot.is_empty():
+				bay = int(spot.bay)
+		else:
+			spot = _free_spot([_bay_spots[bay]], [YardRackStore.GOODS_IN_BAYS[bay]])
+		if spot.is_empty():
+			return false
+		l.claimed = true
+		(_bay_spots[bay] as Array)[int(spot.i)] = l.id
+		var ln: Node3D = l.node
+		# A hauler's loads are drawn out over its ramp; in her hold a bot goes in over each.
+		var mouth := ln.global_position if h.kind == "ship" else (h.node as Node3D).position + Vector3(-11.0, 1.0, ln.position.z)
+		b.job = _fetch_steps(l, mouth) + _carry_steps(l, spot.at, func() -> void: _to_bay(l), false)
+		return true
+	return false
 
 
 ## Steps that fly to `above` (a point the bot hovers at) and draw load `l` up under the bot.
@@ -325,6 +507,12 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 		if s.t >= 1.0:
 			l.where = "carried"
 			job.pop_front()
+	elif s.has("board"):
+		node.reparent((s.board as Dictionary).node)
+		node.position = b.park
+		node.rotation = Vector3.ZERO
+		b.aboard = true
+		job.pop_front()
 	elif s.has("set"):
 		var l: Dictionary = s.set
 		var ln: Node3D = l.node
@@ -341,14 +529,53 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 			job.pop_front()
 
 
-## Up to the bot's cruise height, across, and down: over the racks, never through them.
+## Up to the bot's cruise height, across, and down: over the racks, never through them. Between
+## storeys (0.4.1) it goes by the well over goods in: across at its own storey's cruise to the
+## well, up or down it to the other storey's, across and down.
 func _route(from: Vector3, to: Vector3, index: int) -> Array:
-	var cruise := CRUISE_Y + float(index % 5) * 0.4
+	var lane := float(index % 5) * 0.4
 	if index >= store_bots:   # yard bots fly under the open face's lintel, never over racks
-		cruise = YARD_CRUISE_Y + float(index % 4) * 0.6
-	if Vector2(from.x, from.z).distance_to(Vector2(to.x, to.z)) < 0.5:
-		return [to]
-	return [Vector3(from.x, maxf(cruise, from.y), from.z), Vector3(to.x, maxf(cruise, to.y), to.z), to]
+		var low := YARD_CRUISE_Y + float(index % 4) * 0.6
+		if Vector2(from.x, from.z).distance_to(Vector2(to.x, to.z)) < 0.5:
+			return [to]
+		return [Vector3(from.x, maxf(low, from.y), from.z), Vector3(to.x, maxf(low, to.y), to.z), to]
+	# Out to a hauler's hold, or in from it: through goods in's opening, under its head.
+	var door_x := StoresShellRef.X1
+	var door_y := StoresShellRef.GOODS_IN_H - 3.0
+	if to.x > door_x + 0.5 and from.x <= door_x + 0.5:
+		var z := clampf(to.z, StoresShellRef.GOODS_IN_Z.x + 2.0, StoresShellRef.GOODS_IN_Z.y - 2.0)
+		var inner := Vector3(door_x - 3.0, door_y - lane, z)
+		return _route(from, inner, index) + [Vector3(door_x + 3.0, door_y - lane, z), to]
+	if from.x > door_x + 0.5 and to.x <= door_x + 0.5:
+		var z := clampf(from.z, StoresShellRef.GOODS_IN_Z.x + 2.0, StoresShellRef.GOODS_IN_Z.y - 2.0)
+		var outer := Vector3(door_x + 3.0, door_y - lane, z)
+		var inner := Vector3(door_x - 3.0, door_y - lane, z)
+		return [outer, inner] + _route(inner, to, index)
+	var s_from := _storey(from)
+	var s_to := _storey(to)
+	# One end in the well (open floor to roof): fly at the other end's storey all the way.
+	if from.x >= YardRackStore.UPPER_EDGE_X:
+		s_from = s_to
+	elif to.x >= YardRackStore.UPPER_EDGE_X:
+		s_to = s_from
+	var c_from := YardRackStore.floor_y(s_from) + CRUISE_Y + lane
+	var c_to := YardRackStore.floor_y(s_to) + CRUISE_Y + lane
+	if s_from == s_to:
+		if Vector2(from.x, from.z).distance_to(Vector2(to.x, to.z)) < 0.5:
+			return [to]
+		return [Vector3(from.x, maxf(c_from, from.y), from.z), Vector3(to.x, maxf(c_to, to.y), to.z), to]
+	var wz := clampf(to.z if s_to == 1 else from.z, -60.0, -8.0)
+	var wx := YardRackStore.WELL_X + float(index % 3) * 2.5 - 2.5
+	return [Vector3(from.x, c_from, from.z), Vector3(wx, c_from, wz), Vector3(wx, c_to, wz),
+			Vector3(to.x, c_to, to.z), to]
+
+
+## Which storey a point is on for flying: over the upper deck's floor (west of the well) and
+## above it, the upper; anywhere else the ground floor (the well and goods in, outside).
+func _storey(p: Vector3) -> int:
+	if p.x < YardRackStore.UPPER_EDGE_X and p.y >= YardRackStore.UPPER_FLOOR_Y - 0.3:
+		return 1
+	return 0
 
 
 func _ease(t: float) -> float:
@@ -479,7 +706,7 @@ func _load_height(l: Dictionary) -> float:
 func _home(i: int, yard: bool) -> Vector3:
 	if yard:
 		return Vector3(20.0 + i % 4 * 7.0, 4.0, -70.0)
-	return Vector3(65.0 + float(i % 2) * 2.5, 2.4, -50.0 + float(i / 2) * 9.0)
+	return Vector3(71.0 + float(i % 2) * 6.0, 9.0, -52.0 + float(i / 2) * 9.0)
 
 
 func _mat(key: String, c: Color, glow := 0.0) -> StandardMaterial3D:
@@ -512,65 +739,30 @@ func _box(size: Vector3) -> BoxMesh:
 	return b
 
 
-## A stores bot: a white body on four ducted fans, an orange band (teal for the yard's), the
-## tractor's emitter underneath and a beacon on top.
+## A stores bot in BSX's livery (orange for the stores, teal for the yard's), the detailed
+## hover bot of YardBotLook.
 func _make_bot(i: int, yard: bool) -> Node3D:
-	var n := Node3D.new()
+	var n := BotLook.make(BotLook.BSX_YARD if yard else BotLook.BSX_STORES, ("Y%02d" if yard else "S%02d") % (i + 1))
 	n.name = ("YardBot%d" if yard else "StoreBot%d") % i
-	var white := _mat("bot_white", Color(0.9, 0.91, 0.92))
-	var band := _mat("bot_teal" if yard else "bot_orange", Color(0.2, 0.75, 0.7) if yard else Color(1.0, 0.5, 0.12))
-	var dark := _mat("bot_dark", Color(0.15, 0.16, 0.18))
-	_part(n, _box(Vector3(1.0, 0.32, 1.0)), Vector3.ZERO, white)
-	_part(n, _box(Vector3(1.04, 0.08, 1.04)), Vector3(0, -0.08, 0), band)
-	var ring := TorusMesh.new()
-	ring.inner_radius = 0.26
-	ring.outer_radius = 0.34
-	var fan := CylinderMesh.new()
-	fan.top_radius = 0.26
-	fan.bottom_radius = 0.26
-	fan.height = 0.02
-	for dx: float in [-0.68, 0.68]:
-		for dz: float in [-0.68, 0.68]:
-			_part(n, ring, Vector3(dx, 0.0, dz), white)
-			_part(n, fan, Vector3(dx, -0.02, dz), _mat("bot_fan", Color(0.35, 0.65, 1.0), 1.5)).name = "Fan"
-			_part(n, _box(Vector3(absf(dx) - 0.3, 0.06, 0.08)), Vector3(dx * 0.5, 0.0, dz), dark, Vector3(0, 0, 0)).rotation.y = 0.0
-	var emitter := SphereMesh.new()
-	emitter.radius = 0.16
-	emitter.height = 0.2
-	_part(n, emitter, Vector3(0, -0.2, 0), _mat("bot_emitter", Color(0.45, 0.85, 1.0), 2.5))
-	var beacon := SphereMesh.new()
-	beacon.radius = 0.06
-	beacon.height = 0.12
-	_part(n, beacon, Vector3(0, 0.2, 0), _mat("bot_beacon", Color(1.0, 0.6, 0.1), 4.0)).name = "Beacon"
 	return n
 
 
-func _spin(node: Node3D, _delta: float, working: bool) -> void:
-	var beacon := node.get_node_or_null("Beacon") as Node3D
-	if beacon:
-		beacon.visible = working and int(Time.get_ticks_msec() / 400) % 2 == 0
+func _spin(node: Node3D, delta: float, working: bool) -> void:
+	BotLook.animate(node, delta, working)
 
 
-## A hauler: a long boxy freighter, its cab to the east, engines behind, its hold open to the
-## west with a ramp that lowers towards goods in.
-func _make_hauler(i: int) -> Node3D:
+## A hauler in its freight line's livery (YardHaulerLook): the hold open to the west with a
+## ramp that lowers towards goods in, its cab and engines to the east, its name on both sides.
+func _make_hauler(i: int, brand: Dictionary) -> Node3D:
 	var n := Node3D.new()
 	n.name = "Hauler%d" % i
-	var hull := _mat("hauler_hull", Color(0.78, 0.76, 0.7))
-	var stripe := _mat("hauler_stripe", Color(0.85, 0.3, 0.15))
-	var dark := _mat("hauler_dark", Color(0.2, 0.21, 0.23))
-	var lamp := _mat("hauler_lamp", Color(1.0, 0.92, 0.75), 3.0)
-	# The hold: floor, roof and sides, open at the west end (-X), 16 m long.
-	_part(n, _box(Vector3(16.0, 0.4, 7.6)), Vector3(0, -3.0, 0), dark)
-	_part(n, _box(Vector3(16.0, 0.5, 8.2)), Vector3(0, 3.25, 0), hull)
-	for side: float in [-1.0, 1.0]:
-		_part(n, _box(Vector3(16.0, 6.6, 0.3)), Vector3(0, 0.0, side * 3.95), hull)
-		_part(n, _box(Vector3(16.04, 0.6, 0.32)), Vector3(0, 1.6, side * 3.96), stripe)
-		_part(n, _box(Vector3(10.0, 0.1, 0.1)), Vector3(-2.0, 2.9, side * 3.6), lamp)
-	# Cab and engines.
-	_part(n, _box(Vector3(5.0, 5.0, 6.0)), Vector3(10.5, 0.5, 0), hull)
-	_part(n, _box(Vector3(1.0, 1.4, 4.4)), Vector3(13.05, 1.6, 0), _mat("hauler_glass", Color(0.3, 0.55, 0.75), 0.6))
-	_part(n, _box(Vector3(0.3, 7.0, 8.6)), Vector3(8.05, 0.2, 0), dark)
+	var livery := BotLook.livery(brand)
+	var hm := HaulerLook.meshes()
+	var hull := MeshInstance3D.new()
+	hull.name = "Hull"
+	hull.mesh = hm.hull
+	hull.material_override = livery
+	n.add_child(hull)
 	var bell: Dictionary = Look.look("engine_bell")
 	for dz: float in [-2.2, 2.2]:
 		var e := _part(n, bell.mesh, Vector3(14.6, -1.0, dz), Look.material(), Vector3(0, 0, -PI * 0.5))
@@ -578,25 +770,29 @@ func _make_hauler(i: int) -> Node3D:
 			var g := _part(n, bell.glow, Vector3(14.6, -1.0, dz), Look.glow_material(bell.glow_colour), Vector3(0, 0, -PI * 0.5))
 			g.name = "EngineGlow"
 		e.name = "Engine"
-	# The ramp, hinged on the hold floor's west edge.
 	var ramp := Node3D.new()
 	ramp.name = "Ramp"
 	ramp.position = Vector3(-8.0, -3.0, 0)
 	n.add_child(ramp)
-	_part(ramp, _box(Vector3(0.25, 6.0, 7.4)), Vector3(0, 3.0, 0), hull)
-	_part(ramp, _box(Vector3(0.27, 0.4, 7.42)), Vector3(0, 5.6, 0), stripe)
+	var rm := MeshInstance3D.new()
+	rm.mesh = hm.ramp
+	rm.material_override = livery
+	ramp.add_child(rm)
 	var light := OmniLight3D.new()
 	light.position = Vector3(-2.0, 2.0, 0)
 	light.omni_range = 12.0
 	light.light_energy = 1.2
 	light.light_color = Color(1.0, 0.92, 0.8)
 	n.add_child(light)
-	var tag := Label3D.new()
-	tag.text = "HAULER %d" % (i + 1)
-	tag.font_size = 96
-	tag.pixel_size = 0.012
-	tag.modulate = Color(0.85, 0.3, 0.15)
-	tag.position = Vector3(0, 0.0, -4.12)
-	tag.rotation.y = PI
-	n.add_child(tag)
+	for side: float in [-1.0, 1.0]:
+		var tag := Label3D.new()
+		tag.text = String(brand.name)
+		tag.font_size = 96
+		tag.pixel_size = 0.011
+		tag.modulate = brand.accent
+		tag.outline_size = 0
+		tag.position = Vector3(-1.0, -0.4, side * 4.27)
+		tag.rotation.y = 0.0 if side > 0.0 else PI
+		n.add_child(tag)
+	n.set_meta("brand", brand.id)
 	return n
