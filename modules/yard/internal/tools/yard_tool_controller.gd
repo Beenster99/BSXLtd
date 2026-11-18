@@ -10,8 +10,9 @@ extends Node
 ## the joint loses health at the tool's rate for its kind and breaks free. The tool pushes
 ## you back as hard as it pushes the work.
 
-## The hotbar, left to right (keys 1 to 6): Void Salvage's four, then BSX's tractor and tablet.
-const ORDER: Array[String] = ["grinder", "cutter", "socket", "grabber", "tractor", "tablet"]
+## The hotbar, left to right (keys 1 to 8): Void Salvage's four, then BSX's tractor and tablet,
+## and the tools that put joints in, the riveter and the welder (0.4.0 playtest).
+const ORDER: Array[String] = ["grinder", "cutter", "socket", "grabber", "tractor", "tablet", "riveter", "welder"]
 ## Where the tools are held (the rig's head space): Void Salvage's ToolHold.
 const HOLD := "Transform3D(0.9594144, 0.07234603, 0.272562, 0.014606048, 0.9524863, -0.30423117, -0.28162146, 0.29586482, 0.91277236, 0.28, -0.37, -0.44)"
 
@@ -26,6 +27,8 @@ const HOLD := "Transform3D(0.9594144, 0.07234603, 0.272562, 0.014606048, 0.95248
 @export var max_push_spin: float = 0.3
 
 signal tool_changed(index: int, holstered: bool)
+## A fastening tool put a joint in.
+signal fastened(c: ConnectionData)
 
 var rig: YardRig
 var tools: Array[YardTool] = []
@@ -45,6 +48,15 @@ var lock: ConnectionData
 var lock_body: YardWorkpiece
 ## Joints this rig's tools have broken (tests read it).
 var broken: int = 0
+## Joints this rig's riveter and welder have put in (tests read it), and the plan being worked.
+var fastened_count: int = 0
+var plan: Dictionary = {}
+var plan_body: YardWorkpiece
+## How far through the job in hand is, 0..1 (a joint coming out, a fastening going in), or -1:
+## the bar by the crosshair shows it (0.4.0 playtest). `work_label` names it.
+var work_progress: float = -1.0
+var work_label: String = ""
+var work_stuck := false
 ## The grabber's hold.
 var grab_body: RigidBody3D
 var grab_point := Vector3.ZERO
@@ -60,6 +72,12 @@ var _arm_target := Transform3D()
 var _was_trigger := false
 var _hotbar: HBoxContainer
 var _field: MeshInstance3D
+var _grip_fx: YardFieldGrip
+var _bar: ProgressBar
+var _bar_label: Label
+var _bar_root: Control
+var _bar_fill: StyleBoxFlat
+var _bar_hold: float = 0.0
 
 
 func _ready() -> void:
@@ -69,7 +87,8 @@ func _ready() -> void:
 	hold.name = "ToolHold"
 	hold.transform = str_to_var(HOLD)
 	rig.head.add_child(hold)
-	for tool: YardTool in [YardGrinder.new(), YardCutter.new(), YardSocket.new(), YardGrabber.new(), YardTractor.new(), YardTablet.new()]:
+	for tool: YardTool in [YardGrinder.new(), YardCutter.new(), YardSocket.new(), YardGrabber.new(), YardTractor.new(), YardTablet.new(),
+			YardRiveter.new(), YardWelder.new()]:
 		tool.position = -tool.grip
 		tool.held_reach = (hold.transform * (tool.bite_point - tool.grip)).length()
 		tool.visible = false
@@ -100,7 +119,11 @@ func _ready() -> void:
 	_field.material_override = field_mat
 	_field.visible = false
 	add_child(_field)
+	_grip_fx = YardFieldGrip.new()
+	_grip_fx.name = "GripField"
+	add_child(_grip_fx)
 	_build_hotbar()
+	_build_progress()
 	holster(true)
 
 
@@ -178,7 +201,7 @@ func holster(on: bool) -> void:
 
 
 static func is_joint_tool(tool: YardTool) -> bool:
-	return not tool is YardGrabber and not tool is YardTablet
+	return not tool is YardGrabber and not tool is YardTablet and not tool is YardFastener
 
 
 func _show_in_hand() -> void:
@@ -194,6 +217,8 @@ func _physics_process(delta: float) -> void:
 	var aim := rig.head.global_transform
 	aim_origin = aim.origin
 	aim_dir = -aim.basis.z
+	work_progress = -1.0
+	work_stuck = false
 	if holstered:
 		trigger = false
 		targeted = null
@@ -233,7 +258,9 @@ func _physics_process(delta: float) -> void:
 	tool.work_factor = factor
 	tool.work_kind = targeted.kind if targeted else -1
 	tool.work_heat = targeted.heat_now() if targeted else 0.0
-	if tool is YardTablet:
+	if tool is YardFastener:
+		_update_fastening(tool as YardFastener, hit, body, delta)
+	elif tool is YardTablet:
 		_update_tablet(tool as YardTablet, hit)
 	elif tool is YardGrabber:
 		_update_grab(tool as YardGrabber, hit)
@@ -270,6 +297,10 @@ func _update_cutting(tool: YardTool, hit: Dictionary, body: YardWorkpiece, facto
 	var touching := not hit.is_empty()
 	var working := trigger and touching
 	tool.set_working(trigger, touching)
+	if trigger and targeted:
+		work_progress = 1.0 - targeted.health_fraction()
+		work_label = str(ConnectionData.KIND_NAMES[targeted.kind])
+		work_stuck = targeted_seized or factor <= 0.0
 	if tool.tool_voice and not tool is YardSocket:
 		var through := 1.0 - targeted.health_fraction() if targeted else 0.0
 		tool.tool_voice.feed(trigger, touching, targeted != null, through, factor, 1.0)
@@ -299,6 +330,8 @@ func _update_cutting(tool: YardTool, hit: Dictionary, body: YardWorkpiece, facto
 		return
 	if targeted_body.damage_connection(targeted, tool.damage_rate(targeted.kind) * factor * tool.rate_factor() * delta):
 		broken += 1
+		_bar_hold = 0.35
+		work_progress = 1.0
 		lock = null
 		lock_body = null
 
@@ -307,6 +340,7 @@ func _process(delta: float) -> void:
 	# A screen that has the pointer (the design room's console) covers the hotbar.
 	if _hotbar:
 		(_hotbar.get_parent().get_parent() as CanvasLayer).visible = not HudSlots.pointer_claimed()
+	_show_progress(delta)
 	if tools.is_empty():
 		return
 	var tool := active_tool()
@@ -336,6 +370,127 @@ func _process(delta: float) -> void:
 	if on:
 		tension = clampf(rest_bite(tool).distance_to(_work[0]) / maxf(tool.boom + arm_stretch, 0.01), 0.0, 1.0)
 	tool.draw_boom(tension)
+
+
+# --- Riveter and welder ----------------------------------------------------------------
+
+## A fastening tool: on a planned rivet or weld (the one under the aim, kept while the trigger
+## holds and it stays in reach), the trigger puts it in at the tool's rate; its head rides out to
+## the spot (along a weld's line as it goes). Pushes back as the other tools do.
+func _update_fastening(tool: YardFastener, hit: Dictionary, body: YardWorkpiece, delta: float) -> void:
+	_draw_beam(false)
+	var touching := not hit.is_empty()
+	if plan_body and (not is_instance_valid(plan_body) or not plan_body.planned.has(plan)):
+		plan = {}
+		plan_body = null
+	if not trigger:
+		plan = {}
+		plan_body = null
+	if plan.is_empty() and body and touching:
+		var near := body.planned_near(hit.position, tool.plan_snap, tool.fasten_kind)
+		if not near.is_empty():
+			if trigger:
+				plan = near
+				plan_body = body
+			tool.work_material = body.model.parts[int(near.a)].material if body.model.parts.has(int(near.a)) else "steel"
+	if not plan.is_empty() and rest_bite(tool).distance_to(plan_body.planned_position(plan)) > tool.boom + arm_stretch + 0.4:
+		plan = {}
+		plan_body = null
+	var setting := trigger and not plan.is_empty()
+	tool.set_working(trigger, touching or setting)
+	tool.fastening = setting
+	tool.progress = float(plan.get("done", 0.0))
+	tool.biting = setting
+	if tool.tool_voice:
+		tool.tool_voice.feed(trigger, touching or setting, setting, tool.progress, 1.0, 1.0)
+	if not setting:
+		_effects.update(false, Vector3.ZERO, Vector3.UP, tool, false)
+		_effects.fasten(tool, Vector3.ZERO, Vector3.UP, false, delta)
+		return
+	var at := plan_body.planned_position(plan)
+	var n := plan_body.planned_normal(plan)
+	_work = [at, n]
+	work_progress = tool.progress
+	work_label = "RIVET" if tool.fasten_kind == ConnectionData.Kind.RIVET else "WELD"
+	_effects.fasten(tool, at, n, true, delta)
+	rig.apply_central_force(-(at - aim_origin).normalized() * tool.push_force)
+	var factor := tool.hardness_factor(Materials.tier(tool.work_material)) if tool.work_material != "" else 1.0
+	if plan_body.work_planned(plan, tool.set_rate * maxf(factor, 0.25) * delta):
+		fastened_count += 1
+		var made: ConnectionData = plan_body.model.connections.back()
+		fastened.emit(made)
+		work_progress = 1.0
+		_bar_hold = 0.35
+		plan = {}
+		plan_body = null
+
+
+# --- The progress bar by the crosshair --------------------------------------------------
+
+func _build_progress() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "WorkProgress"
+	layer.layer = 5
+	add_child(layer)
+	_bar_root = Control.new()
+	_bar_root.set_anchors_preset(Control.PRESET_CENTER)
+	_bar_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_bar_root)
+	_bar = ProgressBar.new()
+	_bar.name = "Bar"
+	_bar.min_value = 0.0
+	_bar.max_value = 1.0
+	_bar.step = 0.0
+	_bar.show_percentage = false
+	_bar.position = Vector2(26, 18)
+	_bar.size = Vector2(132, 9)
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var back := StyleBoxFlat.new()
+	back.bg_color = Color(0.03, 0.05, 0.06, 0.75)
+	back.border_color = Color(0.45, 0.95, 1.0, 0.5)
+	back.set_border_width_all(1)
+	back.set_corner_radius_all(2)
+	_bar_fill = StyleBoxFlat.new()
+	_bar_fill.bg_color = Color(1.0, 0.62, 0.15)
+	_bar_fill.set_corner_radius_all(2)
+	_bar.add_theme_stylebox_override("background", back)
+	_bar.add_theme_stylebox_override("fill", _bar_fill)
+	_bar_root.add_child(_bar)
+	_bar_label = Label.new()
+	_bar_label.position = Vector2(26, 28)
+	_bar_label.add_theme_font_override("font", ShipKit.mono_font())
+	_bar_label.add_theme_font_size_override("font_size", 13)
+	_bar_label.add_theme_color_override("font_color", Color(0.75, 1.0, 1.0))
+	_bar_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_bar_label.add_theme_constant_override("outline_size", 4)
+	_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bar_root.add_child(_bar_label)
+	_bar_root.visible = false
+
+
+## Is the bar showing now, and at what (tests read them).
+func progress_shown() -> bool:
+	return _bar_root != null and _bar_root.visible
+
+
+func progress_value() -> float:
+	return _bar.value if _bar else 0.0
+
+
+func _show_progress(delta: float) -> void:
+	if _bar_root == null:
+		return
+	_bar_hold = maxf(_bar_hold - delta, 0.0)
+	var on := work_progress >= 0.0 and not HudSlots.pointer_claimed()
+	if on:
+		_bar.value = work_progress
+		_bar_fill.bg_color = Color(1.0, 0.25, 0.15) if work_stuck else Color(1.0, 0.62, 0.15)
+		_bar_label.text = "%s  %d%%%s" % [work_label, int(round(work_progress * 100.0)), "  STUCK" if work_stuck else ""]
+	elif _bar_hold > 0.0:
+		_bar.value = 1.0
+		_bar_fill.bg_color = Color(0.35, 1.0, 0.5)
+		_bar_label.text = "%s  DONE" % work_label
+	_bar_root.visible = on or _bar_hold > 0.0
 
 
 # --- Beam tablet -----------------------------------------------------------------------
@@ -373,6 +528,7 @@ func _update_grab(grabber: YardGrabber, hit: Dictionary) -> void:
 	if not holding:
 		_effects.grab(false, Vector3.ZERO, Vector3.ZERO)
 		_draw_beam(false)
+		_grip_fx.release()
 		return
 	var body := grab_body
 	var grip := body.global_transform * grab_point
@@ -382,7 +538,13 @@ func _update_grab(grabber: YardGrabber, hit: Dictionary) -> void:
 		release_grab()
 		_draw_beam(false)
 		return
-	_draw_beam(true, grip)
+	# Void Salvage's grip (VX21): a shimmering shell on the load and tethers from the lens or claw.
+	var tractor := grabber as YardTractor
+	var tip := tractor.global_transform * Vector3(0, 0, -0.26) if tractor else (grabber as Node3D).global_position + aim_dir * 0.15
+	_grip_fx.tether_width = 0.06 if tractor else 0.025
+	_grip_fx.tether_bow = 0.1 if tractor else 0.08
+	var from: Array[Vector3] = [tip]
+	_grip_fx.hold(body, from, grip, clampf((stretch.length() / grabber.break_distance - 0.6) / 0.4, 0.0, 1.0))
 	_effects.grab(true, grip, (grabber as Node3D).global_position + aim_dir * 0.25)
 	# A spring-damper between the claw and the grip, sized by the pair's reduced mass (on a
 	# deck your stance takes the reaction and only the load moves).
@@ -416,6 +578,13 @@ func _update_grab(grabber: YardGrabber, hit: Dictionary) -> void:
 func release_grab() -> void:
 	grab_body = null
 	_draw_beam(false)
+	if _grip_fx:
+		_grip_fx.release()
+
+
+## Is the grip's field drawn now (holding, or fading out)? Tests read it.
+func grip_showing() -> bool:
+	return _grip_fx != null and _grip_fx.showing()
 
 
 func _aim_frame() -> Basis:

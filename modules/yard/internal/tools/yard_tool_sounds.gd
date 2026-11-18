@@ -16,6 +16,7 @@ extends RefCounted
 ##   tool.throw          the thunk through your suit as you throw
 ##   tool.socket_groan   a seized bolt's creak under the impact gun (loop)
 ##   tool.spray          the spray can's hiss (loop)
+##   tool.riveter        the rivet gun's air hammer (loop)   tool.welder  the MIG arc's crackle (loop)
 ##
 ## Loops are `LOOP` seconds: every tone in them makes whole cycles over the loop, and the last
 ## tenth of a second is faded into the first (_to_loop), so they run seamlessly. Loops are
@@ -34,7 +35,7 @@ const SHOT_PEAK_DB := -3.0
 const EVENTS: Array[String] = ["tool.grinder_free", "tool.grinder_bite", "tool.grinder_skate", "tool.cutter",
 		"tool.cutter_light", "tool.plasma", "tool.plasma_through", "tool.grabber", "tool.grabber_grip",
 		"tool.battery", "tool.zap", "tool.stretch", "tool.throw", "tool.socket_groan", "tool.spray",
-		"socket.run", "socket.rattle", "socket.stop"]
+		"socket.run", "socket.rattle", "socket.stop", "tool.riveter", "tool.welder"]
 
 static var _made: Dictionary = {}
 
@@ -89,7 +90,51 @@ static func _make(event: String) -> AudioStreamWAV:
 			return _impact_stop()
 		"tool.spray":
 			return _spray()
+		"tool.riveter":
+			return _riveter()
+		"tool.welder":
+			return _welder()
 	return null
+
+
+## (BSX) The rivet gun: 14 hard knocks a second (whole cycles over the loop), each a crack of
+## noise with a steel ring, over the hiss of its exhaust air.
+static func _riveter() -> AudioStreamWAV:
+	var rng := _rng(21)
+	var n := _loop_samples()
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var hz := _hz(14.0)
+	var hiss := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var u := fmod(t * hz, 1.0) / hz
+		var white := rng.randf_range(-1.0, 1.0)
+		hiss = lerpf(hiss, white, 0.5)
+		var knock := white * exp(-160.0 * u) * 1.6 + sin(TAU * _hz(2300.0) * t) * exp(-45.0 * u) * 0.5 \
+				+ sin(TAU * _hz(180.0) * t) * exp(-30.0 * u) * 0.8
+		s[i] = knock + hiss * 0.12
+	return _as_loop(s)
+
+
+## (BSX) The MIG arc: a frying crackle (pops of noise, thick and uneven) on a low 100 Hz buzz.
+static func _welder() -> AudioStreamWAV:
+	var rng := _rng(22)
+	var n := _loop_samples()
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var pop := 0.0
+	var body := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var white := rng.randf_range(-1.0, 1.0)
+		if rng.randf() < 0.012:
+			pop = rng.randf_range(0.6, 1.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+		pop *= 0.93
+		body = lerpf(body, white, 0.35)
+		var buzz := (1.0 if fmod(_hz(100.0) * t, 1.0) < 0.5 else -1.0) * 0.08
+		s[i] = pop * white * 1.8 + body * 0.35 + buzz
+	return _as_loop(s)
 
 
 ## A tone's frequency moved to the nearest that makes whole cycles over a loop (Hz).

@@ -42,6 +42,10 @@ const KINDS := {
 			"db": -14.0, "bite_db": 0.0, "start_db": 0.0},
 	"socket": {"run": "", "bite": "", "skate": "", "start": "", "spin": false,
 			"db": 0.0, "bite_db": 0.0, "start_db": 0.0},
+	"riveter": {"run": "tool.riveter", "bite": "", "skate": "", "start": "", "spin": false,
+			"db": -8.0, "bite_db": 4.0, "start_db": 0.0},
+	"welder": {"run": "tool.welder", "bite": "", "skate": "", "start": "tool.zap", "spin": false,
+			"db": -9.0, "bite_db": 5.0, "start_db": -8.0},
 	"spray": {"run": "tool.spray", "bite": "", "skate": "", "start": "", "spin": false,
 			"db": -12.0, "bite_db": 1.0, "start_db": 0.0},
 }

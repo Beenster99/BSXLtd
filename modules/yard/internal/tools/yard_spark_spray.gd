@@ -33,7 +33,7 @@ extends Node3D
 enum Kind { STREAK, GLOB, CHIP }
 
 ## Most bits alive at once (all kinds); more are dropped.
-const MAX_BITS: int = 700
+const MAX_BITS: int = 1400
 ## Bounces a spark or chip may make (each needs a ray).
 const MAX_BOUNCES: int = 2
 

@@ -63,7 +63,7 @@ func register_module() -> void:
 	Keys.register("yard.dampeners", "Suit dampeners on / off", KEY_Z, "Orbital yard")
 	Keys.register("yard.lamp", "Helmet lamp", KEY_L, "Orbital yard")
 	Keys.register("yard.view", "First / third person", KEY_V, "Orbital yard")
-	var names := ["grinder", "cutter", "socket", "grabber", "tractor", "beam tablet"]
+	var names := ["grinder", "cutter", "socket", "grabber", "tractor", "beam tablet", "riveter", "welder"]
 	for i in names.size():
 		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, "Orbital yard")
 	Keys.register("yard.holster", "Put the tool away", KEY_H, "Orbital yard")

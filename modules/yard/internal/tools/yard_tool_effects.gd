@@ -27,13 +27,21 @@ extends Node3D
 ## Hot sparks a second off a grinder biting steel at full spark_amount (the tool's
 ## spark_amount, the material and the graphics preset scale it). They go into the spray's
 ## shower, worked out once and moved on the GPU, so this many costs little.
-@export var grind_rate: float = 2400.0
+@export var grind_rate: float = 4200.0
 ## Share of the grinder's sparks that leave right along the plate and skid down it.
 @export var grind_hug_share: float = 0.25
 ## Sparks a second off a grinder skating over plate.
 @export var skim_rate: float = 80.0
 ## Molten globs a second off the gas torch on steel.
-@export var slag_rate: float = 28.0
+@export var slag_rate: float = 75.0
+## Molten globs a second off a grinder biting steel (0.4.0 playtest: "LOTS of sparks and molten metal").
+@export var grind_glob_rate: float = 30.0
+## The welder (0.4.0 playtest): spatter sparks and molten droplets a second while it runs a bead.
+@export var weld_spatter_rate: float = 900.0
+@export var weld_glob_rate: float = 55.0
+## The riveter: sparks and scale flakes off each blow of its hammer.
+@export var rivet_blow_sparks: int = 40
+@export var rivet_blow_flakes: int = 3
 ## Hammer blows a second of the socket's impact gun.
 @export var hammer_hz: float = 18.0
 ## Seconds the gas torch takes to bring its melt pool up to yellow-white.
@@ -608,6 +616,12 @@ func _grind(g: YardGrinder, at: Vector3, n: Vector3, biting: bool, delta: float)
 				_spark_colour(p, g.spark_strength) if shimmer else hot, fork)
 	if not biting:
 		return
+	# Molten metal flung off the cut along the fan, glowing as it goes and sticking where it lands.
+	var glob_share := float(p.get("slag", 0.0)) * minf(float(p.get("sparks", 0.0)), 1.0)
+	for k in _due("grind_globs", grind_glob_rate * glob_share * scale, delta):
+		var d := (t + n * randf_range(0.05, 0.4) + axis * randf_range(-0.2, 0.2)).normalized()
+		spray.glob(from, d * randf_range(3.0, 7.0) * speed, randf_range(1.0, 2.2), p.get("slag_color", Color(1.0, 0.55, 0.15)),
+				randf_range(0.004, 0.01))
 	var chip_color: Color = p.get("chip_color", Color.GRAY)
 	for k in _due("swarf", float(p.get("chips", 0.0)) * scale, delta):
 		var d := (t + n * randf_range(0.1, 0.6) + _jitter(0.25)).normalized()
@@ -653,7 +667,7 @@ func _gas(c: YardCutter, at: Vector3, n: Vector3, biting: bool, delta: float) ->
 		spray.glob(from, d * randf_range(1.2, 4.5), randf_range(1.2, 2.4), p.get("slag_color", Color(1.0, 0.55, 0.15)),
 				randf_range(0.006, 0.016))
 	var sparks := float(p.get("sparks", 0.0)) * (0.3 if heating else 1.0)
-	for k in _due("gas_sparks", 45.0 * sparks * scale, delta):
+	for k in _due("gas_sparks", 130.0 * sparks * scale, delta):
 		var d := (away * randf_range(0.3, 1.0) + _off(n, 0.6)).normalized()
 		spray.shower(from, d * randf_range(3.0, 8.0) * float(p.get("speed", 1.0)), randf_range(0.2, 0.5) * float(p.get("life", 0.75)) + 0.1,
 				_spark_colour(p, c.spark_strength))
@@ -680,6 +694,60 @@ func _spatter(tool: YardTool, at: Vector3, n: Vector3, delta: float) -> void:
 	for k in _due("spatter", 25.0 * maxf(float(p.get("sparks", 0.0)), 0.2) * YardFx.effect_scale(), delta):
 		spray.shower(at + n * 0.01, _off(n, 0.7) * randf_range(2.0, 5.0), randf_range(0.15, 0.35),
 				_spark_colour(p, 0.8).lerp(plasma_blue.lightened(0.3), 0.6), -1.0, 1.0, 0.0, true)
+
+
+# --- Riveter and welder (0.4.0 playtest) --------------------------------------------------
+
+## A fastening tool on planned work at `at` (facing `n`): `setting` while it puts one in.
+## The welder: an arc flickering blue-white, a fountain of spatter sparks everywhere and molten
+## droplets spitting off and sticking. The riveter: every hammer blow a burst
+## of sparks off the hot rivet and a few flakes of scale.
+func fasten(tool: YardFastener, at: Vector3, n: Vector3, setting: bool, delta: float) -> void:
+	if not setting:
+		_light.light_energy = move_toward(_light.light_energy, 0.0, 0.5)
+		return
+	global_transform = Transform3D(_basis_up(n), at + n * 0.02)
+	_light.position = Vector3(0.0, 0.45, 0.0)   # out in the spray: lights the room, not a hot disc on the plate
+	var scale := YardFx.effect_scale()
+	var from := at + n * 0.01
+	var p := profile(tool.work_material if tool.work_material != "" else "steel")
+	var hot := _spark_colour(p, 1.0)
+	if _light.light_color != tool.light_color:
+		_light.light_color = tool.light_color
+	_light.omni_range = bite_light_range
+	_glow_step = Engine.get_physics_frames()
+	_glow_goal = randf_range(0.6, 1.0)
+	work_glow.light_color = tool.light_color
+	work_glow.position = Vector3(0.0, work_glow_lift, 0.0)
+	work_glow.omni_range = work_glow_range
+	if tool is YardWelder:
+		_light.light_energy = randf_range(0.15, 0.3) * tool.light_strength
+		var white := Color(1.0, 0.95, 0.8)
+		for k in _due("weld_spatter", weld_spatter_rate * scale, delta):
+			var d := (_off(n, 0.95) + _jitter(0.3)).normalized()
+			var c := white.lerp(hot, randf()) if randf() < 0.7 else hot
+			spray.shower(from, d * randf_range(2.0, 9.0), randf_range(0.25, 0.9), c,
+					randf_range(0.1, 0.3) if randf() < 0.12 else -1.0)
+		for k in _due("weld_globs", weld_glob_rate * scale, delta):
+			var d := (_off(n, 0.8) + _jitter(0.4)).normalized()
+			spray.glob(from, d * randf_range(0.8, 3.5), randf_range(1.5, 3.0), Color(1.0, 0.7, 0.3), randf_range(0.004, 0.012))
+		return
+	# The riveter: blow by blow.
+	_light.light_energy = move_toward(_light.light_energy, 0.25 * tool.light_strength, 0.2)
+	var hz := (tool as YardRiveter).blows_hz
+	_blow -= delta
+	while _blow <= 0.0:
+		_blow += 1.0 / maxf(hz, 1.0)
+		_light.light_energy = randf_range(0.3, 0.6) * tool.light_strength
+		for k in int(rivet_blow_sparks * scale):
+			var d := (_along(n).rotated(n, randf() * TAU) * randf_range(0.6, 1.0) + n * randf_range(0.05, 0.6)).normalized()
+			spray.shower(from, d * randf_range(2.0, 7.0), randf_range(0.15, 0.5), hot)
+		for k in int(rivet_blow_flakes * scale):
+			var d := (_off(n, 0.6) + _jitter(0.3)).normalized()
+			spray.chip(from, d * randf_range(0.6, 2.0), randf_range(1.5, 3.0), RUST[randi() % RUST.size()] * 0.6,
+					randf_range(0.002, 0.005), 30.0)
+		if randf() < 0.35:
+			spray.glob(from, _off(n, 0.7) * randf_range(0.8, 2.5), randf_range(1.0, 2.0), Color(1.0, 0.6, 0.2), randf_range(0.003, 0.007))
 
 
 # --- YardSocket -----------------------------------------------------------------------------

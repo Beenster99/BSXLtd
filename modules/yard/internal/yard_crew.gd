@@ -68,7 +68,8 @@ class Crewmate:
 		hold.name = "ToolHold"
 		hold.transform = str_to_var(YardToolController.HOLD)
 		head.add_child(hold)
-		for tool: YardTool in [YardGrinder.new(), YardCutter.new(), YardSocket.new(), YardGrabber.new(), YardTractor.new(), YardTablet.new()]:
+		for tool: YardTool in [YardGrinder.new(), YardCutter.new(), YardSocket.new(), YardGrabber.new(), YardTractor.new(), YardTablet.new(),
+				YardRiveter.new(), YardWelder.new()]:
 			tool.position = -tool.grip
 			tool.visible = false
 			hold.add_child(tool)
@@ -90,6 +91,8 @@ class Crewmate:
 				(tools[shown_tool] as YardTool).visible = true
 		if shown_tool != "":
 			(tools[shown_tool] as YardTool).set_working(bool(held.get("using", false)), false)
+			if tools[shown_tool] is YardFastener:
+				(tools[shown_tool] as YardFastener).fastening = bool(held.get("using", false))
 
 	## The pose from where the movers put the body and the head this frame.
 	func follow(delta: float) -> void:
