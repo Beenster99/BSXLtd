@@ -25,6 +25,8 @@ extends RefCounted
 class PartShape:
 	var mesh: ArrayMesh
 	var collision: Shape3D
+	## Hull-generated parts retain their historic mass proxy; render topology
+	## corrections do not implicitly rebalance existing designs.
 	var volume: float = 0.0
 	## Windows: the glass, separate so it can take a glass material, of `glass_kind`
 	## (Glazing.Kind: clear, tinted, frosted, armoured, amber or red lens, solar cover).
@@ -226,6 +228,40 @@ static func girder(length: float, width: float, height: float, cut_start: float 
 			k.box(Vector3(height * 0.55, height * 0.45, 0.004), Vector3(x, 0.0, side * (hw + 0.002)))
 	shape.mesh = k.finish()
 	return stamp(shape, "girder", [length, width, height, cut_start, cut_end])
+
+
+## A girder along X whose ends are mitred across its height (Y), for a ring member that meets
+## its neighbours on the corner's bisector with no node block between them (FrameHull's
+## `mitred_joints`): at height y the start is at -length / 2 - y * `lean_start` and the end at
+## length / 2 + y * `lean_end` (the tan of half the turn at that corner: positive where the ring
+## turns away from +Y, so the outer face is the longer; 0 a square end). `girder`'s own cuts lean
+## across the width.
+static func girder_mitred(length: float, width: float, height: float, lean_start: float = 0.0,
+		lean_end: float = 0.0) -> PartShape:
+	var hw := width * 0.5
+	var hh := height * 0.5
+	var pts := PackedVector3Array()
+	for z: float in [-hw, hw]:
+		for y: float in [-hh, hh]:
+			pts.append(Vector3(-length * 0.5 - y * lean_start, y, z))
+			pts.append(Vector3(length * 0.5 + y * lean_end, y, z))
+	var shape := _hull(pts)
+	# The lightening holes keep to the stretch both faces cover.
+	var lo := -length * 0.5 + hh * absf(lean_start)
+	var hi := length * 0.5 - hh * absf(lean_end)
+	if hi - lo > height * 0.8:
+		var k := MeshKit.new()
+		k.verts = shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		k.normals = shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_NORMAL]
+		k.colors = shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+		k.color = DETAIL
+		var holes := maxi(int((hi - lo) / (height * 1.6)), 1)
+		for i in holes:
+			var x := lo + (hi - lo) * (float(i) + 0.5) / float(holes)
+			for side: float in [-1.0, 1.0]:
+				k.box(Vector3(height * 0.55, height * 0.45, 0.004), Vector3(x, 0.0, side * (hw + 0.002)))
+		shape.mesh = k.finish()
+	return stamp(shape, "girder_mitred", [length, width, height, lean_start, lean_end])
 
 
 ## A channel (C-section) along X, `width` (Z) by `height` (Y): a web across its +Y face and a
@@ -858,13 +894,20 @@ static func _hull(points: PackedVector3Array) -> PartShape:
 		centre += p
 	centre /= float(points.size())
 	# Rebuild the hull's faces from Geometry: triangulate via the convex hull helper.
-	var tris := _hull_triangles(points)
+	var candidates := _hull_candidates(points)
+	var tris := _dedupe_coplanar(candidates, points)
 	for t: Array in tris:
 		var mid: Vector3 = (t[0] + t[1] + t[2]) / 3.0
 		k.tri(t[0], t[1], t[2], mid - centre)
 	var shape := PartShape.new()
 	shape.mesh = k.finish()
-	shape.volume = k.volume()
+	# Existing wreck economy and handling were calibrated to this mass proxy.
+	# Correct the render surface without silently rebalancing every hull-built
+	# part. Keep the historic plane grouping for mass only; it is never drawn.
+	var mass_proxy := MeshKit.new()
+	for t: Array in _dedupe_coplanar(candidates, points, true):
+		mass_proxy.tri(t[0], t[1], t[2], (t[0] + t[1] + t[2]) / 3.0 - centre)
+	shape.volume = mass_proxy.volume()
 	shape.collision = hull
 	return shape
 
@@ -872,6 +915,10 @@ static func _hull(points: PackedVector3Array) -> PartShape:
 ## Triangles of the convex hull of `points` (simple gift-wrap; fine for the small point
 ## sets parts use).
 static func _hull_triangles(points: PackedVector3Array) -> Array:
+	return _dedupe_coplanar(_hull_candidates(points), points)
+
+
+static func _hull_candidates(points: PackedVector3Array) -> Array:
 	var out: Array = []
 	var n := points.size()
 	var seen: Dictionary = {}
@@ -895,19 +942,19 @@ static func _hull_triangles(points: PackedVector3Array) -> Array:
 						back += 1
 				if front > 0 and back > 0:
 					continue
-				# A face of the hull. Merge coplanar triangles by keying on the plane: keep
-				# all of them (overlaps are harmless for shading), but skip exact repeats.
+				# Candidate face triples are grouped into one fan per supporting plane
+				# below. Never draw these overlapping candidates directly.
 				var key := "%d_%d_%d" % [i, j, l]
 				if seen.has(key):
 					continue
 				seen[key] = true
 				out.append([a, b, c])
-	return _dedupe_coplanar(out, points)
+	return out
 
 
 ## Coplanar hull faces with 4+ points come out as overlapping triangles; keep a clean fan
 ## per plane so faces don't z-fight.
-static func _dedupe_coplanar(tris: Array, points: PackedVector3Array) -> Array:
+static func _dedupe_coplanar(tris: Array, points: PackedVector3Array, legacy_mass_proxy: bool = false) -> Array:
 	var planes: Dictionary = {}
 	for t: Array in tris:
 		var n: Vector3 = ((t[1] as Vector3) - t[0]).cross((t[2] as Vector3) - t[0]).normalized()
@@ -918,7 +965,12 @@ static func _dedupe_coplanar(tris: Array, points: PackedVector3Array) -> Array:
 		if n.dot((t[0] as Vector3) - centre) < 0.0:
 			n = -n
 		var dist := n.dot(t[0])
-		var key := "%.3f_%.3f_%.3f_%.3f" % [n.x, n.y, n.z, dist]
+		# Integer quantisation canonicalises signed zero. String float keys split
+		# -0.000 / 0.000 into separate fans on the same geometric plane,
+		# causing z-fighting and double-counted volume.
+		var key := "%d_%d_%d_%d" % [roundi(n.x * 1000), roundi(n.y * 1000), roundi(n.z * 1000), roundi(dist * 1000)]
+		if legacy_mass_proxy:
+			key = "%.3f_%.3f_%.3f_%.3f" % [n.x, n.y, n.z, dist]
 		if not planes.has(key):
 			planes[key] = [n, []]
 		for p: Vector3 in t:

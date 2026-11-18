@@ -115,6 +115,8 @@ const COPPER := Color(0.85, 0.45, 0.2)
 
 static var _material: StandardMaterial3D
 
+## Presentation sampling only; collision, conductor count and stock volume stay unchanged.
+var sample_step: float = STEP
 var spec: Spec
 var length: float
 ## Distance between ties along this span, adjusted so ties fall evenly, in metres.
@@ -225,7 +227,7 @@ func build_mesh() -> ArrayMesh:
 	_normals.clear()
 	_colors.clear()
 	_indices.clear()
-	var samples := maxi(int(ceil(length / STEP)), 8)
+	var samples := maxi(int(ceil(length / clampf(sample_step, STEP, 0.20))), 8)
 	# Core wire.
 	_wire_tube(samples, -1, spec.core_radius, spec.core_color)
 	for i in spec.wire_colors.size():
@@ -253,7 +255,12 @@ func _finish() -> ArrayMesh:
 	arrays[Mesh.ARRAY_INDEX] = _indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	MeshKit.keep(mesh, arrays)
 	return mesh
+
+
+## A device lead's width (m): two wires of `lead_mesh`'s default radius side by side.
+const LEAD_SIZE := 0.032
 
 
 ## A device lead: two thin twisted wires along a smooth curve through `points` (any space;

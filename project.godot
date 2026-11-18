@@ -104,3 +104,28 @@ surface_normal={
 "type": "float",
 "value": 1.0
 }
+joint_hint={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+joint_hint_kinds={
+"type": "int",
+"value": 0
+}
+joint_hint_color={
+"type": "vec4",
+"value": Vector4(0.6, 0.85, 1, 0)
+}
+joint_hint_rest={
+"type": "float",
+"value": 0.0
+}
+survey_pulse={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+survey_pulse_glow={
+"type": "float",
+"value": 0.0
+}
+

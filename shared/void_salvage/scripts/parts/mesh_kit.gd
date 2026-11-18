@@ -7,6 +7,17 @@ extends RefCounted
 ## Every face is given an outward direction so it always faces the right way, whatever
 ## order its corners come in. Godot draws clockwise-wound faces as the front.
 
+## On a mesh made while `keep_arrays` is on: its arrays as made (vertex, normal and colour), kept
+## on the CPU. Reading a mesh's arrays back (`surface_get_arrays`, SurfaceTool.append_from)
+## waits for the GPU to finish everything in flight; a merge of many meshes reads these instead.
+const ARRAYS_META := "cpu_arrays"
+## Keeps each finished mesh's arrays on it (ARRAYS_META) while on: a builder whose meshes will be
+## merged sets it for its build.
+static var keep_arrays: bool = false
+## Keeps only each finished mesh's positions on it (ARRAYS_META with the vertices alone) while on and
+## `keep_arrays` is off: enough for a merged shadow (a wreck's build).
+static var keep_positions: bool = false
+
 var verts := PackedVector3Array()
 var normals := PackedVector3Array()
 var colors := PackedColorArray()
@@ -153,7 +164,21 @@ func finish() -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	if not verts.is_empty():
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		keep(mesh, arrays)
 	return mesh
+
+
+## Keeps `arrays` (the one surface `mesh` was made from) on it as ARRAYS_META while `keep_arrays`
+## (all of them) or `keep_positions` (the vertices and the index) is on.
+static func keep(mesh: ArrayMesh, arrays: Array) -> void:
+	if keep_arrays:
+		mesh.set_meta(ARRAYS_META, arrays)
+	elif keep_positions:
+		var kept := []
+		kept.resize(Mesh.ARRAY_MAX)
+		kept[Mesh.ARRAY_VERTEX] = arrays[Mesh.ARRAY_VERTEX]
+		kept[Mesh.ARRAY_INDEX] = arrays[Mesh.ARRAY_INDEX]
+		mesh.set_meta(ARRAYS_META, kept)
 
 
 ## Volume enclosed by everything added so far, in cubic metres (closed solids only; each

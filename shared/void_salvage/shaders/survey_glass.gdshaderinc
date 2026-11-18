@@ -14,6 +14,10 @@ global uniform vec4 survey_poly_3;
 global uniform int survey_poly_n;     // how many corners (3..8); -1 = the whole canopy
 global uniform vec4 survey_sweep;     // the sweep plane: normal (xyz) and offset (w)
 global uniform float survey_glow;     // the sweep line's brightness (0 when still)
+// The scan pulse (ScanPulse, VX8b): a shell grown from a point, inside which everyone sees the
+// hazards and seized bolts the glass shows, with no glass. Set on every machine.
+global uniform vec4 survey_pulse;     // its origin (xyz, world space) and radius now (w, m; 0 = none)
+global uniform float survey_pulse_glow; // its strength, 0..1 (fading in and out)
 
 // Is `world_pos` seen through the glass from `cam` (the pane lies between them, and the line
 // of sight passes inside its outline)?
@@ -50,4 +54,26 @@ bool survey_through_glass(vec3 world_pos, vec3 cam) {
 		}
 	}
 	return true;
+}
+
+// How strongly the scan pulse shows at `world_pos`: its glow inside the shell, else 0.
+float survey_pulse_at(vec3 world_pos) {
+	if (survey_pulse.w <= 0.0 || survey_pulse_glow <= 0.0) {
+		return 0.0;
+	}
+	return distance(world_pos, survey_pulse.xyz) <= survey_pulse.w ? survey_pulse_glow : 0.0;
+}
+
+// Is `world_pos` inside the scan pulse's shell while it shows?
+bool survey_in_pulse(vec3 world_pos) {
+	return survey_pulse_at(world_pos) > 0.0;
+}
+
+// The pulse's edge where it meets a surface: 1 on the shell, fading off `width` metres either side.
+float survey_pulse_edge(vec3 world_pos, float width) {
+	if (survey_pulse.w <= 0.0 || survey_pulse_glow <= 0.0) {
+		return 0.0;
+	}
+	float d = abs(distance(world_pos, survey_pulse.xyz) - survey_pulse.w);
+	return (1.0 - smoothstep(0.0, width, d)) * survey_pulse_glow;
 }

@@ -27,6 +27,10 @@ const BOLT_LIFETIME: float = 300.0
 ## Most loose bolts kept at once; past this the oldest goes first.
 const MAX_LOOSE_BOLTS: int = 150
 const LOOSE_BOLTS := "loose_bolts"
+## Most popped-off heads kept at once; past this the oldest goes first (FR2: a rupture or a
+## crew's burst of cutting threw 280 at once, each a body the physics stepped for 10 s).
+const MAX_HEADS: int = 80
+const HEADS := "joint_heads"
 ## Every popped-off head and loose bolt (ships' deck gravity pulls on these too).
 const DEBRIS := "joint_debris"
 
@@ -36,6 +40,10 @@ static var _materials: Dictionary = {}
 var connection: ConnectionData
 ## 0 = cold, 1 = glowing hot.
 var heat: float = 0.0
+## 1 while the fastener hint lights it as one of the joints holding the part the crosshair rests
+## on (UX3: whatever its kind or the tool in hand), else 0. In the instance's custom w; set by
+## `set_rested` on the machine that looks, presentation only.
+var rested: float = 0.0
 ## The drawn instance (mesh, material, transform in structure space).
 var item: JointBatch.Item
 
@@ -50,6 +58,11 @@ var _is_bead: bool = false
 var _bead_level: int = -1
 ## A bolt being unscrewed: its shank, drawn under the head once it starts to back out.
 var _shank_item: JointBatch.Item
+## (FS2) A followed seam ground part way (ConnectionData.follows): one instance a cell, a short bead at its level
+## or a bare bright stripe where it is ground off, and the level each is drawn at (-1 not yet). Empty while whole:
+## the one bead (`item`) draws it.
+var _cell_items: Array[JointBatch.Item] = []
+var _cell_levels: PackedInt32Array = PackedInt32Array()
 
 
 ## Builds the view for `c` on part `part_xform` (relative to the structure), drawn by
@@ -69,9 +82,13 @@ func setup(c: ConnectionData, part_xform: Transform3D, batch: JointBatch, paint:
 		var z := c.seam_up.cross(y).normalized()
 		basis = Basis(y.cross(z).normalized(), y, z)
 	_anchor = part_xform.affine_inverse() * Transform3D(basis, c.local_position)
-	var surface := painted_material(paint) if c.head == 4 and paint else head_material(c.kind, c.head)
+	var painted := c.head == 4 and paint != null
+	var surface := painted_material(paint) if painted else head_material(c.kind, c.head)
 	item = JointBatch.Item.new(_mesh_for(c.kind, c.head), surface, Transform3D.IDENTITY)
-	item.custom = Color(0.0, _seized_flag(), 0.0, 0.0)
+	if painted:
+		item.tinted = true
+		item.tint = paint_tint(paint)
+	item.custom = Color(0.0, _seized_flag(), _kind_code(), rested)
 	_apply_wear()
 	_batch.add(item)
 
@@ -114,6 +131,8 @@ func move_to(batch: JointBatch) -> void:
 	_batch.move(item, batch)
 	if _shank_item:
 		_batch.move(_shank_item, batch)
+	for cell in _cell_items:
+		_batch.move(cell, batch)
 	_batch = batch
 
 
@@ -121,6 +140,14 @@ func move_to(batch: JointBatch) -> void:
 func clear() -> void:
 	_batch.remove(item)
 	_clear_shank()
+	_clear_cells()
+
+
+func _clear_cells() -> void:
+	for cell in _cell_items:
+		_batch.remove(cell)
+	_cell_items.clear()
+	_cell_levels.clear()
 
 
 func _clear_shank() -> void:
@@ -131,10 +158,10 @@ func _clear_shank() -> void:
 
 ## Detaches the head as a small loose physics piece flying off along the normal, then
 ## removes this view. `model` holds the body it was on.
-func pop_off(model: PartModel, carrier_velocity: Vector3) -> void:
+## Returns the scar a weld leaves (null for a head that pops off).
+func pop_off(model: PartModel, carrier_velocity: Vector3) -> JointBatch.Item:
 	if _is_bead or connection.kind == ConnectionData.Kind.SPOT:
-		leave_scar(model)
-		return
+		return leave_scar(model)
 	var structure := model.body
 	var world_xform := structure.global_transform * item.xform
 	_batch.remove(item)
@@ -151,9 +178,11 @@ func pop_off(model: PartModel, carrier_velocity: Vector3) -> void:
 	sphere.radius = 0.04
 	shape.shape = sphere
 	debris.add_child(shape)
+	# (A painted head's colour is its instance's in the batch: on its own it takes a material.)
+	var loose_look := loose_material(item)
 	var visual := MeshInstance3D.new()
 	visual.mesh = item.mesh
-	visual.material_override = item.material
+	visual.material_override = loose_look
 	visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Keep the worn-down squash on the mesh only: physics bodies can't be squashed.
 	visual.scale = world_xform.basis.get_scale()
@@ -161,8 +190,8 @@ func pop_off(model: PartModel, carrier_velocity: Vector3) -> void:
 	if bolt:
 		# The whole bolt comes out: a threaded shank under the head.
 		var shank := MeshInstance3D.new()
-		shank.mesh = _shank_mesh()
-		shank.material_override = item.material
+		shank.mesh = _shank_mesh(connection.head)
+		shank.material_override = loose_look
 		shank.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		shank.position = Vector3(0.0, -_height * 0.5 - 0.035, 0.0)
 		debris.add_child(shank)
@@ -185,12 +214,19 @@ func pop_off(model: PartModel, carrier_velocity: Vector3) -> void:
 		if loose.size() > MAX_LOOSE_BOLTS:
 			(loose[0] as Node).queue_free()
 	else:
+		debris.add_to_group(HEADS)
 		debris.linear_velocity = carrier_velocity + out * randf_range(0.6, 1.4) + jitter
 		debris.angular_velocity = Vector3(randf_range(-8, 8), randf_range(-8, 8), randf_range(-8, 8))
+		var heads := tree.get_nodes_in_group(HEADS)
+		if heads.size() > MAX_HEADS:
+			(heads[0] as Node).remove_from_group(HEADS)
+			(heads[0] as Node).queue_free()
 	tree.create_timer(BOLT_LIFETIME if bolt else DEBRIS_LIFETIME).timeout.connect(debris.queue_free)
+	return null
 
 
 static var _shank: Mesh
+static var _foot_shank: Mesh
 static var _debris_mat: PhysicsMaterial
 
 
@@ -202,27 +238,41 @@ static func _debris_material() -> PhysicsMaterial:
 	return _debris_mat
 
 
-## A bolt's shank, below its head (local -Y).
-static func _shank_mesh() -> Mesh:
+## A bolt's shank, below its head (local -Y): a foot bolt's (head style 5) as much thinner as its head is smaller.
+static func _shank_mesh(head: int = 0) -> Mesh:
+	if head == 5:
+		if _foot_shank == null:
+			_foot_shank = _cylinder(0.022 * BOLT_SCALE * FOOT_BOLT_SCALE, 0.07, 8)
+		return _foot_shank
 	if _shank == null:
-		var m := CylinderMesh.new()
-		m.top_radius = 0.022 * BOLT_SCALE
-		m.bottom_radius = 0.022 * BOLT_SCALE
-		m.height = 0.07
-		m.radial_segments = 8
-		m.rings = 1
-		_shank = m
+		_shank = _cylinder(0.022 * BOLT_SCALE, 0.07, 8)
 	return _shank
 
 
+static func _cylinder(radius: float, height: float, sides: int) -> CylinderMesh:
+	var m := CylinderMesh.new()
+	m.top_radius = radius
+	m.bottom_radius = radius
+	m.height = height
+	m.radial_segments = sides
+	m.rings = 1
+	return m
+
+
 ## A cut weld: what's left of the bead (or the spot) stays on the steel, dark and ground flat.
-func leave_scar(model: PartModel) -> void:
+## Returns the scar's item.
+func leave_scar(model: PartModel) -> JointBatch.Item:
 	_batch.remove(item)
+	var followed := not _cell_items.is_empty() or connection.follows()
+	_clear_cells()
+	if followed and connection.broken_by == PartData.Removal.INTACT:
+		# (FS2) Ground off along its line: bare bright steel where the bead was, its whole length.
+		return model.add_decor(connection.part_a, stripe_mesh(), bare_material(),
+				_part_xform * _anchor * _stripe_xform(0.0, connection.seam_size.x))
 	if connection.kind == ConnectionData.Kind.SPOT:
-		model.add_decor(connection.part_a, _mesh_for(ConnectionData.Kind.SPOT), scar_material(),
+		return model.add_decor(connection.part_a, _mesh_for(ConnectionData.Kind.SPOT), scar_material(),
 				_part_xform * _anchor * Transform3D(Basis().scaled(Vector3(1.0, 0.3, 1.0)), Vector3.ZERO))
-		return
-	model.add_decor(connection.part_a, bead_mesh(connection.seam_size, 0.3), scar_material(),
+	return model.add_decor(connection.part_a, bead_mesh(connection.seam_size, 0.3), scar_material(),
 			_part_xform * _anchor)
 
 
@@ -232,9 +282,77 @@ func _seized_flag() -> float:
 	return 1.0 if connection.kind == ConnectionData.Kind.BOLT and connection.is_seized(ConnectionData.SEIZED_CHANCE) else 0.0
 
 
+## The heat's halo round a marked weld (LK3, ConnectionData.heat_marked): how far its colours
+## reach past the bead (m), how far it lies off the surface (m).
+const HALO_REACH: float = 0.07
+const HALO_SPOT_REACH: float = 0.045
+const HALO_LIFT: float = 0.0012
+
+static var _halo_mesh: PlaneMesh
+static var _halo_material: ShaderMaterial
+
+
+## Lays the heat's halo on this weld's part as a mark (PartModel.add_decor: it rides the part
+## and stays when the weld goes): a flat quad on the surface round the bead, its colours drawn
+## by shaders/joint_halo.gdshader from the bead's outline in the instance's custom data
+## (x, y: the outline's half sizes along and across, z: the reach, w: 0 a seam, 1 a closed
+## loop, 2 a spot). Returns the mark.
+func lay_halo(model: PartModel) -> JointBatch.Item:
+	var spot := connection.kind == ConnectionData.Kind.SPOT
+	var size := connection.seam_size
+	var reach := HALO_SPOT_REACH if spot else HALO_REACH
+	var hx := SPOT_RADIUS if spot else maxf(size.x, 0.12) * 0.5
+	var hz := SPOT_RADIUS if spot else maxf(size.y, 0.0) * 0.5
+	var shape := 2.0 if spot else (1.0 if size.y > 0.0 else 0.0)
+	var at := _part_xform * _anchor
+	var xform := Transform3D(at.basis * Basis().scaled(Vector3(hx + reach, 1.0, hz + reach)),
+			at.origin + at.basis.y.normalized() * HALO_LIFT)
+	var mark := model.add_decor(connection.part_a, halo_mesh(), halo_material(), xform)
+	mark.custom = Color(hx, hz, reach, shape)
+	model.joints().update(mark)
+	return mark
+
+
+## The halo's quad: 2 x 2 m in the XZ plane facing +Y (scaled per instance).
+static func halo_mesh() -> PlaneMesh:
+	if _halo_mesh == null:
+		_halo_mesh = PlaneMesh.new()
+		_halo_mesh.size = Vector2(2.0, 2.0)
+	return _halo_mesh
+
+
+static func halo_material() -> ShaderMaterial:
+	if _halo_material == null:
+		_halo_material = ShaderMaterial.new()
+		_halo_material.shader = preload("res://shared/void_salvage/shaders/joint_halo.gdshader")
+	return _halo_material
+
+
+## The joint's kind + 1 in the instance's custom z: the fastener hint lights heads of the
+## kinds the held tool works (shaders/joint_head.gdshader); decor (stubs, scars) keeps 0.
+func _kind_code() -> float:
+	return float(connection.kind) + 1.0
+
+
+## Marks this head as holding the rested part (the fastener hint lights it through anything:
+## shaders/joint_head.gdshader, joint_hint_xray.gdshader), or unmarks it.
+func set_rested(on: bool) -> void:
+	var v := 1.0 if on else 0.0
+	if v == rested:
+		return
+	rested = v
+	if _batch == null or not is_instance_valid(_batch) or item == null or item.bucket == null:
+		return
+	_apply_heat()
+
+
 func _apply_heat() -> void:
-	item.custom = Color(heat, _seized_flag(), 0.0, 0.0)
+	item.custom = Color(heat, _seized_flag(), _kind_code(), rested)
 	_batch.update(item)
+	for i in _cell_items.size():
+		var cell := _cell_items[i]
+		cell.custom = item.custom if _cell_levels[i] > 0 else Color(heat, 0.0, 0.0, 0.0)
+		_batch.update(cell)
 	if _shank_item:
 		_shank_item.custom = item.custom
 		_batch.update(_shank_item)
@@ -242,7 +360,12 @@ func _apply_heat() -> void:
 
 func _apply_wear() -> void:
 	var local: Transform3D
-	if _is_bead:
+	if _is_bead and connection.follows() and (connection.cells_left() < 1.0 or not _cell_items.is_empty()):
+		# (FS2) Ground along its line: the bead drawn a cell at a time, what is ground bare (`_draw_cells`); the one
+		# bead's instance folded away.
+		_draw_cells()
+		local = _anchor * Transform3D(Basis().scaled(Vector3.ONE * 0.0001), Vector3.ZERO)
+	elif _is_bead:
 		# Ground down in steps toward flush with the steel.
 		var level := clampi(int(ceil(connection.health_fraction() * BEAD_LEVELS)), 1, BEAD_LEVELS)
 		if level != _bead_level:
@@ -272,6 +395,68 @@ func _apply_wear() -> void:
 	_batch.update(item)
 
 
+## (FS2) A followed seam's cells, each drawn as a short bead at its level (BEAD_LEVELS steps) or, ground off, as a
+## stripe of bare steel; only the cells whose level changed are redrawn.
+func _draw_cells() -> void:
+	var cells := connection.cells
+	var n := cells.size()
+	var length := connection.seam_size.x
+	if _cell_levels.size() != n:
+		_clear_cells()
+		_cell_levels.resize(n)
+		_cell_levels.fill(-1)
+		_cell_items.resize(n)
+	var at := _part_xform * _anchor
+	for i in n:
+		var level := clampi(ceili(cells[i] * BEAD_LEVELS - 0.001), 0, BEAD_LEVELS)
+		var u0 := -length * 0.5 + float(i) * ConnectionData.SEAM_CELL
+		var u1 := minf(u0 + ConnectionData.SEAM_CELL, length * 0.5)
+		var xform: Transform3D
+		if level > 0:
+			xform = at * Transform3D(Basis.IDENTITY, Vector3((u0 + u1) * 0.5, 0.0, 0.0))
+		else:
+			xform = at * _stripe_xform((u0 + u1) * 0.5, u1 - u0)
+		if level != _cell_levels[i] or _cell_items[i] == null:
+			if _cell_items[i] != null:
+				_batch.remove(_cell_items[i])
+			var mesh := bead_mesh(Vector2(u1 - u0, 0.0), float(level) / float(BEAD_LEVELS), connection.head, false) \
+					if level > 0 else stripe_mesh()
+			var cell := JointBatch.Item.new(mesh, item.material if level > 0 else bare_material(), xform)
+			cell.custom = item.custom if level > 0 else Color(heat, 0.0, 0.0, 0.0)
+			_cell_items[i] = cell
+			_cell_levels[i] = level
+			_batch.add(cell)
+		else:
+			_cell_items[i].xform = xform
+			_batch.update(_cell_items[i])
+
+
+## (FS2) Where a stripe of bare steel `length` long lies, `u` along the seam from its middle (the bead's space).
+func _stripe_xform(u: float, length: float) -> Transform3D:
+	return Transform3D(Basis().scaled(Vector3(length, STRIPE_WIDTH, STRIPE_THICK)), Vector3(u, 0.0, 0.0))
+
+
+## (FS2) Ground-off steel: how wide the stripe is across the seam and how thick it stands (m).
+const STRIPE_WIDTH: float = 0.03
+const STRIPE_THICK: float = 0.004
+static var _stripe: BoxMesh
+
+
+## (FS2) The bare stripe's mesh: a unit box, scaled per instance.
+static func stripe_mesh() -> BoxMesh:
+	if _stripe == null:
+		_stripe = BoxMesh.new()
+		_stripe.size = Vector3.ONE
+	return _stripe
+
+
+## (FS2) Freshly ground steel: bright, fine-scratched.
+static func bare_material() -> ShaderMaterial:
+	if not _materials.has("bare"):
+		_materials["bare"] = _make_material(Color(0.8, 0.81, 0.83), 0.95, 0.24)
+	return _materials["bare"]
+
+
 ## The bolt's shank, standing out of the hole by `out` of its length (0 = still home).
 func _place_shank(out: float, turn: Basis) -> void:
 	if out <= 0.001:
@@ -282,7 +467,7 @@ func _place_shank(out: float, turn: Basis) -> void:
 	var xform := _part_xform * _anchor * Transform3D(turn,
 			Vector3(0.0, out * BOLT_TRAVEL - _shank_mesh_length() * 0.5, 0.0))
 	if _shank_item == null:
-		_shank_item = JointBatch.Item.new(_shank_mesh(), material_for(ConnectionData.Kind.BOLT), xform)
+		_shank_item = JointBatch.Item.new(_shank_mesh(connection.head), material_for(ConnectionData.Kind.BOLT), xform)
 		_shank_item.custom = item.custom
 		_batch.add(_shank_item)
 	else:
@@ -306,6 +491,9 @@ static func _basis_from_normal(n: Vector3) -> Basis:
 ## Head sizes against the originals (0.13: rivets 25% smaller again, bolts 35%).
 const RIVET_SCALE: float = 0.75
 const BOLT_SCALE: float = 0.65
+## A fitting's foot bolt (head style 5, WD10a: the bolt on a fitting's bracket on the deck) against a classic bolt:
+## an M16's head, not a hull bolt's.
+const FOOT_BOLT_SCALE: float = 0.5
 
 
 ## A flush rivet (head style 1): a low dome this wide and this high, metres.
@@ -339,6 +527,8 @@ static func _height_for(kind: ConnectionData.Kind, head: int = 0) -> float:
 		ConnectionData.Kind.BOLT:
 			if head == 4:
 				return FLUSH_BOLT_HEIGHT
+			if head == 5:
+				return 0.042 * BOLT_SCALE * FOOT_BOLT_SCALE
 			return 0.042 * BOLT_SCALE
 		ConnectionData.Kind.CONNECTOR:
 			return 0.1
@@ -380,12 +570,25 @@ static func head_material(kind: ConnectionData.Kind, head: int) -> ShaderMateria
 ## the joint shader in `paint`'s colour (a shade darker, `SUBTLE_SHADE`: the plate's surface
 ## tones its paint down with its detail layer), metal and roughness. Not the plate's surface
 ## itself: that projects its detail in the part's space, and a head is a mesh of its own, so
-## each would take one arbitrary (often dark) detail value. One material per paint, so each
-## colour is one more batch.
-static func painted_material(paint: Material) -> ShaderMaterial:
-	if _materials.has(paint):
-		return _materials[paint]
-	# The joint shader takes its albedo as a Vector3 the way the surfaces do (linear).
+## each would take one arbitrary (often dark) detail value. One material for every paint: the
+## colour, metal and roughness ride in the head's instance colour (`paint_tint`, the shader's
+## `instance_paint`), so painted heads of one shape are one batch whatever their plates'
+## colours. (A material per paint was a batch per paint: a wreck whose plates each carry their
+## own surface drew 1,133 batches for 3,382 heads, each again in every pass; 10 Nov.)
+static func painted_material(_paint: Material = null) -> ShaderMaterial:
+	if not _materials.has("painted"):
+		var m := _make_material(Color(0.62, 0.62, 0.6), 0.4, 0.55)
+		m.set_shader_parameter("instance_paint", true)
+		_materials["painted"] = m
+	return _materials["painted"]
+
+
+## The tint a head in `paint` carries (JointBatch.Item.tint): the paint's colour a shade darker
+## (`SUBTLE_SHADE`), linear, with its metal and roughness packed in the alpha. Kept per paint.
+static func paint_tint(paint: Material) -> Color:
+	if _tints.has(paint):
+		return _tints[paint]
+	# The joint shader takes its albedo linear, the way the surfaces do.
 	var colour := Color(0.62, 0.62, 0.6)
 	var metallic := 0.4
 	var roughness := 0.55
@@ -405,9 +608,26 @@ static func painted_material(paint: Material) -> ShaderMaterial:
 		var rv: Variant = sm.get_shader_parameter("roughness")
 		metallic = float(mv) if mv != null else metallic
 		roughness = float(rv) if rv != null else roughness
-	var m := _make_material(colour * SUBTLE_SHADE, metallic, roughness)
-	_materials[paint] = m
-	return m
+	var shade := colour * SUBTLE_SHADE
+	var tint := Color(shade.r, shade.g, shade.b, JointBatch.pack_finish(metallic, roughness))
+	_tints[paint] = tint
+	return tint
+
+
+## paint (Material) -> its tint (`paint_tint`).
+static var _tints: Dictionary = {}
+
+
+## The material a batch item wears once it is drawn on its own (a popped head, a loose bolt): its
+## batch material, or for a painted head one in its tint's colour and finish (kept per tint).
+static func loose_material(of: JointBatch.Item) -> Material:
+	if not of.tinted:
+		return of.material
+	var key := "tint:%s" % of.tint.to_html()
+	if not _materials.has(key):
+		_materials[key] = _make_material(Color(of.tint.r, of.tint.g, of.tint.b),
+				floorf(of.tint.a) / 31.0, of.tint.a - floorf(of.tint.a))
+	return _materials[key]
 
 
 ## Dark, ground-flat remains of a cut weld.
@@ -473,7 +693,20 @@ static func _make_material(color: Color, metallic: float, roughness: float) -> S
 	m.set_shader_parameter("albedo", Vector3(color.r, color.g, color.b))
 	m.set_shader_parameter("metallic", metallic)
 	m.set_shader_parameter("roughness", roughness)
+	m.next_pass = hint_xray_material()
 	return m
+
+
+static var _xray: ShaderMaterial
+
+
+## The fastener hint seen through what hides a head (shaders/joint_hint_xray.gdshader): every
+## head material's next pass, one material for all. Heads outside the hint draw nothing in it.
+static func hint_xray_material() -> ShaderMaterial:
+	if _xray == null:
+		_xray = ShaderMaterial.new()
+		_xray.shader = preload("res://shared/void_salvage/shaders/joint_hint_xray.gdshader")
+	return _xray
 
 
 ## Weld bead: how many ground-down steps it shows, its size (metres: how far it stands
@@ -501,12 +734,20 @@ static var _beads: Dictionary = {}
 ## ground: FrameStyle). Lies in the XZ plane: X along the seam's
 ## up, Y across the seam. Rippled like stacked coins. Cached by size (snapped to 2 cm, so
 ## seams of nearly the same length share a mesh and a draw call).
-static func bead_mesh(size: Vector2, keep: float, head: int = 0) -> Mesh:
+static func bead_mesh(size: Vector2, keep: float, head: int = 0, ends: bool = true) -> Mesh:
 	size = Vector2(snappedf(size.x, 0.02), snappedf(size.y, 0.02))
 	var key := [size.x, size.y, snappedf(keep, 0.01)] if head < 2 else [size.x, size.y, snappedf(keep, 0.01), head]
+	if not ends:
+		key.append("open")   # (FS2) a seam's cell: no tapered ends, so cells side by side read as one bead
 	if _beads.has(key):
 		return _beads[key]
 	var path := PackedVector3Array()
+	# A machine or ground bead (head 2, 3) has no ripple a ring could show (its period is the
+	# ring step itself), so a straight run is one span: rings only round the corners and at the
+	# tapered ends (`kept`). A wreck has thousands of them: drawn every 12 mm they were most of
+	# her triangles (7.2 M of the Cei-Rigotti's 9.3 M).
+	var smooth := head >= 2
+	var kept: Array[bool] = []
 	var closed := size.y > 0.0
 	if closed:
 		var hx := size.x * 0.5
@@ -520,16 +761,19 @@ static func bead_mesh(size: Vector2, keep: float, head: int = 0) -> Mesh:
 			for a in 2:
 				var ang := (float(ci) + float(a) / 2.0) * PI * 0.5
 				path.append(Vector3(c.x + cos(ang) * rc, 0.0, c.y + sin(ang) * rc))
+				kept.append(true)
 			var start := Vector3(c.x + cos((ci + 1) * PI * 0.5) * rc, 0.0, c.y + sin((ci + 1) * PI * 0.5) * rc)
 			var end := Vector3(nxt.x + cos((ci + 1) * PI * 0.5) * rc, 0.0, nxt.y + sin((ci + 1) * PI * 0.5) * rc)
 			var n := maxi(int(start.distance_to(end) / BEAD_STEP), 1)
 			for i in n:
 				path.append(start.lerp(end, float(i) / float(n)))
+				kept.append(i == 0 or not smooth)
 	else:
 		var length := size.x if size.x > 0.0 else 0.12
 		var n := maxi(int(length / BEAD_STEP), 2)
 		for i in n + 1:
 			path.append(Vector3(lerpf(-length * 0.5, length * 0.5, float(i) / float(n)), 0.0, 0.0))
+			kept.append(not smooth or i <= 2 or i >= n - 2)
 	var sides := BEAD_SIDES
 	var count := path.size()
 	var rings: Array[PackedVector3Array] = []
@@ -548,7 +792,7 @@ static func bead_mesh(size: Vector2, keep: float, head: int = 0) -> Mesh:
 		var depth := 0.14 if head < 2 else (MACHINE_RIPPLE if head == 2 else 0.0)
 		var ripple := 1.0 - depth + depth * absf(sin(walked * PI / (BEAD_RIPPLE if head < 2 else BEAD_STEP)))
 		var taper := 1.0
-		if not closed:
+		if not closed and ends:
 			var e := minf(float(i), float(count - 1 - i)) / 2.0
 			taper = clampf(e, 0.35, 1.0)
 		var proud := BEAD_PROUD * keep * ripple * taper
@@ -568,8 +812,10 @@ static func bead_mesh(size: Vector2, keep: float, head: int = 0) -> Mesh:
 				o = Vector3(0, 0, 1) * cos(a)
 			ring.append(path[i] + o * proud + Vector3.UP * sin(a) * spread)
 			norms.append((o / maxf(proud, 0.001) + Vector3.UP * sin(a) / spread).normalized())
-		rings.append(ring)
-		ring_normals.append(norms)
+		if kept[i]:
+			rings.append(ring)
+			ring_normals.append(norms)
+	count = rings.size()
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var segs := count if closed else count - 1
@@ -646,13 +892,8 @@ static func _mesh_for(kind: ConnectionData.Kind, head: int = 0) -> Mesh:
 			rivet.rings = 1
 			m = rivet
 		ConnectionData.Kind.BOLT:
-			var bolt := CylinderMesh.new()
-			bolt.top_radius = 0.049 * BOLT_SCALE
-			bolt.bottom_radius = 0.049 * BOLT_SCALE
-			bolt.height = _height_for(kind)
-			bolt.radial_segments = 6  # hex head
-			bolt.rings = 1
-			m = bolt
+			# A hex head (a foot bolt's, style 5, smaller).
+			m = _cylinder(0.049 * BOLT_SCALE * (FOOT_BOLT_SCALE if head == 5 else 1.0), _height_for(kind, head), 6)
 		ConnectionData.Kind.CONNECTOR:
 			# A plug sleeve around the loom, along the loom (the joint's normal).
 			var plug := CylinderMesh.new()
