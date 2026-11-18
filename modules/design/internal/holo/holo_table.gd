@@ -293,9 +293,11 @@ func _build_table() -> void:
 	var rim := Node3D.new()
 	rim.name = "Ring"
 	add_child(rim)
+	# The rim stands on the top (2 mm clear) and the short sides fit between the long ones, so
+	# no two faces share a plane (test_zfight).
 	for sz: float in [-1.0, 1.0]:
-		_solid("Long", Vector3(TABLE_SIZE.x, 0.04, 0.06), Vector3(0, TABLE_HEIGHT + 0.01, sz * (half.y - 0.03)), glow, rim)
-		_solid("Short", Vector3(0.06, 0.04, TABLE_SIZE.y), Vector3(sz * (half.x - 0.03), TABLE_HEIGHT + 0.01, 0), glow, rim)
+		_solid("Long", Vector3(TABLE_SIZE.x, 0.04, 0.06), Vector3(0, TABLE_HEIGHT + 0.022, sz * (half.y - 0.03)), glow, rim)
+		_solid("Short", Vector3(0.06, 0.036, TABLE_SIZE.y - 0.13), Vector3(sz * (half.x - 0.03), TABLE_HEIGHT + 0.02, 0), glow, rim)
 	for sx: float in [-1.0, 1.0]:
 		var light := OmniLight3D.new()
 		light.light_color = Color(0.45, 0.85, 1.0)
