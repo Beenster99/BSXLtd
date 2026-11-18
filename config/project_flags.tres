@@ -167,7 +167,7 @@ flags = {
 "trades.cutting_bed": true,
 "ui": true,
 "ui.debug_tab": true,
-"yard": false,
+"yard": true,
 "yard.dock": true,
 "yard.racking": true,
 "yard.station": true
