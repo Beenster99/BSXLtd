@@ -46,16 +46,29 @@ const PARTS := {
 	"reactor": {"name": "Reactor", "kind": HEAVY, "size": Vector3(2.0, 2.2, 2.0), "stack": 1},
 }
 
-## The racks, west to east: id, kind, x of the rack's middle (m), the sides it opens to (-1
-## west, +1 east), its z from the yard side (z0) to the back (z1), each place's length along z
-## (bay), its levels, the first level's height and the pitch between them (m), and how deep
-## a place is across (depth, m, from the rack's middle).
+## The hall's two storeys (0.4.1 playtest: "add another layer to the storage hall, same size so
+## we double capacity"): the upper deck's top (y, m) and its east edge (x): past it the hall is
+## open floor to roof over goods in, the well the bots rise and drop through between storeys.
+const UPPER_FLOOR_Y := 16.0
+const UPPER_EDGE_X := 64.0
+const WELL_X := 74.0
+
+## The racks, west to east on each storey: id, kind, x of the rack's middle (m), the sides it
+## opens to (-1 west, +1 east), its z from the yard side (z0) to the back (z1), each place's
+## length along z (bay), its levels, the first level's height above its floor and the pitch
+## between them (m), how deep a place is across (depth, m, from the rack's middle), and the
+## floor it stands on (base, m: 0 the ground floor, UPPER_FLOOR_Y the upper deck).
 const RACKS := [
-	{"id": "L1", "kind": LONG, "x": 20.5, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 7.0, "levels": 5, "first": 0.9, "pitch": 1.5, "depth": 2.2},
-	{"id": "L2", "kind": LONG, "x": 29.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 7.0, "levels": 5, "first": 0.9, "pitch": 1.5, "depth": 2.2},
-	{"id": "P1", "kind": PLATE, "x": 38.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 3.5, "levels": 4, "first": 0.15, "pitch": 1.9, "depth": 2.3},
-	{"id": "C1", "kind": COMPONENT, "x": 47.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 3.0, "levels": 5, "first": 0.15, "pitch": 1.9, "depth": 1.8},
-	{"id": "H1", "kind": HEAVY, "x": 58.5, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 4.2, "levels": 1, "first": 0.35, "pitch": 0.0, "depth": 3.0},
+	{"id": "L1", "kind": LONG, "x": 20.5, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 7.0, "levels": 5, "first": 0.9, "pitch": 1.5, "depth": 2.2, "base": 0.0},
+	{"id": "L2", "kind": LONG, "x": 29.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 7.0, "levels": 5, "first": 0.9, "pitch": 1.5, "depth": 2.2, "base": 0.0},
+	{"id": "P1", "kind": PLATE, "x": 38.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 3.5, "levels": 4, "first": 0.15, "pitch": 1.9, "depth": 2.3, "base": 0.0},
+	{"id": "C1", "kind": COMPONENT, "x": 47.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 3.0, "levels": 5, "first": 0.15, "pitch": 1.9, "depth": 1.8, "base": 0.0},
+	{"id": "H1", "kind": HEAVY, "x": 58.5, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 4.2, "levels": 1, "first": 0.35, "pitch": 0.0, "depth": 3.0, "base": 0.0},
+	{"id": "L3", "kind": LONG, "x": 20.5, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 7.0, "levels": 5, "first": 0.9, "pitch": 1.5, "depth": 2.2, "base": UPPER_FLOOR_Y},
+	{"id": "L4", "kind": LONG, "x": 29.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 7.0, "levels": 5, "first": 0.9, "pitch": 1.5, "depth": 2.2, "base": UPPER_FLOOR_Y},
+	{"id": "P2", "kind": PLATE, "x": 38.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 3.5, "levels": 4, "first": 0.15, "pitch": 1.9, "depth": 2.3, "base": UPPER_FLOOR_Y},
+	{"id": "C2", "kind": COMPONENT, "x": 47.0, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 3.0, "levels": 5, "first": 0.15, "pitch": 1.9, "depth": 1.8, "base": UPPER_FLOOR_Y},
+	{"id": "H2", "kind": HEAVY, "x": 58.5, "sides": [-1, 1], "z0": -52.0, "z1": -10.0, "bay": 4.2, "levels": 1, "first": 0.35, "pitch": 0.0, "depth": 3.0, "base": UPPER_FLOOR_Y},
 ]
 
 ## Goods in (east end): where the haulers' loads are set down, one bay per hauler, and the
@@ -238,7 +251,7 @@ func slot_position(i: int) -> Vector3:
 	var s := slots[i]
 	var rack: Dictionary = RACKS[int(s.rack)]
 	var x := float(rack.x) + float(s.side) * float(rack.depth) * 0.5
-	var y := float(rack.first) + float(rack.pitch) * float(s.level)
+	var y := float(rack.base) + float(rack.first) + float(rack.pitch) * float(s.level)
 	var dz := float(rack.bay) * (float(s.bay) + 0.5)
 	var z := float(rack.z0) + (dz if float(rack.z1) > float(rack.z0) else -dz)
 	return Vector3(x, y, z)
@@ -256,6 +269,15 @@ func pick_point(i: int) -> Vector3:
 
 
 ## The size of a place (m): across, its clear height, along.
+## Which storey a place, or any point in the hall, is on: 0 the ground floor, 1 the upper deck.
+static func storey_of(y: float) -> int:
+	return 1 if y >= UPPER_FLOOR_Y - 0.3 else 0
+
+
+static func floor_y(storey: int) -> float:
+	return UPPER_FLOOR_Y if storey == 1 else 0.0
+
+
 func slot_size(i: int) -> Vector3:
 	var rack: Dictionary = RACKS[int(slots[i].rack)]
 	var h := float(rack.pitch) - 0.25 if float(rack.pitch) > 0.0 else 3.4
@@ -268,7 +290,10 @@ func _nearest_empty(kind: int, to: Vector3) -> int:
 	for i in slots.size():
 		if slots[i].part != "" or slot_kind(i) != kind or pending.has(i):
 			continue
-		var d := slot_position(i).distance_squared_to(to)
+		# Along the floor, the upper deck's place over it hardly further (bots rise through
+		# the well quickly): the two storeys fill together.
+		var at := slot_position(i)
+		var d := Vector2(at.x - to.x, at.z - to.z).length() + absf(at.y - to.y) * 0.05
 		if d < best_d:
 			best_d = d
 			best = i

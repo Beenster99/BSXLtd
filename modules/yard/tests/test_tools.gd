@@ -175,6 +175,9 @@ func run_tests() -> void:
 		fx.sparks = maxi(int(fx.sparks), spray.shower_count())
 		fx.globs = maxi(int(fx.globs), spray.count(1))
 		fx.bar = bool(fx.bar) or (tools.progress_shown() and tools.work_label.begins_with("WELD"))
+		for m: Node in fit.get_children():
+			if String(m.name).begins_with("Plan_") and m.has_node("Tip"):
+				fx.tip = bool(fx.get("tip", false)) or ((m.get_node("Tip") as Node3D).visible and (m.get_node("Pace") as Node3D).visible)
 	var steady := welds[0] as Dictionary
 	await _weld(rig, fit, steady, welder.ideal_speed, each)
 	var neat := fit.last_weld.duplicate()
@@ -189,6 +192,7 @@ func run_tests() -> void:
 	check(_joints(fit, ConnectionData.Kind.WELD).size() == 2 and fit.planned.is_empty(), "the welder ran both welds")
 	check(int(fx.sparks) > 200 and int(fx.globs) > 5, "sparks and molten metal (%d sparks, %d globs)" % [int(fx.sparks), int(fx.globs)])
 	check(bool(fx.bar), "the bar shows the weld going in")
+	check(bool(fx.get("tip", false)), "the torch's aim ring and the pace mark show on the seam")
 	check(tools.fastened_count == 8, "the tools count what they put in (%d)" % tools.fastened_count)
 	tools.trigger_override = -1
 	tools.holster(true)

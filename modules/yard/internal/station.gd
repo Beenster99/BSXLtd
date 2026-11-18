@@ -33,8 +33,16 @@ const VIEWS := {
 	"stores_components": [Vector3(42.5, 3.0, -56), Vector3(46, 2.0, -30)],
 	"stores_heavy": [Vector3(52, 6.5, -58), Vector3(59, 0.5, -36)],
 	"stores_goods_in": [Vector3(64, 6, -60), Vector3(84, 3, -32)],
-	"stores_yard_side": [Vector3(36, 8, -88), Vector3(46, 4, -40)],
+	"stores_yard_side": [Vector3(36, 14, -96), Vector3(46, 14, -40)],
+	"stores_upper": [Vector3(16, 27, -6), Vector3(52, 18, -40)],
+	"stores_upper_long": [Vector3(24.8, 17.7, -55), Vector3(24.8, 18.5, -20)],
+	"stores_stair": [Vector3(70, 2.0, -3.0), Vector3(64.9, 9, -26)],
+	"stores_bot": [Vector3(69.2, 9.5, -53.6), Vector3(71.0, 9.0, -52.0)],
+	"stores_ship": [Vector3(58, 34, -112), Vector3(108, 6, -34)],
+	"stores_ship_hold": [Vector3(78, 7, -16), Vector3(104, 4, -44)],
+	"stores_well": [Vector3(82, 4, -60), Vector3(66, 18, -20)],
 	"stores_deliveries": [Vector3(70, 13, -64), Vector3(92, 2, -32)],
+	"stores_hauler": [Vector3(90, 10, -66), Vector3(104, 4, -50)],
 	"stores_put_away": [Vector3(64, 9, -6), Vector3(48, 3, -40)],
 	"stores_to_yard": [Vector3(48, 6, -82), Vector3(30, 4, -58)],
 	"contracts": [Vector3(-1.0, 1.7, 0.8), Vector3(-8, 1.0, 8)],
@@ -46,7 +54,10 @@ const VIEWS := {
 	"station_from_berth": [Vector3(-8, -2, -72), Vector3(4, 3, -18)],
 }
 ## Views of the stores at work: id -> seconds into a contract's deliveries (stage 1.7).
-const BUSY_VIEWS := {"stores_deliveries": 26.0, "stores_put_away": 70.0, "stores_to_yard": 160.0}
+## (0.4.1: the demo brings the freighter first, about 27 s in, open till about 105 s, then
+## two haulers about 140 s in.)
+const BUSY_VIEWS := {"stores_ship": 50.0, "stores_ship_hold": 62.0, "stores_well": 90.0, "stores_deliveries": 141.0,
+		"stores_hauler": 143.5, "stores_put_away": 150.0, "stores_to_yard": 170.0}
 ## What a demo contract buys (0.4.0 playtest: "when we start a new contract and start to buy
 ## the parts this should be a busy area"), and what the yard then asks for first.
 const DEMO_ORDER := [
@@ -56,6 +67,8 @@ const DEMO_ORDER := [
 	{"part": "hydrogen_engine", "qty": 2}, {"part": "tank_large", "qty": 3}, {"part": "thruster_pod", "qty": 4},
 	{"part": "radiator", "qty": 8}, {"part": "armour_slab", "qty": 8}, {"part": "valve", "qty": 20},
 	{"part": "gyroscope", "qty": 1}, {"part": "reactor", "qty": 1},
+	# More than the freighter carries: the rest follows by hauler.
+	{"part": "hull_plate", "qty": 48}, {"part": "pipe_4", "qty": 20}, {"part": "deck_plate", "qty": 20},
 ]
 const DEMO_TO_YARD := [
 	{"part": "box_beam_6", "qty": 12}, {"part": "girder_4", "qty": 8}, {"part": "hull_plate", "qty": 24},
@@ -486,17 +499,21 @@ func _build_station() -> void:
 		var nx := maxi(1, ceili(b.size.x / 12.0))
 		var nz := maxi(1, ceili(b.size.z / 12.0))
 		var cell := Vector2(b.size.x / nx, b.size.z / nz)
+		# A tall room with a deck in it (the stores' two storeys) gets a layer a storey.
+		var storeys := maxi(1, ceili(b.end.y / 17.0))
+		var storey_h := b.end.y / storeys
 		for ix in nx:
 			for iz in nz:
-				var bounce := OmniLight3D.new()
-				bounce.name = "Bounce_%d_%d" % [ix, iz]
-				bounce.position = Vector3(b.position.x + cell.x * (ix + 0.5), b.end.y * 0.55, b.position.z + cell.y * (iz + 0.5))
-				bounce.omni_range = cell.length() * 0.6 + b.end.y * 0.6
-				bounce.omni_attenuation = 0.35
-				bounce.light_energy = 0.32
-				bounce.light_specular = 0.0
-				bounce.light_color = Color(0.92, 0.95, 1.0)
-				room.add_child(bounce)
+				for iy in storeys:
+					var bounce := OmniLight3D.new()
+					bounce.name = "Bounce_%d_%d" % [ix, iz] if iy == 0 else "Bounce_%d_%d_%d" % [ix, iz, iy]
+					bounce.position = Vector3(b.position.x + cell.x * (ix + 0.5), storey_h * (iy + 0.55), b.position.z + cell.y * (iz + 0.5))
+					bounce.omni_range = cell.length() * 0.6 + storey_h * 0.6
+					bounce.omni_attenuation = 0.35
+					bounce.light_energy = 0.32
+					bounce.light_specular = 0.0
+					bounce.light_color = Color(0.92, 0.95, 1.0)
+					room.add_child(bounce)
 
 	# Design room (x -12..12, z -22..-4, walls 6 m high under a glass vault): the window wall
 	# faces the dock.

@@ -59,6 +59,17 @@ func _process(delta: float) -> void:
 			puddle.scale = puddle.scale.move_toward(Vector3.ZERO, delta * 2.5)
 			if puddle.scale.x < 0.05:
 				puddle.visible = false
+	# The welder's guides show only while it is aimed at the seam.
+	var now := Time.get_ticks_msec()
+	for id: int in _plan_marks:
+		var m: Node3D = _plan_marks[id]
+		if not is_instance_valid(m):
+			continue
+		var tip := m.get_node_or_null("Tip") as Node3D
+		if tip and tip.visible and now - int(m.get_meta("aimed_ms", 0)) > 150:
+			for g: String in ["Tip", "Pace"]:
+				(m.get_node(g) as Node3D).visible = false
+			(m.get_node("Guide") as MeshInstance3D).transparency = 0.6
 	# Work under way glows and cools as the joints do.
 	for id: int in _plan_marks:
 		var bead := (_plan_marks[id] as Node3D).get_node_or_null("Bead") as MeshInstance3D if is_instance_valid(_plan_marks[id]) else null
@@ -468,6 +479,51 @@ func _mark(p: Dictionary) -> void:
 		puddle.visible = false
 		puddle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		marks.add_child(puddle)
+		# The welder's guides (0.4.1 playtest: "make it so our plasma tip is somehow visible for
+		# tracing the weld line"): the seam still to weld lit up, a ring round where the torch
+		# is aimed, and a pace mark running ahead at a steady hand's speed.
+		var guide := MeshInstance3D.new()
+		guide.name = "Guide"
+		var gm := BoxMesh.new()
+		gm.size = Vector3(0.0035, 1.0, 0.0008)
+		guide.mesh = gm
+		guide.material_override = _glow(Color(0.45, 0.95, 1.0), 2.5, false)
+		guide.scale = Vector3(1, length, 1)
+		guide.position = Vector3(0, 0, 0.0022)
+		guide.transparency = 0.6
+		guide.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		marks.add_child(guide)
+		var tip := MeshInstance3D.new()
+		tip.name = "Tip"
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.011
+		tm.outer_radius = 0.0145
+		tm.rings = 24
+		tm.ring_segments = 4
+		tip.mesh = tm
+		tip.material_override = _glow(Color(0.5, 1.0, 1.0), 4.0, true)
+		tip.rotation = Vector3(PI * 0.5, 0, 0)
+		tip.scale = Vector3(1, 0.1, 1)
+		tip.visible = false
+		tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var dot := MeshInstance3D.new()
+		var dm2 := SphereMesh.new()
+		dm2.radius = 0.0028
+		dm2.height = 0.0056
+		dot.mesh = dm2
+		dot.material_override = tip.material_override
+		dot.scale = Vector3(1, 10, 1)
+		tip.add_child(dot)
+		marks.add_child(tip)
+		var pace := MeshInstance3D.new()
+		pace.name = "Pace"
+		var pm2 := PrismMesh.new()
+		pm2.size = Vector3(0.022, 0.012, 0.001)
+		pace.mesh = pm2
+		pace.material_override = _glow(Color(0.4, 1.0, 0.45), 4.0, true)
+		pace.visible = false
+		pace.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		marks.add_child(pace)
 	else:
 		var ring := MeshInstance3D.new()
 		var tm := TorusMesh.new()
@@ -503,6 +559,67 @@ func _mark(p: Dictionary) -> void:
 		head.visible = false
 		head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		marks.add_child(head)
+
+
+static func _glow(c: Color, energy: float, on_top: bool) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = c
+	m.emission_enabled = true
+	m.emission = c
+	m.emission_energy_multiplier = energy
+	m.no_depth_test = on_top   # seen through the gun's own nozzle
+	if on_top:
+		m.render_priority = 1
+	return m
+
+
+## The welder aimed at `world_point` near weld `p` (every frame it is, trigger or not): the
+## ring where it points (off the line or on it), the seam still to weld lit brighter, and the
+## pace mark `lead` seconds ahead of the bead at the steady `ideal` speed (m/s), coloured by
+## how the run is going ("STEADY", "TOO FAST", "TOO SLOW", "" not started).
+func show_aim(p: Dictionary, world_point: Vector3, ideal: float, pace := "", lead := 0.6) -> void:
+	var marks: Node3D = _plan_marks.get(int(p.id))
+	if not is_instance_valid(marks) or not marks.has_node("Tip"):
+		return
+	marks.set_meta("aimed_ms", Time.get_ticks_msec())
+	var length := (p.seam_size as Vector2).x
+	var local := marks.to_local(world_point)
+	var tip := marks.get_node("Tip") as Node3D
+	tip.visible = true
+	tip.position = Vector3(local.x, clampf(local.y, -length * 0.5 - 0.03, length * 0.5 + 0.03), 0.0025)
+	var guide := marks.get_node("Guide") as MeshInstance3D
+	guide.transparency = 0.0
+	var pace_mark := marks.get_node("Pace") as MeshInstance3D
+	if p.has("front"):
+		# Lit from the bead's front to the far end of the seam.
+		var front := float(p.front) - length * 0.5
+		var end := length * 0.5 * float(p.dir)
+		guide.scale.y = maxf(absf(end - front), 0.0005)
+		guide.position.y = (front + end) * 0.5
+		var ahead := clampf(front + float(p.dir) * ideal * lead, -length * 0.5, length * 0.5)
+		pace_mark.visible = absf(end - front) > 0.004
+		pace_mark.position = Vector3(0, ahead, 0.0025)
+		pace_mark.rotation.z = 0.0 if float(p.dir) > 0.0 else PI
+	else:
+		guide.scale.y = length
+		guide.position.y = 0.0
+		# Not started: the mark shows which end it starts from (the nearer one) and the way.
+		var low := local.y < 0.0
+		pace_mark.visible = true
+		pace_mark.position = Vector3(0, (-length * 0.5 + 0.012) if low else (length * 0.5 - 0.012), 0.0025)
+		pace_mark.rotation.z = 0.0 if low else PI
+	var colour := Color(0.4, 1.0, 0.45)
+	match pace:
+		"TOO FAST": colour = Color(1.0, 0.3, 0.2)
+		"TOO SLOW": colour = Color(0.35, 0.55, 1.0)
+		"OFF THE LINE": colour = Color(1.0, 0.75, 0.2)
+	(pace_mark.material_override as StandardMaterial3D).albedo_color = colour
+	(pace_mark.material_override as StandardMaterial3D).emission = colour
+	var ring := tip.material_override as StandardMaterial3D
+	var on_line := absf(local.x) < 0.02
+	ring.albedo_color = Color(0.5, 1.0, 1.0) if on_line else Color(1.0, 0.75, 0.2)
+	ring.emission = ring.albedo_color
 
 
 func _mark_progress(p: Dictionary) -> void:

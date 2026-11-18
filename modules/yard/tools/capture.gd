@@ -12,11 +12,15 @@ func _run() -> void:
 	var out := "user://yard_shots"
 	var only: PackedStringArray = []
 	var size := Vector2i(1600, 900)
+	var timing := OS.get_cmdline_user_args().has("--timing")
+	var settle := 20   # frames a view settles before its shot (--frames=N: fewer on a slow machine)
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="):
 			out = arg.trim_prefix("--out=")
 		elif arg.begins_with("--only="):
 			only = arg.trim_prefix("--only=").split(",")
+		elif arg.begins_with("--frames="):
+			settle = maxi(2, int(arg.trim_prefix("--frames=")))
 		elif arg.begins_with("--size="):
 			var p := arg.trim_prefix("--size=").split("x")
 			size = Vector2i(int(p[0]), int(p[1]))
@@ -41,8 +45,11 @@ func _run() -> void:
 		if not only.is_empty() and not only.has(id):
 			continue
 		station.call("show_view", id)
-		for i in 20:
+		var t0 := Time.get_ticks_msec()
+		for i in settle:
 			await get_tree().process_frame
+			if timing:
+				print("%s frame %d at %d ms" % [id, i, Time.get_ticks_msec() - t0])
 		await RenderingServer.frame_post_draw
 		var path := "%s/yard_%s.png" % [out, id]
 		get_viewport().get_texture().get_image().save_png(path)

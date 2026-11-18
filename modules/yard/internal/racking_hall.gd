@@ -188,6 +188,9 @@ func _build_rack(r: int) -> void:
 	var z_mid := z0 + length * 0.5
 	var levels := int(rack.levels)
 	var top := float(rack.first) + float(rack.pitch) * levels + 0.2
+	# Drawn as if on the ground floor, then lifted onto its own floor.
+	var base := float(rack.base)
+	var marks := [_uprights.size(), _feet.size(), _beams.size(), _decks.size()]
 	match kind:
 		YardRackStore.LONG:
 			top = float(rack.first) + float(rack.pitch) * (levels - 1) + 1.0
@@ -238,9 +241,14 @@ func _build_rack(r: int) -> void:
 						_beams.append(_xf(Vector3(0.22, 0.12, bay - 0.8), Vector3(xc + dx, float(rack.first) - 0.06, zc)))
 					for dz: float in [-(bay - 1.2) * 0.5, (bay - 1.2) * 0.5]:
 						_feet.append(_xf(Vector3(1.28, 0.14, 0.2), Vector3(xc, 0.07, zc + dz)))
+	var lists: Array = [_uprights, _feet, _beams, _decks]
+	for li in lists.size():
+		var list: Array = lists[li]
+		for j in range(int(marks[li]), list.size()):
+			list[j] = Transform3D(Basis.IDENTITY, Vector3.UP * base) * (list[j] as Transform3D)
 	# You walk round a rack: one solid over its footprint.
-	var lo := Vector3(x - depth - (0.25 if kind == YardRackStore.LONG else 0.05), 0.0, z0 - 0.05)
-	var hi := Vector3(x + depth + (0.25 if kind == YardRackStore.LONG else 0.05), top, z0 + length + 0.05)
+	var lo := Vector3(x - depth - (0.25 if kind == YardRackStore.LONG else 0.05), base, z0 - 0.05)
+	var hi := Vector3(x + depth + (0.25 if kind == YardRackStore.LONG else 0.05), base + top, z0 + length + 0.05)
 	var cs := CollisionShape3D.new()
 	cs.name = "Rack_%s" % rack.id
 	var shape := BoxShape3D.new()
@@ -251,7 +259,7 @@ func _build_rack(r: int) -> void:
 	rack_solids.append(cs)
 	# Its name at the yard end, up high.
 	var title := "%s  %s" % [rack.id, ["LONG STOCK", "PLATE", "COMPONENTS", "HEAVY"][kind]]
-	_kit.sign(title, Vector3(x, minf(top, 7.0) + 0.6, z0 - 0.4), Vector3.FORWARD, 0.01, BEAM_ORANGE, 64)
+	_kit.sign(title, Vector3(x, base + minf(top, 7.0) + 0.6, z0 - 0.4), Vector3.FORWARD, 0.01, BEAM_ORANGE, 64)
 
 
 ## The gantry crane over the heavy cradles: rails on columns either side, a bridge and hoist.
@@ -268,18 +276,19 @@ func _build_gantry() -> void:
 		var z0 := float(rack.z0)
 		var length := float(rack.bay) * YardRackStore.bays_of(r)
 		var rail_y := 9.0
+		var up := Vector3(0, float(rack.base), 0)
 		for side: float in [-1.0, 1.0]:
 			var xr := x + side * reach
-			k.box(Vector3(0.5, 0.6, length + 1.0), Vector3(xr, rail_y + 0.3, z0 + length * 0.5), yellow, false)
+			k.box(Vector3(0.5, 0.6, length + 1.0), up + Vector3(xr, rail_y + 0.3, z0 + length * 0.5), yellow, false)
 			var z := z0 - 0.3
 			while z <= z0 + length + 0.5:
-				k.box(Vector3(0.42, rail_y, 0.42), Vector3(xr, rail_y * 0.5, z), yellow)
+				k.box(Vector3(0.42, rail_y, 0.42), up + Vector3(xr, rail_y * 0.5, z), yellow)
 				z += float(rack.bay) * 2.0
 		var bz := z0 + float(rack.bay) * 4.0   # between two cradles' bots
-		k.box(Vector3(reach * 2.0 + 0.8, 0.7, 0.9), Vector3(x, rail_y + 0.95, bz), yellow, false)
-		k.box(Vector3(1.0, 0.8, 1.2), Vector3(x + 0.8, rail_y + 0.2, bz), dark, false)
-		k.box(Vector3(0.04, 3.4, 0.04), Vector3(x + 0.8, rail_y - 1.9, bz), dark, false)
-		k.box(Vector3(0.5, 0.3, 0.3), Vector3(x + 0.8, rail_y - 3.75, bz), yellow, false)
+		k.box(Vector3(reach * 2.0 + 0.8, 0.7, 0.9), up + Vector3(x, rail_y + 0.95, bz), yellow, false)
+		k.box(Vector3(1.0, 0.8, 1.2), up + Vector3(x + 0.8, rail_y + 0.2, bz), dark, false)
+		k.box(Vector3(0.04, 3.4, 0.04), up + Vector3(x + 0.8, rail_y - 1.9, bz), dark, false)
+		k.box(Vector3(0.5, 0.3, 0.3), up + Vector3(x + 0.8, rail_y - 3.75, bz), yellow, false)
 
 
 func _build_labels() -> void:
@@ -295,8 +304,8 @@ func _build_labels() -> void:
 		l.modulate = Color(1, 1, 1, 0.95)
 		var y := p.y - 0.07 if int(rack.kind) != YardRackStore.LONG else p.y - 0.2
 		if int(rack.kind) == YardRackStore.HEAVY:
-			y = float(rack.first) + 0.02
-		l.position = Vector3(float(rack.x) + side * (float(rack.depth) + 0.04), maxf(y, 0.06), p.z)
+			y = float(rack.base) + float(rack.first) + 0.02
+		l.position = Vector3(float(rack.x) + side * (float(rack.depth) + 0.04), maxf(y, float(rack.base) + 0.06), p.z)
 		l.rotation.y = PI * 0.5 * side
 		add_child(l)
 		labels.append(l)

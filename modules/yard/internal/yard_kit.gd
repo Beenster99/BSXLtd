@@ -159,10 +159,12 @@ func _wall_piece(along_x: bool, at: float, a: float, b: float, y0: float, y1: fl
 
 ## A room-light (stage 1.5): a lit panel in a dark steel bezel, a spot under it throwing a
 ## soft pool down the room and a faint omni round it for the ceiling and the walls' tops.
-## Returns the spot (its energy is the lamp's).
+## Returns the spot (its energy is the lamp's); a light_range of 0 builds the panel alone (null).
 func ceiling_lamp(at: Vector3, panel: Vector2, energy := 1.2, light_range := 9.0, shadow := false) -> SpotLight3D:
 	box(Vector3(panel.x + 0.12, 0.06, panel.y + 0.12), at + Vector3(0, -0.04, 0), paint(DARK, 0.7, 0.45, "gunmetal"), false)
 	box(Vector3(panel.x, 0.02, panel.y), at + Vector3(0, -0.075, 0), glow(LAMP, 3.0), false)
+	if light_range <= 0.0:   # the panel only: the caller lights it its own way
+		return null
 	var spot := SpotLight3D.new()
 	spot.position = at + Vector3(0, -0.12, 0)
 	spot.rotation = Vector3(-PI * 0.5, 0, 0)
