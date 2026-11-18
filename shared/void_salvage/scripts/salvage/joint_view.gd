@@ -63,6 +63,11 @@ var _shank_item: JointBatch.Item
 ## the one bead (`item`) draws it.
 var _cell_items: Array[JointBatch.Item] = []
 var _cell_levels: PackedInt32Array = PackedInt32Array()
+## (FS2) Each cell's own glow (0..1): a cell just ground glows hot and cools, so the working edge of a seam shows
+## (Dan, 18 Nov); every machine sees it, as cells come from the host. The joint's own heat is `heat`.
+var _cell_heat: PackedFloat32Array = PackedFloat32Array()
+## (FS2) How much of the joint's own heat a followed seam's cells take (the grind's glow is the cells' own).
+const CELL_SHARE: float = 0.2
 
 
 ## Builds the view for `c` on part `part_xform` (relative to the structure), drawn by
@@ -101,8 +106,13 @@ func structure_transform() -> Transform3D:
 ## Cools a hot head; returns false once it is cold (the structure stops ticking it).
 func cool(delta: float) -> bool:
 	heat = maxf(heat - COOL_RATE * delta, 0.0)
+	var warm := false
+	for i in _cell_heat.size():
+		if _cell_heat[i] > 0.0:
+			_cell_heat[i] = maxf(_cell_heat[i] - COOL_RATE * delta, 0.0)
+			warm = true
 	_apply_heat()
-	return heat > 0.0
+	return heat > 0.0 or warm
 
 
 ## Adds glow as a tool works this joint (1.0 = full glow). Returns true if it was cold
@@ -148,6 +158,7 @@ func _clear_cells() -> void:
 		_batch.remove(cell)
 	_cell_items.clear()
 	_cell_levels.clear()
+	_cell_heat.clear()
 
 
 func _clear_shank() -> void:
@@ -351,7 +362,7 @@ func _apply_heat() -> void:
 	_batch.update(item)
 	for i in _cell_items.size():
 		var cell := _cell_items[i]
-		cell.custom = item.custom if _cell_levels[i] > 0 else Color(heat, 0.0, 0.0, 0.0)
+		cell.custom = _cell_custom(i)
 		_batch.update(cell)
 	if _shank_item:
 		_shank_item.custom = item.custom
@@ -405,6 +416,8 @@ func _draw_cells() -> void:
 		_clear_cells()
 		_cell_levels.resize(n)
 		_cell_levels.fill(-1)
+		_cell_heat.resize(n)
+		_cell_heat.fill(0.0)
 		_cell_items.resize(n)
 	var at := _part_xform * _anchor
 	for i in n:
@@ -422,13 +435,21 @@ func _draw_cells() -> void:
 			var mesh := bead_mesh(Vector2(u1 - u0, 0.0), float(level) / float(BEAD_LEVELS), connection.head, false) \
 					if level > 0 else stripe_mesh()
 			var cell := JointBatch.Item.new(mesh, item.material if level > 0 else bare_material(), xform)
-			cell.custom = item.custom if level > 0 else Color(heat, 0.0, 0.0, 0.0)
-			_cell_items[i] = cell
+			if level < (_cell_levels[i] if _cell_levels[i] >= 0 else BEAD_LEVELS):
+				_cell_heat[i] = 1.0   # just ground: it glows, and cools as the disc moves on
 			_cell_levels[i] = level
+			cell.custom = _cell_custom(i)
+			_cell_items[i] = cell
 			_batch.add(cell)
 		else:
 			_cell_items[i].xform = xform
 			_batch.update(_cell_items[i])
+
+
+## (FS2) Cell `i`'s instance data: its own glow over a share of the joint's, as a bead (the hint's kind) or bare.
+func _cell_custom(i: int) -> Color:
+	var glow := maxf(_cell_heat[i], heat * CELL_SHARE)
+	return Color(glow, _seized_flag(), _kind_code(), rested) if _cell_levels[i] > 0 else Color(glow, 0.0, 0.0, 0.0)
 
 
 ## (FS2) Where a stripe of bare steel `length` long lies, `u` along the seam from its middle (the bead's space).

@@ -113,6 +113,9 @@ var _loom_curves: Dictionary = {}
 ## welds along its long sides, a deck plate and a wall panel by two bolts, a lining by two rivets (FrameHull,
 ## DeckFrame, StudWall). Off: every row of heads as before. A wreck design turns it on; the crew's ships never do.
 var seam_plates: bool = false
+## (FS2) Seam mode's beads run half their side's length, centred on it (Dan, 18 Nov: a big plate's seam is not the
+## whole edge to grind), or at least `ConnectionData.FOLLOW_MIN` where the side is long enough; off: the whole side.
+var seam_half: bool = false
 ## Seam mode: every hull plate's edges ({plate, a, b, out}, ship space) and the long sides that found no member under
 ## them ({plate, a, b, out, rows}: the plate's member rows to fall back on), for `FrameHull.close_seams` to weld to
 ## the plate across them once every hull is built.

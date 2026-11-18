@@ -336,7 +336,7 @@ static func catalogue() -> Array:
 
 ## An outline moved inward by a different distance per edge (`dists[i]` for the edge from
 ## point i to i + 1): each corner is where its two offset edges cross.
-static func inset_edges(outline: PackedVector2Array, dists: Array[float]) -> PackedVector2Array:
+static func inset_edges(outline: PackedVector2Array, dists: Array[float], straight: float = 1e-4) -> PackedVector2Array:
 	var centre := Vector2.ZERO
 	for p in outline:
 		centre += p
@@ -350,17 +350,32 @@ static func inset_edges(outline: PackedVector2Array, dists: Array[float]) -> Pac
 			nrm = -nrm
 		normals.append(nrm)
 	var out := PackedVector2Array()
+	var on_line: Array[bool] = []
 	for i in n:
 		var n1 := normals[(i - 1 + n) % n]
 		var n2 := normals[i]
 		var d1 := dists[(i - 1 + n) % n]
 		var d2 := dists[i]
 		var det := n1.x * n2.y - n1.y * n2.x
-		if absf(det) < 1e-4:
+		on_line.append(absf(det) < straight)
+		if on_line[i]:
 			out.append(outline[i] + n1 * maxf(d1, d2))
 			continue
 		var v := Vector2((d1 * n2.y - n1.y * d2) / det, (n1.x * d2 - n2.x * d1) / det)
 		out.append(outline[i] + v)
+	if straight > 1e-3:
+		# A corner drawn in slides along its side, and can pass a point that stands on that side close by (a panel
+		# point): such a point stops at the corner, so the line never folds back on itself.
+		for sweep in 2:
+			for j in 2 * n:
+				var i := j % n if sweep == 0 else (2 * n - 1 - j) % n
+				var k := (i + 1) % n
+				if (out[k] - out[i]).dot(outline[k] - outline[i]) >= 0.0:
+					continue
+				if sweep == 0 and on_line[k]:
+					out[k] = out[i]
+				elif sweep == 1 and on_line[i]:
+					out[i] = out[k]
 	return out
 
 
