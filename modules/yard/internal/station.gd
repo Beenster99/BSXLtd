@@ -38,7 +38,7 @@ const SUIT_VIEWS := {
 }
 ## Screenshot points at the practice frame (stage 1.4): the grinder on a rivet, seen from the
 ## side, and the same from your own eyes with the hotbar.
-const TOOL_VIEWS := ["tools_grinder", "tools_first_person"]
+const TOOL_VIEWS := ["tools_grinder", "tools_first_person", "tools_tractor", "tools_tractor_close", "tools_tablet"]
 ## Where you start: the corridor, by the design room's door.
 const START := Vector3(4.0, 0.0, -1.5)
 
@@ -142,11 +142,41 @@ func show_view(id: String) -> void:
 	view_camera.current = true
 
 
-## Floats in front of the riveted panel's first rivet with the grinder running on it.
+## Floats in front of the riveted panel's first rivet with the grinder running on it; or holds
+## the loose bracket with the tractor; or reads the frame on the beam tablet, raised.
 func _show_tool_view(id: String) -> void:
 	if practice == null:
 		return
 	var frame := practice.get("frame") as YardWorkpiece
+	if id.begins_with("tools_tractor"):
+		var bracket := practice.get("bracket") as YardWorkpiece
+		var b_at := bracket.global_transform * bracket.center_of_mass
+		var away := frame.global_basis.x
+		var head_at := b_at + away * 6.0 + Vector3(0, 0.6, 0)
+		mover.place(head_at - Vector3(0, YardRig.FEET + YardRig.EYE, 0), b_at)
+		mover.lamp.visible = true
+		mover.tools.select_tool(4)
+		mover.tools.trigger_override = 1
+		var across := away.cross(Vector3.UP).normalized()
+		if id == "tools_tractor_close":
+			# In front of the suit and off to its right, looking back at the tool in its hand.
+			var aim := (b_at - head_at).normalized()
+			var right := aim.cross(Vector3.UP).normalized()
+			view_camera.position = to_local(head_at + aim * 0.95 + right * 0.55 - Vector3(0, 0.2, 0))
+			view_camera.look_at(head_at + aim * 0.45 + right * 0.28 - Vector3(0, 0.35, 0))
+		else:
+			view_camera.position = to_local(head_at + across * 3.2 + away * 1.5 + Vector3(0, 0.8, 0))
+			view_camera.look_at(head_at.lerp(b_at, 0.45))
+		view_camera.current = true
+		return
+	if id == "tools_tablet":
+		var f_at := frame.global_transform * Vector3(0.0, 1.3, 0.08)
+		mover.place(f_at + frame.global_basis.z * 2.2 - Vector3(0, YardRig.FEET + YardRig.EYE, 0), f_at)
+		mover.lamp.visible = true
+		mover.tools.select_tool(5)
+		(mover.tools.active_tool() as YardTablet).up = true
+		mover.camera.current = true
+		return
 	var rivet: ConnectionData = null
 	for c: ConnectionData in frame.model.connections:
 		if c.kind == ConnectionData.Kind.RIVET:

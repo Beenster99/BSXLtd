@@ -10,8 +10,8 @@ extends Node
 ## the joint loses health at the tool's rate for its kind and breaks free. The tool pushes
 ## you back as hard as it pushes the work.
 
-## The hotbar, left to right (keys 1 to 4).
-const ORDER: Array[String] = ["grinder", "cutter", "socket", "grabber"]
+## The hotbar, left to right (keys 1 to 6): Void Salvage's four, then BSX's tractor and tablet.
+const ORDER: Array[String] = ["grinder", "cutter", "socket", "grabber", "tractor", "tablet"]
 ## Where the tools are held (the rig's head space): Void Salvage's ToolHold.
 const HOLD := "Transform3D(0.9594144, 0.07234603, 0.272562, 0.014606048, 0.9524863, -0.30423117, -0.28162146, 0.29586482, 0.91277236, 0.28, -0.37, -0.44)"
 
@@ -59,6 +59,7 @@ var _arm_level: float = 0.0
 var _arm_target := Transform3D()
 var _was_trigger := false
 var _hotbar: HBoxContainer
+var _field: MeshInstance3D
 
 
 func _ready() -> void:
@@ -68,7 +69,7 @@ func _ready() -> void:
 	hold.name = "ToolHold"
 	hold.transform = str_to_var(HOLD)
 	rig.head.add_child(hold)
-	for tool: YardTool in [YardGrinder.new(), YardCutter.new(), YardSocket.new(), YardGrabber.new()]:
+	for tool: YardTool in [YardGrinder.new(), YardCutter.new(), YardSocket.new(), YardGrabber.new(), YardTractor.new(), YardTablet.new()]:
 		tool.position = -tool.grip
 		tool.held_reach = (hold.transform * (tool.bite_point - tool.grip)).length()
 		tool.visible = false
@@ -89,6 +90,16 @@ func _ready() -> void:
 	beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_beam.material_override = beam_mat
 	add_child(_beam)
+	_field = MeshInstance3D.new()
+	_field.name = "TractorField"
+	_field.mesh = _field_mesh()
+	_field.top_level = true
+	_field.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var field_mat := ShaderMaterial.new()
+	field_mat.shader = preload("res://modules/yard/assets/tools_fx/tractor_field.gdshader")
+	_field.material_override = field_mat
+	_field.visible = false
+	add_child(_field)
 	_build_hotbar()
 	holster(true)
 
@@ -167,7 +178,7 @@ func holster(on: bool) -> void:
 
 
 static func is_joint_tool(tool: YardTool) -> bool:
-	return not tool is YardGrabber
+	return not tool is YardGrabber and not tool is YardTablet
 
 
 func _show_in_hand() -> void:
@@ -222,7 +233,9 @@ func _physics_process(delta: float) -> void:
 	tool.work_factor = factor
 	tool.work_kind = targeted.kind if targeted else -1
 	tool.work_heat = targeted.heat_now() if targeted else 0.0
-	if tool is YardGrabber:
+	if tool is YardTablet:
+		_update_tablet(tool as YardTablet, hit)
+	elif tool is YardGrabber:
 		_update_grab(tool as YardGrabber, hit)
 	else:
 		_update_cutting(tool, hit, body, factor, delta)
@@ -322,6 +335,18 @@ func _process(delta: float) -> void:
 	tool.draw_boom(tension)
 
 
+# --- Beam tablet -----------------------------------------------------------------------
+
+func _update_tablet(tablet: YardTablet, hit: Dictionary) -> void:
+	_effects.update(false, Vector3.ZERO, Vector3.UP, tablet, false)
+	_draw_beam(false)
+	if trigger and not _was_trigger:
+		tablet.toggle()
+	var body := hit.get("collider") as YardWorkpiece if not hit.is_empty() else null
+	if body:
+		tablet.reading = body
+
+
 # --- Grabber ---------------------------------------------------------------------------
 
 func _update_grab(grabber: YardGrabber, hit: Dictionary) -> void:
@@ -405,9 +430,20 @@ func _push(body: RigidBody3D, force: Vector3, at: Vector3) -> void:
 
 func _draw_beam(on: bool, to := Vector3.ZERO) -> void:
 	_beam_mesh.clear_surfaces()
+	var tractor := active_tool() as YardTractor if not tools.is_empty() else null
+	_field.visible = on and tractor != null
 	if not on:
 		return
 	var tool_tip := (active_tool() as Node3D).global_position + aim_dir * 0.15
+	if tractor:
+		# The tractor's field: a soft cone from its lens out to the load.
+		tool_tip = tractor.global_transform * Vector3(0, 0, -0.26)
+		var length := tool_tip.distance_to(to)
+		if length > 0.05:
+			var dir := (to - tool_tip) / length
+			var up := Vector3.UP if absf(dir.y) < 0.95 else Vector3.RIGHT
+			_field.global_transform = Transform3D(Basis.looking_at(dir, up).scaled(Vector3(1, 1, length)), tool_tip)
+		return
 	_beam_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 	var side := aim_dir.cross(Vector3.UP).normalized() * 0.008
 	if side.is_zero_approx():
@@ -416,6 +452,29 @@ func _draw_beam(on: bool, to := Vector3.ZERO) -> void:
 		_beam_mesh.surface_add_vertex(tool_tip + side * k)
 		_beam_mesh.surface_add_vertex(to + side * k)
 	_beam_mesh.surface_end()
+
+
+## The tractor's field: an open cone a metre long down -Z (scaled to the load), its radius
+## from the lens's to half a metre at the load; the shader draws it soft and moving.
+static func _field_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sides := 24
+	var rings := 12
+	for r in rings:
+		for i in sides:
+			var quad: Array = []
+			for k: Vector2i in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1)]:
+				var t := float(r + k.y) / rings
+				var a := TAU * (i + k.x) / sides
+				var radius := lerpf(0.03, 0.5, t)
+				st.set_uv(Vector2(float(i + k.x) / sides, t))
+				quad.append(Vector3(cos(a) * radius, sin(a) * radius, -t))
+			for j: int in [0, 1, 2, 0, 2, 3]:
+				st.set_uv(Vector2(0, -(quad[j] as Vector3).z))
+				st.add_vertex(quad[j])
+	st.generate_normals()
+	return st.commit()
 
 
 func _cast_ray(reach: float) -> Dictionary:

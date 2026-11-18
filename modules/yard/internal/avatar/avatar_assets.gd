@@ -19,6 +19,17 @@ static func is_design(id: String) -> bool:
 static func meshes(id: String) -> Dictionary:
 	if _meshes.has(id):
 		return _meshes[id]
+	# BSX's own tools, made in code in the same finish (YardToolMesh), each in the fitted hand
+	# of the Void Salvage tool whose grip it copies (MADE_TOOLS).
+	if id == "tool_tractor":
+		_meshes[id] = YardTractor.model()
+	elif id == "tool_tablet":
+		_meshes[id] = YardTablet.model()
+	if _meshes.has(id):
+		var out: Dictionary = _meshes[id]
+		if not out.has("hand"):
+			out["hand"] = meshes("tool_" + String(MADE_TOOLS[id.trim_prefix("tool_")]))["hand"]
+		return out
 	var scene := load("res://modules/yard/assets/avatar/" + id + ".glb") as PackedScene
 	assert(scene != null, "Missing baked player asset: " + id)
 	var root := scene.instantiate()
@@ -61,10 +72,14 @@ static func _data() -> Dictionary:
 	return _all
 
 
+## BSX's own tools and the Void Salvage tool each one's grip, hand and wrist copy.
+const MADE_TOOLS := {"tractor": "grabber", "tablet": "scanner"}
+
+
 static func tool_profile(id: String) -> Dictionary:
 	if _profiles.is_empty():
 		_profiles = _data()["tools"]
-	return _profiles[id]
+	return _profiles[MADE_TOOLS.get(id, id)]
 
 
 ## Where a design's torso carries the name plate ("plate", the chest joint's space) or its
