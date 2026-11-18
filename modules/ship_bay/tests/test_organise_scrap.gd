@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: ORGANISE SCRAP on the small, medium and large trolleys (beenster, 0.3.20).
 ## In that mode a trolley roams the courtyard and takes every loose part it can carry where
 ## its condition says: the stores, a refurb line's drop area or the crusher's. PARK ends it.
@@ -6,7 +7,14 @@ extends ModuleTest
 ##   tools/run_tests.sh ship_bay
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var flags := ["ship_bay.clean_up", "ship_bay.organise_scrap"]

@@ -21,22 +21,25 @@ func _init(p_bus: ShipBayBus) -> void:
 	add_theme_constant_override("separation", 6)
 	_state = BsxTheme.muted("")
 	add_child(_state)
-	_manta = BsxTheme.button("Spawn a Manta on Dock 2", _toggle_manta)
-	_manta.name = "Manta"
-	_manta.tooltip_text = "Void Salvage's Manta stands on Dock 2 on the apron, for everyone."
-	add_child(_manta)
+	# The apron, its docks and wrecks to take apart are switched off for the shipbuilder
+	# (Wave 0, beenster 17 Nov): ship_bay.apron and ship_bay.teardown bring them back.
+	if Flags.is_on("ship_bay.apron"):
+		_manta = BsxTheme.button("Spawn a Manta on Dock 2", _toggle_manta)
+		_manta.name = "Manta"
+		_manta.tooltip_text = "Void Salvage's Manta stands on Dock 2 on the apron, for everyone."
+		add_child(_manta)
 	_kestrel = BsxTheme.button("Remove the Kestrel", _toggle_kestrel)
 	_kestrel.name = "Kestrel"
 	_kestrel.tooltip_text = "Takes the Kestrel out of the bay, for everyone."
 	add_child(_kestrel)
-	for size: String in ShipBayBus.WRECK_SIZES:
+	for size: String in (ShipBayBus.WRECK_SIZES if Flags.is_on("ship_bay.teardown") else {}):
 		var b := BsxTheme.button("", func() -> void: bus.debug_ship("random_wreck", size))
 		b.name = "Wreck" if size == "S" else "Wreck" + size
 		b.tooltip_text = "Rolls a new %s wreck and puts it on the courtyard bay's cradle instead of the Kestrel, for everyone." \
 				% str(ShipBayBus.WRECK_SIZES[size]).to_lower()
 		add_child(b)
 		_wrecks[size] = b
-	if Flags.is_on("ship_bay.debug_named_wreck"):
+	if Flags.is_on("ship_bay.debug_named_wreck") and Flags.is_on("ship_bay.teardown"):
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
 		_pick = OptionButton.new()
@@ -101,7 +104,8 @@ func _toggle_kestrel() -> void:
 
 func _show() -> void:
 	var manta := bus.yard_ships.has("manta")
-	_manta.text = "Remove the Manta" if manta else "Spawn a Manta on Dock 2"
+	if _manta:
+		_manta.text = "Remove the Manta" if manta else "Spawn a Manta on Dock 2"
 	var kestrel := bus.ship != null and bus.ship.ship_id != ShipBayBus.WRECK_ID
 	_kestrel.text = "Remove the Kestrel" if kestrel else "Bring the Kestrel back"
 	for size: String in _wrecks:

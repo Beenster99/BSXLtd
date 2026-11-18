@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: a part taken off a ship keeps its own shape (beenster, 0.3.26: "on the refurb
 ## line the part turns into a box"). Its crate carries a shape key; trolleys, the refurbishment
 ## line and the crusher draw it with ItemLook.look_id, built from the bay ship's own pieces.
@@ -7,7 +8,14 @@ extends ModuleTest
 const ItemLook := preload("res://modules/ship_bay/internal/yard/item_look.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var was := Flags.is_on("ship_bay.bay_cradle")

@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: a player's beam can take goods off any trolley (beenster, 0.3.19). Drawn
 ## trolley loads, floor crates and shelf stock carry look boxes with the part's catalogue id
 ## (and the crate's), so the look card and Tools' beam find them; lift_off_trolley takes a
@@ -6,7 +7,14 @@ extends ModuleTest
 ##   tools/run_tests.sh ship_bay
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	Flags.set_flag("ship_bay.trucks", false)

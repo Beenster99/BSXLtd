@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 ## Ship and Bay: a package ordered for the courtyard (beenster's Frame Builder playtest, 30
@@ -10,7 +11,14 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 ##   tools/run_tests.sh ship_bay
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	Flags.set_flag("ship_bay.trucks", false)

@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: the plate hall (beenster, 0.3.23 and 0.3.24). West of Stock, through a door
 ## off its transfer aisle: five open plate racks round the plasma cutting bed's place, one a
 ## material (steel P1, alloy P2, titanium Q1, glass R1, crystal R2), a bay a size and a level
@@ -11,7 +12,14 @@ const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.
 const Yard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var layout := Layout.get_layout()

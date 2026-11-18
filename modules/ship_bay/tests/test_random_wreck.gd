@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: Settings > Debug > Ship's random wrecks (beenster, 26 Oct). A press rolls a
 ## small, medium or large wreck (one of Void Salvage's designs) and makes it the bay's ship in place of the Kestrel,
 ## the same on every machine: set down on the cradle's saddles (a medium cradle for the bigger
@@ -14,7 +15,14 @@ const Bay := preload("res://modules/ship_bay/internal/bay/bay.gd")
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var a := ShipBayBus.random_wreck(42)

@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: you board the Kestrel on the scissor lift (walk on, hold RAISE on its
 ## touch screen to the door sill, walk in), the lift steps, stops, is pushed and won't run
 ## into the hull, the touch screens take clicks from the view's pointer, the ground power unit
@@ -10,7 +11,14 @@ extends ModuleTest
 const TransportCradle := preload("res://modules/ship_bay/internal/yard/transport_cradle.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	var scene := load("res://modules/ship_bay/internal/yard/shipyard.tscn") as PackedScene
 	var yard := scene.instantiate() as Node3D

@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: the shipyard builds round the bay, its rooms are where the flow says, you
 ## can walk from the apron into the courtyard and through the rooms, and the Kestrel sits
 ## in the bay.
@@ -9,7 +10,14 @@ const CrusherPlant := preload("res://modules/ship_bay/internal/yard/crusher_plan
 const Apron := preload("res://modules/ship_bay/internal/yard/apron.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bay := Modules.bus("ship_bay") as ShipBayBus
 	var rooms := bay.shipyard_rooms()
 	check(rooms.keys() == ["deliveries", "stock", "prep", "preassembly", "plates", "bay"], "rooms in work order: %s" % [rooms.keys()])

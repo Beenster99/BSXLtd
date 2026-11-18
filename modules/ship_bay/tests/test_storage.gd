@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: the storage hall has a labelled home for every small part BSX can buy and a
 ## large or heavy rack place for every big one, starts
 ## empty on a new game, takes Business's deliveries into the Deliveries hall, puts crates
@@ -8,7 +9,14 @@ extends ModuleTest
 const Layout := preload("res://modules/ship_bay/internal/storage/storage_layout.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	check(bus.get("_net") != null or not Modules.is_loaded("multiplayer"), "changes to the stores go through Multiplayer")

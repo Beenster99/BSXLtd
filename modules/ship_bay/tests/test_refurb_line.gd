@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: the two refurbishment lines in Pre-assembly and the crusher bay outside.
 ## A survey takes a worn lot out of the stores (or its intake bay) and says scrap or
 ## refurbish; a refurbished lot goes straightener -> bath -> coater onto the line's own
@@ -13,7 +14,14 @@ const RefurbLineScript := preload("res://modules/ship_bay/internal/yard/refurb_l
 const Crusher := preload("res://modules/ship_bay/internal/yard/crusher_plant.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	# These checks run the machines by hand: the bay's lots don't run on by themselves here.
