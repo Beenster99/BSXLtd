@@ -3,6 +3,9 @@ extends Node3D
 ## Presentation only. The existing head transform still determines reach, contact and damage.
 ## A fitted metal hand and the complete tool travel together; extension happens at the wrist.
 
+## Meta on a tool's own mesh that stays drawn under the art (a live screen, its lit rim).
+const LIVE := &"yard_live"
+
 ## Width of the bellows and support rails; length still follows the fitted hand.
 @export_range(0.3, 1.0, 0.05) var wrist_width: float = 0.65
 
@@ -72,7 +75,7 @@ func _hide_previous_geometry() -> void:
 		if is_ancestor_of(mi):
 			continue
 		var mat := mi.material_override as StandardMaterial3D
-		var live := mi in keep
+		var live := mi in keep or mi.has_meta(LIVE)
 		if not live:
 			mi.visible = false
 		if live and tool.head and not tool.head.is_ancestor_of(mi):
