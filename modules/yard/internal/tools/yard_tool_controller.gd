@@ -57,6 +57,10 @@ var plan_body: YardWorkpiece
 var work_progress: float = -1.0
 var work_label: String = ""
 var work_stuck := false
+## The work is going badly but going (a weld too fast or too slow): the bar turns red, no STUCK.
+var work_warn := false
+var _held_label := ""
+var _held_stuck := false
 ## The grabber's hold.
 var grab_body: RigidBody3D
 var grab_point := Vector3.ZERO
@@ -182,6 +186,14 @@ func active_tool() -> YardTool:
 	return tools[active_index]
 
 
+## The tool with this id, or null.
+func get_tool(id: String) -> YardTool:
+	for tool in tools:
+		if tool.tool_id == id:
+			return tool
+	return null
+
+
 ## Puts the tool away (the hand free) or draws it again.
 func holster(on: bool) -> void:
 	if not on:
@@ -218,6 +230,7 @@ func _physics_process(delta: float) -> void:
 	aim_origin = aim.origin
 	aim_dir = -aim.basis.z
 	work_progress = -1.0
+	work_warn = false
 	work_stuck = false
 	if holstered:
 		trigger = false
@@ -331,6 +344,8 @@ func _update_cutting(tool: YardTool, hit: Dictionary, body: YardWorkpiece, facto
 	if targeted_body.damage_connection(targeted, tool.damage_rate(targeted.kind) * factor * tool.rate_factor() * delta):
 		broken += 1
 		_bar_hold = 0.35
+		_held_label = ""
+		_held_stuck = false
 		work_progress = 1.0
 		lock = null
 		lock_body = null
@@ -380,12 +395,14 @@ func _process(delta: float) -> void:
 func _update_fastening(tool: YardFastener, hit: Dictionary, body: YardWorkpiece, delta: float) -> void:
 	_draw_beam(false)
 	var touching := not hit.is_empty()
-	if plan_body and (not is_instance_valid(plan_body) or not plan_body.planned.has(plan)):
+	if not plan.is_empty() and (not is_instance_valid(plan_body) or not plan_body.planned.has(plan)):
 		plan = {}
 		plan_body = null
 	if not trigger:
 		plan = {}
 		plan_body = null
+		if tool is YardRiveter:
+			(tool as YardRiveter).pressure = 0.0
 	if plan.is_empty() and body and touching:
 		var near := body.planned_near(hit.position, tool.plan_snap, tool.fasten_kind)
 		if not near.is_empty():
@@ -396,33 +413,105 @@ func _update_fastening(tool: YardFastener, hit: Dictionary, body: YardWorkpiece,
 	if not plan.is_empty() and rest_bite(tool).distance_to(plan_body.planned_position(plan)) > tool.boom + arm_stretch + 0.4:
 		plan = {}
 		plan_body = null
-	var setting := trigger and not plan.is_empty()
-	tool.set_working(trigger, touching or setting)
-	tool.fastening = setting
-	tool.progress = float(plan.get("done", 0.0))
-	tool.biting = setting
+	var on_plan := trigger and not plan.is_empty()
+	if tool is YardWelder:
+		_update_welding(tool as YardWelder, hit, on_plan, delta)
+	else:
+		_update_riveting(tool as YardRiveter, on_plan, delta)
+
+
+## The welder (0.4.1 playtest): the bead follows where you aim, as fast as you move it. Steady
+## along the chalk line lays a neat bead; too fast, a thin broken one; too slow, a fat burnt one.
+func _update_welding(tool: YardWelder, hit: Dictionary, on_plan: bool, delta: float) -> void:
+	var laid := false
+	var pace := ""
+	if on_plan and not hit.is_empty():
+		var r := plan_body.weld_along(plan, hit.position, delta, tool.ideal_speed, tool.max_speed)
+		laid = bool(r.laid) or String(r.pace) == "STEADY" or String(r.pace) == "TOO SLOW" or String(r.pace) == "TOO FAST"
+		pace = r.pace
+		tool.pace = pace
+		tool.speed = float(r.speed)
+		if bool(r.done):
+			fastened_count += 1
+			fastened.emit(plan_body.model.connections.back())
+			work_progress = 1.0
+			work_label = "WELD %s" % String(plan_body.last_weld.get("grade", ""))
+			_bar_hold = 1.2
+			_held_label = work_label
+			_held_stuck = String(plan_body.last_weld.get("grade", "")) == "POOR"
+			plan = {}
+			plan_body = null
+			on_plan = false
+	var arc := on_plan and laid and pace != "OFF THE LINE"
+	tool.set_working(trigger, not hit.is_empty() or arc)
+	tool.fastening = arc
+	tool.progress = float(plan.get("done", 0.0)) if on_plan else 0.0
+	tool.biting = arc
 	if tool.tool_voice:
-		tool.tool_voice.feed(trigger, touching or setting, setting, tool.progress, 1.0, 1.0)
-	if not setting:
+		tool.tool_voice.feed(trigger, arc, arc, tool.progress, 1.0, 1.0)
+	if not arc:
+		_effects.update(false, Vector3.ZERO, Vector3.UP, tool, false)
+		_effects.fasten(tool, Vector3.ZERO, Vector3.UP, false, delta)
+		if on_plan:
+			work_progress = tool.progress
+			work_label = pace if pace != "" else "WELD"
+			work_warn = true
+		return
+	var at := plan_body.planned_position(plan)
+	var n := plan_body.planned_normal(plan)
+	_work = [at, n]
+	work_progress = tool.progress
+	work_label = "WELD  %s" % pace
+	work_warn = pace != "STEADY"
+	_effects.fasten(tool, at, n, true, delta)
+	rig.apply_central_force(-(at - aim_origin).normalized() * tool.push_force)
+
+
+## The riveter (0.4.1 playtest): on a chalked rivet it builds up air pressure with a rising
+## hiss, then punches the rivet home in one blow, loud, with a kick and a burst of sparks.
+func _update_riveting(tool: YardRiveter, on_plan: bool, delta: float) -> void:
+	tool.set_working(trigger, on_plan)
+	tool.fastening = on_plan
+	tool.biting = on_plan
+	if on_plan:
+		var factor := tool.hardness_factor(Materials.tier(tool.work_material)) if tool.work_material != "" else 1.0
+		tool.pressure = minf(tool.pressure + delta / maxf(tool.charge_seconds, 0.05) * maxf(factor, 0.4), 1.0)
+	else:
+		tool.pressure = move_toward(tool.pressure, 0.0, delta * 3.0)
+	tool.progress = tool.pressure
+	if tool.tool_voice:
+		tool.tool_voice.feed(trigger, on_plan, on_plan, tool.pressure, 1.0, 1.0)
+	if not on_plan:
 		_effects.update(false, Vector3.ZERO, Vector3.UP, tool, false)
 		_effects.fasten(tool, Vector3.ZERO, Vector3.UP, false, delta)
 		return
 	var at := plan_body.planned_position(plan)
 	var n := plan_body.planned_normal(plan)
 	_work = [at, n]
-	work_progress = tool.progress
-	work_label = "RIVET" if tool.fasten_kind == ConnectionData.Kind.RIVET else "WELD"
+	work_progress = tool.pressure
+	work_label = "PRESSURE"
 	_effects.fasten(tool, at, n, true, delta)
-	rig.apply_central_force(-(at - aim_origin).normalized() * tool.push_force)
-	var factor := tool.hardness_factor(Materials.tier(tool.work_material)) if tool.work_material != "" else 1.0
-	if plan_body.work_planned(plan, tool.set_rate * maxf(factor, 0.25) * delta):
-		fastened_count += 1
-		var made: ConnectionData = plan_body.model.connections.back()
-		fastened.emit(made)
-		work_progress = 1.0
-		_bar_hold = 0.35
-		plan = {}
-		plan_body = null
+	if tool.pressure < 1.0:
+		return
+	# The punch: the rivet goes in, the gun kicks you back.
+	plan_body.work_planned(plan, 1.0)
+	fastened_count += 1
+	fastened.emit(plan_body.model.connections.back())
+	_effects.rivet_punch(tool, at, n)
+	if tool.tool_voice:
+		tool.tool_voice.punch()
+	tool.punches += 1
+	tool.pressure = 0.0
+	rig.apply_central_impulse(-(at - aim_origin).normalized() * tool.kick)
+	if rig.feel:
+		rig.feel.set_rumble("hammer", rig.feel.hammer_rumble)
+	work_progress = 1.0
+	work_label = "RIVET IN"
+	_held_label = work_label
+	_held_stuck = false
+	_bar_hold = 0.5
+	plan = {}
+	plan_body = null
 
 
 # --- The progress bar by the crosshair --------------------------------------------------
@@ -484,12 +573,12 @@ func _show_progress(delta: float) -> void:
 	var on := work_progress >= 0.0 and not HudSlots.pointer_claimed()
 	if on:
 		_bar.value = work_progress
-		_bar_fill.bg_color = Color(1.0, 0.25, 0.15) if work_stuck else Color(1.0, 0.62, 0.15)
+		_bar_fill.bg_color = Color(1.0, 0.25, 0.15) if work_stuck or work_warn else Color(1.0, 0.62, 0.15)
 		_bar_label.text = "%s  %d%%%s" % [work_label, int(round(work_progress * 100.0)), "  STUCK" if work_stuck else ""]
 	elif _bar_hold > 0.0:
 		_bar.value = 1.0
-		_bar_fill.bg_color = Color(0.35, 1.0, 0.5)
-		_bar_label.text = "%s  DONE" % work_label
+		_bar_fill.bg_color = Color(1.0, 0.4, 0.2) if _held_stuck else Color(0.35, 1.0, 0.5)
+		_bar_label.text = _held_label if _held_label != "" else "%s  DONE" % work_label
 	_bar_root.visible = on or _bar_hold > 0.0
 
 

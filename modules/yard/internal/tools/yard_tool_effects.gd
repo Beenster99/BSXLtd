@@ -40,8 +40,9 @@ extends Node3D
 @export var weld_spatter_rate: float = 900.0
 @export var weld_glob_rate: float = 55.0
 ## The riveter: sparks and scale flakes off each blow of its hammer.
-@export var rivet_blow_sparks: int = 40
-@export var rivet_blow_flakes: int = 3
+@export var rivet_punch_sparks: int = 260
+@export var rivet_punch_flakes: int = 14
+@export var rivet_punch_globs: int = 7
 ## Hammer blows a second of the socket's impact gun.
 @export var hammer_hz: float = 18.0
 ## Seconds the gas torch takes to bring its melt pool up to yellow-white.
@@ -732,22 +733,32 @@ func fasten(tool: YardFastener, at: Vector3, n: Vector3, setting: bool, delta: f
 			var d := (_off(n, 0.8) + _jitter(0.4)).normalized()
 			spray.glob(from, d * randf_range(0.8, 3.5), randf_range(1.5, 3.0), Color(1.0, 0.7, 0.3), randf_range(0.004, 0.012))
 		return
-	# The riveter: blow by blow.
-	_light.light_energy = move_toward(_light.light_energy, 0.25 * tool.light_strength, 0.2)
-	var hz := (tool as YardRiveter).blows_hz
-	_blow -= delta
-	while _blow <= 0.0:
-		_blow += 1.0 / maxf(hz, 1.0)
-		_light.light_energy = randf_range(0.3, 0.6) * tool.light_strength
-		for k in int(rivet_blow_sparks * scale):
-			var d := (_along(n).rotated(n, randf() * TAU) * randf_range(0.6, 1.0) + n * randf_range(0.05, 0.6)).normalized()
-			spray.shower(from, d * randf_range(2.0, 7.0), randf_range(0.15, 0.5), hot)
-		for k in int(rivet_blow_flakes * scale):
-			var d := (_off(n, 0.6) + _jitter(0.3)).normalized()
-			spray.chip(from, d * randf_range(0.6, 2.0), randf_range(1.5, 3.0), RUST[randi() % RUST.size()] * 0.6,
-					randf_range(0.002, 0.005), 30.0)
-		if randf() < 0.35:
-			spray.glob(from, _off(n, 0.7) * randf_range(0.8, 2.5), randf_range(1.0, 2.0), Color(1.0, 0.6, 0.2), randf_range(0.003, 0.007))
+	# The riveter charging: its air hisses at the nose, a faint mist, a glow from the hot rivet.
+	var r := tool as YardRiveter
+	_light.light_energy = move_toward(_light.light_energy, 0.15 * r.pressure * tool.light_strength, 0.2)
+	for k in _due("rivet_hiss", 25.0 * r.pressure * scale, delta):
+		var d := (_off(n, 0.5) + _jitter(0.5)).normalized()
+		spray.chip(from, d * randf_range(0.3, 0.9), randf_range(0.3, 0.7), Color(0.85, 0.87, 0.9, 0.5), randf_range(0.002, 0.004), 0.0)
+
+
+## The riveter's punch (0.4.1): the rivet goes in in one blow. A flash, a ring of sparks out
+## across the plate, scale and molten drops flying.
+func rivet_punch(tool: YardFastener, at: Vector3, n: Vector3) -> void:
+	global_transform = Transform3D(_basis_up(n), at + n * 0.02)
+	var scale := YardFx.effect_scale()
+	var from := at + n * 0.01
+	var hot := _spark_colour(profile(tool.work_material if tool.work_material != "" else "steel"), 1.0)
+	_light.light_energy = 1.4 * tool.light_strength
+	for k in int(rivet_punch_sparks * scale):
+		var d := (_along(n).rotated(n, randf() * TAU) * randf_range(0.6, 1.0) + n * randf_range(0.05, 0.7)).normalized()
+		spray.shower(from, d * randf_range(3.0, 10.0), randf_range(0.2, 0.7), hot if randf() < 0.7 else Color(1.0, 0.95, 0.8))
+	for k in int(rivet_punch_flakes * scale):
+		var d := (_off(n, 0.6) + _jitter(0.4)).normalized()
+		spray.chip(from, d * randf_range(0.8, 3.0), randf_range(1.5, 3.0), RUST[randi() % RUST.size()] * 0.6,
+				randf_range(0.002, 0.006), 30.0)
+	for k in int(rivet_punch_globs * scale):
+		spray.glob(from, (_off(n, 0.7) + _jitter(0.3)).normalized() * randf_range(1.0, 3.5), randf_range(1.0, 2.5),
+				Color(1.0, 0.6, 0.2), randf_range(0.003, 0.008))
 
 
 # --- YardSocket -----------------------------------------------------------------------------
