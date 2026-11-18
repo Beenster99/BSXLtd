@@ -39,6 +39,16 @@ const SUIT_VIEWS := {
 ## Screenshot points at the practice frame (stage 1.4): the grinder on a rivet, seen from the
 ## side, and the same from your own eyes with the hotbar.
 const TOOL_VIEWS := ["tools_grinder", "tools_first_person", "tools_tractor", "tools_tractor_close", "tools_tablet"]
+## Friends in the yard (stage 1.6), stood in: id -> [the camera, look at, [name, feet, facing,
+## held state] for each] (station space).
+const CREW_VIEWS := {
+	"crew_corridor": [Vector3(-5.0, 1.7, -2.4), Vector3(-14, 1.0, -2.0), [
+		["Dan", Vector3(-8.5, 0, -1.2), Vector3(-2, 1.6, -2.4), {"deck": true, "tool": "grinder"}],
+		["Sam", Vector3(-11.5, 0, -3.0), Vector3(-2, 1.6, -2.4), {"deck": true, "tool": "tablet"}]]],
+	"crew_dock": [Vector3(-56.5, 0.3, -36.0), Vector3(-47.5, -1.0, -42.0), [
+		["Dan", Vector3(-49.5, -0.5, -39.0), Vector3(-47.5, -1.0, -2.0), {"deck": false, "tool": "tractor", "lamp": true}],
+		["Sam", Vector3(-52.5, 1.2, -44.0), Vector3(-56.5, 0.3, -36.0), {"deck": false, "tool": "", "lamp": true}]]],
+}
 ## Where you start: the corridor, by the design room's door.
 const START := Vector3(4.0, 0.0, -1.5)
 
@@ -46,6 +56,8 @@ var kit: RefCounted
 var sky: Node3D
 ## You: the Void Salvage suit and jet-rig (YardRig). Named "Mover" as the stand-in was.
 var mover: YardRig
+## Friends in the yard (stage 1.6).
+var crew: YardCrew
 var view_camera: Camera3D
 var racking: Node3D
 var airlock: Node3D
@@ -86,6 +98,9 @@ func _ready() -> void:
 	mover.gravity_at = Callable(YardLayout, "has_gravity")
 	add_child(mover)
 	mover.place(START, Vector3(6.25, 1.5, -10))
+	crew = YardCrew.new()
+	crew.rig = mover
+	add_child(crew)
 	view_camera = Camera3D.new()
 	view_camera.name = "ViewCamera"
 	view_camera.far = 60000.0
@@ -120,6 +135,9 @@ func _rack_store() -> YardRackStore:
 
 
 func show_view(id: String) -> void:
+	if CREW_VIEWS.has(id):
+		_show_crew_view(id)
+		return
 	if id in TOOL_VIEWS:
 		_show_tool_view(id)
 		return
@@ -137,6 +155,20 @@ func show_view(id: String) -> void:
 	if not VIEWS.has(id):
 		return
 	var v: Array = VIEWS[id]
+	view_camera.position = v[0]
+	view_camera.look_at(v[1])
+	view_camera.current = true
+
+
+## Two friends stood in, in their suits, and you out of the way.
+func _show_crew_view(id: String) -> void:
+	var v: Array = CREW_VIEWS[id]
+	var colours: Array[Color] = [Color("6fc8e8"), Color("7fd47a")]
+	var i := 0
+	for f: Array in v[2]:
+		crew.show_stand_in(f[0], colours[i % colours.size()], f[1], f[2], f[3])
+		i += 1
+	mover.place(Vector3(30, 0, -1.5), Vector3(40, 1.5, -1.5))
 	view_camera.position = v[0]
 	view_camera.look_at(v[1])
 	view_camera.current = true
