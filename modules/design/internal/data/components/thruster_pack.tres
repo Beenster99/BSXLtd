@@ -20,3 +20,4 @@ crew = 0
 rooms = PackedStringArray()
 access = 0.5
 lead_days = 2
+shared_part = "SideThruster"

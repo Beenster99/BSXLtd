@@ -21,6 +21,9 @@ static func load_default() -> DesignCatalog:
 	for res in _load_dir(PARTS_DIR):
 		var p := res as DesignPartType
 		if p:
+			# A part built from a Void Salvage part takes its size as built.
+			if p.shared_part != "" and VsParts.has(p.shared_part):
+				p.size = VsParts.size(p.shared_part)
 			c.parts[p.id] = p
 	return c
 

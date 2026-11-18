@@ -20,3 +20,4 @@ crew = 0
 rooms = PackedStringArray("reactor", "engineering")
 access = 1.0
 lead_days = 6
+shared_part = "Reactor"

@@ -762,6 +762,14 @@ func _components() -> void:
 ## A part as a fitted unit: a dark plinth, its body in its colour, a panel on its working
 ## face (FRONTS[rot]) and a trim round the top. Origin at the floor, middle of its footprint.
 static func component_look(parent: Node3D, pt: DesignPartType, size: Vector3, rot: int, kit: Object) -> void:
+	var vs := VsParts.instance(pt.shared_part) if pt.shared_part != "" else null
+	if vs != null:
+		# Void Salvage's own part, its front (-Z) turned to FRONTS[rot], standing on the floor.
+		var bb := VsParts.shape(pt.shared_part).mesh.get_aabb()
+		vs.rotation.y = rot * PI * 0.5
+		vs.position.y = -bb.position.y
+		parent.add_child(vs)
+		return
 	var plinth := MeshInstance3D.new()
 	plinth.mesh = _box_mesh(Vector3(size.x - 0.06, 0.08, size.z - 0.06))
 	plinth.material_override = kit.call("paint", Color(0.18, 0.19, 0.2), "gunmetal")

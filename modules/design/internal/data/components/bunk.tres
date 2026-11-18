@@ -19,3 +19,4 @@ crew = 1
 rooms = PackedStringArray("quarters")
 access = 0.6
 lead_days = 1
+shared_part = "Bunk"

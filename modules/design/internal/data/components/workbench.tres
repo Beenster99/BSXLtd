@@ -19,3 +19,4 @@ crew = 0
 rooms = PackedStringArray("workshop", "engineering")
 access = 0.8
 lead_days = 1
+shared_part = "Workbench"
