@@ -9,6 +9,7 @@ const Kit := preload("res://modules/yard/internal/yard_kit.gd")
 const SpaceSky := preload("res://modules/yard/internal/space_sky.gd")
 const RackingHall := preload("res://modules/yard/internal/racking_hall.gd")
 const Airlock := preload("res://modules/yard/internal/airlock.gd")
+const DesignLock := preload("res://modules/yard/internal/design_lock.gd")
 const Dock := preload("res://modules/yard/internal/dock.gd")
 const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
 ## Where the practice frame floats: just out of the airlock (station space).
@@ -20,6 +21,8 @@ const VIEWS := {
 	"corridor": [Vector3(-31, 1.7, -2.0), Vector3(40, 1.4, -2.0)],
 	"design_room": [Vector3(10.5, 2.4, -5.0), Vector3(-5, 1.0, -18)],
 	"design_window": [Vector3(0, 1.7, -15), Vector3(0, -3, -80)],
+	"design_lock": [Vector3(-3.5, 2.0, -15.5), Vector3(-11, 1.2, -22.5)],
+	"design_lock_outside": [Vector3(-4.5, 1.2, -31), Vector3(-11, 1.4, -23.5)],
 	"racking_front": [Vector3(31, 2.0, -4.6), Vector3(24, 3.5, -20)],
 	"racking_aisle": [Vector3(25.5, 5.5, -10.4), Vector3(25.5, 4.0, -29)],
 	"contracts": [Vector3(-1.0, 1.7, 0.8), Vector3(-8, 1.0, 8)],
@@ -61,6 +64,8 @@ var crew: YardCrew
 var view_camera: Camera3D
 var racking: Node3D
 var airlock: Node3D
+## The design room's own airlock out to the dock.
+var design_lock: Node3D
 var dock: Node3D
 ## The practice frame for the hand tools (with the dock).
 var practice: Node3D
@@ -84,6 +89,10 @@ func _ready() -> void:
 	airlock.name = "Airlock"
 	add_child(airlock)
 	airlock.call("build", kit)
+	design_lock = DesignLock.new()
+	design_lock.name = "DesignLock"
+	add_child(design_lock)
+	design_lock.call("build", kit)
 	if Flags.is_on(YardBus.DOCK):
 		dock = Dock.new()
 		dock.name = "Dock"
@@ -335,7 +344,8 @@ func _build_station() -> void:
 				room.add_child(bounce)
 
 	# Design room (x -12..12, z -22..-4, 6 m high): the window wall faces the dock.
-	k.wall(true, -22.0, -12.1, 12.1, 0.0, 6.0, wall, [[-10.0, 10.0, 5.2, 0.9]], 0.2, pane)
+	var lock_x := YardLayout.DESIGN_LOCK_DOOR_X
+	k.wall(true, -22.0, -12.1, 12.1, 0.0, 6.0, wall, [[lock_x.x, lock_x.y, YardLayout.DESIGN_LOCK_DOOR_H], [-10.0, 10.0, 5.2, 0.9]], 0.2, pane)
 	for x: float in [-5.0, 0.0, 5.0]:
 		k.box(Vector3(0.12, 4.3, 0.16), Vector3(x, 3.05, -22.0), dark)
 	k.wall(false, -12.0, -22.0, -4.0, 0.0, 6.0, wall)
@@ -430,19 +440,24 @@ func _build_station() -> void:
 		k.box(Vector3(0.3, 0.3, 0.3), p, k.glow(Color(1.0, 0.25, 0.2), 6.0), false)
 
 
-## The holotable's circle in the design room's middle, drawn on the floor (nothing stands in it).
+## The holotable's rectangle in the design room's middle, drawn on the floor (nothing stands in it).
 func _mark_clear_circle(k) -> void:
-	var ring := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = YardBus.DESIGN_CLEAR_RADIUS - 0.06
-	tm.outer_radius = YardBus.DESIGN_CLEAR_RADIUS + 0.06
-	tm.rings = 64
-	ring.mesh = tm
-	ring.scale = Vector3(1.0, 0.05, 1.0)
-	ring.position = Vector3(0, 0.002, 0)
-	ring.material_override = k.glow(Kit.ORANGE, 1.2)
-	ring.name = "HoloCircle"
-	design_root.add_child(ring)
+	var mark := Node3D.new()
+	mark.name = "HoloCircle"
+	design_root.add_child(mark)
+	var size := YardBus.DESIGN_CLEAR_SIZE
+	var line := 0.12
+	var mat: Material = k.glow(Kit.ORANGE, 1.2)
+	for side: float in [-1.0, 1.0]:
+		for along_x: bool in [true, false]:
+			var bar := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = Vector3(size.x + line, 0.004, line) if along_x else Vector3(line, 0.004, size.y - line)
+			bar.mesh = bm
+			bar.position = Vector3(0, 0.002, side * size.y * 0.5) if along_x else Vector3(side * size.x * 0.5, 0.002, 0)
+			bar.material_override = mat
+			bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mark.add_child(bar)
 
 
 func _door_frame(k, along_x: bool, at: float, a: float, b: float, h: float, mat: Material) -> void:

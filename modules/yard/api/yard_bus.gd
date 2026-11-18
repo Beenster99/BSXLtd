@@ -13,7 +13,7 @@ extends Node
 ##   var root := yard.design_room_root()        # add the design room's contents here
 ##   for m in yard.design_room_mounts(): ...     # {id, transform, size} TV and whiteboard spots
 ## The design room's root sits at the room's floor centre: +X right, -Z towards the window,
-## y = 0 the floor. Its middle circle (DESIGN_CLEAR_RADIUS) is left empty for the holotable.
+## y = 0 the floor. Its middle rectangle (DESIGN_CLEAR_SIZE) is left empty for the holotable.
 
 ## The station scene was built (and its rooms are ready to furnish).
 signal station_ready(station: Node3D)
@@ -32,7 +32,11 @@ const RACKING := "yard.racking"
 const DESIGN_ROOM_SIZE := Vector3(24, 6, 18)
 ## Its floor centre in station space.
 const DESIGN_ROOM_CENTRE := Vector3(0, 0, -13)
-## Radius (m) of the clear circle in its middle, kept free for the holotable.
+## The clear rectangle in its middle, kept free for the holotable (m: along x, along z),
+## centred on the room root and marked on the floor.
+const DESIGN_CLEAR_SIZE := Vector2(10, 6)
+## The old clear circle's radius (m): the rectangle holds it. Kept until the design room's
+## test reads DESIGN_CLEAR_SIZE.
 const DESIGN_CLEAR_RADIUS := 3.0
 
 ## The racking hall's store (shared by the scene and anyone who asks while it is open).

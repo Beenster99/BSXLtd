@@ -29,6 +29,7 @@ func run_tests() -> void:
 	_design_room(bus, station)
 	await _gravity_and_walking(station)
 	_airlock(station)
+	_design_lock(station)
 	await _racking(station)
 	_dock(station)
 
@@ -72,7 +73,7 @@ func _design_room(bus: YardBus, station: Node3D) -> void:
 
 
 func _gravity_and_walking(station: Node3D) -> void:
-	for id: String in ["design", "corridor", "racking", "contracts", "crew", "airlock"]:
+	for id: String in ["design", "corridor", "racking", "contracts", "crew", "airlock", "design_lock"]:
 		var c: Vector3 = (YardLayout.ROOMS[id].box as AABB).get_center()
 		check(YardLayout.room_at(c) == id and YardLayout.has_gravity(c), "%s has gravity" % id)
 	check(not YardLayout.has_gravity(Vector3(-45, 1, -2)), "past the airlock it is weightless")
@@ -211,6 +212,36 @@ func _airlock(station: Node3D) -> void:
 	check(absf(inner.position.z - -2.0) < 0.01 and outer.position.z > -0.5, "the doors moved to match")
 	lock.call("cycle", true)
 	check(not lock.call("is_busy"), "asking for the open door again does nothing")
+	lock.call("toggle")
+	while lock.call("is_busy") and steps < 2000:
+		lock.call("advance", 0.05)
+		steps += 1
+	check(lock.get("state") == 0, "and back in")
+
+
+## The design room's own lock to the dock (0.4.0 playtest): cycles like the main one, its doors
+## lifting into the wall.
+func _design_lock(station: Node3D) -> void:
+	var lock := station.get("design_lock") as Node3D
+	check(lock != null and lock.get("state") == 0, "the design room's lock starts open to the room")
+	var inner := lock.get("inner_door") as Node3D
+	var outer := lock.get("outer_door") as Node3D
+	var h := YardLayout.DESIGN_LOCK_DOOR_H
+	check(inner.position.y > h and absf(outer.position.y - h * 0.5) < 0.01, "inner door up, outer door down")
+	check(absf(inner.position.z - YardLayout.DESIGN_LOCK_INNER_Z) < 0.01 and absf(outer.position.z - YardLayout.DESIGN_LOCK_OUTER_Z) < 0.01,
+			"its doors sit in the window wall and the outer wall")
+	lock.call("cycle", true)
+	var both_open := false
+	var steps := 0
+	while lock.call("is_busy") and steps < 1000:
+		lock.call("advance", 0.05)
+		var o: Vector2 = lock.call("openness")
+		both_open = both_open or (o.x > 0.0 and o.y > 0.0)
+		steps += 1
+	check(lock.get("state") == 1 and not both_open, "it cycles out, never both doors open")
+	check(absf(inner.position.y - h * 0.5) < 0.01 and outer.position.y > h, "inner door down, outer door up")
+	var mid := Vector3((YardLayout.DESIGN_LOCK_DOOR_X.x + YardLayout.DESIGN_LOCK_DOOR_X.y) * 0.5, 1.0, -23.5)
+	check(YardLayout.room_at(mid) == "design_lock", "the lock is a room of its own")
 	lock.call("toggle")
 	while lock.call("is_busy") and steps < 2000:
 		lock.call("advance", 0.05)
