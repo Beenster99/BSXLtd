@@ -10,6 +10,9 @@ const SpaceSky := preload("res://modules/yard/internal/space_sky.gd")
 const RackingHall := preload("res://modules/yard/internal/racking_hall.gd")
 const Airlock := preload("res://modules/yard/internal/airlock.gd")
 const Dock := preload("res://modules/yard/internal/dock.gd")
+const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
+## Where the practice frame floats: just out of the airlock (station space).
+const PRACTICE_AT := Vector3(-47.5, -0.6, -2.0)
 
 ## Camera views for screenshots and tests: id -> [from, look at] (station space).
 const VIEWS := {
@@ -33,6 +36,9 @@ const SUIT_VIEWS := {
 	"suit_back": [Vector3(-12, 0, -2.0), Vector3(-30, 1.5, -2.0), Vector3(-8.6, 2.0, -1.4), false],
 	"suit_dock": [Vector3(-52, -1.5, -40), Vector3(-30, -8, -95), Vector3(-49.0, -0.4, -43.2), true],
 }
+## Screenshot points at the practice frame (stage 1.4): the grinder on a rivet, seen from the
+## side, and the same from your own eyes with the hotbar.
+const TOOL_VIEWS := ["tools_grinder", "tools_first_person"]
 ## Where you start: the corridor, by the design room's door.
 const START := Vector3(4.0, 0.0, -1.5)
 
@@ -44,6 +50,8 @@ var view_camera: Camera3D
 var racking: Node3D
 var airlock: Node3D
 var dock: Node3D
+## The practice frame for the hand tools (with the dock).
+var practice: Node3D
 var design_root: Node3D
 var _hint: Label
 var _bus: Node
@@ -69,6 +77,10 @@ func _ready() -> void:
 		dock.name = "Dock"
 		add_child(dock)
 		dock.call("build")
+		practice = PracticeFrame.new()
+		practice.position = PRACTICE_AT
+		practice.rotation.y = PI * 0.5   # its panels face the airlock
+		add_child(practice)
 	mover = YardRig.new()
 	mover.name = "Mover"
 	mover.gravity_at = Callable(YardLayout, "has_gravity")
@@ -108,6 +120,12 @@ func _rack_store() -> YardRackStore:
 
 
 func show_view(id: String) -> void:
+	if id in TOOL_VIEWS:
+		_show_tool_view(id)
+		return
+	if mover.tools:
+		mover.tools.trigger_override = -1
+		mover.tools.holster(true)
 	if SUIT_VIEWS.has(id):
 		var s: Array = SUIT_VIEWS[id]
 		mover.place(s[0], s[1])
@@ -121,6 +139,34 @@ func show_view(id: String) -> void:
 	var v: Array = VIEWS[id]
 	view_camera.position = v[0]
 	view_camera.look_at(v[1])
+	view_camera.current = true
+
+
+## Floats in front of the riveted panel's first rivet with the grinder running on it.
+func _show_tool_view(id: String) -> void:
+	if practice == null:
+		return
+	var frame := practice.get("frame") as YardWorkpiece
+	var rivet: ConnectionData = null
+	for c: ConnectionData in frame.model.connections:
+		if c.kind == ConnectionData.Kind.RIVET:
+			rivet = c
+			break
+	if rivet == null:
+		return
+	var at := frame.joint_position(rivet)
+	var normal := frame.joint_normal(rivet)
+	var head := at + normal * 0.9
+	mover.place(head - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
+	mover.lamp.visible = true
+	mover.tools.select_tool(0)
+	mover.tools.trigger_override = 1
+	if id == "tools_first_person":
+		mover.camera.current = true
+		return
+	var side := normal.cross(Vector3.UP).normalized()
+	view_camera.position = to_local(head + side * 1.6 + Vector3(0, 0.5, 0) - normal * 0.2)
+	view_camera.look_at(at.lerp(head, 0.45))
 	view_camera.current = true
 
 

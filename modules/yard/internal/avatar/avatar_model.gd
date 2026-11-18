@@ -770,6 +770,11 @@ func hand_targets() -> Dictionary:
 
 
 func _tool_hand_target(tool: Node3D) -> Transform3D:
+	var held := tool as YardTool
+	if held and held.art != null and held.art.is_node_ready():
+		var shoulder := global_transform * (_chain(joints["clavicle_R"]) * (joints["upper_arm_R"] as Node3D).position)
+		var reach: float = (BONES_REST["forearm_R"] - BONES_REST["upper_arm_R"]).length() + (BONES_REST["hand_R"] - BONES_REST["forearm_R"]).length() - .005
+		return held.art.cuff_target(shoulder, reach)
 	var grip: Variant = tool.get("grip")
 	return Transform3D(tool.global_basis, tool.global_transform * (grip as Vector3 if grip is Vector3 else Vector3.ZERO))
 
@@ -929,7 +934,12 @@ func _reach_hands(delta: float) -> void:
 ## The hand is part of the fitted tool assembly while equipped. The arm keeps its
 ## existing IK target; the elastic wrist spans from its cuff to the travelling hand.
 func _fit_tool_hand() -> void:
-	(joints["hand_R"] as Node3D).visible = true
+	var tool := tool_override as YardTool
+	var fitted := not seated and is_instance_valid(tool) and tool.is_inside_tree() \
+			and tool.is_visible_in_tree() and tool.art != null and tool.art.is_node_ready()
+	(joints["hand_R"] as Node3D).visible = not fitted
+	if fitted:
+		tool.art.bind_cuff((joints["hand_R"] as Node3D).global_transform, look, accent)
 
 
 ## A gesture's fingers and thumb, over the arm's IK, by `weight`: curled or straight, the thumb

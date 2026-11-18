@@ -45,7 +45,7 @@ func _run() -> void:
 		while hall.call("busy") and t < 20.0:
 			await get_tree().create_timer(0.25).timeout
 			t += 0.25
-	var ids: Array = (station.get("VIEWS") as Dictionary).keys() + (station.get("SUIT_VIEWS") as Dictionary).keys()
+	var ids: Array = (station.get("VIEWS") as Dictionary).keys() + (station.get("SUIT_VIEWS") as Dictionary).keys() + (station.get("TOOL_VIEWS") as Array)
 	for id: String in ids:
 		if not only.is_empty() and not only.has(id):
 			continue

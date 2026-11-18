@@ -89,6 +89,8 @@ var camera: Camera3D
 var lamp: SpotLight3D
 var feel: YardCameraFeel
 var avatar: YardAvatar
+## The tools in hand and the hotbar.
+var tools: YardToolController
 ## Whatever usable thing the view is on (a node with meta "yard_use"), or null.
 var looking_at: Node
 ## The suit's accent colour.
@@ -163,6 +165,8 @@ func _ready() -> void:
 	add_child(avatar)
 	avatar.setup_shadow(accent, lamp, YardSuitLook.default_look(), "")
 	lamp.shadow_caster_mask = 0xFFFFFFFF & ~YardAvatar.OWN_BODY_LAYER
+	tools = YardToolController.new()
+	add_child(tools)
 
 
 ## The mouse's travel (pixels), turned by the gyros over the next steps.
