@@ -33,10 +33,17 @@ const SKIFF_OPS := [
 	{"op": "add_component", "component": {"id": "c8", "type": "cargo_rack", "room": "r4", "x": -6, "z": -4, "rot": 3}},
 	{"op": "add_component", "component": {"id": "c9", "type": "galley", "room": "r9", "x": 1.5, "z": -3.65, "rot": 2}},
 	{"op": "add_component", "component": {"id": "c10", "type": "med_pod", "room": "r10", "x": 1.8, "z": 2, "rot": 1}},
+	{"op": "add_component", "component": {"id": "c11", "type": "fuel_pump", "room": "r11", "x": -4.5, "z": 2, "rot": 3}},
 ]
 
 
-## Builds the skiff into `rec` (an empty record).
-static func skiff(rec: DesignRecord) -> void:
+## Builds the skiff into `rec` (an empty record). With the catalogue it is wired and piped too
+## (DesignServices.route).
+static func skiff(rec: DesignRecord, cat: DesignCatalog = null) -> void:
 	for op: Dictionary in SKIFF_OPS:
 		rec.apply(op)
+	if cat == null:
+		return
+	for kind: String in DesignServices.KINDS:
+		for run in DesignServices.route(rec, cat, kind):
+			rec.apply({"op": "add_run", "run": run})

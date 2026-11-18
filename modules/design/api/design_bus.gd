@@ -91,7 +91,7 @@ func unregister_module() -> void:
 ## Opens a new design holding the sample skiff (Debug tab, tests, screenshots).
 func open_sample() -> DesignRecord:
 	var rec := library.create("Sample skiff")
-	Samples.skiff(rec)
+	Samples.skiff(rec, catalog)
 	library.save_current()
 	return rec
 

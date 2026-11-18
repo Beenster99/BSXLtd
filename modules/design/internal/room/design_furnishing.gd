@@ -117,6 +117,8 @@ func _input(event: InputEvent) -> void:
 			and event.physical_keycode == KEY_ESCAPE:
 		if console._library_panel.visible:
 			console._toggle_library()
+		elif console.plan.cancel():
+			pass  # Esc first drops a half-drawn run, then the tool in hand
 		else:
 			close_console()
 		get_viewport().set_input_as_handled()

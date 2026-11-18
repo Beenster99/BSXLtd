@@ -100,6 +100,32 @@ func run_tests() -> void:
 	await frames(1)
 	check(holo._cut_y < 50.0, "the cutting plane comes down")
 
+	# Wires and pipes: draw one by clicking points, route the rest, swap the hull.
+	plan.set_deck(0)
+	var runs_before := rec.runs.size()
+	plan.set_tool("run:wire")
+	plan._press(plan.to_screen(Vector2(3, 2.5)))
+	plan._press(plan.to_screen(Vector2(5.6, 2.4)))
+	plan._finish_run()
+	check(rec.runs.size() == runs_before + 1 and plan.selected_kind == "run", "clicking points draws a wire")
+	var w: Dictionary = rec.runs[plan.selected_id]
+	check(w.points.size() == 2 and is_equal_approx(float(w.points[1][1]), 2.5), "its legs keep square: %s" % [w.points])
+	check(DesignServices.connected(rec, bus.catalog, "wire").components.has("c3"), "it powers the engine")
+	plan.set_tool("run:wire")
+	plan._press(plan.to_screen(Vector2(0, 0)))
+	check(plan.cancel() and rec.runs.size() == runs_before + 1, "Esc drops a half-drawn run")
+	check(plan.cancel() and plan.tool == "select" and not plan.cancel(), "then puts the tool down, then nothing")
+	var added := console.route_all("fuel")
+	check(added > 0 and DesignServices.cut_off(rec, bus.catalog, "fuel").is_empty() and holo.layers.pipes,
+			"ROUTE ALL lays fuel lines to every engine and shows the pipes layer (%d runs)" % added)
+	bus.editor.undo()
+	check(not DesignServices.cut_off(rec, bus.catalog, "fuel").is_empty(), "one undo takes the whole route away")
+	var hull_b := console.find_child("Structure_hull", true, false) as Button
+	var cost0 := bus.totals().cost
+	hull_b.pressed.emit()
+	check(rec.structure.hull == "armoured" and bus.totals().cost > cost0 and hull_b.text.contains("ARMOURED"),
+			"the hull button swaps the plating and the cost goes up: %s" % hull_b.text)
+
 	# Saves through the console.
 	console._on_save()
 	check(not bus.library.dirty, "save stores the design")

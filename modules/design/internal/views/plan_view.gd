@@ -54,6 +54,10 @@ var centre := Vector2.ZERO
 var selected_kind := ""
 var selected_id := ""
 
+## Points of the wire or pipe being drawn (tool "run:<kind>"), ship space.
+var _run_pts: Array[Vector2] = []
+## The hull walls round the rooms on this deck (DesignStructure, refreshed on change).
+var _structure: DesignStructure
 var _drag := {}  # what the left button is doing: {kind, id, start, edge, rect, ...}
 var _pan_from := Vector2.INF
 var _mouse := Vector2.ZERO
@@ -81,8 +85,22 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 func set_tool(t: String) -> void:
 	tool = t
 	_drag = {}
+	_run_pts = []
 	queue_redraw()
 	tool_changed.emit(tool)
+
+
+## Esc: drops a half-drawn run, else puts the tool in hand down. False if there was nothing to
+## cancel (the console then closes).
+func cancel() -> bool:
+	if not _run_pts.is_empty():
+		_run_pts = []
+		queue_redraw()
+		return true
+	if tool != "select":
+		set_tool("select")
+		return true
+	return false
 
 
 func set_deck(n: int) -> void:
@@ -128,7 +146,9 @@ func _on_changed() -> void:
 			for c in p.components:
 				if problem_parts.get(c, "") != DesignRules.ERROR:
 					problem_parts[c] = p.severity
+		_structure = DesignStructure.measure(rec) if mode == PLAN else null
 		if selected_kind == "room" and not rec.rooms.has(selected_id) \
+				or selected_kind == "run" and not rec.runs.has(selected_id) \
 				or selected_kind == "part" and not rec.components.has(selected_id) \
 				or selected_kind == "door" and not rec.doors.has(selected_id):
 			select("", "")
@@ -224,6 +244,7 @@ func _draw_plan(rec: DesignRecord) -> void:
 			draw_rect(sr, Color(DIM, 0.25), false, 1.0)
 	for r in rec.rooms_on(deck):
 		_draw_room(rec, r)
+	_draw_hull(rec)
 	for door: Dictionary in rec.doors.values():
 		if int(door.deck) == deck:
 			_draw_door(rec, door)
@@ -231,8 +252,52 @@ func _draw_plan(rec: DesignRecord) -> void:
 		var r: Dictionary = rec.rooms.get(c.room, {})
 		if not r.is_empty() and int(r.deck) == deck:
 			_draw_part(c)
+	for w: Dictionary in rec.runs.values():
+		if int(w.deck) == deck:
+			_draw_run(w)
 	for r in rec.rooms_on(deck):
 		_draw_room_label(r)
+
+
+## The hull round the rooms: outer walls heavy, inner walls light, frame ticks every spacing.
+func _draw_hull(rec: DesignRecord) -> void:
+	if _structure == null:
+		return
+	var spacing := maxf(float(rec.structure.get("spacing", 2.0)), 0.5)
+	var outer_w := clampf(zoom * 0.12, 2.0, 6.0)
+	for e: Dictionary in _structure.outer_edges:
+		if int(e.deck) != deck:
+			continue
+		var a := to_screen(e.a)
+		var b := to_screen(e.b)
+		draw_line(a, b, Color(0.75, 0.85, 0.95, 0.9), outer_w)
+		# Frame ticks across the wall, every spacing along it.
+		var along: Vector2 = (e.b - e.a)
+		var n := int(floor(along.length() / spacing + 0.001))
+		var normal := Vector2(-along.y, along.x).normalized() * maxf(zoom * 0.18, 3.0)
+		for i in n + 1:
+			var p := to_screen((e.a as Vector2) + along.normalized() * spacing * i)
+			draw_line(p - normal, p + normal, Color(1.0, 0.7, 0.35, 0.8), 1.5)
+	for e: Dictionary in _structure.inner_edges:
+		if int(e.deck) == deck:
+			draw_line(to_screen(e.a), to_screen(e.b), Color(0.75, 0.85, 0.95, 0.55), maxf(outer_w * 0.5, 1.5))
+
+
+func _draw_run(w: Dictionary) -> void:
+	var spec: Dictionary = DesignServices.KINDS.get(str(w.kind), {})
+	var col: Color = spec.get("colour", INK)
+	var pts := DesignServices.points(w)
+	var sel: bool = selected_kind == "run" and selected_id == w.id
+	var width := clampf(zoom * 0.08, 1.5, 4.0) * (1.8 if sel else 1.0)
+	var screen := PackedVector2Array()
+	for p in pts:
+		screen.append(to_screen(p))
+	draw_polyline(screen, SELECT if sel else col, width)
+	if str(w.kind) != "wire":
+		# Pipes: a darker core so they read differently from wires.
+		draw_polyline(screen, Color(BG, 0.6), maxf(width * 0.35, 1.0))
+	for p in [screen[0], screen[screen.size() - 1]]:
+		draw_circle(p, width * 1.2, col)
 
 
 func _room_colour(r: Dictionary) -> Color:
@@ -377,6 +442,9 @@ func _draw_elevation(rec: DesignRecord) -> void:
 
 
 func _draw_drag_ghost(_rec_unused: DesignRecord) -> void:
+	if tool.begins_with("run:") and editable:
+		_draw_run_ghost()
+		return
 	if _drag.get("kind", "") != "new_room" or not _drag.has("rect"):
 		if editable and tool.begins_with("part:") and _drag.is_empty():
 			_draw_part_ghost()
@@ -388,6 +456,44 @@ func _draw_drag_ghost(_rec_unused: DesignRecord) -> void:
 	draw_rect(sr, Color(col, 0.3))
 	draw_rect(sr, SELECT, false, 2.0)
 	_text(sr.position + Vector2(4, -6), "%s x %s m" % [_m(rect.size.x), _m(rect.size.y)], SELECT, 13)
+
+
+func _draw_run_ghost() -> void:
+	var spec: Dictionary = DesignServices.KINDS.get(tool.trim_prefix("run:"), {})
+	var col: Color = spec.get("colour", INK)
+	var pts := PackedVector2Array()
+	for p in _run_pts:
+		pts.append(to_screen(p))
+	var next := to_screen(_run_point(to_ship(_mouse)))
+	pts.append(next)
+	if pts.size() >= 2:
+		draw_polyline(pts, Color(col, 0.8), 2.0)
+	draw_circle(next, 4.0, SELECT)
+	var hint := "click to add points, double-click or Enter to finish, Esc to cancel"
+	_text(next + Vector2(10, -8), "%s: %s" % [str(spec.get("name", "Run")).to_upper(), hint], SELECT, 12)
+
+
+## Run points snap to half the grid, and keep square: each leg runs along X or Z.
+func _run_point(p: Vector2) -> Vector2:
+	var at := _snap(p, _grid() * 0.5)
+	if not _run_pts.is_empty():
+		var last: Vector2 = _run_pts[_run_pts.size() - 1]
+		if absf(at.x - last.x) > absf(at.y - last.y):
+			at.y = last.y
+		else:
+			at.x = last.x
+	return at
+
+
+func _finish_run() -> void:
+	if _run_pts.size() >= 2:
+		var pts: Array = []
+		for p in _run_pts:
+			pts.append([p.x, p.y])
+		bus.editor.do({"op": "add_run", "run": {"kind": tool.trim_prefix("run:"), "deck": deck, "points": pts}})
+		select("run", _newest(_rec().runs))
+	_run_pts = []
+	queue_redraw()
 
 
 func _draw_part_ghost() -> void:
@@ -434,7 +540,7 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 		elif not _drag.is_empty():
 			_drag_move(event.position)
-		elif editable and tool.begins_with("part:"):
+		elif editable and (tool.begins_with("part:") or tool.begins_with("run:")):
 			queue_redraw()
 		_update_cursor(event.position)
 	elif event is InputEventMouseButton:
@@ -444,12 +550,18 @@ func _gui_input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
 			_zoom_at(mb.position, 1.0 / 1.15)
 		elif mb.button_index in [MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT]:
+			if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT and editable and tool.begins_with("run:") \
+					and not _run_pts.is_empty():
+				_finish_run()
+				return
 			if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT and editable and tool != "select":
 				set_tool("select")
 				return
 			_pan_from = mb.position if mb.pressed else Vector2.INF
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
-			if mb.pressed:
+			if mb.pressed and mb.double_click and tool.begins_with("run:") and editable:
+				_finish_run()
+			elif mb.pressed:
 				_press(mb.position)
 			else:
 				_release(mb.position)
@@ -461,6 +573,13 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 		elif k.keycode in [KEY_DELETE, KEY_BACKSPACE]:
 			delete_selected()
+			accept_event()
+		elif k.keycode in [KEY_ENTER, KEY_KP_ENTER] and tool.begins_with("run:"):
+			_finish_run()
+			accept_event()
+		elif k.keycode == KEY_ESCAPE and tool.begins_with("run:") and not _run_pts.is_empty():
+			_run_pts = []
+			queue_redraw()
 			accept_event()
 		elif k.keycode == KEY_ESCAPE and tool != "select":
 			set_tool("select")
@@ -492,6 +611,8 @@ func delete_selected() -> void:
 			bus.editor.do({"op": "remove_component", "id": selected_id})
 		"door":
 			bus.editor.do({"op": "remove_door", "id": selected_id})
+		"run":
+			bus.editor.do({"op": "remove_run", "id": selected_id})
 
 
 ## What is under a screen point on this deck: {kind, id, edge} (edge: which room edges are
@@ -509,6 +630,14 @@ func pick(s: Vector2) -> Dictionary:
 	for door: Dictionary in rec.doors.values():
 		if int(door.deck) == deck and to_screen(Vector2(door.x, door.z)).distance_to(s) < maxf(8.0, zoom * 0.5):
 			return {"kind": "door", "id": door.id}
+	for w: Dictionary in rec.runs.values():
+		if int(w.deck) != deck:
+			continue
+		var pts := DesignServices.points(w)
+		for i in pts.size() - 1:
+			var q := Geometry2D.get_closest_point_to_segment(p, pts[i], pts[i + 1])
+			if to_screen(q).distance_to(s) < 6.0:
+				return {"kind": "run", "id": w.id}
 	var list := rec.rooms_on(deck)
 	list.reverse()
 	for r in list:
@@ -566,6 +695,9 @@ func _press(s: Vector2) -> void:
 		_place_part(p)
 	elif tool == "door":
 		_place_door(p)
+	elif tool.begins_with("run:"):
+		_run_pts.append(_run_point(p))
+		queue_redraw()
 	else:
 		var hit := pick(s)
 		select(hit.get("kind", ""), hit.get("id", ""))

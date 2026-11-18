@@ -14,6 +14,7 @@ cost = 36000.0
 mass = 4100.0
 build_hours = 16.0
 power = -60.0
+fuel = -1
 thrust = 180.0
 crew = 0
 rooms = PackedStringArray("engineering")

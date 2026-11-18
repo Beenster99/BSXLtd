@@ -172,6 +172,34 @@ func _fill_palette() -> void:
 		b.pressed.connect(plan.set_tool.bind("room:" + rt.id))
 		_tool_buttons["room:" + rt.id] = b
 		_palette.add_child(b)
+	_palette.add_child(T.label("WIRES AND PIPES  (click points, double-click ends)", "display_medium", 15, T.DIM))
+	for kind: String in DesignServices.KINDS:
+		var spec: Dictionary = DesignServices.KINDS[kind]
+		var row := HBoxContainer.new()
+		var draw_b := _swatch_button("DRAW " + str(spec.name).to_upper(), spec.colour)
+		draw_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		draw_b.pressed.connect(plan.set_tool.bind("run:" + kind))
+		_tool_buttons["run:" + kind] = draw_b
+		row.add_child(draw_b)
+		var auto_b := T.button("ROUTE ALL", false, 14)
+		auto_b.name = "Route_" + kind
+		auto_b.tooltip_text = "Lay %s to every part that needs it and has none yet" % str(spec.name).to_lower()
+		auto_b.pressed.connect(route_all.bind(kind))
+		row.add_child(auto_b)
+		_palette.add_child(row)
+	_palette.add_child(T.label("HULL  (click to swap, cost updates)", "display_medium", 15, T.DIM))
+	for kind: String in ["frame", "spacing", "hull", "inner"]:
+		var b := T.button(_structure_text(kind), false, 15)
+		b.name = "Structure_" + kind
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.pressed.connect(func() -> void:
+			var rec := bus.library.current
+			if rec == null:
+				return
+			bus.editor.do({"op": "set_meta", "fields": {"structure": {
+					kind: DesignStructure.next_choice(kind, rec.structure.get(kind))}}})
+			b.text = _structure_text(kind))
+		_palette.add_child(b)
 	_palette.add_child(T.label("COMPONENTS  (click in a room, R turns)", "display_medium", 15, T.DIM))
 	var parts: Array = bus.catalog.parts.values()
 	parts.sort_custom(func(a, b): return a.display_name < b.display_name)
@@ -181,6 +209,43 @@ func _fill_palette() -> void:
 		_tool_buttons["part:" + pt.id] = b
 		_palette.add_child(b)
 	_mark_tools()
+
+
+## Lays runs of `kind` to every part that needs one and has none, in one undo step.
+func route_all(kind: String) -> int:
+	var rec := bus.library.current
+	if rec == null:
+		return 0
+	var ops: Array = []
+	for run in DesignServices.route(rec, bus.catalog, kind):
+		ops.append({"op": "add_run", "run": run})
+	if not ops.is_empty():
+		bus.editor.do({"op": "batch", "ops": ops})
+		if kind == "wire":
+			holo.set_layer("wiring", true)
+		else:
+			holo.set_layer("pipes", true)
+		_sync_layer_buttons()
+	return ops.size()
+
+
+func _structure_text(kind: String) -> String:
+	var rec := bus.library.current
+	if rec == null:
+		return kind.to_upper()
+	var v: Variant = rec.structure.get(kind)
+	if kind == "spacing":
+		return "FRAME SPACING   %s m" % PlanView._m(float(v))
+	var label: String = {"frame": "FRAME", "hull": "HULL", "inner": "INNER WALLS"}[kind]
+	return "%s   %s" % [label, str(DesignStructure.option(kind, str(v)).get("name", v)).to_upper()]
+
+
+func _sync_layer_buttons() -> void:
+	for layer in HoloTable.LAYERS:
+		var b := find_child("Layer_" + layer, true, false) as Button
+		if b and b.button_pressed != holo.layers.get(layer, false):
+			b.set_pressed_no_signal(holo.layers.get(layer, false))
+			_restyle_toggle(b, b.button_pressed)
 
 
 func _swatch_button(text: String, col: Color) -> Button:
@@ -320,6 +385,10 @@ func _refresh_bar() -> void:
 	var rec := bus.library.current
 	if _title:
 		_title.text = ("  " + rec.name + ("  *" if bus.library.dirty else "")) if rec else "  No design open"
+	for kind: String in ["frame", "spacing", "hull", "inner"]:
+		var b := find_child("Structure_" + kind, true, false) as Button
+		if b:
+			b.text = _structure_text(kind)
 	_on_selection(plan.selected_kind if plan else "", plan.selected_id if plan else "")
 
 
@@ -376,6 +445,14 @@ func _on_selection(kind: String, id: String) -> void:
 		_selection.add_child(_remove_button())
 	elif kind == "door":
 		_selection.add_child(T.label("DOOR", "display_bold", 18, T.ORANGE))
+		_selection.add_child(_remove_button())
+	elif kind == "run" and rec.runs.has(id):
+		var w: Dictionary = rec.runs[id]
+		var spec: Dictionary = DesignServices.KINDS.get(str(w.kind), {})
+		var live: bool = DesignServices.connected(rec, bus.catalog, str(w.kind)).runs.has(id)
+		_selection.add_child(T.label(str(spec.get("name", w.kind)).to_upper(), "display_bold", 18, T.ORANGE))
+		_selection.add_child(T.label("%s m   %s" % [PlanView._m(DesignServices.length(w)),
+				"LIVE" if live else "NOT CONNECTED"], "mono_medium", 15, T.GOOD if live else T.DIM))
 		_selection.add_child(_remove_button())
 
 
