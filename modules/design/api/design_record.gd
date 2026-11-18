@@ -215,6 +215,12 @@ func _set_meta(fields: Dictionary) -> Dictionary:
 	return {} if old.is_empty() else {"op": "set_meta", "fields": old}
 
 
+## The id the next new entry with `prefix` will get (for ops that name what they add, so later
+## ops in the same batch can point at it).
+func peek_id(prefix: String) -> String:
+	return "%s%d" % [prefix, _next]
+
+
 func _new_id(prefix: String) -> String:
 	var eid := "%s%d" % [prefix, _next]
 	_next += 1

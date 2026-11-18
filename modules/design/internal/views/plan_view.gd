@@ -79,6 +79,7 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	mode = view_mode
 	editable = can_edit and mode == PLAN
 	bus.design_changed.connect(_on_changed)
+	bus.carry_changed.connect(func(_id: String) -> void: queue_redraw())
 	_on_changed()
 
 
@@ -93,6 +94,9 @@ func set_tool(t: String) -> void:
 ## Esc: drops a half-drawn run, else puts the tool in hand down. False if there was nothing to
 ## cancel (the console then closes).
 func cancel() -> bool:
+	if bus and bus.carrying != "":
+		bus.carry("")
+		return true
 	if not _run_pts.is_empty():
 		_run_pts = []
 		queue_redraw()
@@ -442,6 +446,9 @@ func _draw_elevation(rec: DesignRecord) -> void:
 
 
 func _draw_drag_ghost(_rec_unused: DesignRecord) -> void:
+	if bus.carrying != "" and mode == PLAN:
+		_draw_module_ghost()
+		return
 	if tool.begins_with("run:") and editable:
 		_draw_run_ghost()
 		return
@@ -456,6 +463,27 @@ func _draw_drag_ghost(_rec_unused: DesignRecord) -> void:
 	draw_rect(sr, Color(col, 0.3))
 	draw_rect(sr, SELECT, false, 2.0)
 	_text(sr.position + Vector2(4, -6), "%s x %s m" % [_m(rect.size.x), _m(rect.size.y)], SELECT, 13)
+
+
+## The module being carried, under the pointer: its room and parts, where a click drops it.
+func _draw_module_ghost() -> void:
+	var m := bus.library.module(bus.carrying)
+	if m.is_empty():
+		return
+	var rec := _rec()
+	var size_m := Vector2(float(m.room.w), float(m.room.d))
+	var corner := (to_ship(_mouse) - size_m * 0.5).snapped(Vector2.ONE * rec.grid)
+	var rt := bus.catalog.room(str(m.room.type))
+	var col := rt.colour if rt else INK
+	var sr := Rect2(to_screen(corner), size_m * zoom)
+	draw_rect(sr, Color(col, 0.3))
+	draw_rect(sr, SELECT, false, 2.0)
+	for c: Dictionary in m.components:
+		var pt := bus.catalog.part(str(c.type))
+		if pt:
+			var f := DesignRules.footprint({"x": corner.x + float(c.x), "z": corner.y + float(c.z), "rot": c.rot}, pt)
+			draw_rect(Rect2(to_screen(f.position), f.size * zoom), Color(pt.colour, 0.5))
+	_text(sr.position + Vector2(4, -6), "%s: click to place, right-click to put down" % str(m.name).to_upper(), SELECT, 13)
 
 
 func _draw_run_ghost() -> void:
@@ -540,7 +568,7 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 		elif not _drag.is_empty():
 			_drag_move(event.position)
-		elif editable and (tool.begins_with("part:") or tool.begins_with("run:")):
+		elif bus.carrying != "" or editable and (tool.begins_with("part:") or tool.begins_with("run:")):
 			queue_redraw()
 		_update_cursor(event.position)
 	elif event is InputEventMouseButton:
@@ -550,6 +578,9 @@ func _gui_input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
 			_zoom_at(mb.position, 1.0 / 1.15)
 		elif mb.button_index in [MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT]:
+			if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT and bus.carrying != "":
+				bus.carry("")
+				return
 			if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT and editable and tool.begins_with("run:") \
 					and not _run_pts.is_empty():
 				_finish_run()
@@ -684,6 +715,12 @@ func _press(s: Vector2) -> void:
 	if rec == null or mode != PLAN:
 		return
 	var p := to_ship(s)
+	if bus.carrying != "":
+		# A carried module drops on any plan, the console's or a wall's.
+		var rid := bus.drop_carried(deck, p)
+		if rid != "":
+			select("room", rid)
+		return
 	if not editable:
 		var hit := pick(s)
 		select(hit.get("kind", ""), hit.get("id", ""))

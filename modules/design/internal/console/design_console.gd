@@ -41,6 +41,7 @@ func setup(design_bus: DesignBus, table: HoloTable) -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build()
 	bus.design_changed.connect(_refresh_bar)
+	bus.library.modules_changed.connect(_fill_palette)
 	if bus.library.current == null:
 		var list := bus.library.list()
 		if list.is_empty():
@@ -172,6 +173,26 @@ func _fill_palette() -> void:
 		b.pressed.connect(plan.set_tool.bind("room:" + rt.id))
 		_tool_buttons["room:" + rt.id] = b
 		_palette.add_child(b)
+	_palette.add_child(T.label("MODULES  (pick up, click on a plan to drop)", "display_medium", 15, T.DIM))
+	var mods := bus.library.modules()
+	if mods.is_empty():
+		_palette.add_child(T.label("Select a room and SAVE AS MODULE to make one.", "body", 14, T.DIM))
+	for m in mods:
+		var rt := bus.catalog.room(str(m.room.type))
+		var row := HBoxContainer.new()
+		var pick_b := _swatch_button("%s   %s x %s m, %d parts" % [m.name, PlanView._m(float(m.room.w)),
+				PlanView._m(float(m.room.d)), (m.components as Array).size()], rt.colour if rt else Color.GRAY)
+		pick_b.name = "Module_" + str(m.id)
+		pick_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pick_b.pressed.connect(func() -> void:
+			plan.set_tool("select")
+			bus.carry(str(m.id)))
+		row.add_child(pick_b)
+		var del_b := T.button("X", false, 14)
+		del_b.tooltip_text = "Delete this module (designs already using it keep their rooms)"
+		del_b.pressed.connect(bus.library.remove_module.bind(str(m.id)))
+		row.add_child(del_b)
+		_palette.add_child(row)
 	_palette.add_child(T.label("WIRES AND PIPES  (click points, double-click ends)", "display_medium", 15, T.DIM))
 	for kind: String in DesignServices.KINDS:
 		var spec: Dictionary = DesignServices.KINDS[kind]
@@ -431,6 +452,19 @@ func _on_selection(kind: String, id: String) -> void:
 		var area := float(r.w) * float(r.d)
 		_selection.add_child(T.label("%s m2 floor, %s m3" % [PlanView._m(area), PlanView._m(area * rec.deck_height)],
 				"mono_medium", 15, T.DIM))
+		var mod_row := HBoxContainer.new()
+		var mod_name := LineEdit.new()
+		mod_name.name = "ModuleName"
+		mod_name.placeholder_text = "Module name"
+		mod_name.text = str(r.get("name", "")) if str(r.get("name", "")) != "" else (rt.display_name if rt else "")
+		mod_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mod_row.add_child(mod_name)
+		var mod_b := T.button("SAVE AS MODULE", false, 14)
+		mod_b.name = "SaveModule"
+		mod_b.tooltip_text = "Save this room and everything in it as a ready-made module"
+		mod_b.pressed.connect(func() -> void: bus.library.save_module(mod_name.text, id))
+		mod_row.add_child(mod_b)
+		_selection.add_child(mod_row)
 		_selection.add_child(_remove_button())
 	elif kind == "part" and rec.components.has(id):
 		var c: Dictionary = rec.components[id]

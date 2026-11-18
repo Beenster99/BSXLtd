@@ -126,6 +126,38 @@ func run_tests() -> void:
 	check(rec.structure.hull == "armoured" and bus.totals().cost > cost0 and hull_b.text.contains("ARMOURED"),
 			"the hull button swaps the plating and the cost goes up: %s" % hull_b.text)
 
+	# Ready-made modules: save the mess with its galley, drop copies on the plan.
+	var mess_id := ""
+	for r: Dictionary in rec.rooms.values():
+		if r.type == "mess":
+			mess_id = r.id
+	var mid := bus.library.save_module("Crew mess", mess_id)
+	check(mid != "" and bus.library.modules().size() == 1 and (bus.library.module(mid).components as Array).size() == 1,
+			"a room saves as a module with its parts")
+	check(console.find_child("Module_" + mid, true, false) != null, "the module shows in the palette")
+	check(bus.library.save_module("Crew mess", mess_id) != mid and bus.library.modules()[1].name == "Crew mess 2",
+			"a second save under the same name gets a number")
+	bus.library.remove_module(bus.library.modules()[1].id)
+	var rooms_before := rec.rooms.size()
+	var parts_before := rec.components.size()
+	(console.find_child("Module_" + mid, true, false) as Button).pressed.emit()
+	check(bus.carrying == mid, "pressing it picks the module up")
+	plan.set_deck(0)
+	plan._press(plan.to_screen(Vector2(20, 0)))
+	check(rec.rooms.size() == rooms_before + 1 and rec.components.size() == parts_before + 1 and bus.carrying == "",
+			"a click drops the room and its galley and puts the module down")
+	var dropped: Dictionary = rec.rooms[plan.selected_id]
+	check(dropped.type == "mess" and int(dropped.deck) == 0 and absf(float(dropped.x) + float(dropped.w) * 0.5 - 20.0) <= 0.5,
+			"centred on the click, on the plan's deck: %s" % [dropped])
+	bus.editor.undo()
+	check(rec.rooms.size() == rooms_before and rec.components.size() == parts_before, "one undo takes the whole module away")
+	bus.carry(mid)
+	check(plan.cancel() and bus.carrying == "", "Esc puts a carried module down")
+	var saved := bus.library.save_data()
+	bus.library.load_data(JSON.parse_string(JSON.stringify(saved)), DesignLibrary.SAVE_VERSION)
+	check(bus.library.modules().size() == 1 and bus.library.module(mid).name == "Crew mess", "modules are kept in the save")
+	rec = bus.library.current
+
 	# Saves through the console.
 	console._on_save()
 	check(not bus.library.dirty, "save stores the design")
