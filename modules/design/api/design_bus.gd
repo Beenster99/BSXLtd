@@ -23,6 +23,11 @@ const ROOM_FLAG := "design.room"
 var catalog: DesignCatalog = DesignCatalog.load_default()
 var library := DesignLibrary.new()
 var editor := DesignEditor.new(library)
+## The ready-made module picked up to drop on a plan (the console's or a wall's), or "".
+var carrying := ""
+
+## A module was picked up or put down.
+signal carry_changed(module_id: String)
 
 
 func _init() -> void:
@@ -91,7 +96,7 @@ func unregister_module() -> void:
 ## Opens a new design holding the sample skiff (Debug tab, tests, screenshots).
 func open_sample() -> DesignRecord:
 	var rec := library.create("Sample skiff")
-	Samples.skiff(rec)
+	Samples.skiff(rec, catalog)
 	library.save_current()
 	return rec
 
@@ -110,6 +115,25 @@ func _debug_panel() -> Control:
 
 
 ## The open design's numbers, or null with nothing open.
+## Picks up a ready-made module ("" puts it down).
+func carry(module_id: String) -> void:
+	carrying = module_id if library.module(module_id).size() > 0 else ""
+	carry_changed.emit(carrying)
+
+
+## Drops the module being carried into the open design, centred on `at` on `deck`. One undo
+## takes it away. Returns the new room's id, or "".
+func drop_carried(deck: int, at: Vector2) -> String:
+	var rec := library.current
+	var op := library.place_module_op(carrying, rec, deck, at)
+	if op.is_empty():
+		return ""
+	var rid: String = op.ops[0].room.id
+	editor.do(op)
+	carry("")
+	return rid if rec.rooms.has(rid) else ""
+
+
 func totals() -> DesignTotals:
 	return DesignTotals.compute(library.current, catalog) if library.current else null
 

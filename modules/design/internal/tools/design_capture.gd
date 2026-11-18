@@ -5,7 +5,8 @@ extends Node
 ## With --station (and --flags=yard=on,yard.station=on,design.room=on) it shoots the design
 ## room furnished inside the orbital yard's station instead.
 ## Saves console.png (the design console), room.png (the room with its walls and table),
-## holo_cut.png (the holotable cut through deck 1) and wall_left.png, wall_right.png (what two walls show).
+## holo_cut.png (the holotable cut through deck 1), wall_left.png, wall_right.png (what two walls show)
+## and walk_*.png (walk-inside mode).
 
 const SIZE := Vector2i(1920, 1080)
 
@@ -61,6 +62,21 @@ class Runner:
 			var img: Image = wall.viewport.get_texture().get_image()
 			img.save_png(out.path_join(id + ".png"))
 			print("DesignCapture: ", out.path_join(id + ".png"))
+		# Walk-inside: in the corridor looking to the bow, then in engineering, then outside.
+		room.console._set_view("plan")
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		for shot in [["walk_corridor", Vector3(0, 1.0, 3.0), 0.0, -0.05],
+				["walk_engineering", Vector3(1.8, 1.0, 3.3), -0.9, -0.25],
+				["walk_stairs", Vector3(-1.4, 1.0, 3.6), 0.6, 0.15],
+				["walk_outside", Vector3(9, 1.0, 12), 0.62, 0.0]]:
+			walk.body.position = shot[1]
+			walk.body.rotation.y = shot[2]
+			walk.set("_pitch", shot[3])
+			walk.camera.rotation.x = shot[3]
+			await _frames(20)
+			await _save(out, shot[0])
+		room.furnishing.close_walk()
 		get_tree().quit()
 
 	## The furnished design room inside the orbital yard's station.

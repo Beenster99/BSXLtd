@@ -8,6 +8,7 @@ extends Node3D
 const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
 const WallBoard := preload("res://modules/design/internal/room/wall_board.gd")
 const DesignConsole := preload("res://modules/design/internal/console/design_console.gd")
+const WalkInside := preload("res://modules/design/internal/walk/walk_inside.gd")
 
 ## What each wall's panels show at first: wall id -> [[view, share of the width], ...].
 ## Anyone can change a panel with its < and > (WallBoard.views()).
@@ -25,18 +26,25 @@ const WALL_REACH := 12.0
 
 ## The mouse claim while the console is open (HudSlots).
 const POINTER := "design.console"
+## The mouse claim while walking inside the design.
+const WALK_POINTER := "design.walk"
 
 ## The design room's inside, m (the station's design room is this size).
 const ROOM_SIZE := Vector3(24, 6, 18)
 
 signal console_opened
 signal console_closed
+signal walk_opened
+signal walk_closed
 
 var bus: DesignBus
 var holo: HoloTable
 var console: DesignConsole
 var walls: Dictionary = {}  # wall id -> TouchScreen (its content a WallBoard)
 var _layer: CanvasLayer
+## Walk-inside mode while it's open, else null.
+var walk: WalkInside
+var _camera_before: Camera3D
 
 
 func setup(design_bus: DesignBus, wall_planes: Array[Dictionary]) -> void:
@@ -58,6 +66,7 @@ func setup(design_bus: DesignBus, wall_planes: Array[Dictionary]) -> void:
 	_layer.add_child(console)
 	console.setup(bus, holo)
 	console.leave_requested.connect(close_console)
+	console.walk_requested.connect(open_walk)
 	console.visible = false
 
 
@@ -107,16 +116,60 @@ func close_console() -> void:
 	console_closed.emit()
 
 
+func is_walking() -> bool:
+	return walk != null
+
+
+## Walk-inside mode: leaves the console for the open design at full size, around you.
+func open_walk() -> void:
+	if walk or bus.library.current == null:
+		return
+	HudSlots.claim_pointer(WALK_POINTER)
+	_camera_before = get_viewport().get_camera_3d()
+	close_console()
+	walk = WalkInside.new()
+	add_child(walk)
+	walk.setup(bus, global_transform)
+	walk.camera.current = true
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	walk_opened.emit()
+
+
+## Back from walking inside to the console at the table.
+func close_walk() -> void:
+	if walk == null:
+		return
+	remove_child(walk)
+	walk.queue_free()
+	walk = null
+	if is_instance_valid(_camera_before):
+		_camera_before.current = true
+	_camera_before = null
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	open_console()
+	HudSlots.release_pointer(WALK_POINTER)
+	walk_closed.emit()
+
+
 func _exit_tree() -> void:
 	HudSlots.release_pointer(POINTER)
+	HudSlots.release_pointer(WALK_POINTER)
 
 
 func _input(event: InputEvent) -> void:
+	if walk and event is InputEventKey and event.pressed and not event.echo \
+			and event.physical_keycode == KEY_ESCAPE:
+		close_walk()
+		get_viewport().set_input_as_handled()
+		return
 	# Esc leaves the console before anything else sees it (the pause menu, the station).
 	if is_console_open() and event is InputEventKey and event.pressed and not event.echo \
 			and event.physical_keycode == KEY_ESCAPE:
 		if console._library_panel.visible:
 			console._toggle_library()
+		elif console.plan.cancel():
+			pass  # Esc first drops a half-drawn run, then the tool in hand
 		else:
 			close_console()
 		get_viewport().set_input_as_handled()

@@ -88,7 +88,7 @@ func refresh() -> void:
 	_body.add_child(T.columns([["Item", 0], ["Qty", 80], ["Mass", 90], ["Cost", 120]]))
 	alt = false
 	for line in t.lines:
-		var qty := "%d %s" % [int(roundf(line.qty)), "m2" if line.unit == "m2" else "x"]
+		var qty := "%d %s" % [int(roundf(line.qty)), str(line.unit)]
 		_body.add_child(T.row([T.cell_text(str(line.name), str(line.kind)), T.cell(qty, 80),
 				T.cell("%.1f t" % (float(line.mass) / 1000.0), 90),
 				T.cell(T.money(int(line.cost)), 120, T.TEXT)], alt))

@@ -53,7 +53,23 @@ func run_tests() -> void:
 	board.call("set_view", 0, "data")
 	check(board.call("content", 0).get_class() == "PanelContainer", "a panel can show the parts and cost channel")
 	board.call("step", 0, 1)
+	check(str(board.get("panels")[0].view) == "modules", "after the parts channel comes the modules list")
+	board.call("step", 0, 1)
 	check(str(board.get("panels")[0].view) == "plan:0", "stepping on from the last view comes round to deck 1")
+	# Pick a module up on one wall panel, drop it on a wall plan.
+	bus.open_sample()
+	var mid := bus.library.save_module("Mess", "r9")
+	board.call("set_view", 1, "modules")
+	await frames(1)
+	var mod_b := (board.call("content", 1) as Node).find_child("Module_" + mid, true, false) as Button
+	check(mod_b != null, "the wall lists the modules")
+	if mod_b:
+		mod_b.pressed.emit()
+	check(bus.carrying == mid, "pressing one on the wall picks it up")
+	var wall_plan: Control = board.call("content", 0)
+	var before := bus.library.current.rooms.size()
+	wall_plan.call("_press", wall_plan.call("to_screen", Vector2(30, 0)))
+	check(bus.library.current.rooms.size() == before + 1 and bus.carrying == "", "pressing a wall plan drops it there")
 	var holo: Node3D = f.get("holo")
 	# The yard keeps a 10 x 6 m rectangle clear (DESIGN_CLEAR_SIZE; read by name until it lands).
 	var clear: Vector2 = (YardBus as Script).get_script_constant_map().get("DESIGN_CLEAR_SIZE", Vector2(10, 6))

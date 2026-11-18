@@ -23,7 +23,30 @@ static func check(d: DesignRecord, cat: DesignCatalog) -> Array[Dictionary]:
 	_route_checks(d, cat, out)
 	_component_checks(d, cat, out)
 	_ship_checks(d, cat, out)
+	_service_checks(d, cat, out)
 	return out
+
+
+## Parts that need power with no wire to a source, engines with no fuel line to a pump. Only
+## once the design has any wiring (or piping): a layout with none yet is just not wired.
+static func _service_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictionary]) -> void:
+	for kind: String in ["wire", "fuel"]:
+		var any := false
+		for w: Dictionary in d.runs.values():
+			any = any or str(w.kind) == kind
+		if not any:
+			continue
+		var cut := DesignServices.cut_off(d, cat, kind)
+		if cut.is_empty():
+			continue
+		var names: Array = []
+		for cid: String in cut:
+			var pt := cat.part(str(d.components[cid].type))
+			names.append(pt.display_name if pt else cid)
+		if kind == "wire":
+			out.append(_problem("unpowered", WARNING, "No wire to a power source: %s" % ", ".join(names), [], cut))
+		else:
+			out.append(_problem("no_fuel", WARNING, "No fuel line to a pump: %s" % ", ".join(names), [], cut))
 
 
 static func errors(problems: Array[Dictionary]) -> int:

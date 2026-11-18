@@ -14,6 +14,8 @@ signal opened(record: DesignRecord)
 ## The open design was edited (the op as applied) or saved.
 signal edited(op: Dictionary)
 signal stored(design_id: String)
+## The ready-made modules changed (saved, renamed, removed).
+signal modules_changed
 
 const SAVE_VERSION := 1
 
@@ -23,6 +25,11 @@ var current: DesignRecord
 ## The open design has edits not yet saved under its name.
 var dirty := false
 var _next := 1
+## Ready-made modules (beenster, 18 Nov): a room with its parts, saved under a name, dropped
+## into any design. module id -> {id, name, room: {type, w, d, name}, components: [{type, x, z,
+## rot}] and runs: [{kind, points}] relative to the room's corner, saved_at}.
+var _modules: Dictionary = {}
+var _next_module := 1
 
 
 # Listing
@@ -137,6 +144,104 @@ func remove(design_id: String) -> bool:
 	return true
 
 
+# Ready-made modules
+
+## Saves a room of the open design, with its components and the runs inside it, as a module.
+## Returns its id ("" if the room isn't there). A taken name gets a number.
+func save_module(module_name: String, room_id: String) -> String:
+	if current == null or not current.rooms.has(room_id):
+		return ""
+	var r: Dictionary = current.rooms[room_id]
+	var corner := Vector2(float(r.x), float(r.z))
+	var rect := Rect2(corner, Vector2(float(r.w), float(r.d)))
+	var comps: Array = []
+	for c: Dictionary in current.components.values():
+		if c.room == room_id:
+			comps.append({"type": c.type, "x": float(c.x) - corner.x, "z": float(c.z) - corner.y, "rot": int(c.rot)})
+	comps.sort_custom(func(a, b): return [a.type, a.x, a.z] < [b.type, b.x, b.z])
+	var runs: Array = []
+	for w: Dictionary in current.runs.values():
+		if int(w.deck) != int(r.deck):
+			continue
+		var pts := DesignServices.points(w)
+		if Array(pts).all(func(p: Vector2) -> bool: return rect.grow(0.01).has_point(p)):
+			var rel: Array = []
+			for p in pts:
+				rel.append([p.x - corner.x, p.y - corner.y])
+			runs.append({"kind": w.kind, "points": rel})
+	var id := "module_%d" % _next_module
+	_next_module += 1
+	while _modules.has(id):
+		id = "module_%d" % _next_module
+		_next_module += 1
+	var clean := module_name.strip_edges()
+	if clean == "":
+		clean = str(r.get("name", "")) if str(r.get("name", "")) != "" else str(r.type).capitalize()
+	var taken := func(n: String) -> bool:
+		return _modules.values().any(func(m): return str(m.name).to_lower() == n.to_lower())
+	var final_name := clean
+	var n := 2
+	while taken.call(final_name):
+		final_name = "%s %d" % [clean, n]
+		n += 1
+	_modules[id] = {"id": id, "name": final_name, "saved_at": int(Time.get_unix_time_from_system()),
+			"room": {"type": r.type, "w": float(r.w), "d": float(r.d), "name": str(r.get("name", ""))},
+			"components": comps, "runs": runs}
+	modules_changed.emit()
+	return id
+
+
+## Modules, by name: [{id, name, room, components, runs}].
+func modules() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for m: Dictionary in _modules.values():
+		out.append(m)
+	out.sort_custom(func(a, b): return str(a.name).naturalnocasecmp_to(str(b.name)) < 0)
+	return out
+
+
+func module(module_id: String) -> Dictionary:
+	return _modules.get(module_id, {})
+
+
+func remove_module(module_id: String) -> bool:
+	if not _modules.erase(module_id):
+		return false
+	modules_changed.emit()
+	return true
+
+
+func rename_module(module_id: String, module_name: String) -> bool:
+	var clean := module_name.strip_edges()
+	if not _modules.has(module_id) or clean == "":
+		return false
+	_modules[module_id].name = clean
+	modules_changed.emit()
+	return true
+
+
+## The op that drops a module into `rec`, its room centred on `at` (snapped to the grid) on
+## `deck`: one batch, so one undo takes it all away. {} for an unknown module.
+func place_module_op(module_id: String, rec: DesignRecord, deck: int, at: Vector2) -> Dictionary:
+	var m: Dictionary = _modules.get(module_id, {})
+	if m.is_empty() or rec == null:
+		return {}
+	var size := Vector2(float(m.room.w), float(m.room.d))
+	var corner := (at - size * 0.5).snapped(Vector2.ONE * rec.grid)
+	var rid := rec.peek_id("r")
+	var ops: Array = [{"op": "add_room", "room": {"id": rid, "type": m.room.type, "deck": deck,
+			"x": corner.x, "z": corner.y, "w": size.x, "d": size.y, "name": m.room.get("name", "")}}]
+	for c: Dictionary in m.components:
+		ops.append({"op": "add_component", "component": {"type": c.type, "room": rid,
+				"x": corner.x + float(c.x), "z": corner.y + float(c.z), "rot": int(c.rot)}})
+	for w: Dictionary in m.get("runs", []):
+		var pts: Array = []
+		for p: Array in w.points:
+			pts.append([corner.x + float(p[0]), corner.y + float(p[1])])
+		ops.append({"op": "add_run", "run": {"kind": w.kind, "deck": deck, "points": pts}})
+	return {"op": "batch", "ops": ops}
+
+
 # Saves provider
 
 func save_version() -> int:
@@ -147,7 +252,10 @@ func save_data() -> Dictionary:
 	var designs: Array = []
 	for item in list():
 		designs.append(_stored[item.id].duplicate(true))
-	var data := {"designs": designs, "next": _next}
+	var mods: Array = []
+	for m in modules():
+		mods.append(m.duplicate(true))
+	var data := {"designs": designs, "next": _next, "modules": mods, "next_module": _next_module}
 	if current:
 		data["open"] = current.id
 		if dirty:
@@ -161,6 +269,12 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	for d: Dictionary in data.get("designs", []):
 		_stored[str(d.get("id", ""))] = d.duplicate(true)
 	_stored.erase("")
+	_modules = {}
+	_next_module = int(data.get("next_module", 1))
+	for m: Dictionary in data.get("modules", []):
+		_modules[str(m.get("id", ""))] = m.duplicate(true)
+	_modules.erase("")
+	modules_changed.emit()
 	var open_id := str(data.get("open", ""))
 	var working: Dictionary = data.get("working", {})
 	if not working.is_empty() and str(working.get("id", "")) == open_id:

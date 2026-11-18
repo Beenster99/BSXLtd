@@ -18,7 +18,10 @@ extends RefCounted
 ##   {op = "add_component", component = {id?, type, room, x, z, rot?}}
 ##   {op = "set_component", id, fields = {...}}
 ##   {op = "remove_component", id}
-##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?}}
+##   {op = "add_run", run = {id?, kind, deck, points = [[x, z], ...]}}   # a wire or pipe
+##   {op = "set_run", id, fields = {...}}
+##   {op = "remove_run", id}
+##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?, structure? (merged)}}
 ##   {op = "batch", ops = [...]}         # applied in order, undone in reverse
 ## The undo of a remove re-adds what was removed with its old id, so ids stay stable.
 
@@ -41,6 +44,13 @@ var rooms: Dictionary = {}
 var doors: Dictionary = {}
 ## component id -> {id, type, room, x, z, rot}
 var components: Dictionary = {}
+## run id -> {id, kind ("wire", "fuel"...: DesignServices.KINDS), deck, points: [[x, z], ...]}
+## A wire or pipe on one deck, a line through its points; runs meet where they touch, and
+## carry on to the deck above or below where one ends over the other's end (a riser).
+var runs: Dictionary = {}
+## How the hull is built round the rooms (DesignStructure.OPTIONS): frame weight, frame
+## spacing (m), outer hull plating and inner walls.
+var structure := {"frame": "standard", "spacing": 2.0, "hull": "standard", "inner": "panel"}
 var _next := 1
 
 
@@ -90,6 +100,20 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _set_fields(components, str(op.get("id", "")), op.get("fields", {}), "set_component")
 		"remove_component":
 			return _remove_entry(components, str(op.get("id", "")), "component", "add_component")
+		"add_run":
+			var run: Dictionary = op.get("run", {}).duplicate(true)
+			var pts: Array = []
+			for p: Variant in run.get("points", []):
+				pts.append([float(p[0]), float(p[1])])
+			if pts.size() < 2 or str(run.get("kind", "")) == "":
+				return {}
+			run["points"] = pts
+			run["deck"] = int(run.get("deck", 0))
+			return _add_entry(runs, run, "w", "run", "remove_run")
+		"set_run":
+			return _set_fields(runs, str(op.get("id", "")), op.get("fields", {}), "set_run")
+		"remove_run":
+			return _remove_entry(runs, str(op.get("id", "")), "run", "add_run")
 		"set_meta":
 			return _set_meta(op.get("fields", {}))
 		"batch":
@@ -152,7 +176,7 @@ func _remove_entry(table: Dictionary, eid: String, key: String, undo_op: String)
 		return {}
 	var old: Dictionary = table[eid]
 	table.erase(eid)
-	return {"op": undo_op, key: old.duplicate()}
+	return {"op": undo_op, key: old.duplicate(true)}
 
 
 func _set_fields(table: Dictionary, eid: String, fields: Dictionary, op_name: String) -> Dictionary:
@@ -184,7 +208,17 @@ func _set_meta(fields: Dictionary) -> Dictionary:
 			"deck_height":
 				old.deck_height = deck_height
 				deck_height = maxf(float(fields.deck_height), 2.0)
+			"structure":
+				old.structure = structure.duplicate()
+				for k2 in (fields.structure as Dictionary):
+					structure[k2] = fields.structure[k2]
 	return {} if old.is_empty() else {"op": "set_meta", "fields": old}
+
+
+## The id the next new entry with `prefix` will get (for ops that name what they add, so later
+## ops in the same batch can point at it).
+func peek_id(prefix: String) -> String:
+	return "%s%d" % [prefix, _next]
 
 
 func _new_id(prefix: String) -> String:
@@ -284,6 +318,7 @@ func to_dict() -> Dictionary:
 		"format": FORMAT, "id": id, "name": name, "notes": notes, "grid": grid,
 		"deck_height": deck_height, "next": _next,
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
+		"runs": _sorted(runs), "structure": structure.duplicate(),
 	}
 
 
@@ -304,8 +339,16 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		var comp := c.duplicate()
 		comp.rot = int(comp.get("rot", 0))
 		d.components[str(comp.id)] = comp
+	for w: Dictionary in data.get("runs", []):
+		var run := w.duplicate(true)
+		run.deck = int(run.get("deck", 0))
+		d.runs[str(run.id)] = run
+	var st: Dictionary = data.get("structure", {})
+	for k in st:
+		d.structure[k] = st[k]
+	d.structure.spacing = float(d.structure.spacing)
 	d._next = int(data.get("next", 1))
-	for table: Dictionary in [d.rooms, d.doors, d.components]:
+	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs]:
 		for eid: String in table:
 			d._bump_next(eid)
 	return d
@@ -323,5 +366,5 @@ func _sorted(table: Dictionary) -> Array:
 	keys.sort_custom(func(a, b): return str(a).naturalnocasecmp_to(str(b)) < 0)
 	var out: Array = []
 	for k in keys:
-		out.append(table[k].duplicate())
+		out.append(table[k].duplicate(true))
 	return out

@@ -17,6 +17,8 @@ extends Resource
 @export var build_hours := 2.0
 ## kW: positive makes power, negative uses it.
 @export var power := 0.0
+## Fuel: +1 feeds fuel lines (a pump), -1 burns fuel and needs a line, 0 neither.
+@export var fuel := 0
 ## Thrust, kN (engines).
 @export var thrust := 0.0
 ## Crew bunks it adds.
