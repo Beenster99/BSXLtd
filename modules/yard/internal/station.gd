@@ -1,13 +1,12 @@
 extends Node3D
 ## The orbital yard (master plan Wave 1): the station's rooms with gravity (stage 1.1) and,
 ## outside, the weightless dock with its berths (stage 1.2, flag "yard.dock"), over a planet.
-## Simple shapes first: the look comes in stage 1.5, the Void Salvage avatar in 1.3.
+## Simple shapes first: the look comes in stage 1.5. You are in the Void Salvage suit (YardRig, 1.3).
 ## Where everything is: YardLayout (api). Rooms are furnished by other modules through
 ## YardBus (the design room's contents belong to the Design Room module).
 
 const Kit := preload("res://modules/yard/internal/yard_kit.gd")
 const SpaceSky := preload("res://modules/yard/internal/space_sky.gd")
-const Mover := preload("res://modules/yard/internal/yard_mover.gd")
 const RackingHall := preload("res://modules/yard/internal/racking_hall.gd")
 const Airlock := preload("res://modules/yard/internal/airlock.gd")
 const Dock := preload("res://modules/yard/internal/dock.gd")
@@ -28,12 +27,19 @@ const VIEWS := {
 	"holding_berths": [Vector3(0, 45, -175), Vector3(0, -3, -80)],
 	"station_from_berth": [Vector3(-8, -2, -72), Vector3(4, 3, -18)],
 }
+## Views of you in the suit: id -> [your feet, where you face, the camera, lamp on] (station space).
+const SUIT_VIEWS := {
+	"suit_corridor": [Vector3(-12, 0, -2.0), Vector3(-30, 1.5, -2.0), Vector3(-15.2, 1.6, -2.6), false],
+	"suit_back": [Vector3(-12, 0, -2.0), Vector3(-30, 1.5, -2.0), Vector3(-8.6, 2.0, -1.4), false],
+	"suit_dock": [Vector3(-52, -1.5, -40), Vector3(-30, -8, -95), Vector3(-49.0, -0.4, -43.2), true],
+}
 ## Where you start: the corridor, by the design room's door.
 const START := Vector3(4.0, 0.0, -1.5)
 
 var kit: RefCounted
 var sky: Node3D
-var mover: CharacterBody3D
+## You: the Void Salvage suit and jet-rig (YardRig). Named "Mover" as the stand-in was.
+var mover: YardRig
 var view_camera: Camera3D
 var racking: Node3D
 var airlock: Node3D
@@ -63,11 +69,11 @@ func _ready() -> void:
 		dock.name = "Dock"
 		add_child(dock)
 		dock.call("build")
-	mover = Mover.new()
+	mover = YardRig.new()
 	mover.name = "Mover"
-	mover.set("gravity_at", Callable(YardLayout, "has_gravity"))
+	mover.gravity_at = Callable(YardLayout, "has_gravity")
 	add_child(mover)
-	mover.call("place", START, Vector3(6.25, 1.5, -10))
+	mover.place(START, Vector3(6.25, 1.5, -10))
 	view_camera = Camera3D.new()
 	view_camera.name = "ViewCamera"
 	view_camera.far = 60000.0
@@ -102,6 +108,14 @@ func _rack_store() -> YardRackStore:
 
 
 func show_view(id: String) -> void:
+	if SUIT_VIEWS.has(id):
+		var s: Array = SUIT_VIEWS[id]
+		mover.place(s[0], s[1])
+		mover.lamp.visible = s[3]
+		view_camera.position = s[2]
+		view_camera.look_at(mover.global_position + Vector3(0, 0.1, 0))
+		view_camera.current = true
+		return
 	if not VIEWS.has(id):
 		return
 	var v: Array = VIEWS[id]
@@ -139,7 +153,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _walk_again() -> void:
 	if view_camera.current:
-		(mover.get("camera") as Camera3D).current = true
+		mover.camera.current = true
 
 
 func _build_hud() -> void:
