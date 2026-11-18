@@ -26,6 +26,10 @@ signal fastened(c: ConnectionData)
 ## and as it goes in the rivet's head swells and the bead runs along its line, glowing.
 var planned: Array[Dictionary] = []
 var _plan_marks: Dictionary = {}   # a plan's id -> its marks (Node3D)
+## Finished welds' beads, kept on the work until their joint is cut: node -> ConnectionData.
+var _kept_beads: Dictionary = {}
+## The last weld finished: {quality (0..1), grade ("NEAT", "FAIR", "POOR")}.
+var last_weld: Dictionary = {}
 var _next_plan: int = 0
 static var _chalk: StandardMaterial3D
 static var _hot: StandardMaterial3D
@@ -42,6 +46,19 @@ func _init() -> void:
 
 func _process(delta: float) -> void:
 	model.cool(delta)
+	for node: Node3D in _kept_beads.keys():
+		var c: ConnectionData = _kept_beads[node]
+		if not is_instance_valid(node) or c.is_broken() or not model.has_joint(c):
+			if is_instance_valid(node):
+				node.queue_free()
+			_kept_beads.erase(node)
+	for id: int in _plan_marks:
+		var m: Node3D = _plan_marks[id]
+		var puddle := m.get_node_or_null("Puddle") as Node3D if is_instance_valid(m) else null
+		if puddle and puddle.visible:
+			puddle.scale = puddle.scale.move_toward(Vector3.ZERO, delta * 2.5)
+			if puddle.scale.x < 0.05:
+				puddle.visible = false
 	# Work under way glows and cools as the joints do.
 	for id: int in _plan_marks:
 		var bead := (_plan_marks[id] as Node3D).get_node_or_null("Bead") as MeshInstance3D if is_instance_valid(_plan_marks[id]) else null
@@ -163,6 +180,8 @@ func planned_near(world_point: Vector3, snap: float, kind: int) -> Dictionary:
 
 ## Where the work is on plan `p` now (world): a rivet's hole, or how far along its line a weld is.
 func planned_position(p: Dictionary) -> Vector3:
+	if p.has("front"):   # a weld under way: where its puddle is
+		return global_transform * ((p.at as Vector3) + (p.seam_up as Vector3) * (float(p.front) - (p.seam_size as Vector2).x * 0.5))
 	return global_transform * _along(p, float(p.done))
 
 
@@ -178,15 +197,170 @@ func work_planned(p: Dictionary, amount: float) -> bool:
 	_mark_progress(p)
 	if float(p.done) < 1.0:
 		return false
+	_finish(p, false)
+	return true
+
+
+## The welder works plan `p` by hand (0.4.1 playtest: "the welding should follow your line and
+## speed"): the puddle follows the arc where it is aimed (`aim_world`), along the seam from the end
+## it started at, never faster than `max_speed` (m/s). A ripple of bead is laid every RIPPLE_STEP
+## of travel, shaped by how fast you go against `ideal` (m/s): steady makes the even stacked
+## ripples of a neat weld, too fast a thin, broken, sooty one, too slow a fat, lumpy, burnt one.
+## Returns {laid (metal went down), speed (m/s), pace ("STEADY", "TOO FAST", "TOO SLOW", "OFF
+## THE LINE"), done (the weld is in: its joint made, as strong as the bead was good)}.
+func weld_along(p: Dictionary, aim_world: Vector3, delta: float, ideal: float, max_speed := 0.4) -> Dictionary:
+	var out := {"laid": false, "speed": 0.0, "pace": "", "done": false}
+	if not planned.has(p) or delta <= 0.0:
+		return out
+	var length := (p.seam_size as Vector2).x
+	var up: Vector3 = p.seam_up
+	var local := to_local(aim_world)
+	var at := clampf((local - (p.at as Vector3)).dot(up) + length * 0.5, 0.0, length)
+	if not p.has("front"):
+		var low := at < length * 0.5
+		p.dir = 1.0 if low else -1.0
+		p.front = 0.0 if low else length
+		p.start = p.front
+		p.next_ripple = p.front
+		p.speed = ideal
+		p.ripples = 0
+		p.q_sum = 0.0
+	var ahead := (at - float(p.front)) * float(p.dir)
+	if ahead < -0.025 or ahead > 0.07:
+		p.speed = lerpf(float(p.speed), 0.0, minf(1.0, delta * 2.0))
+		out.pace = "OFF THE LINE"
+		out.speed = p.speed
+		return out
+	var step := clampf(ahead, 0.0, max_speed * delta)
+	p.speed = lerpf(float(p.speed), step / delta, minf(1.0, delta * 5.0))
+	p.front = clampf(float(p.front) + step * float(p.dir), 0.0, length)
+	var r := float(p.speed) / maxf(ideal, 0.001)
+	out.speed = p.speed
+	out.pace = "TOO FAST" if r > 1.6 else ("TOO SLOW" if r < 0.6 else "STEADY")
+	while (float(p.front) - float(p.next_ripple)) * float(p.dir) >= 0.0 and int(p.ripples) < _ripple_room(p):
+		_lay_ripple(p, float(p.next_ripple) - length * 0.5, r)
+		p.next_ripple = float(p.next_ripple) + RIPPLE_STEP * float(p.dir)
+		out.laid = true
+	p.done = absf(float(p.front) - float(p.start)) / maxf(length, 0.001)
+	if float(p.done) >= 0.999:
+		var q := float(p.q_sum) / maxf(float(p.ripples), 1.0)
+		var c := _finish(p, true)
+		if c:
+			c.health = c.max_health * lerpf(0.35, 1.0, q)
+			c.max_health = c.health
+		last_weld = {"quality": q, "grade": "NEAT" if q >= 0.8 else ("FAIR" if q >= 0.5 else "POOR")}
+		out.done = true
+	return out
+
+
+## Where along its seam plan `p` is aimed (0..1, from its low end).
+func weld_t(p: Dictionary, world_point: Vector3) -> float:
+	var length := (p.seam_size as Vector2).x
+	var local := to_local(world_point)
+	return clampf(((local - (p.at as Vector3)).dot(p.seam_up) + length * 0.5) / maxf(length, 0.001), 0.0, 1.0)
+
+
+## A weld's bead (tests and the screen read it): how many ripples, and their mean quality.
+func bead_of(p: Dictionary) -> Dictionary:
+	return {"ripples": int(p.get("ripples", 0)), "quality": float(p.get("q_sum", 0.0)) / maxf(float(p.get("ripples", 0)), 1.0)}
+
+
+const RIPPLE_STEP := 0.0045
+
+
+func _ripple_room(p: Dictionary) -> int:
+	return int((p.seam_size as Vector2).x / RIPPLE_STEP) + 2
+
+
+## One ripple of bead at `y` along the seam (the marks' space), shaped by `r`, the speed over
+## the ideal: its width, height, spacing, colour and whether it is there at all.
+func _lay_ripple(p: Dictionary, y: float, r: float) -> void:
+	var marks: Node3D = _plan_marks.get(int(p.id))
+	if not is_instance_valid(marks):
+		return
+	var mmi := marks.get_node_or_null("Ripples") as MultiMeshInstance3D
+	if mmi == null:
+		mmi = MultiMeshInstance3D.new()
+		mmi.name = "Ripples"
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		var sm := SphereMesh.new()
+		sm.radius = 0.5
+		sm.height = 1.0
+		sm.radial_segments = 14
+		sm.rings = 7
+		mm.mesh = sm
+		mm.instance_count = _ripple_room(p)
+		mm.visible_instance_count = 0
+		mmi.multimesh = mm
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.metallic = 0.9
+		m.roughness = 0.22
+		mmi.material_override = m
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		marks.add_child(mmi)
+	var q := 1.0
+	if r > 1.4:
+		q = clampf(1.0 - (r - 1.4) / 1.4, 0.0, 1.0)
+	elif r < 0.65:
+		q = clampf(1.0 - (0.65 - r) / 0.45, 0.15, 1.0)
+	var w := 0.016 * clampf(pow(1.0 / maxf(r, 0.05), 0.4), 0.5, 1.7)
+	var h := w * (0.42 if r >= 0.65 else 0.6)
+	var wobble := 0.0
+	var colour := Color(0.84, 0.86, 0.88)
+	if r > 1.4:
+		# Too fast: thin and broken, the arc skipping (gaps), cold and sooty.
+		wobble = randf_range(-1.0, 1.0) * 0.003 * (r - 1.0)
+		colour = Color(0.84, 0.86, 0.88).lerp(Color(0.25, 0.23, 0.21), 1.0 - q)
+		if randf() > 0.25 + q * 0.75:
+			p.ripples = int(p.ripples) + 1   # a gap: counted, nothing laid
+			p.q_sum = float(p.q_sum) + q * 0.5
+			return
+	elif r < 0.65:
+		# Too slow: fat, lumpy, overheated (burnt blue and brown).
+		wobble = randf_range(-1.0, 1.0) * 0.002
+		h *= randf_range(0.9, 1.3)
+		colour = Color(0.84, 0.86, 0.88).lerp(Color(0.32, 0.3, 0.45) if randf() < 0.5 else Color(0.45, 0.33, 0.22), 1.0 - q)
+	var mm := mmi.multimesh
+	var i := mm.visible_instance_count
+	if i >= mm.instance_count:
+		return
+	# Each ripple leans back towards where the bead came from: the stacked rings of a neat weld.
+	var lean := Basis(Vector3.RIGHT, -0.55 * float(p.dir))
+	var basis := lean * Basis.from_scale(Vector3(w, RIPPLE_STEP * 2.8, h))
+	mm.set_instance_transform(i, Transform3D(basis, Vector3(wobble, y, 0.0015 + h * 0.22)))
+	mm.set_instance_color(i, colour)
+	mm.visible_instance_count = i + 1
+	p.ripples = int(p.ripples) + 1
+	p.q_sum = float(p.q_sum) + q
+	var puddle := marks.get_node_or_null("Puddle") as MeshInstance3D
+	if puddle:
+		puddle.visible = true
+		puddle.scale = Vector3.ONE
+		puddle.position = Vector3(wobble, y, 0.0015 + h * 0.25)
+
+
+## A plan done: its joint made (hot) and its marks taken away (a weld's bead stays on the work
+## till its joint is cut). The joint, or null.
+func _finish(p: Dictionary, keep_bead: bool) -> ConnectionData:
 	planned.erase(p)
 	var marks: Node3D = _plan_marks.get(int(p.id))
 	_plan_marks.erase(int(p.id))
-	if is_instance_valid(marks):
-		marks.queue_free()
 	var c := model.connect_parts(model.parts[int(p.a)], model.parts[int(p.b)], int(p.kind), p.at, p.normal, p.seam_up, p.seam_size)
 	model.heat(c, 1.0)
+	if is_instance_valid(marks):
+		if keep_bead and marks.get_node_or_null("Ripples"):
+			for child in marks.get_children():
+				if child.name != "Ripples":
+					child.queue_free()
+			marks.name = "WeldBead_%d" % int(p.id)
+			_kept_beads[marks] = c
+		else:
+			marks.queue_free()
 	fastened.emit(c)
-	return true
+	return c
 
 
 func _closest_on(p: Dictionary, local: Vector3) -> Vector3:
@@ -242,16 +416,21 @@ func _mark(p: Dictionary) -> void:
 			dash.position = Vector3(0, -length * 0.5 + 0.02 + k * 0.04, 0.0015)
 			dash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			marks.add_child(dash)
-		var bead := MeshInstance3D.new()
-		bead.name = "Bead"
-		var bm := CapsuleMesh.new()
-		bm.radius = 0.008
-		bm.height = 0.02
-		bead.mesh = bm
-		bead.material_override = _hot.duplicate()
-		bead.visible = false
-		bead.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		marks.add_child(bead)
+		# The weld puddle: a white-hot drop at the arc, where the bead is being laid.
+		var puddle := MeshInstance3D.new()
+		puddle.name = "Puddle"
+		var pm := SphereMesh.new()
+		pm.radius = 0.009
+		pm.height = 0.008
+		puddle.mesh = pm
+		var hot := _hot.duplicate() as StandardMaterial3D
+		hot.albedo_color = Color(1.0, 0.85, 0.6)
+		hot.emission = Color(1.0, 0.75, 0.4)
+		hot.emission_energy_multiplier = 6.0
+		puddle.material_override = hot
+		puddle.visible = false
+		puddle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		marks.add_child(puddle)
 	else:
 		var ring := MeshInstance3D.new()
 		var tm := TorusMesh.new()

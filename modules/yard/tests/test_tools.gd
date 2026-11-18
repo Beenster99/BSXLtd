@@ -163,18 +163,31 @@ func run_tests() -> void:
 		await _fasten(rig, fit, p, 400, func() -> void:
 			fx.sparks = maxi(int(fx.sparks), spray.shower_count()))
 	check(_joints(fit, ConnectionData.Kind.RIVET).size() == 6, "the riveter set all six rivets (%d)" % _joints(fit, ConnectionData.Kind.RIVET).size())
-	check(int(fx.sparks) > 100, "its hammer throws sparks (%d)" % int(fx.sparks))
+	check(riveter.punches == 6, "one punch a rivet, once the pressure is up (%d)" % riveter.punches)
+	check(int(fx.sparks) > 100, "its punch throws sparks (%d)" % int(fx.sparks))
 	fx.sparks = 0
 	tools.select_tool(7)
 	var welder := tools.active_tool() as YardWelder
 	check(welder != null and welder.visible, "8 draws the welder")
-	for p: Dictionary in fit.planned.filter(func(q: Dictionary) -> bool: return int(q.kind) == ConnectionData.Kind.WELD):
-		await _fasten(rig, fit, p, 600, func() -> void:
-			fx.sparks = maxi(int(fx.sparks), spray.shower_count())
-			fx.globs = maxi(int(fx.globs), spray.count(1))
-			fx.bar = bool(fx.bar) or (tools.progress_shown() and tools.work_label == "WELD"))
+	# The bead follows your aim: run one weld steadily, the other far too fast.
+	var welds := fit.planned.filter(func(q: Dictionary) -> bool: return int(q.kind) == ConnectionData.Kind.WELD)
+	var each := func() -> void:
+		fx.sparks = maxi(int(fx.sparks), spray.shower_count())
+		fx.globs = maxi(int(fx.globs), spray.count(1))
+		fx.bar = bool(fx.bar) or (tools.progress_shown() and tools.work_label.begins_with("WELD"))
+	var steady := welds[0] as Dictionary
+	await _weld(rig, fit, steady, welder.ideal_speed, each)
+	var neat := fit.last_weld.duplicate()
+	check(not fit.planned.has(steady) and String(neat.get("grade", "")) == "NEAT", "a steady hand lays a neat bead (%s, %.2f)" % [neat.get("grade", "?"), float(neat.get("quality", 0.0))])
+	check(fit.find_child("WeldBead_*", true, false) != null, "and the bead stays on the seam, ripple by ripple")
+	var fast := welds[1] as Dictionary
+	await _weld(rig, fit, fast, welder.ideal_speed * 3.5, each)
+	var poor := fit.last_weld.duplicate()
+	check(not fit.planned.has(fast) and String(poor.get("grade", "")) == "POOR", "rushing it lays a poor one (%s, %.2f)" % [poor.get("grade", "?"), float(poor.get("quality", 0.0))])
+	var weak := _joints(fit, ConnectionData.Kind.WELD).map(func(c: ConnectionData) -> float: return c.max_health)
+	check(weak.size() == 2 and float(weak.min()) < float(weak.max()) * 0.8, "and the poor bead is the weaker joint (%s)" % str(weak))
 	check(_joints(fit, ConnectionData.Kind.WELD).size() == 2 and fit.planned.is_empty(), "the welder ran both welds")
-	check(int(fx.sparks) > 400 and int(fx.globs) > 10, "lots of sparks and molten metal (%d sparks, %d globs)" % [int(fx.sparks), int(fx.globs)])
+	check(int(fx.sparks) > 200 and int(fx.globs) > 5, "sparks and molten metal (%d sparks, %d globs)" % [int(fx.sparks), int(fx.globs)])
 	check(bool(fx.bar), "the bar shows the weld going in")
 	check(tools.fastened_count == 8, "the tools count what they put in (%d)" % tools.fastened_count)
 	tools.trigger_override = -1
@@ -207,6 +220,30 @@ func _fasten(rig: YardRig, body: YardWorkpiece, p: Dictionary, most: int, each: 
 		if i % 30 == 29:
 			at = body.planned_position(p)
 			rig.place(at + body.planned_normal(p) * 0.9 - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
+	rig.tools.trigger_override = 0
+	await physics_steps(2)
+
+
+## Runs weld `p` by hand: from its low end, the aim moving up the seam at `speed` m/s, the
+## trigger held, till it is in (`each` runs every step).
+func _weld(rig: YardRig, body: YardWorkpiece, p: Dictionary, speed: float, each: Callable) -> void:
+	var length := (p.seam_size as Vector2).x
+	var up: Vector3 = p.seam_up
+	var t := 0.0
+	var aim := func(along: float) -> Vector3:
+		return body.global_transform * ((p.at as Vector3) + up * (along - length * 0.5))
+	var at: Vector3 = aim.call(0.0)
+	rig.place(at + body.planned_normal(p) * 0.9 - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
+	await physics_steps(3)
+	rig.tools.trigger_override = 1
+	for i in int(length / speed * 60.0) + 240:
+		t = minf(t + speed / 60.0, length)
+		at = aim.call(t)
+		rig.place(at + body.planned_normal(p) * 0.9 - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
+		await physics_steps(1)
+		each.call()
+		if not body.planned.has(p):
+			break
 	rig.tools.trigger_override = 0
 	await physics_steps(2)
 

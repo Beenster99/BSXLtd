@@ -1,15 +1,21 @@
 class_name YardRiveter
 extends YardFastener
-## The riveter (0.4.0 playtest): a pneumatic hot-rivet gun. On a planned rivet it drives a hot
-## rivet home in about two seconds, hammering: every blow throws a burst of sparks and scale, and
-## the new head glows orange as it cools.
+## The riveter (0.4.0 playtest; 0.4.1: "build up pressure with a little hiss and then punch a
+## rivet into the plate with a powerful noise"). Held on a chalked rivet it charges its air, the
+## hiss rising, then punches the hot rivet home in one blow: a bang, a kick back into your hands, a
+## burst of sparks and scale, the new head glowing orange as it cools.
 ##
 ## Look: a BSX orange pistol-grip air hammer, a finned barrel, a steel rivet set on its nose (on
 ## the telescoping boom), an air hose out of the grip's foot and a rivet magazine on its side. It
 ## wears the socket's fitted hand (the same pistol grip).
 
-## Hammer blows a second.
-@export var blows_hz: float = 14.0
+## Seconds to build the pressure for one punch (on harder metal, longer).
+@export var charge_seconds: float = 0.9
+## The kick back into you as it punches (N s).
+@export var kick: float = 14.0
+## The air pressure built up (0..1); at 1 it punches. Punches so far (tests).
+var pressure: float = 0.0
+var punches: int = 0
 
 
 func _init() -> void:
@@ -46,7 +52,7 @@ func _ready() -> void:
 
 func readout_text() -> String:
 	if fastening:
-		return "DRIVING\n%d%%" % int(progress * 100.0)
+		return "PRESSURE\n%.1f BAR" % (pressure * 8.0)
 	return "RIVETS READY\nAIR 6 BAR"
 
 

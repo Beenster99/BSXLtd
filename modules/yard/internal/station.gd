@@ -236,6 +236,18 @@ func _busy_stores(seconds: float) -> void:
 	traffic.set_meta("demo_seconds", done)
 
 
+## Runs weld `p` by hand at the welder's steady pace to `share` of its length (the views).
+func _lay_weld(fit: YardWorkpiece, p: Dictionary, share: float) -> void:
+	var welder := mover.tools.get_tool("welder") as YardWelder
+	var length := (p.seam_size as Vector2).x
+	var dt := 1.0 / 60.0
+	var s := 0.0
+	while s < length * share and fit.planned.has(p):
+		s += welder.ideal_speed * dt
+		var at := fit.global_transform * ((p.at as Vector3) + (p.seam_up as Vector3) * (s - length * 0.5))
+		fit.weld_along(p, at, dt, welder.ideal_speed, welder.max_speed)
+
+
 ## Two friends stood in, in their suits, and you out of the way.
 func _show_crew_view(id: String) -> void:
 	var v: Array = CREW_VIEWS[id]
@@ -288,7 +300,18 @@ func _show_tool_view(id: String) -> void:
 				break
 		if plan.is_empty():
 			return
-		fit.work_planned(plan, 0.5 - float(plan.done))
+		if kind == ConnectionData.Kind.WELD:
+			# One weld run neat to the end, the next half run, steady, the gun on it.
+			var other: Dictionary = {}
+			for p: Dictionary in fit.planned:
+				if int(p.kind) == kind and p != plan:
+					other = p
+			if not other.is_empty():
+				_lay_weld(fit, other, 1.0)
+			_lay_weld(fit, plan, 0.5)
+		else:
+			(mover.tools.get_tool("riveter") as YardRiveter).charge_seconds = 60.0
+			(mover.tools.get_tool("riveter") as YardRiveter).pressure = 0.7
 		var at := fit.planned_position(plan)
 		var normal := fit.planned_normal(plan)
 		var head := at + normal * 0.9 + Vector3(0, 0.15, 0)
@@ -296,8 +319,6 @@ func _show_tool_view(id: String) -> void:
 		mover.lamp.visible = false   # the arc lights it
 
 		mover.tools.select_tool(6 if kind == ConnectionData.Kind.RIVET else 7)
-		# Slowed right down, so the picture catches it half in however slowly the frames come.
-		(mover.tools.active_tool() as YardFastener).set_rate = 0.02
 		mover.tools.trigger_override = 1
 		if id == "tools_welder_first_person":
 			mover.camera.current = true

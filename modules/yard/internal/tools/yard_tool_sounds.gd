@@ -35,7 +35,7 @@ const SHOT_PEAK_DB := -3.0
 const EVENTS: Array[String] = ["tool.grinder_free", "tool.grinder_bite", "tool.grinder_skate", "tool.cutter",
 		"tool.cutter_light", "tool.plasma", "tool.plasma_through", "tool.grabber", "tool.grabber_grip",
 		"tool.battery", "tool.zap", "tool.stretch", "tool.throw", "tool.socket_groan", "tool.spray",
-		"socket.run", "socket.rattle", "socket.stop", "tool.riveter", "tool.welder"]
+		"socket.run", "socket.rattle", "socket.stop", "tool.riveter", "tool.welder", "tool.riveter_charge", "tool.riveter_punch"]
 
 static var _made: Dictionary = {}
 
@@ -94,6 +94,10 @@ static func _make(event: String) -> AudioStreamWAV:
 			return _riveter()
 		"tool.welder":
 			return _welder()
+		"tool.riveter_charge":
+			return _riveter_charge()
+		"tool.riveter_punch":
+			return _riveter_punch()
 	return null
 
 
@@ -115,6 +119,46 @@ static func _riveter() -> AudioStreamWAV:
 				+ sin(TAU * _hz(180.0) * t) * exp(-30.0 * u) * 0.8
 		s[i] = knock + hiss * 0.12
 	return _as_loop(s)
+
+
+## (BSX) The riveter charging (0.4.1): air hissing into its cylinder, a soft compressor whine
+## under it (the voice raises its pitch as the pressure builds).
+static func _riveter_charge() -> AudioStreamWAV:
+	var rng := _rng(23)
+	var n := _loop_samples()
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var a := 0.0
+	var b := 0.0
+	var whine := _hz(620.0)
+	for i in n:
+		var t := float(i) / RATE
+		var white := rng.randf_range(-1.0, 1.0)
+		a = lerpf(a, white, 0.6)
+		b = lerpf(b, a, 0.5)
+		var hiss := a - b   # a high band of noise: air through a valve
+		s[i] = hiss * 1.2 + sin(TAU * whine * t) * 0.05 + sin(TAU * whine * 2.0 * t) * 0.02
+	return _as_loop(s)
+
+
+## (BSX) The riveter's punch (0.4.1): one heavy blow. A deep thump through the plate, the crack
+## of steel on steel, the set ringing, and the spent air blasting out after it.
+static func _riveter_punch() -> AudioStreamWAV:
+	var rng := _rng(24)
+	var s := PackedFloat32Array()
+	var air := 0.0
+	var low := 0.0
+	for i in int(RATE * 0.85):
+		var t := float(i) / RATE
+		var white := rng.randf_range(-1.0, 1.0)
+		low = lerpf(low, white, 0.08)
+		var thump := sin(TAU * (48.0 + 40.0 * exp(-30.0 * t)) * t) * exp(-9.0 * t) * 1.3 + low * exp(-14.0 * t) * 2.0
+		var crack := white * exp(-90.0 * t) * 1.6
+		var ring := (sin(TAU * 1870.0 * t) * 0.35 + sin(TAU * 3120.0 * t) * 0.22 + sin(TAU * 4410.0 * t) * 0.12) * exp(-11.0 * t)
+		air = lerpf(air, white, 0.7)
+		var blast := air * 0.45 * (smoothstep(0.03, 0.08, t) * exp(-6.0 * maxf(t - 0.08, 0.0)))
+		s.append(thump + crack + ring + blast)
+	return _as_shot(s)
 
 
 ## (BSX) The MIG arc: a frying crackle (pops of noise, thick and uneven) on a low 100 Hz buzz.
