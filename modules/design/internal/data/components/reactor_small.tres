@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "reactor_small"
+display_name = "Small fusion reactor"
+short = "RX"
+colour = Color(1.0, 0.35, 0.3, 1)
+size = Vector3(1.6, 2.0, 1.6)
+cost = 42000.0
+mass = 3200.0
+build_hours = 14.0
+power = 120.0
+thrust = 0.0
+crew = 0
+rooms = PackedStringArray("reactor", "engineering")
+access = 1.0
+lead_days = 6

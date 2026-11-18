@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: the emitter frame rig (Component Upgrades U1). A coil goes on its deck and
 ## comes off, its four hold-down bolts follow its housing in spot space and are tracked like the ship's joints, TEST asks the host for a
 ## field sweep and Quality's result plays on every rig; all of it is saved.
@@ -8,7 +9,14 @@ const Rig := preload("res://modules/ship_bay/internal/yard/emitter_rig.gd")
 const Yard := preload("res://modules/ship_bay/internal/yard/shipyard.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var spot := bus.shipyard_spot("rig_emitter")

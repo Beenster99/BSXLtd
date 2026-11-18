@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignRoomType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_room_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "workshop"
+display_name = "Workshop"
+short = "WRK"
+colour = Color(0.8, 0.8, 0.45, 1)
+min_size = Vector2(3, 3)
+default_size = Vector2(4, 4)
+cost_per_m2 = 800.0
+mass_per_m2 = 75.0
+hours_per_m2 = 1.5
+power_per_m2 = 0.1
+crew_per_m2 = 0.0
+cargo_share = 0.0
+fuel_share = 0.0
+needs_access = true
+required = false
+is_airlock = false

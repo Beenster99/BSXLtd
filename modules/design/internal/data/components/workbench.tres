@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "workbench"
+display_name = "Workbench"
+short = "WB"
+colour = Color(0.8, 0.8, 0.45, 1)
+size = Vector3(2.0, 1.0, 0.8)
+cost = 1500.0
+mass = 150.0
+build_hours = 1.5
+power = -1.0
+thrust = 0.0
+crew = 0
+rooms = PackedStringArray("workshop", "engineering")
+access = 0.8
+lead_days = 1

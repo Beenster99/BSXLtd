@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay, S6 (large jobs in stages; beenster, 30 Oct: "move to next stage S6 - large
 ## jobs"): a large wreck in Dock 2 or Dock 3 is cut into sections the dolly can carry, at its
 ## frame rings, and a section cut free stands beside the dock as its own body. Both docks hold
@@ -9,7 +10,14 @@ extends ModuleTest
 const HullSections := preload("res://modules/ship_bay/internal/hull_sections.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var f := VsShipImport.design_source("vsw:sentinel")
 	var plan := HullSections.plan(f)
 	var seen := {}

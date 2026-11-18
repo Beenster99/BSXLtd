@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: each delivery comes on a hover truck in a haulage company's livery that
 ## drives in, backs onto a truck door, sets its crates down and drives away; until then
 ## its crates aren't on the goods-in floor and the trolleys leave them be.
@@ -7,7 +8,14 @@ extends ModuleTest
 const Trucks := preload("res://modules/ship_bay/internal/yard/delivery_trucks.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	check(Trucks.BRANDS.size() >= 4, "several haulage companies: %d" % Trucks.BRANDS.size())

@@ -11,7 +11,7 @@ const Reader := preload("res://modules/contracts/internal/work_order_reader.gd")
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.clients": true, "contracts.wrecks": false})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true, "contracts.clients": true, "contracts.wrecks": false})
 	Modules.load_all()
 	var bus := Modules.bus("contracts") as ContractsBus
 	check(bus != null, "contracts loads")
@@ -30,7 +30,7 @@ func run_tests() -> void:
 		bus.advance_cycle()
 	check(_whole(bus).is_empty(), "no whole-ship offers with contracts.wrecks off")
 
-	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.clients": true, "contracts.wrecks": true})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.board": true, "contracts.kinds": true, "contracts.fit_jobs": true, "contracts.clients": true, "contracts.wrecks": true})
 	Modules.load_all()
 	bus = Modules.bus("contracts") as ContractsBus
 	_test_board(bus)

@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: Settings > Debug > Ship (beenster, 24 Oct) stands a Manta on Dock 2 and takes
 ## the Kestrel out of the bay and back; both are saved and sent to players who join.
 ##   tools/run_tests.sh ship_bay
@@ -7,7 +8,14 @@ const ShipsPanel := preload("res://modules/ship_bay/internal/ui/debug_ships_pane
 const YardShips := preload("res://modules/ship_bay/internal/yard/yard_ships.gd")
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	check(Menu.settings_sections(Menu.DEBUG).any(func(c: Variant) -> bool: return c.id == ShipBayBus.DEBUG_SECTION),
 			"the Debug page has a Ship section")

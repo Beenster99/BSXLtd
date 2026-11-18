@@ -8,6 +8,9 @@ const KNOWN: PackedStringArray = ["hold_net", "attractor_coil_1"]
 
 
 func run_tests() -> void:
+	# The fixtures are Void Salvage orders, switched off by default since the pivot (Wave 0).
+	var was_on := Flags.is_on(ContractsBus.VS_ORDERS_FLAG)
+	Flags.set_flag(ContractsBus.VS_ORDERS_FLAG, true)
 	var bus := ContractsBus.new()
 	add_child(bus)
 	bus.set_component_library(func(id: String) -> bool: return id in KNOWN)
@@ -70,3 +73,4 @@ func run_tests() -> void:
 	check(again.get_active_job().job_id == "rook_salvage.bsx1", "active job kept through a save")
 	bus.queue_free()
 	again.queue_free()
+	Flags.set_flag(ContractsBus.VS_ORDERS_FLAG, was_on)

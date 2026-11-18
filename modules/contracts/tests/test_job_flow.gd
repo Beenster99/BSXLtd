@@ -9,10 +9,10 @@ const ID := "rook_salvage.bsx1"
 
 func run_tests() -> void:
 	var saved := Flags.all()
-	Flags.use({"core": true, "ui": true, "contracts": true, "business": false})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.vs_orders": true, "business": false})
 	Modules.load_all()
 	_test_without_business()
-	Flags.use({"core": true, "ui": true, "contracts": true, "ship_bay": true, "business": true})
+	Flags.use({"core": true, "ui": true, "contracts": true, "contracts.vs_orders": true, "ship_bay": true, "business": true})
 	Modules.load_all()
 	_test_with_business()
 	Flags.use(saved)

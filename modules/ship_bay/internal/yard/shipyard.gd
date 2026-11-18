@@ -209,10 +209,11 @@ var walker: CharacterBody3D
 var view_camera: Camera3D
 var bay: Node3D
 ## The refurbishment lines in Pre-assembly (refurb_line.gd): line id -> node; `line` is
-## line A.
+## line A. Empty (and null) with "ship_bay.refurb" off.
 var lines: Dictionary = {}
 var line: Node3D
-## The crusher bay outside Pre-assembly's south door (crusher_plant.gd).
+## The crusher bay outside Pre-assembly's south door (crusher_plant.gd), with
+## "ship_bay.crusher" on; else null.
 var crusher: Node3D
 ## Where the extinguishers hang at the fire points (ShipBayBus.fire_points): yard space, the
 ## origin at a bottle's foot on the wall, -Z out of the wall into the room.
@@ -253,7 +254,7 @@ var _goods: Array[Material] = []   # crate tints
 var _labels: Node3D                 # location labels and tags
 var _stores: Node3D                 # goods on the shelves and delivered crates, redrawn
 var _bus: ShipBayBus
-## The hover trolleys and their console (TrolleyFleet).
+## The hover trolleys and their console (TrolleyFleet), with "ship_bay.trolleys" on; else null.
 var trolleys: Node3D
 ## The emitter frame rig in Pre-assembly (emitter_rig.gd, Component Upgrades U1), with the
 ## flag "ship_bay.emitter_rig" on; else null.
@@ -322,9 +323,11 @@ func _ready() -> void:
 	walker.name = "Walker"
 	add_child(walker)
 	walker.call("place", Vector3(-6, 0, 30), Vector3(0, 3, -4))
-	trolleys = TrolleyFleet.new()
-	trolleys.set("yard", self)
-	add_child(trolleys)
+	# The hover trolleys and their lifts (ship_bay.trolleys; off for the shipbuilder, Wave 0).
+	if Flags.is_on("ship_bay.trolleys"):
+		trolleys = TrolleyFleet.new()
+		trolleys.set("yard", self)
+		add_child(trolleys)
 	trucks = DeliveryTrucks.new()
 	trucks.name = "Trucks"
 	trucks.set("yard", self)
@@ -1668,14 +1671,18 @@ func _tag_rooms() -> void:
 func _build_preassembly() -> void:
 	# The two refurbishment lines side by side down the hall, intake bays at the north end,
 	# their trolleys at the south end; the crusher in its own house against the east wall.
-	for id: String in RefurbLine.LINES:
-		var l: Node3D = RefurbLine.new(id)
-		add_child(l)
-		lines[id] = l
-	line = lines["a"]
-	crusher = CrusherPlant.new()
-	add_child(crusher)
-	_build_crusher_house()
+	# Switched off for the shipbuilder (Wave 0, beenster 17 Nov): ship_bay.refurb and
+	# ship_bay.crusher bring them back. The hall stays, empty.
+	if Flags.is_on("ship_bay.refurb"):
+		for id: String in RefurbLine.LINES:
+			var l: Node3D = RefurbLine.new(id)
+			add_child(l)
+			lines[id] = l
+		line = lines["a"]
+	if Flags.is_on("ship_bay.crusher"):
+		crusher = CrusherPlant.new()
+		add_child(crusher)
+		_build_crusher_house()
 
 
 ## The crusher house: a clad shed on portal frames against Pre-assembly's east wall (that

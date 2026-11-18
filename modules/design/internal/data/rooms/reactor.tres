@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignRoomType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_room_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "reactor"
+display_name = "Reactor room"
+short = "RCT"
+colour = Color(0.95, 0.35, 0.3, 1)
+min_size = Vector2(3, 3)
+default_size = Vector2(4, 4)
+cost_per_m2 = 1500.0
+mass_per_m2 = 160.0
+hours_per_m2 = 2.8
+power_per_m2 = 0.05
+crew_per_m2 = 0.0
+cargo_share = 0.0
+fuel_share = 0.0
+needs_access = true
+required = false
+is_airlock = false

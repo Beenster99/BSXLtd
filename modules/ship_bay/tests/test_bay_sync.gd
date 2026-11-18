@@ -1,4 +1,5 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay in a crew: what one player does to the ship in the bay reaches the others.
 ## The shore power plug follows whoever holds it and stays theirs until they put it down; a
 ## joint made or undone, and a part set in or lifted out, change every player's tracker (so
@@ -9,7 +10,14 @@ extends ModuleTest
 const OTHER := 99
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var bay := (load("res://modules/ship_bay/internal/bay/bay.tscn") as PackedScene).instantiate() as Node3D

@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "nav_console"
+display_name = "Navigation console"
+short = "NAV"
+colour = Color(0.5, 0.6, 1.0, 1)
+size = Vector3(1.0, 1.2, 0.8)
+cost = 7000.0
+mass = 200.0
+build_hours = 4.0
+power = -2.5
+thrust = 0.0
+crew = 0
+rooms = PackedStringArray("bridge")
+access = 0.8
+lead_days = 2

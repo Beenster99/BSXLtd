@@ -376,7 +376,9 @@ func _build_access() -> void:
 	if access:
 		access.queue_free()
 		access = null
-	if model == null or not model.has_method("access_points"):
+	# The lift, the power unit and the scaffolds are ground kit: switched off for the
+	# shipbuilder (Wave 0, beenster 17 Nov); ship_bay.lifts brings them back.
+	if model == null or not model.has_method("access_points") or not Flags.is_on("ship_bay.lifts"):
 		return
 	var points: Dictionary = model.call("access_points")
 	access = Access.new()

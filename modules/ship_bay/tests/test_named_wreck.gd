@@ -1,11 +1,19 @@
 extends ModuleTest
+const OldYard := preload("res://modules/ship_bay/tests/old_yard.gd")
 ## Ship and Bay: Settings > Debug > Ship lists every Void Salvage wreck design by name, the
 ## Patience training hulk too, and puts the one picked in the bay (beenster, 0.3.31: "how do i
 ## spawn the patience" / "please add pick a particular wreck").
 ##   tools/run_tests.sh ship_bay
 
 
+## The old yard's parts are switched off for the shipbuilder (Wave 0): this test turns them on.
 func run_tests() -> void:
+	var saved := OldYard.on()
+	await _run_old_yard()
+	OldYard.restore(saved)
+
+
+func _run_old_yard() -> void:
 	var bus := Modules.bus("ship_bay") as ShipBayBus
 	bus.reset_data()
 	var ids: Array = ShipBayBus.wreck_choices().map(func(c: Array) -> String: return str(c[0]))

@@ -1,0 +1,56 @@
+extends ModuleTest
+## Design Room in the orbital yard's station: the holotable, wall TVs and console go into the
+## station's design room on its mounts, and using the table opens the console.
+##   tools/run_tests.sh design
+
+const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
+
+
+func run_tests() -> void:
+	var bus := Modules.bus("design") as DesignBus
+	for f: String in [YardBus.FLAG, YardBus.STATION]:
+		Flags.set_flag(f, true)
+	var yard := Modules.bus("yard") as YardBus
+	if yard == null:
+		yard = YardBus.new()
+		yard.name = "yard"
+		Modules.add_child(yard)
+		yard.register_module()
+	if not yard.station_ready.is_connected(bus.furnish_station):
+		yard.station_ready.connect(bus.furnish_station)
+	var station := (load(YardBus.SCENE_PATH) as PackedScene).instantiate() as Node3D
+	add_child(station)
+	await frames(5)
+	var root := yard.design_room_root()
+	check(root != null, "the station has a design room")
+	if root == null:
+		return
+	var f := root.get_node_or_null("DesignFurnishing")
+	check(f != null, "the design room is furnished")
+	if f == null:
+		return
+	var tvs: Dictionary = f.get("tvs")
+	check(tvs.size() == 6, "six wall TVs: %s" % [tvs.keys()])
+	var mounts := {}
+	for m in YardBus.design_room_mounts():
+		mounts[m.id] = m
+	for id: String in tvs:
+		var tv: Node3D = tvs[id]
+		var spot: Transform3D = mounts[id].transform
+		check(tv.position.distance_to(spot.origin) < 0.1, "%s sits on its mount" % id)
+		# The screen's face (+Z) points into the room, the way the mount's -Z does.
+		check(tv.basis.z.dot(-spot.basis.z) > 0.99, "%s faces into the room" % id)
+	var holo: Node3D = f.get("holo")
+	check(Vector2(holo.position.x, holo.position.z).length() < 0.01 and HoloTable.TABLE_RADIUS <= YardBus.DESIGN_CLEAR_RADIUS,
+			"the holotable stands in the clear circle")
+	var use := holo.get_node_or_null("TableUse")
+	check(use != null and use.has_meta("yard_use") and str((use.get_meta("yard_hint") as Callable).call()).contains("holotable"),
+			"the table can be used: E Design at the holotable")
+	(use.get_meta("yard_use") as Callable).call()
+	check(f.call("is_console_open") and HudSlots.pointer_claimed(), "using it opens the console and frees the mouse")
+	f.call("close_console")
+	check(not f.call("is_console_open") and not HudSlots.pointer_claimed(), "leaving gives the mouse back")
+	bus.furnish_station()
+	check(root.get_children().filter(func(c): return c.name == "DesignFurnishing").size() == 1,
+			"furnishing twice does not double up")
+
