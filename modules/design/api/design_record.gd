@@ -408,6 +408,8 @@ func decks() -> PackedInt32Array:
 	var seen := {}
 	for r: Dictionary in rooms.values():
 		seen[int(r.deck)] = true
+	for dk: String in hull:
+		seen[int(dk)] = true
 	var out := PackedInt32Array(seen.keys())
 	out.sort()
 	return out if out.size() > 0 else PackedInt32Array([0])
@@ -447,6 +449,11 @@ func bounds() -> Rect2:
 		var rr := Rect2(r.x, r.z, r.w, r.d)
 		out = rr if first else out.merge(rr)
 		first = false
+	for dk: String in hull:
+		for p: Array in hull[dk]:
+			var v := Vector2(float(p[0]), float(p[1]))
+			out = Rect2(v, Vector2.ZERO) if first else out.expand(v)
+			first = false
 	return out
 
 

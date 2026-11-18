@@ -56,6 +56,8 @@ var selected_id := ""
 
 ## Points of the wire or pipe being drawn (tool "run:<kind>"), ship space.
 var _run_pts: Array[Vector2] = []
+## Corners of the hull outline being drawn (tool "hull"), ship space.
+var _hull_pts: Array[Vector2] = []
 ## The hull walls round the rooms on this deck (DesignStructure, refreshed on change).
 var _structure: DesignStructure
 var _drag := {}  # what the left button is doing: {kind, id, start, edge, rect, ...}
@@ -87,6 +89,7 @@ func set_tool(t: String) -> void:
 	tool = t
 	_drag = {}
 	_run_pts = []
+	_hull_pts = []
 	queue_redraw()
 	tool_changed.emit(tool)
 
@@ -97,8 +100,9 @@ func cancel() -> bool:
 	if bus and bus.carrying != "":
 		bus.carry("")
 		return true
-	if not _run_pts.is_empty():
+	if not _run_pts.is_empty() or not _hull_pts.is_empty():
 		_run_pts = []
+		_hull_pts = []
 		queue_redraw()
 		return true
 	if tool != "select":
@@ -154,7 +158,10 @@ func _on_changed() -> void:
 		if selected_kind == "room" and not rec.rooms.has(selected_id) \
 				or selected_kind == "run" and not rec.runs.has(selected_id) \
 				or selected_kind == "part" and not rec.components.has(selected_id) \
-				or selected_kind == "door" and not rec.doors.has(selected_id):
+				or selected_kind == "door" and not rec.doors.has(selected_id) \
+				or selected_kind == "wall" and not rec.walls.has(selected_id) \
+				or selected_kind == "beam" and not rec.beams.has(selected_id) \
+				or selected_kind == "hull" and int(selected_id) >= rec.hull_outline(deck).size():
 			select("", "")
 	if auto_frame:
 		frame_all()
@@ -246,9 +253,11 @@ func _draw_plan(rec: DesignRecord) -> void:
 		for r in rec.rooms_on(deck - 1):
 			var sr := Rect2(to_screen(Vector2(r.x, r.z)), Vector2(r.w, r.d) * zoom)
 			draw_rect(sr, Color(DIM, 0.25), false, 1.0)
+	_draw_hull_fill(rec)
 	for r in rec.rooms_on(deck):
 		_draw_room(rec, r)
 	_draw_hull(rec)
+	_draw_beams(rec)
 	for door: Dictionary in rec.doors.values():
 		if int(door.deck) == deck:
 			_draw_door(rec, door)
@@ -285,6 +294,47 @@ func _draw_hull(rec: DesignRecord) -> void:
 	for e: Dictionary in _structure.inner_edges:
 		if int(e.deck) == deck:
 			draw_line(to_screen(e.a), to_screen(e.b), Color(0.75, 0.85, 0.95, 0.55), maxf(outer_w * 0.5, 1.5))
+
+
+## A drawn hull: the deck plated out to it, faintly, and its corners as handles.
+func _draw_hull_fill(rec: DesignRecord) -> void:
+	var outline := rec.hull_outline(deck)
+	if outline.size() < 3:
+		return
+	var sp := PackedVector2Array()
+	for p in outline:
+		sp.append(to_screen(p))
+	if Geometry2D.triangulate_polygon(sp).size() > 0:
+		draw_colored_polygon(sp, Color(0.45, 0.6, 0.75, 0.10))
+
+
+func _draw_hull_handles(rec: DesignRecord) -> void:
+	var outline := rec.hull_outline(deck)
+	if not editable or outline.size() < 3:
+		return
+	for i in outline.size():
+		var sel: bool = selected_kind == "hull" and int(selected_id) == i
+		var at := to_screen(outline[i])
+		if _drag.get("kind", "") == "hull_pt" and int(_drag.index) == i and _drag.has("pos"):
+			at = to_screen(_drag.pos)
+		draw_rect(Rect2(at - Vector2(4, 4), Vector2(8, 8)), SELECT if sel else INK, not sel, -1.0 if sel else 1.5)
+
+
+## Beams placed by hand: a dashed orange line, the selected one solid.
+func _draw_beams(rec: DesignRecord) -> void:
+	for b: Dictionary in rec.beams.values():
+		if int(b.deck) != deck:
+			continue
+		var a := to_screen(DesignStructure._v(b.a))
+		var e := to_screen(DesignStructure._v(b.b))
+		var sel: bool = selected_kind == "beam" and selected_id == b.id
+		if sel:
+			draw_line(a, e, SELECT, 4.0)
+		else:
+			draw_dashed_line(a, e, Color(1.0, 0.7, 0.35, 0.9), clampf(zoom * 0.1, 2.0, 5.0), 8.0)
+	for w: Dictionary in rec.walls.values():
+		if int(w.deck) == deck and selected_kind == "wall" and selected_id == w.id:
+			draw_line(to_screen(DesignStructure._v(w.a)), to_screen(DesignStructure._v(w.b)), SELECT, 4.0)
 
 
 func _draw_run(w: Dictionary) -> void:
@@ -449,8 +499,15 @@ func _draw_drag_ghost(_rec_unused: DesignRecord) -> void:
 	if bus.carrying != "" and mode == PLAN:
 		_draw_module_ghost()
 		return
+	_draw_hull_handles(_rec())
 	if tool.begins_with("run:") and editable:
 		_draw_run_ghost()
+		return
+	if tool == "hull" and editable:
+		_draw_hull_ghost()
+		return
+	if tool in ["wall", "beam"] and editable:
+		_draw_line_ghost()
 		return
 	if _drag.get("kind", "") != "new_room" or not _drag.has("rect"):
 		if editable and tool.begins_with("part:") and _drag.is_empty():
@@ -499,6 +556,50 @@ func _draw_run_ghost() -> void:
 	draw_circle(next, 4.0, SELECT)
 	var hint := "click to add points, double-click or Enter to finish, Esc to cancel"
 	_text(next + Vector2(10, -8), "%s: %s" % [str(spec.get("name", "Run")).to_upper(), hint], SELECT, 12)
+
+
+func _draw_hull_ghost() -> void:
+	var pts := PackedVector2Array()
+	for p in _hull_pts:
+		pts.append(to_screen(p))
+	var next := to_screen(_snap(to_ship(_mouse), _grid() * 0.5))
+	var closing := _hull_pts.size() >= 3 and next.distance_to(pts[0]) < 10.0
+	pts.append(pts[0] if closing else next)
+	if pts.size() >= 2:
+		draw_polyline(pts, Color(0.75, 0.85, 0.95, 0.9), 3.0)
+	for p in pts:
+		draw_circle(p, 3.5, INK)
+	draw_circle(next, 5.0, SELECT)
+	var hint := "click to close the hull" if closing else \
+			"click each corner of the hull, back on the first (or Enter) to close, Esc to cancel"
+	_text(next + Vector2(10, -8), "HULL: %s" % hint, SELECT, 12)
+
+
+## A wall or beam: press at one end, drag to the other.
+func _draw_line_ghost() -> void:
+	var at := to_screen(_snap(to_ship(_mouse), _grid() * 0.5))
+	var col := Color(1.0, 0.7, 0.35) if tool == "beam" else INK
+	if _drag.get("kind", "") == "line" and _drag.has("b"):
+		var a := to_screen(_drag.a)
+		var b := to_screen(_drag.b)
+		draw_line(a, b, col, 3.0)
+		_text(b + Vector2(10, -8), "%s m" % _m((_drag.a as Vector2).distance_to(_drag.b)), SELECT, 13)
+	else:
+		draw_circle(at, 5.0, SELECT)
+		_text(at + Vector2(10, -8), "%s: drag from one end to the other" % ("BEAM" if tool == "beam" else "INNER WALL"),
+				SELECT, 12)
+
+
+## Commits the hull being drawn.
+func _finish_hull() -> void:
+	if _hull_pts.size() >= 3:
+		var pts: Array = []
+		for p in _hull_pts:
+			pts.append([p.x, p.y])
+		bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
+		set_tool("select")
+	_hull_pts = []
+	queue_redraw()
 
 
 ## Run points snap to half the grid, and keep square: each leg runs along X or Z.
@@ -568,7 +669,8 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 		elif not _drag.is_empty():
 			_drag_move(event.position)
-		elif bus.carrying != "" or editable and (tool.begins_with("part:") or tool.begins_with("run:")):
+		elif bus.carrying != "" or editable and (tool.begins_with("part:") or tool.begins_with("run:")
+				or tool in ["hull", "wall", "beam"]):
 			queue_redraw()
 		_update_cursor(event.position)
 	elif event is InputEventMouseButton:
@@ -592,6 +694,8 @@ func _gui_input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed and mb.double_click and tool.begins_with("run:") and editable:
 				_finish_run()
+			elif mb.pressed and mb.double_click and tool == "hull" and editable:
+				_finish_hull()
 			elif mb.pressed:
 				_press(mb.position)
 			else:
@@ -607,6 +711,9 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 		elif k.keycode in [KEY_ENTER, KEY_KP_ENTER] and tool.begins_with("run:"):
 			_finish_run()
+			accept_event()
+		elif k.keycode in [KEY_ENTER, KEY_KP_ENTER] and tool == "hull":
+			_finish_hull()
 			accept_event()
 		elif k.keycode == KEY_ESCAPE and tool.begins_with("run:") and not _run_pts.is_empty():
 			_run_pts = []
@@ -644,6 +751,16 @@ func delete_selected() -> void:
 			bus.editor.do({"op": "remove_door", "id": selected_id})
 		"run":
 			bus.editor.do({"op": "remove_run", "id": selected_id})
+		"wall":
+			bus.editor.do({"op": "remove_wall", "id": selected_id})
+		"beam":
+			bus.editor.do({"op": "remove_beam", "id": selected_id})
+		"hull":
+			# A corner: take it out (a hull keeps at least three).
+			var pts: Array = _rec().hull.get(str(deck), []).duplicate(true)
+			if pts.size() > 3:
+				pts.remove_at(int(selected_id))
+				bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
 
 
 ## What is under a screen point on this deck: {kind, id, edge} (edge: which room edges are
@@ -653,6 +770,11 @@ func pick(s: Vector2) -> Dictionary:
 	if rec == null or mode != PLAN:
 		return {}
 	var p := to_ship(s)
+	if editable:
+		var outline := rec.hull_outline(deck)
+		for i in outline.size():
+			if to_screen(outline[i]).distance_to(s) < 8.0:
+				return {"kind": "hull", "id": str(i)}
 	for c: Dictionary in rec.components.values():
 		var r: Dictionary = rec.rooms.get(c.room, {})
 		var pt := bus.catalog.part(str(c.type))
@@ -669,6 +791,13 @@ func pick(s: Vector2) -> Dictionary:
 			var q := Geometry2D.get_closest_point_to_segment(p, pts[i], pts[i + 1])
 			if to_screen(q).distance_to(s) < 6.0:
 				return {"kind": "run", "id": w.id}
+	for kind: String in ["beam", "wall"]:
+		for e: Dictionary in (rec.beams if kind == "beam" else rec.walls).values():
+			if int(e.deck) != deck:
+				continue
+			var q := Geometry2D.get_closest_point_to_segment(p, DesignStructure._v(e.a), DesignStructure._v(e.b))
+			if to_screen(q).distance_to(s) < 6.0:
+				return {"kind": kind, "id": e.id}
 	var list := rec.rooms_on(deck)
 	list.reverse()
 	for r in list:
@@ -735,6 +864,16 @@ func _press(s: Vector2) -> void:
 	elif tool.begins_with("run:"):
 		_run_pts.append(_run_point(p))
 		queue_redraw()
+	elif tool == "hull":
+		var at := _snap(p, _grid() * 0.5)
+		if _hull_pts.size() >= 3 and to_screen(_hull_pts[0]).distance_to(s) < 10.0:
+			_finish_hull()
+		elif _hull_pts.is_empty() or _hull_pts[_hull_pts.size() - 1] != at:
+			_hull_pts.append(at)
+			queue_redraw()
+	elif tool in ["wall", "beam"]:
+		var at := _snap(p, _grid() * 0.5)
+		_drag = {"kind": "line", "a": at, "b": at}
 	else:
 		var hit := pick(s)
 		select(hit.get("kind", ""), hit.get("id", ""))
@@ -744,6 +883,8 @@ func _press(s: Vector2) -> void:
 		elif hit.get("kind", "") == "part":
 			var c: Dictionary = rec.components[hit.id]
 			_drag = {"kind": "part", "id": hit.id, "start": p, "orig": Vector2(c.x, c.z)}
+		elif hit.get("kind", "") == "hull":
+			_drag = {"kind": "hull_pt", "index": int(hit.id), "orig": rec.hull_outline(deck)[int(hit.id)]}
 
 
 func _drag_move(s: Vector2) -> void:
@@ -780,6 +921,10 @@ func _drag_move(s: Vector2) -> void:
 			_drag.rect = r
 		"part":
 			_drag.pos = _snap(_drag.orig + (p - _drag.start), rec.grid * 0.5)
+		"hull_pt":
+			_drag.pos = _snap(p, _grid() * 0.5)
+		"line":
+			_drag.b = _snap(p, _grid() * 0.5)
 	queue_redraw()
 
 
@@ -814,6 +959,17 @@ func _release(_s: Vector2) -> void:
 				if room_id != "":
 					fields.room = room_id
 				bus.editor.do({"op": "set_component", "id": d.id, "fields": fields})
+		"hull_pt":
+			if d.has("pos") and d.pos != d.orig:
+				var pts: Array = rec.hull.get(str(deck), []).duplicate(true)
+				pts[int(d.index)] = [d.pos.x, d.pos.y]
+				bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
+		"line":
+			var a: Vector2 = d.a
+			var b: Vector2 = d.b
+			if a.distance_to(b) >= 0.1:
+				bus.editor.do({"op": "add_" + tool, tool: {"deck": deck, "a": [a.x, a.y], "b": [b.x, b.y]}})
+				select(tool, _newest(rec.walls if tool == "wall" else rec.beams))
 	queue_redraw()
 
 

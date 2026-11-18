@@ -104,8 +104,42 @@ class Runner:
 		walk.call("toggle_palette")
 		await _frames(10)
 		await _save(out, "walk_palette")
+		walk.call("toggle_palette")
+		walk.set("holding", {})
 		room.furnishing.close_walk()
+		await _hull_shots(room, out)
 		get_tree().quit()
+
+	## The same ship with a hull of its own drawn round it: a tapered bow, an open deck, a
+	## partition wall and a beam across it.
+	func _hull_shots(room: Node, out: String) -> void:
+		var ed: DesignEditor = room.bus.editor
+		ed.do({"op": "set_hull", "deck": 0, "points": [[-8, -6.5], [-3, -11.5], [3.5, -11.5], [8, -3], [8, 6], [-8, 6]]})
+		ed.do({"op": "add_wall", "wall": {"deck": 0, "a": [-8, 2], "b": [-3, 2]}})
+		ed.do({"op": "add_beam", "beam": {"deck": 0, "a": [-6, -7], "b": [-2, -7]}})
+		room.furnishing.open_console()
+		room.console._set_view("plan")
+		room.console.plan.select("hull", "1")
+		room.console.plan.set_tool("hull")
+		await _frames(30)
+		await _save(out, "hull_console")
+		room.console.plan.set_tool("select")
+		for layer in ["frame", "power"]:
+			(room.console.find_child("Layer_" + layer, true, false) as Button).button_pressed = layer == "frame"
+		(room.console.find_child("Cut", true, false) as HSlider).value = 1.0
+		await _frames(30)
+		await _save(out, "hull_holo")
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		for shot in [["walk_hull_bow", Vector3(-4.5, 1.0, -6.5), 0.75, 0.05],
+				["walk_hull_outside", Vector3(-12, 1.0, -16), -2.45, -0.05]]:
+			walk.body.position = shot[1]
+			walk.body.rotation.y = shot[2]
+			walk.set("_pitch", shot[3])
+			walk.camera.rotation.x = shot[3]
+			await _frames(20)
+			await _save(out, shot[0])
+		room.furnishing.close_walk()
 
 	## The furnished design room inside the orbital yard's station.
 	func _station(bus: DesignBus, out: String) -> void:

@@ -94,7 +94,7 @@ func rebuild() -> void:
 	_layer_nodes = {}
 	_materials = []
 	var rec := bus.library.current if bus else null
-	if rec == null or rec.rooms.is_empty():
+	if rec == null or rec.rooms.is_empty() and rec.hull.is_empty():
 		return
 	var b := rec.bounds()
 	var levels := rec.decks()
@@ -213,6 +213,12 @@ func _build_frame(rec: DesignRecord, parent: Node3D) -> void:
 		for i in n + 1:
 			var p := a + (b - a).normalized() * spacing * i
 			segs.append_array([p, p + Vector3.UP * h])
+	# Beams placed by hand, under the deckhead.
+	for bm: Dictionary in rec.beams.values():
+		var y := (float(bm.deck) + 1.0) * h - 0.08
+		var a := DesignStructure._v(bm.a)
+		var e := DesignStructure._v(bm.b)
+		segs.append_array([Vector3(a.x, y, a.y), Vector3(e.x, y, e.y)])
 	_lines(parent, segs, _mat(Color(1.0, 0.7, 0.35), 0.8))
 
 
@@ -228,9 +234,32 @@ func _build_plates(rec: DesignRecord, parent: Node3D) -> void:
 			var b: Vector2 = e.b
 			var mid := (a + b) * 0.5
 			var t: float = list[2]
-			var sz := Vector3(maxf(absf(b.x - a.x), t), h, maxf(absf(b.y - a.y), t))
-			_box(parent, Vector3(mid.x, float(e.deck) * h + h * 0.5, mid.y), sz, list[1])
+			# Along the edge, turned to it, so a hull's angled sides plate too.
+			var pane := _box(parent, Vector3(mid.x, float(e.deck) * h + h * 0.5, mid.y),
+					Vector3(a.distance_to(b), h, t), list[1])
+			pane.rotation.y = -(b - a).angle()
+	# Decks with a drawn hull are plated out to it.
+	for deck in rec.decks():
+		var outline := rec.hull_outline(deck)
+		if outline.size() < 3:
+			continue
+		var tris := Geometry2D.triangulate_polygon(outline)
+		if tris.is_empty():
+			continue
+		var st2 := SurfaceTool.new()
+		st2.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var y := float(deck) * h + 0.03
+		for i in tris:
+			st2.add_vertex(Vector3(outline[i].x, y, outline[i].y))
+		var mi := MeshInstance3D.new()
+		mi.name = "HullDeck_%d" % deck
+		mi.mesh = st2.commit()
+		mi.material_override = outer
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(mi)
 	for r: Dictionary in rec.rooms.values():
+		if rec.hull_outline(int(r.deck)).size() >= 3:
+			continue
 		var box := _room_box(rec, r)
 		_box(parent, Vector3(box.get_center().x, box.position.y + 0.03, box.get_center().z),
 				Vector3(box.size.x, 0.06, box.size.z), outer)
