@@ -20,6 +20,11 @@ const PANELS := [
 
 var frame: YardWorkpiece
 var bracket: YardWorkpiece
+## The fitting frame: its panels tacked on, rivets and welds planned (YardWorkpiece.planned).
+var fit: YardWorkpiece
+## Where the fitting frame stands (frame space): to the right, past the bracket.
+const FIT_AT := Vector3(4.2, 0.0, 0.0)
+const FIT_SIZE := Vector3(1.8, 1.4, 0.1)
 var _pieces: Array[Node] = []
 var _steel: StandardMaterial3D
 var _paint: StandardMaterial3D
@@ -83,6 +88,46 @@ func rebuild() -> void:
 	bracket.model.add_part("Bracket", PartData.Kind.FRAME, 8.0, 0.0, Transform3D(), arm.mesh, arm.collision, _steel)
 	bracket.position = Vector3(FRAME_SIZE.x * 0.5 + 0.9, 1.4, 0.6)
 	bracket._weigh()
+	_build_fit()
+
+
+## The fitting frame: a backing with two primer-grey panels on it, each held by one tack weld,
+## the left's six rivets ringed and the right's two side welds chalked.
+func _build_fit() -> void:
+	fit = YardWorkpiece.new()
+	fit.name = "FitFrame"
+	fit.freeze = true
+	fit.position = FIT_AT
+	add_child(fit)
+	_pieces.append(fit)
+	var m := fit.model
+	var back_shape := PartShapes.box(FIT_SIZE)
+	var back := m.add_part("FitFrame", PartData.Kind.FRAME, 200.0, 0.0,
+			Transform3D(Basis(), Vector3(0, FIT_SIZE.y * 0.5 + 0.6, 0)), back_shape.mesh, back_shape.collision, _steel)
+	fit.anchor_part = back.id
+	var primer := StandardMaterial3D.new()
+	primer.albedo_color = Color(0.5, 0.53, 0.55)
+	primer.metallic = 0.3
+	primer.roughness = 0.65
+	var panel_shape := PartShapes.box(PANEL_SIZE)
+	var face := FIT_SIZE.z * 0.5
+	for i in 2:
+		var x := (float(i) - 0.5) * (PANEL_SIZE.x + 0.14)
+		var centre := Vector3(x, back.local_transform.origin.y, face + GAP + PANEL_SIZE.z * 0.5)
+		var panel := m.add_part("RivetFitPanel" if i == 0 else "WeldFitPanel", PartData.Kind.HULL, 12.0, 0.0,
+				Transform3D(Basis(), centre), panel_shape.mesh, panel_shape.collision, primer)
+		var front := centre.z + PANEL_SIZE.z * 0.5
+		# One tack at the top holds it while it is fixed.
+		m.connect_parts(panel, back, ConnectionData.Kind.SPOT, Vector3(x, centre.y + PANEL_SIZE.y * 0.5 - 0.05, front), Vector3.BACK)
+		if i == 0:
+			for row in 3:
+				for col: float in [-1.0, 1.0]:
+					var at := Vector3(x + col * (PANEL_SIZE.x * 0.5 - 0.07), centre.y + (float(row) - 1.0) * 0.38, front)
+					fit.plan(ConnectionData.Kind.RIVET, panel, back, at, Vector3.BACK)
+		else:
+			for sx: float in [-1.0, 1.0]:
+				fit.plan(ConnectionData.Kind.WELD, panel, back, Vector3(x + sx * PANEL_SIZE.x * 0.5, centre.y, front - 0.008),
+						Vector3.BACK, Vector3.UP, Vector2(PANEL_SIZE.y * 0.7, 0.012))
 
 
 ## How many joints still hold panels to the frame.

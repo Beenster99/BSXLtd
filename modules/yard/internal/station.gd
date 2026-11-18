@@ -44,7 +44,8 @@ const SUIT_VIEWS := {
 }
 ## Screenshot points at the practice frame (stage 1.4): the grinder on a rivet, seen from the
 ## side, and the same from your own eyes with the hotbar.
-const TOOL_VIEWS := ["tools_grinder", "tools_first_person", "tools_tractor", "tools_tractor_close", "tools_tablet"]
+const TOOL_VIEWS := ["tools_grinder", "tools_first_person", "tools_tractor", "tools_tractor_close", "tools_tablet",
+		"tools_riveter", "tools_welder", "tools_welder_first_person"]
 ## Friends in the yard (stage 1.6), stood in: id -> [the camera, look at, [name, feet, facing,
 ## held state] for each] (station space).
 const CREW_VIEWS := {
@@ -211,6 +212,36 @@ func _show_tool_view(id: String) -> void:
 		else:
 			view_camera.position = to_local(head_at + across * 3.2 + away * 1.5 + Vector3(0, 0.8, 0))
 			view_camera.look_at(head_at.lerp(b_at, 0.45))
+		view_camera.current = true
+		return
+	if id in ["tools_riveter", "tools_welder", "tools_welder_first_person"]:
+		# The fitting frame: a rivet or a weld half in, the tool on it.
+		var fit := practice.get("fit") as YardWorkpiece
+		var kind := ConnectionData.Kind.RIVET if id == "tools_riveter" else ConnectionData.Kind.WELD
+		var plan: Dictionary = {}
+		for p: Dictionary in fit.planned:
+			if int(p.kind) == kind:
+				plan = p
+				break
+		if plan.is_empty():
+			return
+		fit.work_planned(plan, 0.5 - float(plan.done))
+		var at := fit.planned_position(plan)
+		var normal := fit.planned_normal(plan)
+		var head := at + normal * 0.9 + Vector3(0, 0.15, 0)
+		mover.place(head - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
+		mover.lamp.visible = false   # the arc lights it
+
+		mover.tools.select_tool(6 if kind == ConnectionData.Kind.RIVET else 7)
+		# Slowed right down, so the picture catches it half in however slowly the frames come.
+		(mover.tools.active_tool() as YardFastener).set_rate = 0.02
+		mover.tools.trigger_override = 1
+		if id == "tools_welder_first_person":
+			mover.camera.current = true
+			return
+		var side := normal.cross(Vector3.UP).normalized()
+		view_camera.position = to_local(head - side * 1.5 + Vector3(0, 0.45, 0) - normal * 0.1)
+		view_camera.look_at(at.lerp(head, 0.4))
 		view_camera.current = true
 		return
 	if id == "tools_tablet":

@@ -25,6 +25,10 @@ static func meshes(id: String) -> Dictionary:
 		_meshes[id] = YardTractor.model()
 	elif id == "tool_tablet":
 		_meshes[id] = YardTablet.model()
+	elif id == "tool_riveter":
+		_meshes[id] = YardRiveter.model()
+	elif id == "tool_welder":
+		_meshes[id] = YardWelder.model()
 	if _meshes.has(id):
 		var out: Dictionary = _meshes[id]
 		if not out.has("hand"):
@@ -73,7 +77,7 @@ static func _data() -> Dictionary:
 
 
 ## BSX's own tools and the Void Salvage tool each one's grip, hand and wrist copy.
-const MADE_TOOLS := {"tractor": "grabber", "tablet": "scanner"}
+const MADE_TOOLS := {"tractor": "grabber", "tablet": "scanner", "riveter": "socket", "welder": "cutter"}
 
 
 static func tool_profile(id: String) -> Dictionary:

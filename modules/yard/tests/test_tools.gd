@@ -16,14 +16,14 @@ func run_tests() -> void:
 		bus.name = "yard"
 		Modules.add_child(bus)
 		bus.register_module()
-	for i in 6:
+	for i in 8:
 		check(InputMap.has_action("yard.tool_%d" % (i + 1)), "key for tool %d" % (i + 1))
 	var station := (load(YardBus.SCENE_PATH) as PackedScene).instantiate() as Node3D
 	add_child(station)
 	await frames(3)
 	var rig := station.get("mover") as YardRig
 	var tools := rig.tools
-	check(tools != null and tools.tools.size() == 6, "six tools on the hotbar")
+	check(tools != null and tools.tools.size() == 8, "eight tools on the hotbar")
 	check(tools.holstered, "you come in with the tool put away")
 	tools.select_tool(0)
 	check(not tools.holstered and tools.active_tool() is YardGrinder and tools.active_tool().visible, "1 draws the grinder")
@@ -59,11 +59,15 @@ func run_tests() -> void:
 	var freed: Array = []
 	frame.piece_freed.connect(func(p: YardWorkpiece) -> void: freed.append(p))
 	var rivets := _joints(frame, ConnectionData.Kind.RIVET)
+	var seen := {"bar": false, "most": 0.0}   # (lambdas change a dictionary, not a local)
 	for c: ConnectionData in rivets:
-		await _work(rig, frame, c, 300)
+		await _work(rig, frame, c, 300, func() -> void:
+			seen.bar = bool(seen.bar) or tools.progress_shown()
+			seen.most = maxf(float(seen.most), tools.progress_value()))
 	check(rivets.all(func(c: ConnectionData) -> bool: return c.is_broken()), "the grinder took every rivet off")
 	check(freed.size() == 1 and (freed[0] as YardWorkpiece).model.parts.size() == 1, "the riveted panel came free")
 	check(tools.broken >= 4, "the tool counts what it broke (%d)" % tools.broken)
+	check(bool(seen.bar) and float(seen.most) > 0.5, "a progress bar by the crosshair shows the rivet going (%.2f)" % float(seen.most))
 	var piece: YardWorkpiece = freed[0] if freed.size() > 0 else null
 
 	# The socket on a bolt that turns.
@@ -89,6 +93,8 @@ func run_tests() -> void:
 		tools.trigger_override = 1
 		await physics_steps(5)
 		check(tools.grab_body == piece, "the grabber takes hold of the panel")
+		await frames(2)
+		check(tools.grip_showing(), "the claw's grip field is drawn on it")
 		tools.hold_distance = 1.5
 		await physics_steps(120)
 		var near := (piece.global_transform * piece.center_of_mass).distance_to(rig.head.global_position)
@@ -111,6 +117,8 @@ func run_tests() -> void:
 	tools.trigger_override = 1
 	await physics_steps(5)
 	check(tools.grab_body == bracket, "the tractor's beam takes the bracket 9 m off")
+	await frames(2)
+	check(tools.grip_showing(), "with Void Salvage's grip field on it")
 	tools.wheel(-1)
 	tools.wheel(-1)
 	tools.wheel(-1)
@@ -140,9 +148,42 @@ func run_tests() -> void:
 	tools.trigger_override = -1
 	tools.holster(true)
 
+	# The riveter puts the fitting frame's rivets in, the welder runs its welds (0.4.0 playtest).
+	var fit := practice.get("fit") as YardWorkpiece
+	check(fit != null and fit.planned.size() == 8, "the fitting frame has 6 rivets and 2 welds chalked (%d)" % (fit.planned.size() if fit else 0))
+	check(_joints(fit, ConnectionData.Kind.SPOT).size() == 2, "its panels hang by a tack each")
+	tools.select_tool(6)
+	var riveter := tools.active_tool() as YardRiveter
+	check(riveter != null and riveter.visible, "7 draws the riveter")
+	await frames(3)
+	check(riveter.art != null and riveter.art.pieces.has("hand"), "the riveter is drawn in the suit's finish, in the fitted hand")
+	var spray := (tools.get_node("ToolEffects") as YardToolEffects).spray
+	var fx := {"sparks": 0, "globs": 0, "bar": false}
+	for p: Dictionary in fit.planned.filter(func(q: Dictionary) -> bool: return int(q.kind) == ConnectionData.Kind.RIVET):
+		await _fasten(rig, fit, p, 400, func() -> void:
+			fx.sparks = maxi(int(fx.sparks), spray.shower_count()))
+	check(_joints(fit, ConnectionData.Kind.RIVET).size() == 6, "the riveter set all six rivets (%d)" % _joints(fit, ConnectionData.Kind.RIVET).size())
+	check(int(fx.sparks) > 100, "its hammer throws sparks (%d)" % int(fx.sparks))
+	fx.sparks = 0
+	tools.select_tool(7)
+	var welder := tools.active_tool() as YardWelder
+	check(welder != null and welder.visible, "8 draws the welder")
+	for p: Dictionary in fit.planned.filter(func(q: Dictionary) -> bool: return int(q.kind) == ConnectionData.Kind.WELD):
+		await _fasten(rig, fit, p, 600, func() -> void:
+			fx.sparks = maxi(int(fx.sparks), spray.shower_count())
+			fx.globs = maxi(int(fx.globs), spray.count(1))
+			fx.bar = bool(fx.bar) or (tools.progress_shown() and tools.work_label == "WELD"))
+	check(_joints(fit, ConnectionData.Kind.WELD).size() == 2 and fit.planned.is_empty(), "the welder ran both welds")
+	check(int(fx.sparks) > 400 and int(fx.globs) > 10, "lots of sparks and molten metal (%d sparks, %d globs)" % [int(fx.sparks), int(fx.globs)])
+	check(bool(fx.bar), "the bar shows the weld going in")
+	check(tools.fastened_count == 8, "the tools count what they put in (%d)" % tools.fastened_count)
+	tools.trigger_override = -1
+	tools.holster(true)
+
 	practice.call("rebuild")
 	await frames(2)
 	check(int(practice.call("joints_left")) == start, "the terminal builds the frame again")
+	check((practice.get("fit") as YardWorkpiece).planned.size() == 8, "and the fitting frame")
 	station.queue_free()
 	await frames(2)
 
@@ -151,8 +192,27 @@ func _joints(body: YardWorkpiece, kind: ConnectionData.Kind) -> Array:
 	return body.model.connections.filter(func(c: ConnectionData) -> bool: return c.kind == kind)
 
 
+## Floats a metre out in front of planned fastening `p`, aims along it and holds the trigger
+## till it is in (`each` runs every step).
+func _fasten(rig: YardRig, body: YardWorkpiece, p: Dictionary, most: int, each: Callable) -> void:
+	var at := body.planned_position(p)
+	rig.place(at + body.planned_normal(p) * 0.9 - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
+	await physics_steps(3)
+	rig.tools.trigger_override = 1
+	for i in most:
+		await physics_steps(1)
+		each.call()
+		if not body.planned.has(p):
+			break
+		if i % 30 == 29:
+			at = body.planned_position(p)
+			rig.place(at + body.planned_normal(p) * 0.9 - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
+	rig.tools.trigger_override = 0
+	await physics_steps(2)
+
+
 ## Floats a metre out in front of joint `c`, aims at it and holds the trigger till it breaks.
-func _work(rig: YardRig, body: YardWorkpiece, c: ConnectionData, most: int) -> void:
+func _work(rig: YardRig, body: YardWorkpiece, c: ConnectionData, most: int, each := Callable()) -> void:
 	var at := body.joint_position(c)
 	var head := at + body.joint_normal(c) * 0.9
 	rig.place(head - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
@@ -160,6 +220,8 @@ func _work(rig: YardRig, body: YardWorkpiece, c: ConnectionData, most: int) -> v
 	rig.tools.trigger_override = 1
 	for i in most:
 		await physics_steps(1)
+		if each.is_valid():
+			each.call()
 		if c.is_broken():
 			break
 		if i % 30 == 29:
