@@ -11,7 +11,7 @@ extends Node
 ##   var yard := Modules.bus("yard") as YardBus
 ##   yard.station_ready.connect(func(station): ...)
 ##   var root := yard.design_room_root()        # add the design room's contents here
-##   for m in yard.design_room_mounts(): ...     # {id, transform, size} TV and whiteboard spots
+##   for w in yard.design_room_walls(): ...      # {id, transform, size} whole wall planes for screens
 ## The design room's root sits at the room's floor centre: +X right, -Z towards the window,
 ## y = 0 the floor. Its middle rectangle (DESIGN_CLEAR_SIZE) is left empty for the holotable.
 
@@ -28,8 +28,13 @@ const STATION := "yard.station"
 const DOCK := "yard.dock"
 const RACKING := "yard.racking"
 
-## The design room's inside (m): width (x), height, depth (z).
+## The design room's inside (m): width (x), the side walls' height, depth (z).
 const DESIGN_ROOM_SIZE := Vector3(24, 6, 18)
+## The top of its glass barrel vault, which runs from the window to the back (m over the floor).
+const DESIGN_ROOM_PEAK := 11.0
+## The mezzanine along its back wall: its deck's top over the floor and its depth (m).
+const DESIGN_MEZZANINE_Y := 3.4
+const DESIGN_MEZZANINE_DEPTH := 4.0
 ## Its floor centre in station space.
 const DESIGN_ROOM_CENTRE := Vector3(0, 0, -13)
 ## The clear rectangle in its middle, kept free for the holotable (m: along x, along z),
@@ -62,7 +67,7 @@ func register_module() -> void:
 	for i in names.size():
 		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, "Orbital yard")
 	Keys.register("yard.holster", "Put the tool away", KEY_H, "Orbital yard")
-	for view: String in ["station_outside", "corridor", "design_room", "design_window", "racking_front",
+	for view: String in ["station_outside", "corridor", "design_room", "design_vault", "design_mezzanine", "design_window", "design_lock", "racking_front",
 			"racking_aisle", "contracts", "crew", "airlock"]:
 		Shots.register("yard_" + view, SCENE, func(scene: Node) -> void: scene.call("show_view", view))
 	if Flags.is_on(DOCK):
@@ -89,23 +94,34 @@ func design_room_size() -> Vector3:
 	return DESIGN_ROOM_SIZE
 
 
-## The design room's wall spots, in the room root's space: {id, transform, size (Vector2,
-## m)}. The transform's origin is the spot's middle on the wall's face and its -Z points
-## into the room (a screen there faces the room). Ids are stable: tv_left_1..3,
-## tv_right_1..3 (front to back), whiteboard.
-static func design_room_mounts() -> Array[Dictionary]:
+## The design room's walls as whole planes for screens (0.4.0 playtest: "the walls themselves
+## should be interactive"), in the room root's space: {id, transform, size (Vector2, m)}, the
+## convention the old mounts had (origin the plane's middle on the wall's face, -Z into the
+## room). Nothing of the station's stands on them. Ids: wall_left, wall_right (the side walls
+## in front of the stair and the mezzanine), wall_back_low_left and wall_back_low_right
+## (under the mezzanine, either side of the corridor door), wall_back_high (above it).
+static func design_room_walls() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var half := DESIGN_ROOM_SIZE * 0.5
-	for i in 3:
-		var z := -5.0 + 4.5 * i   # towards the window first
-		# Left wall (x = -12): facing +X, so -Z of the spot points +X.
-		out.append({"id": "tv_left_%d" % (i + 1), "size": Vector2(2.4, 1.4),
-				"transform": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-half.x + 0.06, 2.2, z))})
-		out.append({"id": "tv_right_%d" % (i + 1), "size": Vector2(2.4, 1.4),
-				"transform": Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(half.x - 0.06, 2.2, z))})
-	# The back wall (z = +9, the corridor side), left of the door: facing -Z already.
-	out.append({"id": "whiteboard", "size": Vector2(10, 3),
-			"transform": Transform3D(Basis.IDENTITY, Vector3(-4.0, 2.2, half.z - 0.06))})
+	var c := DESIGN_ROOM_CENTRE
+	# Side walls: from just off the window wall to in front of the stair's landing.
+	var z0 := -21.7 - c.z
+	var z1 := -9.8 - c.z
+	var side := Vector2(z1 - z0, 5.5)
+	out.append({"id": "wall_left", "size": side,
+			"transform": Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-half.x + 0.06, 0.3 + side.y * 0.5, (z0 + z1) * 0.5))})
+	out.append({"id": "wall_right", "size": side,
+			"transform": Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(half.x - 0.06, 0.3 + side.y * 0.5, (z0 + z1) * 0.5))})
+	# The back wall (z = +9 in the root), under the mezzanine either side of the door
+	# (x 5..7.5) and above it.
+	var back := half.z - 0.06
+	for p: Array in [["wall_back_low_left", -11.7, 4.8], ["wall_back_low_right", 7.7, 11.7]]:
+		var x0: float = p[1]
+		var x1: float = p[2]
+		out.append({"id": p[0], "size": Vector2(x1 - x0, 2.7),
+				"transform": Transform3D(Basis.IDENTITY, Vector3((x0 + x1) * 0.5, 0.3 + 1.35, back))})
+	out.append({"id": "wall_back_high", "size": Vector2(23.4, 2.2),
+			"transform": Transform3D(Basis.IDENTITY, Vector3(0.0, 4.7, back))})
 	return out
 
 

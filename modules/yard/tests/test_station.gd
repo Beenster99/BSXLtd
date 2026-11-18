@@ -48,17 +48,25 @@ func _design_room(bus: YardBus, station: Node3D) -> void:
 	check(bus.design_room_size() == Vector3(24, 6, 18), "24 x 6 x 18 m")
 	var box: AABB = YardLayout.ROOMS.design.box
 	check(box.get_center().x == root.position.x and box.position.z + box.size.z * 0.5 == root.position.z, "the room box agrees")
-	var ids: PackedStringArray = []
-	for m: Dictionary in bus.design_room_mounts():
-		ids.append(m.id)
-		var t: Transform3D = m.transform
-		var at := root.position + t.origin
-		check(box.grow(0.01).has_point(at), "%s is on the design room's wall" % m.id)
-		# Its -Z points into the room.
-		var into := at - t.basis.z * 1.0
-		check(box.has_point(into), "%s faces into the room" % m.id)
-	check(ids == PackedStringArray(["tv_left_1", "tv_right_1", "tv_left_2", "tv_right_2", "tv_left_3", "tv_right_3", "whiteboard"]),
-			"stable mount ids")
+	# Its walls as whole planes for screens: on a wall, facing in, nothing of the station's in
+	# front of them (rays from 0.3 m out land on the plane).
+	var wall_ids: PackedStringArray = []
+	var space0 := station.get_world_3d().direct_space_state
+	for w: Dictionary in YardBus.design_room_walls():
+		wall_ids.append(w.id)
+		var t: Transform3D = Transform3D(Basis.IDENTITY, root.position) * (w.transform as Transform3D)
+		var size: Vector2 = w.size
+		check(box.grow(0.01).has_point(t.origin) and box.has_point(t.origin - t.basis.z), "%s on a wall, facing in" % w.id)
+		var bare := true
+		for u: float in [-0.45, 0.0, 0.45]:
+			for v: float in [-0.45, 0.0, 0.45]:
+				var on := t * Vector3(u * size.x, v * size.y, 0.0)
+				var from := on - t.basis.z * 0.3
+				var hit := space0.intersect_ray(PhysicsRayQueryParameters3D.create(from, on + t.basis.z * 0.2))
+				bare = bare and not hit.is_empty() and (hit.position as Vector3).distance_to(on) < 0.1
+		check(bare, "%s is bare" % w.id)
+	check(wall_ids == PackedStringArray(["wall_left", "wall_right", "wall_back_low_left", "wall_back_low_right", "wall_back_high"]),
+			"stable wall ids")
 	# Nothing solid in the holotable's circle: a ray straight down lands on the floor.
 	var space := station.get_world_3d().direct_space_state
 	var clear := true
@@ -114,6 +122,30 @@ func _gravity_and_walking(station: Node3D) -> void:
 	await physics_steps(90)
 	Input.action_release(Keys.FORWARD)
 	check(rig.feet().z < 0.0, "the corridor wall stops you (z %.2f)" % rig.feet().z)
+	# The design room's stair takes you up to the mezzanine (0.4.0 playtest).
+	rig.place(Vector3(-3.6, 0.0, -8.75), Vector3(-12.0, 1.5, -8.75))
+	await physics_steps(10)
+	Input.action_press(Keys.FORWARD)
+	var climbed := 0.0
+	for i in 12:
+		await physics_steps(20)
+		climbed = maxf(climbed, rig.feet().y)
+		if rig.feet().x < -10.6:
+			break
+	Input.action_release(Keys.FORWARD)
+	check(climbed > YardBus.DESIGN_MEZZANINE_Y - 0.15, "up the stair to the mezzanine (feet at %.2f)" % climbed)
+	rig.place(Vector3(-11.2, YardBus.DESIGN_MEZZANINE_Y, -8.75), Vector3(-11.2, 4.5, 0.0))
+	await physics_steps(10)
+	Input.action_press(Keys.FORWARD)
+	await physics_steps(60)
+	Input.action_release(Keys.FORWARD)
+	check(rig.feet().z > -8.0 and rig.feet().y > YardBus.DESIGN_MEZZANINE_Y - 0.1, "and on along it (z %.2f, feet at %.2f)" % [rig.feet().z, rig.feet().y])
+	rig.place(Vector3(0.0, YardBus.DESIGN_MEZZANINE_Y, -6.0), Vector3(0.0, 4.5, -20.0))
+	await physics_steps(10)
+	Input.action_press(Keys.FORWARD)
+	await physics_steps(90)
+	Input.action_release(Keys.FORWARD)
+	check(rig.feet().z > -8.0 and rig.feet().y > YardBus.DESIGN_MEZZANINE_Y - 0.1, "its rail keeps you on it (z %.2f)" % rig.feet().z)
 
 	# Your own body: the Void Salvage suit, seen in first person only as forearms.
 	var body := rig.get_node_or_null("Avatar") as YardAvatar

@@ -6,7 +6,7 @@ extends RefCounted
 
 ## id -> {name, box}. Boxes are the rooms' insides.
 const ROOMS := {
-	"design": {"name": "Design room", "box": AABB(Vector3(-12, 0, -22), Vector3(24, 6, 18))},
+	"design": {"name": "Design room", "box": AABB(Vector3(-12, 0, -22), Vector3(24, 11, 18))},
 	"corridor": {"name": "Corridor", "box": AABB(Vector3(-34, 0, -4), Vector3(80, 3.2, 4))},
 	"racking": {"name": "Racking hall", "box": AABB(Vector3(14, 0, -30), Vector3(32, 12, 26))},
 	"contracts": {"name": "Contracts desk", "box": AABB(Vector3(-12, 0, 0), Vector3(12, 3.2, 10))},

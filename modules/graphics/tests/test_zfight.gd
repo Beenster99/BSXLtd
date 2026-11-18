@@ -12,7 +12,7 @@ const BUDGET := {
 	"ship_bay.shipyard": 198,
 	# The orbital yard (Wave 1): wall boxes overlapping at the room corners and ceiling tiles
 	# meeting the walls, each a strip 0.1 m wide; lower as the yard's walls are butted.
-	"yard.station": 27,
+	"yard.station": 18,
 }
 
 
