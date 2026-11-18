@@ -1,13 +1,22 @@
 class_name YardWelder
 extends YardFastener
-## The welder (0.4.0 playtest): a MIG welding gun. On a planned weld it runs the bead along the
-## chalked line in about three seconds (move with it: the head follows the line out on its hose).
+## The welder (0.4.0 playtest; 0.4.1: "the welding should follow your line and speed"): a MIG
+## welding gun. Hold it on a chalked seam and the arc lays bead where you aim, as fast as you
+## move along the line: steady (`ideal_speed`) lays even stacked ripples, a neat weld; too fast a
+## thin, broken, sooty bead; too slow a fat, lumpy, burnt one. The joint is as strong as the bead.
 ## The arc flickers blue-white and lights the room, spatter sparks fly everywhere and molten
 ## droplets spit off and stick; the bead glows and cools. No helmet: the suit's visor takes it.
 ##
 ## Look: a swan-necked MIG gun: a rubber handle with the trigger, the copper neck curving down
 ## to a nozzle on its hose, the wire feed's cable out of the back. It wears the cutter's fitted
 ## hand (the same slim handle).
+
+## The travel speed a neat bead wants, and the fastest the puddle can follow (m/s).
+@export var ideal_speed: float = 0.05
+@export var max_speed: float = 0.4
+## How it is going (the controller sets them): "STEADY", "TOO FAST", "TOO SLOW"... and the speed.
+var pace := ""
+var speed: float = 0.0
 
 ## How fast the arc flickers (Hz) and how bright its light is.
 @export var arc_hz: float = 30.0
@@ -83,7 +92,7 @@ func _process(_delta: float) -> void:
 
 func readout_text() -> String:
 	if fastening:
-		return "ARC 140 A\n%d%%" % int(progress * 100.0)
+		return "ARC 140 A\n%s" % (pace if pace != "" else "%d%%" % int(progress * 100.0))
 	return "WIRE 0.8 mm\nGAS OK"
 
 

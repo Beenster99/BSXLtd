@@ -67,14 +67,20 @@ func _design_room(bus: YardBus, station: Node3D) -> void:
 		check(bare, "%s is bare" % w.id)
 	check(wall_ids == PackedStringArray(["wall_left", "wall_right", "wall_back_low_left", "wall_back_low_right", "wall_back_high"]),
 			"stable wall ids")
-	# Nothing solid in the holotable's circle: a ray straight down lands on the floor.
+	# Nothing solid of the yard's in the holotable's circle: a ray straight down lands on the
+	# floor (the design room's own furniture, the holotable itself, stands there by right).
 	var space := station.get_world_3d().direct_space_state
+	var furnished: Array[RID] = []
+	var furnishing := station.find_child("DesignFurnishing", true, false)
+	if furnishing:
+		for n: Node in furnishing.find_children("*", "CollisionObject3D", true, false):
+			furnished.append((n as CollisionObject3D).get_rid())
 	var clear := true
 	for i in 12:
 		var a := TAU * i / 12.0
 		for r: float in [0.0, 1.5, YardBus.DESIGN_CLEAR_RADIUS - 0.1]:
 			var p := root.position + Vector3(cos(a) * r, 5.5, sin(a) * r)
-			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(p, p + Vector3.DOWN * 6.0))
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(p, p + Vector3.DOWN * 6.0, 0xFFFFFFFF, furnished))
 			clear = clear and not hit.is_empty() and absf((hit.position as Vector3).y) < 0.01
 	check(clear, "the holotable circle is clear down to the floor")
 	check(station.get_node_or_null("DesignRoomRoot/HoloCircle") != null, "the circle is marked")

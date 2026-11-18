@@ -42,8 +42,8 @@ const KINDS := {
 			"db": -14.0, "bite_db": 0.0, "start_db": 0.0},
 	"socket": {"run": "", "bite": "", "skate": "", "start": "", "spin": false,
 			"db": 0.0, "bite_db": 0.0, "start_db": 0.0},
-	"riveter": {"run": "tool.riveter", "bite": "", "skate": "", "start": "", "spin": false,
-			"db": -8.0, "bite_db": 4.0, "start_db": 0.0},
+	"riveter": {"run": "tool.riveter_charge", "bite": "", "skate": "", "start": "", "spin": false,
+			"db": -12.0, "bite_db": 3.0, "start_db": 0.0},
 	"welder": {"run": "tool.welder", "bite": "", "skate": "", "start": "tool.zap", "spin": false,
 			"db": -9.0, "bite_db": 5.0, "start_db": -8.0},
 	"spray": {"run": "tool.spray", "bite": "", "skate": "", "start": "", "spin": false,
@@ -68,6 +68,8 @@ var kind: String = "grinder"
 @export var zap_db: float = -2.0
 ## The boom snapping back at full stretch, in dB.
 @export var clack_db: float = -6.0
+## The riveter's punch, in dB.
+@export var punch_db: float = 2.0
 
 @export_group("Pitch")
 ## The grinder's note as it bites, as a share of its free pitch: the disc loads up.
@@ -182,6 +184,11 @@ func zap() -> void:
 	_one_shot("tool.zap", zap_db, 1.0 + _rng.randf_range(-0.05, 0.05))
 
 
+## The riveter's punch: the rivet driven home in one blow (0.4.1 playtest: "a powerful noise").
+func punch() -> void:
+	_one_shot("tool.riveter_punch", punch_db, 1.0 + _rng.randf_range(-0.04, 0.04))
+
+
 ## The boom let go of its joint at full stretch and snapped back.
 func clack() -> void:
 	clacks += 1
@@ -215,6 +222,8 @@ func _target() -> float:
 		if not _contact or _under:
 			return 1.0
 		return lerpf(bite_pitch, through_pitch, _through) * pow(maxf(_voice, 0.01), material_share)
+	if kind == "riveter":   # the hiss climbs as the pressure builds
+		return lerpf(0.7, 1.5, _through) if _contact else 1.0
 	if kind == "cutter" or kind == "plasma":
 		return lerpf(1.0, contact_pitch, 1.0 if _contact else 0.0)
 	return 1.0

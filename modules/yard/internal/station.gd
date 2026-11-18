@@ -71,7 +71,7 @@ const SUIT_VIEWS := {
 ## Screenshot points at the practice frame (stage 1.4): the grinder on a rivet, seen from the
 ## side, and the same from your own eyes with the hotbar.
 const TOOL_VIEWS := ["tools_grinder", "tools_first_person", "tools_tractor", "tools_tractor_close", "tools_tablet",
-		"tools_riveter", "tools_welder", "tools_welder_first_person"]
+		"tools_riveter", "tools_welder", "tools_welder_first_person", "tools_weld_bead", "tools_weld_rushed"]
 ## Friends in the yard (stage 1.6), stood in: id -> [the camera, look at, [name, feet, facing,
 ## held state] for each] (station space).
 const CREW_VIEWS := {
@@ -103,6 +103,7 @@ var dock: Node3D
 var practice: Node3D
 var design_root: Node3D
 var _hint: Label
+var _weld_drive: Dictionary = {}
 var _bus: Node
 
 
@@ -236,6 +237,18 @@ func _busy_stores(seconds: float) -> void:
 	traffic.set_meta("demo_seconds", done)
 
 
+## Runs weld `p` by hand at the welder's steady pace to `share` of its length (the views).
+func _lay_weld(fit: YardWorkpiece, p: Dictionary, share: float, pace := 1.0) -> void:
+	var welder := mover.tools.get_tool("welder") as YardWelder
+	var length := (p.seam_size as Vector2).x
+	var dt := 1.0 / 60.0
+	var s := 0.0
+	while s < length * share and fit.planned.has(p):
+		s += welder.ideal_speed * pace * dt
+		var at := fit.global_transform * ((p.at as Vector3) + (p.seam_up as Vector3) * (s - length * 0.5))
+		fit.weld_along(p, at, dt, welder.ideal_speed, welder.max_speed)
+
+
 ## Two friends stood in, in their suits, and you out of the way.
 func _show_crew_view(id: String) -> void:
 	var v: Array = CREW_VIEWS[id]
@@ -277,8 +290,10 @@ func _show_tool_view(id: String) -> void:
 			view_camera.look_at(head_at.lerp(b_at, 0.45))
 		view_camera.current = true
 		return
-	if id in ["tools_riveter", "tools_welder", "tools_welder_first_person"]:
-		# The fitting frame: a rivet or a weld half in, the tool on it.
+	if id in ["tools_riveter", "tools_welder", "tools_welder_first_person", "tools_weld_bead", "tools_weld_rushed"]:
+		# The fitting frame (built afresh for each view): a rivet or a weld half in, the tool on it.
+		_weld_drive = {}
+		practice.call("rebuild")
 		var fit := practice.get("fit") as YardWorkpiece
 		var kind := ConnectionData.Kind.RIVET if id == "tools_riveter" else ConnectionData.Kind.WELD
 		var plan: Dictionary = {}
@@ -288,7 +303,33 @@ func _show_tool_view(id: String) -> void:
 				break
 		if plan.is_empty():
 			return
-		fit.work_planned(plan, 0.5 - float(plan.done))
+		if kind == ConnectionData.Kind.WELD:
+			# One weld run neat to the end, the next half run, steady, the gun on it.
+			var other: Dictionary = {}
+			for p: Dictionary in fit.planned:
+				if int(p.kind) == kind and p != plan:
+					other = p
+			if not other.is_empty():
+				_lay_weld(fit, other, 1.0)
+			if id in ["tools_weld_bead", "tools_weld_rushed"]:
+				# Close up: the neat bead beside one rushed at three and a half times the pace.
+				_lay_weld(fit, plan, 1.0, 2.6)
+				mover.tools.holster(true)
+				var a := fit.global_transform * (other.at as Vector3)
+				var b := fit.global_transform * (plan.at as Vector3)
+				var n := fit.planned_normal(plan)
+				# Up close on one, a little off to the side so the ripples stand out.
+				var on := a if id == "tools_weld_bead" else b
+				var out := (a - b).normalized() * (1.0 if id == "tools_weld_bead" else -1.0)
+				view_camera.position = to_local(on + n * 0.17 + out * 0.12 + Vector3(0, 0.06, 0))
+				view_camera.look_at(on)
+				view_camera.current = true
+				return
+			_lay_weld(fit, plan, 0.3)
+			_weld_drive = {"fit": fit, "plan": plan}
+		else:
+			(mover.tools.get_tool("riveter") as YardRiveter).charge_seconds = 60.0
+			(mover.tools.get_tool("riveter") as YardRiveter).pressure = 0.7
 		var at := fit.planned_position(plan)
 		var normal := fit.planned_normal(plan)
 		var head := at + normal * 0.9 + Vector3(0, 0.15, 0)
@@ -296,8 +337,6 @@ func _show_tool_view(id: String) -> void:
 		mover.lamp.visible = false   # the arc lights it
 
 		mover.tools.select_tool(6 if kind == ConnectionData.Kind.RIVET else 7)
-		# Slowed right down, so the picture catches it half in however slowly the frames come.
-		(mover.tools.active_tool() as YardFastener).set_rate = 0.02
 		mover.tools.trigger_override = 1
 		if id == "tools_welder_first_person":
 			mover.camera.current = true
@@ -336,6 +375,24 @@ func _show_tool_view(id: String) -> void:
 	view_camera.position = to_local(head + side * 1.6 + Vector3(0, 0.5, 0) - normal * 0.2)
 	view_camera.look_at(at.lerp(head, 0.45))
 	view_camera.current = true
+
+
+## A weld view's hand: the aim carried on along the seam at the welder's steady pace.
+func _physics_process(_delta: float) -> void:
+	if _weld_drive.is_empty():
+		return
+	var fit := _weld_drive.fit as YardWorkpiece
+	var p: Dictionary = _weld_drive.plan
+	if not is_instance_valid(fit) or not fit.planned.has(p):
+		_weld_drive = {}
+		return
+	var length := (p.seam_size as Vector2).x
+	var welder := mover.tools.get_tool("welder") as YardWelder
+	_weld_drive.s = float(_weld_drive.get("s", float(p.get("front", 0.0)))) + float(p.get("dir", 1.0)) * welder.ideal_speed * _delta
+	var front := minf(float(_weld_drive.s), length * 0.97)
+	var at := fit.global_transform * ((p.at as Vector3) + (p.seam_up as Vector3) * (clampf(front, 0.0, length) - length * 0.5))
+	var head := at + fit.planned_normal(p) * 0.9 + Vector3(0, 0.15, 0)
+	mover.place(head - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
 
 
 func _process(_delta: float) -> void:

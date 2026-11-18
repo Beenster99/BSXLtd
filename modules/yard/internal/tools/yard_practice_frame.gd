@@ -25,6 +25,8 @@ var fit: YardWorkpiece
 ## Where the fitting frame stands (frame space): to the right, past the bracket.
 const FIT_AT := Vector3(4.2, 0.0, 0.0)
 const FIT_SIZE := Vector3(1.8, 1.4, 0.1)
+## A weld seam's length (m): short, so a steady hand runs it in about six seconds (0.4.1).
+const WELD_LENGTH := 0.28
 var _pieces: Array[Node] = []
 var _steel: StandardMaterial3D
 var _paint: StandardMaterial3D
@@ -127,7 +129,7 @@ func _build_fit() -> void:
 		else:
 			for sx: float in [-1.0, 1.0]:
 				fit.plan(ConnectionData.Kind.WELD, panel, back, Vector3(x + sx * PANEL_SIZE.x * 0.5, centre.y, front - 0.008),
-						Vector3.BACK, Vector3.UP, Vector2(PANEL_SIZE.y * 0.7, 0.012))
+						Vector3.BACK, Vector3.UP, Vector2(WELD_LENGTH, 0.012))
 
 
 ## How many joints still hold panels to the frame.
