@@ -111,6 +111,8 @@ static func _room_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Diction
 		if rt == null:
 			out.append(_problem("unknown_room", ERROR, "Unknown room type %s" % r.type, [r.id]))
 			continue
+		if not d.room_in_hull(r.id):
+			out.append(_problem("outside_hull", ERROR, "%s sticks out of the hull" % _label(d, cat, r.id), [r.id]))
 		var w := float(r.w) + 0.01
 		var dd := float(r.d) + 0.01
 		var fits := (w >= rt.min_size.x and dd >= rt.min_size.y) or (w >= rt.min_size.y and dd >= rt.min_size.x)
