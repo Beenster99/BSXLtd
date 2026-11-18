@@ -1,7 +1,7 @@
 extends Node3D
 ## The design room on its own, for working on it without the station: a stand-in shell the
 ## size of the station's design room (24 m wide, 18 m deep, 6 m high, window wall to -Z) with
-## the same furnishing the station gets (holotable, wall TVs on YardBus's mounts, console).
+## the same furnishing the station gets (holotable, interactive walls on YardBus's wall planes, console).
 ##
 ## Tab switches between the console and looking round the room. Esc opens the pause menu.
 
@@ -14,7 +14,7 @@ var furnishing: Furnishing
 var holo: Node3D
 var console: Control
 var camera: Camera3D
-var tvs: Dictionary = {}
+var walls: Dictionary = {}
 var room_view := false
 var _look_turn := 0.0
 var _look_pitch := -0.25
@@ -31,10 +31,10 @@ func _ready() -> void:
 	camera.current = true
 	furnishing = Furnishing.new()
 	add_child(furnishing)
-	furnishing.setup(bus, bus.room_mounts())
+	furnishing.setup(bus, bus.room_walls())
 	holo = furnishing.holo
 	console = furnishing.console
-	tvs = furnishing.tvs
+	walls = furnishing.walls
 	furnishing.console_closed.connect(func() -> void: set_room_view(true))
 	furnishing.console_opened.connect(func() -> void: set_room_view(false))
 	furnishing.open_console()

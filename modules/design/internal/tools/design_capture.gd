@@ -4,8 +4,8 @@ extends Node
 ##       res://modules/design/internal/tools/design_capture.tscn -- --flags=design.room=on --out=/abs/dir
 ## With --station (and --flags=yard=on,yard.station=on,design.room=on) it shoots the design
 ## room furnished inside the orbital yard's station instead.
-## Saves console.png (the design console), room.png (the room with its TVs and table),
-## holo_cut.png (the holotable cut through deck 1) and tv_plan.png (a wall TV's plan).
+## Saves console.png (the design console), room.png (the room with its walls and table),
+## holo_cut.png (the holotable cut through deck 1) and wall_left.png, wall_right.png (what two walls show).
 
 const SIZE := Vector2i(1920, 1080)
 
@@ -55,11 +55,12 @@ class Runner:
 		room.console._set_view("side")
 		await _frames(30)
 		await _save(out, "holo_cut")
-		var tv: Node = room.tvs["tv_left_1"]
-		await _frames(5)
-		var img: Image = tv.viewport.get_texture().get_image()
-		img.save_png(out.path_join("tv_plan.png"))
-		print("DesignCapture: ", out.path_join("tv_plan.png"))
+		for id: String in ["wall_left", "wall_right"]:
+			var wall: Node = room.walls[id]
+			await _frames(5)
+			var img: Image = wall.viewport.get_texture().get_image()
+			img.save_png(out.path_join(id + ".png"))
+			print("DesignCapture: ", out.path_join(id + ".png"))
 		get_tree().quit()
 
 	## The furnished design room inside the orbital yard's station.
