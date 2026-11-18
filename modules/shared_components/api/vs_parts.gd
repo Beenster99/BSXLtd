@@ -11,50 +11,56 @@ extends RefCounted
 ## Read-only, the same on every machine; looks are built once and cached. Presentation and data
 ## only: nothing here touches the network.
 
-## id -> {name, category (a Void Salvage PartCatalog category), material (a Materials id)}.
-## The names and categories are Void Salvage's PartCatalog's.
+## id -> {name, category (a Void Salvage PartCatalog category), material (a Materials id),
+## kg (what the part as built weighs: a hollow machine, not a solid block; plates, beams and
+## valves without one weigh their volume of metal)}. The names and categories are Void
+## Salvage's PartCatalog's.
 const ENTRIES: Dictionary = {
 	# Power
-	"Reactor": {"name": "Reactor", "category": "electronics", "material": "steel"},
-	"ReactorCore": {"name": "Reactor core", "category": "electronics", "material": "steel"},
-	"Generator": {"name": "Generator", "category": "electronics", "material": "steel"},
-	"BatteryRack": {"name": "Battery rack", "category": "electronics", "material": "steel"},
-	"CapacitorBank": {"name": "Capacitor bank", "category": "electronics", "material": "copper"},
-	"SolarPanel": {"name": "Solar panel", "category": "electronics", "material": "alloy"},
-	"Radiator": {"name": "Radiator", "category": "electronics", "material": "alloy"},
-	"HeatSink": {"name": "Heat sink", "category": "electronics", "material": "copper"},
-	"SwitchCabinet": {"name": "Switch cabinet", "category": "electronics", "material": "steel"},
-	"JunctionBox": {"name": "Junction box", "category": "wiring", "material": "steel"},
+	"Reactor": {"name": "Reactor", "category": "electronics", "material": "steel", "kg": 9000.0},
+	"ReactorCore": {"name": "Reactor core", "category": "electronics", "material": "steel", "kg": 7500.0},
+	"Generator": {"name": "Generator", "category": "electronics", "material": "steel", "kg": 2200.0},
+	"BatteryRack": {"name": "Battery rack", "category": "electronics", "material": "steel", "kg": 480.0},
+	"CapacitorBank": {"name": "Capacitor bank", "category": "electronics", "material": "copper", "kg": 900.0},
+	"SolarPanel": {"name": "Solar panel", "category": "electronics", "material": "alloy", "kg": 90.0},
+	"Radiator": {"name": "Radiator", "category": "electronics", "material": "alloy", "kg": 260.0},
+	"HeatSink": {"name": "Heat sink", "category": "electronics", "material": "copper", "kg": 120.0},
+	"SwitchCabinet": {"name": "Switch cabinet", "category": "electronics", "material": "steel", "kg": 150.0},
+	"JunctionBox": {"name": "Junction box", "category": "wiring", "material": "steel", "kg": 25.0},
 	# Control
-	"Gyroscope": {"name": "Gyroscope", "category": "electronics", "material": "steel"},
-	"PilotConsole": {"name": "Pilot console", "category": "electronics", "material": "alloy"},
-	"SideConsole": {"name": "Side console", "category": "electronics", "material": "alloy"},
-	"Antenna": {"name": "Antenna", "category": "electronics", "material": "alloy"},
+	"Gyroscope": {"name": "Gyroscope", "category": "electronics", "material": "steel", "kg": 650.0},
+	"PilotConsole": {"name": "Pilot console", "category": "electronics", "material": "alloy", "kg": 320.0},
+	"SideConsole": {"name": "Side console", "category": "electronics", "material": "alloy", "kg": 180.0},
+	"Antenna": {"name": "Antenna", "category": "electronics", "material": "alloy", "kg": 60.0},
 	# Engines
-	"MainThruster": {"name": "Main thruster", "category": "engines", "material": "steel"},
-	"HydrogenEngine": {"name": "Hydrogen engine", "category": "engines", "material": "steel"},
-	"TurbineEngine": {"name": "Turbine engine", "category": "engines", "material": "alloy"},
-	"IonThruster": {"name": "Ion thruster", "category": "engines", "material": "alloy"},
-	"SideThruster": {"name": "Side thruster", "category": "engines", "material": "alloy"},
-	"LiftThruster": {"name": "Lift thruster", "category": "engines", "material": "alloy"},
+	"MainThruster": {"name": "Main thruster", "category": "engines", "material": "steel", "kg": 2600.0},
+	"HydrogenEngine": {"name": "Hydrogen engine", "category": "engines", "material": "steel", "kg": 3200.0},
+	"TurbineEngine": {"name": "Turbine engine", "category": "engines", "material": "alloy", "kg": 1800.0},
+	"IonThruster": {"name": "Ion thruster", "category": "engines", "material": "alloy", "kg": 400.0},
+	"SideThruster": {"name": "Side thruster", "category": "engines", "material": "alloy", "kg": 200.0},
+	"LiftThruster": {"name": "Lift thruster", "category": "engines", "material": "alloy", "kg": 300.0},
 	# Machinery and fluids
-	"Assembler": {"name": "Assembler", "category": "machinery", "material": "steel"},
-	"FuelTank": {"name": "Fuel tank", "category": "fluids", "material": "steel"},
-	"SideTank": {"name": "Side tank", "category": "fluids", "material": "steel"},
+	"Assembler": {"name": "Assembler", "category": "machinery", "material": "steel", "kg": 2400.0},
+	"FuelTank": {"name": "Fuel tank", "category": "fluids", "material": "steel", "kg": 900.0},
+	"SideTank": {"name": "Side tank", "category": "fluids", "material": "steel", "kg": 700.0},
+	"FuelPump": {"name": "Fuel pump", "category": "fluids", "material": "steel", "kg": 260.0},
 	"FuelValve": {"name": "Valve", "category": "piping", "material": "steel"},
-	"Pipe": {"name": "Pipe", "category": "piping", "material": "steel"},
-	"BigPipe": {"name": "Big pipe", "category": "piping", "material": "steel"},
-	"CargoContainer": {"name": "Cargo container", "category": "cargo", "material": "steel"},
+	"Pipe": {"name": "Pipe", "category": "piping", "material": "steel", "kg": 90.0},
+	"BigPipe": {"name": "Big pipe", "category": "piping", "material": "steel", "kg": 380.0},
+	"CargoRack": {"name": "Cargo rack", "category": "cargo", "material": "steel", "kg": 160.0},
+	"CargoContainer": {"name": "Cargo container", "category": "cargo", "material": "steel", "kg": 3800.0},
 	# Life and crew
-	"MedStation": {"name": "Med station", "category": "electronics", "material": "alloy"},
-	"CrashSeat": {"name": "Crash seat", "category": "fittings", "material": "alloy"},
-	"Seat": {"name": "Seat", "category": "fittings", "material": "alloy"},
-	"Bunk": {"name": "Bunk", "category": "fittings", "material": "steel"},
-	"Locker": {"name": "Locker", "category": "fittings", "material": "steel"},
-	"Workbench": {"name": "Workbench", "category": "fittings", "material": "steel"},
-	"GalleyCounter": {"name": "Galley counter", "category": "fittings", "material": "steel"},
+	"LifeSupport": {"name": "Life support", "category": "electronics", "material": "steel", "kg": 1400.0},
+	"AirlockDoor": {"name": "Airlock door", "category": "fittings", "material": "steel", "kg": 420.0},
+	"MedStation": {"name": "Med station", "category": "electronics", "material": "alloy", "kg": 650.0},
+	"CrashSeat": {"name": "Crash seat", "category": "fittings", "material": "alloy", "kg": 70.0},
+	"Seat": {"name": "Seat", "category": "fittings", "material": "alloy", "kg": 35.0},
+	"Bunk": {"name": "Bunk", "category": "fittings", "material": "steel", "kg": 140.0},
+	"Locker": {"name": "Locker", "category": "fittings", "material": "steel", "kg": 90.0},
+	"Workbench": {"name": "Workbench", "category": "fittings", "material": "steel", "kg": 220.0},
+	"GalleyCounter": {"name": "Galley counter", "category": "fittings", "material": "steel", "kg": 380.0},
 	# Structure
-	"BoxBeam": {"name": "Box beam", "category": "frame", "material": "steel"},
+	"BoxBeam": {"name": "Box beam", "category": "frame", "material": "steel", "kg": 1100.0},
 	"Girder": {"name": "Girder", "category": "frame", "material": "steel"},
 	"HullPlate": {"name": "Hull plate", "category": "hull", "material": "steel"},
 	"DeckPlate": {"name": "Deck plate", "category": "hull", "material": "steel"},
@@ -120,8 +126,12 @@ static func size(id: String) -> Vector3:
 	return s.mesh.get_aabb().size if s != null else Vector3.ZERO
 
 
-## Kilograms: its solid volume times its material's density.
+## Kilograms: its entry's `kg` (a component is mostly air inside its casing), else its
+## volume of its material (plates, beams, valves: solid stock).
 static func mass(id: String) -> float:
+	var e: Dictionary = ENTRIES.get(id, {})
+	if e.has("kg"):
+		return float(e["kg"])
 	var s := shape(id)
 	if s == null:
 		return 0.0
@@ -228,10 +238,14 @@ static func _build(id: String) -> PartShapes.PartShape:
 		"Assembler": return WreckParts.machine_unit(Vector3(1.6, 1.8, 1.2))
 		"FuelTank": return WreckParts.tank(0.6, 2.8)
 		"SideTank": return WreckParts.banded_tank(0.6, 2.4)
+		"FuelPump": return WreckParts.machine_unit(Vector3(0.7, 0.9, 0.6))
 		"FuelValve": return WreckParts.valve_body()
 		"Pipe": return WreckParts.pipe(0.08, 4.0)
 		"BigPipe": return WreckParts.pipe(0.16, 5.0)
+		"CargoRack": return WreckParts.shelf_rack()
 		"CargoContainer": return WreckParts.container(Vector3(2.4, 2.4, 4.8))
+		"LifeSupport": return WreckParts.machine_unit(Vector3(1.2, 1.7, 0.8))
+		"AirlockDoor": return WreckParts.hatch_door()
 		"MedStation": return WreckParts.med_station()
 		"CrashSeat": return WreckParts.crash_seat()
 		"Seat": return WreckParts.seat()
