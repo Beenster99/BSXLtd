@@ -27,6 +27,10 @@ var planet: MeshInstance3D
 func _ready() -> void:
 	name = "SpaceSky"
 	add_to_group("gfx_world")
+	# The planet, its air and the moon are kilometres off and alone in their planes: nothing
+	# can flicker against them, and the Graphics module's z-fight check would grid each of
+	# their 600 m faces in 2 m cells (the scan of the station never finished).
+	set_meta("gfx_coplanar_ok", true)
 	var sky_mat := ShaderMaterial.new()
 	sky_mat.shader = SkyShader
 	var sky := Sky.new()
