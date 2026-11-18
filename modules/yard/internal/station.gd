@@ -8,6 +8,8 @@ extends Node3D
 const Kit := preload("res://modules/yard/internal/yard_kit.gd")
 const SpaceSky := preload("res://modules/yard/internal/space_sky.gd")
 const RackingHall := preload("res://modules/yard/internal/racking_hall.gd")
+const StoresShell := preload("res://modules/yard/internal/stores_shell.gd")
+const StoresTraffic := preload("res://modules/yard/internal/stores_traffic.gd")
 const Airlock := preload("res://modules/yard/internal/airlock.gd")
 const DesignLock := preload("res://modules/yard/internal/design_lock.gd")
 const DesignShell := preload("res://modules/yard/internal/design_shell.gd")
@@ -26,16 +28,40 @@ const VIEWS := {
 	"design_window": [Vector3(0, 1.7, -15), Vector3(0, -3, -80)],
 	"design_lock": [Vector3(-3.5, 2.0, -15.5), Vector3(-11, 1.2, -22.5)],
 	"design_lock_outside": [Vector3(-4.5, 1.2, -31), Vector3(-11, 1.4, -23.5)],
-	"racking_front": [Vector3(31, 2.0, -4.6), Vector3(24, 3.5, -20)],
-	"racking_aisle": [Vector3(25.5, 5.5, -10.4), Vector3(25.5, 4.0, -29)],
+	"stores_hall": [Vector3(16, 11, -6), Vector3(52, 2, -40)],
+	"stores_long": [Vector3(24.8, 1.7, -55), Vector3(24.8, 2.5, -20)],
+	"stores_components": [Vector3(42.5, 3.0, -56), Vector3(46, 2.0, -30)],
+	"stores_heavy": [Vector3(52, 6.5, -58), Vector3(59, 0.5, -36)],
+	"stores_goods_in": [Vector3(64, 6, -60), Vector3(84, 3, -32)],
+	"stores_yard_side": [Vector3(36, 8, -88), Vector3(46, 4, -40)],
+	"stores_deliveries": [Vector3(70, 13, -64), Vector3(92, 2, -32)],
+	"stores_put_away": [Vector3(64, 9, -6), Vector3(48, 3, -40)],
+	"stores_to_yard": [Vector3(48, 6, -82), Vector3(30, 4, -58)],
 	"contracts": [Vector3(-1.0, 1.7, 0.8), Vector3(-8, 1.0, 8)],
 	"crew": [Vector3(1.0, 1.8, 0.8), Vector3(12, 0.8, 11)],
 	"airlock": [Vector3(-29, 1.7, -2.0), Vector3(-40, 1.2, -2.0)],
 	"dock": [Vector3(-170, 55, 35), Vector3(0, -5, -70)],
-	"build_berth": [Vector3(58, 12, -45), Vector3(0, -3, -85)],
+	"build_berth": [Vector3(45, 10, -72), Vector3(0, -3, -85)],
 	"holding_berths": [Vector3(0, 45, -175), Vector3(0, -3, -80)],
 	"station_from_berth": [Vector3(-8, -2, -72), Vector3(4, 3, -18)],
 }
+## Views of the stores at work: id -> seconds into a contract's deliveries (stage 1.7).
+const BUSY_VIEWS := {"stores_deliveries": 26.0, "stores_put_away": 70.0, "stores_to_yard": 160.0}
+## What a demo contract buys (0.4.0 playtest: "when we start a new contract and start to buy
+## the parts this should be a busy area"), and what the yard then asks for first.
+const DEMO_ORDER := [
+	{"part": "hull_plate", "qty": 36}, {"part": "box_beam_6", "qty": 18}, {"part": "deck_plate", "qty": 20},
+	{"part": "pipe_4", "qty": 30}, {"part": "girder_4", "qty": 16}, {"part": "junction_box", "qty": 16},
+	{"part": "switch_cabinet", "qty": 4}, {"part": "battery_rack", "qty": 2}, {"part": "generator", "qty": 2},
+	{"part": "hydrogen_engine", "qty": 2}, {"part": "tank_large", "qty": 3}, {"part": "thruster_pod", "qty": 4},
+	{"part": "radiator", "qty": 8}, {"part": "armour_slab", "qty": 8}, {"part": "valve", "qty": 20},
+	{"part": "gyroscope", "qty": 1}, {"part": "reactor", "qty": 1},
+]
+const DEMO_TO_YARD := [
+	{"part": "box_beam_6", "qty": 12}, {"part": "girder_4", "qty": 8}, {"part": "hull_plate", "qty": 24},
+	{"part": "hydrogen_engine", "qty": 1}, {"part": "tank_large", "qty": 2}, {"part": "deck_plate", "qty": 10},
+]
+
 ## Views of you in the suit: id -> [your feet, where you face, the camera, lamp on] (station space).
 const SUIT_VIEWS := {
 	"suit_corridor": [Vector3(-12, 0, -2.0), Vector3(-30, 1.5, -2.0), Vector3(-15.2, 1.6, -2.6), false],
@@ -67,6 +93,8 @@ var mover: YardRig
 var crew: YardCrew
 var view_camera: Camera3D
 var racking: Node3D
+## Goods in's haulers and the stores' bots.
+var traffic: Node3D
 var airlock: Node3D
 ## The design room's own airlock out to the dock.
 var design_lock: Node3D
@@ -89,6 +117,10 @@ func _ready() -> void:
 		racking.name = "RackingHall"
 		add_child(racking)
 		racking.call("build", kit, _rack_store())
+		traffic = StoresTraffic.new()
+		traffic.name = "StoresTraffic"
+		add_child(traffic)
+		traffic.call("build", _rack_store())
 	airlock = Airlock.new()
 	airlock.name = "Airlock"
 	add_child(airlock)
@@ -167,10 +199,41 @@ func show_view(id: String) -> void:
 		return
 	if not VIEWS.has(id):
 		return
+	if id in BUSY_VIEWS and traffic:
+		_busy_stores(BUSY_VIEWS[id])
 	var v: Array = VIEWS[id]
 	view_camera.position = v[0]
 	view_camera.look_at(v[1])
 	view_camera.current = true
+
+
+## Starts a demo contract: buys its parts, and the yard asks for its first ones (F at the
+## contracts desk, and the busy views).
+func start_demo_contract() -> void:
+	if traffic == null:
+		return
+	traffic.call("order", DEMO_ORDER)
+	traffic.call("send_to_yard", DEMO_TO_YARD)
+
+
+func _contract_hint() -> String:
+	if traffic == null:
+		return ""
+	if bool(traffic.call("busy")):
+		return "Deliveries are coming in to goods in..."
+	return "%s  Start a contract: buy its parts" % Keys.prompt(Keys.INTERACT)
+
+
+## The stores `seconds` into a demo contract (for the busy views), run on in small steps.
+func _busy_stores(seconds: float) -> void:
+	if not bool(traffic.get_meta("demo_started", false)):
+		traffic.set_meta("demo_started", true)
+		start_demo_contract()
+	var done := float(traffic.get_meta("demo_seconds", 0.0))
+	while done < seconds:
+		traffic.call("step", 0.05)
+		done += 0.05
+	traffic.set_meta("demo_seconds", done)
 
 
 ## Two friends stood in, in their suits, and you out of the way.
@@ -423,24 +486,14 @@ func _build_station() -> void:
 	_door_frame(k, true, 0.0, -7.0, -5.0, 2.4, orange)
 	_door_frame(k, true, 0.0, 9.0, 11.0, 2.4, orange)
 	k.sign("DESIGN ROOM", Vector3(6.25, 2.85, -3.9), Vector3.BACK, 0.006)
-	k.sign("RACKING HALL  ·  STOCK", Vector3(30.0, 3.05, -3.9), Vector3.BACK, 0.006)
+	k.sign("STORES  ·  GOODS IN", Vector3(30.0, 3.05, -3.9), Vector3.BACK, 0.006)
 	k.sign("CONTRACTS", Vector3(-6.0, 2.75, -0.1), Vector3.FORWARD, 0.006)
 	k.sign("CREW", Vector3(10.0, 2.75, -0.1), Vector3.FORWARD, 0.006)
 	k.sign("AIRLOCK  ·  DOCK", Vector3(-33.9, 2.75, -2.0), Vector3.RIGHT, 0.006)
 
-	# Racking hall's shell (x 14..46, z -30..-4, 12 m high); its racks are RackingHall's.
-	k.wall(true, -4.0, 14.0, 46.0, 0.0, 12.0, wall, [[28.0, 32.0, 3.0]])
-	k.wall(true, -30.0, 13.9, 46.1, 0.0, 12.0, wall)
-	k.wall(false, 14.0, -30.0, -4.0, 0.0, 12.0, wall)
-	k.wall(false, 46.0, -30.0, -4.0, 0.0, 12.0, wall)
-	for x: float in [20.0, 30.0, 40.0]:
-		for z: float in [-26.0, -17.0, -8.0]:
-			k.ceiling_lamp(Vector3(x, 12.0, z), Vector2(2.0, 0.6), 1.6, 16.0)
-	# The cargo shutter to the dock (stage 7 brings deliveries through it).
-	k.box(Vector3(12.0, 8.0, 0.1), Vector3(30.0, 4.0, -29.85), k.paint(Kit.STEEL, 0.5, 0.45), false)
-	for i in 7:
-		k.box(Vector3(12.0, 0.08, 0.04), Vector3(30.0, 0.6 + i * 1.15, -29.78), dark, false)
-	k.box(Vector3(12.0, 8.0, 0.1), Vector3(30.0, 4.0, -30.15), k.paint(Kit.STEEL, 0.5, 0.45), false)
+	# The stores hall's shell (x 14..84, z -64..-4, 16 m high, open to the yard); its racks
+	# are RackingHall's.
+	StoresShell.new().build(k, hull, wall, dark, orange)
 
 	# Contracts desk (x -12..0, z 0..10).
 	k.wall(false, -12.0, 0.0, 10.0, 0.0, 3.2, wall)
@@ -454,9 +507,6 @@ func _build_station() -> void:
 	_furnish_crew(k)
 
 	# Outside: the hull's colours and a name the dock can read.
-	k.box(Vector3(30.0, 0.4, 26.0), Vector3(30.0, -0.5, -17.0), dark, false)
-	k.sign("BSX LTD", Vector3(30.0, 9.5, -30.1), Vector3.FORWARD, 0.05, Kit.ORANGE, 96)
-	k.sign("ORBITAL YARD", Vector3(30.0, 6.6, -30.1), Vector3.FORWARD, 0.025, Kit.HULL, 96)
 	for x: float in [-30.0, 4.0]:
 		k.box(Vector3(0.25, 7.0, 0.25), Vector3(x, 7.0, -2.0), dark, false)
 		k.box(Vector3(0.35, 0.35, 0.35), Vector3(x, 10.6, -2.0), k.glow(Color(1.0, 0.25, 0.2), 6.0), false)
@@ -467,10 +517,10 @@ func _build_station() -> void:
 	k.box(Vector3(0.3, 3.2, 0.3), Vector3(-24.0, 4.8, -2.0), dark, false)
 	k.box(Vector3(0.2, 0.2, 24.0), Vector3(-24.0, 6.4, -2.0), dark, false)
 	for i in 4:
-		k.box(Vector3(5.0, 2.4, 0.06), Vector3(18.0 + i * 7.5, 13.6, -17.0), k.paint(Kit.HULL, 0.2, 0.4), false)
-		k.box(Vector3(0.2, 1.4, 0.2), Vector3(18.0 + i * 7.5, 12.7, -17.0), dark, false)
+		k.box(Vector3(5.0, 2.4, 0.06), Vector3(24.0 + i * 12.0, 17.6, -34.0), k.paint(Kit.HULL, 0.2, 0.4), false)
+		k.box(Vector3(0.2, 1.4, 0.2), Vector3(24.0 + i * 12.0, 17.0, -34.0), dark, false)
 	# Running lights on the corners.
-	for p: Vector3 in [Vector3(-40.2, 3.4, -5.2), Vector3(46.2, 12.3, -30.2), Vector3(46.2, 3.4, 12.2), Vector3(-12.2, 6.3, -22.2)]:
+	for p: Vector3 in [Vector3(-40.2, 3.4, -5.2), Vector3(46.2, 3.4, 12.2), Vector3(-12.2, 6.3, -22.2)]:
 		k.box(Vector3(0.3, 0.3, 0.3), p, k.glow(Color(1.0, 0.25, 0.2), 6.0), false)
 
 
@@ -513,6 +563,20 @@ func _furnish_contracts(k) -> void:
 		k.box(Vector3(0.9, 0.55, 0.05), Vector3(x, 1.45, 5.55), k.glow(Color(0.2, 0.55, 0.9), 1.5), false)
 		k.box(Vector3(0.6, 0.5, 0.6), Vector3(x, 0.25, 7.0), seat)
 		k.box(Vector3(0.6, 0.7, 0.1), Vector3(x, 0.85, 7.35), seat)
+	# F at the desk starts a demo contract: its parts are bought and delivered to goods in.
+	var area := Area3D.new()
+	area.name = "Use_contract"
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(6.2, 0.8, 1.0)
+	cs.shape = shape
+	area.add_child(cs)
+	area.position = Vector3(-7.0, 1.45, 5.4)
+	area.set_meta("yard_use", start_demo_contract)
+	area.set_meta("yard_hint", _contract_hint)
+	area.add_to_group("gfx_interactable")
+	area.set_meta("gfx_id", "contracts_desk")
+	add_child(area)
 	# The contracts board on the wall by the door, and two visitors' chairs.
 	k.box(Vector3(0.06, 1.6, 3.2), Vector3(-11.85, 1.7, 3.0), dark, false)
 	k.box(Vector3(0.02, 1.4, 3.0), Vector3(-11.8, 1.7, 3.0), k.glow(Color(0.15, 0.35, 0.6), 1.2), false)
