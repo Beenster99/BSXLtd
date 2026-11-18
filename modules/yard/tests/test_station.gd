@@ -79,42 +79,116 @@ func _gravity_and_walking(station: Node3D) -> void:
 	check(not YardLayout.has_gravity(Vector3(0, -3, -85)), "the build berth is weightless")
 	check(YardLayout.room_at(Vector3(0, 0, -85)) == "", "the dock is in no room")
 
-	var mover := station.get("mover") as CharacterBody3D
-	check(mover.get("in_gravity") == true, "you start with your feet on the deck")
-	await frames(20)
-	check(mover.is_on_floor() and absf(mover.position.y) < 0.1, "standing on the corridor floor")
-	var start := mover.position
-	mover.call("place", start, start + Vector3(10, 0, 0))
+	var rig := station.get("mover") as YardRig
+	check(rig != null and rig.in_gravity, "you start with your feet on the deck")
+	await physics_steps(30)
+	check(rig.on_deck() and rig.grounded() and absf(rig.feet().y) < 0.1, "standing on the corridor floor (feet at %.2f)" % rig.feet().y)
+	var start := rig.feet()
+	rig.place(start, start + Vector3(10, 0, 0))
+	await physics_steps(2)
 	Input.action_press(Keys.FORWARD)
-	await frames(40)
+	await physics_steps(40)
 	Input.action_release(Keys.FORWARD)
-	check(mover.position.x - start.x > 0.5 and absf(mover.position.y) < 0.1, "walked along the corridor (%.2f m)" % (mover.position.x - start.x))
+	check(rig.feet().x - start.x > 0.5 and absf(rig.feet().y) < 0.1, "walked along the corridor (%.2f m)" % (rig.feet().x - start.x))
+	await physics_steps(30)
+	check(rig.linear_velocity.length() < 0.3, "the boots grip and you stop (%.2f m/s)" % rig.linear_velocity.length())
+	# The mouse turns you round on a deck and tilts only the head.
+	var pitch0 := rig.head.rotation.x
+	rig.look(Vector2(-200, -100))
+	await physics_steps(20)
+	check(rig.head.rotation.x - pitch0 > 0.15 and absf(rig.global_basis.y.dot(Vector3.UP) - 1.0) < 0.01,
+			"looking up tilts the head, the body stays upright")
 	# A screen holding the mouse (a console) keeps you still.
 	HudSlots.claim_pointer("yard.test")
-	var held_at := mover.position
+	var held_at := rig.feet()
 	Input.action_press(Keys.FORWARD)
-	await frames(30)
+	await physics_steps(30)
 	Input.action_release(Keys.FORWARD)
 	HudSlots.release_pointer("yard.test")
-	check(mover.position.distance_to(held_at) < 0.05, "no walking while a screen has the mouse")
-	var wall_test := mover.position
-	mover.call("place", Vector3(4.0, 0.0, -1.5), Vector3(4.0, 1.5, 10.0))
+	check(rig.feet().distance_to(held_at) < 0.05, "no walking while a screen has the mouse")
+	var wall_test := rig.feet()
+	rig.place(Vector3(4.0, 0.0, -1.5), Vector3(4.0, 1.5, 10.0))
+	await physics_steps(2)
 	Input.action_press(Keys.FORWARD)
-	await frames(90)
+	await physics_steps(90)
 	Input.action_release(Keys.FORWARD)
-	check(mover.position.z < 0.0, "the corridor wall stops you (z %.2f)" % mover.position.z)
+	check(rig.feet().z < 0.0, "the corridor wall stops you (z %.2f)" % rig.feet().z)
+
+	# Your own body: the Void Salvage suit, seen in first person only as forearms.
+	var body := rig.get_node_or_null("Avatar") as YardAvatar
+	check(body != null and body.joints.has("forearm_R") and body.joints.has("head"), "you wear the suit's jointed body")
+	if body:
+		var seen := 0
+		for n in body.find_children("*", "GeometryInstance3D", true, false):
+			if YardAvatar.drawn(n as GeometryInstance3D):
+				seen += 1
+		check(seen > 0, "your forearms are drawn in first person (%d pieces)" % seen)
 
 	# Out in the dock: no gravity, the suit flies.
-	mover.call("place", Vector3(-60, 0, -30), Vector3(-60, 0, -80))
-	await frames(5)
-	check(mover.get("in_gravity") == false, "weightless outside")
-	var y0 := mover.position.y
+	rig.place(Vector3(-60, 0, -30), Vector3(-60, 0, -80))
+	await physics_steps(5)
+	check(not rig.in_gravity and not rig.on_deck(), "weightless outside")
+	var y0 := rig.global_position.y
 	Input.action_press(Keys.FORWARD)
-	await frames(40)
+	await physics_steps(40)
 	Input.action_release(Keys.FORWARD)
-	check(mover.velocity.z < -0.3, "thrust carries you forward (%.2f m/s)" % mover.velocity.z)
-	check(absf(mover.position.y - y0) < 0.2, "and you do not fall")
-	mover.call("place", wall_test, wall_test + Vector3.RIGHT)
+	check(rig.linear_velocity.z < -0.3, "thrust carries you forward (%.2f m/s)" % rig.linear_velocity.z)
+	check(absf(rig.global_position.y - y0) < 0.3, "and you do not fall")
+	check(rig.glide > 0.3, "holding forward you lay out in the glide (%.2f)" % rig.glide)
+	await physics_steps(80)
+	check(rig.linear_velocity.length() < 0.3, "the dampeners stop your drift (%.2f m/s)" % rig.linear_velocity.length())
+	check(rig.glide > 0.9, "the glide holds till you pull back")
+	Input.action_press(Keys.BACK)
+	await physics_steps(3)
+	Input.action_release(Keys.BACK)
+	await physics_steps(30)
+	check(rig.glide < 0.1, "pulling back stands you up again")
+	# The mouse turns the whole body after it, at the gyros' pace.
+	var facing := -rig.global_basis.z
+	rig.look(Vector2(-300, 0))
+	await physics_steps(60)
+	check((-rig.global_basis.z).angle_to(facing) > 0.4, "the gyros turn you to the look (%.2f rad)" % (-rig.global_basis.z).angle_to(facing))
+	Input.action_press("yard.roll_left")
+	await physics_steps(20)
+	Input.action_release("yard.roll_left")
+	check(absf(rig.global_basis.y.dot(Vector3.UP)) < 0.99, "Q rolls you")
+	# Back through the airlock: the station's gravity takes you, upright, the head keeping the look.
+	var lock := station.get("airlock") as Node3D
+	lock.call("cycle", true)
+	for i in 1000:
+		if not lock.call("is_busy"):
+			break
+		lock.call("advance", 0.05)
+	rig.place(Vector3(-36.5, 0.2, -2.0), Vector3(-30, 1.5, -2.0))
+	await physics_steps(30)
+	check(rig.on_deck() and rig.grounded(), "inside the airlock you stand on its floor")
+	rig.place(Vector3(-46, 0.5, -2.0), Vector3(-30, 1.5, -2.0))
+	await physics_steps(3)
+	check(not rig.on_deck(), "past the outer door you float")
+	Input.action_press(Keys.FORWARD)
+	Input.action_press(Keys.RUN)
+	var crossed := false
+	for i in 240:
+		await physics_steps(1)
+		if rig.on_deck():
+			crossed = true
+			break
+	Input.action_release(Keys.FORWARD)
+	Input.action_release(Keys.RUN)
+	check(crossed and absf(rig.global_basis.y.dot(Vector3.UP) - 1.0) < 0.05, "flying in through the airlock you land on your feet")
+	lock.call("cycle", false)
+	for i in 1000:
+		if not lock.call("is_busy"):
+			break
+		lock.call("advance", 0.05)
+	rig.place(wall_test, wall_test + Vector3.RIGHT)
+	await physics_steps(5)
+
+
+## `n` physics steps.
+func physics_steps(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
 
 
 func _airlock(station: Node3D) -> void:

@@ -49,6 +49,11 @@ func register_module() -> void:
 	Keys.register("yard.up", "Fly up (in zero g)", KEY_SPACE, "Orbital yard")
 	Keys.register("yard.down", "Fly down (in zero g)", KEY_CTRL, "Orbital yard")
 	Keys.register("yard.brake", "Stop drifting (in zero g)", KEY_X, "Orbital yard")
+	Keys.register("yard.roll_left", "Roll left (in zero g)", KEY_Q, "Orbital yard")
+	Keys.register("yard.roll_right", "Roll right (in zero g)", KEY_E, "Orbital yard")
+	Keys.register("yard.dampeners", "Suit dampeners on / off", KEY_Z, "Orbital yard")
+	Keys.register("yard.lamp", "Helmet lamp", KEY_L, "Orbital yard")
+	Keys.register("yard.view", "First / third person", KEY_V, "Orbital yard")
 	for view: String in ["station_outside", "corridor", "design_room", "design_window", "racking_front",
 			"racking_aisle", "contracts", "crew", "airlock"]:
 		Shots.register("yard_" + view, SCENE, func(scene: Node) -> void: scene.call("show_view", view))
