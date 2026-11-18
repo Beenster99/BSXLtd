@@ -41,8 +41,11 @@ func run_tests() -> void:
 		# The screen's face (+Z) points into the room, the way the mount's -Z does.
 		check(tv.basis.z.dot(-spot.basis.z) > 0.99, "%s faces into the room" % id)
 	var holo: Node3D = f.get("holo")
-	check(Vector2(holo.position.x, holo.position.z).length() < 0.01 and HoloTable.TABLE_RADIUS <= YardBus.DESIGN_CLEAR_RADIUS,
-			"the holotable stands in the clear circle")
+	# The yard keeps a 10 x 6 m rectangle clear (DESIGN_CLEAR_SIZE; read by name until it lands).
+	var clear: Vector2 = (YardBus as Script).get_script_constant_map().get("DESIGN_CLEAR_SIZE", Vector2(10, 6))
+	check(Vector2(holo.position.x, holo.position.z).length() < 0.01 and HoloTable.TABLE_SIZE.x <= clear.x - 2.0
+			and HoloTable.TABLE_SIZE.y <= clear.y - 2.0, "the holotable stands in the clear rectangle with room to walk round")
+	check(HoloTable.TABLE_SIZE.x > HoloTable.TABLE_SIZE.y and HoloTable.TABLE_SIZE.x >= 6.0, "the table is long and rectangular")
 	var use := holo.get_node_or_null("TableUse")
 	check(use != null and use.has_meta("yard_use") and str((use.get_meta("yard_hint") as Callable).call()).contains("holotable"),
 			"the table can be used: E Design at the holotable")

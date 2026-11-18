@@ -30,7 +30,7 @@ var _holo_view: SubViewport
 var _holo_cam: Camera3D
 var _cam_turn := 0.0
 var _cam_pitch := 0.55
-var _cam_dist := 4.6
+var _cam_dist := 7.2
 var _dragging_holo := false
 
 

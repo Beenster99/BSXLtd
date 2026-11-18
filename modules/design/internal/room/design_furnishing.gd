@@ -105,15 +105,14 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## A body round the table that the player's view finds: "E  Use the holotable".
+## A body over the table that the player's view finds: "E  Design at the holotable".
 func _add_use_body() -> void:
 	var body := StaticBody3D.new()
 	body.name = "TableUse"
 	var shape := CollisionShape3D.new()
-	var cyl := CylinderShape3D.new()
-	cyl.radius = HoloTable.TABLE_RADIUS
-	cyl.height = HoloTable.TABLE_HEIGHT
-	shape.shape = cyl
+	var box := BoxShape3D.new()
+	box.size = Vector3(HoloTable.TABLE_SIZE.x, HoloTable.TABLE_HEIGHT, HoloTable.TABLE_SIZE.y)
+	shape.shape = box
 	shape.position.y = HoloTable.TABLE_HEIGHT * 0.5
 	body.add_child(shape)
 	body.set_meta("yard_use", open_console)

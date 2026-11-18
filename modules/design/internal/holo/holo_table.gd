@@ -1,19 +1,21 @@
 extends Node3D
-## The holotable (plan 2.3, 2.4): a round table in the middle of the design room with the
+## The holotable (plan 2.3, 2.4): a long rectangular table in the middle of the design room with the
 ## open design floating over it as a hologram. Turn it, zoom it, slice it with a cutting
 ## plane, and switch its layers on and off. Built from the same record as every plan, so it
 ## always matches them; it rebuilds itself on any change.
 ##
 ## Node space: y = 0 is the floor, the table top is at TABLE_HEIGHT and the model floats
-## over it, its middle on the table's axis. The model is drawn at `scale_fit` (fits the table)
-## times `zoom`, turned `turn` radians about the vertical.
+## over it, its middle over the table's middle. The model is drawn at `scale_fit` (fits the
+## table, its long side along the table's) times `zoom`, turned `turn` radians about the
+## vertical from there.
 
-const TABLE_RADIUS := 2.0
+## The table top, m: length along x, width along z (beenster, 0.4.0: larger and rectangular).
+const TABLE_SIZE := Vector2(7.0, 3.5)
 const TABLE_HEIGHT := 0.95
 ## Highest point of the model over the floor, m (the room is 6 m high).
-const MODEL_TOP := 3.6
-## How wide the model is drawn at zoom 1, m.
-const FIT := 3.4
+const MODEL_TOP := 3.8
+## The footprint the model is fitted into at zoom 1, m (the top less a margin).
+const FIT := Vector2(6.3, 2.9)
 
 const LAYERS: PackedStringArray = ["rooms", "frame", "plates", "components", "power"]
 const LAYER_NAMES := {"rooms": "Rooms", "frame": "Frame", "plates": "Plates",
@@ -25,7 +27,9 @@ const HoloShader := preload("res://modules/design/internal/holo/holo.gdshader")
 var bus: DesignBus
 var layers := {"rooms": true, "frame": true, "plates": false, "components": true, "power": false}
 ## Radians about the vertical.
-var turn := 0.6
+var turn := 0.0
+## Turned a quarter so a design longer across than along still lies along the table.
+var align := 0.0
 var zoom := 1.0
 ## Cut away everything above this share of the model's height (1 = no cut).
 var cut := 1.0
@@ -76,7 +80,7 @@ func _process(_delta: float) -> void:
 		_dirty = false
 		rebuild()
 	if model:
-		model.rotation.y = turn
+		model.rotation.y = align + turn
 		model.scale = Vector3.ONE * scale_fit * zoom
 	_apply_cut()
 
@@ -94,7 +98,11 @@ func rebuild() -> void:
 	var b := rec.bounds()
 	var levels := rec.decks()
 	var height := (levels[levels.size() - 1] + 1) * rec.deck_height
-	scale_fit = minf(FIT / maxf(maxf(b.size.x, b.size.y), 1.0), (MODEL_TOP - TABLE_HEIGHT - 0.3) / maxf(height, 1.0))
+	var long_side := maxf(b.size.x, b.size.y)
+	var short_side := minf(b.size.x, b.size.y)
+	align = 0.0 if b.size.x >= b.size.y else PI * 0.5
+	scale_fit = minf(minf(FIT.x / maxf(long_side, 1.0), FIT.y / maxf(short_side, 1.0)),
+			(MODEL_TOP - TABLE_HEIGHT - 0.3) / maxf(height, 1.0))
 	# Model space: the design's middle over the table axis, its lowest deck on the table.
 	var inner := Node3D.new()
 	inner.name = "Ship"
@@ -266,24 +274,9 @@ func _build_table() -> void:
 	steel.albedo_color = Color(0.2, 0.22, 0.25)
 	steel.metallic = 0.7
 	steel.roughness = 0.4
-	var base := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = TABLE_RADIUS * 0.55
-	cyl.bottom_radius = TABLE_RADIUS * 0.7
-	cyl.height = TABLE_HEIGHT - 0.1
-	base.mesh = cyl
-	base.position.y = (TABLE_HEIGHT - 0.1) * 0.5
-	base.material_override = steel
-	base.name = "Base"
-	add_child(base)
-	var top := MeshInstance3D.new()
-	var disc := CylinderMesh.new()
-	disc.top_radius = TABLE_RADIUS
-	disc.bottom_radius = TABLE_RADIUS
-	disc.height = 0.1
-	disc.radial_segments = 64
-	top.mesh = disc
-	top.position.y = TABLE_HEIGHT - 0.05
+	# A plinth under the middle, set back from the edges so people can stand close.
+	_solid("Base", Vector3(TABLE_SIZE.x - 1.2, TABLE_HEIGHT - 0.1, TABLE_SIZE.y - 1.0),
+			Vector3(0, (TABLE_HEIGHT - 0.1) * 0.5, 0), steel)
 	var glass := StandardMaterial3D.new()
 	glass.albedo_color = Color(0.05, 0.12, 0.18)
 	glass.emission_enabled = true
@@ -291,26 +284,35 @@ func _build_table() -> void:
 	glass.emission_energy_multiplier = 0.6
 	glass.metallic = 0.3
 	glass.roughness = 0.15
-	top.material_override = glass
-	top.name = "Top"
-	add_child(top)
-	var ring := MeshInstance3D.new()
-	var torus := TorusMesh.new()
-	torus.inner_radius = TABLE_RADIUS - 0.06
-	torus.outer_radius = TABLE_RADIUS + 0.02
-	torus.rings = 64
-	ring.mesh = torus
-	ring.position.y = TABLE_HEIGHT
+	_solid("Top", Vector3(TABLE_SIZE.x, 0.1, TABLE_SIZE.y), Vector3(0, TABLE_HEIGHT - 0.05, 0), glass)
+	# A glowing rim round the top's edge.
 	var glow := StandardMaterial3D.new()
 	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	glow.albedo_color = Color(0.45, 0.9, 1.0)
-	ring.material_override = glow
-	ring.name = "Ring"
-	add_child(ring)
-	var light := OmniLight3D.new()
-	light.light_color = Color(0.45, 0.85, 1.0)
-	light.light_energy = 0.8
-	light.omni_range = 5.0
-	light.position.y = TABLE_HEIGHT + 1.2
-	light.name = "HoloGlow"
-	add_child(light)
+	var half := TABLE_SIZE * 0.5
+	var rim := Node3D.new()
+	rim.name = "Ring"
+	add_child(rim)
+	for sz: float in [-1.0, 1.0]:
+		_solid("Long", Vector3(TABLE_SIZE.x, 0.04, 0.06), Vector3(0, TABLE_HEIGHT + 0.01, sz * (half.y - 0.03)), glow, rim)
+		_solid("Short", Vector3(0.06, 0.04, TABLE_SIZE.y), Vector3(sz * (half.x - 0.03), TABLE_HEIGHT + 0.01, 0), glow, rim)
+	for sx: float in [-1.0, 1.0]:
+		var light := OmniLight3D.new()
+		light.light_color = Color(0.45, 0.85, 1.0)
+		light.light_energy = 0.7
+		light.omni_range = 5.0
+		light.position = Vector3(sx * half.x * 0.5, TABLE_HEIGHT + 1.2, 0)
+		light.name = "HoloGlow"
+		add_child(light, true)
+
+
+func _solid(id: String, sz: Vector3, at: Vector3, mat: Material, parent: Node = self) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = sz
+	mi.mesh = bm
+	mi.position = at
+	mi.material_override = mat
+	mi.name = id
+	parent.add_child(mi, true)
+	return mi
