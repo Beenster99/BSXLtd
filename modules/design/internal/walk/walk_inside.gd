@@ -474,6 +474,8 @@ func _process(delta: float) -> void:
 	var room_name := "Outside"
 	if str(w.room) != "":
 		room_name = _room_name(rec.rooms[w.room])
+	elif DesignStructure.on_deck(rec, int(w.deck), Vector2(body.position.x, body.position.z)):
+		room_name = "Open deck"
 	_title.text = "WALK-INSIDE   %s" % (rec.name.to_upper() if rec else "")
 	_where.text = "DECK %d   %s" % [int(w.deck) + 1, room_name.to_upper()]
 	_aim_label.text = _aim_text()

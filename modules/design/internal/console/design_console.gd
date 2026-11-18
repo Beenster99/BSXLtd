@@ -173,6 +173,29 @@ func _fill_palette() -> void:
 		_tool_buttons[spec[0]] = b
 		tools.add_child(b)
 	_palette.add_child(tools)
+	_palette.add_child(T.label("HULL SHAPE  (click its corners, drag them to reshape)", "display_medium", 15, T.DIM))
+	var shape := HBoxContainer.new()
+	for spec in [["hull", "DRAW HULL", func() -> void: plan.set_tool("hull")],
+			["hull_rooms", "ROUND THE ROOMS", hull_round_rooms],
+			["hull_clear", "CLEAR", func() -> void: bus.editor.do({"op": "set_hull", "deck": plan.deck, "points": []})]]:
+		var b := T.button(spec[1], false, 15)
+		b.name = "Hull_" + str(spec[0])
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(spec[2])
+		if spec[0] == "hull":
+			_tool_buttons["hull"] = b
+		shape.add_child(b)
+	_palette.add_child(shape)
+	_palette.add_child(T.label("STRUCTURE  (drag from one end to the other)", "display_medium", 15, T.DIM))
+	var frame := HBoxContainer.new()
+	for spec in [["wall", "INNER WALL"], ["beam", "BEAM"]]:
+		var b := T.button(spec[1], false, 15)
+		b.name = "Tool_" + str(spec[0])
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(plan.set_tool.bind(spec[0]))
+		_tool_buttons[spec[0]] = b
+		frame.add_child(b)
+	_palette.add_child(frame)
 	_palette.add_child(T.label("ROOMS  (drag out on the grid, or click)", "display_medium", 15, T.DIM))
 	for rt in bus.catalog.room_list():
 		var b := _swatch_button(rt.display_name, rt.colour)
@@ -214,7 +237,7 @@ func _fill_palette() -> void:
 		auto_b.pressed.connect(route_all.bind(kind))
 		row.add_child(auto_b)
 		_palette.add_child(row)
-	_palette.add_child(T.label("HULL  (click to swap, cost updates)", "display_medium", 15, T.DIM))
+	_palette.add_child(T.label("BUILD SPEC  (click to swap, cost updates)", "display_medium", 15, T.DIM))
 	for kind: String in ["frame", "spacing", "hull", "inner"]:
 		var b := T.button(_structure_text(kind), false, 15)
 		b.name = "Structure_" + kind
@@ -239,6 +262,16 @@ func _fill_palette() -> void:
 
 
 ## Lays runs of `kind` to every part that needs one and has none, in one undo step.
+## Draws a starting hull round the rooms on the deck in view, half a metre out.
+func hull_round_rooms() -> void:
+	var rec := bus.library.current
+	if rec == null:
+		return
+	var pts := rec.hull_round_rooms(plan.deck, 0.5)
+	if not pts.is_empty():
+		bus.editor.do({"op": "set_hull", "deck": plan.deck, "points": pts})
+
+
 func route_all(kind: String) -> int:
 	var rec := bus.library.current
 	if rec == null:
@@ -493,6 +526,20 @@ func _on_selection(kind: String, id: String) -> void:
 		_selection.add_child(T.label(str(spec.get("name", w.kind)).to_upper(), "display_bold", 18, T.ORANGE))
 		_selection.add_child(T.label("%s m   %s" % [PlanView._m(DesignServices.length(w)),
 				"LIVE" if live else "NOT CONNECTED"], "mono_medium", 15, T.GOOD if live else T.DIM))
+		_selection.add_child(_remove_button())
+	elif kind in ["wall", "beam"] and (rec.walls if kind == "wall" else rec.beams).has(id):
+		var e: Dictionary = (rec.walls if kind == "wall" else rec.beams)[id]
+		var length := DesignStructure._v(e.a).distance_to(DesignStructure._v(e.b))
+		_selection.add_child(T.label("INNER WALL" if kind == "wall" else "BEAM", "display_bold", 18, T.ORANGE))
+		var spec := DesignStructure.option("inner" if kind == "wall" else "frame",
+				str(rec.structure.get("inner" if kind == "wall" else "frame")))
+		_selection.add_child(T.label("%s m   %s" % [PlanView._m(length), spec.get("name", "")], "mono_medium", 15, T.DIM))
+		_selection.add_child(_remove_button())
+	elif kind == "hull":
+		var outline := rec.hull_outline(plan.deck)
+		_selection.add_child(T.label("HULL CORNER", "display_bold", 18, T.ORANGE))
+		_selection.add_child(T.label("%d corners, drag to reshape. Delete takes this one out." % outline.size(),
+				"body", 14, T.DIM))
 		_selection.add_child(_remove_button())
 
 

@@ -21,6 +21,11 @@ extends RefCounted
 ##   {op = "add_run", run = {id?, kind, deck, points = [[x, z], ...]}}   # a wire or pipe
 ##   {op = "set_run", id, fields = {...}}
 ##   {op = "remove_run", id}
+##   {op = "set_hull", deck, points = [[x, z], ...]}   # the hull's outline on a deck ([] clears it)
+##   {op = "add_wall", wall = {id?, deck, a = [x, z], b = [x, z]}}   # an inner wall drawn anywhere
+##   {op = "remove_wall", id}
+##   {op = "add_beam", beam = {id?, deck, a = [x, z], b = [x, z]}}   # a beam under the deckhead
+##   {op = "remove_beam", id}
 ##   {op = "add_layer", layer = {id?, name, visible?, order?}}   # a whiteboard layer
 ##   {op = "set_layer", id, fields = {name?, visible?, order?}}
 ##   {op = "remove_layer", id}           # its strokes go with it
@@ -56,6 +61,14 @@ var runs: Dictionary = {}
 ## How the hull is built round the rooms (DesignStructure.OPTIONS): frame weight, frame
 ## spacing (m), outer hull plating and inner walls.
 var structure := {"frame": "standard", "spacing": 2.0, "hull": "standard", "inner": "panel"}
+## The hull: deck (as a string) -> its outline, [[x, z], ...], a closed polygon. Rooms on a
+## deck with an outline must sit inside it, its sides are the outer hull, and the deck is
+## plated all the way out to it. A deck with no outline is hulled round its rooms as before.
+var hull: Dictionary = {}
+## Inner walls drawn anywhere: wall id -> {id, deck, a: [x, z], b: [x, z]}.
+var walls: Dictionary = {}
+## Beams placed by hand under a deckhead: beam id -> {id, deck, a: [x, z], b: [x, z]}.
+var beams: Dictionary = {}
 ## The design's whiteboard (Whiteboard view): layer id -> {id, name, visible, order}, drawn
 ## lowest order first, and stroke id -> {id, layer, tool ("pen", "marker", "line", "box"),
 ## colour (html), width (board units), points: [[x, y], ...]} in board units (Whiteboard.BOARD).
@@ -124,6 +137,38 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _set_fields(runs, str(op.get("id", "")), op.get("fields", {}), "set_run")
 		"remove_run":
 			return _remove_entry(runs, str(op.get("id", "")), "run", "add_run")
+		"set_hull":
+			var dk := str(int(op.get("deck", 0)))
+			var outline: Array = []
+			for p: Variant in op.get("points", []):
+				outline.append([float(p[0]), float(p[1])])
+			if outline.size() in [1, 2]:
+				return {}
+			var was: Array = hull.get(dk, [])
+			if outline.is_empty():
+				if not hull.has(dk):
+					return {}
+				hull.erase(dk)
+			else:
+				hull[dk] = outline
+			return {"op": "set_hull", "deck": int(dk), "points": was.duplicate(true)}
+		"add_wall", "add_beam":
+			var key := "wall" if op.op == "add_wall" else "beam"
+			var e: Dictionary = op.get(key, {}).duplicate(true)
+			var a: Array = e.get("a", [])
+			var b: Array = e.get("b", [])
+			if a.size() < 2 or b.size() < 2 or Vector2(float(a[0]), float(a[1])).distance_to(Vector2(float(b[0]), float(b[1]))) < 0.1:
+				return {}
+			e["a"] = [float(a[0]), float(a[1])]
+			e["b"] = [float(b[0]), float(b[1])]
+			e["deck"] = int(e.get("deck", 0))
+			if key == "wall":
+				return _add_entry(walls, e, "i", "wall", "remove_wall")
+			return _add_entry(beams, e, "b", "beam", "remove_beam")
+		"remove_wall":
+			return _remove_entry(walls, str(op.get("id", "")), "wall", "add_wall")
+		"remove_beam":
+			return _remove_entry(beams, str(op.get("id", "")), "beam", "add_beam")
 		"add_layer":
 			var layer: Dictionary = op.get("layer", {}).duplicate()
 			layer["name"] = str(layer.get("name", "Layer"))
@@ -208,6 +253,44 @@ func _remove_layer(layer_id: String) -> Dictionary:
 	undos.push_front({"op": "add_layer", "layer": sketch_layers[layer_id].duplicate()})
 	sketch_layers.erase(layer_id)
 	return {"op": "batch", "ops": undos}
+
+
+## The hull's outline on a deck, or [] if it's hulled round its rooms.
+func hull_outline(deck: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p: Array in hull.get(str(deck), []):
+		out.append(Vector2(float(p[0]), float(p[1])))
+	return out
+
+
+## Whether a room's floor lies inside its deck's hull (true where the deck has no outline).
+func room_in_hull(room_id: String) -> bool:
+	var r: Dictionary = rooms.get(room_id, {})
+	var outline := hull_outline(int(r.get("deck", 0)))
+	if r.is_empty() or outline.size() < 3:
+		return true
+	var rect := Rect2(r.x, r.z, r.w, r.d).grow(-0.01)
+	for c in [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]:
+		if not Geometry2D.is_point_in_polygon(c, outline):
+			return false
+	return true
+
+
+## A starting hull for a deck: round its rooms, `margin` m out, the corners cut at 45 degrees.
+## Returns points for set_hull ([] if the deck has no rooms).
+func hull_round_rooms(deck: int, margin: float = 0.5) -> Array:
+	var pts := PackedVector2Array()
+	for r: Dictionary in rooms_on(deck):
+		var rect := Rect2(r.x, r.z, r.w, r.d).grow(margin)
+		for c in [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]:
+			pts.append(c)
+	if pts.size() < 3:
+		return []
+	var ring := Geometry2D.convex_hull(pts)
+	var out: Array = []
+	for i in ring.size() - 1:  # convex_hull repeats the first point at the end
+		out.append([snappedf(ring[i].x, 0.01), snappedf(ring[i].y, 0.01)])
+	return out
 
 
 ## Whiteboard layers, lowest first.
@@ -325,6 +408,8 @@ func decks() -> PackedInt32Array:
 	var seen := {}
 	for r: Dictionary in rooms.values():
 		seen[int(r.deck)] = true
+	for dk: String in hull:
+		seen[int(dk)] = true
 	var out := PackedInt32Array(seen.keys())
 	out.sort()
 	return out if out.size() > 0 else PackedInt32Array([0])
@@ -364,6 +449,11 @@ func bounds() -> Rect2:
 		var rr := Rect2(r.x, r.z, r.w, r.d)
 		out = rr if first else out.merge(rr)
 		first = false
+	for dk: String in hull:
+		for p: Array in hull[dk]:
+			var v := Vector2(float(p[0]), float(p[1]))
+			out = Rect2(v, Vector2.ZERO) if first else out.expand(v)
+			first = false
 	return out
 
 
@@ -380,6 +470,7 @@ func to_dict() -> Dictionary:
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
 		"runs": _sorted(runs), "structure": structure.duplicate(),
 		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
+		"hull": hull.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams),
 	}
 
 
@@ -404,6 +495,17 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		var run := w.duplicate(true)
 		run.deck = int(run.get("deck", 0))
 		d.runs[str(run.id)] = run
+	var hd: Dictionary = data.get("hull", {})
+	for dk in hd:
+		d.hull[str(dk)] = (hd[dk] as Array).duplicate(true)
+	for wv: Dictionary in data.get("walls", []):
+		var wall := wv.duplicate(true)
+		wall.deck = int(wall.get("deck", 0))
+		d.walls[str(wall.id)] = wall
+	for bv: Dictionary in data.get("beams", []):
+		var beam := bv.duplicate(true)
+		beam.deck = int(beam.get("deck", 0))
+		d.beams[str(beam.id)] = beam
 	for l: Dictionary in data.get("sketch_layers", []):
 		var layer := l.duplicate()
 		layer.order = int(layer.get("order", 0))
@@ -416,7 +518,7 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		d.structure[k] = st[k]
 	d.structure.spacing = float(d.structure.spacing)
 	d._next = int(data.get("next", 1))
-	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes]:
+	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams]:
 		for eid: String in table:
 			d._bump_next(eid)
 	return d

@@ -62,10 +62,20 @@ static func measure(d: DesignRecord) -> DesignStructure:
 	var s := DesignStructure.new()
 	var h := d.deck_height
 	var spacing := maxf(float(d.structure.get("spacing", 2.0)), 0.5)
+	# Decks with a drawn hull: its sides are the outer hull and the deck is plated out to them.
+	for deck in s._hull_decks(d):
+		var outline := d.hull_outline(deck)
+		for i in outline.size():
+			s.outer_edges.append({"deck": deck, "a": outline[i], "b": outline[(i + 1) % outline.size()]})
+		s.floor_area += absf(_area(outline))
+		var box := _bounds(outline)
+		s.outer_area += _uncovered(d, box, deck, deck - 1) + _uncovered(d, box, deck, deck + 1)
 	for r: Dictionary in d.rooms.values():
 		var rect := Rect2(r.x, r.z, r.w, r.d)
 		var deck := int(r.deck)
-		s.floor_area += rect.get_area()
+		var hulled := d.hull_outline(deck).size() >= 3
+		if not hulled:
+			s.floor_area += rect.get_area()
 		# The four sides, with the outward normal: start sides (-X, -Z) and end sides (+X, +Z).
 		var sides := [
 			[Vector2(rect.position.x, rect.position.y), Vector2(rect.position.x, rect.end.y), Vector2(-1, 0), false],
@@ -76,15 +86,60 @@ static func measure(d: DesignRecord) -> DesignStructure:
 		for side: Array in sides:
 			s._split_side(d, deck, r.id, side[0], side[1], side[2], side[3])
 		# Floors with no room under them, roofs with none over: outer hull too.
-		s.outer_area += _uncovered(d, rect, deck - 1) + _uncovered(d, rect, deck + 1)
+		if not hulled:
+			s.outer_area += _uncovered(d, rect, deck, deck - 1) + _uncovered(d, rect, deck, deck + 1)
+	# Inner walls drawn by hand.
+	for w: Dictionary in d.walls.values():
+		s.inner_edges.append({"deck": int(w.deck), "a": _v(w.a), "b": _v(w.b), "wall": w.id})
 	for e in s.outer_edges:
 		s.outer_len += (e.a as Vector2).distance_to(e.b)
 	for e in s.inner_edges:
 		s.inner_len += (e.a as Vector2).distance_to(e.b)
 	s.outer_area += s.outer_len * h
 	s.inner_area = s.inner_len * h
-	s.frame_m = s.outer_len * h / spacing + s.floor_area / spacing
+	var placed := 0.0
+	for b: Dictionary in d.beams.values():
+		placed += _v(b.a).distance_to(_v(b.b))
+	s.frame_m = s.outer_len * h / spacing + s.floor_area / spacing + placed
 	return s
+
+
+## Whether a point is on a deck's floor: inside its hull where it has one, else in a room.
+static func on_deck(d: DesignRecord, deck: int, p: Vector2) -> bool:
+	var outline := d.hull_outline(deck)
+	if outline.size() >= 3:
+		return Geometry2D.is_point_in_polygon(p, outline)
+	return d.room_at(deck, p) != ""
+
+
+func _hull_decks(d: DesignRecord) -> Array[int]:
+	var out: Array[int] = []
+	for dk: String in d.hull:
+		if d.hull_outline(int(dk)).size() >= 3:
+			out.append(int(dk))
+	out.sort()
+	return out
+
+
+static func _v(p: Variant) -> Vector2:
+	return Vector2(float(p[0]), float(p[1]))
+
+
+## A polygon's signed area, m2.
+static func _area(poly: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		a += p.x * q.y - q.x * p.y
+	return a * 0.5
+
+
+static func _bounds(poly: PackedVector2Array) -> Rect2:
+	var r := Rect2(poly[0], Vector2.ZERO)
+	for p in poly:
+		r = r.expand(p)
+	return r
 
 
 ## Splits one room side into stretches that face space (outer) and stretches against another
@@ -94,36 +149,46 @@ func _split_side(d: DesignRecord, deck: int, room_id: String, a: Vector2, b: Vec
 	var length := a.distance_to(b)
 	var steps := maxi(int(round(length / STEP)), 1)
 	var dir := (b - a) / float(steps)
+	var hulled := d.hull_outline(deck).size() >= 3
 	var run_start := a
-	var run_inner := false
+	var run_kind := 0
 	for i in steps + 1:
-		var inner := false
+		# 0 outer hull, 1 against another room, 2 open deck inside the hull, 3 on the hull itself.
+		var kind := 0
 		if i < steps:
 			var mid := a + dir * (i + 0.5)
-			var other := d.room_at(deck, mid + normal * 0.05)
-			inner = other != "" and other != room_id
+			var at := mid + normal * 0.05
+			var other := d.room_at(deck, at)
+			if other != "" and other != room_id:
+				kind = 1
+			elif hulled:
+				kind = 2 if on_deck(d, deck, at) else 3
 		if i == 0:
-			run_inner = inner
+			run_kind = kind
 			continue
-		if i == steps or inner != run_inner:
+		if i == steps or kind != run_kind:
 			var p := a + dir * i
-			if run_inner:
+			if run_kind == 1:
 				if end_side:
 					inner_edges.append({"deck": deck, "a": run_start, "b": p})
-			else:
+			elif run_kind == 2:
+				inner_edges.append({"deck": deck, "a": run_start, "b": p})
+			elif run_kind == 0:
 				outer_edges.append({"deck": deck, "a": run_start, "b": p})
 			run_start = p
-			run_inner = inner
+			run_kind = kind
 
 
-static func _uncovered(d: DesignRecord, rect: Rect2, deck: int) -> float:
+## Floor of `deck` within rect with no floor of `other` beside it (over or under), m2.
+static func _uncovered(d: DesignRecord, rect: Rect2, deck: int, other: int) -> float:
 	var cell := 0.5
 	var area := 0.0
 	var x := rect.position.x + cell * 0.5
 	while x < rect.end.x:
 		var z := rect.position.y + cell * 0.5
 		while z < rect.end.y:
-			if d.room_at(deck, Vector2(x, z)) == "":
+			var p := Vector2(x, z)
+			if on_deck(d, deck, p) and not on_deck(d, other, p):
 				area += cell * cell
 			z += cell
 		x += cell

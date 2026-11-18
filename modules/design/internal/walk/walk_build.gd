@@ -74,7 +74,12 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	for r: Dictionary in rec.rooms.values():
 		_floor(r, stairs)
 		_ceiling(r, (ramp_plan(r).rect as Rect2) if stairs.has(str(r.id)) else Rect2())
+	for deck in rec.decks():
+		if rec.hull_outline(deck).size() >= 3:
+			_open_deck(deck)
 	var st := DesignStructure.measure(rec)
+	for b: Dictionary in rec.beams.values():
+		_beam(b)
 	for e in st.outer_edges:
 		_wall(e, true)
 	for e in st.inner_edges:
@@ -142,7 +147,7 @@ func _floor(r: Dictionary, stairs: Dictionary) -> void:
 	for low_id: String in stairs:
 		if stairs[low_id] == str(r.id):
 			hole = (ramp_plan(rec.rooms[low_id]).rect as Rect2).intersection(rect)
-	var covered := not rec.room_at(int(r.deck) - 1, rect.get_center()).is_empty()
+	var covered := DesignStructure.on_deck(rec, int(r.deck) - 1, rect.get_center())
 	var bed := paint(Color(0.2, 0.21, 0.23), "gunmetal")
 	var plate := paint(Color(0.46, 0.48, 0.5), "bare_steel")
 	var tiles: Array[Transform3D] = []
@@ -186,7 +191,7 @@ func _ceiling(r: Dictionary, hole: Rect2) -> void:
 			x = x1
 	_multi("Ceiling_" + str(r.id), panels, paint(Color(0.62, 0.64, 0.65), "satin_paint"))
 	# A roof of hull plate where no room stands over this one.
-	if rec.room_at(int(r.deck) + 1, rect.get_center()).is_empty():
+	if not DesignStructure.on_deck(rec, int(r.deck) + 1, rect.get_center()):
 		var roof := MeshInstance3D.new()
 		roof.name = "Roof_" + str(r.id)
 		roof.mesh = _box_mesh(Vector3(rect.size.x, FLOOR - 0.02, rect.size.y))
@@ -229,6 +234,160 @@ func _ceiling(r: Dictionary, hole: Rect2) -> void:
 	lamps += 1
 
 
+## The deck inside a drawn hull that no room covers: plated out to the hull's sides, one
+## plate a metre square (cut to the hull where it angles), lit, and roofed where nothing is over it.
+func _open_deck(deck: int) -> void:
+	var outline := rec.hull_outline(deck)
+	var y := deck * rec.deck_height
+	var top := (deck + 1) * rec.deck_height - FLOOR
+	var box := DesignStructure._bounds(outline)
+	var plates := SurfaceTool.new()
+	plates.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var bed_up := PackedVector3Array()
+	var bed_down := PackedVector3Array()
+	var bed_seen := PackedVector3Array()
+	var roof := PackedVector3Array()
+	var lit := {}
+	var x := floorf(box.position.x)
+	while x < box.end.x:
+		var z := floorf(box.position.y)
+		while z < box.end.y:
+			var cell := PackedVector2Array([Vector2(x, z), Vector2(x + PLATE, z), Vector2(x + PLATE, z + PLATE), Vector2(x, z + PLATE)])
+			for piece in Geometry2D.intersect_polygons(cell, outline):
+				for open in _minus_rooms(piece, deck):
+					var c := _centroid(open)
+					_fan(open, y - 0.018, bed_up, false)
+					_fan(open, y - FLOOR, bed_down if DesignStructure.on_deck(rec, deck - 1, c) else bed_seen, true)
+					for inset in Geometry2D.offset_polygon(open, -0.006):
+						_plate(plates, inset, y)
+					if not DesignStructure.on_deck(rec, deck + 1, c):
+						_fan(open, top, roof, true)
+					lit[Vector2i(floori(c.x / 5.0), floori(c.y / 5.0))] = true
+			z += PLATE
+		x += PLATE
+	if bed_up.is_empty():
+		return
+	plates.generate_normals()
+	var pm := MeshInstance3D.new()
+	pm.name = "OpenDeckPlates_%d" % deck
+	pm.mesh = plates.commit()
+	pm.material_override = paint(Color(0.46, 0.48, 0.5), "bare_steel")
+	root.add_child(pm)
+	var body := _body({"kind": "floor", "room": "", "deck": deck})
+	body.name = "OpenDeck_%d" % deck
+	var shape := ConcavePolygonShape3D.new()
+	var faces := PackedVector3Array()
+	for v in bed_up:
+		faces.append(v + Vector3(0, 0.018, 0))
+	shape.set_faces(faces)
+	shape.backface_collision = true
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	# Its underside: the ceiling of the deck below, or hull plating where nothing is under it.
+	if not bed_down.is_empty():
+		body.add_child(_tri_mesh(bed_down, paint(Color(0.62, 0.64, 0.65), "satin_paint"), 1))
+	if not bed_seen.is_empty():
+		body.add_child(_tri_mesh(bed_seen, paint(Color(0.5, 0.52, 0.55), "brushed_alloy"), 1 | EXTERIOR))
+	if not roof.is_empty():
+		var rm := _tri_mesh(roof, paint(Color(0.62, 0.64, 0.65), "satin_paint"), 1 | EXTERIOR)
+		rm.name = "OpenDeckRoof_%d" % deck
+		root.add_child(rm)
+	# A lamp over every 5 m block of open deck.
+	var glow := _glow(Color(1.0, 0.96, 0.88))
+	for k: Vector2i in lit:
+		var at := Vector2(k.x * 5.0 + 2.5, k.y * 5.0 + 2.5)
+		if not Geometry2D.is_point_in_polygon(at, outline) or rec.room_at(deck, at) != "":
+			continue
+		var lp := MeshInstance3D.new()
+		lp.mesh = _box_mesh(Vector3(1.2, 0.03, 0.3))
+		lp.material_override = glow
+		lp.position = Vector3(at.x, top - 0.035, at.y)
+		root.add_child(lp)
+		var lamp := OmniLight3D.new()
+		lamp.name = "Lamp_open_%d_%d_%d" % [deck, k.x, k.y]
+		lamp.position = Vector3(at.x, top - 0.3, at.y)
+		lamp.omni_range = 8.0
+		lamp.light_energy = 0.85
+		lamp.light_color = Color(1.0, 0.95, 0.88)
+		root.add_child(lamp)
+		lamps += 1
+
+
+## `poly` with every room on the deck cut out of it.
+func _minus_rooms(poly: PackedVector2Array, deck: int) -> Array[PackedVector2Array]:
+	var out: Array[PackedVector2Array] = [poly]
+	for r in rec.rooms_on(deck):
+		var rr := Rect2(r.x, r.z, r.w, r.d)
+		var sq := PackedVector2Array([rr.position, Vector2(rr.end.x, rr.position.y), rr.end, Vector2(rr.position.x, rr.end.y)])
+		var next: Array[PackedVector2Array] = []
+		for p in out:
+			for q in Geometry2D.clip_polygons(p, sq):
+				if not Geometry2D.is_polygon_clockwise(q) or q.size() < 3:
+					next.append(q)
+		out = next
+	return out.filter(func(p): return absf(DesignStructure._area(p)) > 0.0004)
+
+
+static func _centroid(poly: PackedVector2Array) -> Vector2:
+	var c := Vector2.ZERO
+	for p in poly:
+		c += p
+	return c / maxf(poly.size(), 1)
+
+
+## A flat polygon as triangles at height y, appended to `out` (facing down when `down`).
+static func _fan(poly: PackedVector2Array, y: float, out: PackedVector3Array, down: bool) -> void:
+	var idx := Geometry2D.triangulate_polygon(poly)
+	for i in range(0, idx.size(), 3):
+		var a := Vector3(poly[idx[i]].x, y, poly[idx[i]].y)
+		var b := Vector3(poly[idx[i + 1]].x, y, poly[idx[i + 1]].y)
+		var c := Vector3(poly[idx[i + 2]].x, y, poly[idx[i + 2]].y)
+		# Godot's front faces wind clockwise as seen from in front.
+		var up := (b - a).cross(c - a).y > 0.0
+		if up != down:
+			out.append_array([a, c, b])
+		else:
+			out.append_array([a, b, c])
+
+
+## One deck plate: its top at y and a thin edge round it.
+func _plate(st: SurfaceTool, poly: PackedVector2Array, y: float) -> void:
+	var tris := PackedVector3Array()
+	_fan(poly, y, tris, false)
+	for v in tris:
+		st.add_vertex(v)
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		var quad := [Vector3(p.x, y, p.y), Vector3(q.x, y, q.y), Vector3(q.x, y - 0.018, q.y), Vector3(p.x, y - 0.018, p.y)]
+		for k in [0, 1, 2, 0, 2, 3]:
+			st.add_vertex(quad[k])
+
+
+func _tri_mesh(tris: PackedVector3Array, mat: Material, layers: int) -> MeshInstance3D:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for v in tris:
+		st.add_vertex(v)
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	mi.layers = layers
+	return mi
+
+
+## A beam placed by hand: a girder along the deckhead.
+func _beam(b: Dictionary) -> void:
+	var spec: Array = GIRDERS.get(str(rec.structure.get("frame", "standard")), GIRDERS.standard)
+	var gh: float = spec[1]
+	var y := (int(b.deck) + 1) * rec.deck_height - FLOOR - gh * 0.5
+	var a := DesignStructure._v(b.a)
+	var e := DesignStructure._v(b.b)
+	_girder(Vector3(a.x, y, a.y), Vector3(e.x, y, e.y), spec[0], gh, Vector3.UP)
+
+
 # Walls, frames and doors
 
 ## One wall stretch on one deck, with a doorway wherever a door stands on it.
@@ -245,11 +404,14 @@ func _wall(e: Dictionary, outer: bool) -> void:
 	var normal := Vector2(-dir.y, dir.x)
 	# Which faces are inside a room.
 	var mid := (a + b) * 0.5
-	var inside_pos := not rec.room_at(deck, mid + normal * 0.1).is_empty()
-	var inside_neg := not rec.room_at(deck, mid - normal * 0.1).is_empty()
+	var inside_pos := DesignStructure.on_deck(rec, deck, mid + normal * 0.1)
+	var inside_neg := DesignStructure.on_deck(rec, deck, mid - normal * 0.1)
+	var hulled := rec.hull_outline(deck).size() >= 3
 	var gaps: Array[Dictionary] = []
 	for d: Dictionary in rec.doors.values():
-		if int(d.deck) != deck or outer != (str(d.b) == ""):
+		# Without a drawn hull a room's outer door is on the outer hull; with one it can open
+		# onto the deck inside it, so match doors to walls by where they stand.
+		if int(d.deck) != deck or not hulled and outer != (str(d.b) == ""):
 			continue
 		var at := Vector2(float(d.x), float(d.z))
 		var t := (at - a).dot(dir)
@@ -311,12 +473,14 @@ func _ribs(a: Vector2, dir: Vector2, inward: Vector2, length: float, gaps: Array
 	var spacing := maxf(float(rec.structure.get("spacing", 2.0)), 0.5)
 	var gw: float = spec[0]
 	var gh: float = spec[1]
-	# Ribs where the frame grid crosses the wall (x for walls along z and the other way).
-	var along := a.x if absf(dir.x) > 0.5 else a.y
-	var sign := dir.x if absf(dir.x) > 0.5 else dir.y
-	var t := 0.0
-	var first := ceilf((along + 0.15 * sign) / spacing) * spacing if sign > 0 else floorf((along - 0.15) / spacing) * spacing
-	t = absf(first - along)
+	# Ribs where the frame grid crosses the wall (x for walls along z and the other way); an
+	# angled hull side takes them every spacing along it.
+	var t := spacing * 0.5
+	if absf(dir.x) > 0.999 or absf(dir.y) > 0.999:
+		var along := a.x if absf(dir.x) > 0.5 else a.y
+		var sign := dir.x if absf(dir.x) > 0.5 else dir.y
+		var first := ceilf((along + 0.15 * sign) / spacing) * spacing if sign > 0 else floorf((along - 0.15) / spacing) * spacing
+		t = absf(first - along)
 	while t < length - 0.15:
 		var clear := true
 		for g in gaps:
