@@ -34,6 +34,19 @@ func run_tests() -> void:
 	check(tools.active_tool() is YardCutter, "the wheel goes round the hotbar")
 	tools.holster(true)
 	check(tools.holstered and not tools.tools[1].visible, "H puts it away")
+	# A screen holding the pointer (the design room's console) hides the hotbar and keeps the keys.
+	HudSlots.claim_pointer("test_tools")
+	await frames(2)
+	var bar := tools.get_node("Hotbar") as CanvasLayer
+	var key := InputEventKey.new()
+	key.keycode = KEY_2
+	key.physical_keycode = KEY_2
+	key.pressed = true
+	tools._unhandled_input(key)
+	check(not bar.visible and tools.holstered, "a console holding the pointer hides the hotbar and keeps the keys")
+	HudSlots.release_pointer("test_tools")
+	await frames(2)
+	check(bar.visible, "the hotbar comes back after")
 
 	var practice := station.get("practice") as Node3D
 	check(practice != null, "the practice frame floats outside the airlock")

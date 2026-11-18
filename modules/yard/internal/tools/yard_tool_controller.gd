@@ -304,6 +304,9 @@ func _update_cutting(tool: YardTool, hit: Dictionary, body: YardWorkpiece, facto
 
 
 func _process(delta: float) -> void:
+	# A screen that has the pointer (the design room's console) covers the hotbar.
+	if _hotbar:
+		(_hotbar.get_parent().get_parent() as CanvasLayer).visible = not HudSlots.pointer_claimed()
 	if tools.is_empty():
 		return
 	var tool := active_tool()
