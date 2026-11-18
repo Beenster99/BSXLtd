@@ -395,7 +395,7 @@ func _process(delta: float) -> void:
 func _update_fastening(tool: YardFastener, hit: Dictionary, body: YardWorkpiece, delta: float) -> void:
 	_draw_beam(false)
 	var touching := not hit.is_empty()
-	if plan_body and (not is_instance_valid(plan_body) or not plan_body.planned.has(plan)):
+	if not plan.is_empty() and (not is_instance_valid(plan_body) or not plan_body.planned.has(plan)):
 		plan = {}
 		plan_body = null
 	if not trigger:

@@ -296,11 +296,35 @@ func _lay_ripple(p: Dictionary, y: float, r: float) -> void:
 		mmi.multimesh = mm
 		var m := StandardMaterial3D.new()
 		m.vertex_color_use_as_albedo = true
-		m.metallic = 0.9
-		m.roughness = 0.22
+		m.metallic = 0.6
+		m.roughness = 0.24
+		m.metallic_specular = 0.8
 		mmi.material_override = m
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		marks.add_child(mmi)
+		# The cleaned, heat-tinted band either side of the bead (a flat disc a ripple, under it).
+		var halo := MultiMeshInstance3D.new()
+		halo.name = "Halo"
+		var hm := MultiMesh.new()
+		hm.transform_format = MultiMesh.TRANSFORM_3D
+		hm.use_colors = true
+		var disc := CylinderMesh.new()
+		disc.top_radius = 0.5
+		disc.bottom_radius = 0.5
+		disc.height = 1.0
+		disc.radial_segments = 14
+		disc.rings = 1
+		hm.mesh = disc
+		hm.instance_count = mm.instance_count
+		hm.visible_instance_count = 0
+		halo.multimesh = hm
+		var hmat := StandardMaterial3D.new()
+		hmat.vertex_color_use_as_albedo = true
+		hmat.metallic = 0.5
+		hmat.roughness = 0.35
+		halo.material_override = hmat
+		halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.add_child(halo)
 	var q := 1.0
 	if r > 1.4:
 		q = clampf(1.0 - (r - 1.4) / 1.4, 0.0, 1.0)
@@ -333,6 +357,15 @@ func _lay_ripple(p: Dictionary, y: float, r: float) -> void:
 	mm.set_instance_transform(i, Transform3D(basis, Vector3(wobble, y, 0.0015 + h * 0.22)))
 	mm.set_instance_color(i, colour)
 	mm.visible_instance_count = i + 1
+	var hm := (mmi.get_node("Halo") as MultiMeshInstance3D).multimesh
+	if hm.visible_instance_count < hm.instance_count:
+		var tint := Color(0.8, 0.79, 0.75) if r <= 1.4 else Color(0.62, 0.6, 0.58)
+		if r < 0.65:
+			tint = Color(0.6, 0.48, 0.42)
+		var hw := w * 2.0
+		hm.set_instance_transform(hm.visible_instance_count, Transform3D(Basis(Vector3.RIGHT, PI * 0.5) * Basis.from_scale(Vector3(hw, 0.0006, RIPPLE_STEP * 3.0)), Vector3(0.0, y, 0.0004)))
+		hm.set_instance_color(hm.visible_instance_count, tint)
+		hm.visible_instance_count += 1
 	p.ripples = int(p.ripples) + 1
 	p.q_sum = float(p.q_sum) + q
 	var puddle := marks.get_node_or_null("Puddle") as MeshInstance3D
@@ -357,6 +390,10 @@ func _finish(p: Dictionary, keep_bead: bool) -> ConnectionData:
 					child.queue_free()
 			marks.name = "WeldBead_%d" % int(p.id)
 			_kept_beads[marks] = c
+			# The bead you laid is the weld's look: the joint's own drawn seam goes.
+			var view := model.forget_view(c)
+			if view:
+				view.clear()
 		else:
 			marks.queue_free()
 	fastened.emit(c)
