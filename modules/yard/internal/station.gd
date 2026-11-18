@@ -10,6 +10,7 @@ const SpaceSky := preload("res://modules/yard/internal/space_sky.gd")
 const RackingHall := preload("res://modules/yard/internal/racking_hall.gd")
 const Airlock := preload("res://modules/yard/internal/airlock.gd")
 const DesignLock := preload("res://modules/yard/internal/design_lock.gd")
+const DesignShell := preload("res://modules/yard/internal/design_shell.gd")
 const Dock := preload("res://modules/yard/internal/dock.gd")
 const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
 ## Where the practice frame floats: just out of the airlock (station space).
@@ -19,7 +20,9 @@ const PRACTICE_AT := Vector3(-47.5, -0.6, -2.0)
 const VIEWS := {
 	"station_outside": [Vector3(-95, 32, 55), Vector3(4, 1, -12)],
 	"corridor": [Vector3(-31, 1.7, -2.0), Vector3(40, 1.4, -2.0)],
-	"design_room": [Vector3(10.5, 2.4, -5.0), Vector3(-5, 1.0, -18)],
+	"design_room": [Vector3(9.5, 5.2, -5.5), Vector3(-4, 1.2, -18)],
+	"design_vault": [Vector3(7, 1.7, -20.5), Vector3(-3, 7.5, -8)],
+	"design_mezzanine": [Vector3(-2, 1.7, -17), Vector3(-6, 3.0, -6)],
 	"design_window": [Vector3(0, 1.7, -15), Vector3(0, -3, -80)],
 	"design_lock": [Vector3(-3.5, 2.0, -15.5), Vector3(-11, 1.2, -22.5)],
 	"design_lock_outside": [Vector3(-4.5, 1.2, -31), Vector3(-11, 1.4, -23.5)],
@@ -317,8 +320,9 @@ func _build_station() -> void:
 		var b: AABB = YardLayout.ROOMS[id].box
 		var floor_mat: Material = k.paint(Color(0.34, 0.38, 0.44), 0.0, 0.5, "plastic_textured") if id == "design" else deck
 		k.slab(Vector3(b.position.x, -0.3, b.position.z), Vector3(b.end.x, 0.0, b.end.z), floor_mat)
-		k.span(Vector3(b.position.x - 0.095, b.end.y, b.position.z - 0.095), Vector3(b.end.x + 0.095, b.end.y + 0.3, b.end.z + 0.095), hull)
-		k.slab(Vector3(b.position.x, b.end.y - 0.02, b.position.z), Vector3(b.end.x, b.end.y, b.end.z), ceiling, 6.0, false)
+		if id != "design":   # the design room's roof is its glass vault (DesignShell)
+			k.span(Vector3(b.position.x - 0.095, b.end.y, b.position.z - 0.095), Vector3(b.end.x + 0.095, b.end.y + 0.3, b.end.z + 0.095), hull)
+			k.slab(Vector3(b.position.x, b.end.y - 0.02, b.position.z), Vector3(b.end.x, b.end.y, b.end.z), ceiling, 6.0, false)
 		var room := Node3D.new()
 		room.name = "Room_%s" % id
 		room.add_to_group("gfx_room")
@@ -343,7 +347,8 @@ func _build_station() -> void:
 				bounce.light_color = Color(0.92, 0.95, 1.0)
 				room.add_child(bounce)
 
-	# Design room (x -12..12, z -22..-4, 6 m high): the window wall faces the dock.
+	# Design room (x -12..12, z -22..-4, walls 6 m high under a glass vault): the window wall
+	# faces the dock.
 	var lock_x := YardLayout.DESIGN_LOCK_DOOR_X
 	k.wall(true, -22.0, -12.1, 12.1, 0.0, 6.0, wall, [[lock_x.x, lock_x.y, YardLayout.DESIGN_LOCK_DOOR_H], [-10.0, 10.0, 5.2, 0.9]], 0.2, pane)
 	for x: float in [-5.0, 0.0, 5.0]:
@@ -356,9 +361,7 @@ func _build_station() -> void:
 	design_root.position = YardBus.DESIGN_ROOM_CENTRE
 	add_child(design_root)
 	_mark_clear_circle(k)
-	for x: float in [-7.0, 0.0, 7.0]:
-		for z: float in [-18.0, -9.0]:
-			k.ceiling_lamp(Vector3(x, 6.0, z), Vector2(3.0, 1.2), 1.3, 12.0)
+	DesignShell.new().build(k, hull, wall, dark, deck)
 	# Between the design room and the racking hall: solid hull.
 	k.span(Vector3(12.1, 0.0, -22.0), Vector3(13.9, 6.0, -4.1), hull)
 
