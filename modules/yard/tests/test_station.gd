@@ -315,6 +315,11 @@ func _racking(station: Node3D) -> void:
 	for part: String in (hall.get("part_meshes") as Dictionary):
 		kinds[YardRackStore.kind_of(part)] = true
 	check(kinds.size() == 4, "long stock, plates, components and heavy parts are all on show")
+	var vs_drawn := true
+	for part: String in (hall.get("part_meshes") as Dictionary):
+		var body: MultiMeshInstance3D = hall.get("part_meshes")[part].body
+		vs_drawn = vs_drawn and body.material_override == VsParts.surface(part)
+	check(vs_drawn, "the racks draw each part on Void Salvage's salvage surface")
 	# No counters: nothing in the hall to press for a load.
 	var uses := hall.find_children("Use_*", "Area3D", true, false)
 	check(uses.is_empty(), "no ordering counters")
@@ -358,7 +363,7 @@ func _racking(station: Node3D) -> void:
 	check(not hit.is_empty() and absf((hit.position as Vector3).x - 35.65) < 0.1, "a plate rack stops you at its face")
 	# Putting away and taking out redraws the racks.
 	var before := int(hall.call("drawn_count"))
-	var slot := store.store("reactor", 1)
+	var slot := store.store("Reactor", 1)
 	check(slot >= 0, "a delivered reactor goes on a heavy cradle")
 	await frames(2)
 	check(int(hall.call("drawn_count")) == before + 1, "and is drawn there")

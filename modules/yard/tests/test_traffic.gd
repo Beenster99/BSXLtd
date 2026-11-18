@@ -20,10 +20,10 @@ func run_tests() -> void:
 	_routes(traffic, store)
 	await _freighter()
 
-	var order := [{"part": "hull_plate", "qty": 60}, {"part": "box_beam_6", "qty": 10}, {"part": "junction_box", "qty": 12},
-			{"part": "hydrogen_engine", "qty": 2}, {"part": "reactor", "qty": 1}, {"part": "pipe_4", "qty": 25},
-			{"part": "radiator", "qty": 6}, {"part": "generator", "qty": 2}, {"part": "deck_plate", "qty": 15},
-			{"part": "tank_large", "qty": 2}, {"part": "girder_4", "qty": 9}]
+	var order := [{"part": "HullPlate", "qty": 60}, {"part": "BoxBeam", "qty": 10}, {"part": "JunctionBox", "qty": 12},
+			{"part": "HydrogenEngine", "qty": 2}, {"part": "Reactor", "qty": 1}, {"part": "Pipe", "qty": 25},
+			{"part": "Radiator", "qty": 6}, {"part": "Generator", "qty": 2}, {"part": "DeckPlate", "qty": 15},
+			{"part": "FuelTank", "qty": 2}, {"part": "Girder", "qty": 9}]
 	var before := {}
 	var bought := 0
 	for it: Dictionary in order:
@@ -76,17 +76,17 @@ func run_tests() -> void:
 	check(bool(seen.upstairs), "bots carried loads to the upper storey")
 
 	# The yard asks for parts: off the racks, to the yard side, out to the build berth.
-	var plates := store.count("hull_plate")
-	var beams := store.count("box_beam_6")
+	var plates := store.count("HullPlate")
+	var beams := store.count("BoxBeam")
 	var sent := {"n": 0}
 	traffic.sent.connect(func(_p: String, q: int) -> void: sent.n += q)
-	traffic.send_to_yard([{"part": "hull_plate", "qty": 20}, {"part": "box_beam_6", "qty": 6}])
+	traffic.send_to_yard([{"part": "HullPlate", "qty": 20}, {"part": "BoxBeam", "qty": 6}])
 	t = 0.0
 	while traffic.busy() and t < 600.0:
 		traffic.step(0.1)
 		t += 0.1
 	check(not traffic.busy(), "the yard's parts are out (%.0f s)" % t)
-	check(store.count("hull_plate") == plates - 20 and store.count("box_beam_6") == beams - 6, "taken off the racks")
+	check(store.count("HullPlate") == plates - 20 and store.count("BoxBeam") == beams - 6, "taken off the racks")
 	check(sent.n == 26, "26 parts set down at the build berth (%d)" % sent.n)
 	var berth: AABB = YardLayout.BERTHS[0].box
 	var at_berth := traffic.loads.filter(func(l: Dictionary) -> bool: return l.where == "berth")
@@ -143,8 +143,8 @@ func _freighter() -> void:
 	traffic.set_process(false)
 	add_child(traffic)
 	traffic.build(store)
-	var order := [{"part": "hull_plate", "qty": 240}, {"part": "box_beam_6", "qty": 60}, {"part": "junction_box", "qty": 40},
-			{"part": "tank_large", "qty": 4}, {"part": "pipe_4", "qty": 60}]
+	var order := [{"part": "HullPlate", "qty": 240}, {"part": "BoxBeam", "qty": 60}, {"part": "JunctionBox", "qty": 40},
+			{"part": "FuelTank", "qty": 4}, {"part": "Pipe", "qty": 60}]
 	var loads := 20 + 10 + 5 + 4 + 6
 	traffic.order(order)
 	check(traffic.haulers.size() == 1 and traffic.haulers[0].kind == "ship", "a big order (%d loads) brings the freighter" % loads)

@@ -63,11 +63,7 @@ func redraw() -> void:
 		var xforms: Array = by_part.get(part, [])
 		if xforms.is_empty() and not part_meshes.has(part):
 			continue
-		var m := _part_mesh(part)
-		for key: String in ["body", "glow"]:
-			var mmi: MultiMeshInstance3D = m[key]
-			if mmi == null:
-				continue
+		for mmi: MultiMeshInstance3D in _part_mesh(part).all:
 			mmi.multimesh.instance_count = xforms.size()
 			for j in xforms.size():
 				mmi.multimesh.set_instance_transform(j, xforms[j])
@@ -154,10 +150,15 @@ func _inner_gap(kind: int) -> float:
 func _part_mesh(part: String) -> Dictionary:
 	if part_meshes.has(part):
 		return part_meshes[part]
-	var look := Look.look(part)
-	var m := {"body": _part_multi(look.mesh, Look.material(), "Stock_%s" % part), "glow": null}
-	if look.glow != null:
-		m.glow = _part_multi(look.glow, Look.glow_material(look.glow_colour), "Stock_%s_glow" % part)
+	var all: Array[MultiMeshInstance3D] = []
+	var layers: Array = Look.layers(part)
+	for j in layers.size():
+		var l: Dictionary = layers[j]
+		var mmi := _part_multi(l.mesh, l.material, "Stock_%s" % part if j == 0 else "Stock_%s_%d" % [part, j])
+		if l.get("lit", false):
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		all.append(mmi)
+	var m := {"body": all[0], "all": all}
 	part_meshes[part] = m
 	return m
 

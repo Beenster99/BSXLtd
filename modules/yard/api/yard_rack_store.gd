@@ -12,38 +12,55 @@ extends RefCounted
 ##   COMPONENT  pallet racking: boxes, valves, cabinets, batteries, gyros on the decks
 ##   HEAVY      floor cradles under the gantry: engines, tanks, reactors, one to a cradle
 ##   var store := YardRackStore.new(); store.fill_demo()
-##   var slot := store.store("tank_large", 1)   # where a delivery goes
+##   var slot := store.store("FuelTank", 1)   # where a delivery goes
 ##   store.take(slot, 1)                         # a bot takes one out to the yard
 
 enum { LONG, PLATE, COMPONENT, HEAVY }
 
 const KIND_NAMES: PackedStringArray = ["long", "plate", "component", "heavy"]
 
-## The parts the stores keep: id -> {name, kind (rack), size (m, as it lies: x across the rack,
-## y up, z along it), stack (how many to one place)}. RackingHall draws each one.
+## The parts the stores keep, by Void Salvage part_name (VsParts: the same part in both games,
+## drawn by Void Salvage's own code): id -> {name, kind (rack), size (m, as it lies: x across
+## the rack, y up, z along it), stack (how many to one place)}. RackingHall draws each one.
 const PARTS := {
-	"box_beam_6": {"name": "Box beam 6 m", "kind": LONG, "size": Vector3(0.2, 0.24, 6.0), "stack": 6},
-	"girder_4": {"name": "Frame girder 4 m", "kind": LONG, "size": Vector3(0.16, 0.2, 4.0), "stack": 8},
-	"pipe_4": {"name": "Pipe 4 m", "kind": LONG, "size": Vector3(0.18, 0.18, 4.0), "stack": 10},
-	"pipe_big_5": {"name": "Main pipe 5 m", "kind": LONG, "size": Vector3(0.36, 0.36, 5.0), "stack": 4},
-	"hull_plate": {"name": "Hull plate 1.5x2.5", "kind": PLATE, "size": Vector3(1.5, 0.03, 2.5), "stack": 12},
-	"deck_plate": {"name": "Deck plate 1.2x2.4", "kind": PLATE, "size": Vector3(1.2, 0.04, 2.4), "stack": 10},
-	"armour_slab": {"name": "Armour slab 2x2.8", "kind": PLATE, "size": Vector3(2.0, 0.18, 2.8), "stack": 4},
-	"radiator": {"name": "Radiator 2.8 m", "kind": PLATE, "size": Vector3(1.2, 0.16, 2.8), "stack": 4},
-	"junction_box": {"name": "Junction box", "kind": COMPONENT, "size": Vector3(0.4, 0.3, 0.2), "stack": 8},
-	"valve": {"name": "Valve", "kind": COMPONENT, "size": Vector3(0.2, 0.2, 0.12), "stack": 10},
-	"switch_cabinet": {"name": "Switch cabinet", "kind": COMPONENT, "size": Vector3(0.7, 1.4, 0.35), "stack": 2},
-	"battery_rack": {"name": "Battery rack", "kind": COMPONENT, "size": Vector3(1.2, 1.4, 0.5), "stack": 1},
-	"heat_sink": {"name": "Heat sink", "kind": COMPONENT, "size": Vector3(0.84, 1.0, 0.32), "stack": 2},
-	"gyroscope": {"name": "Gyroscope", "kind": COMPONENT, "size": Vector3(1.0, 1.0, 1.0), "stack": 1},
-	"capacitor_bank": {"name": "Capacitor bank", "kind": COMPONENT, "size": Vector3(1.6, 1.4, 0.7), "stack": 1},
-	"generator": {"name": "Generator", "kind": COMPONENT, "size": Vector3(1.4, 1.2, 0.9), "stack": 1},
-	"engine_bell": {"name": "Engine bell", "kind": HEAVY, "size": Vector3(1.9, 1.9, 1.9), "stack": 1},
-	"hydrogen_engine": {"name": "Hydrogen engine", "kind": HEAVY, "size": Vector3(2.5, 2.5, 2.2), "stack": 1},
-	"turbine_engine": {"name": "Turbine engine", "kind": HEAVY, "size": Vector3(2.2, 2.2, 1.7), "stack": 1},
-	"thruster_pod": {"name": "Thruster pod", "kind": HEAVY, "size": Vector3(1.4, 1.2, 1.8), "stack": 2},
-	"tank_large": {"name": "Tank 1.2x3", "kind": HEAVY, "size": Vector3(1.3, 1.3, 3.0), "stack": 1},
-	"reactor": {"name": "Reactor", "kind": HEAVY, "size": Vector3(2.0, 2.2, 2.0), "stack": 1},
+	"BoxBeam": {"name": "Box beam 6 m", "kind": LONG, "size": Vector3(0.21, 0.24, 6.0), "stack": 6},
+	"Girder": {"name": "Girder 4 m", "kind": LONG, "size": Vector3(0.16, 0.2, 4.0), "stack": 8},
+	"Pipe": {"name": "Pipe 4 m", "kind": LONG, "size": Vector3(0.22, 0.22, 4.0), "stack": 10},
+	"BigPipe": {"name": "Big pipe 5 m", "kind": LONG, "size": Vector3(0.43, 0.43, 5.0), "stack": 4},
+	"HullPlate": {"name": "Hull plate 1.5x2.5", "kind": PLATE, "size": Vector3(1.5, 0.06, 2.5), "stack": 12},
+	"DeckPlate": {"name": "Deck plate 1.2x2.4", "kind": PLATE, "size": Vector3(1.2, 0.04, 2.4), "stack": 10},
+	"ArmourSlab": {"name": "Armour slab 2x2.8", "kind": PLATE, "size": Vector3(2.0, 0.2, 2.8), "stack": 4},
+	"Radiator": {"name": "Radiator 2.8 m", "kind": PLATE, "size": Vector3(1.2, 0.18, 2.8), "stack": 4},
+	"SolarPanel": {"name": "Solar panel 1.6x3", "kind": PLATE, "size": Vector3(1.61, 0.07, 3.0), "stack": 8},
+	"JunctionBox": {"name": "Junction box", "kind": COMPONENT, "size": Vector3(0.22, 0.34, 0.4), "stack": 8},
+	"FuelValve": {"name": "Valve", "kind": COMPONENT, "size": Vector3(0.06, 0.22, 0.17), "stack": 10},
+	"SwitchCabinet": {"name": "Switch cabinet", "kind": COMPONENT, "size": Vector3(0.48, 1.4, 0.72), "stack": 2},
+	"BatteryRack": {"name": "Battery rack", "kind": COMPONENT, "size": Vector3(0.51, 1.4, 1.2), "stack": 1},
+	"HeatSink": {"name": "Heat sink", "kind": COMPONENT, "size": Vector3(0.32, 1.0, 0.91), "stack": 2},
+	"Gyroscope": {"name": "Gyroscope", "kind": COMPONENT, "size": Vector3(1.04, 1.0, 1.04), "stack": 1},
+	"CapacitorBank": {"name": "Capacitor bank", "kind": COMPONENT, "size": Vector3(0.71, 1.4, 1.4), "stack": 1},
+	"Generator": {"name": "Generator", "kind": COMPONENT, "size": Vector3(0.9, 1.2, 1.4), "stack": 1},
+	"PilotConsole": {"name": "Pilot console", "kind": COMPONENT, "size": Vector3(0.71, 1.01, 1.81), "stack": 1},
+	"SideConsole": {"name": "Side console", "kind": COMPONENT, "size": Vector3(0.61, 1.01, 1.01), "stack": 2},
+	"Antenna": {"name": "Antenna", "kind": COMPONENT, "size": Vector3(1.21, 1.59, 1.21), "stack": 1},
+	"SideThruster": {"name": "Side thruster", "kind": COMPONENT, "size": Vector3(0.41, 0.84, 0.6), "stack": 2},
+	"IonThruster": {"name": "Ion thruster", "kind": COMPONENT, "size": Vector3(0.8, 1.2, 0.8), "stack": 2},
+	"LiftThruster": {"name": "Lift thruster", "kind": COMPONENT, "size": Vector3(1.21, 0.61, 1.21), "stack": 2},
+	"Seat": {"name": "Seat", "kind": COMPONENT, "size": Vector3(0.53, 1.19, 0.6), "stack": 2},
+	"MainThruster": {"name": "Main thruster", "kind": HEAVY, "size": Vector3(1.87, 1.8, 1.87), "stack": 1},
+	"HydrogenEngine": {"name": "Hydrogen engine", "kind": HEAVY, "size": Vector3(2.4, 2.0, 2.4), "stack": 1},
+	"TurbineEngine": {"name": "Turbine engine", "kind": HEAVY, "size": Vector3(2.0, 1.6, 2.0), "stack": 1},
+	"FuelTank": {"name": "Fuel tank", "kind": HEAVY, "size": Vector3(1.23, 2.8, 1.25), "stack": 1},
+	"SideTank": {"name": "Side tank", "kind": HEAVY, "size": Vector3(1.24, 2.4, 1.25), "stack": 1},
+	"Reactor": {"name": "Reactor", "kind": HEAVY, "size": Vector3(1.77, 2.0, 1.77), "stack": 1},
+	"ReactorCore": {"name": "Reactor core", "kind": HEAVY, "size": Vector3(1.46, 2.46, 2.03), "stack": 1},
+	"Assembler": {"name": "Assembler", "kind": HEAVY, "size": Vector3(1.27, 1.81, 1.67), "stack": 1},
+	"MedStation": {"name": "Med station", "kind": HEAVY, "size": Vector3(0.59, 2.2, 1.6), "stack": 1},
+	"Bunk": {"name": "Bunk", "kind": HEAVY, "size": Vector3(0.91, 1.9, 2.03), "stack": 1},
+	"Locker": {"name": "Locker", "kind": HEAVY, "size": Vector3(0.54, 1.9, 0.81), "stack": 2},
+	"CrashSeat": {"name": "Crash seat", "kind": HEAVY, "size": Vector3(0.6, 1.9, 0.65), "stack": 2},
+	"Workbench": {"name": "Workbench", "kind": HEAVY, "size": Vector3(0.82, 1.95, 2.0), "stack": 1},
+	"GalleyCounter": {"name": "Galley counter", "kind": HEAVY, "size": Vector3(0.65, 1.95, 3.0), "stack": 1},
 }
 
 ## The hall's two storeys (0.4.1 playtest: "add another layer to the storage hall, same size so

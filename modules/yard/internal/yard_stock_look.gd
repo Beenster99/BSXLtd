@@ -1,11 +1,13 @@
 extends RefCounted
-## What each part the stores keep looks like: Void Salvage's own part shapes (WreckParts,
-## FrameParts, PartShapes in shared/void_salvage), the same parts the ships are built from, so
-## the racks hold beams, plates, cabinets and engines, never crates. Each comes laid as it
+## What each part the stores keep looks like: Void Salvage's own parts (VsParts: its builders,
+## mostly the components modelled in Blender, on its salvage surface), the same parts a Void
+## Salvage crew strips from a wreck and the yard fits, so the racks hold beams, plates,
+## cabinets and engines, never crates. Each comes laid as it
 ## rests on a rack: its long side along z, a plate flat, its bottom on y = 0, its middle over
 ## the origin. Built once, cached.
 
-## part id -> {mesh, glow (or null), glow_colour, rest (Transform3D), size (as it rests, m)}.
+## part id -> {mesh, glow (or null), glow_colour, layers ([{mesh, material}]: body, glass,
+## lit details), rest (Transform3D), size (as it rests, m)}.
 static var _looks: Dictionary = {}
 static var _mats: Dictionary = {}
 
@@ -17,34 +19,15 @@ static func look(part: String) -> Dictionary:
 
 
 static func shape_of(part: String) -> PartShapes.PartShape:
-	match part:
-		"box_beam_6": return PartShapes.girder(6.0, 0.2, 0.24)
-		"girder_4": return PartShapes.i_beam(4.0, 0.16, 0.2)
-		"pipe_4": return WreckParts.pipe(0.08, 4.0)
-		"pipe_big_5": return WreckParts.pipe(0.16, 5.0)
-		"hull_plate": return FrameParts.rect(1.5, 2.5)
-		"deck_plate": return PartShapes.inset_panel(1.2, 2.4, 0.04, 0.1)
-		"armour_slab": return WreckParts.armour_slab(2.0, 2.8)
-		"radiator": return WreckParts.radiator_grille(2.8, 1.2)
-		"junction_box": return WreckParts.junction_box()
-		"valve": return WreckParts.valve_body()
-		"switch_cabinet": return WreckParts.switch_cabinet()
-		"battery_rack": return WreckParts.battery_rack()
-		"heat_sink": return WreckParts.heat_sink()
-		"gyroscope": return WreckParts.gyroscope()
-		"capacitor_bank": return WreckParts.capacitor_bank(1.6, 1.4, 0.7)
-		"generator": return WreckParts.generator(Vector3(1.4, 1.2, 0.9))
-		"engine_bell": return WreckParts.engine_bell(0.9, 1.8)
-		"hydrogen_engine": return WreckParts.hydrogen_engine(1.2, 2.0)
-		"turbine_engine": return WreckParts.turbine_engine(1.0, 1.6)
-		"thruster_pod": return WreckParts.thruster_pod(1.2, 1.0, 1.6)
-		"tank_large": return WreckParts.tank(0.6, 2.8)
-		"reactor": return WreckParts.reactor(1.0, 2.0)
-	return PartShapes.box(Vector3.ONE * 0.5)
+	var shape := VsParts.shape(part)
+	return shape if shape != null else PartShapes.box(Vector3.ONE * 0.5)
 
 
-## The part's body material (its vertex colours, a little metal) and its lit faces'.
-static func material() -> StandardMaterial3D:
+## The part's body material: Void Salvage's salvage surface (its paint, finish zones and
+## detail maps, VsParts.surface); a plain one for a part it doesn't know.
+static func material(part := "") -> Material:
+	if VsParts.has(part):
+		return VsParts.surface(part)
 	if not _mats.has("body"):
 		var m := StandardMaterial3D.new()
 		m.vertex_color_use_as_albedo = true
@@ -55,16 +38,13 @@ static func material() -> StandardMaterial3D:
 
 
 static func glow_material(c: Color) -> StandardMaterial3D:
-	var key := c.to_html()
-	if not _mats.has(key):
-		var m := StandardMaterial3D.new()
-		m.albedo_color = c
-		m.emission_enabled = true
-		m.emission = c
-		m.emission_energy_multiplier = 2.0
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_mats[key] = m
-	return _mats[key]
+	return VsParts.glow_material(c)
+
+
+## Every mesh the part draws with its material, as Void Salvage draws it: the body on its
+## surface, its glass, its lit details (screens, lamps, a thruster's glow) each in its colour.
+static func layers(part: String) -> Array:
+	return look(part).layers
 
 
 static func _make(part: String) -> Dictionary:
@@ -88,7 +68,16 @@ static func _make(part: String) -> Dictionary:
 		basis = Basis(Vector3.UP, PI * 0.5)
 	var laid := Transform3D(basis, Vector3.ZERO) * box
 	var rest := Transform3D(basis, Vector3(-laid.get_center().x, -laid.position.y, -laid.get_center().z))
+	var drawn: Array = [{"mesh": shape.mesh, "material": material(part)}]
+	if shape.glass != null:
+		drawn.append({"mesh": shape.glass, "material": Glazing.material(shape.glass_kind)})
+	if not shape.emissives.is_empty():
+		for e: Dictionary in shape.emissives:
+			drawn.append({"mesh": e["mesh"], "material": glow_material(e.get("color", shape.glow_color)), "lit": true})
+	elif shape.glow != null:
+		drawn.append({"mesh": shape.glow, "material": glow_material(shape.glow_color), "lit": true})
 	return {
+		"layers": drawn,
 		"mesh": shape.mesh,
 		"glow": shape.glow,
 		"glow_colour": shape.glow_color,
