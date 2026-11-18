@@ -51,6 +51,8 @@ func set_room_view(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if furnishing.is_walking():
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_TAB:
 			set_room_view(not room_view)

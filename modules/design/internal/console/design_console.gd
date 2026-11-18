@@ -8,6 +8,8 @@ extends Control
 ## Page Up / Page Down change deck.
 
 signal leave_requested
+## WALK INSIDE: walk through the open design at full size (DesignFurnishing.open_walk).
+signal walk_requested
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
@@ -127,6 +129,10 @@ func _top_bar() -> Control:
 		var b := T.button(PlanView._m(g) + " m", false, 16)
 		b.pressed.connect(func() -> void: bus.editor.do({"op": "set_meta", "fields": {"grid": g}}))
 		h.add_child(b)
+	var walk := T.button("WALK INSIDE", true, 17)
+	walk.name = "BtnWalkInside"
+	walk.pressed.connect(func() -> void: walk_requested.emit())
+	h.add_child(walk)
 	var leave := T.button("LEAVE", false, 17)
 	leave.pressed.connect(func() -> void: leave_requested.emit())
 	h.add_child(leave)
