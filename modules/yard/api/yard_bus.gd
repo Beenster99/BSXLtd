@@ -54,6 +54,9 @@ func register_module() -> void:
 	Keys.register("yard.dampeners", "Suit dampeners on / off", KEY_Z, "Orbital yard")
 	Keys.register("yard.lamp", "Helmet lamp", KEY_L, "Orbital yard")
 	Keys.register("yard.view", "First / third person", KEY_V, "Orbital yard")
+	for i in 4:
+		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (grinder, cutter, socket, grabber)" % (i + 1), KEY_1 + i, "Orbital yard")
+	Keys.register("yard.holster", "Put the tool away", KEY_H, "Orbital yard")
 	for view: String in ["station_outside", "corridor", "design_room", "design_window", "racking_front",
 			"racking_aisle", "contracts", "crew", "airlock"]:
 		Shots.register("yard_" + view, SCENE, func(scene: Node) -> void: scene.call("show_view", view))
