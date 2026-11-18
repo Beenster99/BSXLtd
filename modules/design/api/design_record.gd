@@ -18,7 +18,15 @@ extends RefCounted
 ##   {op = "add_component", component = {id?, type, room, x, z, rot?}}
 ##   {op = "set_component", id, fields = {...}}
 ##   {op = "remove_component", id}
-##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?}}
+##   {op = "add_run", run = {id?, kind, deck, points = [[x, z], ...]}}   # a wire or pipe
+##   {op = "set_run", id, fields = {...}}
+##   {op = "remove_run", id}
+##   {op = "add_layer", layer = {id?, name, visible?, order?}}   # a whiteboard layer
+##   {op = "set_layer", id, fields = {name?, visible?, order?}}
+##   {op = "remove_layer", id}           # its strokes go with it
+##   {op = "add_stroke", stroke = {id?, layer, tool, colour, width, points = [[x, y], ...]}}
+##   {op = "remove_stroke", id}
+##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?, structure? (merged)}}
 ##   {op = "batch", ops = [...]}         # applied in order, undone in reverse
 ## The undo of a remove re-adds what was removed with its old id, so ids stay stable.
 
@@ -41,6 +49,18 @@ var rooms: Dictionary = {}
 var doors: Dictionary = {}
 ## component id -> {id, type, room, x, z, rot}
 var components: Dictionary = {}
+## run id -> {id, kind ("wire", "fuel"...: DesignServices.KINDS), deck, points: [[x, z], ...]}
+## A wire or pipe on one deck, a line through its points; runs meet where they touch, and
+## carry on to the deck above or below where one ends over the other's end (a riser).
+var runs: Dictionary = {}
+## How the hull is built round the rooms (DesignStructure.OPTIONS): frame weight, frame
+## spacing (m), outer hull plating and inner walls.
+var structure := {"frame": "standard", "spacing": 2.0, "hull": "standard", "inner": "panel"}
+## The design's whiteboard (Whiteboard view): layer id -> {id, name, visible, order}, drawn
+## lowest order first, and stroke id -> {id, layer, tool ("pen", "marker", "line", "box"),
+## colour (html), width (board units), points: [[x, y], ...]} in board units (Whiteboard.BOARD).
+var sketch_layers: Dictionary = {}
+var strokes: Dictionary = {}
 var _next := 1
 
 
@@ -90,6 +110,49 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _set_fields(components, str(op.get("id", "")), op.get("fields", {}), "set_component")
 		"remove_component":
 			return _remove_entry(components, str(op.get("id", "")), "component", "add_component")
+		"add_run":
+			var run: Dictionary = op.get("run", {}).duplicate(true)
+			var pts: Array = []
+			for p: Variant in run.get("points", []):
+				pts.append([float(p[0]), float(p[1])])
+			if pts.size() < 2 or str(run.get("kind", "")) == "":
+				return {}
+			run["points"] = pts
+			run["deck"] = int(run.get("deck", 0))
+			return _add_entry(runs, run, "w", "run", "remove_run")
+		"set_run":
+			return _set_fields(runs, str(op.get("id", "")), op.get("fields", {}), "set_run")
+		"remove_run":
+			return _remove_entry(runs, str(op.get("id", "")), "run", "add_run")
+		"add_layer":
+			var layer: Dictionary = op.get("layer", {}).duplicate()
+			layer["name"] = str(layer.get("name", "Layer"))
+			layer["visible"] = bool(layer.get("visible", true))
+			if not layer.has("order"):
+				var top := -1
+				for l: Dictionary in sketch_layers.values():
+					top = maxi(top, int(l.order))
+				layer["order"] = top + 1
+			layer["order"] = int(layer.order)
+			return _add_entry(sketch_layers, layer, "l", "layer", "remove_layer")
+		"set_layer":
+			return _set_fields(sketch_layers, str(op.get("id", "")), op.get("fields", {}), "set_layer")
+		"remove_layer":
+			return _remove_layer(str(op.get("id", "")))
+		"add_stroke":
+			var k: Dictionary = op.get("stroke", {}).duplicate(true)
+			var spts: Array = []
+			for p: Variant in k.get("points", []):
+				spts.append([float(p[0]), float(p[1])])
+			if spts.is_empty() or not sketch_layers.has(str(k.get("layer", ""))):
+				return {}
+			k["points"] = spts
+			k["tool"] = str(k.get("tool", "pen"))
+			k["colour"] = str(k.get("colour", "ffffff"))
+			k["width"] = float(k.get("width", 4.0))
+			return _add_entry(strokes, k, "k", "stroke", "remove_stroke")
+		"remove_stroke":
+			return _remove_entry(strokes, str(op.get("id", "")), "stroke", "add_stroke")
 		"set_meta":
 			return _set_meta(op.get("fields", {}))
 		"batch":
@@ -135,6 +198,27 @@ func _remove_room(room_id: String) -> Dictionary:
 	return {"op": "batch", "ops": undos}
 
 
+func _remove_layer(layer_id: String) -> Dictionary:
+	if not sketch_layers.has(layer_id):
+		return {}
+	var undos: Array = []
+	for k: Dictionary in strokes.values().duplicate():
+		if str(k.layer) == layer_id:
+			undos.push_front(_apply({"op": "remove_stroke", "id": k.id}))
+	undos.push_front({"op": "add_layer", "layer": sketch_layers[layer_id].duplicate()})
+	sketch_layers.erase(layer_id)
+	return {"op": "batch", "ops": undos}
+
+
+## Whiteboard layers, lowest first.
+func layers_in_order() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for l: Dictionary in sketch_layers.values():
+		out.append(l)
+	out.sort_custom(func(a, b): return int(a.order) < int(b.order))
+	return out
+
+
 func _add_entry(table: Dictionary, entry: Dictionary, prefix: String, _key: String,
 		undo_op: String) -> Dictionary:
 	var e := entry.duplicate()
@@ -152,7 +236,7 @@ func _remove_entry(table: Dictionary, eid: String, key: String, undo_op: String)
 		return {}
 	var old: Dictionary = table[eid]
 	table.erase(eid)
-	return {"op": undo_op, key: old.duplicate()}
+	return {"op": undo_op, key: old.duplicate(true)}
 
 
 func _set_fields(table: Dictionary, eid: String, fields: Dictionary, op_name: String) -> Dictionary:
@@ -184,7 +268,17 @@ func _set_meta(fields: Dictionary) -> Dictionary:
 			"deck_height":
 				old.deck_height = deck_height
 				deck_height = maxf(float(fields.deck_height), 2.0)
+			"structure":
+				old.structure = structure.duplicate()
+				for k2 in (fields.structure as Dictionary):
+					structure[k2] = fields.structure[k2]
 	return {} if old.is_empty() else {"op": "set_meta", "fields": old}
+
+
+## The id the next new entry with `prefix` will get (for ops that name what they add, so later
+## ops in the same batch can point at it).
+func peek_id(prefix: String) -> String:
+	return "%s%d" % [prefix, _next]
 
 
 func _new_id(prefix: String) -> String:
@@ -284,6 +378,8 @@ func to_dict() -> Dictionary:
 		"format": FORMAT, "id": id, "name": name, "notes": notes, "grid": grid,
 		"deck_height": deck_height, "next": _next,
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
+		"runs": _sorted(runs), "structure": structure.duplicate(),
+		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
 	}
 
 
@@ -304,8 +400,23 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		var comp := c.duplicate()
 		comp.rot = int(comp.get("rot", 0))
 		d.components[str(comp.id)] = comp
+	for w: Dictionary in data.get("runs", []):
+		var run := w.duplicate(true)
+		run.deck = int(run.get("deck", 0))
+		d.runs[str(run.id)] = run
+	for l: Dictionary in data.get("sketch_layers", []):
+		var layer := l.duplicate()
+		layer.order = int(layer.get("order", 0))
+		layer.visible = bool(layer.get("visible", true))
+		d.sketch_layers[str(layer.id)] = layer
+	for k: Dictionary in data.get("strokes", []):
+		d.strokes[str(k.id)] = k.duplicate(true)
+	var st: Dictionary = data.get("structure", {})
+	for k in st:
+		d.structure[k] = st[k]
+	d.structure.spacing = float(d.structure.spacing)
 	d._next = int(data.get("next", 1))
-	for table: Dictionary in [d.rooms, d.doors, d.components]:
+	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes]:
 		for eid: String in table:
 			d._bump_next(eid)
 	return d
@@ -323,5 +434,5 @@ func _sorted(table: Dictionary) -> Array:
 	keys.sort_custom(func(a, b): return str(a).naturalnocasecmp_to(str(b)) < 0)
 	var out: Array = []
 	for k in keys:
-		out.append(table[k].duplicate())
+		out.append(table[k].duplicate(true))
 	return out

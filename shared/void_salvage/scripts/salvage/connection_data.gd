@@ -243,6 +243,24 @@ func seam_near_ray(origin: Vector3, dir: Vector3, length: float) -> Array:
 	return [pair[0], pair[1], pair[0].distance_to(pair[1])]
 
 
+## (FS2) Where a ray from `origin` along `dir` (structure space, unit, `length` long) meets the seam's face: the plane
+## through the seam square to its plate (`local_normal` across the seam, `seam_up` along it). [the seam's point nearest
+## where the ray meets the face, that meeting point, how far apart they lie across the face]. Measured on the face, not
+## in 3D, so a plate's thickness or a slanting look does not throw the aim off a bead it is on. A ray running along
+## the face (or meeting it out of `length`) falls back to `seam_near_ray`.
+func seam_on_face(origin: Vector3, dir: Vector3, length: float) -> Array:
+	var up := seam_up.normalized()
+	var face := local_normal.cross(up).normalized()
+	var facing := dir.dot(face)
+	if absf(facing) > 0.15:
+		var t := (local_position - origin).dot(face) / facing
+		if t >= 0.0 and t <= length:
+			var at := origin + dir * t
+			var on := seam_point(seam_along(at))
+			return [on, at, on.distance_to(at)]
+	return seam_near_ray(origin, dir, length)
+
+
 ## (FS2) Grinds the cells within `reach` metres of `u` (metres from the middle) down by `amount` each (a share of a
 ## cell); returns the share of the whole seam taken off (0..1). Health follows (the mean of what is left), so a
 ## seam ground to its last cell breaks; damage from anything else (load, a blast) still comes off health alone.

@@ -5,10 +5,8 @@ extends RefCounted
 ## contract's demands. Recomputed from the record in a few milliseconds, so every view calls
 ## compute() after each change rather than keeping running sums.
 
-## The hull and frame round each room, per m2 of floor: frame, outer plates, deck.
-const HULL_COST_PER_M2 := 650.0
-const HULL_MASS_PER_M2 := 180.0
-const HULL_HOURS_PER_M2 := 2.0
+## The hull round the rooms (frame, outer plating, inner walls, decks) is priced from
+## DesignStructure; wires and pipes from DesignServices.KINDS, per m.
 
 var floor_area := 0.0
 var volume := 0.0
@@ -24,7 +22,8 @@ var cargo_m3 := 0.0
 var fuel_m3 := 0.0
 ## Longest supplier wait among the parts, days.
 var lead_days := 0
-## Parts list: [{kind: "room"|"component"|"hull", id, name, qty, unit, cost, mass, hours}]
+## Parts list: [{kind: "hull"|"room"|"component"|"service", id, name, qty, unit, cost, mass, hours}]
+## Hull lines come first.
 var lines: Array[Dictionary] = []
 
 
@@ -50,9 +49,18 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 		t.cargo_m3 += area * d.deck_height * rt.cargo_share
 		t.fuel_m3 += area * d.deck_height * rt.fuel_share
 	if t.floor_area > 0.0:
-		t.lines.append({"kind": "hull", "id": "hull", "name": "Hull, frame and decks",
-				"qty": t.floor_area, "unit": "m2", "cost": t.floor_area * HULL_COST_PER_M2,
-				"mass": t.floor_area * HULL_MASS_PER_M2, "hours": t.floor_area * HULL_HOURS_PER_M2})
+		var st := DesignStructure.measure(d)
+		var spec := d.structure
+		for row: Array in [["frame", DesignStructure.option("frame", str(spec.frame)), st.frame_m, "m"],
+				["hull", DesignStructure.option("hull", str(spec.hull)), st.outer_area, "m2"],
+				["inner", DesignStructure.option("inner", str(spec.inner)), st.inner_area, "m2"],
+				["deck", DesignStructure.DECK, st.floor_area, "m2"]]:
+			var o: Dictionary = row[1]
+			var qty: float = row[2]
+			if qty <= 0.0:
+				continue
+			t.lines.append({"kind": "hull", "id": row[0], "name": o.name, "qty": qty, "unit": row[3],
+					"cost": qty * float(o.cost), "mass": qty * float(o.mass), "hours": qty * float(o.hours)})
 	var keys := room_lines.keys()
 	keys.sort()
 	for k in keys:
@@ -80,6 +88,16 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 	keys.sort()
 	for k in keys:
 		t.lines.append(part_lines[k])
+	var run_m := {}
+	for w: Dictionary in d.runs.values():
+		if DesignServices.KINDS.has(str(w.kind)):
+			run_m[str(w.kind)] = float(run_m.get(str(w.kind), 0.0)) + DesignServices.length(w)
+	for kind: String in DesignServices.KINDS:
+		if run_m.has(kind):
+			var k2: Dictionary = DesignServices.KINDS[kind]
+			var m: float = run_m[kind]
+			t.lines.append({"kind": "service", "id": kind, "name": k2.name, "qty": m, "unit": "m",
+					"cost": m * float(k2.cost), "mass": m * float(k2.mass), "hours": m * float(k2.hours)})
 	for line in t.lines:
 		t.cost += line.cost
 		t.mass += line.mass

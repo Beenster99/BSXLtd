@@ -8,10 +8,12 @@ extends PanelContainer
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
 const DataChannel := preload("res://modules/design/internal/views/data_channel.gd")
+const Whiteboard := preload("res://modules/design/internal/views/whiteboard.gd")
 
 ## Every view a panel can show, in the order < and > step through. "plan:<deck>" for decks.
-const BASE_VIEWS: PackedStringArray = ["side", "end", "data"]
-const VIEW_NAMES := {"side": "SIDE ELEVATION", "end": "END ELEVATION", "data": "PARTS, COST AND CHECKS"}
+const BASE_VIEWS: PackedStringArray = ["side", "end", "data", "modules", "whiteboard"]
+const VIEW_NAMES := {"side": "SIDE ELEVATION", "end": "END ELEVATION", "data": "PARTS, COST AND CHECKS",
+		"modules": "READY-MADE MODULES", "whiteboard": "WHITEBOARD"}
 ## Decks offered even before the design has them (so a panel can wait on deck 2).
 const MIN_DECKS := 2
 
@@ -78,7 +80,7 @@ func set_view(i: int, view: String) -> void:
 	_fill(i)
 
 
-## The control panel `i` shows now (a PlanView or a DataChannel).
+## The control panel `i` shows now (a PlanView, a DataChannel, a Whiteboard or the modules).
 func content(i: int) -> Control:
 	var slot := _slots[i]
 	return slot.get_child(1) as Control if slot.get_child_count() > 1 else null
@@ -111,7 +113,13 @@ func _fill(i: int) -> void:
 	bar.add_child(next)
 	slot.add_child(head)
 	var body: Control
-	if view == "data":
+	if view == "modules":
+		body = _modules_list(font)
+	elif view == "whiteboard":
+		var wb := Whiteboard.new()
+		wb.setup(bus, font)
+		body = wb
+	elif view == "data":
 		var dc := DataChannel.new()
 		dc.setup(bus, false)
 		body = dc
@@ -127,6 +135,44 @@ func _fill(i: int) -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slot.add_child(body)
+
+
+## The ready-made modules as big buttons: press one to pick it up, then press a plan (on this
+## wall, another, or the table's) to drop it there.
+func _modules_list(font: int) -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", int(px_per_m * 0.06))
+	scroll.add_child(col)
+	var fill := func() -> void:
+		for c in col.get_children():
+			col.remove_child(c)
+			c.queue_free()
+		var mods := bus.library.modules()
+		if mods.is_empty():
+			col.add_child(T.label("No modules yet. At the table, select a room and SAVE AS MODULE.", "body", font, T.DIM))
+		for m in mods:
+			var carried: bool = bus.carrying == str(m.id)
+			var b := T.button(("CARRYING  " if carried else "") + str(m.name).to_upper()
+					+ "   %s x %s m   %d parts" % [_m(float(m.room.w)), _m(float(m.room.d)), (m.components as Array).size()],
+					carried, font)
+			b.name = "Module_" + str(m.id)
+			b.pressed.connect(func() -> void: bus.carry("" if bus.carrying == str(m.id) else str(m.id)))
+			col.add_child(b)
+	fill.call()
+	var on_carry := func(_id: String) -> void: fill.call()
+	bus.library.modules_changed.connect(fill)
+	bus.carry_changed.connect(on_carry)
+	scroll.tree_exiting.connect(func() -> void:
+		bus.library.modules_changed.disconnect(fill)
+		bus.carry_changed.disconnect(on_carry))
+	return scroll
+
+
+static func _m(v: float) -> String:
+	return ("%d" % int(v)) if is_equal_approx(v, roundf(v)) else ("%.1f" % v)
 
 
 func _refresh_titles() -> void:

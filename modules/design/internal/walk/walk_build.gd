@@ -1,0 +1,751 @@
+extends RefCounted
+## Builds the open design at full size for walk-inside mode, as near real as the design says
+## (beenster, 18 Nov: "plates, floors, walls, doors... the only thing that tells you that you
+## are in the hologram is a slight pale blue outline to some of the objects"):
+##   deck plates on every floor, lined walls with hull plating outside, frame ribs at the
+##   design's frame spacing and weight, ceiling beams and light panels, a lamp in each room,
+##   doorways with sliding doors, stairs with steps and a rail round the stairwell, and the
+##   parts as solid units. The parts, doors and stairs carry a faint pale blue outline.
+##
+## Everything you can aim at to design with carries meta "walk": {kind, ...} on its body:
+##   floor {room}, wall {deck, a, b, outer}, component {id}, door {id}.
+## Room space: ship metres, deck n's floor at n * deck_height (DesignRecord).
+
+const SURFACE := preload("res://shared/void_salvage/shaders/salvage_surface.gdshader")
+
+## The physics layer walk-inside alone uses (bit 20).
+const LAYER := 1 << 19
+## The visual layer of what faces space: the only thing walk-inside's sun lights.
+const EXTERIOR := 1 << 1
+## Wall core thickness and the lining on each face, m.
+const WALL := 0.14
+const LINING := 0.025
+## Floor (deck plate and its bed) thickness, m.
+const FLOOR := 0.1
+## A doorway: width and height, m.
+const DOOR_W := 1.2
+const DOOR_H := 2.2
+## Stairs: the flight's width at most, and the landing at its top, m.
+const RAMP_W := 1.2
+const LANDING := 1.0
+## Deck plates and wall panels, m.
+const PLATE := 1.0
+const PANEL := 1.2
+const HULL_PANEL := 2.0
+## Frame girder size by the design's frame weight: [width, depth], m.
+const GIRDERS := {"light": [0.1, 0.12], "standard": [0.14, 0.18], "heavy": [0.2, 0.26]}
+## The hologram's only tell.
+const OUTLINE := Color(0.62, 0.86, 1.0, 0.42)
+
+var catalog: DesignCatalog
+var root: Node3D
+var rec: DesignRecord
+## Built last time, for tests and the walker.
+var wall_pieces: Array[Dictionary] = []  # {deck, a, b, y0, y1, outer}
+var ramps: PackedStringArray = []
+## Sliding doors: {id, centre (Vector3), left, right (Node3D), dir (Vector3), half (m), open (0..1)}.
+var doors: Array[Dictionary] = []
+var lamps := 0
+var ribs := 0
+var _paints: Dictionary = {}
+var _outline: Array[Vector3] = []
+
+
+func _init(design_catalog: DesignCatalog) -> void:
+	catalog = design_catalog
+
+
+## Builds `record` under `parent` (cleared first).
+func build(record: DesignRecord, parent: Node3D) -> void:
+	rec = record
+	root = parent
+	for c in root.get_children():
+		root.remove_child(c)
+		c.queue_free()
+	wall_pieces.clear()
+	ramps.clear()
+	doors.clear()
+	_outline.clear()
+	lamps = 0
+	ribs = 0
+	if rec == null:
+		return
+	var stairs := stairwells(rec, catalog)
+	for r: Dictionary in rec.rooms.values():
+		_floor(r, stairs)
+		_ceiling(r, (ramp_plan(r).rect as Rect2) if stairs.has(str(r.id)) else Rect2())
+	var st := DesignStructure.measure(rec)
+	for e in st.outer_edges:
+		_wall(e, true)
+	for e in st.inner_edges:
+		_wall(e, false)
+	for low_id: String in stairs:
+		_stairs(rec.rooms[low_id], rec.rooms[stairs[low_id]])
+	_components()
+	_services()
+	_draw_outline()
+
+
+# Shared queries
+
+## Lower stairs room id -> the stairs room over it.
+static func stairwells(d: DesignRecord, cat: DesignCatalog) -> Dictionary:
+	var out := {}
+	for r: Dictionary in d.rooms.values():
+		var rt := cat.room(str(r.type))
+		if rt == null or not rt.links_decks:
+			continue
+		var rect := Rect2(r.x, r.z, r.w, r.d)
+		for u: Dictionary in d.rooms_on(int(r.deck) + 1):
+			var ut := cat.room(str(u.type))
+			if ut and ut.links_decks and Rect2(u.x, u.z, u.w, u.d).intersects(rect):
+				out[str(r.id)] = str(u.id)
+				break
+	return out
+
+
+## The flight in a stairs room: along its long side, against its start wall, climbing to a
+## landing at the far end.
+static func ramp_plan(r: Dictionary) -> Dictionary:
+	var along_z := float(r.d) >= float(r.w)
+	var length := (float(r.d) if along_z else float(r.w)) - LANDING
+	var across := float(r.w) if along_z else float(r.d)
+	var width := minf(RAMP_W, across * 0.5)
+	var foot := Rect2(r.x, r.z, width, length) if along_z else Rect2(r.x, r.z, length, width)
+	return {"rect": foot, "along_z": along_z, "length": length, "width": width}
+
+
+## `rect` with `hole` cut out, as up to four rectangles.
+static func minus(rect: Rect2, hole: Rect2) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	var h := hole.intersection(rect)
+	if not h.has_area():
+		out.append(rect)
+		return out
+	for cand in [
+		Rect2(rect.position.x, rect.position.y, rect.size.x, h.position.y - rect.position.y),
+		Rect2(rect.position.x, h.end.y, rect.size.x, rect.end.y - h.end.y),
+		Rect2(rect.position.x, h.position.y, h.position.x - rect.position.x, h.size.y),
+		Rect2(h.end.x, h.position.y, rect.end.x - h.end.x, h.size.y),
+	]:
+		if cand.size.x > 0.01 and cand.size.y > 0.01:
+			out.append(cand)
+	return out
+
+
+# Floors and ceilings
+
+func _floor(r: Dictionary, stairs: Dictionary) -> void:
+	var rect := Rect2(r.x, r.z, r.w, r.d)
+	var y := int(r.deck) * rec.deck_height
+	var hole := Rect2()
+	for low_id: String in stairs:
+		if stairs[low_id] == str(r.id):
+			hole = (ramp_plan(rec.rooms[low_id]).rect as Rect2).intersection(rect)
+	var covered := not rec.room_at(int(r.deck) - 1, rect.get_center()).is_empty()
+	var bed := paint(Color(0.2, 0.21, 0.23), "gunmetal")
+	var plate := paint(Color(0.46, 0.48, 0.5), "bare_steel")
+	var tiles: Array[Transform3D] = []
+	for p in minus(rect, hole):
+		# The bed: what you stand on (collision), its underside the hull where nothing is below.
+		var body := _body({"kind": "floor", "room": str(r.id), "deck": int(r.deck)})
+		body.position = Vector3(p.get_center().x, y - FLOOR * 0.5 - 0.01, p.get_center().y)
+		_box_in(body, Vector3(p.size.x, FLOOR - 0.02, p.size.y), bed if covered else paint(Color(0.5, 0.52, 0.55), "brushed_alloy"))
+		if not covered:
+			(body.get_child(0) as VisualInstance3D).layers = 1 | EXTERIOR
+		_shape_in(body, Vector3(p.size.x, FLOOR, p.size.y), Vector3(0, 0.01, 0))
+		# Deck plates on top, with a hair of a seam between them.
+		var x := p.position.x
+		while x < p.end.x - 0.01:
+			var x1 := minf(snappedf(x + PLATE, PLATE) if not is_equal_approx(fmod(x, PLATE), 0.0) else x + PLATE, p.end.x)
+			var z := p.position.y
+			while z < p.end.y - 0.01:
+				var z1 := minf(snappedf(z + PLATE, PLATE) if not is_equal_approx(fmod(z, PLATE), 0.0) else z + PLATE, p.end.y)
+				tiles.append(Transform3D(Basis.from_scale(Vector3(x1 - x - 0.01, 0.018, z1 - z - 0.01)),
+						Vector3((x + x1) * 0.5, y - 0.009, (z + z1) * 0.5)))
+				z = z1
+			x = x1
+	_multi("DeckPlates_" + str(r.id), tiles, plate)
+
+
+## `hole`: the stairwell's opening up through this room's ceiling (none if empty).
+func _ceiling(r: Dictionary, hole: Rect2) -> void:
+	var rect := Rect2(r.x, r.z, r.w, r.d)
+	var top := (int(r.deck) + 1) * rec.deck_height - FLOOR
+	var spec: Array = GIRDERS.get(str(rec.structure.get("frame", "standard")), GIRDERS.standard)
+	var gh: float = spec[1]
+	var under := top - gh
+	# Ceiling panels between the beams.
+	var panels: Array[Transform3D] = []
+	for piece in minus(rect, hole):
+		var x := piece.position.x
+		while x < piece.end.x - 0.01:
+			var x1 := minf(x + PANEL, piece.end.x)
+			panels.append(Transform3D(Basis.from_scale(Vector3(x1 - x - 0.012, 0.02, piece.size.y - 0.02)),
+					Vector3((x + x1) * 0.5, under - 0.01, piece.get_center().y)))
+			x = x1
+	_multi("Ceiling_" + str(r.id), panels, paint(Color(0.62, 0.64, 0.65), "satin_paint"))
+	# A roof of hull plate where no room stands over this one.
+	if rec.room_at(int(r.deck) + 1, rect.get_center()).is_empty():
+		var roof := MeshInstance3D.new()
+		roof.name = "Roof_" + str(r.id)
+		roof.mesh = _box_mesh(Vector3(rect.size.x, FLOOR - 0.02, rect.size.y))
+		roof.material_override = paint(Color(0.5, 0.52, 0.55), "brushed_alloy")
+		roof.position = Vector3(rect.get_center().x, top + FLOOR * 0.5, rect.get_center().y)
+		roof.layers = EXTERIOR
+		root.add_child(roof)
+	# Beams across the short way at the frame spacing, from the frame's grid.
+	var spacing := maxf(float(rec.structure.get("spacing", 2.0)), 0.5)
+	var across_x := rect.size.x <= rect.size.y
+	var from := rect.position.y if across_x else rect.position.x
+	var to := rect.end.y if across_x else rect.end.x
+	var s := ceilf((from + 0.2) / spacing) * spacing
+	var gw: float = spec[0]
+	while s < to - 0.2 and not hole.has_area():
+		var a := Vector3(rect.position.x, top - gh * 0.5, s) if across_x else Vector3(s, top - gh * 0.5, rect.position.y)
+		var b := Vector3(rect.end.x, top - gh * 0.5, s) if across_x else Vector3(s, top - gh * 0.5, rect.end.y)
+		_girder(a, b, gw, gh, Vector3.UP)
+		s += spacing
+	# Light panels and the room's lamp.
+	var glow := _glow(Color(1.0, 0.96, 0.88))
+	var n := maxi(int(rect.size.length() / 4.0), 1)
+	for i in n:
+		var t := (i + 0.5) / n
+		var at := rect.position + rect.size * t if n > 1 else rect.get_center()
+		var lp := MeshInstance3D.new()
+		lp.mesh = _box_mesh(Vector3(1.2, 0.03, 0.3) if across_x else Vector3(0.3, 0.03, 1.2))
+		lp.material_override = glow
+		lp.position = Vector3(at.x, under - 0.035, at.y)
+		root.add_child(lp)
+	var lamp := OmniLight3D.new()
+	lamp.name = "Lamp_" + str(r.id)
+	lamp.position = Vector3(rect.get_center().x, under - 0.3, rect.get_center().y)
+	lamp.omni_range = maxf(rect.size.length() * 0.75, 3.5) + 1.5
+	# Small rooms get a gentler lamp: their walls are close to it.
+	lamp.light_energy = clampf(rect.get_area() / 24.0, 0.35, 0.9)
+	lamp.light_color = Color(1.0, 0.95, 0.88)
+	lamp.shadow_enabled = false
+	root.add_child(lamp)
+	lamps += 1
+
+
+# Walls, frames and doors
+
+## One wall stretch on one deck, with a doorway wherever a door stands on it.
+func _wall(e: Dictionary, outer: bool) -> void:
+	var a: Vector2 = e.a
+	var b: Vector2 = e.b
+	var deck := int(e.deck)
+	var y0 := deck * rec.deck_height
+	var y1 := y0 + rec.deck_height - FLOOR
+	var length := a.distance_to(b)
+	if length < 0.01:
+		return
+	var dir := (b - a) / length
+	var normal := Vector2(-dir.y, dir.x)
+	# Which faces are inside a room.
+	var mid := (a + b) * 0.5
+	var inside_pos := not rec.room_at(deck, mid + normal * 0.1).is_empty()
+	var inside_neg := not rec.room_at(deck, mid - normal * 0.1).is_empty()
+	var gaps: Array[Dictionary] = []
+	for d: Dictionary in rec.doors.values():
+		if int(d.deck) != deck or outer != (str(d.b) == ""):
+			continue
+		var at := Vector2(float(d.x), float(d.z))
+		var t := (at - a).dot(dir)
+		if t < -0.01 or t > length + 0.01 or (a + dir * t).distance_to(at) > 0.05:
+			continue
+		gaps.append({"id": str(d.id), "t0": maxf(t - DOOR_W * 0.5, 0.0), "t1": minf(t + DOOR_W * 0.5, length)})
+	gaps.sort_custom(func(p, q): return p.t0 < q.t0)
+	var info := {"kind": "wall", "deck": deck, "a": a, "b": b, "outer": outer}
+	var start := 0.0
+	for g in gaps:
+		_wall_piece(info, a, dir, normal, start, g.t0, y0, y1, inside_pos, inside_neg, outer)
+		_wall_piece(info, a, dir, normal, g.t0, g.t1, y0 + DOOR_H, y1, inside_pos, inside_neg, outer)
+		_door(g, a, dir, normal, y0, outer)
+		start = g.t1
+	_wall_piece(info, a, dir, normal, start, length, y0, y1, inside_pos, inside_neg, outer)
+	if outer:
+		_ribs(a, dir, normal if inside_pos else -normal, length, gaps, y0, y1)
+
+
+func _wall_piece(info: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, t0: float, t1: float,
+		y0: float, y1: float, inside_pos: bool, inside_neg: bool, outer: bool) -> void:
+	if t1 - t0 < 0.02 or y1 - y0 < 0.02:
+		return
+	var p0 := a + dir * t0
+	var p1 := a + dir * t1
+	var mid := (p0 + p1) * 0.5
+	var basis := Basis(Vector3(dir.x, 0, dir.y), Vector3.UP, Vector3(normal.x, 0, normal.y))
+	var body := _body(info)
+	body.transform = Transform3D(basis, Vector3(mid.x, (y0 + y1) * 0.5, mid.y))
+	var len := t1 - t0
+	_box_in(body, Vector3(len, y1 - y0, WALL), paint(Color(0.24, 0.25, 0.27), "gunmetal"))
+	_shape_in(body, Vector3(len, y1 - y0, WALL), Vector3.ZERO)
+	wall_pieces.append({"deck": int(info.deck), "a": p0, "b": p1, "y0": y0, "y1": y1, "outer": outer})
+	# Each face: lining panels inside a room, hull plating where it faces space.
+	for side in [1.0, -1.0]:
+		var inside := inside_pos if side > 0.0 else inside_neg
+		var w := PANEL if inside else HULL_PANEL
+		var mat := paint(Color(0.52, 0.54, 0.54), "satin_paint") if inside else paint(Color(0.5, 0.52, 0.55), "brushed_alloy")
+		var panels: Array[Transform3D] = []
+		var t := 0.0
+		while t < len - 0.01:
+			var t2 := minf(t + w, len)
+			panels.append(Transform3D(Basis.from_scale(Vector3(t2 - t - 0.01, y1 - y0 - 0.02, LINING)),
+					Vector3(-len * 0.5 + (t + t2) * 0.5, 0, side * (WALL + LINING) * 0.5)))
+			t = t2
+		_multi("Panels" if inside else "HullPlates", panels, mat, body, 1 if inside else EXTERIOR)
+		if inside and y1 - y0 > 2.0:
+			# A kick strip along the floor in a darker paint.
+			var kick := MeshInstance3D.new()
+			kick.mesh = _box_mesh(Vector3(len, 0.12, 0.012))
+			kick.material_override = paint(Color(0.3, 0.32, 0.34), "satin_paint")
+			kick.position = Vector3(0, -(y1 - y0) * 0.5 + 0.07, side * (WALL * 0.5 + LINING + 0.006))
+			body.add_child(kick)
+
+
+## Frame ribs up the inside of an outer wall, on the design's frame grid.
+func _ribs(a: Vector2, dir: Vector2, inward: Vector2, length: float, gaps: Array[Dictionary], y0: float, y1: float) -> void:
+	var spec: Array = GIRDERS.get(str(rec.structure.get("frame", "standard")), GIRDERS.standard)
+	var spacing := maxf(float(rec.structure.get("spacing", 2.0)), 0.5)
+	var gw: float = spec[0]
+	var gh: float = spec[1]
+	# Ribs where the frame grid crosses the wall (x for walls along z and the other way).
+	var along := a.x if absf(dir.x) > 0.5 else a.y
+	var sign := dir.x if absf(dir.x) > 0.5 else dir.y
+	var t := 0.0
+	var first := ceilf((along + 0.15 * sign) / spacing) * spacing if sign > 0 else floorf((along - 0.15) / spacing) * spacing
+	t = absf(first - along)
+	while t < length - 0.15:
+		var clear := true
+		for g in gaps:
+			if t > float(g.t0) - gw and t < float(g.t1) + gw:
+				clear = false
+		if clear and t > 0.15:
+			var p := a + dir * t + inward * (WALL * 0.5 + LINING + gh * 0.5)
+			_girder(Vector3(p.x, y0, p.y), Vector3(p.x, y1 - gh, p.y), gw, gh, Vector3(inward.x, 0, inward.y))
+			ribs += 1
+		t += spacing
+
+
+func _door(g: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, y0: float, outer: bool) -> void:
+	var t0: float = g.t0
+	var t1: float = g.t1
+	var c2 := a + dir * ((t0 + t1) * 0.5)
+	var basis := Basis(Vector3(dir.x, 0, dir.y), Vector3.UP, Vector3(normal.x, 0, normal.y))
+	var frame := _body({"kind": "door", "id": str(g.id)})
+	frame.name = "Door_" + str(g.id)
+	frame.transform = Transform3D(basis, Vector3(c2.x, y0, c2.y))
+	var w := t1 - t0
+	var trim := paint(Color(0.86, 0.62, 0.16), "satin_paint") if not outer else paint(Color(0.72, 0.2, 0.15), "satin_paint")
+	var depth := WALL + LINING * 2.0 + 0.04
+	for side in [-1.0, 1.0]:
+		var jamb := MeshInstance3D.new()
+		jamb.mesh = _box_mesh(Vector3(0.08, DOOR_H, depth))
+		jamb.material_override = trim
+		jamb.position = Vector3(side * (w * 0.5 - 0.04), DOOR_H * 0.5, 0)
+		frame.add_child(jamb)
+		_outline_box(frame.transform * Transform3D(Basis.IDENTITY, jamb.position), Vector3(0.08, DOOR_H, depth))
+	var head := MeshInstance3D.new()
+	head.mesh = _box_mesh(Vector3(w, 0.1, depth))
+	head.material_override = trim
+	head.position = Vector3(0, DOOR_H - 0.05, 0)
+	frame.add_child(head)
+	# The sill is flush with the deck plates; a hazard tread strip on it.
+	var sill := MeshInstance3D.new()
+	sill.mesh = _box_mesh(Vector3(w - 0.16, 0.012, depth))
+	sill.material_override = paint(Color(0.9, 0.7, 0.1), "hazard_stripes")
+	sill.position = Vector3(0, 0.002, 0)
+	frame.add_child(sill)
+	# Two leaves that slide apart into the wall.
+	var half := (w - 0.16) * 0.5
+	var leaves: Array[Node3D] = []
+	for side in [-1.0, 1.0]:
+		var leaf := MeshInstance3D.new()
+		leaf.name = "Leaf"
+		leaf.mesh = _box_mesh(Vector3(half, DOOR_H - 0.12, 0.05))
+		leaf.material_override = paint(Color(0.56, 0.58, 0.6), "brushed_steel")
+		leaf.position = Vector3(side * half * 0.5, (DOOR_H - 0.1) * 0.5, 0)
+		var stripe := MeshInstance3D.new()
+		stripe.mesh = _box_mesh(Vector3(half, 0.08, 0.056))
+		stripe.material_override = trim
+		stripe.position = Vector3(0, 0.1, 0)
+		leaf.add_child(stripe)
+		frame.add_child(leaf)
+		leaves.append(leaf)
+	_shape_in(frame, Vector3(0.08, DOOR_H, depth), Vector3(-(w * 0.5 - 0.04), DOOR_H * 0.5, 0))
+	_shape_in(frame, Vector3(0.08, DOOR_H, depth), Vector3(w * 0.5 - 0.04, DOOR_H * 0.5, 0))
+	doors.append({"id": str(g.id), "centre": Vector3(c2.x, y0 + 1.0, c2.y), "left": leaves[0], "right": leaves[1],
+			"half": half, "open": 0.0})
+
+
+## Opens each door as someone comes near (`near`: room-space points) and closes it after.
+func update_doors(near: Array[Vector3], delta: float) -> void:
+	for d in doors:
+		if not is_instance_valid(d.left):
+			continue
+		var want := 0.0
+		for p in near:
+			if p.distance_to(d.centre) < 2.4:
+				want = 1.0
+		d.open = move_toward(float(d.open), want, delta * 2.5)
+		var s := smoothstep(0.0, 1.0, float(d.open))
+		var half: float = d.half
+		(d.left as Node3D).position.x = -half * 0.5 - s * half * 0.95
+		(d.right as Node3D).position.x = half * 0.5 + s * half * 0.95
+
+
+# Stairs
+
+func _stairs(r: Dictionary, upper: Dictionary) -> void:
+	var plan := ramp_plan(r)
+	var rect: Rect2 = plan.rect
+	var h := rec.deck_height
+	var y := int(r.deck) * h
+	var length: float = plan.length
+	var along_z: bool = plan.along_z
+	# What you walk on: a smooth slope (no collision on the steps).
+	var ramp := StaticBody3D.new()
+	ramp.name = "Ramp_" + str(r.id)
+	ramp.collision_layer = LAYER
+	ramp.collision_mask = 0
+	ramp.set_meta("walk", {"kind": "floor", "room": str(r.id), "deck": int(r.deck)})
+	var angle := atan2(h, length)
+	var c := rect.get_center()
+	ramp.position = Vector3(c.x, y + h * 0.5 - 0.06, c.y)
+	if along_z:
+		ramp.rotation.x = -angle
+	else:
+		ramp.rotation.z = angle
+	var slope := Vector2(length, h).length()
+	_shape_in(ramp, Vector3(rect.size.x, 0.06, slope) if along_z else Vector3(slope, 0.06, rect.size.y), Vector3.ZERO)
+	root.add_child(ramp)
+	ramps.append(str(r.id))
+	# The steps you see.
+	var n := maxi(int(ceilf(h / 0.2)), 2)
+	var tread := paint(Color(0.46, 0.48, 0.5), "bare_steel")
+	var steps: Array[Transform3D] = []
+	for i in n:
+		var rise := h * (i + 1) / n
+		var run0 := length * i / n
+		var run1 := length * (i + 1) / n
+		var sz := Vector3(rect.size.x - 0.04, rise, run1 - run0) if along_z else Vector3(run1 - run0, rise, rect.size.y - 0.04)
+		var at := Vector3(c.x, y + rise * 0.5 - 0.002, rect.position.y + (run0 + run1) * 0.5) if along_z \
+				else Vector3(rect.position.x + (run0 + run1) * 0.5, y + rise * 0.5 - 0.002, c.y)
+		steps.append(Transform3D(Basis.from_scale(sz), at))
+	_multi("Steps_" + str(r.id), steps, tread)
+	var lo := Vector3(rect.position.x, y, rect.position.y)
+	var hi := Vector3(rect.end.x, y + h, rect.end.y)
+	_outline_box(Transform3D(Basis.IDENTITY, (lo + hi) * 0.5), hi - lo)
+	# A rail round the open sides of the stairwell on the deck above.
+	var hole := rect.intersection(Rect2(upper.x, upper.z, upper.w, upper.d))
+	var up := Rect2(upper.x, upper.z, upper.w, upper.d)
+	var top := y + h
+	var edges := [
+		[Vector2(hole.end.x, hole.position.y), Vector2(hole.end.x, hole.end.y)],
+		[Vector2(hole.position.x, hole.end.y), Vector2(hole.end.x, hole.end.y)],
+		[Vector2(hole.position.x, hole.position.y), Vector2(hole.position.x, hole.end.y)],
+		[Vector2(hole.position.x, hole.position.y), Vector2(hole.end.x, hole.position.y)],
+	]
+	for e in edges:
+		var ea: Vector2 = e[0]
+		var eb: Vector2 = e[1]
+		var m := (ea + eb) * 0.5
+		var on_wall := absf(m.x - up.position.x) < 0.02 or absf(m.x - up.end.x) < 0.02 \
+				or absf(m.y - up.position.y) < 0.02 or absf(m.y - up.end.y) < 0.02
+		# The top end of the flight stays open: you walk off it onto the landing.
+		var top_end := (along_z and absf(m.y - hole.end.y) < 0.02 and absf(ea.y - eb.y) < 0.02) \
+				or (not along_z and absf(m.x - hole.end.x) < 0.02 and absf(ea.x - eb.x) < 0.02)
+		if on_wall or top_end:
+			continue
+		_rail(ea, eb, top)
+
+
+func _rail(a: Vector2, b: Vector2, y: float) -> void:
+	var steel := paint(Color(0.85, 0.62, 0.16), "satin_paint")
+	var body := _body({"kind": "rail"})
+	body.name = "Rail"
+	var mid := (a + b) * 0.5
+	var len := a.distance_to(b)
+	var along_x := absf(b.x - a.x) > absf(b.y - a.y)
+	body.position = Vector3(mid.x, y + 0.5, mid.y)
+	var bar := Vector3(len, 0.05, 0.05) if along_x else Vector3(0.05, 0.05, len)
+	for hy in [0.48, 0.0]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = _box_mesh(bar)
+		mi.material_override = steel
+		mi.position.y = hy
+		body.add_child(mi)
+	var posts := maxi(int(len / 1.0), 1)
+	for i in posts + 1:
+		var t := -0.5 + float(i) / posts
+		var mi := MeshInstance3D.new()
+		mi.mesh = _box_mesh(Vector3(0.05, 1.0, 0.05))
+		mi.material_override = steel
+		mi.position = Vector3(t * len, 0, 0) if along_x else Vector3(0, 0, t * len)
+		body.add_child(mi)
+	_shape_in(body, Vector3(bar.x, 1.0, bar.z), Vector3.ZERO)
+	_outline.append_array([Vector3(a.x, y + 1.0, a.y), Vector3(b.x, y + 1.0, b.y)])
+
+
+# Services
+
+## Wires in cable trays under the ceiling, fuel pipes on brackets low down, risers between
+## decks where a run carries on over another's end: where they will really go.
+func _services() -> void:
+	var h := rec.deck_height
+	var spec: Array = GIRDERS.get(str(rec.structure.get("frame", "standard")), GIRDERS.standard)
+	var tray_y := h - FLOOR - float(spec[1]) - 0.12
+	var pipe_y := 0.35
+	var tray := paint(Color(0.55, 0.57, 0.6), "galvanised")
+	for w: Dictionary in rec.runs.values():
+		var kind := str(w.kind)
+		if not DesignServices.KINDS.has(kind):
+			continue
+		var col: Color = DesignServices.KINDS[kind].colour
+		var pts := DesignServices.points(w)
+		var y := int(w.deck) * h + (tray_y if kind == "wire" else pipe_y)
+		var mat := paint(col.darkened(0.25), "satin_paint") if kind == "wire" else paint(col.darkened(0.15), "gloss_paint")
+		for i in pts.size() - 1:
+			var a := Vector3(pts[i].x, y, pts[i].y)
+			var b := Vector3(pts[i + 1].x, y, pts[i + 1].y)
+			if a.distance_to(b) < 0.01:
+				continue
+			var xf := FrameParts.along(a, b, Vector3.UP)
+			var len := a.distance_to(b)
+			if kind == "wire":
+				# The tray, and the cable bundle lying in it.
+				var t := MeshInstance3D.new()
+				t.name = "CableTray"
+				t.mesh = _box_mesh(Vector3(len + 0.2, 0.05, 0.24))
+				t.material_override = tray
+				t.transform = xf
+				root.add_child(t, true)
+				var cab := MeshInstance3D.new()
+				cab.mesh = _box_mesh(Vector3(len + 0.2, 0.05, 0.14))
+				cab.material_override = mat
+				cab.transform = xf.translated_local(Vector3(0, 0.045, 0))
+				root.add_child(cab)
+			else:
+				var pipe := MeshInstance3D.new()
+				pipe.name = "Pipe"
+				var cyl := CylinderMesh.new()
+				cyl.top_radius = 0.045
+				cyl.bottom_radius = 0.045
+				cyl.height = len + 0.09
+				cyl.radial_segments = 12
+				pipe.mesh = cyl
+				pipe.material_override = mat
+				pipe.transform = xf * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3.ZERO)
+				root.add_child(pipe, true)
+				# Flanges every 2 m.
+				var n := int(len / 2.0)
+				for k in n:
+					var fl := MeshInstance3D.new()
+					var fc := CylinderMesh.new()
+					fc.top_radius = 0.07
+					fc.bottom_radius = 0.07
+					fc.height = 0.04
+					fl.mesh = fc
+					fl.material_override = paint(Color(0.6, 0.62, 0.64), "brushed_steel")
+					fl.transform = xf * Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(-len * 0.5 + (k + 1) * len / (n + 1), 0, 0))
+					root.add_child(fl)
+		# Risers: up to the deck above where a run of this kind carries on from this one's end.
+		for end in [pts[0], pts[pts.size() - 1]]:
+			for u: Dictionary in rec.runs.values():
+				if str(u.kind) != kind or int(u.deck) != int(w.deck) + 1:
+					continue
+				var up := DesignServices.points(u)
+				if up.is_empty() or (up[0].distance_to(end) > DesignServices.JOIN and up[up.size() - 1].distance_to(end) > DesignServices.JOIN):
+					continue
+				var y2 := (int(w.deck) + 1) * h + (tray_y if kind == "wire" else pipe_y)
+				var r := MeshInstance3D.new()
+				r.name = "Riser"
+				if kind == "wire":
+					r.mesh = _box_mesh(Vector3(0.12, y2 - y, 0.12))
+				else:
+					var rc := CylinderMesh.new()
+					rc.top_radius = 0.045
+					rc.bottom_radius = 0.045
+					rc.height = y2 - y
+					rc.radial_segments = 12
+					r.mesh = rc
+				r.material_override = mat
+				r.position = Vector3(end.x, (y + y2) * 0.5, end.y)
+				root.add_child(r, true)
+
+
+# Parts
+
+func _components() -> void:
+	for c: Dictionary in rec.components.values():
+		var pt := catalog.part(str(c.type))
+		var r: Dictionary = rec.rooms.get(c.room, {})
+		if pt == null or r.is_empty():
+			continue
+		var f := DesignRules.footprint(c, pt)
+		var y := float(r.deck) * rec.deck_height
+		var h := minf(pt.size.y, rec.deck_height - FLOOR - 0.3)
+		var body := _body({"kind": "component", "id": str(c.id)})
+		body.name = "Part_" + str(c.id)
+		body.position = Vector3(f.get_center().x, y, f.get_center().y)
+		component_look(body, pt, Vector3(f.size.x, h, f.size.y), int(c.get("rot", 0)), self)
+		_shape_in(body, Vector3(f.size.x, h, f.size.y), Vector3(0, h * 0.5, 0))
+		_outline_box(Transform3D(Basis.IDENTITY, body.position + Vector3(0, h * 0.5, 0)), Vector3(f.size.x, h, f.size.y))
+
+
+## A part as a fitted unit: a dark plinth, its body in its colour, a panel on its working
+## face (FRONTS[rot]) and a trim round the top. Origin at the floor, middle of its footprint.
+static func component_look(parent: Node3D, pt: DesignPartType, size: Vector3, rot: int, kit: Object) -> void:
+	var plinth := MeshInstance3D.new()
+	plinth.mesh = _box_mesh(Vector3(size.x - 0.06, 0.08, size.z - 0.06))
+	plinth.material_override = kit.call("paint", Color(0.18, 0.19, 0.2), "gunmetal")
+	plinth.position.y = 0.04
+	parent.add_child(plinth)
+	var body := MeshInstance3D.new()
+	body.mesh = _box_mesh(Vector3(size.x, size.y - 0.1, size.z))
+	body.material_override = kit.call("paint", pt.colour.darkened(0.25), "metallic_paint")
+	body.position.y = 0.08 + (size.y - 0.1) * 0.5
+	parent.add_child(body)
+	var cap := MeshInstance3D.new()
+	cap.mesh = _box_mesh(Vector3(size.x + 0.02, 0.04, size.z + 0.02))
+	cap.material_override = kit.call("paint", Color(0.62, 0.64, 0.66), "brushed_steel")
+	cap.position.y = size.y - 0.02
+	parent.add_child(cap)
+	# The working face: a recessed panel with a lit strip, facing where the fitter stands.
+	var front: Vector2 = DesignRules.FRONTS[rot % 4]
+	var face_w := (size.z if absf(front.x) > 0.5 else size.x) * 0.7
+	var panel := MeshInstance3D.new()
+	panel.mesh = _box_mesh(Vector3(face_w, size.y * 0.45, 0.02))
+	panel.material_override = kit.call("paint", Color(0.12, 0.13, 0.14), "plastic")
+	var depth := (size.x if absf(front.x) > 0.5 else size.z) * 0.5 + 0.01
+	panel.position = Vector3(front.x * depth, size.y * 0.55, front.y * depth)
+	panel.rotation.y = atan2(front.x, front.y)
+	parent.add_child(panel)
+	var strip := MeshInstance3D.new()
+	strip.mesh = _box_mesh(Vector3(face_w * 0.8, 0.03, 0.01))
+	strip.material_override = kit.call("glow_mat", pt.colour.lightened(0.35))
+	strip.position = Vector3(0, size.y * 0.14, 0.011)
+	panel.add_child(strip)
+
+
+# Kit
+
+func paint(c: Color, finish: String) -> ShaderMaterial:
+	var key := "%s/%s" % [c.to_html(), finish]
+	if not _paints.has(key):
+		var info := SurfaceFinish.info(finish)
+		var m := ShaderMaterial.new()
+		m.shader = SURFACE
+		m.set_shader_parameter("albedo", Color(c.r, c.g, c.b))
+		m.set_shader_parameter("metallic", float(info.get("metallic", 0.3)))
+		m.set_shader_parameter("roughness", float(info.get("roughness", 0.5)))
+		m.set_shader_parameter("survey_skip", true)
+		SurfaceFinish.apply(m)
+		SurfaceFinish.set_finish(m, finish, Color(c.r, c.g, c.b, 1.0))
+		m.set_shader_parameter("material_blend", 0.0)
+		_paints[key] = m
+	return _paints[key]
+
+
+func glow_mat(c: Color) -> StandardMaterial3D:
+	return _glow(c)
+
+
+func _glow(c: Color) -> StandardMaterial3D:
+	var key := "glow/" + c.to_html()
+	if not _paints.has(key):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = c
+		_paints[key] = m
+	return _paints[key]
+
+
+func _body(info: Dictionary) -> StaticBody3D:
+	var b := StaticBody3D.new()
+	b.collision_layer = LAYER
+	b.collision_mask = 0
+	b.set_meta("walk", info)
+	root.add_child(b, true)
+	return b
+
+
+func _shape_in(body: Node3D, size: Vector3, at: Vector3) -> void:
+	var s := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	s.shape = box
+	s.position = at
+	body.add_child(s)
+
+
+func _box_in(body: Node3D, size: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = _box_mesh(size)
+	mi.material_override = mat
+	body.add_child(mi)
+
+
+static func _box_mesh(size: Vector3) -> BoxMesh:
+	var bm := BoxMesh.new()
+	bm.size = size
+	return bm
+
+
+## Unit boxes scaled and placed by `xforms`, one draw for the lot.
+func _multi(id: String, xforms: Array[Transform3D], mat: Material, parent: Node3D = null, layers := 1) -> void:
+	if xforms.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _box_mesh(Vector3.ONE)
+	mm.instance_count = xforms.size()
+	for i in xforms.size():
+		mm.set_instance_transform(i, xforms[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = id
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.layers = layers
+	(parent if parent else root).add_child(mmi, true)
+
+
+func _girder(a: Vector3, b: Vector3, w: float, h: float, up: Vector3) -> void:
+	var g: Array = FrameParts.girder_between(a, b, w, h, up)
+	var mi := MeshInstance3D.new()
+	mi.name = "Girder"
+	mi.mesh = (g[0] as PartShapes.PartShape).mesh
+	mi.transform = g[1]
+	mi.material_override = paint(Color(0.34, 0.36, 0.39), "gunmetal")
+	root.add_child(mi, true)
+
+
+func _outline_box(xf: Transform3D, size: Vector3) -> void:
+	var h := size * 0.5
+	var c: Array[Vector3] = []
+	for i in 8:
+		c.append(xf * Vector3(h.x * (1 if i & 1 else -1), h.y * (1 if i & 2 else -1), h.z * (1 if i & 4 else -1)))
+	for pair in [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]:
+		_outline.append_array([c[pair[0]], c[pair[1]]])
+
+
+func _draw_outline() -> void:
+	if _outline.is_empty():
+		return
+	var im := ImmediateMesh.new()
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.albedo_color = OUTLINE
+	im.surface_begin(Mesh.PRIMITIVE_LINES, m)
+	for p in _outline:
+		im.surface_add_vertex(p)
+	im.surface_end()
+	var mi := MeshInstance3D.new()
+	mi.name = "HoloOutline"
+	mi.mesh = im
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)

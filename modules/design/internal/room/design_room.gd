@@ -51,6 +51,8 @@ func set_room_view(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if furnishing.is_walking():
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_TAB:
 			set_room_view(not room_view)
@@ -91,7 +93,9 @@ func _build_shell() -> void:
 	_slab(shell, Vector3(0, 0.5, -half.z - 0.1), Vector3(ROOM_SIZE.x, 1.0, 0.3), wall_mat)
 	_slab(shell, Vector3(0, ROOM_SIZE.y - 0.4, -half.z - 0.1), Vector3(ROOM_SIZE.x, 0.8, 0.3), wall_mat)
 	for i in 7:
-		_slab(shell, Vector3(-half.x + i * 4.0, half.y, -half.z - 0.1), Vector3(0.25, ROOM_SIZE.y, 0.35), wall_mat)
+		# Between the sill and the header, so no face lies on theirs.
+		_slab(shell, Vector3(-half.x + i * 4.0, 1.0 + (ROOM_SIZE.y - 1.8) * 0.5, -half.z - 0.1),
+				Vector3(0.25, ROOM_SIZE.y - 1.8, 0.35), wall_mat)
 	# The raised ring round the table.
 	var ring := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()

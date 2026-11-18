@@ -5,7 +5,8 @@ extends Node
 ## With --station (and --flags=yard=on,yard.station=on,design.room=on) it shoots the design
 ## room furnished inside the orbital yard's station instead.
 ## Saves console.png (the design console), room.png (the room with its walls and table),
-## holo_cut.png (the holotable cut through deck 1) and wall_left.png, wall_right.png (what two walls show).
+## holo_cut.png (the holotable cut through deck 1), wall_left.png, wall_right.png (what two walls show)
+## and walk_*.png (walk-inside mode).
 
 const SIZE := Vector2i(1920, 1080)
 
@@ -61,6 +62,49 @@ class Runner:
 			var img: Image = wall.viewport.get_texture().get_image()
 			img.save_png(out.path_join(id + ".png"))
 			print("DesignCapture: ", out.path_join(id + ".png"))
+		# The whiteboard on the back wall: a sketch over the deck plan.
+		var wall: Node = room.walls["wall_back_low_left"]
+		var wb: Node = wall.content.call("content", 0)
+		wb.call("toggle_plan")
+		var sketch := [["box", "ff9a4d", 7.0, [[520, 300], [760, 520]]],
+				["pen", "f2f2ee", 3.0, [[770, 410], [830, 380], [900, 360], [960, 350]]],
+				["line", "f2f2ee", 3.0, [[960, 350], [935, 335]]], ["line", "f2f2ee", 3.0, [[960, 350], [938, 368]]],
+				["marker", "e8c25a", 15.0, [[380, 640], [600, 650], [820, 640]]],
+				["pen", "6fc8e8", 3.0, [[1000, 300], [1040, 330], [1010, 380], [1060, 420], [1030, 470]]]]
+		var lay: String = room.bus.library.current.peek_id("l")
+		room.bus.editor.do({"op": "add_layer", "layer": {"id": lay, "name": "Bigger hold?"}})
+		for k in sketch:
+			room.bus.editor.do({"op": "add_stroke", "stroke": {"layer": lay, "tool": k[0], "colour": k[1], "width": k[2], "points": k[3]}})
+		(wall.viewport as SubViewport).render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		await _frames(10)
+		(wall.viewport.get_texture().get_image() as Image).save_png(out.path_join("whiteboard.png"))
+		print("DesignCapture: ", out.path_join("whiteboard.png"))
+		# Walk-inside: in the corridor looking to the bow, then in engineering, then outside.
+		room.console._set_view("plan")
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		for shot in [["walk_corridor", Vector3(0, 1.0, 3.0), 0.0, -0.05],
+				["walk_engineering", Vector3(6.2, 1.0, -1.3), 2.36, -0.2],
+				["walk_stairs", Vector3(-1.5, 1.0, 1.0), PI * 0.5, 0.45],
+				["walk_outside", Vector3(9, 1.0, 12), 0.62, 0.0]]:
+			walk.body.position = shot[1]
+			walk.body.rotation.y = shot[2]
+			walk.set("_pitch", shot[3])
+			walk.camera.rotation.x = shot[3]
+			await _frames(20)
+			await _save(out, shot[0])
+		# Designing from inside: a fuel pump in your hands in engineering, showing where it fits.
+		walk.body.position = Vector3(2.0, 1.0, -1.2)
+		walk.body.rotation.y = PI
+		walk.set("_pitch", -0.7)
+		walk.camera.rotation.x = -0.7
+		walk.call("take_new", "fuel_pump")
+		await _frames(20)
+		await _save(out, "walk_design")
+		walk.call("toggle_palette")
+		await _frames(10)
+		await _save(out, "walk_palette")
+		room.furnishing.close_walk()
 		get_tree().quit()
 
 	## The furnished design room inside the orbital yard's station.

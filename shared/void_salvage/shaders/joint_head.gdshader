@@ -45,8 +45,9 @@ void vertex() {
 	rest = INSTANCE_CUSTOM.w > 0.5 ? joint_hint_rest : 0.0;
 	int kind = int(INSTANCE_CUSTOM.z + 0.5) - 1;
 	if (joint_hint.w > 0.0 && kind >= 0 && (joint_hint_kinds & (1 << kind)) != 0) {
-		// The head's own middle, so all of it fades in together.
-		vec3 centre = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+		// The head's own middle, so all of it fades in together; a weld bead (kind 0) by each point of it, so a long
+		// seam lights along the stretch near the aim, wherever its middle is (FS2).
+		vec3 centre = kind == 0 ? world_pos : (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 		float d = distance(centre, joint_hint.xyz);
 		hint = 1.0 - smoothstep(joint_hint.w * 0.45, joint_hint.w, d);
 	}

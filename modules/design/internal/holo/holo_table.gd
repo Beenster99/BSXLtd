@@ -17,15 +17,16 @@ const MODEL_TOP := 3.8
 ## The footprint the model is fitted into at zoom 1, m (the top less a margin).
 const FIT := Vector2(6.3, 2.9)
 
-const LAYERS: PackedStringArray = ["rooms", "frame", "plates", "components", "power"]
+const LAYERS: PackedStringArray = ["rooms", "frame", "plates", "components", "wiring", "pipes", "power"]
 const LAYER_NAMES := {"rooms": "Rooms", "frame": "Frame", "plates": "Plates",
-		"components": "Components", "power": "Power"}
+		"components": "Components", "wiring": "Wiring", "pipes": "Pipes", "power": "Power"}
 const HOLO := Color(0.45, 0.85, 1.0)
 
 const HoloShader := preload("res://modules/design/internal/holo/holo.gdshader")
 
 var bus: DesignBus
-var layers := {"rooms": true, "frame": true, "plates": false, "components": true, "power": false}
+var layers := {"rooms": true, "frame": true, "plates": false, "components": true, "wiring": false,
+		"pipes": false, "power": false}
 ## Radians about the vertical.
 var turn := 0.0
 ## Turned a quarter so a design longer across than along still lies along the table.
@@ -119,6 +120,8 @@ func rebuild() -> void:
 	_build_frame(rec, _layer_nodes.frame)
 	_build_plates(rec, _layer_nodes.plates)
 	_build_components(rec, _layer_nodes.components)
+	_build_runs(rec, _layer_nodes.wiring, "wiring")
+	_build_runs(rec, _layer_nodes.pipes, "pipes")
 	_build_power(rec, _layer_nodes.power)
 
 
@@ -194,27 +197,43 @@ func _build_rooms(rec: DesignRecord, parent: Node3D) -> void:
 	_lines(parent, door_edges, _mat(Color(0.6, 1.0, 0.95), 0.95))
 
 
+## The frame the hull is built on (DesignStructure): posts up the outer walls and beams
+## round the top and bottom of them, every `spacing` m.
 func _build_frame(rec: DesignRecord, parent: Node3D) -> void:
-	# Frame rings every 2 m along each room, and its long members at the corners.
+	var st := DesignStructure.measure(rec)
+	var spacing := maxf(float(rec.structure.get("spacing", 2.0)), 0.5)
+	var h := rec.deck_height
 	var segs := PackedVector3Array()
-	for r: Dictionary in rec.rooms.values():
-		var box := _room_box(rec, r)
-		var lo := box.position
-		var hi := box.end
-		var z := lo.z
-		while z <= hi.z + 0.01:
-			segs.append_array([Vector3(lo.x, lo.y, z), Vector3(hi.x, lo.y, z), Vector3(hi.x, lo.y, z), Vector3(hi.x, hi.y, z),
-					Vector3(hi.x, hi.y, z), Vector3(lo.x, hi.y, z), Vector3(lo.x, hi.y, z), Vector3(lo.x, lo.y, z)])
-			z += 2.0
+	for e: Dictionary in st.outer_edges:
+		var y0 := float(e.deck) * h
+		var a := Vector3(e.a.x, y0, e.a.y)
+		var b := Vector3(e.b.x, y0, e.b.y)
+		segs.append_array([a, b, a + Vector3.UP * h, b + Vector3.UP * h])
+		var n := int(floor(a.distance_to(b) / spacing + 0.001))
+		for i in n + 1:
+			var p := a + (b - a).normalized() * spacing * i
+			segs.append_array([p, p + Vector3.UP * h])
 	_lines(parent, segs, _mat(Color(1.0, 0.7, 0.35), 0.8))
 
 
+## The outer hull plating (walls facing space) and the inner walls, as see-through panels.
 func _build_plates(rec: DesignRecord, parent: Node3D) -> void:
-	var mat := _mat(Color(0.7, 0.8, 0.9), 0.16, 0.6)
+	var st := DesignStructure.measure(rec)
+	var h := rec.deck_height
+	var outer := _mat(Color(0.7, 0.8, 0.9), 0.14, 0.6)
+	var inner := _mat(Color(0.6, 0.75, 0.9), 0.07, 0.4)
+	for list: Array in [[st.outer_edges, outer, 0.06], [st.inner_edges, inner, 0.04]]:
+		for e: Dictionary in list[0]:
+			var a: Vector2 = e.a
+			var b: Vector2 = e.b
+			var mid := (a + b) * 0.5
+			var t: float = list[2]
+			var sz := Vector3(maxf(absf(b.x - a.x), t), h, maxf(absf(b.y - a.y), t))
+			_box(parent, Vector3(mid.x, float(e.deck) * h + h * 0.5, mid.y), sz, list[1])
 	for r: Dictionary in rec.rooms.values():
 		var box := _room_box(rec, r)
 		_box(parent, Vector3(box.get_center().x, box.position.y + 0.03, box.get_center().z),
-				Vector3(box.size.x, 0.06, box.size.z), mat)
+				Vector3(box.size.x, 0.06, box.size.z), outer)
 
 
 func _build_components(rec: DesignRecord, parent: Node3D) -> void:
@@ -228,6 +247,33 @@ func _build_components(rec: DesignRecord, parent: Node3D) -> void:
 		var h := minf(pt.size.y, rec.deck_height - 0.1)
 		_box(parent, Vector3(f.get_center().x, y + h * 0.5 + 0.05, f.get_center().y),
 				Vector3(f.size.x, h, f.size.y), _mat(pt.colour, 0.3, 0.8))
+
+
+## Wires (just under the deckhead) or pipes (just over the floor), and the risers between
+## decks where a run ends over another.
+func _build_runs(rec: DesignRecord, parent: Node3D, layer: String) -> void:
+	var h := rec.deck_height
+	for kind: String in DesignServices.KINDS:
+		var spec: Dictionary = DesignServices.KINDS[kind]
+		if str(spec.layer) != layer:
+			continue
+		var segs := PackedVector3Array()
+		var lift := h - 0.35 if layer == "wiring" else 0.35
+		for w: Dictionary in rec.runs.values():
+			if str(w.kind) != kind:
+				continue
+			var y := float(w.deck) * h + lift
+			var pts := DesignServices.points(w)
+			for i in pts.size() - 1:
+				segs.append_array([Vector3(pts[i].x, y, pts[i].y), Vector3(pts[i + 1].x, y, pts[i + 1].y)])
+			# Risers: from each end up to the deck above if a run of this kind continues there.
+			for e in [pts[0], pts[pts.size() - 1]]:
+				for o: Dictionary in rec.runs.values():
+					if str(o.kind) == kind and int(o.deck) == int(w.deck) + 1:
+						var op := DesignServices.points(o)
+						if op[0].distance_to(e) <= DesignServices.JOIN or op[op.size() - 1].distance_to(e) <= DesignServices.JOIN:
+							segs.append_array([Vector3(e.x, y, e.y), Vector3(e.x, y + h, e.y)])
+		_lines(parent, segs, _mat(spec.colour, 1.0))
 
 
 func _build_power(rec: DesignRecord, parent: Node3D) -> void:
@@ -293,9 +339,11 @@ func _build_table() -> void:
 	var rim := Node3D.new()
 	rim.name = "Ring"
 	add_child(rim)
+	# The rim stands on the top (2 mm clear) and the short sides fit between the long ones, so
+	# no two faces share a plane (test_zfight).
 	for sz: float in [-1.0, 1.0]:
-		_solid("Long", Vector3(TABLE_SIZE.x, 0.04, 0.06), Vector3(0, TABLE_HEIGHT + 0.01, sz * (half.y - 0.03)), glow, rim)
-		_solid("Short", Vector3(0.06, 0.04, TABLE_SIZE.y), Vector3(sz * (half.x - 0.03), TABLE_HEIGHT + 0.01, 0), glow, rim)
+		_solid("Long", Vector3(TABLE_SIZE.x, 0.04, 0.06), Vector3(0, TABLE_HEIGHT + 0.022, sz * (half.y - 0.03)), glow, rim)
+		_solid("Short", Vector3(0.06, 0.036, TABLE_SIZE.y - 0.13), Vector3(sz * (half.x - 0.03), TABLE_HEIGHT + 0.02, 0), glow, rim)
 	for sx: float in [-1.0, 1.0]:
 		var light := OmniLight3D.new()
 		light.light_color = Color(0.45, 0.85, 1.0)
