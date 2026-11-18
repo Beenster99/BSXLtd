@@ -138,6 +138,9 @@ var frame_skip := Callable()
 ## Optional `stringer_skip(segment, edge) -> bool`: leave out the stringers along that face
 ## (a doorway cut through the side). The mitred style, and node styles with `mitred_joints`.
 var stringer_skip := Callable()
+## Optional func(segment, corner) -> bool: no stringer along corner `corner` in bay `segment` (mitred joints: a
+## panel line inside one plate, `style`'s "span").
+var corner_skip := Callable()
 ## End caps (mitred): `caps[0]` front, `caps[1]` back: true, or a style dictionary {skip,
 ## mat, glass}. Node styles make theirs with `cap`.
 var caps: Array = [true, true]
@@ -162,6 +165,15 @@ var edge_insets: Dictionary = {}
 ## Node styles: stand each edge's members in by its own faces' slope across a station (a steep
 ## chin deepens only the chin's members) rather than every member by the steepest face's.
 var tilt_by_edge: bool = false
+## `tilt_by_edge`: two edges that turn less than this (the sine of the turn) are one line, and their members stand
+## in together (a profile with points a few centimetres apart along a face needs more than the default).
+var straight_inset: float = 1e-4
+## Mitred joints: a straight run of a ring shorter than this (m) gets no girder, and its neighbours are cut to
+## each other (0: every run is tried, as before). For rings with panel points bunched on a narrow face.
+var short_run: float = 0.0
+## Skin plates' sides are also trimmed by the fold between them and the face beside them in 3D (`_fold_trim`),
+## for hulls whose panel lines run out to a point between stations.
+var true_corners: bool = false
 ## How much further to hold the plates back from the front and back stations, metres (a
 ## neighbouring section's plates meet them there). Node styles.
 var end_gap: Array[float] = [0.0, 0.0]
@@ -470,7 +482,7 @@ func centre_line(profile: PackedVector2Array, station: int = -1) -> PackedVector
 		for e in profile.size():
 			var te := _edge_tilt(station, e)
 			d.append(skin / cos(te) + GAP + ring_width * 0.5 * tan(te) + depth * 0.5)
-		return FrameParts.inset_edges(profile, d)
+		return FrameParts.inset_edges(profile, d, straight_inset)
 	var t := _station_tilt(station) if station >= 0 else 0.0
 	return FrameParts.inset(profile, skin / cos(t) + GAP + ring_width * 0.5 * tan(t) + depth * 0.5)
 
@@ -520,6 +532,58 @@ func _corner_trim(profile: PackedVector2Array, k: int, t: float = -1.0) -> float
 	var c := (profile[(k + 1) % n] - profile[k]).normalized()
 	var angle := acos(clampf(a.dot(c), -1.0, 1.0))   # interior angle
 	return GAP + (skin if t < 0.0 else t) / maxf(tan(angle * 0.5), 0.15)
+
+
+## The same trim from the fold itself: the angle between the plate (corner `k` toward `own`) and the face beside
+## it (toward `other`) about the line the corner runs along between two stations. A section's corner angle says
+## nothing where one of the two edges has closed up to a point there (a panel line running out), so the plates
+## either side of such a fold were trimmed as if it were square and met inside each other.
+func _fold_trim(pa: PackedVector2Array, pb: PackedVector2Array, za: float, zb: float, k: int, own: int, other: int,
+		out: Vector3) -> float:
+	var a := v3(pa[k], za)
+	var far_own := v3(pa[own], za) - a
+	var far_other := v3(pa[other], za) - a
+	if pa[own].distance_to(pa[k]) < pb[own].distance_to(pb[k]):
+		far_own = v3(pb[own], zb) - a
+	if pa[other].distance_to(pa[k]) < pb[other].distance_to(pb[k]):
+		far_other = v3(pb[other], zb) - a
+	return _ridge_trim(v3(pb[k], zb) - a, far_own, far_other, out)
+
+
+## How far a plate stands back from a fold line to clear the plate across it: `own` and `other` reach from the
+## line into each face. Nothing at a valley (the plates' backs part there) or where a face has no width.
+func _ridge_trim(line: Vector3, own: Vector3, other: Vector3, out: Vector3) -> float:
+	if line.length() < 0.02:
+		return 0.0
+	line = line.normalized()
+	own -= line * own.dot(line)
+	other -= line * other.dot(line)
+	if own.length() < 0.02 or other.length() < 0.02:
+		return 0.0
+	own = own.normalized()
+	other = other.normalized()
+	if (own + other).dot(out) > -0.02:
+		return 0.0
+	var angle := acos(clampf(own.dot(other), -1.0, 1.0))
+	return skin / maxf(tan(angle * 0.5), 0.15)
+
+
+## The same across a station: the fold between the plate over edges `e` to `e1` in bay `seg` and the one in the
+## bay the other side of station `s` (a face that turns sharply at a ring: a tail drawn in, then out again).
+func _station_fold(seg: int, s: int, e: int, e1: int, out: Vector3) -> float:
+	var o := s - 1 if s == seg else s + 1
+	if o < 0 or o >= stations.size():
+		return 0.0
+	var far := seg + 1 if s == seg else seg
+	var ps: PackedVector2Array = stations[s]["profile"]
+	var pf: PackedVector2Array = stations[far]["profile"]
+	var po: PackedVector2Array = stations[o]["profile"]
+	if po.size() != ps.size():
+		return 0.0
+	var zs: float = stations[s]["z"]
+	var mid := v3((ps[e] + ps[e1]) * 0.5, zs)
+	return _ridge_trim(v3(ps[e1], zs) - v3(ps[e], zs), v3((pf[e] + pf[e1]) * 0.5, stations[far]["z"]) - mid,
+			v3((po[e] + po[e1]) * 0.5, stations[o]["z"]) - mid, out)
 
 
 ## Whether four corners lie in one plane (within `tolerance`, metres).
@@ -1381,6 +1445,9 @@ func _corner_stringers() -> void:
 			if mitred and panel_seams and _carried_through(i, k) and _carried_through(i + 1, k):
 				row.append(null)
 				continue
+			if mitred and corner_skip.is_valid() and corner_skip.call(i, k):
+				row.append(null)
+				continue
 			# Mitred joints: a stringer butts onto the ring's girder at its corner, not a node.
 			var na: PartData = ring_at(i, k) if mitred else nodes[i][k]
 			var nb: PartData = ring_at(i + 1, k) if mitred else nodes[i + 1][k]
@@ -1504,8 +1571,32 @@ func _mitred_rings() -> void:
 			var after := run_of[(s + m) % n]
 			var a: Vector3 = pts[s]
 			var b: Vector3 = pts[(s + m) % n]
+			if short_run > 0.0:
+				# A run too short for a girder is left out, and the girders either side of it are cut to
+				# each other's line (not to its own, which let their ends pass each other).
+				if a.distance_to(b) < short_run:
+					made.append(null)
+					continue
+				before = _past_short(runs, pts, run_of, before, -1)
+				after = _past_short(runs, pts, run_of, after, 1)
+			var up := (a + b) * 0.5 - centre
+			var along := dirs[j]
+			var flat_up := Vector3(up.x, up.y, 0.0)
+			if short_run > 0.0 and (flat_up.length() < 0.01 or absf(flat_up.normalized().dot(along)) >= 0.95):
+				# the ring's middle lies on this girder's own line (a narrow hull): its way out is by the ring's winding
+				var turn := 0.0
+				for q in n:
+					turn += (pts[q] as Vector3).x * (pts[(q + 1) % n] as Vector3).y - (pts[(q + 1) % n] as Vector3).x * (pts[q] as Vector3).y
+				up = Vector3(along.y, -along.x, 0.0) * signf(turn)
+			# where short runs were passed over, the girder it is cut to ends somewhere else: its near end
+			var meet_a := a
+			var meet_b := b
+			if short_run > 0.0 and before >= 0 and before != j:
+				meet_a = pts[(int(runs[before][0]) + int(runs[before][1])) % n]
+			if short_run > 0.0 and after >= 0 and after != j:
+				meet_b = pts[int(runs[after][0])]
 			var part := _mitred_member(i, s, m, a, b, dirs[before] if before >= 0 and before != j else Vector3.ZERO,
-					dirs[after] if after >= 0 and after != j else Vector3.ZERO, (a + b) * 0.5 - centre)
+					dirs[after] if after >= 0 and after != j else Vector3.ZERO, up, meet_a, meet_b)
 			made.append(part)
 			for q in m:
 				row[(s + q) % n] = part
@@ -1514,6 +1605,8 @@ func _mitred_rings() -> void:
 			var m: int = runs[j][1]
 			var c := (s + m) % n
 			var after := run_of[c]
+			if short_run > 0.0 and after >= 0 and made[j] != null:
+				after = _past_short(runs, pts, run_of, after, 1)
 			if after < 0 or after == j or made[j] == null or made[after] == null:
 				continue
 			var across := (dirs[j] + dirs[after]).normalized()
@@ -1525,12 +1618,28 @@ func _mitred_rings() -> void:
 	_near = []
 
 
+## `short_run`: the run to cut a girder to at its end, from run `j` on (`step` -1 before, 1 after): the first
+## that is long enough for a girder of its own.
+func _past_short(runs: Array, pts: Array, run_of: Array[int], j: int, step: int) -> int:
+	var n := pts.size()
+	for tries in runs.size():
+		if j < 0:
+			return -1
+		var s: int = runs[j][0]
+		var m: int = runs[j][1]
+		if (pts[s] as Vector3).distance_to(pts[(s + m) % n]) >= short_run:
+			return j
+		j = run_of[(s - 1 + n) % n] if step < 0 else run_of[(s + m) % n]
+	return -1
+
+
 ## One ring girder of a section with `mitred_joints`: along the `m` edges from corner `s` of
 ## station `i` (`a` to `b`, its height facing `up`), drawn corner to corner. `before` and `after`
 ## are the directions of the girders it meets (zero: none there, a square end). Its collision
 ## stands `MITRE_GAP` / 2 back from each bisector and is fitted inside the skin. Null if the
 ## corners are too close for it.
-func _mitred_member(i: int, s: int, m: int, a: Vector3, b: Vector3, before: Vector3, after: Vector3, up: Vector3) -> PartData:
+func _mitred_member(i: int, s: int, m: int, a: Vector3, b: Vector3, before: Vector3, after: Vector3, up: Vector3,
+		meet_a := Vector3.INF, meet_b := Vector3.INF) -> PartData:
 	var length := a.distance_to(b)
 	if length < 0.05:
 		return null
@@ -1552,6 +1661,13 @@ func _mitred_member(i: int, s: int, m: int, a: Vector3, b: Vector3, before: Vect
 			return null
 		leans[end] = across.dot(xform.basis.y) / nx * (1.0 if end == 0 else -1.0)
 		backs[end] = MITRE_GAP * 0.5 / nx
+		# The girder it meets ends at another point (a short run between them left out): the two mitres are
+		# parallel planes, and where the other's lies behind this one's they stood in each other. Each gives half.
+		var meet := meet_a if end == 0 else meet_b
+		if meet != Vector3.INF:
+			var behind := across.dot(meet - (a if end == 0 else b)) * (-1.0 if end == 0 else 1.0)
+			if behind < 0.0:
+				backs[end] += -behind * 0.5 / nx
 	# Drawn out to the skin (`frame_to_skin`): the look is the gap taller on its outer side.
 	var lift := GAP if frame_to_skin else 0.0
 	if length - (hh + lift) * (absf(leans.x) + absf(leans.y)) - backs.x - backs.y < 0.05:
@@ -2212,7 +2328,7 @@ func _lining_face_edges(s: int, seg: int, e: int, ins: float) -> PackedVector2Ar
 	for k in line.size():
 		var at := ins if k == e else float(edge_insets.get(k, lining_inset)) + _lining_slope(seg, k)
 		d.append(depth * 0.5 + GAP + at + lining_thickness)
-	return FrameParts.inset_edges(line, d)
+	return FrameParts.inset_edges(line, d, straight_inset)
 
 
 ## The linings' room-side outline in bay `seg` at `z` (between its rings' lines, as its panels'
@@ -2259,8 +2375,12 @@ func _node_skin() -> void:
 			if look.get("skip", false):
 				row.append([])
 				continue
-			var e1 := (e + 1) % n
+			# "span": one plate over this edge and the next span - 1 round the profile (edges in one line, a
+			# face cut by panel lines that have closed up: those edges' looks say "skip").
+			var e1 := (e + maxi(1, int(look.get("span", 1)))) % n
 			var o2 := edge_out(pa, e)
+			if true_corners and pa[e].distance_to(pa[(e + 1) % n]) < pb[e].distance_to(pb[(e + 1) % n]):
+				o2 = edge_out(pb, e)
 			var out := Vector3(o2.x, o2.y, 0.0)
 			# How far each kind of edge stands back: along the corners, at the stations (a
 			# sloped plate's back face reaches past its ends), and at the section's ends.
@@ -2272,6 +2392,31 @@ func _node_skin() -> void:
 			var back_b := end_gap[1] + GAP * 0.5 if seg == last else station_back
 			var side_a := maxf(_corner_trim(pa, e), _corner_trim(pb, e))
 			var side_b := maxf(_corner_trim(pa, e1), _corner_trim(pb, e1))
+			if true_corners:
+				side_a = maxf(side_a, GAP + _fold_trim(pa, pb, za, zb, e, e1, (e + n - 1) % n, out))
+				side_b = maxf(side_b, GAP + _fold_trim(pa, pb, za, zb, e1, e, (e1 + 1) % n, out))
+				# a face leaning hard over (nearly an end wall): its trims are measured in its own plane, which hardly
+				# moves along the hull there, so its back still reached past the station into the next bay's plates
+				if tilt > 1.0:
+					var steep := minf(skin * tan(tilt), 0.3)
+					if seg > 0:
+						back_a = maxf(back_a, steep)
+					if seg < last:
+						back_b = maxf(back_b, steep)
+				# a face that closes to a point at a station (panel lines meeting): cut off where it is too narrow
+				# for its own side trims, or its tip lies in the tips of the faces beside it
+				var need := side_a + side_b + 0.02
+				var wa := pa[e].distance_to(pa[e1])
+				var wb := pb[e].distance_to(pb[e1])
+				var run := v3(mb, zb).distance_to(v3(ma, za))
+				if wa < need and wb > need:
+					back_a = maxf(back_a, run * (need - wa) / (wb - wa))
+				elif wb < need and wa > need:
+					back_b = maxf(back_b, run * (need - wb) / (wa - wb))
+				if seg > 0:
+					back_a = maxf(back_a, GAP * 0.5 + _station_fold(seg, seg, e, e1, out))
+				if seg < last:
+					back_b = maxf(back_b, GAP * 0.5 + _station_fold(seg, seg + 1, e, e1, out))
 			var corners := PackedVector3Array([v3(pa[e], za), v3(pa[e1], za), v3(pb[e1], zb), v3(pb[e], zb)])
 			var pieces: Array = []
 			var face := "%s/skin/e%d" % [_bay(seg), e]
@@ -2627,9 +2772,14 @@ func _seam(plate: PartData, flat: PackedVector2Array, rows: Array, frame: Transf
 				continue
 			best = r
 			best_off = off
-		# The bead runs the side's length (a margin in from its corners), however much of it the member is under.
+		# The bead runs the side's length (a margin in from its corners), however much of it the member is under; half
+		# of it, centred, with `seam_half`.
 		var lo := ROW_MARGIN if length > ROW_MARGIN * 4.0 else 0.0
 		var hi := length - lo
+		if target.seam_half:
+			var cut := half_seam(0.0, length)
+			lo = maxf(lo, cut.x)
+			hi = minf(hi, cut.y)
 		var p0 := a + d * lo
 		var p1 := a + d * hi
 		var w0 := frame * Vector3(p0.x, 0.0, p0.y)
@@ -2645,6 +2795,15 @@ func _seam(plate: PartData, flat: PackedVector2Array, rows: Array, frame: Transf
 				Vector2(w0.distance_to(w1), 0.0), "%s/seam:%s/%d" % [plate.path, rows[best][3], k])
 		target.seam_counts["member"] = int(target.seam_counts["member"]) + 1
 	target.parts_model().head_style = was
+
+
+## (FS2) The stretch of a seam from `t0` to `t1` along its side that `seam_half` welds: half of it, centred, but at least
+## `ConnectionData.FOLLOW_MIN` (so it is still followed) where the side is that long.
+static func half_seam(t0: float, t1: float) -> Vector2:
+	var length := t1 - t0
+	var keep := minf(length, maxf(length * 0.5, ConnectionData.FOLLOW_MIN + 0.02))
+	var mid := (t0 + t1) * 0.5
+	return Vector2(mid - keep * 0.5, mid + keep * 0.5)
 
 
 ## A lining in seam mode: two rivets, at the ends of its member rows furthest apart (`FrameTarget.two_apart`).
@@ -2734,6 +2893,8 @@ static func close_seams(target: FrameTarget) -> void:
 				target.seam_counts["plate"] = int(target.seam_counts["plate"]) + 1
 				continue
 			done[pair] = true
+			if target.seam_half:
+				span = half_seam(span.x, span.y)
 			var w0 := a + d * span.x
 			var w1 := a + d * span.y
 			into.append(target.join(plate, other, ConnectionData.Kind.WELD, (w0 + w1) * 0.5, d.cross(out).normalized(), d,
@@ -2755,6 +2916,12 @@ static func close_seams(target: FrameTarget) -> void:
 		held[(rows[pick][2] as PartData).id] = true
 		var r0: Vector3 = rows[pick][0]
 		var r1: Vector3 = rows[pick][1]
+		if target.seam_half:
+			var rl := r0.distance_to(r1)
+			var cut := half_seam(0.0, rl)
+			var rd := (r1 - r0) / maxf(rl, 0.001)
+			r1 = r0 + rd * cut.y
+			r0 = r0 + rd * cut.x
 		var up := (r1 - r0).normalized()
 		into.append(target.join(plate, rows[pick][2], ConnectionData.Kind.WELD, (r0 + r1) * 0.5, up.cross(out).normalized(), up,
 				Vector2(r0.distance_to(r1), 0.0), "%s/seam:%s/%d" % [plate.path, rows[pick][3], int(o["key"])]))

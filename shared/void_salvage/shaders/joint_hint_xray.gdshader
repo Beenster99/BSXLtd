@@ -37,7 +37,8 @@ void vertex() {
 	hint = 0.0;
 	int kind = int(INSTANCE_CUSTOM.z + 0.5) - 1;
 	if (joint_hint.w > 0.0 && joint_hint_color.a > 0.0 && kind >= 0 && (joint_hint_kinds & (1 << kind)) != 0) {
-		vec3 centre = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+		// A weld bead (kind 0) by each point of it, as the head shader (FS2: a long seam's middle is far off).
+		vec3 centre = kind == 0 ? (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz : (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 		hint = 1.0 - smoothstep(joint_hint.w * 0.45, joint_hint.w, distance(centre, joint_hint.xyz));
 	}
 	hint *= min(joint_hint_color.a, 1.0);
