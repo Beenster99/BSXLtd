@@ -10,6 +10,9 @@ const BUDGET := {
 	# The Kestrel imported from Void Salvage (bay and apron hulk) brings ~99 pairs each from
 	# its own frame (hull plates flush with the stern cap); lower as the export is fixed.
 	"ship_bay.shipyard": 198,
+	# The orbital yard (Wave 1): wall boxes overlapping at the room corners and ceiling tiles
+	# meeting the walls, each a strip 0.1 m wide; lower as the yard's walls are butted.
+	"yard.station": 26,
 }
 
 

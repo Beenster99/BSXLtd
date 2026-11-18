@@ -308,7 +308,7 @@ func _build_station() -> void:
 		var b: AABB = YardLayout.ROOMS[id].box
 		var floor_mat: Material = k.paint(Color(0.34, 0.38, 0.44), 0.0, 0.5, "plastic_textured") if id == "design" else deck
 		k.slab(Vector3(b.position.x, -0.3, b.position.z), Vector3(b.end.x, 0.0, b.end.z), floor_mat)
-		k.span(Vector3(b.position.x - 0.1, b.end.y, b.position.z - 0.1), Vector3(b.end.x + 0.1, b.end.y + 0.3, b.end.z + 0.1), hull)
+		k.span(Vector3(b.position.x - 0.095, b.end.y, b.position.z - 0.095), Vector3(b.end.x + 0.095, b.end.y + 0.3, b.end.z + 0.095), hull)
 		k.slab(Vector3(b.position.x, b.end.y - 0.02, b.position.z), Vector3(b.end.x, b.end.y, b.end.z), ceiling, 6.0, false)
 		var room := Node3D.new()
 		room.name = "Room_%s" % id
@@ -448,8 +448,9 @@ func _mark_clear_circle(k) -> void:
 func _door_frame(k, along_x: bool, at: float, a: float, b: float, h: float, mat: Material) -> void:
 	if along_x:
 		for x: float in [a, b]:
-			k.box(Vector3(0.12, h, 0.3), Vector3(x, h * 0.5, at), mat, false)
-		k.box(Vector3(b - a + 0.12, 0.12, 0.3), Vector3((a + b) * 0.5, h, at), mat, false)
+			k.box(Vector3(0.12, h - 0.06, 0.3), Vector3(x, (h - 0.06) * 0.5, at), mat, false)
+		# The head sits on the jambs, a touch deeper, so no face of one lies flush on the other's.
+		k.box(Vector3(b - a + 0.12, 0.12, 0.304), Vector3((a + b) * 0.5, h, at), mat, false)
 
 
 func _furnish_contracts(k) -> void:
