@@ -254,9 +254,20 @@ func _fill_palette() -> void:
 	var parts: Array = bus.catalog.parts.values()
 	parts.sort_custom(func(a, b): return a.display_name < b.display_name)
 	for pt: DesignPartType in parts:
+		if pt.hull_mount:
+			continue
 		var b := _swatch_button("%s   CR %s" % [pt.display_name, T.money(int(pt.cost))], pt.colour)
 		b.pressed.connect(plan.set_tool.bind("part:" + pt.id))
 		_tool_buttons["part:" + pt.id] = b
+		_palette.add_child(b)
+	_palette.add_child(T.label("ON THE HULL  (click on the hull's side)", "display_medium", 15, T.DIM))
+	for pt: DesignPartType in parts:
+		if not pt.hull_mount:
+			continue
+		var b := _swatch_button("%s   CR %s" % [pt.display_name, T.money(int(pt.cost))], pt.colour)
+		b.name = "Mount_" + pt.id
+		b.pressed.connect(plan.set_tool.bind("mount:" + pt.id))
+		_tool_buttons["mount:" + pt.id] = b
 		_palette.add_child(b)
 	_mark_tools()
 
@@ -534,6 +545,13 @@ func _on_selection(kind: String, id: String) -> void:
 		var spec := DesignStructure.option("inner" if kind == "wall" else "frame",
 				str(rec.structure.get("inner" if kind == "wall" else "frame")))
 		_selection.add_child(T.label("%s m   %s" % [PlanView._m(length), spec.get("name", "")], "mono_medium", 15, T.DIM))
+		_selection.add_child(_remove_button())
+	elif kind == "mount" and rec.mounts.has(id):
+		var pt := bus.catalog.part(str(rec.mounts[id].type))
+		if pt:
+			_selection.add_child(T.label(pt.display_name.to_upper(), "display_bold", 18, T.ORANGE))
+			_selection.add_child(T.label("ON THE HULL   CR %s   %.1f t   %.0f kN" % [T.money(int(pt.cost)),
+					pt.mass / 1000.0, pt.thrust], "mono_medium", 15, T.DIM))
 		_selection.add_child(_remove_button())
 	elif kind == "hull":
 		var outline := rec.hull_outline(plan.deck)

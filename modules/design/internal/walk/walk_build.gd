@@ -895,6 +895,35 @@ func _components() -> void:
 		component_look(body, pt, Vector3(f.size.x, h, f.size.y), int(c.get("rot", 0)), self)
 		_shape_in(body, Vector3(f.size.x, h, f.size.y), Vector3(0, h * 0.5, 0))
 		_outline_box(Transform3D(Basis.IDENTITY, body.position + Vector3(0, h * 0.5, 0)), Vector3(f.size.x, h, f.size.y))
+	for m: Dictionary in rec.mounts.values():
+		_mount(m)
+
+
+## A part on the outside of the hull, against its plating, its front facing out, halfway up
+## the deck's wall.
+func _mount(m: Dictionary) -> void:
+	var pt := catalog.part(str(m.type))
+	if pt == null:
+		return
+	var n := Vector2.from_angle(float(m.angle))
+	var at := Vector2(float(m.x), float(m.z)) + n * (WALL * 0.5 + LINING + pt.size.z * 0.5)
+	var body := _body({"kind": "mount", "id": str(m.id)})
+	body.name = "Mount_" + str(m.id)
+	var y := float(m.deck) * rec.deck_height + (rec.deck_height - FLOOR - pt.size.y) * 0.5
+	body.position = Vector3(at.x, y, at.y)
+	# Its front (-Z) turned to the hull's outward normal.
+	body.rotation.y = atan2(-n.x, -n.y)
+	var vs := VsParts.instance(pt.shared_part) if pt.shared_part != "" else null
+	if vs != null:
+		vs.position.y = -VsParts.shape(pt.shared_part).mesh.get_aabb().position.y
+		body.add_child(vs)
+	else:
+		_box_in(body, pt.size, paint(pt.colour.darkened(0.25), "metallic_paint"))
+		(body.get_child(0) as Node3D).position.y = pt.size.y * 0.5
+	for c in body.find_children("*", "VisualInstance3D", true, false):
+		(c as VisualInstance3D).layers = 1 | EXTERIOR
+	_shape_in(body, pt.size, Vector3(0, pt.size.y * 0.5, 0))
+	_outline_box(body.transform * Transform3D(Basis.IDENTITY, Vector3(0, pt.size.y * 0.5, 0)), pt.size)
 
 
 ## A part as a fitted unit: a dark plinth, its body in its colour, a panel on its working

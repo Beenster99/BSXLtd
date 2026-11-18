@@ -104,6 +104,31 @@ static func measure(d: DesignRecord) -> DesignStructure:
 	return s
 
 
+## The nearest point on a deck's outer hull to `p`: {point, normal (outward), dist, angle (of
+## the normal, radians from +X towards +Z)}, or {} if the deck has no outer hull.
+static func nearest_hull(d: DesignRecord, deck: int, p: Vector2, st: DesignStructure = null) -> Dictionary:
+	if st == null:
+		st = measure(d)
+	var best := {}
+	for e: Dictionary in st.outer_edges:
+		if int(e.deck) != deck:
+			continue
+		var a: Vector2 = e.a
+		var b: Vector2 = e.b
+		if a.distance_to(b) < 0.01:
+			continue
+		var q := Geometry2D.get_closest_point_to_segment(p, a, b)
+		var dist := q.distance_to(p)
+		if best.is_empty() or dist < float(best.dist):
+			var dir := (b - a).normalized()
+			var n := Vector2(-dir.y, dir.x)
+			var mid := (a + b) * 0.5
+			if on_deck(d, deck, mid + n * 0.1):
+				n = -n
+			best = {"point": q, "normal": n, "dist": dist, "angle": n.angle()}
+	return best
+
+
 ## Whether a point is on a deck's floor: inside its hull where it has one, else in a room.
 static func on_deck(d: DesignRecord, deck: int, p: Vector2) -> bool:
 	var outline := d.hull_outline(deck)

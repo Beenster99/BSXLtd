@@ -23,6 +23,8 @@ extends Resource
 @export var thrust := 0.0
 ## Crew bunks it adds.
 @export var crew := 0
+## Fitted on the outside of the hull (thrusters, engine bells) instead of in a room.
+@export var hull_mount := false
 ## Room types it may go in ([] = any).
 @export var rooms: PackedStringArray = PackedStringArray()
 ## Needs this much clear floor in front of it to be fitted and serviced, m.

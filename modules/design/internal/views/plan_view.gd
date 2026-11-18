@@ -161,6 +161,7 @@ func _on_changed() -> void:
 				or selected_kind == "door" and not rec.doors.has(selected_id) \
 				or selected_kind == "wall" and not rec.walls.has(selected_id) \
 				or selected_kind == "beam" and not rec.beams.has(selected_id) \
+				or selected_kind == "mount" and not rec.mounts.has(selected_id) \
 				or selected_kind == "hull" and int(selected_id) >= rec.hull_outline(deck).size():
 			select("", "")
 	if auto_frame:
@@ -258,6 +259,9 @@ func _draw_plan(rec: DesignRecord) -> void:
 		_draw_room(rec, r)
 	_draw_hull(rec)
 	_draw_beams(rec)
+	for m: Dictionary in rec.mounts.values():
+		if int(m.deck) == deck:
+			_draw_mount(m, selected_kind == "mount" and selected_id == m.id, 1.0)
 	for door: Dictionary in rec.doors.values():
 		if int(door.deck) == deck:
 			_draw_door(rec, door)
@@ -317,7 +321,38 @@ func _draw_hull_handles(rec: DesignRecord) -> void:
 		var at := to_screen(outline[i])
 		if _drag.get("kind", "") == "hull_pt" and int(_drag.index) == i and _drag.has("pos"):
 			at = to_screen(_drag.pos)
-		draw_rect(Rect2(at - Vector2(4, 4), Vector2(8, 8)), SELECT if sel else INK, not sel, -1.0 if sel else 1.5)
+		draw_rect(Rect2(at - Vector2(4, 4), Vector2(8, 8)), SELECT if sel else INK, not sel, 1.5 if sel else -1.0)
+
+
+## A part on the hull: its footprint standing out from the hull's side, its front outward.
+func _draw_mount(m: Dictionary, sel: bool, alpha: float) -> void:
+	var pt := bus.catalog.part(str(m.type))
+	if pt == null:
+		return
+	var at := Vector2(float(m.x), float(m.z))
+	var n := Vector2.from_angle(float(m.angle))
+	var t := Vector2(-n.y, n.x)
+	var half_w := pt.size.x * 0.5
+	var depth := pt.size.z
+	var pts := PackedVector2Array()
+	for c in [at + t * half_w, at + t * half_w + n * depth, at - t * half_w + n * depth, at - t * half_w]:
+		pts.append(to_screen(c))
+	var bad: bool = problem_parts.get(str(m.get("id", "")), "") == DesignRules.ERROR
+	draw_colored_polygon(pts, Color(pt.colour, 0.55 * alpha))
+	pts.append(pts[0])
+	draw_polyline(pts, SELECT if sel else (BAD if bad else Color(INK, alpha)), 2.0 if sel else 1.2)
+	var mid := to_screen(at + n * depth * 0.5)
+	_text(mid - Vector2(12, -4), pt.short, Color(INK, alpha), 11)
+
+
+## A hull part in hand: it snaps to the nearest stretch of hull under the pointer.
+func _mount_spot(p: Vector2) -> Dictionary:
+	var near := DesignStructure.nearest_hull(_rec(), deck, p, _structure)
+	if near.is_empty() or float(near.dist) > 3.0:
+		return {}
+	var q: Vector2 = (near.point as Vector2).snapped(Vector2.ONE * _grid() * 0.25)
+	near = DesignStructure.nearest_hull(_rec(), deck, q, _structure)
+	return {"x": (near.point as Vector2).x, "z": (near.point as Vector2).y, "angle": float(near.angle)}
 
 
 ## Beams placed by hand: a dashed orange line, the selected one solid.
@@ -509,6 +544,13 @@ func _draw_drag_ghost(_rec_unused: DesignRecord) -> void:
 	if tool in ["wall", "beam"] and editable:
 		_draw_line_ghost()
 		return
+	if tool.begins_with("mount:") and editable:
+		var spot := _mount_spot(to_ship(_mouse))
+		if not spot.is_empty():
+			spot["type"] = tool.trim_prefix("mount:")
+			_draw_mount(spot, true, 0.7)
+		_text(_mouse + Vector2(14, -10), "ON THE HULL: click on the hull's side", SELECT, 12)
+		return
 	if _drag.get("kind", "") != "new_room" or not _drag.has("rect"):
 		if editable and tool.begins_with("part:") and _drag.is_empty():
 			_draw_part_ghost()
@@ -670,7 +712,7 @@ func _gui_input(event: InputEvent) -> void:
 		elif not _drag.is_empty():
 			_drag_move(event.position)
 		elif bus.carrying != "" or editable and (tool.begins_with("part:") or tool.begins_with("run:")
-				or tool in ["hull", "wall", "beam"]):
+				or tool in ["hull", "wall", "beam"] or tool.begins_with("mount:")):
 			queue_redraw()
 		_update_cursor(event.position)
 	elif event is InputEventMouseButton:
@@ -755,6 +797,8 @@ func delete_selected() -> void:
 			bus.editor.do({"op": "remove_wall", "id": selected_id})
 		"beam":
 			bus.editor.do({"op": "remove_beam", "id": selected_id})
+		"mount":
+			bus.editor.do({"op": "remove_mount", "id": selected_id})
 		"hull":
 			# A corner: take it out (a hull keeps at least three).
 			var pts: Array = _rec().hull.get(str(deck), []).duplicate(true)
@@ -775,6 +819,13 @@ func pick(s: Vector2) -> Dictionary:
 		for i in outline.size():
 			if to_screen(outline[i]).distance_to(s) < 8.0:
 				return {"kind": "hull", "id": str(i)}
+	for m: Dictionary in rec.mounts.values():
+		var mp := bus.catalog.part(str(m.type))
+		if mp and int(m.deck) == deck:
+			var n := Vector2.from_angle(float(m.angle))
+			var rel := p - Vector2(float(m.x), float(m.z))
+			if absf(rel.dot(Vector2(-n.y, n.x))) < mp.size.x * 0.5 and rel.dot(n) > -0.1 and rel.dot(n) < mp.size.z:
+				return {"kind": "mount", "id": m.id}
 	for c: Dictionary in rec.components.values():
 		var r: Dictionary = rec.rooms.get(c.room, {})
 		var pt := bus.catalog.part(str(c.type))
@@ -874,6 +925,13 @@ func _press(s: Vector2) -> void:
 	elif tool in ["wall", "beam"]:
 		var at := _snap(p, _grid() * 0.5)
 		_drag = {"kind": "line", "a": at, "b": at}
+	elif tool.begins_with("mount:"):
+		var spot := _mount_spot(p)
+		if not spot.is_empty():
+			spot["type"] = tool.trim_prefix("mount:")
+			spot["deck"] = deck
+			bus.editor.do({"op": "add_mount", "mount": spot})
+			select("mount", _newest(rec.mounts))
 	else:
 		var hit := pick(s)
 		select(hit.get("kind", ""), hit.get("id", ""))

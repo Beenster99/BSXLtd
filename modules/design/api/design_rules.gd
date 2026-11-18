@@ -24,7 +24,25 @@ static func check(d: DesignRecord, cat: DesignCatalog) -> Array[Dictionary]:
 	_component_checks(d, cat, out)
 	_ship_checks(d, cat, out)
 	_service_checks(d, cat, out)
+	_mount_checks(d, cat, out)
 	return out
+
+
+## A hull part must be one that fits on the hull, and sit on the hull's side.
+static func _mount_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictionary]) -> void:
+	if d.mounts.is_empty():
+		return
+	var st := DesignStructure.measure(d)
+	for m: Dictionary in d.mounts.values():
+		var pt := cat.part(str(m.type))
+		if pt == null:
+			out.append(_problem("unknown_part", ERROR, "Unknown component %s" % m.type, [], [m.id]))
+			continue
+		if not pt.hull_mount:
+			out.append(_problem("not_hull_part", ERROR, "%s goes inside, not on the hull" % pt.display_name, [], [m.id]))
+		var near := DesignStructure.nearest_hull(d, int(m.deck), Vector2(m.x, m.z), st)
+		if near.is_empty() or float(near.dist) > 0.3:
+			out.append(_problem("off_hull", ERROR, "%s is not on the hull" % pt.display_name, [], [m.id]))
 
 
 ## Parts that need power with no wire to a source, engines with no fuel line to a pump. Only

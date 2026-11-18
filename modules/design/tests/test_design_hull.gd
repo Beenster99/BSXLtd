@@ -67,8 +67,38 @@ func run_tests() -> void:
 	d.apply(wu)
 	d.apply(u)
 	check(d.hull.is_empty() and d.walls.is_empty() and d.beams.is_empty(), "undo takes them all away again")
+	_mounts(bus)
 	await _plan_tools(bus)
 	await _walk_inside(bus)
+
+
+## Parts on the hull: a main thruster on the hull's side counts, one off it or one meant for a
+## room is flagged.
+func _mounts(bus: DesignBus) -> void:
+	var cat := bus.catalog
+	var d := DesignRecord.new("m", "Mounts")
+	d.apply({"op": "add_room", "room": {"type": "engineering", "deck": 0, "x": 0, "z": 0, "w": 6, "d": 4}})
+	check(cat.part("main_thruster") != null and cat.part("main_thruster").hull_mount, "a main thruster goes on the hull")
+	var near := DesignStructure.nearest_hull(d, 0, Vector2(3, 5))
+	check((near.point as Vector2).distance_to(Vector2(3, 4)) < 0.01 and (near.normal as Vector2).distance_to(Vector2(0, 1)) < 0.01,
+			"the nearest hull to a point behind the room is its stern wall, facing aft: %s" % [near])
+	var before := DesignTotals.compute(d, cat)
+	var u := d.apply({"op": "add_mount", "mount": {"type": "main_thruster", "deck": 0, "x": 3, "z": 4, "angle": near.angle}})
+	var mid := str(u.id)
+	check(d.mounts.has(mid) and mid.begins_with("h"), "a mount is added")
+	var after := DesignTotals.compute(d, cat)
+	check(is_equal_approx(after.thrust - before.thrust, cat.part("main_thruster").thrust)
+			and after.mass > before.mass, "its thrust and mass count: %.0f kN" % after.thrust)
+	var codes := DesignRules.check(d, cat).map(func(p): return str(p.code))
+	check(not "off_hull" in codes and not "not_hull_part" in codes, "on the hull's side it is fine: %s" % [codes])
+	d.apply({"op": "set_mount", "id": mid, "fields": {"z": 7.0}})
+	codes = DesignRules.check(d, cat).map(func(p): return str(p.code))
+	check("off_hull" in codes, "moved off the hull it is flagged")
+	d.apply({"op": "add_mount", "mount": {"type": "bunk", "deck": 0, "x": 0, "z": 2, "angle": PI}})
+	codes = DesignRules.check(d, cat).map(func(p): return str(p.code))
+	check("not_hull_part" in codes, "a bunk on the hull is flagged")
+	var back := DesignRecord.from_dict(JSON.parse_string(JSON.stringify(d.to_dict())))
+	check(back.mounts.size() == 2, "mounts save with the design")
 
 
 ## The console's plan: draw a hull corner by corner, drag a corner, draw a wall and a beam.
@@ -112,6 +142,14 @@ func _plan_tools(bus: DesignBus) -> void:
 	plan.select("hull", "2")
 	plan.delete_selected()
 	check(rec.hull_outline(0).size() == 4, "deleting a selected corner takes it out of the hull")
+	# A main thruster clicked just off the stern snaps onto it, facing aft.
+	plan.set_tool("mount:main_thruster")
+	plan._press(plan.to_screen(Vector2(2, 6.6)))
+	check(rec.mounts.size() == 1, "clicking near the hull fits a hull part")
+	var m: Dictionary = rec.mounts.values()[0]
+	check(absf(float(m.z) - 6.0) < 0.05 and Vector2.from_angle(float(m.angle)).distance_to(Vector2(0, 1)) < 0.01,
+			"it snaps onto the hull, facing out: %s" % [m])
+	check(str(plan.pick(plan.to_screen(Vector2(2, 6.8))).get("kind", "")) == "mount", "and can be picked")
 	layer.queue_free()
 	await frames(1)
 
@@ -133,6 +171,9 @@ func _walk_inside(bus: DesignBus) -> void:
 	check(inner.size() >= 5, "the room's sides and the drawn wall are inner walls: %d" % inner.size())
 	check(holder.find_children("Girder*", "", true, false).size() > b.ribs, "the placed beam is a girder")
 	check(holder.get_node_or_null("OpenDeckRoof_0") != null and b.lamps > 1, "the open deck is roofed and lit")
+	var mount := holder.find_child("Mount_*", true, false) as Node3D
+	check(mount != null and mount.find_child("MainThruster", true, false) != null and mount.position.z > 6.0,
+			"the thruster is Void Salvage's, outside the stern plating")
 	# Something stands on it: a ray down onto open deck hits the floor.
 	await frames(2)
 	var space := holder.get_world_3d().direct_space_state
