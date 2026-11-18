@@ -12,6 +12,7 @@ const ROOMS := {
 	"contracts": {"name": "Contracts desk", "box": AABB(Vector3(-12, 0, 0), Vector3(12, 3.2, 10))},
 	"crew": {"name": "Crew room", "box": AABB(Vector3(0, 0, 0), Vector3(20, 3.2, 12))},
 	"airlock": {"name": "Airlock", "box": AABB(Vector3(-40, 0, -5), Vector3(6, 3.2, 6))},
+	"design_lock": {"name": "Design room airlock", "box": AABB(Vector3(-11.9, 0, -25), Vector3(1.7, 5, 2.9))},
 }
 ## The whole station's outside, hull included (m).
 const HULL_BOX := AABB(Vector3(-40.3, -0.5, -30.3), Vector3(86.6, 13.0, 42.6))
@@ -21,6 +22,13 @@ const AIRLOCK_INNER_X := -34.0
 const AIRLOCK_OUTER_X := -40.0
 const AIRLOCK_DOOR_Z := Vector2(-2.9, -1.1)
 const AIRLOCK_DOOR_H := 2.4
+## The design room's own way out to the dock (0.4.0 playtest): a small lock in the window
+## wall's left corner. Its doors' z (inner, in the window wall; outer, facing B1), their
+## opening along x (from, to) and height. They slide up into the wall.
+const DESIGN_LOCK_INNER_Z := -22.0
+const DESIGN_LOCK_OUTER_Z := -25.0
+const DESIGN_LOCK_DOOR_X := Vector2(-11.6, -10.3)
+const DESIGN_LOCK_DOOR_H := 2.4
 
 ## The dock (stage 1.2): one build berth in front of the design room's window, and a
 ## holding berth either side.
