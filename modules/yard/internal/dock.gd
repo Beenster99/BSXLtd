@@ -39,9 +39,9 @@ func _berth(b: Dictionary) -> void:
 	node.name = "Berth_" + str(b.id)
 	add_child(node)
 	berth_nodes[b.id] = node
-	var white: Material = kit.paint(Kit.HULL, 0.2, 0.5)
-	var orange: Material = kit.paint(Kit.ORANGE, 0.15, 0.45)
-	var dark: Material = kit.paint(Kit.DARK, 0.5, 0.45)
+	var white: Material = kit.paint(Kit.HULL, 0.2, 0.4, "gloss_paint")
+	var orange: Material = kit.paint(Kit.ORANGE, 0.15, 0.4, "hazard_paint")
+	var dark: Material = kit.paint(Kit.DARK, 0.7, 0.45, "gunmetal")
 	var beam := 0.9 if build_berth else 0.7
 	var lo := box.position
 	var hi := box.end
@@ -95,8 +95,8 @@ func _berth(b: Dictionary) -> void:
 
 ## A truss along the berths' station side, and two arms back to the station's underside.
 func _dock_arm() -> void:
-	var white: Material = kit.paint(Kit.HULL, 0.2, 0.5)
-	var dark: Material = kit.paint(Kit.DARK, 0.5, 0.45)
+	var white: Material = kit.paint(Kit.HULL, 0.2, 0.4, "gloss_paint")
+	var dark: Material = kit.paint(Kit.DARK, 0.7, 0.45, "galvanised")
 	var z := -66.0
 	var y := -16.0
 	_truss(Vector3(-100, y, z), Vector3(100, y, z), white, dark)

@@ -108,8 +108,8 @@ func _build_racks() -> void:
 			# Rails for the crane, floor and top.
 		beams.append(Transform3D(Basis.from_scale(Vector3(0.25, 0.12, length + 1.0)), Vector3(float(a.x), 0.06, z_mid - 0.5)))
 		beams.append(Transform3D(Basis.from_scale(Vector3(0.25, 0.12, length + 1.0)), Vector3(float(a.x), top + 0.5, z_mid - 0.5)))
-	_multi(uprights, _kit.paint(Color(0.2, 0.3, 0.5), 0.4, 0.5), "Uprights")
-	_multi(beams, _kit.paint(Color(1.0, 0.5, 0.12), 0.2, 0.45), "Beams")
+	_multi(uprights, _kit.paint(Color(0.2, 0.3, 0.5), 0.3, 0.4, "enamel"), "Uprights")
+	_multi(beams, _kit.paint(Color(1.0, 0.5, 0.12), 0.2, 0.45, "hazard_paint"), "Beams")
 
 
 func _multi(xforms: Array[Transform3D], mat: Material, node_name: String) -> MultiMeshInstance3D:
@@ -322,7 +322,7 @@ func _colour_for_slot_load(slot: int) -> Color:
 
 func _build_front() -> void:
 	var k = _kit
-	var steel: Material = k.paint(Color(0.3, 0.32, 0.36), 0.5, 0.45)
+	var steel: Material = k.paint(Color(0.3, 0.32, 0.36), 0.7, 0.45, "galvanised")
 	var mesh_mat := StandardMaterial3D.new()
 	mesh_mat.albedo_color = Color(0.25, 0.28, 0.32, 0.35)
 	mesh_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -358,7 +358,7 @@ func _build_port(size: int, steel: Material) -> void:
 		k.box(Vector3(s + 0.1, 0.03, 0.05), Vector3(p.x, bed_top + 0.012, HANDOVER_Z + 0.1 + i * 0.25),
 				k.paint(Color(0.6, 0.62, 0.66), 0.8, 0.3), false)
 	# Hazard edge round a floor bay.
-	k.box(Vector3(s + 0.3, 0.012, 0.15), Vector3(p.x, 0.006, bed_end + 0.15), k.paint(Color(1.0, 0.78, 0.1), 0.1, 0.6), false)
+	k.box(Vector3(s + 0.3, 0.012, 0.15), Vector3(p.x, 0.006, bed_end + 0.15), k.paint(Color(1.0, 0.78, 0.1), 0.1, 0.6, "hazard_stripes"), false)
 	# The terminal beside the port.
 	var tx := p.x + s * 0.5 + 0.7
 	var term: MeshInstance3D = k.box(Vector3(0.5, 1.15, 0.4), Vector3(tx, 0.575, -6.8), k.paint(Color(0.85, 0.86, 0.88), 0.1, 0.5))
