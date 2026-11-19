@@ -922,22 +922,27 @@ func unregister_running_cost(id: String) -> void:
 	_running_costs.erase(id)
 
 
-## Each open contract's payments: Contracts' payment_profiles() where it has them, else the
-## books' own. [{contract_id, title, value, due_day, stages: [{id, name, amount, expected_day,
+## Each open contract's payments: Contracts' payment_profiles() for the contracts it lists,
+## the books' own for the rest. [{contract_id, title, value, due_day, stages: [{id, name, amount, expected_day,
 ## paid, paid_day}], trial: {bonus, holdback}, parts_to_buy}]. Unpaid stages without a day are
 ## spread evenly between today and the due day; a contract without stages pays what is left at
 ## its due day.
 func payment_profiles() -> Array:
+	var out: Array = []
+	var theirs := {}
 	var contracts := Modules.bus("contracts")
 	if contracts and contracts.has_method("payment_profiles"):
 		var given: Variant = contracts.call("payment_profiles")
-		if given is Array and not (given as Array).is_empty():
-			return given
-	var out: Array = []
+		if given is Array:
+			for p: Variant in given:
+				if p is Dictionary:
+					out.append(p)
+					theirs[str((p as Dictionary).get("contract_id", ""))] = true
 	var today := get_day()
 	for id: String in _books.contracts:
 		var c: Dictionary = _books.contracts[id]
-		if c.state != "open":
+		# Contracts' own profile wins for the contracts it lists; the books fill in the rest.
+		if c.state != "open" or theirs.has(id):
 			continue
 		var stages: Array = []
 		var plan: Array = c.get("stages", [])
