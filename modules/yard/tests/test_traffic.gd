@@ -19,6 +19,7 @@ func run_tests() -> void:
 	check(not traffic.busy(), "quiet before a contract")
 	_routes(traffic, store)
 	await _freighter()
+	await _kits()
 
 	var order := [{"part": "HullPlate", "qty": 60}, {"part": "BoxBeam", "qty": 10}, {"part": "JunctionBox", "qty": 12},
 			{"part": "HydrogenEngine", "qty": 2}, {"part": "Reactor", "qty": 1}, {"part": "Pipe", "qty": 25},
@@ -177,4 +178,81 @@ func _freighter() -> void:
 	check(all_in, "the stores hold all of it")
 	check(traffic.bots.size() == traffic.store_bots + traffic.yard_bots, "and every visiting bot went home aboard")
 	traffic.queue_free()
+	await frames(1)
+
+
+## Mover bots (0.4.1): a kit goes off the racks to wherever its target is, by the corridor into
+## a room, out of the open face to the dock, and follows it; the worker bots in the build berth
+## ask for frame kits and weld each on as a ring.
+func _kits() -> void:
+	var store := YardRackStore.new()
+	store.fill_demo(0.6)
+	var traffic := Traffic.new()
+	traffic.set_process(false)
+	add_child(traffic)
+	traffic.build(store)
+	var you := Node3D.new()
+	add_child(you)
+	you.global_position = Vector3(32.0, 1.2, 8.0)   # in the sleeping quarters
+	var got := {"id": -1}
+	traffic.kit_delivered.connect(func(id: int, _k: String) -> void: got.id = id)
+	var beams := store.count("BoxBeam")
+	var id: int = traffic.deliver_kit("frame", you)
+	check(id > 0, "a frame kit is on its way")
+	var corridor := false
+	var through_wall := false
+	var t := 0.0
+	while got.id != id and t < 400.0:
+		traffic.step(0.1)
+		t += 0.1
+		for b: Dictionary in traffic.bots:
+			if b.yard:
+				var p := (b.node as Node3D).global_position
+				if absf(p.z - -2.0) < 0.6 and p.y < 3.0 and p.x > 28.0 and p.x < 34.0:
+					corridor = true
+				if p.z > -3.8 and p.z < 0.0 and p.y > 3.2:
+					through_wall = true
+		if t > 20.0 and t < 21.0:
+			you.global_position = Vector3(26.0, 1.2, 6.0)   # you walk off down the aisle
+	check(got.id == id, "the kit arrived (%.0f s)" % t)
+	check(store.count("BoxBeam") == beams - 2, "its parts came off the racks")
+	var o: Dictionary = traffic.kit_order(id)
+	var near := (o.loads as Array).all(func(l: Dictionary) -> bool: return (l.node as Node3D).global_position.distance_to(Vector3(26.0, 0.0, 6.0)) < 3.5)
+	check((o.loads as Array).size() >= 2 and near, "set down by you where you went, not where you were")
+	check(corridor and not through_wall, "the mover came along the corridor, under its ceiling")
+	var on_floor := (o.loads as Array).all(func(l: Dictionary) -> bool: return absf((l.node as Node3D).global_position.y) < 0.05)
+	check(on_floor, "on the quarters' floor")
+	# Home again, and the loads go back after a while.
+	for i in 900:
+		traffic.step(0.25)
+	check((o.loads as Array).all(func(l: Dictionary) -> bool: return not traffic.loads.has(l)), "uncollected kits go back after a while")
+	var homes := traffic.bots.filter(func(b: Dictionary) -> bool: return b.yard and (b.node as Node3D).position.distance_to(b.home) < 0.5)
+	check(homes.size() == traffic.yard_bots, "the movers are home")
+	# Out to the dock.
+	you.global_position = Vector3(-5.0, -2.0, -80.0)
+	got.id = -1
+	id = traffic.deliver_kit("power", you)
+	t = 0.0
+	while got.id != id and t < 400.0:
+		traffic.step(0.1)
+		t += 0.1
+	o = traffic.kit_order(id)
+	check(got.id == id and (o.loads as Array).all(func(l: Dictionary) -> bool: return (l.node as Node3D).global_position.distance_to(you.global_position) < 4.0),
+			"a power kit brought out to you in zero g")
+	# The worker bots build.
+	var Workers := load("res://modules/yard/internal/yard_workers.gd")
+	var crew: Node3D = Workers.new()
+	crew.set_process(false)
+	add_child(crew)
+	crew.build(traffic)
+	var rings: int = crew.rings_built()
+	t = 0.0
+	while crew.rings_built() == rings and t < 600.0:
+		traffic.step(0.2)
+		crew.step(0.2)
+		t += 0.2
+	check(crew.rings_built() == rings + 1, "the worker bots asked for a frame kit and welded it on as a ring (%.0f s)" % t)
+	crew.queue_free()
+	traffic.queue_free()
+	you.queue_free()
 	await frames(1)
