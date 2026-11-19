@@ -25,6 +25,9 @@ var steppers: Array[Node] = []
 var advancers: Array[Node] = []
 ## Ticks run since the epoch.
 var tick := 0
+## The pace (Game time): each tick moves things on by TICK * rate (0 holds them; the locks
+## always run at their own pace, so nobody is shut in an airlock while time is paused).
+var rate := 1.0
 ## True while well behind the shared clock (replaying after joining).
 var catching_up := false
 
@@ -40,6 +43,7 @@ func setup(bus: Object) -> void:
 	for n in advancers:
 		n.set_physics_process(false)
 	if _bus:
+		rate = float(_bus.get("sim_epoch_rate"))
 		for e: Dictionary in _bus.get("sim_log"):
 			_enqueue(e)
 		_bus.connect("sim_logged", _enqueue)
@@ -54,7 +58,9 @@ func _exit_tree() -> void:
 func restart() -> void:
 	_queue.clear()
 	tick = 0
+	rate = 1.0
 	if _bus:
+		rate = float(_bus.get("sim_epoch_rate"))
 		for e: Dictionary in _bus.get("sim_log"):
 			_enqueue(e)
 
@@ -79,15 +85,18 @@ func _process(_delta: float) -> void:
 	catching_up = target - tick > BEHIND
 
 
-## One tick: the events due, then everything moved on by TICK.
+## One tick: the events due, then everything moved on by TICK at the pace (the locks by TICK).
 func run_tick() -> void:
 	while not _queue.is_empty() and int(_queue[0].tick) <= tick:
 		var e: Dictionary = _queue.pop_front()
-		if apply.is_valid():
+		if String(e.get("kind", "")) == "rate":
+			rate = maxf(0.0, float(e.get("rate", 1.0)))
+		elif apply.is_valid():
 			apply.call(e)
-	for n in steppers:
-		if is_instance_valid(n):
-			n.call("step", TICK)
+	if rate > 0.0:
+		for n in steppers:
+			if is_instance_valid(n):
+				n.call("step", TICK * rate)
 	for n in advancers:
 		if is_instance_valid(n):
 			n.call("advance", TICK)

@@ -73,6 +73,11 @@ const SIM_TICK := 1.0 / 60.0
 const SIM_LEAD := 30
 var sim_epoch := -1.0
 var sim_log: Array[Dictionary] = []
+## The pace of the yard's work (Game time's: 0 paused, 0.5 to 4): the host's latest, and the
+## pace the clock started at. A change is a "rate" entry in the log, so every player's yard
+## changes pace at the same tick; each tick moves things on by SIM_TICK * the pace.
+var sim_rate := 1.0
+var sim_epoch_rate := 1.0
 var _sim_n := 0
 var _net: Object
 
@@ -284,11 +289,23 @@ func sim_target_tick() -> int:
 func sim_start() -> void:
 	if _net == null or not bool(_net.call("is_online")):
 		sim_epoch = _now()
+		sim_epoch_rate = sim_rate
 		sim_log.clear()
 		return
 	if not bool(_net.call("is_host")):
 		sim_epoch = -1.0   # wait for the host's answer
 	sim_request({"kind": "epoch"})
+
+
+## Game time (host): the yard's work runs at `rate` times its own pace from a tick a moment
+## ahead, on every player's machine. Before the clock starts it is the pace it starts at.
+func set_sim_rate(rate: float) -> void:
+	rate = maxf(0.0, rate)
+	if is_equal_approx(rate, sim_rate):
+		return
+	sim_rate = rate
+	if sim_epoch >= 0.0:
+		sim_request({"kind": "rate", "rate": rate})
 
 
 ## Asks for something to happen in the yard at a tick every player agrees on.
@@ -306,6 +323,7 @@ func _sim_validate(sender: int, p: Dictionary) -> Variant:
 	if String(p.get("kind", "")) == "epoch":
 		out.fresh = sim_epoch < 0.0 or not _anyone_in_yard(sender)
 		out.epoch = _now() + 0.1 if out.fresh else sim_epoch
+		out.rate = sim_rate if out.fresh else sim_epoch_rate
 		return out
 	if sim_epoch < 0.0:
 		return "the yard's clock has not started"
@@ -323,6 +341,7 @@ func _sim_apply(p: Dictionary) -> void:
 		if bool(p.get("fresh", false)):
 			sim_log.clear()
 		sim_epoch = float(p.epoch)
+		sim_epoch_rate = float(p.get("rate", sim_epoch_rate))
 		if changed:
 			sim_reset.emit()
 		return
@@ -359,7 +378,7 @@ func _on_session_ended(_reason: String = "") -> void:
 
 
 func get_net_snapshot() -> Dictionary:
-	return {"epoch": sim_epoch, "log": sim_log.duplicate(true)}
+	return {"epoch": sim_epoch, "rate": sim_epoch_rate, "log": sim_log.duplicate(true)}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
@@ -367,5 +386,6 @@ func apply_net_snapshot(data: Dictionary) -> void:
 	if is_equal_approx(epoch, sim_epoch):
 		return
 	sim_epoch = epoch
+	sim_epoch_rate = float(data.get("rate", 1.0))
 	sim_log.assign(data.get("log", []))
 	sim_reset.emit()

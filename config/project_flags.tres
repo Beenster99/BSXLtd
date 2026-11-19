@@ -96,6 +96,8 @@ flags = {
 "supply": true,
 "supply.wall": true,
 "shared_components": true,
+"time": true,
+"time.hud": true,
 "trades": true,
 "trades.bolting": true,
 "trades.jump": true,

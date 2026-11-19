@@ -600,11 +600,31 @@ func make_screen(interactive: bool, channel := "orders") -> Control:
 func _process(delta: float) -> void:
 	if not _is_authority() or not _clock_running():
 		return
-	_clock_carry += delta * _books.rules.game_minutes_per_second
+	_clock_carry += delta * _books.rules.game_minutes_per_second * time_rate()
 	if _clock_carry >= 1.0:
 		var whole := int(_clock_carry)
 		_clock_carry -= whole
 		_books.advance_minutes(whole)
+
+
+## The pace Game time sets (Modules.bus("time").rate, reached by name: 0 paused, 0.5 to 4),
+## 1 without it. The clock runs game_minutes_per_second times this.
+func time_rate() -> float:
+	var time := Modules.bus("time")
+	if time == null:
+		return 1.0
+	var r: Variant = time.get("rate")
+	return maxf(0.0, float(r)) if r != null else 1.0
+
+
+## Game time skipping ahead (host): the clock runs on to `to_minute` at once, every midnight on
+## the way closing its day (rent, wages, penalties, the market, payments due), and the crew get
+## the books straight after.
+func skip_to_minute(to_minute: int) -> void:
+	if not _is_authority() or to_minute <= _books.minute:
+		return
+	_books.advance_minutes(to_minute - _books.minute)
+	_books_changed()
 
 
 ## The business clock runs while a yard is open: the old shipyard, or the orbital yard's
@@ -633,12 +653,16 @@ func get_minute() -> int:
 ## Real seconds until a business-clock minute (an order's eta_minute) comes round, 0 once
 ## it has.
 func seconds_until(at_minute: int) -> int:
-	return _books.seconds_until(at_minute)
+	var r := time_rate()
+	var at_one := _books.seconds_until(at_minute)
+	return at_one if r <= 0.0 else ceili(at_one / r)
 
 
 ## How soon an order on its way arrives, for the screens: "IN 23 S", or "ARRIVING".
 func arrival_text(at_minute: int) -> String:
 	var left := seconds_until(at_minute)
+	if left > 0 and time_rate() <= 0.0:
+		return "PAUSED"
 	return "IN %d S" % left if left > 0 else "ARRIVING"
 
 
