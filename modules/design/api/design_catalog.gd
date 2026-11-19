@@ -16,6 +16,18 @@ const CATEGORIES: Array = [["flight", "Flight and control"], ["power", "Power"],
 		["storage", "Cupboards and lockers"], ["cargo", "Cargo"], ["doors", "Doors and hatches"],
 		["lighting", "Lights and screens"], ["structure", "Structure"]]
 
+## Kinds of door a door in the record can be ("kind", "door" when missing): its opening, m,
+## whether it has leaves that slide shut, and what one costs to fit.
+const DOOR_KINDS: Dictionary = {
+	"door": {"name": "Sliding door", "short": "DOOR", "w": 1.2, "h": 2.2, "leaves": true,
+			"cost": 2400.0, "mass": 180.0, "hours": 3.0},
+	"doorway": {"name": "Open doorway", "short": "DOORWAY", "w": 1.2, "h": 2.2, "leaves": false,
+			"cost": 300.0, "mass": 25.0, "hours": 1.0},
+	"cargo": {"name": "Cargo door", "short": "CARGO DOOR", "w": 2.4, "h": 2.4, "leaves": true,
+			"cost": 7500.0, "mass": 650.0, "hours": 6.0},
+}
+const DOOR_ORDER: PackedStringArray = ["door", "doorway", "cargo"]
+
 var rooms: Dictionary = {}  # id -> DesignRoomType
 var parts: Dictionary = {}  # id -> DesignPartType (base types only)
 ## Size/grade variants made so far ("reactor_small:5H" -> DesignPartType), DesignGrades.derive.
@@ -65,6 +77,20 @@ func part(type_id: String) -> DesignPartType:
 			p = parts.get(p.id) if parts.has(p.id) else part(p.id)
 	_variants[type_id] = p
 	return p
+
+
+## What a door in the record is (DOOR_KINDS), "door" for an unknown or missing kind.
+static func door_kind(door: Dictionary) -> Dictionary:
+	return DOOR_KINDS.get(str(door.get("kind", "door")), DOOR_KINDS["door"])
+
+
+## A door's opening width and height, m.
+static func door_w(door: Dictionary) -> float:
+	return float(door_kind(door).w)
+
+
+static func door_h(door: Dictionary) -> float:
+	return float(door_kind(door).h)
 
 
 ## The base type of a component type id ("reactor_small:5H" -> reactor_small).

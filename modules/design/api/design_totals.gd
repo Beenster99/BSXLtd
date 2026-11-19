@@ -115,6 +115,18 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 	keys.sort()
 	for k in keys:
 		t.lines.append(part_lines[k])
+	var door_n := {}
+	for g: Dictionary in d.doors.values():
+		var k := str(g.get("kind", "door"))
+		if not DesignCatalog.DOOR_KINDS.has(k):
+			k = "door"
+		door_n[k] = int(door_n.get(k, 0)) + 1
+	for k: String in DesignCatalog.DOOR_ORDER:
+		if door_n.has(k):
+			var dk: Dictionary = DesignCatalog.DOOR_KINDS[k]
+			var n := float(door_n[k])
+			t.lines.append({"kind": "door", "id": k, "name": dk.name, "qty": n, "unit": "x",
+					"cost": n * float(dk.cost), "mass": n * float(dk.mass), "hours": n * float(dk.hours)})
 	var run_m := {}
 	for w: Dictionary in d.runs.values():
 		if DesignServices.KINDS.has(str(w.kind)):

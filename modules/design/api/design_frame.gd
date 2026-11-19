@@ -150,7 +150,7 @@ static func _inside(d: DesignRecord, p: Dictionary) -> void:
 			var gt := float(g.x) if across else float(g.z)
 			var ga := float(g.z) if across else float(g.x)
 			if absf(ga - at) < 0.05 and gt > t0 + 0.01 and gt < t1 - 0.01:
-				doors.append(gt)
+				doors.append([gt, DesignCatalog.door_w(g), DesignCatalog.door_h(g)])
 		if t1 - t0 > WALL_END * 2.0 + 0.2:
 			walls.append({"deck": int(e.deck), "across": across, "at": at, "t0": t0 + WALL_END, "t1": t1 - WALL_END,
 					"y0": y0, "y1": y0 + h - CEILING, "doors": doors})
@@ -425,8 +425,8 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 			sw.frame = StudWall.along(float(w.at))
 		sw.floor_y = y0
 		sw.spacing = STUD
-		for t: float in w.doors:
-			sw.openings.append(Rect2(t - DOOR_W * 0.5, y0, DOOR_W, DOOR_H))
+		for o: Array in w.doors:
+			sw.openings.append(Rect2(float(o[0]) - float(o[1]) * 0.5, y0, float(o[1]), float(o[2])))
 		sw.build()
 		walls.append(sw)
 	h.set_meta("decks", decks)
@@ -557,6 +557,8 @@ static func _openings(d: DesignRecord, p: Dictionary) -> void:
 		if not d.rooms.has(room_id):
 			continue
 		var r: Dictionary = d.rooms[room_id]
+		var dw := DesignCatalog.door_w(g)
+		var dh := DesignCatalog.door_h(g)
 		var x := float(g.x)
 		var z := float(g.z)
 		var y0 := int(g.deck) * h
@@ -572,13 +574,13 @@ static func _openings(d: DesignRecord, p: Dictionary) -> void:
 			"px", "nx":
 				var s := 1.0 if best == "px" else -1.0
 				var edge := STARBOARD if s > 0.0 else PORT
-				var box := AABB(Vector3(x if s > 0.0 else x - far, y0, z - DOOR_W * 0.5), Vector3(far, DOOR_H, DOOR_W))
+				var box := AABB(Vector3(x if s > 0.0 else x - far, y0, z - dw * 0.5), Vector3(far, dh, dw))
 				(p.openings as Array).append({"name": name, "edge": edge, "box": box})
 				# No ring girder across the doorway: the jambs carry round it.
 				for i in st.size():
-					if absf(float(st[i].z) - z) < DOOR_W * 0.5 + 0.3:
+					if absf(float(st[i].z) - z) < dw * 0.5 + 0.3:
 						p.skip["%d:%d" % [i, edge]] = true
-				_square_up(st, z - DOOR_W * 0.5, z + DOOR_W * 0.5)
+				_square_up(st, z - dw * 0.5, z + dw * 0.5)
 			"pz", "nz":
 				var end := 1 if best == "pz" else 0
 				var cap_z := float(st[st.size() - 1 if end == 1 else 0].z)
@@ -587,7 +589,7 @@ static func _openings(d: DesignRecord, p: Dictionary) -> void:
 				if absf(cap_z - z) > clear + 0.05:
 					continue
 				(p.openings as Array).append({"name": name, "edge": -1, "cap": end,
-						"hole": Rect2(x - DOOR_W * 0.5, y0, DOOR_W, DOOR_H)})
+						"hole": Rect2(x - dw * 0.5, y0, dw, dh)})
 
 
 ## The stations either side of z0..z1 (and one more each way, so none of them leans) all take

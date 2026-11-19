@@ -14,6 +14,7 @@ func run_tests() -> void:
 	_catalogue()
 	_variants()
 	_ratings()
+	_doors()
 	_palette()
 
 
@@ -116,6 +117,39 @@ func _ratings() -> void:
 	check(DesignTotals.compute(dry, cat).jump_range() == 0.0, "no fuel aboard, no jump")
 
 
+## Door kinds: a plain door, an open doorway and a wide cargo door, priced on the parts list
+## and checked against the wall they stand in.
+func _doors() -> void:
+	var d := DesignRecord.new("dk", "Doors")
+	for op in [
+		{"op": "add_room", "room": {"id": "a", "type": "corridor", "x": 0, "z": 0, "w": 2, "d": 8}},
+		{"op": "add_room", "room": {"id": "b", "type": "cargo", "x": 2, "z": 0, "w": 6, "d": 8}},
+		{"op": "add_room", "room": {"id": "c", "type": "mess", "x": -4, "z": 0, "w": 4, "d": 4}},
+		{"op": "add_door", "door": {"id": "d1", "a": "a", "b": "b", "x": 2, "z": 4, "kind": "cargo"}},
+		{"op": "add_door", "door": {"id": "d2", "a": "a", "b": "c", "x": 0, "z": 2, "kind": "doorway"}},
+		{"op": "add_door", "door": {"id": "d3", "a": "c", "b": "", "x": -4, "z": 2}},
+	]:
+		check(not d.apply(op).is_empty(), "door op applies: %s" % [op])
+	check(DesignCatalog.door_w(d.doors.d1) > 2.0 and DesignCatalog.door_w(d.doors.d3) < 1.5, "a cargo door is wider")
+	check(not DesignCatalog.door_kind(d.doors.d2).leaves, "a doorway has no door in it")
+	var t := DesignTotals.compute(d, cat)
+	var kinds := {}
+	for l in t.lines:
+		if l.kind == "door":
+			kinds[l.id] = l
+	check(kinds.has("cargo") and kinds.has("doorway") and kinds.has("door"), "each door kind is on the parts list")
+	check(float(kinds.cargo.cost) > float(kinds.door.cost) and float(kinds.doorway.cost) < float(kinds.door.cost),
+			"cargo doors cost most, doorways least")
+	var bad := DesignRules.check(d, cat).filter(func(p): return "door" in str(p.text).to_lower() and p.severity == DesignRules.ERROR)
+	check(bad.is_empty(), "all three doors fit their walls: %s" % [bad.map(func(p): return p.text)])
+	var squeeze := DesignRecord.new("sq", "Squeeze")
+	squeeze.apply({"op": "add_room", "room": {"id": "a", "type": "corridor", "x": 0, "z": 0, "w": 2, "d": 2}})
+	squeeze.apply({"op": "add_room", "room": {"id": "b", "type": "cargo", "x": 2, "z": 0, "w": 4, "d": 4}})
+	squeeze.apply({"op": "add_door", "door": {"id": "d1", "a": "a", "b": "b", "x": 2, "z": 1, "kind": "cargo"}})
+	var errs := DesignRules.check(squeeze, cat).filter(func(p): return p.severity == DesignRules.ERROR and "door" in str(p.text).to_lower())
+	check(not errs.is_empty(), "a cargo door does not fit a 2 m wall")
+
+
 func _palette() -> void:
 	var bus := Modules.bus("design") as DesignBus
 	bus.library.reset_data()
@@ -138,5 +172,10 @@ func _palette() -> void:
 	if b:
 		b.pressed.emit()
 		check(console.plan.tool == "part:reactor_small:5H", "picking it arms that variant: %s" % console.plan.tool)
+	var cargo_b := console.find_child("DoorKind_cargo", true, false) as Button
+	check(cargo_b != null, "the door kinds are on the palette")
+	if cargo_b:
+		cargo_b.pressed.emit()
+		check(console.plan.tool == "door" and console.plan.door_kind == "cargo", "CARGO DOOR arms the door tool")
 	layer.queue_free()
 	holo.queue_free()
