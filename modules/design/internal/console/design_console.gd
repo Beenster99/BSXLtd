@@ -434,6 +434,10 @@ func _fill_orders() -> void:
 			var who := T.label(_order_tag(current), "mono_medium", 12, T.DIM)
 			who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_palette.add_child(who)
+			if current.has("region"):
+				var where := T.label(ShipOrders.region_line(current), "mono_medium", 12, T.CYAN)
+				where.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				_palette.add_child(where)
 			_palette.add_child(_achievability_label(current, 14))
 		var lines := T.label("\n".join(ShipOrders.demand_lines(current) + ShipOrders.clause_lines(current)), "mono_medium", 13, T.DIM)
 		lines.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -604,7 +608,7 @@ static func _order_tooltip(o: Dictionary) -> String:
 	var a: Dictionary = o.achievability
 	return "%s\n%s\n\n%s\n\n%s\n\nWHAT THEY WANT\n%s\n\n%s: CR %s budget, about CR %s for the cheapest build (x%.2f)." % [
 			str(o.title), _order_tag(o), str(o.story), str(o.brief),
-			"\n".join(ShipOrders.demand_lines(o) + ShipOrders.clause_lines(o)),
+			"\n".join(ShipOrders.demand_lines(o) + ShipOrders.clause_lines(o) + PackedStringArray([ShipOrders.region_line(o)])),
 			str(a.label).to_upper(), T.money(int(o.budget)), T.money(int(o.estimate)), float(a.ratio)]
 
 

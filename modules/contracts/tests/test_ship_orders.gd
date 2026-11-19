@@ -13,6 +13,7 @@ func run_tests() -> void:
 	_masses()
 	_legacy_and_locks()
 	_berths()
+	_work()
 
 
 func _board() -> void:
@@ -159,3 +160,28 @@ func _berths() -> void:
 	check((by_size.small as Array).max() == 1 and (by_size.medium as Array).max() == 1, "small and medium ships fit the starter berth")
 	check((by_size.get("giga", [0]) as Array).max() >= 3 and (by_size.get("mega", [0]) as Array).max() >= 3, "the biggest projects need the biggest berths")
 	print("ship orders: berths by size ", by_size.keys().map(func(k): return "%s %s-%s" % [k, (by_size[k] as Array).min(), (by_size[k] as Array).max()]))
+
+
+## Orders say where the ship works (how much sun solar gets) and some ask for days without
+## refuelling or no reactor aboard; the estimate pays for the tanks.
+func _work() -> void:
+	var regions := {}
+	var endurance := 0
+	var no_reactor := 0
+	for cycle in range(1, 60):
+		for o: Dictionary in ShipOrders.for_cycle(cycle):
+			regions[o.region] = true
+			check(ShipOrders.region_line(o) != "", "an order says where she works")
+			if o.demands.has("endurance_days"):
+				endurance += 1
+			if o.demands.has("reactors"):
+				no_reactor += 1
+				check(ShipOrders.demand_lines(o).has("No reactor aboard"), "no reactor reads as a line")
+	check(regions.size() == 4, "ships work in every region: %s" % [regions.keys()])
+	check(endurance > 10 and no_reactor > 5, "some orders ask for endurance (%d) or no reactor (%d)" % [endurance, no_reactor])
+	var base := {"crew": 6, "speed": 120}
+	var long := {"crew": 6, "speed": 120, "endurance_days": 120}
+	check(ShipOrders.estimate(long) > ShipOrders.estimate(base), "four months between ports costs more than none")
+	check(ShipOrders.length_for(long) > ShipOrders.length_for(base), "and her tanks make her longer")
+	for o: Dictionary in ShipOrders.for_cycle(3, ShipOrders.LEGACY_PER_CYCLE, false):
+		check(not o.demands.has("endurance_days") and not o.demands.has("reactors"), "legacy orders ask for neither")
