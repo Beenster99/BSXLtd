@@ -1,18 +1,26 @@
 extends RefCounted
 ## The TartanCo bots' upgrade path (beenster, 19 Nov: "We need an upgrade path for tartanco
-## bots", then his pick: marks with module slots). Each bot is a mark: Mk3 as they come, Mk4,
-## Mk5. Each mark is quicker and wears slower than the one before and has one more slot (Mk3 one,
-## Mk4 two, Mk5 three); modules go in the slots, each a part with one effect on the bot's work.
+## bots", then his pick: marks with module slots). Each bot is a mark: Mk1 as they come, up to
+## Mk5. Each mark is quicker and wears slower than the one before; Mk1 and Mk2 have one slot, Mk3
+## and Mk4 two, Mk5 three; modules go in the slots, each a part with one effect on the bot's work.
 ## TartanCo's engineers fit them on a service visit. Pure data: YardWorkers reads the effects.
-## Higher marks open new trades too (a pipe fitter at Mk4, a wire tech at Mk5): later.
+## Higher marks open new trades too (a pipe fitter at Mk4, a wire tech at Mk5, say): later.
 
-## mark -> {name, slots, pace (work and flying, x), wear (per job, x), price (credits)}.
+## mark -> {name, slots, pace (work and flying, x), wear (per job, x), price (credits)}. Every bot
+## starts as a Mk1 (beenster, 19 Nov: "Why don't we have Mk1 to Mk5"), a new one too.
 const MARKS := {
-	3: {"name": "Mk3", "slots": 1, "pace": 1.0, "wear": 1.0, "price": 0},
-	4: {"name": "Mk4", "slots": 2, "pace": 1.12, "wear": 0.8, "price": 18000},
-	5: {"name": "Mk5", "slots": 3, "pace": 1.25, "wear": 0.65, "price": 42000},
+	1: {"name": "Mk1", "slots": 1, "pace": 1.0, "wear": 1.0, "price": 0},
+	2: {"name": "Mk2", "slots": 1, "pace": 1.06, "wear": 0.9, "price": 8000},
+	3: {"name": "Mk3", "slots": 2, "pace": 1.12, "wear": 0.8, "price": 18000},
+	4: {"name": "Mk4", "slots": 2, "pace": 1.2, "wear": 0.7, "price": 30000},
+	5: {"name": "Mk5", "slots": 3, "pace": 1.3, "wear": 0.6, "price": 48000},
 }
-const FIRST_MARK := 3
+const FIRST_MARK := 1
+## A new Mk1 bot from TartanCo, by trade (credits): dear on purpose, so a company grows its
+## fleet slowly (beenster, 19 Nov: "They should be expensive so that you can't immediately have
+## lots of them"). A medium contract pays 10,000 to 60,000; a company starts with 20,000.
+const BOT_PRICES := {"F": 55000, "W": 65000, "R": 60000, "B": 60000}
+const BOT_NAMES := {"F": "F-1 component fitter", "W": "W-1 welder", "R": "R-1 riveter", "B": "B-1 bolter"}
 const LAST_MARK := 5
 
 ## id -> {name, line (what it does, for the screens), price (credits), and its effect: a factor on
@@ -45,7 +53,7 @@ static func module_ids() -> Array[String]:
 	return out
 
 
-## What a bot of `mark` with `modules` fitted does, as factors (1 = as a new Mk3): {pace, fly,
+## What a bot of `mark` with `modules` fitted does, as factors (1 = as a new Mk1): {pace, fly,
 ## drain, charge, wear, faults}. The mark's pace counts for flying too.
 static func effects(mark: int, modules: Array) -> Dictionary:
 	var m: Dictionary = MARKS.get(mark, MARKS[FIRST_MARK])

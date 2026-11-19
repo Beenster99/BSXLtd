@@ -242,11 +242,13 @@ func _shows(n: Node, part: String) -> bool:
 	return false
 
 
-## The upgrade path (beenster's pick, 19 Nov: marks with module slots): Mk3 one slot to Mk5
+## The upgrade path (beenster's pick, 19 Nov: marks with module slots): Mk1 one slot to Mk5
 ## three, each mark quicker and wearing slower, modules each with one effect, shown in condition().
 func _upgrades() -> void:
 	var Upgrades := preload("res://modules/yard/internal/tartanco_upgrades.gd")
-	check(Upgrades.slots(3) == 1 and Upgrades.slots(4) == 2 and Upgrades.slots(5) == 3, "Mk3 has one slot, Mk4 two, Mk5 three")
+	check(Upgrades.slots(1) == 1 and Upgrades.slots(2) == 1 and Upgrades.slots(3) == 2 and Upgrades.slots(4) == 2
+			and Upgrades.slots(5) == 3, "Mk1 to Mk5: one slot, one, two, two, three")
+	check(Upgrades.FIRST_MARK == 1 and Upgrades.LAST_MARK == 5, "bots come as Mk1 and go up to Mk5")
 	check(Upgrades.module_ids().size() >= 6, "six modules to fit")
 	var store := YardRackStore.new()
 	var traffic := Traffic.new()
@@ -260,20 +262,43 @@ func _upgrades() -> void:
 	var w: Dictionary = crew.workers[2]
 	var bot: Node3D = w.node
 	var base: float = crew.pace(w)
-	check(crew.fit_module(bot, "servo_set"), "a Mk3 takes a module")
+	check(crew.fit_module(bot, "servo_set"), "a Mk1 takes a module")
 	check(not crew.fit_module(bot, "hardened_joints"), "but only one")
 	check(crew.pace(w) > base * 1.1, "uprated servos speed its work")
 	check(crew.set_mark(bot, 5) and crew.fit_module(bot, "hardened_joints") and crew.fit_module(bot, "battery_pack"),
 			"a Mk5 takes three")
 	check(not crew.fit_module(bot, "sensor_suite"), "and no more")
-	check(String(bot.get_meta("tartanco_model")) == "W-5" and (bot.get_node("Code") as Label3D).text == "W-5",
-			"its chest code shows its mark")
+	check(String(bot.get_meta("tartanco_model")) == "W Mk5" and (bot.get_node("Code") as Label3D).text == "Mk5"
+			and (bot.get_node("Number") as Label3D).text.begins_with("W "), "its chest shows its mark, Mk5, its trade and number under it")
 	var fx: Dictionary = w.fx
 	check(float(fx.wear) < 0.5 and float(fx.drain) < 1.0 and float(fx.pace) > 1.4, "its effects stack: %s" % str(fx))
 	var c: Dictionary = crew.condition(bot)
 	check(int(c.mark) == 5 and c.mark_name == "Mk5" and int(c.slots) == 3 and (c.upgrades as Array).size() == 3
 			and String((c.upgrades as Array)[0].name) == "Uprated servos", "its condition lists its mark and modules")
-	check(crew.set_mark(bot, 3) and (w.modules as Array).size() == 1, "taken back to Mk3, the modules past its slot come out")
+	check(crew.set_mark(bot, 1) and (w.modules as Array).size() == 1, "taken back to Mk1, the modules past its slot come out")
 	check(crew.remove_module(bot, "servo_set") and is_equal_approx(crew.pace(w), base), "and a module taken out undoes its effect")
+	# New bots bought from TartanCo, dear, each on a dock of its own on the berth's frame.
+	check(int(Upgrades.BOT_PRICES.W) >= 50000, "a new bot costs a lot (%d)" % int(Upgrades.BOT_PRICES.W))
+	var before: int = crew.workers.size()
+	var bought: Node3D = crew.add_bot("R")
+	check(bought != null and crew.workers.size() == before + 1 and crew.charge_docks.get_child_count() == before + 1,
+			"a bought bot joins the crew with its own dock")
+	check(String(bought.get_meta("tartanco_model")) == "R Mk1" and String(bought.get_meta("serial")).ends_with("02"),
+			"it's the company's second riveter")
+	var spots := {}
+	for d in crew.charge_docks.get_children():
+		spots[(d as Node3D).position] = true
+	check(spots.size() == crew.charge_docks.get_child_count(), "no two docks in one place")
+	while crew.add_bot("F") != null:
+		pass
+	check(crew.workers.size() == Workers.MAX_BOTS, "the berth takes %d bots, no more" % Workers.MAX_BOTS)
+	var saved: Array = crew.fleet_state()
+	var again: Node3D = Workers.new()
+	again.set_process(false)
+	add_child(again)
+	again.build(traffic)
+	again.restore_fleet(saved)
+	check(again.workers.size() == Workers.MAX_BOTS and again.fleet_state() == saved, "a saved fleet comes back as it was")
+	again.queue_free()
 	crew.queue_free()
 	traffic.queue_free()

@@ -72,8 +72,13 @@ const FITOUT_EVERY := 2
 ## Each bot's dock: on a rib of the build berth's station-side frame face (ribs every 10 m at
 ## z -70, 0.6 m thick), low under the hull clamps and high over them (station space: the rib's
 ## face at the hanging height).
+## The first six for the crew the yard starts with, then one for each bot bought from TartanCo,
+## up to MAX_BOTS: every rib of the build berth's station-side frame, low and high.
 const DOCKS: Array[Vector3] = [Vector3(-20, -13.5, -70.3), Vector3(20, -13.5, -70.3), Vector3(-10, -13.5, -70.3),
-		Vector3(10, -13.5, -70.3), Vector3(-10, 7.5, -70.3), Vector3(10, 7.5, -70.3)]
+		Vector3(10, -13.5, -70.3), Vector3(-10, 7.5, -70.3), Vector3(10, 7.5, -70.3),
+		Vector3(0, -13.5, -70.3), Vector3(0, 7.5, -70.3), Vector3(-20, 7.5, -70.3), Vector3(20, 7.5, -70.3)]
+## The most bots the berth has docks for.
+const MAX_BOTS := 10
 
 ## Seconds a fitter takes to ease a part into place, a weld per joint, a rivet (pressure, then
 ## the punch).
@@ -83,6 +88,16 @@ const DOCKS: Array[Vector3] = [Vector3(-20, -13.5, -70.3), Vector3(20, -13.5, -7
 ## Seconds a bolter runs one bolt home, and bolts at each joint.
 @export var bolt_seconds := 1.4
 @export var bolts_per_joint := 2
+## The welder's sparks a second (the grinder's spray: YardSparkSpray), and what a rivet slamming
+## home throws: swarf and flakes, sparks and puffs of steam.
+@export var weld_spark_rate := 420.0
+@export var rivet_chips := 26
+@export var rivet_sparks := 14
+@export var rivet_steam := 8
+## The frame's box girders, Void Salvage's sizes (m): the ring's members (width across the
+## ring, depth along the keel) and the stringers between rings.
+@export var ring_member := Vector2(0.24, 0.2)
+@export var stringer := Vector2(0.16, 0.16)
 ## The skin: how far its plates stand off the frame's centre lines (m), how far in from a plate's
 ## edges its corner rivets go (m), and the hull plates' short seam (m).
 @export var skin_gap := 0.2
@@ -160,6 +175,11 @@ var _asked := false
 var _bolt_mesh: CylinderMesh
 var _keel_done := 0.0
 var charge_docks: Node3D
+## The welders' and riveters' shower of sparks, globs, chips and steam: the same spray the
+## player's grinder throws (YardSparkSpray). Presentation only: its own random numbers, never
+## the crew's `_rng`, so the shared clock's crew stays the same on every PC.
+var spray: YardSparkSpray
+var _owed := {}
 
 
 func build(stores_traffic: Node) -> void:
@@ -170,41 +190,16 @@ func build(stores_traffic: Node) -> void:
 	supply = Node3D.new()
 	supply.name = "Supply"
 	add_child(supply)
-	var counts := {}
 	for i in CREW.size():
-		var role: String = CREW[i]
-		counts[role] = int(counts.get(role, 0)) + 1
-		var bot := WorkerLook.make(role, "%02d" % counts[role])
-		bot.name = "Worker%d" % (i + 1)
-		add_child(bot)
-		var w := {"node": bot, "role": role, "index": i, "task": {}, "vel": Vector3.ZERO, "wear": 0.05 * i,
-				"fault": "", "servicing": false, "charge": 1.0 - 0.13 * i, "charging": true, "low": false, "route": [],
-				"speed": 1.0, "began": 0.0, "mark": Upgrades.FIRST_MARK, "modules": [],
-				"fx": Upgrades.effects(Upgrades.FIRST_MARK, [])}
-		if role != "F":
-			w.sparks = make_sparks(role)
-			add_child(w.sparks)
-		if role != "F":
-			var light := OmniLight3D.new()
-			light.name = "WorkLight%d" % (i + 1)
-			light.light_color = Color(0.6, 0.8, 1.0) if role == "W" else Color(1.0, 0.85, 0.6)
-			light.omni_range = 6.0
-			light.light_energy = 0.0
-			add_child(light)
-			w.light = light
-		bot.position = dock_spot(i)
-		WorkerLook.rest(bot, "R")
-		WorkerLook.rest(bot, "L")
-		WorkerLook.tuck(bot, "R")
-		WorkerLook.tuck(bot, "L")
-		workers.append(w)
+		_make_worker(String(CREW[i]))
+	spray = YardSparkSpray.new()
+	spray.name = "BotSpray"
+	add_child(spray)
 	charge_docks = Node3D.new()
 	charge_docks.name = "ChargeDocks"
 	add_child(charge_docks)
 	for i in CREW.size():
-		var dock := WorkerLook.charge_dock(i + 1)
-		dock.position = DOCKS[i]
-		charge_docks.add_child(dock)
+		_add_dock(i)
 	_rng.seed = 4021
 	# Each its own pace, so no two move alike.
 	for w: Dictionary in workers:
@@ -245,6 +240,78 @@ func serviced(w: Dictionary) -> void:
 	w.fault = ""
 	w.servicing = false
 	(w.node.get_node("Fault") as Label3D).visible = false
+
+
+## A new bot of trade `role` on the next dock (its node named Worker<n>, numbered within its trade).
+func _make_worker(role: String) -> Dictionary:
+	var i := workers.size()
+	var number := 1 + workers.filter(func(x: Dictionary) -> bool: return x.role == role).size()
+	var bot := WorkerLook.make(role, "%02d" % number)
+	bot.name = "Worker%d" % (i + 1)
+	add_child(bot)
+	var w := {"node": bot, "role": role, "index": i, "task": {}, "vel": Vector3.ZERO, "wear": 0.05 * i,
+			"fault": "", "servicing": false, "charge": 1.0 - 0.13 * i, "charging": true, "low": false, "route": [],
+			"speed": 1.0, "began": 0.0, "mark": Upgrades.FIRST_MARK, "modules": [],
+			"fx": Upgrades.effects(Upgrades.FIRST_MARK, [])}
+	if role != "F":
+		w.sparks = make_sparks(role)
+		add_child(w.sparks)
+		var light := OmniLight3D.new()
+		light.name = "WorkLight%d" % (i + 1)
+		light.light_color = Color(0.6, 0.8, 1.0) if role == "W" else Color(1.0, 0.85, 0.6)
+		light.omni_range = 6.0
+		light.light_energy = 0.0
+		add_child(light)
+		w.light = light
+	bot.position = dock_spot(i)
+	WorkerLook.rest(bot, "R")
+	WorkerLook.rest(bot, "L")
+	WorkerLook.tuck(bot, "R")
+	WorkerLook.tuck(bot, "L")
+	workers.append(w)
+	_refit(w)   # its chest code shows its mark: W-1 as it comes
+	return w
+
+
+func _add_dock(i: int) -> void:
+	var dock := WorkerLook.charge_dock(i + 1)
+	dock.position = DOCKS[i]
+	charge_docks.add_child(dock)
+
+
+# --- The fleet ---------------------------------------------------------------------------------
+# beenster, 19 Nov: "New bots can be added to our fleet by buying them at TartanCo. They should be
+# expensive so that you can't immediately have lots of them" (prices: TartanCoUpgrades.BOT_PRICES).
+# Whoever sells them takes the money, then calls add_bot, on the yard's shared clock.
+
+## Adds a new bot of trade `role` (F, W, R or B), new and charged, on a dock of its own on the
+## berth's frame. Its node, or null when the trade is unknown or every dock is taken.
+func add_bot(role: String) -> Node3D:
+	if not Upgrades.BOT_PRICES.has(role) or workers.size() >= MAX_BOTS:
+		return null
+	_add_dock(workers.size())
+	var w := _make_worker(role)
+	w.wear = 0.0
+	w.charge = 1.0
+	w.speed = _rng.randf_range(0.8, 1.2)
+	return w.node
+
+
+## The fleet as it stands, to save: one {role, mark, modules} a bot, in order.
+func fleet_state() -> Array:
+	return workers.map(func(w: Dictionary) -> Dictionary: return {"role": w.role, "mark": int(w.mark), "modules": (w.modules as Array).duplicate()})
+
+
+## Puts a saved fleet back: the bots bought since added again, every bot's mark and modules.
+func restore_fleet(state: Array) -> void:
+	for i in state.size():
+		var b: Dictionary = state[i]
+		if i >= workers.size() and add_bot(String(b.get("role", ""))) == null:
+			break
+		var w: Dictionary = workers[i]
+		w.mark = int(b.get("mark", Upgrades.FIRST_MARK)) if Upgrades.MARKS.has(int(b.get("mark", 0))) else Upgrades.FIRST_MARK
+		w.modules = (b.get("modules", []) as Array).filter(func(id: Variant) -> bool: return Upgrades.MODULES.has(String(id))).slice(0, Upgrades.slots(int(w.mark)))
+		_refit(w)
 
 
 ## How fast a bot works for its wear (1 new).
@@ -294,15 +361,22 @@ func remove_module(bot: Node3D, id: String) -> bool:
 	return true
 
 
-## Its effects worked out again, and its chest code and model shown as its mark (W-3 -> W-5).
+## Its effects worked out again, and its mark shown (beenster, 19 Nov: "it should be Mk1, Mk2,
+## Mk3, Mk4 and Mk5"): "Mk1" big on its chest, its trade and number under it ("W 01"), and its
+## model "W Mk1".
 func _refit(w: Dictionary) -> void:
 	w.fx = Upgrades.effects(int(w.mark), w.modules)
 	var node: Node3D = w.node
-	var code := "%s-%d" % [w.role, int(w.mark)]
-	node.set_meta("tartanco_model", code)
+	var mark := Upgrades.mark_name(int(w.mark))
+	node.set_meta("tartanco_model", "%s %s" % [w.role, mark])
 	var label := node.get_node_or_null("Code") as Label3D
 	if label:
-		label.text = code
+		label.text = mark
+	var number := node.get_node_or_null("Number") as Label3D
+	if number:
+		if not node.has_meta("number"):
+			node.set_meta("number", number.text)
+		number.text = "%s %s" % [w.role, String(node.get_meta("number"))]
 
 
 ## The crew's bots (their nodes), for the maintenance ship.
@@ -503,22 +577,35 @@ func _front() -> Vector3:
 	return KEEL_START + Vector3(KEEL_STEP * rings.size(), 0, 0)
 
 
-## Its members (ring space): four box beams round a square, then girders back to the last ring.
+## Its members (ring space), framed the way Void Salvage frames a hull (beenster, 19 Nov: "box
+## girders like those in Void Salvage", "the same neat beam joining ... so that we don't have big
+## knuckles at joins"): four box girders round a square, each the corner to corner length of its
+## side on the centre line and mitred 45 degrees at both ends (PartShapes.girder, VS's own box
+## girder with its lightening holes), so the ring closes up corner to corner with no ends
+## sticking past; then stringers, box girders too, butted onto the ring's faces back to the last
+## ring at each corner. Each member carries its own shape (`shape`).
 func _member_list(with_girders: bool) -> Array[Dictionary]:
 	var h := RING * 0.5
 	var out: Array[Dictionary] = []
-	# BoxBeam is built along x: turned for the uprights and the cross members.
-	for t: Transform3D in [
-		Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 0, 0)),
-		Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0, h, -h)),
-		Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0, h, h)),
-		Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, RING, 0)),
-	]:
-		out.append({"part": "BoxBeam", "t": t})
+	var centre := Vector3(0, h, 0)
+	var corners: Array[Vector3] = [Vector3(0, 0, -h), Vector3(0, 0, h), Vector3(0, RING, h), Vector3(0, RING, -h)]
+	for i in 4:
+		var a: Vector3 = corners[i]
+		var b: Vector3 = corners[(i + 1) % 4]
+		var x := (b - a).normalized()
+		var mid := (a + b) * 0.5
+		# Width across the ring, pointing in: the mitre makes the outer edge the longer one.
+		var z := (centre - mid).normalized()
+		var basis := Basis(x, z.cross(x), z)
+		out.append({"part": "BoxBeam", "t": Transform3D(basis, mid),
+				"shape": _girder(a.distance_to(b), ring_member, 45.0)})
 	if with_girders:
-		for c: Vector3 in [Vector3(0, 0, -h), Vector3(0, 0, h), Vector3(0, RING, -h), Vector3(0, RING, h)]:
-			# Girder is built along x, 4 m: scaled to the pitch, from this ring back to the last.
-			out.append({"part": "Girder", "t": Transform3D(Basis().scaled(Vector3(KEEL_STEP / 4.0, 1, 1)), c - Vector3(KEEL_STEP * 0.5, 0, 0))})
+		var length := KEEL_STEP - ring_member.y
+		for c: Vector3 in corners:
+			# Along the keel, from the last ring's face to this one's.
+			var z := Vector3(0, centre.y - c.y, centre.z - c.z).normalized()
+			out.append({"part": "Girder", "t": Transform3D(Basis(Vector3.RIGHT, z.cross(Vector3.RIGHT), z), c - Vector3(KEEL_STEP * 0.5, 0, 0)),
+					"shape": _girder(length, stringer, 0.0)})
 		out.append_array(_skin_list())
 	return out
 
@@ -540,6 +627,42 @@ func _skin_list() -> Array[Dictionary]:
 			out.append({"part": "DeckPlate", "skin": true, "out": -face,
 					"t": Transform3D(Basis(Vector3.UP, -face, Vector3.UP.cross(-face)), Vector3(bay, y, side * (h - skin_gap)))})
 	return out
+
+
+static var _girders: Dictionary = {}
+
+
+## A Void Salvage box girder `length` long, `section` (width, depth), mitred `mitre` degrees at
+## both ends; built once a size.
+func _girder(length: float, section: Vector2, mitre: float) -> PartShapes.PartShape:
+	var key := "%.3f_%.3f_%.3f_%.1f" % [length, section.x, section.y, mitre]
+	if not _girders.has(key):
+		_girders[key] = PartShapes.girder(length, section.x, section.y, mitre, mitre)
+	return _girders[key]
+
+
+## What a member draws with: its own shape (a frame member's mitred box girder) on its part's
+## surface, else the part as the stores keep it.
+func _layers_of(m: Dictionary) -> Array:
+	if m.has("shape"):
+		return [{"mesh": (m.shape as PartShapes.PartShape).mesh, "material": Look.material(m.part)}]
+	return Look.layers(m.part)
+
+
+## A piece taken from a mover dressed as the member it will be (a stock box beam becomes this
+## ring's mitred one).
+func _dress(piece: Node3D, m: Dictionary) -> void:
+	if not m.has("shape"):
+		return
+	for c in piece.get_children():
+		if c is MeshInstance3D:
+			piece.remove_child(c)
+			c.queue_free()
+	for l: Dictionary in _layers_of(m):
+		var mi := MeshInstance3D.new()
+		mi.mesh = l.mesh
+		mi.material_override = l.material
+		piece.add_child(mi)
 
 
 ## A member's fastening steps (JOINING) and where it starts.
@@ -571,7 +694,7 @@ func _whole_ring() -> void:
 	ring.position = _front()
 	add_child(ring)
 	for m: Dictionary in _member_list(rings.size() > 0):
-		for l: Dictionary in Look.layers(m.part):
+		for l: Dictionary in _layers_of(m):
 			var mi := MeshInstance3D.new()
 			mi.mesh = l.mesh
 			mi.material_override = l.material
@@ -623,7 +746,7 @@ func _out(p: Vector3) -> Vector3:
 func _span(m: Dictionary) -> Dictionary:
 	var box := AABB()
 	var first := true
-	for l: Dictionary in Look.layers(m.part):
+	for l: Dictionary in _layers_of(m):
 		var b: AABB = (l.mesh as Mesh).get_aabb()
 		box = b if first else box.merge(b)
 		first = false
@@ -687,7 +810,7 @@ func _step_fitout(delta: float) -> void:
 ## beam, either side of the middle; small ones go on the uprights' inner faces. Each spot: its
 ## transform, the way out from its face and the bolts that hold it ({p, out, toward}).
 func _mount_spots() -> Dictionary:
-	var beam := _box("BoxBeam")
+	var beam := AABB(-Vector3.ONE * ring_member.x * 0.5, Vector3.ONE * ring_member.x)   # a ring member's faces
 	var h := RING * 0.5
 	var big: Array = []
 	for z: float in [-1.5, 1.5]:
@@ -1016,6 +1139,7 @@ func _fit(w: Dictionary, task: Dictionary, delta: float) -> void:
 					if piece == null:
 						piece = _spare(m.part, at)
 					piece.reparent(self, true)
+					_dress(piece, m)
 					m.piece = piece
 					task.from = piece.global_transform
 					task.phase = "carry"
@@ -1044,7 +1168,7 @@ func _fit(w: Dictionary, task: Dictionary, delta: float) -> void:
 			_face(node, _span(m).mid, delta)
 			_hold(node, piece, m)
 			# The alignment laser on the part's place while it eases in.
-			task.laser = final * _centre(m.part)
+			task.laser = final * _centre(m)
 			if float(task.t) >= 1.0:
 				piece.reparent(ring_node, true)
 				m.stage = "held"
@@ -1063,15 +1187,15 @@ func _hold(node: Node3D, piece: Node3D, m: Dictionary) -> void:
 	var along := g.basis.x.normalized()
 	if along.dot(node.global_basis.x) < 0.0:
 		along = -along
-	var mid := g * _centre(m.part)
+	var mid := g * _centre(m)
 	var into := (mid - node.global_position).normalized()
 	var skin := 0.12
 	WorkerLook.reach(node, "R", mid + along * 0.55 - into * skin, into)
 	WorkerLook.reach(node, "L", mid - along * 0.55 - into * skin, into)
 
 
-func _centre(part: String) -> Vector3:
-	var layers: Array = Look.layers(part)
+func _centre(m: Dictionary) -> Vector3:
+	var layers: Array = _layers_of(m)
 	return (layers[0].mesh as Mesh).get_aabb().get_center() if not layers.is_empty() else Vector3.ZERO
 
 
@@ -1118,12 +1242,11 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 			var k := clampf(float(task.t) / weld_seconds, 0.0, 1.0)
 			var tip := face + across * lerpf(-half, half, k)
 			WorkerLook.reach(node, "R", tip, (-out + inward * 0.3).normalized())
-			var sparks: CPUParticles3D = w.sparks
-			_spray(w, WorkerLook.tip_of(node, "R"), out)
-			sparks.emitting = true
+			var arc_at := WorkerLook.tip_of(node, "R")
+			_weld_shower(w, arc_at, out, across * (1.0 if k < 1.0 else -1.0), delta)
 			var flick := 0.5 + 0.5 * sin(_time * 47.0) * sin(_time * 31.0 + float(w.index))
 			var light: OmniLight3D = w.light
-			light.global_position = sparks.global_position + out * 0.3
+			light.global_position = arc_at + out * 0.3
 			light.light_energy = 1.4 + flick * 2.2
 			if float(task.t) >= weld_seconds:
 				_bead(face - across * half, face + across * half, out)
@@ -1169,6 +1292,7 @@ func _rivet(w: Dictionary, task: Dictionary, delta: float) -> void:
 					task.fired = true
 					_rivet_head(face, out)
 					_spray(w, face + out * 0.03, out)
+					_rivet_burst(face, out, along)
 				light.global_position = face + out * 0.3
 				light.light_energy = 3.0 * (1.0 - k)
 			WorkerLook.reach(node, "R", face, -out, kick)
@@ -1450,6 +1574,68 @@ func _spray(w: Dictionary, at: Vector3, out: Vector3) -> void:
 	if p.one_shot:
 		p.restart()
 		p.emitting = true
+
+
+## How many of a thing are due this step at `rate` a second (the remainder carried over), for
+## worker `key`.
+func _due(key: String, rate: float, delta: float) -> int:
+	var owed := float(_owed.get(key, 0.0)) + rate * delta
+	var n := int(owed)
+	_owed[key] = owed - n
+	return n
+
+
+## The welder's arc, thrown like the grinder's spray (beenster, 19 Nov: "should be as good as
+## the grinder"): a dense fan of streaking sparks off the pool, many forking into stars, molten
+## globs that stick and glow where they land, and a little smoke.
+func _weld_shower(w: Dictionary, at: Vector3, out: Vector3, run: Vector3, delta: float) -> void:
+	if spray == null:
+		return
+	var n := out.normalized()
+	var t := run.normalized() if run.length() > 0.01 else n.cross(Vector3.UP).normalized()
+	var axis := t.cross(n).normalized()
+	var from := at + n * 0.02
+	var key := "weld%d" % int(w.index)
+	var hot := Color(1.0, 0.85, 0.45)
+	for k in _due(key, weld_spark_rate, delta):
+		# Most fly out off the pool in a wide cone; some skid back along the seam.
+		var lift := deg_to_rad(randf_range(-4.0, 6.0) if randf() < 0.25 else randf_range(15.0, 80.0))
+		var swing := randf_range(-PI, PI)
+		var side := t * cos(swing) + axis * sin(swing)
+		var d := (side * cos(lift) + n * sin(lift)).normalized()
+		var life := randf_range(0.35, 1.1)
+		var fork := randf_range(0.2, 0.55) * life if randf() < 0.18 else -1.0
+		spray.shower(from, d * randf_range(3.5, 10.0), life, hot if randf() < 0.7 else Color(1.0, 0.97, 0.85), fork)
+	for k in _due(key + "glob", weld_spark_rate * 0.05, delta):
+		var d := (n * randf_range(0.3, 1.0) + t * randf_range(-0.8, 0.8) + axis * randf_range(-0.8, 0.8)).normalized()
+		spray.glob(from, d * randf_range(1.5, 4.5), randf_range(1.0, 2.2), Color(1.0, 0.55, 0.15), randf_range(0.004, 0.012))
+	for k in _due(key + "smoke", 6.0, delta):
+		spray.dust(from + n * 0.05, (n * 0.35 + axis * randf_range(-0.1, 0.1)) * randf_range(0.3, 0.7), Color(0.75, 0.75, 0.72))
+
+
+## A rivet slammed through the plate (beenster, 19 Nov: "spray metal particles, steam and some
+## sparks"): a ring of swarf and flakes flung off the plate, a few sparks, and a burst of steam
+## from the hot rivet.
+func _rivet_burst(at: Vector3, out: Vector3, along: Vector3) -> void:
+	if spray == null:
+		return
+	var n := out.normalized()
+	var t := along.normalized()
+	var axis := t.cross(n).normalized()
+	var from := at + n * 0.02
+	for k in rivet_chips:
+		var a := randf_range(0.0, TAU)
+		var d := ((t * cos(a) + axis * sin(a)) * randf_range(0.6, 1.0) + n * randf_range(0.2, 0.9)).normalized()
+		var grey := randf_range(0.45, 0.8)
+		spray.chip(from, d * randf_range(1.0, 4.0), randf_range(1.5, 3.0), Color(grey, grey, grey * 1.04), randf_range(0.003, 0.009), 30.0)
+	for k in rivet_sparks:
+		var a := randf_range(0.0, TAU)
+		var d := ((t * cos(a) + axis * sin(a)) + n * randf_range(0.1, 0.6)).normalized()
+		spray.shower(from, d * randf_range(3.0, 8.0), randf_range(0.2, 0.55), Color(1.0, 0.8, 0.4))
+	for k in rivet_steam:
+		var a := randf_range(0.0, TAU)
+		spray.dust(from + n * 0.04, (n * randf_range(0.4, 0.9) + (t * cos(a) + axis * sin(a)) * 0.35) * randf_range(0.5, 1.2),
+				Color(0.95, 0.96, 1.0))
 
 
 static func _ease(t: float) -> float:
