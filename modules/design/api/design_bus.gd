@@ -451,6 +451,14 @@ func _hook_yard() -> void:
 	var yard := Modules.bus("yard")
 	if yard and yard.has_signal("station_ready") and not yard.is_connected("station_ready", furnish_station):
 		yard.connect("station_ready", furnish_station)
+	# The berth grows with reputation: re-check the fit when it does.
+	if yard and yard.has_signal("berth_tier_changed") and not yard.is_connected("berth_tier_changed", _on_berth_tier):
+		yard.connect("berth_tier_changed", _on_berth_tier)
+
+
+func _on_berth_tier(_tier: int = 0) -> void:
+	_problems_of = null
+	design_changed.emit()
 
 
 ## The design room's wall planes: the station's (the yard module's design_room_walls), or
@@ -486,8 +494,9 @@ func berth() -> Dictionary:
 	var yard := Modules.bus("yard")
 	if yard and yard.has_method("build_berth"):
 		return DesignBerth.from_yard(yard.call("build_berth"))
-	if yard and yard.has_method("berths"):
-		for b: Dictionary in yard.call("berths"):
+	var list_fn := "current_berths" if yard and yard.has_method("current_berths") else "berths"
+	if yard and yard.has_method(list_fn):
+		for b: Dictionary in yard.call(list_fn):
 			if str(b.get("kind", "")) == "build" and b.get("box") is AABB:
 				return DesignBerth.from_yard(b.box, str(b.get("name", "")))
 	return DesignBerth.DEFAULT.duplicate()
