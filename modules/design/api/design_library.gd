@@ -111,6 +111,17 @@ func save_as(design_name: String) -> DesignRecord:
 	return copy
 
 
+## Opens a design someone else in the session has open (designing together): the working copy
+## is theirs, under its own id, or "crew_<id>" where that id names a different design of
+## ours, so saving it never writes over one of ours. Not stored until saved.
+func adopt(data: Dictionary) -> DesignRecord:
+	var rec := DesignRecord.from_dict(data)
+	if _stored.has(rec.id) and str(_stored[rec.id].get("name", "")) != rec.name and not rec.id.begins_with("crew_"):
+		rec.id = "crew_" + rec.id
+	_open(rec)
+	return rec
+
+
 ## Copies a stored design under a new name (not opened).
 func copy(design_id: String, design_name: String = "") -> String:
 	if not _stored.has(design_id):
