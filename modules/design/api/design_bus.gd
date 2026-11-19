@@ -10,6 +10,7 @@ extends Node
 ##   bus.totals()                       # DesignTotals of the open design (parts list, cost...)
 ##   bus.problems()                     # DesignRules.check of the open design
 ##   bus.design_changed.connect(...)    # any edit, open or save
+##   bus.register_wall_view(id, title, make)  # offer a panel to the room's walls
 ##
 ## Features (Flags): "design" (the module: designs in the save), "design.room" (the design
 ## room scene and its menu entry, off until the room is ready to play at test point 2).
@@ -43,6 +44,24 @@ var crew: Node
 
 ## A module was picked up or put down.
 signal carry_changed(module_id: String)
+## Panels other modules offer the design room's walls (the parts market...): view id ->
+## {title, make: Callable(px_per_m: float) -> Control}. WallBoard steps through them after its own.
+var wall_views: Dictionary = {}
+## A module offered or took back a wall panel.
+signal wall_views_changed
+
+
+## Offers a panel to the walls: `make` builds its Control for a wall drawn at px_per_m.
+func register_wall_view(id: String, title: String, make: Callable) -> void:
+	wall_views[id] = {"title": title, "make": make}
+	wall_views_changed.emit()
+
+
+func unregister_wall_view(id: String) -> void:
+	if wall_views.erase(id):
+		wall_views_changed.emit()
+
+
 ## Symmetry mode for this player's plans (DesignMirror: OFF, ACROSS or ALONG); not shared.
 var mirror := 0
 signal mirror_changed(axis: int)

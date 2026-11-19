@@ -109,6 +109,9 @@ var _mood_on := false
 var _calm_on := false
 ## VoxelGIs waiting to bake, one per frame after BAKE_DELAY: [{gi, at}].
 var _bakes: Array[Dictionary] = []
+## The loading screen's hold while rooms bake behind it, and how many it has had.
+const LOADING_HOLD := "graphics.gi"
+var _load_bakes := 0
 var _sky_hour := -100.0
 
 
@@ -263,12 +266,31 @@ func _walk(n: Node) -> void:
 		_walk(c)
 
 
-## Bakes a room's bounce light soon (after BAKE_DELAY, one room per frame).
+## Bakes a room's bounce light soon (after BAKE_DELAY, one room per frame). Behind the
+## loading screen (Router.is_loading) the bakes hold it up, so they happen before you can
+## move rather than as long stalls just after.
 func queue_bake(gi: VoxelGI) -> void:
 	for b in _bakes:
 		if is_instance_valid(b.gi) and b.gi == gi:
 			return
 	_bakes.append({"gi": gi, "at": Time.get_ticks_msec() / 1000.0 + BAKE_DELAY})
+	if Router.is_loading():
+		if not Router.is_holding_loading(LOADING_HOLD):
+			_load_bakes = 0
+		_load_bakes += 1
+		Router.hold_loading(LOADING_HOLD, "Lighting the rooms...")
+		_loading_bakes()
+
+
+func _loading_bakes() -> void:
+	if not Router.is_holding_loading(LOADING_HOLD):
+		return
+	if _bakes.is_empty():
+		Router.release_loading(LOADING_HOLD)
+		return
+	var done := _load_bakes - _bakes.size()
+	Router.loading_progress(LOADING_HOLD, float(done) / maxf(1.0, _load_bakes),
+			"Lighting the rooms (%d of %d)..." % [mini(done + 1, _load_bakes), _load_bakes])
 
 
 ## Rooms whose bounce light is still waiting to bake.
@@ -278,6 +300,7 @@ func pending_bakes() -> int:
 
 func _process(_delta: float) -> void:
 	_refresh_beams()
+	_loading_bakes()
 	if _bakes.is_empty():
 		return
 	var now := Time.get_ticks_msec() / 1000.0
@@ -288,6 +311,7 @@ func _process(_delta: float) -> void:
 		if now >= float(b.at):
 			_bakes.erase(b)
 			RoomLight.bake(b.gi)
+			_loading_bakes()
 			return
 
 

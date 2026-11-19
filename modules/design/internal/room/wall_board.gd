@@ -36,8 +36,11 @@ func setup(design_bus: DesignBus, id: String, layout: Array, density: float) -> 
 	_row = HBoxContainer.new()
 	_row.add_theme_constant_override("separation", int(px_per_m * 0.12))
 	add_child(_row)
+	var offered := views()
 	for p in layout:
-		panels.append({"view": str(p[0]), "share": float(p[1])})
+		# A panel another module offers starts on the parts list while that module is off.
+		var view := str(p[0])
+		panels.append({"view": view if offered.has(view) else "data", "share": float(p[1])})
 		var slot := VBoxContainer.new()
 		slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		slot.size_flags_stretch_ratio = float(p[1])
@@ -46,6 +49,15 @@ func setup(design_bus: DesignBus, id: String, layout: Array, density: float) -> 
 		_slots.append(slot)
 		_fill(_slots.size() - 1)
 	bus.design_changed.connect(_refresh_titles)
+	bus.wall_views_changed.connect(_on_wall_views_changed)
+
+
+## A module offered or took back a panel: panels showing one are built again.
+func _on_wall_views_changed() -> void:
+	for i in panels.size():
+		var view := str(panels[i].view)
+		if not view.begins_with("plan:") and not BASE_VIEWS.has(view):
+			_fill(i)
 
 
 ## The views a panel can step through for the open design.
@@ -58,12 +70,17 @@ func views() -> PackedStringArray:
 	for d in decks:
 		out.append("plan:%d" % d)
 	out.append_array(BASE_VIEWS)
+	if bus:
+		for id: String in bus.wall_views:
+			out.append(id)
 	return out
 
 
-static func view_name(view: String) -> String:
+func view_name(view: String) -> String:
 	if view.begins_with("plan:"):
 		return "DECK %d PLAN" % (int(view.get_slice(":", 1)) + 1)
+	if bus and bus.wall_views.has(view):
+		return str(bus.wall_views[view].title)
 	return VIEW_NAMES.get(view, view.to_upper())
 
 
@@ -113,7 +130,13 @@ func _fill(i: int) -> void:
 	bar.add_child(next)
 	slot.add_child(head)
 	var body: Control
-	if view == "modules":
+	if bus.wall_views.has(view):
+		body = (bus.wall_views[view].make as Callable).call(px_per_m)
+	elif not view.begins_with("plan:") and not BASE_VIEWS.has(view):
+		# Another module's panel that isn't offered now (its module or flag is off).
+		body = T.label("Not available", "body", font, T.DIM)
+		body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	elif view == "modules":
 		body = _modules_list(font)
 	elif view == "whiteboard":
 		var wb := Whiteboard.new()

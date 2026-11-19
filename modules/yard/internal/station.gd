@@ -109,6 +109,8 @@ const CREW_VIEWS := {
 		["Dan", Vector3(-49.5, -0.5, -39.0), Vector3(-47.5, -1.0, -2.0), {"deck": false, "tool": "tractor", "lamp": true}],
 		["Sam", Vector3(-52.5, 1.2, -44.0), Vector3(-56.5, 0.3, -36.0), {"deck": false, "tool": "", "lamp": true}]]],
 }
+## The loading screen's hold while the shared clock is unknown or catching up.
+const SIM_HOLD := "yard.sim"
 ## Where you start: the corridor, by the design room's door.
 const START := Vector3(4.0, 0.0, -1.5)
 
@@ -201,6 +203,10 @@ func _ready() -> void:
 		_bus.call("_station_opened", self)
 		_bus.connect("sim_reset", _on_sim_reset)
 	sim.call("setup", _bus)
+	# The loading screen waits for the shared clock (a guest: the host's answer, then the
+	# replay to where the others are).
+	if Router.is_loading():
+		Router.hold_loading(SIM_HOLD, "Starting the yard's clock...")
 	var start: String = Router.args.get("view", "")
 	if start != "":
 		show_view(start)
@@ -452,6 +458,8 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if Router.is_holding_loading(SIM_HOLD):
+		_loading_sim()
 	if _note and sim and bool(sim.get("catching_up")):
 		_show_note("Catching up with the yard...")
 	if _note and _note_left > 0.0:
@@ -461,6 +469,17 @@ func _process(delta: float) -> void:
 		var h: String = mover.call("hint")
 		_hint.text = h
 		_hint.visible = h != "" and not view_camera.current
+
+
+## The loading screen's share for the shared clock: waiting for the host's, then the replay.
+func _loading_sim() -> void:
+	var target := int(sim.call("target_tick"))
+	if target < 0:
+		Router.loading_progress(SIM_HOLD, 0.0, "Waiting for the host...")
+	elif bool(sim.get("catching_up")):
+		Router.loading_progress(SIM_HOLD, float(sim.get("tick")) / maxf(1.0, target), "Catching up with the yard...")
+	elif int(sim.get("tick")) >= target - YardSim.BEHIND:
+		Router.release_loading(SIM_HOLD)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -571,7 +590,7 @@ func _on_sim_reset() -> void:
 	if int(sim.get("tick")) == 0:
 		sim.call("restart")
 	elif Router.has_scene(YardBus.SCENE):
-		Router.goto.call_deferred(YardBus.SCENE)
+		Router.goto_loading.call_deferred(YardBus.SCENE)
 
 
 func _walk_again() -> void:

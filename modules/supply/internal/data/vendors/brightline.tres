@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SupplyVendor" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/supply/api/supply_vendor.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "brightline"
+display_name = "Brightline Systems"
+tagline = "Avionics, sensors, shields and hardpoints, certified"
+colour = Color(0.435, 0.784, 0.910, 1)
+categories = PackedStringArray("flight", "sensors", "defence", "weapons", "lighting")
+grades = PackedStringArray("S", "H", "Q", "P")
+price_factor = 1.15
+spread = 0.04
+volatility = 0.025
+reliability = 0.95
+lead_days = 1
+stock = 4
+restock_days = 5
+volume_percent = {
+5: 3,
+12: 6
+}
+deals_per_week = 1
+deal_percent = Vector2i(5, 12)
+standing_start = 10

@@ -16,17 +16,28 @@ const CATEGORIES: Array = [["flight", "Flight and control"], ["power", "Power"],
 		["storage", "Cupboards and lockers"], ["cargo", "Cargo"], ["doors", "Doors and hatches"],
 		["lighting", "Lights and screens"], ["structure", "Structure"]]
 
-## Kinds of door a door in the record can be ("kind", "door" when missing): its opening, m,
-## whether it has leaves that slide shut, and what one costs to fit.
+## Kinds of door a door in the record can be ("kind", "door" when missing): its opening, m
+## (w by default, min_w to max_w when a door is given its own "w"), whether it has leaves and how
+## they open (style: split = two leaves slide apart, slide = one leaf slides aside, swing = one
+## leaf on hinges, roll = a shutter rolls up, "" = an open doorway), whether it seals
+## (airtight), and what one costs to fit at its default width (cost scales with the width).
 const DOOR_KINDS: Dictionary = {
-	"door": {"name": "Sliding door", "short": "SLIDING", "w": 1.2, "h": 2.2, "leaves": true,
-			"cost": 2400.0, "mass": 180.0, "hours": 3.0},
-	"doorway": {"name": "Open doorway", "short": "DOORWAY", "w": 1.2, "h": 2.2, "leaves": false,
-			"cost": 300.0, "mass": 25.0, "hours": 1.0},
-	"cargo": {"name": "Cargo door", "short": "CARGO DOOR", "w": 2.4, "h": 2.4, "leaves": true,
-			"cost": 7500.0, "mass": 650.0, "hours": 6.0},
+	"door": {"name": "Sliding door", "short": "SLIDING", "w": 1.2, "min_w": 0.9, "max_w": 2.0, "h": 2.2,
+			"leaves": true, "style": "split", "airtight": false, "cost": 2400.0, "mass": 180.0, "hours": 3.0},
+	"single": {"name": "Single sliding door", "short": "SINGLE", "w": 0.9, "min_w": 0.7, "max_w": 1.2, "h": 2.1,
+			"leaves": true, "style": "slide", "airtight": false, "cost": 1500.0, "mass": 110.0, "hours": 2.0},
+	"hinged": {"name": "Hinged door", "short": "HINGED", "w": 0.8, "min_w": 0.6, "max_w": 1.0, "h": 2.0,
+			"leaves": true, "style": "swing", "airtight": false, "cost": 600.0, "mass": 45.0, "hours": 1.5},
+	"pressure": {"name": "Pressure door", "short": "PRESSURE", "w": 1.0, "min_w": 0.8, "max_w": 1.4, "h": 2.0,
+			"leaves": true, "style": "slide", "airtight": true, "cost": 5200.0, "mass": 420.0, "hours": 5.0},
+	"doorway": {"name": "Open doorway", "short": "DOORWAY", "w": 1.2, "min_w": 0.6, "max_w": 3.0, "h": 2.2,
+			"leaves": false, "style": "", "airtight": false, "cost": 300.0, "mass": 25.0, "hours": 1.0},
+	"cargo": {"name": "Cargo door", "short": "CARGO DOOR", "w": 2.4, "min_w": 2.0, "max_w": 4.0, "h": 2.4,
+			"leaves": true, "style": "split", "airtight": true, "cost": 7500.0, "mass": 650.0, "hours": 6.0},
+	"shutter": {"name": "Roller shutter", "short": "SHUTTER", "w": 3.0, "min_w": 2.0, "max_w": 5.0, "h": 2.6,
+			"leaves": true, "style": "roll", "airtight": false, "cost": 4200.0, "mass": 380.0, "hours": 4.0},
 }
-const DOOR_ORDER: PackedStringArray = ["door", "doorway", "cargo"]
+const DOOR_ORDER: PackedStringArray = ["door", "single", "hinged", "pressure", "doorway", "cargo", "shutter"]
 
 var rooms: Dictionary = {}  # id -> DesignRoomType
 var parts: Dictionary = {}  # id -> DesignPartType (base types only)
@@ -84,9 +95,20 @@ static func door_kind(door: Dictionary) -> Dictionary:
 	return DOOR_KINDS.get(str(door.get("kind", "door")), DOOR_KINDS["door"])
 
 
-## A door's opening width and height, m.
+## A door's opening width (its own "w" if it has one, kept within its kind's range) and
+## height, m.
 static func door_w(door: Dictionary) -> float:
-	return float(door_kind(door).w)
+	var k := door_kind(door)
+	if door.get("w") == null:
+		return float(k.w)
+	return clampf(float(door.w), float(k.min_w), float(k.max_w))
+
+
+## What fitting a door costs, its mass and hours: its kind's, scaled with its width.
+static func door_cost(door: Dictionary) -> Dictionary:
+	var k := door_kind(door)
+	var f := door_w(door) / float(k.w)
+	return {"cost": float(k.cost) * f, "mass": float(k.mass) * f, "hours": float(k.hours) * lerpf(1.0, f, 0.5)}
 
 
 static func door_h(door: Dictionary) -> float:

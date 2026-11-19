@@ -47,13 +47,14 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 	var room_lines := {}
 	for r: Dictionary in d.rooms.values():
 		var rt := cat.room(str(r.type))
-		var area := float(r.w) * float(r.d)
+		var area := DesignRecord.room_area(r)
 		t.floor_area += area
 		t.volume += area * d.deck_height
 		if rt == null:
 			continue
 		var line: Dictionary = room_lines.get(rt.id, {"kind": "room", "id": rt.id,
-				"name": rt.display_name, "qty": 0.0, "unit": "m2", "cost": 0.0, "mass": 0.0, "hours": 0.0})
+				"name": rt.display_name, "qty": 0.0, "unit": "m2", "cost": 0.0, "mass": 0.0, "hours": 0.0, "tags": []})
+		line.tags.append(DesignRecord.tag(str(r.id)))
 		line.qty += area
 		line.cost += area * rt.cost_per_m2
 		line.mass += area * rt.mass_per_m2
@@ -93,7 +94,8 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		if pt == null:
 			continue
 		var line: Dictionary = part_lines.get(pt.id, {"kind": "component", "id": pt.id,
-				"name": pt.display_name, "qty": 0.0, "unit": "x", "cost": 0.0, "mass": 0.0, "hours": 0.0})
+				"name": pt.display_name, "qty": 0.0, "unit": "x", "cost": 0.0, "mass": 0.0, "hours": 0.0, "tags": []})
+		line.tags.append(DesignRecord.tag(str(c.id)))
 		line.qty += 1.0
 		line.cost += pt.cost
 		line.mass += pt.mass
@@ -123,13 +125,20 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		var k := str(g.get("kind", "door"))
 		if not DesignCatalog.DOOR_KINDS.has(k):
 			k = "door"
-		door_n[k] = int(door_n.get(k, 0)) + 1
+		var sum: Dictionary = door_n.get(k, {"qty": 0.0, "cost": 0.0, "mass": 0.0, "hours": 0.0, "tags": []})
+		sum.tags.append(DesignRecord.tag(str(g.id)))
+		var c := DesignCatalog.door_cost(g)
+		sum.qty += 1.0
+		sum.cost += c.cost
+		sum.mass += c.mass
+		sum.hours += c.hours
+		door_n[k] = sum
 	for k: String in DesignCatalog.DOOR_ORDER:
 		if door_n.has(k):
 			var dk: Dictionary = DesignCatalog.DOOR_KINDS[k]
-			var n := float(door_n[k])
-			t.lines.append({"kind": "door", "id": k, "name": dk.name, "qty": n, "unit": "x",
-					"cost": n * float(dk.cost), "mass": n * float(dk.mass), "hours": n * float(dk.hours)})
+			var sum: Dictionary = door_n[k]
+			t.lines.append({"kind": "door", "id": k, "name": dk.name, "qty": sum.qty, "unit": "x",
+					"cost": sum.cost, "mass": sum.mass, "hours": sum.hours, "tags": sum.tags})
 	var run_m := {}
 	for w: Dictionary in d.runs.values():
 		if DesignServices.KINDS.has(str(w.kind)):
