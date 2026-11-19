@@ -92,3 +92,11 @@ extends Resource
 var base_id := ""
 var grade := ""
 var model_scale := 1.0
+
+
+## A landing leg, foot, skid or jack: fitted under the hull's edge, hanging below the lowest
+## deck's belly, not halfway up a side (beenster, 19 Nov: landing gear that animates).
+func under_hull() -> bool:
+	var k: Variant = get("move_kind")
+	var base := base_id if base_id != "" else id
+	return hull_mount and (str(k) == "leg" or base.begins_with("landing_"))
