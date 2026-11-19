@@ -108,6 +108,7 @@ func run_tests() -> void:
 func _shop() -> void:
 	var bus := Modules.bus("refurb") as RefurbBus
 	check(bus != null, "the refurb module loads")
+	check(RefurbBus.shop_at().z <= -180.0, "the shop sits out beyond the berths (z %.0f)" % RefurbBus.shop_at().z)
 	var holder := Node3D.new()
 	add_child(holder)
 	var shop: Node3D = RefurbBus.Shop.new()

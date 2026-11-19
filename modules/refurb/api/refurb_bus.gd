@@ -31,10 +31,15 @@ signal lot_scrapped(lot: Dictionary)
 
 const FLAG := "refurb"
 const SHOP_FLAG := "refurb.shop"
-## Where the shop's deck sits in station space (m): in the dock beyond holding berth H2 and clear
-## of the TartanCo ship's way out (she leaves along +x at z -114; the Orbital Yard thread's pick), its
+## Where the shop's deck sits in station space (m): in the dock this far beyond the berths' far
+## end (YardLayout.DOCK_FAR_Z, which grows with the yard's reputation tiers), so it stays clear of
+## the berths and of the TartanCo ship's way out along +x (the Orbital Yard thread's pick), its
 ## front (+Z) towards the station, its deck's top at this point.
-const SHOP_AT := Vector3(80.0, -6.0, -142.0)
+const SHOP_X := 80.0
+const SHOP_Y := -6.0
+const SHOP_BEYOND_BERTHS := 40.0
+## The berths' far end when YardLayout has no DOCK_FAR_Z (before the reputation tiers).
+const DOCK_FAR_Z_FALLBACK := -150.0
 const Shop := preload("res://modules/refurb/internal/refurb_shop.gd")
 
 ## The shop's state while the yard is open (or the last one, after it closed).
@@ -74,8 +79,14 @@ func open_shop(station: Node3D) -> void:
 	works.standin_dealer = standin_dealer
 	_shop = Shop.new()
 	station.add_child(_shop)
-	_shop.position = SHOP_AT
+	_shop.position = shop_at()
 	_shop.call("setup", self, _yard, works)
+
+
+## Where the shop goes in station space (see SHOP_X).
+static func shop_at() -> Vector3:
+	var far: float = float((YardLayout as Script).get_script_constant_map().get("DOCK_FAR_Z", DOCK_FAR_Z_FALLBACK))
+	return Vector3(SHOP_X, SHOP_Y, far - SHOP_BEYOND_BERTHS)
 
 
 ## The shop node while the station is open, else null.
