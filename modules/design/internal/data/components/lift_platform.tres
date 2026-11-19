@@ -22,6 +22,7 @@ size_class = 2
 min_class = 1
 max_class = 5
 integrity = 300.0
+shared_part = "LiftPlatform"
 move_s = 15.0
 move_kw = 10.0
 load_kg = 4000.0

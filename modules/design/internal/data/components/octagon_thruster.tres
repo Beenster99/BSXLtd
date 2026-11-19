@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "octagon_thruster"
+display_name = "Octagon multi-nozzle thruster"
+short = "OCT"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(1.6, 1.6, 0.8)
+cost = 19000.0
+mass = 1400.0
+build_hours = 8.0
+power = -14.0
+thrust = 90.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 3
+shared_part = "OctagonThruster"
+category = "propulsion"
+size_class = 3
+min_class = 2
+max_class = 7
+integrity = 220.0
+signature = 22.0

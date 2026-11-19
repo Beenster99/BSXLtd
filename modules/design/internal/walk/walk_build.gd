@@ -1328,6 +1328,7 @@ func _mount(m: Dictionary) -> void:
 	# Its front (-Z) turned to the hull's outward normal.
 	body.rotation.y = atan2(-n.x, -n.y)
 	var vs := VsParts.instance(pt.shared_part) if pt.shared_part != "" else null
+	var model := part_model(pt) if vs == null else null
 	if vs != null:
 		var bb := VsParts.shape(pt.shared_part).mesh.get_aabb()
 		vs.scale = Vector3.ONE * pt.model_scale
@@ -1338,6 +1339,10 @@ func _mount(m: Dictionary) -> void:
 		else:
 			vs.position.y = -bb.position.y * pt.model_scale
 		body.add_child(vs)
+	elif model != null:
+		# BSX's own model: built mounting face to +Z, standing out from the hull to -Z.
+		model.scale = Vector3.ONE * pt.model_scale
+		body.add_child(model)
 	else:
 		_box_in(body, pt.size, paint(pt.colour.darkened(0.25), "metallic_paint"))
 		(body.get_child(0) as Node3D).position.y = pt.size.y * 0.5
@@ -1345,6 +1350,14 @@ func _mount(m: Dictionary) -> void:
 		(c as VisualInstance3D).layers = 1 | EXTERIOR
 	_shape_in(body, pt.size, Vector3(0, pt.size.y * 0.5, 0))
 	_outline_box(body.transform * Transform3D(Basis.IDENTITY, Vector3(0, pt.size.y * 0.5, 0)), pt.size)
+
+
+## BSX's own detailed model of a part Void Salvage has no part for (PartModels, by its base
+## catalogue id), at its base size; null when there is none or design.part_models is off.
+static func part_model(pt: DesignPartType) -> Node3D:
+	if not Flags.is_on("design.part_models"):
+		return null
+	return PartModels.instance(pt.base_id if pt.base_id != "" else pt.id)
 
 
 ## A part as a fitted unit: a dark plinth, its body in its colour, a panel on its working
@@ -1359,6 +1372,13 @@ static func component_look(parent: Node3D, pt: DesignPartType, size: Vector3, ro
 		vs.rotation.y = rot * PI * 0.5
 		vs.position.y = -bb.position.y * pt.model_scale
 		parent.add_child(vs)
+		return
+	var model := part_model(pt)
+	if model != null:
+		# BSX's own detailed model (PartModels), its front (-Z) turned to FRONTS[rot].
+		model.scale = Vector3.ONE * pt.model_scale
+		model.rotation.y = rot * PI * 0.5
+		parent.add_child(model)
 		return
 	var plinth := MeshInstance3D.new()
 	plinth.mesh = _box_mesh(Vector3(size.x - 0.06, 0.08, size.z - 0.06))

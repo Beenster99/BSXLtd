@@ -1,0 +1,52 @@
+{
+ "power_kw": 2.0,
+ "load_kg": 0.0,
+ "pieces": [
+  {
+   "name": "panel_2",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "stowed": 0.0,
+   "deployed": -180.0,
+   "seconds": 15.0,
+   "order": 1,
+   "pivot": [
+    0.5728,
+    0.2217,
+    -0.0254
+   ],
+   "unit": "deg",
+   "min": -180.0,
+   "max": 0.0,
+   "rest": 0.0
+  },
+  {
+   "name": "panel_3",
+   "parent": "panel_2",
+   "kind": "hinge",
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "stowed": 0.0,
+   "deployed": 180.0,
+   "seconds": 15.0,
+   "order": 2,
+   "pivot": [
+    -0.5728,
+    0.3225,
+    -0.0254
+   ],
+   "unit": "deg",
+   "min": 0.0,
+   "max": 180.0,
+   "rest": 0.0
+  }
+ ]
+}

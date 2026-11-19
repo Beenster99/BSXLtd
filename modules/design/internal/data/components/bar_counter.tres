@@ -20,3 +20,4 @@ lead_days = 2
 category = "galley"
 graded = false
 integrity = 70.0
+shared_part = "BarCounter"

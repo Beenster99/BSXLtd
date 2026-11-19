@@ -1,0 +1,33 @@
+{
+ "power_kw": 18.0,
+ "load_kg": 0.0,
+ "opening": [
+  4.8,
+  3.0
+ ],
+ "pieces": [
+  {
+   "name": "leaf",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 120.0,
+   "seconds": 18.0,
+   "order": 1,
+   "pivot": [
+    0.0,
+    3.02,
+    -0.0071
+   ],
+   "unit": "deg",
+   "min": 0.0,
+   "max": 120.0,
+   "rest": 0.0
+  }
+ ]
+}

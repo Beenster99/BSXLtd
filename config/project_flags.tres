@@ -30,6 +30,7 @@ flags = {
 "core.loading_screen": true,
 "design": true,
 "design.room": true,
+"design.part_models": true,
 "fleet": true,
 "fleet.screen": true,
 "graphics": true,

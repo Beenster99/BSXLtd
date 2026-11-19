@@ -6,7 +6,7 @@
 script = ExtResource("1")
 version = 1
 id = "landing_gear"
-display_name = "Landing gear"
+display_name = "Landing gear (medium)"
 short = "LGR"
 colour = Color(1.0, 0.6, 0.2, 1)
 size = Vector3(0.9, 2.4, 1.6)

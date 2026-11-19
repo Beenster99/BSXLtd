@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "landing_gear_xl"
+display_name = "Landing gear (very large)"
+short = "LGX"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(3.0, 4.2, 3.6)
+cost = 52000.0
+mass = 8500.0
+build_hours = 30.0
+power = -8.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 2.0
+lead_days = 7
+category = "propulsion"
+size_class = 7
+min_class = 6
+max_class = 8
+integrity = 1500.0

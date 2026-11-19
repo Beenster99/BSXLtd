@@ -21,3 +21,4 @@ lead_days = 2
 category = "crew"
 graded = false
 integrity = 80.0
+shared_part = "BedAlcove"
