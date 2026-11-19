@@ -7,6 +7,7 @@ extends Node
 const WorkerLook := preload("res://modules/yard/internal/yard_worker_look.gd")
 const Traffic := preload("res://modules/yard/internal/stores_traffic.gd")
 const Workers := preload("res://modules/yard/internal/yard_workers.gd")
+const BerthDock := preload("res://modules/yard/internal/dock.gd")
 
 
 func _ready() -> void:
@@ -101,6 +102,10 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 	traffic.set_process(false)
 	root.add_child(traffic)
 	traffic.build(store)
+	# The berths' frames, so the docks are seen on their ribs.
+	var berths: Node3D = BerthDock.new()
+	root.add_child(berths)
+	berths.call("build")
 	var crew: Node3D = Workers.new()
 	crew.set_process(false)
 	root.add_child(crew)
@@ -151,13 +156,13 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_tree().root.get_texture().get_image().save_png(out.path_join("berth_keel.png"))
-	# The charging wall: four bots run low go and hang on their docks (charging slowly, so they
-	# are all still there for the shot).
+	# The charging docks in the berth's frame: four bots back on their docks, charging slowly so
+	# they are all still there for the shot.
 	crew.charge_seconds = 10000.0
 	for i in [0, 2, 3, 5]:
 		var w: Dictionary = crew.workers[i]
 		crew._drop_task(w)
-		w.charge = 0.05 + 0.25 * float(i) / 5.0
+		w.charge = 0.05
 	var settled := 0.0
 	while settled < 60.0:
 		traffic.step(0.1)
@@ -167,11 +172,10 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 			break
 	for k in [0, 2, 3, 5]:
 		crew.workers[k].charge = 0.2 + 0.15 * k
-	for k in 20:
+	for k in 30:
 		crew.step(0.1)
-	var wall: Vector3 = crew.CHARGE_WALL
-	for shot: Array in [["charging_wall", wall + Vector3(4.0, 2.5, -11.0), wall + Vector3(0, -0.6, 0)],
-			["charging_close", wall + Vector3(-1.5, 1.0, -4.2), wall + Vector3(-3.4, -0.3, 0)]]:
+	for shot: Array in [["charging_frame", Vector3(2.0, -3.0, -90.0), Vector3(0, -6.0, -70.0)],
+			["charging_close", Vector3(-6.8, -11.6, -75.2), Vector3(-10.0, -13.4, -70.5)]]:
 		cam.global_position = shot[1]
 		cam.look_at(shot[2])
 		for k in 3:
