@@ -40,6 +40,15 @@ var carrying := ""
 
 ## A module was picked up or put down.
 signal carry_changed(module_id: String)
+## Symmetry mode for this player's plans (DesignMirror: OFF, ACROSS or ALONG); not shared.
+var mirror := 0
+signal mirror_changed(axis: int)
+
+
+## OFF, then mirrored across the centre line, then fore and aft, then off again.
+func cycle_mirror() -> void:
+	mirror = (mirror + 1) % 3
+	mirror_changed.emit(mirror)
 
 
 func _init() -> void:
@@ -137,11 +146,18 @@ func hook_net(net: Object) -> void:
 	_net.call("register_event", "design.undo", func(p: Dictionary) -> void: editor.apply_undo(str(p.author)), _stamp)
 	_net.call("register_event", "design.redo", func(p: Dictionary) -> void: editor.apply_redo(str(p.author)), _stamp)
 	_net.call("register_event", "design.open", _apply_open, _stamp)
+	# Saved modules and designs are shared with the crew (beenster, 19 Nov).
+	_net.call("register_event", "design.module", _apply_module, _stamp)
+	_net.call("register_event", "design.stored", _apply_stored, _stamp)
 	_net.call("register_snapshot_provider", NET_SECTION, self)
 	editor.send = func(kind: String, payload: Dictionary) -> void: _net.call("request", "design." + kind, payload)
 	editor.me = func() -> String: return "p%d" % int(_net.call("local_peer_id"))
 	if not library.opened.is_connected(_share_open):
 		library.opened.connect(_share_open)
+	if not library.modules_changed.is_connected(_share_modules):
+		library.modules_changed.connect(_share_modules)
+	if not library.stored.is_connected(_share_stored):
+		library.stored.connect(_share_stored)
 
 
 func _unhook_net() -> void:
@@ -149,13 +165,17 @@ func _unhook_net() -> void:
 		return
 	if _net.has_signal("peer_left") and _net.is_connected("peer_left", _on_peer_left):
 		_net.disconnect("peer_left", _on_peer_left)
-	for e in ["design.op", "design.undo", "design.redo", "design.open", "design.walk"]:
+	for e in ["design.op", "design.undo", "design.redo", "design.open", "design.walk", "design.module", "design.stored"]:
 		_net.call("unregister_event", e)
 	_net.call("unregister_snapshot_provider", NET_SECTION)
 	editor.send = Callable()
 	editor.me = Callable()
 	if library.opened.is_connected(_share_open):
 		library.opened.disconnect(_share_open)
+	if library.modules_changed.is_connected(_share_modules):
+		library.modules_changed.disconnect(_share_modules)
+	if library.stored.is_connected(_share_stored):
+		library.stored.disconnect(_share_stored)
 	_net = null
 
 
@@ -244,6 +264,45 @@ func _share_open(rec: DesignRecord) -> void:
 	_net.call("request", "design.open", {"record": rec.to_dict()})
 
 
+var _from_net := false
+var _shared_modules: Dictionary = {}
+
+
+## Each module saved here goes to the crew once (modules_changed fires for any change).
+func _share_modules() -> void:
+	if _from_net or _net == null or not bool(_net.call("is_online")):
+		return
+	for m: Dictionary in library.modules():
+		if not _shared_modules.has(m.id):
+			_shared_modules[m.id] = true
+			_net.call("request", "design.module", {"module": m})
+
+
+func _share_stored(design_id: String) -> void:
+	if _from_net or _net == null or not bool(_net.call("is_online")):
+		return
+	var d := library.stored_design(design_id)
+	if not d.is_empty():
+		_net.call("request", "design.stored", {"record": d})
+
+
+func _apply_module(p: Dictionary) -> void:
+	if int(p.get("peer", 0)) == (int(_net.call("local_peer_id")) if _net else 0):
+		return
+	_from_net = true
+	var id := library.receive_module(p.get("module", {}))
+	_shared_modules[id] = true
+	_from_net = false
+
+
+func _apply_stored(p: Dictionary) -> void:
+	if int(p.get("peer", 0)) == (int(_net.call("local_peer_id")) if _net else 0):
+		return
+	_from_net = true
+	library.receive_design(p.get("record", {}))
+	_from_net = false
+
+
 func _apply_open(p: Dictionary) -> void:
 	var data: Dictionary = p.get("record", {})
 	if data.is_empty() or library.current and _same(library.current.to_dict(), data):
@@ -263,13 +322,23 @@ static func _same(a: Dictionary, b: Dictionary) -> bool:
 
 ## The open design, for a player joining the session.
 func get_net_snapshot() -> Dictionary:
-	var out := {"walkers": walkers.keys()}
+	var out := {"walkers": walkers.keys(), "modules": library.modules()}
+	var designs: Array = []
+	for row: Dictionary in library.list():
+		designs.append(library.stored_design(str(row.id)))
+	out["designs"] = designs
 	if library.current:
 		out["record"] = library.current.to_dict()
 	return out
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
+	_from_net = true
+	for m: Dictionary in data.get("modules", []):
+		_shared_modules[library.receive_module(m)] = true
+	for d: Dictionary in data.get("designs", []):
+		library.receive_design(d)
+	_from_net = false
 	_apply_open(data)
 	walkers = {}
 	for w in data.get("walkers", []):

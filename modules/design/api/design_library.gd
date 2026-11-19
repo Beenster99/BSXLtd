@@ -202,6 +202,47 @@ func save_module(module_name: String, room_id: String) -> String:
 	return id
 
 
+## A module someone else in the session saved (designing together): kept under its own id,
+## or a new one where ours already uses it for another module. The same module again (same
+## name, room and parts) is not kept twice. Returns its id here.
+func receive_module(m: Dictionary) -> String:
+	var mod := m.duplicate(true)
+	for have: Dictionary in _modules.values():
+		if str(have.name) == str(mod.get("name", "")) and have.get("room") == mod.get("room") \
+				and have.get("components") == mod.get("components"):
+			return str(have.id)
+	var id := str(mod.get("id", ""))
+	if id == "" or _modules.has(id):
+		id = "module_%d" % _next_module
+		while _modules.has(id):
+			_next_module += 1
+			id = "module_%d" % _next_module
+	mod["id"] = id
+	_modules[id] = mod
+	modules_changed.emit()
+	return id
+
+
+## A design someone else in the session saved: listed here too (not opened), under its own
+## id, or "crew_<id>" where that id names a different design of ours.
+func receive_design(data: Dictionary) -> String:
+	var d := data.duplicate(true)
+	var id := str(d.get("id", ""))
+	if id == "":
+		return ""
+	if _stored.has(id) and str(_stored[id].get("name", "")) != str(d.get("name", "")) and not id.begins_with("crew_"):
+		id = "crew_" + id
+		d["id"] = id
+	_stored[id] = d
+	list_changed.emit()
+	return id
+
+
+## Every saved design, as stored (for sharing with the crew).
+func stored_design(design_id: String) -> Dictionary:
+	return _stored.get(design_id, {})
+
+
 ## Modules, by name: [{id, name, room, components, runs}].
 func modules() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
