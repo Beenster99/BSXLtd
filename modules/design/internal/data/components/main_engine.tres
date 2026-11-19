@@ -20,3 +20,4 @@ crew = 0
 rooms = PackedStringArray("engineering")
 access = 1.0
 lead_days = 5
+shared_part = "HydrogenEngine"

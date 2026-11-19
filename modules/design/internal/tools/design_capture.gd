@@ -86,7 +86,8 @@ class Runner:
 		for shot in [["walk_corridor", Vector3(0, 1.0, 3.0), 0.0, -0.05],
 				["walk_engineering", Vector3(6.2, 1.0, -1.3), 2.36, -0.2],
 				["walk_stairs", Vector3(-1.5, 1.0, 1.0), PI * 0.5, 0.45],
-				["walk_outside", Vector3(9, 1.0, 12), 0.62, 0.0]]:
+				["walk_outside", Vector3(9, 1.0, 12), 0.62, 0.0],
+				["walk_bridge", Vector3(0.3, 1.0, -6.6), 0.0, -0.35]]:
 			walk.body.position = shot[1]
 			walk.body.rotation.y = shot[2]
 			walk.set("_pitch", shot[3])

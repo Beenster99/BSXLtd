@@ -1,8 +1,8 @@
 class_name DesignPartType
 extends Resource
 ## A component the designer can place in a room (modules/design/internal/data/components/*.tres).
-## The design stage's stand-in for the shared part library: `shared_part` names the Void
-## Salvage part it will be built from once the latest shared code is in (Wave 0.4).
+## `shared_part` names the Void Salvage part it is (a VsParts id): walk-inside draws that part
+## and the catalog takes its size from it. Cost, mass and the rest stay BSX's own numbers.
 
 @export var version := 1
 @export var id := ""
@@ -29,5 +29,5 @@ extends Resource
 @export var access := 0.6
 ## Days to get one from suppliers (availability on the data channel).
 @export var lead_days := 1
-## The Void Salvage part name it maps to ("" until the shared code is updated).
+## The Void Salvage part it is, a VsParts id ("" for none yet: drawn as a fitted box).
 @export var shared_part := ""

@@ -19,3 +19,4 @@ crew = 0
 rooms = PackedStringArray("engineering", "reactor")
 access = 0.6
 lead_days = 2
+shared_part = "BatteryRack"

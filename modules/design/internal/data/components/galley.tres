@@ -19,3 +19,4 @@ crew = 0
 rooms = PackedStringArray("mess")
 access = 0.8
 lead_days = 2
+shared_part = "GalleyCounter"

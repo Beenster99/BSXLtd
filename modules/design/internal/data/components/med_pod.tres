@@ -19,3 +19,4 @@ crew = 0
 rooms = PackedStringArray("medbay")
 access = 0.8
 lead_days = 4
+shared_part = "MedStation"
