@@ -69,6 +69,11 @@ func register_module() -> void:
 const NET_SECTION := "design"
 var _net: Object
 var _opening_from_net := false
+## Players in walk-inside: peer id -> true (so the others can show them walking about).
+var walkers: Dictionary = {}
+## Someone else's edit landed here: their name, colour and what they did ("added a Cargo hold").
+signal crew_edited(who: String, colour: Color, what: String)
+signal walkers_changed
 
 
 func _hook_net() -> void:
@@ -82,7 +87,10 @@ func hook_net(net: Object) -> void:
 		return
 	_unhook_net()
 	_net = net
-	_net.call("register_event", "design.op", func(p: Dictionary) -> void: editor.apply_op(p.op, str(p.author)), _stamp)
+	_net.call("register_event", "design.op", _apply_op, _stamp)
+	_net.call("register_event", "design.walk", _apply_walk, _stamp)
+	if _net.has_signal("peer_left") and not _net.is_connected("peer_left", _on_peer_left):
+		_net.connect("peer_left", _on_peer_left)
 	_net.call("register_event", "design.undo", func(p: Dictionary) -> void: editor.apply_undo(str(p.author)), _stamp)
 	_net.call("register_event", "design.redo", func(p: Dictionary) -> void: editor.apply_redo(str(p.author)), _stamp)
 	_net.call("register_event", "design.open", _apply_open, _stamp)
@@ -96,7 +104,9 @@ func hook_net(net: Object) -> void:
 func _unhook_net() -> void:
 	if _net == null:
 		return
-	for e in ["design.op", "design.undo", "design.redo", "design.open"]:
+	if _net.has_signal("peer_left") and _net.is_connected("peer_left", _on_peer_left):
+		_net.disconnect("peer_left", _on_peer_left)
+	for e in ["design.op", "design.undo", "design.redo", "design.open", "design.walk"]:
 		_net.call("unregister_event", e)
 	_net.call("unregister_snapshot_provider", NET_SECTION)
 	editor.send = Callable()
@@ -112,7 +122,68 @@ func _stamp(sender: int, payload: Dictionary) -> Variant:
 		return "not an edit"
 	var out := payload.duplicate()
 	out["author"] = "p%d" % sender
+	out["peer"] = sender
 	return out
+
+
+func _apply_op(p: Dictionary) -> void:
+	var undo_op := editor.apply_op(p.op, str(p.author))
+	var peer := int(p.get("peer", 0))
+	if undo_op.is_empty() or _net == null or peer == int(_net.call("local_peer_id")):
+		return
+	crew_edited.emit(str(_net.call("player_name", peer)) if _net.has_method("player_name") else "Crew",
+			_net.call("player_colour", peer) if _net.has_method("player_colour") else Color.WHITE,
+			describe_op(p.op))
+
+
+## A few words on an edit, for the crew to see who did what.
+func describe_op(op: Dictionary) -> String:
+	var kind := str(op.get("op", ""))
+	var thing := ""
+	if op.has("room") and op.room is Dictionary:
+		var rt := catalog.room(str(op.room.get("type", "")))
+		thing = rt.display_name if rt else "a room"
+	elif op.has("component") and op.component is Dictionary:
+		var pt := catalog.part(str(op.component.get("type", "")))
+		thing = pt.display_name if pt else "a part"
+	elif op.has("mount") and op.mount is Dictionary:
+		var pt := catalog.part(str(op.mount.get("type", "")))
+		thing = pt.display_name if pt else "a part on the hull"
+	var verb := kind.get_slice("_", 0)
+	var noun := kind.substr(verb.length() + 1).replace("_", " ")
+	match verb:
+		"add":
+			return "added %s" % (thing if thing != "" else "a " + noun)
+		"remove":
+			return "removed %s" % (thing if thing != "" else "a " + noun)
+		"set":
+			return "changed the %s" % ("design" if noun == "meta" else noun)
+	return kind.replace("_", " ")
+
+
+## Says whether this player is walking inside the design (the others see them there).
+func set_walking(on: bool) -> void:
+	if _net and bool(_net.call("is_online")):
+		_net.call("request", "design.walk", {"on": on})
+
+
+## The multiplayer module, for walk-inside's crew (null without it).
+func net() -> Object:
+	return _net
+
+
+func _apply_walk(p: Dictionary) -> void:
+	var peer := int(p.get("peer", 0))
+	if bool(p.get("on", false)):
+		walkers[peer] = true
+	else:
+		walkers.erase(peer)
+	walkers_changed.emit()
+
+
+func _on_peer_left(peer_id: int, _why: String) -> void:
+	if walkers.erase(peer_id):
+		walkers_changed.emit()
 
 
 ## A design opened here is opened for everyone in the session.
@@ -141,11 +212,18 @@ static func _same(a: Dictionary, b: Dictionary) -> bool:
 
 ## The open design, for a player joining the session.
 func get_net_snapshot() -> Dictionary:
-	return {"record": library.current.to_dict()} if library.current else {}
+	var out := {"walkers": walkers.keys()}
+	if library.current:
+		out["record"] = library.current.to_dict()
+	return out
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
 	_apply_open(data)
+	walkers = {}
+	for w in data.get("walkers", []):
+		walkers[int(w)] = true
+	walkers_changed.emit()
 
 
 func _hook_yard() -> void:

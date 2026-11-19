@@ -6,6 +6,8 @@ extends ModuleTest
 ## multiplayer module that holds messages until pumped, as a network would.
 ##   tools/run_tests.sh design
 
+const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
+
 
 class Hub:
 	## Peers in join order; the first is the host. Requests wait in `queue` until pump().
@@ -57,6 +59,20 @@ class Net:
 	func is_online() -> bool:
 		return true
 
+	var movers: Dictionary = {}
+
+	func register_mover(object_id: String, node: Node3D) -> void:
+		movers[object_id] = node
+
+	func unregister_mover(object_id: String) -> void:
+		movers.erase(object_id)
+
+	func player_name(peer_id: int) -> String:
+		return {1: "Ana", 7: "Ben", 9: "Cal"}.get(peer_id, "Crew")
+
+	func player_colour(peer_id: int) -> Color:
+		return Color.ORANGE if peer_id == 1 else Color.CYAN
+
 
 func run_tests() -> void:
 	var hub := Hub.new()
@@ -89,6 +105,14 @@ func run_tests() -> void:
 	hub.pump()
 	check(a.rooms.size() == 2 and _same(a, b), "Ben's redo puts it back for everyone")
 
+	# Who did what: Ana sees Ben's edits named, never her own.
+	var seen: Array = []
+	ana.bus.crew_edited.connect(func(who, _c, what): seen.append("%s %s" % [who, what]))
+	ben.bus.editor.do({"op": "add_room", "room": {"type": "quarters", "deck": 1, "x": 0, "z": -2, "w": 4, "d": 4}})
+	ana.bus.editor.do({"op": "set_meta", "fields": {"name": "Shared skiff Mk2"}})
+	hub.pump()
+	check(seen == ["Ben added Crew quarters"], "Ana's console says what Ben did: %s" % [seen])
+
 	# A player who joins late gets the design as it is now.
 	var cal := _room(hub, 9)
 	hub.join(cal.net)
@@ -105,6 +129,32 @@ func run_tests() -> void:
 	ana.bus.editor.do({"op": "add_room", "room": {"type": "engineering", "deck": 0, "x": 0, "z": 0, "w": 5, "d": 5}})
 	hub.pump()
 	check(ben.bus.library.current.rooms.size() == 1, "and Ana's edit lands in it on Ben's machine")
+
+	# Walking about together: Ana in walk-inside sees Ben there, named, in his colour.
+	var room := Node3D.new()
+	add_child(room)
+	var f := Furnishing.new()
+	room.add_child(f)
+	f.setup(ana.bus, Furnishing.stand_in_walls())
+	f.open_walk()
+	await frames(2)
+	hub.pump()
+	check(ben.bus.walkers.has(1), "Ben's machine knows Ana is walking inside")
+	check(ana.net.movers.has("player:1:walk"), "Ana's walk streams to the crew")
+	ben.bus.set_walking(true)
+	hub.pump()
+	var fig: Node3D = f.walk.find_child("Crew_7", true, false)
+	check(fig != null and (fig.find_child("Name", true, false) as Label3D).text == "Ben", "Ben walks in and Ana sees him, named")
+	check(ana.net.movers.get("player:7:walk") == fig, "his figure follows his walk")
+	ben.bus.set_walking(false)
+	hub.pump()
+	await frames(1)
+	check(f.walk.find_child("Crew_7", true, false) == null, "he steps out and is gone")
+	f.close_walk()
+	hub.pump()
+	check(not ben.bus.walkers.has(1), "Ana leaving walk-inside tells the others")
+	room.queue_free()
+	await frames(2)
 	for r: Dictionary in [ana, ben, cal]:
 		(r.bus as DesignBus).free()
 

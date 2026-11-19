@@ -65,6 +65,8 @@ var _palette: PanelContainer
 var _palette_list: VBoxContainer
 var _pitch := 0.0
 var _dirty := false
+## The crew walking about in here too: peer id -> their figure (it follows their walk).
+var crew: Dictionary = {}
 
 ## Built last time (tests): see WalkBuild.
 var wall_pieces: Array[Dictionary]:
@@ -90,11 +92,106 @@ func setup(design_bus: DesignBus, origin: Transform3D) -> void:
 	_add_hud()
 	bus.design_changed.connect(_on_changed)
 	spawn()
+	_join_crew()
 
 
 func _exit_tree() -> void:
 	if bus and bus.design_changed.is_connected(_on_changed):
 		bus.design_changed.disconnect(_on_changed)
+	_leave_crew()
+
+
+# Walking about together: this player's walk streams to the crew (a mover under their own
+# "player:<id>:walk" id, so they always drive it), and everyone else in walk-inside shows
+# here as a figure in their colour with their name over it.
+
+func _mover_id(peer: int) -> String:
+	return "player:%d:walk" % peer
+
+
+func _join_crew() -> void:
+	var net := bus.net()
+	if net == null:
+		return
+	net.call("register_mover", _mover_id(int(net.call("local_peer_id"))), body)
+	bus.walkers_changed.connect(_sync_crew)
+	bus.set_walking(true)
+	_sync_crew()
+
+
+func _leave_crew() -> void:
+	var net := bus.net() if bus else null
+	if net == null:
+		return
+	if bus.walkers_changed.is_connected(_sync_crew):
+		bus.walkers_changed.disconnect(_sync_crew)
+	net.call("unregister_mover", _mover_id(int(net.call("local_peer_id"))))
+	for peer: int in crew:
+		net.call("unregister_mover", _mover_id(peer))
+	crew.clear()
+	bus.set_walking(false)
+
+
+func _sync_crew() -> void:
+	var net := bus.net()
+	if net == null or world == null:
+		return
+	var me := int(net.call("local_peer_id"))
+	for peer: int in crew.keys():
+		if not bus.walkers.has(peer):
+			net.call("unregister_mover", _mover_id(peer))
+			(crew[peer] as Node).queue_free()
+			crew.erase(peer)
+	for peer: int in bus.walkers:
+		if peer == me or crew.has(peer):
+			continue
+		var fig := crew_figure(str(net.call("player_name", peer)), net.call("player_colour", peer))
+		fig.name = "Crew_%d" % peer
+		world.add_child(fig)
+		fig.position = body.position
+		crew[peer] = fig
+		net.call("register_mover", _mover_id(peer), fig)
+
+
+## A crewmate in walk-inside: a figure in their colour, their name over their head.
+static func crew_figure(player: String, colour: Color) -> Node3D:
+	var fig := Node3D.new()
+	var mi := MeshInstance3D.new()
+	var cap := CapsuleMesh.new()
+	cap.radius = 0.3
+	cap.height = 1.8
+	mi.mesh = cap
+	var m := StandardMaterial3D.new()
+	m.albedo_color = colour
+	m.roughness = 0.6
+	mi.material_override = m
+	mi.layers = 1 | EXTERIOR
+	fig.add_child(mi)
+	var visor := MeshInstance3D.new()
+	var vb := BoxMesh.new()
+	vb.size = Vector3(0.34, 0.12, 0.08)
+	visor.mesh = vb
+	var vm := StandardMaterial3D.new()
+	vm.albedo_color = Color(0.1, 0.12, 0.14)
+	vm.emission_enabled = true
+	vm.emission = colour * 0.6
+	visor.material_override = vm
+	visor.position = Vector3(0, 0.62, -0.27)
+	visor.layers = 1 | EXTERIOR
+	fig.add_child(visor)
+	var tag := Label3D.new()
+	tag.name = "Name"
+	tag.text = player
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.no_depth_test = true
+	tag.font_size = 40
+	tag.pixel_size = 0.005
+	tag.modulate = colour
+	tag.outline_size = 8
+	tag.position = Vector3(0, 1.2, 0)
+	tag.layers = 1 | EXTERIOR
+	fig.add_child(tag)
+	return fig
 
 
 func record() -> DesignRecord:
@@ -478,6 +575,8 @@ func _process(delta: float) -> void:
 		_dirty = false
 		builder.build(record(), _built)
 	var near: Array[Vector3] = [body.position]
+	for fig: Node3D in crew.values():
+		near.append(fig.position)
 	builder.update_doors(near, delta)
 	_update_spot()
 	_update_ghost()

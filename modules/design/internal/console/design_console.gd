@@ -75,6 +75,14 @@ func _build() -> void:
 	plan.selection_changed.connect(_on_selection)
 	plan.tool_changed.connect(func(_t: String) -> void: _mark_tools())
 	body.add_child(plan)
+	_crew_feed = T.label("", "body_medium", 17, T.TEXT)
+	_crew_feed.name = "CrewFeed"
+	_crew_feed.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	_crew_feed.position = Vector2(16, -120)
+	_crew_feed.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_crew_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plan.add_child(_crew_feed)
+	bus.crew_edited.connect(_on_crew_edited)
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.size_flags_stretch_ratio = 1.3
@@ -89,6 +97,33 @@ func _build() -> void:
 	_library_panel = _make_library_panel()
 	_library_panel.visible = false
 	add_child(_library_panel)
+
+
+## The crew's last few edits, newest last, each fading after a few seconds.
+var _crew_feed: Label
+var _crew_lines: Array = []   # [text, until msec]
+
+
+func _on_crew_edited(who: String, colour: Color, what: String) -> void:
+	_crew_lines.append(["%s %s" % [who, what], Time.get_ticks_msec() + 6000])
+	if _crew_lines.size() > 4:
+		_crew_lines.pop_front()
+	_crew_feed.modulate = colour.lerp(Color.WHITE, 0.4)
+	_show_crew_feed()
+	get_tree().create_timer(6.1).timeout.connect(_show_crew_feed)
+
+
+func _show_crew_feed() -> void:
+	if not is_instance_valid(_crew_feed):
+		return
+	var now := Time.get_ticks_msec()
+	_crew_lines = _crew_lines.filter(func(l): return int(l[1]) > now)
+	_crew_feed.text = "\n".join(_crew_lines.map(func(l): return str(l[0])))
+
+
+func _exit_tree() -> void:
+	if bus and bus.crew_edited.is_connected(_on_crew_edited):
+		bus.crew_edited.disconnect(_on_crew_edited)
 
 
 func _top_bar() -> Control:
