@@ -31,3 +31,9 @@ func run_tests() -> void:
 	check(zones.size() > 1, "the battery rack carries finish zones: %s" % [zones.keys()])
 	check(VsParts.shape("Reactor") == VsParts.shape("Reactor"), "shapes are built once")
 	check(VsParts.mass("Reactor") > VsParts.mass("JunctionBox"), "a reactor outweighs a junction box")
+	# Components weigh as built (hollow), not as solid blocks of their box.
+	check(VsParts.mass("Bunk") < 500.0 and VsParts.mass("CargoContainer") < 10000.0 and VsParts.mass("Reactor") < 20000.0,
+			"hollow parts weigh sensibly: bunk %.0f, container %.0f, reactor %.0f kg" % [VsParts.mass("Bunk"),
+			VsParts.mass("CargoContainer"), VsParts.mass("Reactor")])
+	for id in ["AirlockDoor", "FuelPump", "LifeSupport", "CargoRack"]:
+		check(VsParts.has(id), "%s is stocked" % id)
