@@ -14,7 +14,15 @@ extends Node3D
 ## The trades who fasten clamp their feet to the work and lean into it. Every second ring the
 ## crew fits it out: they send for a power kit, and movers bring it to the lead fitter when it's
 ## wanted; fitters set the battery rack, cabinet and junction boxes on the ring and the bolters
-## bolt them down. Presentation only: it stands in for Wave 5's real building.
+## bolt them down; the next fit-out is a piping kit, the pipes clamped on with bolts. Presentation only: it
+## stands in for Wave 5's real building.
+##
+## How things are joined is TartanCo's rule (beenster, 19 Nov): beams are welded together; inner
+## walls are riveted at the plate corners; outer hull plates are riveted at the corners and
+## welded along a short length of one side; components are bolted to walls, ceilings and floors
+## (large ones with several bolts); pipes are bolted and wires riveted (JOINING). So each ring's
+## box beams and girders are welded at both ends, and once its frame stands its bay is skinned:
+## hull plates on both sides (riveted, then a short seam) and an inner wall lining each (riveted).
 ##
 ## The bots are TartanCo's, and they wear: every job wears a bot a little, a worn bot slows
 ## down, and past a point it starts throwing errors and stops till it's seen to. Then the crew
@@ -30,6 +38,7 @@ extends Node3D
 const WorkerLook := preload("res://modules/yard/internal/yard_worker_look.gd")
 const Look := preload("res://modules/yard/internal/yard_stock_look.gd")
 const Service := preload("res://modules/yard/internal/yard_service.gd")
+const Upgrades := preload("res://modules/yard/internal/tartanco_upgrades.gd")
 
 ## The keel's first ring, the way it grows (m), the rings' pitch and how many it has room for.
 const KEEL_START := Vector3(-16.0, -3.0, -85.0)
@@ -44,14 +53,32 @@ const CREW := ["F", "F", "W", "W", "R", "B"]
 ## The kit a fit-out sends for (brought to the lead fitter when it's wanted, not held waiting),
 ## and how often: after every this many rings.
 const FITOUT_KIT := "power"
+## The fit-out kits, in turn (a ring with power, the next with pipes).
+const FITOUT_KITS: Array[String] = ["power", "piping"]
+## TartanCo's joining rule (see the header): the fastening steps a part takes, in order. Anything
+## not named is a component: bolted.
+const JOINING := {
+	"BoxBeam": ["weld"], "Girder": ["weld"],
+	"HullPlate": ["rivet", "weld"],
+	"DeckPlate": ["rivet"],
+	"Pipe": ["bolt"],
+	"Wire": ["rivet"],
+}
+## The trade each step wants.
+const TRADE := {"weld": "W", "rivet": "R", "bolt": "B"}
 const FITOUT_EVERY := 2
 ## The charging wall (station space): its face's middle at the docks' hanging height, standing on
 ## the dock arm's truss (z -66, y -16) beside the build berth, and its docks' spacing (m).
 ## Each bot's dock: on a rib of the build berth's station-side frame face (ribs every 10 m at
 ## z -70, 0.6 m thick), low under the hull clamps and high over them (station space: the rib's
 ## face at the hanging height).
+## The first six for the crew the yard starts with, then one for each bot bought from TartanCo,
+## up to MAX_BOTS: every rib of the build berth's station-side frame, low and high.
 const DOCKS: Array[Vector3] = [Vector3(-20, -13.5, -70.3), Vector3(20, -13.5, -70.3), Vector3(-10, -13.5, -70.3),
-		Vector3(10, -13.5, -70.3), Vector3(-10, 7.5, -70.3), Vector3(10, 7.5, -70.3)]
+		Vector3(10, -13.5, -70.3), Vector3(-10, 7.5, -70.3), Vector3(10, 7.5, -70.3),
+		Vector3(0, -13.5, -70.3), Vector3(0, 7.5, -70.3), Vector3(-20, 7.5, -70.3), Vector3(20, 7.5, -70.3)]
+## The most bots the berth has docks for.
+const MAX_BOTS := 10
 
 ## Seconds a fitter takes to ease a part into place, a weld per joint, a rivet (pressure, then
 ## the punch).
@@ -61,6 +88,21 @@ const DOCKS: Array[Vector3] = [Vector3(-20, -13.5, -70.3), Vector3(20, -13.5, -7
 ## Seconds a bolter runs one bolt home, and bolts at each joint.
 @export var bolt_seconds := 1.4
 @export var bolts_per_joint := 2
+## The welder's sparks a second (the grinder's spray: YardSparkSpray), and what a rivet slamming
+## home throws: swarf and flakes, sparks and puffs of steam.
+@export var weld_spark_rate := 420.0
+@export var rivet_chips := 26
+@export var rivet_sparks := 14
+@export var rivet_steam := 8
+## The frame's box girders, Void Salvage's sizes (m): the ring's members (width across the
+## ring, depth along the keel) and the stringers between rings.
+@export var ring_member := Vector2(0.24, 0.2)
+@export var stringer := Vector2(0.16, 0.16)
+## The skin: how far its plates stand off the frame's centre lines (m), how far in from a plate's
+## edges its corner rivets go (m), and the hull plates' short seam (m).
+@export var skin_gap := 0.2
+@export var corner_inset := 0.12
+@export var seam_length := 0.5
 ## How far a trade leans into the work it's clamped to (rad), and its pelvis over the surface (m).
 @export var brace_lean := 0.62
 @export var brace_height := 0.8
@@ -114,7 +156,8 @@ var traffic: Node
 var workers: Array[Dictionary] = []
 var rings: Array[Node3D] = []
 ## The ring going on now: {part, t (ring space), stage, piece, fitter, waited}. Stages: need,
-## carry, held, welding, welded, riveting, done.
+## carry, held (waiting on its next fastening step, `steps`[`step`]), working, done. `fixed` once its
+## first step is done (its fitter lets go).
 var members: Array[Dictionary] = []
 var ring_node: Node3D
 ## Where the movers wait with their loads (just off the keel's front).
@@ -134,6 +177,11 @@ var _asked := false
 var _bolt_mesh: CylinderMesh
 var _keel_done := 0.0
 var charge_docks: Node3D
+## The welders' and riveters' shower of sparks, globs, chips and steam: the same spray the
+## player's grinder throws (YardSparkSpray). Presentation only: its own random numbers, never
+## the crew's `_rng`, so the shared clock's crew stays the same on every PC.
+var spray: YardSparkSpray
+var _owed := {}
 
 
 func build(stores_traffic: Node) -> void:
@@ -144,40 +192,16 @@ func build(stores_traffic: Node) -> void:
 	supply = Node3D.new()
 	supply.name = "Supply"
 	add_child(supply)
-	var counts := {}
 	for i in CREW.size():
-		var role: String = CREW[i]
-		counts[role] = int(counts.get(role, 0)) + 1
-		var bot := WorkerLook.make(role, "%02d" % counts[role])
-		bot.name = "Worker%d" % (i + 1)
-		add_child(bot)
-		var w := {"node": bot, "role": role, "index": i, "task": {}, "vel": Vector3.ZERO, "wear": 0.05 * i,
-				"fault": "", "servicing": false, "charge": 1.0 - 0.13 * i, "charging": true, "low": false, "route": [],
-				"speed": 1.0, "began": 0.0}
-		if role != "F":
-			w.sparks = make_sparks(role)
-			add_child(w.sparks)
-		if role != "F":
-			var light := OmniLight3D.new()
-			light.name = "WorkLight%d" % (i + 1)
-			light.light_color = Color(0.6, 0.8, 1.0) if role == "W" else Color(1.0, 0.85, 0.6)
-			light.omni_range = 6.0
-			light.light_energy = 0.0
-			add_child(light)
-			w.light = light
-		bot.position = dock_spot(i)
-		WorkerLook.rest(bot, "R")
-		WorkerLook.rest(bot, "L")
-		WorkerLook.tuck(bot, "R")
-		WorkerLook.tuck(bot, "L")
-		workers.append(w)
+		_make_worker(String(CREW[i]))
+	spray = YardSparkSpray.new()
+	spray.name = "BotSpray"
+	add_child(spray)
 	charge_docks = Node3D.new()
 	charge_docks.name = "ChargeDocks"
 	add_child(charge_docks)
 	for i in CREW.size():
-		var dock := WorkerLook.charge_dock(i + 1)
-		dock.position = DOCKS[i]
-		charge_docks.add_child(dock)
+		_add_dock(i)
 	_rng.seed = 4021
 	# Each its own pace, so no two move alike.
 	for w: Dictionary in workers:
@@ -225,10 +249,141 @@ func serviced(w: Dictionary) -> void:
 	(w.node.get_node("Fault") as Label3D).visible = false
 
 
+## A new bot of trade `role` on the next dock (its node named Worker<n>, numbered within its trade).
+func _make_worker(role: String) -> Dictionary:
+	var i := workers.size()
+	var number := 1 + workers.filter(func(x: Dictionary) -> bool: return x.role == role).size()
+	var bot := WorkerLook.make(role, "%02d" % number)
+	bot.name = "Worker%d" % (i + 1)
+	add_child(bot)
+	var w := {"node": bot, "role": role, "index": i, "task": {}, "vel": Vector3.ZERO, "wear": 0.05 * i,
+			"fault": "", "servicing": false, "charge": 1.0 - 0.13 * i, "charging": true, "low": false, "route": [],
+			"speed": 1.0, "began": 0.0, "mark": Upgrades.FIRST_MARK, "modules": [],
+			"fx": Upgrades.effects(Upgrades.FIRST_MARK, [])}
+	if role != "F":
+		w.sparks = make_sparks(role)
+		add_child(w.sparks)
+		var light := OmniLight3D.new()
+		light.name = "WorkLight%d" % (i + 1)
+		light.light_color = Color(0.6, 0.8, 1.0) if role == "W" else Color(1.0, 0.85, 0.6)
+		light.omni_range = 6.0
+		light.light_energy = 0.0
+		add_child(light)
+		w.light = light
+	bot.position = dock_spot(i)
+	WorkerLook.rest(bot, "R")
+	WorkerLook.rest(bot, "L")
+	WorkerLook.tuck(bot, "R")
+	WorkerLook.tuck(bot, "L")
+	workers.append(w)
+	_refit(w)   # its chest code shows its mark: W-1 as it comes
+	return w
+
+
+func _add_dock(i: int) -> void:
+	var dock := WorkerLook.charge_dock(i + 1)
+	dock.position = DOCKS[i]
+	charge_docks.add_child(dock)
+
+
+# --- The fleet ---------------------------------------------------------------------------------
+# beenster, 19 Nov: "New bots can be added to our fleet by buying them at TartanCo. They should be
+# expensive so that you can't immediately have lots of them" (prices: TartanCoUpgrades.BOT_PRICES).
+# Whoever sells them takes the money, then calls add_bot, on the yard's shared clock.
+
+## Adds a new bot of trade `role` (F, W, R or B), new and charged, on a dock of its own on the
+## berth's frame. Its node, or null when the trade is unknown or every dock is taken.
+func add_bot(role: String) -> Node3D:
+	if not Upgrades.BOT_PRICES.has(role) or workers.size() >= MAX_BOTS:
+		return null
+	_add_dock(workers.size())
+	var w := _make_worker(role)
+	w.wear = 0.0
+	w.charge = 1.0
+	w.speed = _rng.randf_range(0.8, 1.2)
+	return w.node
+
+
+## The fleet as it stands, to save: one {role, mark, modules} a bot, in order.
+func fleet_state() -> Array:
+	return workers.map(func(w: Dictionary) -> Dictionary: return {"role": w.role, "mark": int(w.mark), "modules": (w.modules as Array).duplicate()})
+
+
+## Puts a saved fleet back: the bots bought since added again, every bot's mark and modules.
+func restore_fleet(state: Array) -> void:
+	for i in state.size():
+		var b: Dictionary = state[i]
+		if i >= workers.size() and add_bot(String(b.get("role", ""))) == null:
+			break
+		var w: Dictionary = workers[i]
+		w.mark = int(b.get("mark", Upgrades.FIRST_MARK)) if Upgrades.MARKS.has(int(b.get("mark", 0))) else Upgrades.FIRST_MARK
+		w.modules = (b.get("modules", []) as Array).filter(func(id: Variant) -> bool: return Upgrades.MODULES.has(String(id))).slice(0, Upgrades.slots(int(w.mark)))
+		_refit(w)
+
+
 ## How fast a bot works for its wear (1 new).
 func pace(w: Dictionary) -> float:
 	var over := clampf((float(w.wear) - slow_from) / (1.0 - slow_from), 0.0, 1.0)
-	return lerpf(1.0, worn_pace, over)
+	return lerpf(1.0, worn_pace, over) * float(_fx(w).pace)
+
+
+## A bot's upgrade effects (its mark and modules, TartanCoUpgrades.effects).
+func _fx(w: Dictionary) -> Dictionary:
+	return w.get("fx", Upgrades.effects(Upgrades.FIRST_MARK, []))
+
+
+# --- Upgrades ---------------------------------------------------------------------------------
+# beenster's pick, 19 Nov: marks with module slots (tartanco_upgrades.gd). Whoever sells them
+# (TartanCo's engineers on a visit) calls these, on the yard's shared clock like everything else.
+
+## Makes a bot `mark` (3 to 5). Modules past the new mark's slots come out. False if it isn't one.
+func set_mark(bot: Node3D, mark: int) -> bool:
+	var w := worker_of(bot)
+	if w.is_empty() or not Upgrades.MARKS.has(mark):
+		return false
+	w.mark = mark
+	(w.modules as Array).resize(mini((w.modules as Array).size(), Upgrades.slots(mark)))
+	_refit(w)
+	return true
+
+
+## Fits module `id` in a free slot. False if it isn't a module, the bot has it or has no slot free.
+func fit_module(bot: Node3D, id: String) -> bool:
+	var w := worker_of(bot)
+	var mods: Array = w.get("modules", [])
+	if w.is_empty() or not Upgrades.MODULES.has(id) or mods.has(id) or mods.size() >= Upgrades.slots(int(w.mark)):
+		return false
+	mods.append(id)
+	_refit(w)
+	return true
+
+
+## Takes module `id` out. False if it wasn't fitted.
+func remove_module(bot: Node3D, id: String) -> bool:
+	var w := worker_of(bot)
+	if w.is_empty() or not (w.modules as Array).has(id):
+		return false
+	(w.modules as Array).erase(id)
+	_refit(w)
+	return true
+
+
+## Its effects worked out again, and its mark shown (beenster, 19 Nov: "it should be Mk1, Mk2,
+## Mk3, Mk4 and Mk5"): "Mk1" big on its chest, its trade and number under it ("W 01"), and its
+## model "W Mk1".
+func _refit(w: Dictionary) -> void:
+	w.fx = Upgrades.effects(int(w.mark), w.modules)
+	var node: Node3D = w.node
+	var mark := Upgrades.mark_name(int(w.mark))
+	node.set_meta("tartanco_model", "%s %s" % [w.role, mark])
+	var label := node.get_node_or_null("Code") as Label3D
+	if label:
+		label.text = mark
+	var number := node.get_node_or_null("Number") as Label3D
+	if number:
+		if not node.has_meta("number"):
+			node.set_meta("number", number.text)
+		number.text = "%s %s" % [w.role, String(node.get_meta("number"))]
 
 
 ## The crew's bots (their nodes), for the maintenance ship.
@@ -246,8 +401,10 @@ func worker_of(bot: Node3D) -> Dictionary:
 	return {}
 
 
-## A bot's state for the maintenance ship: productivity 0..1 (its pace, 0 while faulted), its
-## errors, and its wear.
+## A bot's state for the maintenance ship and the fleet screen: productivity 0..1 (its pace, 0
+## while faulted), its errors, wear, charge, model and serial; its role (F/W/R/B), own speed
+## factor, state (working, idle, to_dock, charging, faulted, servicing), job ("Welding keel ring
+## 7, joint 2/2", "" when idle) and job_kind (fit/weld/rivet/bolt, "" when idle).
 func condition(bot: Node3D) -> Dictionary:
 	var w := worker_of(bot)
 	if w.is_empty():
@@ -257,7 +414,44 @@ func condition(bot: Node3D) -> Dictionary:
 		errors.append(String(w.fault))
 	return {"productivity": 0.0 if w.fault != "" else pace(w), "errors": errors, "wear": float(w.wear),
 			"charge": float(w.charge), "charging": _docked(w) and float(w.charge) < 1.0,
-			"model": bot.get_meta("tartanco_model", ""), "serial": bot.get_meta("serial", "")}
+			"model": bot.get_meta("tartanco_model", ""), "serial": bot.get_meta("serial", ""),
+			"role": String(w.role), "speed": float(w.speed), "state": _state(w), "job": job_line(w),
+			"job_kind": String((w.task as Dictionary).get("kind", "")),
+			"mark": int(w.mark), "mark_name": Upgrades.mark_name(int(w.mark)), "slots": Upgrades.slots(int(w.mark)),
+			"upgrades": Upgrades.fitted(w.modules)}
+
+
+func _state(w: Dictionary) -> String:
+	if w.fault != "":
+		return "faulted"
+	if bool(w.servicing):
+		return "servicing"
+	if not (w.task as Dictionary).is_empty():
+		return "working"
+	if _docked(w):
+		return "charging" if float(w.charge) < 1.0 else "idle"
+	return "to_dock" if bool(w.low) or not (w.route as Array).is_empty() else "idle"
+
+
+const _VERB := {"fit": "Fitting", "weld": "Welding", "rivet": "Riveting", "bolt": "Bolting"}
+const _UNIT := {"weld": "joint", "rivet": "rivet", "bolt": "bolt"}
+const _NAMES := {"BoxBeam": "box beam", "Girder": "girder", "HullPlate": "hull plate", "DeckPlate": "inner wall",
+		"Pipe": "pipe"}
+
+
+## What a bot is doing, in a line ("Welding keel ring 7 hull plate, joint 1/1"), or "".
+func job_line(w: Dictionary) -> String:
+	var task: Dictionary = w.task
+	if task.is_empty():
+		return ""
+	var m: Dictionary = task.get("member", {})
+	var part: String = _NAMES.get(String(m.get("part", "")), String(m.get("part", "")).to_snake_case().replace("_", " "))
+	var where := "keel ring %d" % (int(_fitout.ring) if not _fitout.is_empty() else rings.size() + 1)
+	var line := "%s %s %s" % [_VERB.get(task.kind, String(task.kind).capitalize()), where, part]
+	if task.has("of"):
+		var left: Array = task.get("joints", task.get("spots", []))
+		line += ", %s %d/%d" % [_UNIT[task.kind], mini(int(task.of), int(task.of) - left.size() + 1), int(task.of)]
+	return line
 
 
 ## The maintenance ship takes a bot: it puts its job down (a part it was holding stays put) and
@@ -307,21 +501,18 @@ func _drop_task(w: Dictionary) -> void:
 				(m.piece as Node3D).global_transform = ring_node.global_transform * (m.t as Transform3D)
 				(m.piece as Node3D).reparent(ring_node, true)
 				m.stage = "held"
-		"weld":
+		"weld", "bolt", "rivet":
 			m.stage = "held"
-		"bolt":
-			m.stage = "held"
-		"rivet":
-			m.stage = "welded"
 	w.task = {}
 
 
 ## A job done: wear on the bot, and a worn bot may fault.
 func _job_done(w: Dictionary) -> void:
 	w.task = {}
-	w.charge = maxf(0.0, float(w.charge) - charge_per_job * _rng.randf_range(0.7, 1.3))
-	w.wear = minf(1.0, float(w.wear) + wear_per_job * _rng.randf_range(0.6, 1.4))
-	if float(w.wear) > faults_from and _rng.randf() < (float(w.wear) - faults_from) * 1.6:
+	var fx := _fx(w)
+	w.charge = maxf(0.0, float(w.charge) - charge_per_job * float(fx.drain) * _rng.randf_range(0.7, 1.3))
+	w.wear = minf(1.0, float(w.wear) + wear_per_job * float(fx.wear) * _rng.randf_range(0.6, 1.4))
+	if float(w.wear) > faults_from and _rng.randf() < (float(w.wear) - faults_from) * 1.6 * float(fx.faults):
 		w.fault = FAULTS[_rng.randi() % FAULTS.size()]
 		var label := w.node.get_node("Fault") as Label3D
 		label.text = "%s\n%s" % ["ERROR", w.fault]
@@ -393,23 +584,114 @@ func _front() -> Vector3:
 	return KEEL_START + Vector3(KEEL_STEP * rings.size(), 0, 0)
 
 
-## Its members (ring space): four box beams round a square, then girders back to the last ring.
+## Its members (ring space), framed the way Void Salvage frames a hull (beenster, 19 Nov: "box
+## girders like those in Void Salvage", "the same neat beam joining ... so that we don't have big
+## knuckles at joins"): four box girders round a square, each the corner to corner length of its
+## side on the centre line and mitred 45 degrees at both ends (PartShapes.girder, VS's own box
+## girder with its lightening holes), so the ring closes up corner to corner with no ends
+## sticking past; then stringers, box girders too, butted onto the ring's faces back to the last
+## ring at each corner. Each member carries its own shape (`shape`).
 func _member_list(with_girders: bool) -> Array[Dictionary]:
 	var h := RING * 0.5
 	var out: Array[Dictionary] = []
-	# BoxBeam is built along x: turned for the uprights and the cross members.
-	for t: Transform3D in [
-		Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, 0, 0)),
-		Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0, h, -h)),
-		Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(0, h, h)),
-		Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, RING, 0)),
-	]:
-		out.append({"part": "BoxBeam", "t": t})
+	var centre := Vector3(0, h, 0)
+	var corners: Array[Vector3] = [Vector3(0, 0, -h), Vector3(0, 0, h), Vector3(0, RING, h), Vector3(0, RING, -h)]
+	for i in 4:
+		var a: Vector3 = corners[i]
+		var b: Vector3 = corners[(i + 1) % 4]
+		var x := (b - a).normalized()
+		var mid := (a + b) * 0.5
+		# Width across the ring, pointing in: the mitre makes the outer edge the longer one.
+		var z := (centre - mid).normalized()
+		var basis := Basis(x, z.cross(x), z)
+		out.append({"part": "BoxBeam", "t": Transform3D(basis, mid),
+				"shape": _girder(a.distance_to(b), ring_member, 45.0)})
 	if with_girders:
-		for c: Vector3 in [Vector3(0, 0, -h), Vector3(0, 0, h), Vector3(0, RING, -h), Vector3(0, RING, h)]:
-			# Girder is built along x, 4 m: scaled to the pitch, from this ring back to the last.
-			out.append({"part": "Girder", "t": Transform3D(Basis().scaled(Vector3(KEEL_STEP / 4.0, 1, 1)), c - Vector3(KEEL_STEP * 0.5, 0, 0))})
+		var length := KEEL_STEP - ring_member.y
+		for c: Vector3 in corners:
+			# Along the keel, from the last ring's face to this one's.
+			var z := Vector3(0, centre.y - c.y, centre.z - c.z).normalized()
+			out.append({"part": "Girder", "t": Transform3D(Basis(Vector3.RIGHT, z.cross(Vector3.RIGHT), z), c - Vector3(KEEL_STEP * 0.5, 0, 0)),
+					"shape": _girder(length, stringer, 0.0)})
+		out.append_array(_skin_list())
 	return out
+
+
+## The bay's skin (ring space), once its frame stands: on each side three hull plates outside the
+## frame and two inner wall linings inside it (a plating kit's worth), long sides along the keel.
+## Each turned so its face (the part's +y) points out of the side it covers: the hull away from
+## the keel, the linings in towards it.
+func _skin_list() -> Array[Dictionary]:
+	var h := RING * 0.5
+	var bay := -KEEL_STEP * 0.5
+	var out: Array[Dictionary] = []
+	for side: float in [-1.0, 1.0]:
+		var face := Vector3(0, 0, side)
+		for y: float in [h - 1.6, h, h + 1.6]:
+			out.append({"part": "HullPlate", "skin": true, "out": face,
+					"t": Transform3D(Basis(Vector3.UP, face, Vector3.UP.cross(face)), Vector3(bay, y, side * (h + skin_gap)))})
+		for y: float in [h - 0.65, h + 0.65]:
+			out.append({"part": "DeckPlate", "skin": true, "out": -face,
+					"t": Transform3D(Basis(Vector3.UP, -face, Vector3.UP.cross(-face)), Vector3(bay, y, side * (h - skin_gap)))})
+	return out
+
+
+static var _girders: Dictionary = {}
+
+
+## A Void Salvage box girder `length` long, `section` (width, depth), mitred `mitre` degrees at
+## both ends; built once a size.
+func _girder(length: float, section: Vector2, mitre: float) -> PartShapes.PartShape:
+	var key := "%.3f_%.3f_%.3f_%.1f" % [length, section.x, section.y, mitre]
+	if not _girders.has(key):
+		_girders[key] = PartShapes.girder(length, section.x, section.y, mitre, mitre)
+	return _girders[key]
+
+
+## What a member draws with: its own shape (a frame member's mitred box girder) on its part's
+## surface, else the part as the stores keep it.
+func _layers_of(m: Dictionary) -> Array:
+	if m.has("shape"):
+		return [{"mesh": (m.shape as PartShapes.PartShape).mesh, "material": Look.material(m.part)}]
+	return Look.layers(m.part)
+
+
+## A piece taken from a mover dressed as the member it will be (a stock box beam becomes this
+## ring's mitred one).
+func _dress(piece: Node3D, m: Dictionary) -> void:
+	if not m.has("shape"):
+		return
+	for c in piece.get_children():
+		if c is MeshInstance3D:
+			piece.remove_child(c)
+			c.queue_free()
+	for l: Dictionary in _layers_of(m):
+		var mi := MeshInstance3D.new()
+		mi.mesh = l.mesh
+		mi.material_override = l.material
+		piece.add_child(mi)
+
+
+## A member's fastening steps (JOINING) and where it starts.
+func _ready_member(m: Dictionary) -> void:
+	m.stage = "need"
+	m.piece = null
+	m.waited = 0.0
+	m.steps = (JOINING.get(m.part, ["bolt"]) as Array).duplicate()
+	m.step = 0
+	m.fixed = false
+
+
+## A member's next fastening step is done: its fitter lets go; on to the next, or done.
+func _fastened(m: Dictionary) -> void:
+	m.fixed = true
+	m.step = int(m.step) + 1
+	m.stage = "done" if int(m.step) >= (m.steps as Array).size() else "held"
+
+
+## Whether this ring's frame (its beams and girders) is all welded, so its skin can go on.
+func _frame_done() -> bool:
+	return members.all(func(m: Dictionary) -> bool: return m.has("skin") or m.stage == "done")
 
 
 ## A ring standing whole (the ones there when the yard opens).
@@ -419,7 +701,7 @@ func _whole_ring() -> void:
 	ring.position = _front()
 	add_child(ring)
 	for m: Dictionary in _member_list(rings.size() > 0):
-		for l: Dictionary in Look.layers(m.part):
+		for l: Dictionary in _layers_of(m):
 			var mi := MeshInstance3D.new()
 			mi.mesh = l.mesh
 			mi.material_override = l.material
@@ -448,9 +730,7 @@ func _start_ring() -> void:
 	add_child(ring_node)
 	members.clear()
 	for m: Dictionary in _member_list(rings.size() > 0):
-		m.stage = "need"
-		m.piece = null
-		m.waited = 0.0
+		_ready_member(m)
 		members.append(m)
 	# The movers wait beside the new ring, on the side away from the station.
 	supply.position = _front() + Vector3(KEEL_STEP * 0.5, -0.5, RING * 0.5 + 4.5)
@@ -473,7 +753,7 @@ func _out(p: Vector3) -> Vector3:
 func _span(m: Dictionary) -> Dictionary:
 	var box := AABB()
 	var first := true
-	for l: Dictionary in Look.layers(m.part):
+	for l: Dictionary in _layers_of(m):
 		var b: AABB = (l.mesh as Mesh).get_aabb()
 		box = b if first else box.merge(b)
 		first = false
@@ -490,11 +770,16 @@ func _span(m: Dictionary) -> Dictionary:
 
 # --- Fitting out ----------------------------------------------------------------------------
 
+## The kit the fit-out after ring `ring` sends for: power, then piping, in turn.
+static func fitout_kit(ring: int) -> String:
+	return FITOUT_KITS[(ring / FITOUT_EVERY) % FITOUT_KITS.size()]
+
+
 ## Sends for the fit-out's kit, brought to the lead fitter when it's wanted.
 func _start_fitout() -> void:
-	_fitout = {"order": -1, "t": 0.0, "ring": rings.size()}
+	_fitout = {"order": -1, "t": 0.0, "ring": rings.size(), "kit": fitout_kit(rings.size())}
 	if traffic:
-		_fitout.order = int(traffic.call("deliver_kit", FITOUT_KIT, foreman(), false))
+		_fitout.order = int(traffic.call("deliver_kit", String(_fitout.kit), foreman(), false))
 
 
 ## Waits for the kit; once it's here, each part it brought is a member to set on the last ring.
@@ -518,8 +803,9 @@ func _step_fitout(delta: float) -> void:
 			var spot := _next_spot(spots, String(l.part))
 			if spot.is_empty():
 				break
-			members.append({"part": l.part, "t": spot.t, "out": spot.out, "joints": spot.joints, "stage": "need",
-					"piece": null, "waited": 0.0, "load": l})
+			var m := {"part": l.part, "t": spot.t, "out": spot.out, "joints": spot.joints, "load": l}
+			_ready_member(m)
+			members.append(m)
 	if members.is_empty():
 		fitted_out.append(int(_fitout.ring))
 		_fitout = {}
@@ -531,7 +817,7 @@ func _step_fitout(delta: float) -> void:
 ## beam, either side of the middle; small ones go on the uprights' inner faces. Each spot: its
 ## transform, the way out from its face and the bolts that hold it ({p, out, toward}).
 func _mount_spots() -> Dictionary:
-	var beam := _box("BoxBeam")
+	var beam := AABB(-Vector3.ONE * ring_member.x * 0.5, Vector3.ONE * ring_member.x)   # a ring member's faces
 	var h := RING * 0.5
 	var big: Array = []
 	for z: float in [-1.5, 1.5]:
@@ -540,27 +826,45 @@ func _mount_spots() -> Dictionary:
 	for y: float in [h - 0.9, h + 0.9]:
 		small.append([Basis(), Vector3(0, y, -h + beam.end.z), Vector3.BACK])
 		small.append([Basis(Vector3.UP, PI), Vector3(0, y, h - beam.end.z), Vector3.FORWARD])
-	return {"big": big, "small": small}
+	# Pipes stand up the bay's sides just behind the ring's uprights, clear of the linings.
+	var pipes: Array = []
+	for side: float in [-1.0, 1.0]:
+		pipes.append([Basis(), Vector3(-0.4, h, side * (h - skin_gap - 0.45)), Vector3(0, 0, -side)])
+	return {"big": big, "small": small, "pipe": pipes}
 
 
 func _next_spot(spots: Dictionary, part: String) -> Dictionary:
 	var size := _box(part).size
-	var list: Array = spots.small if maxf(size.x, maxf(size.y, size.z)) < 0.6 else spots.big
+	var big := maxf(size.x, maxf(size.y, size.z)) >= 0.6
+	var list: Array = spots.pipe if part == "Pipe" else (spots.big if big else spots.small)
 	if list.is_empty():
 		return {}
 	var s: Array = list.pop_front()
 	var basis: Basis = s[0]
 	var contact: Vector3 = s[1]
 	var normal: Vector3 = s[2]
+	if part == "Pipe":
+		# A pipe: a clamp bolted on at three points up its length, on the face towards the keel.
+		var r := _box(part).size.x * 0.5
+		var clamps: Array = []
+		for y: float in [-1.4, 0.0, 1.4]:
+			clamps.append({"p": contact + Vector3(0, y, 0) + normal * r, "out": normal, "toward": Vector3.UP, "n": 1})
+		return {"t": Transform3D(basis, contact), "out": normal, "joints": clamps}
 	var ab := Transform3D(basis, Vector3.ZERO) * _box(part)
 	var half := absf(ab.size.dot(normal.abs())) * 0.5
 	var at := contact - ab.get_center() + normal * half
-	# Two bolts at its foot, either side along the beam (or up the upright).
+	# Bolts at its foot: a small part one each side along the beam (or up the upright), a large
+	# one at its four corners (TartanCo's rule: large objects take several bolts).
 	var spread := Vector3(0, 0, 1) if normal == Vector3.UP else Vector3(0, 1, 0)
 	var reach := maxf(0.12, absf(ab.size.dot(spread)) * 0.5 + 0.06)
+	var side := normal.cross(spread).normalized()
 	var joints: Array = []
 	for sgn: float in [-1.0, 1.0]:
-		joints.append({"p": contact + spread * sgn * reach, "out": normal, "toward": -spread * sgn})
+		if big:
+			for k: float in [-1.0, 1.0]:
+				joints.append({"p": contact + spread * sgn * reach + side * k * 0.07, "out": normal, "toward": -spread * sgn, "n": 1})
+		else:
+			joints.append({"p": contact + spread * sgn * reach, "out": normal, "toward": -spread * sgn, "n": 1})
 	return {"t": Transform3D(basis, at), "out": normal, "joints": joints}
 
 
@@ -597,8 +901,20 @@ func _keep_supplied() -> void:
 			need[l.part] = int(need[l.part]) - (int(l.qty) - int(l.get("promised", 0)))
 	for part: String in need:
 		if int(need[part]) > 0:
-			_order = int(traffic.call("deliver_kit", KIT, supply, true))
+			_order = int(traffic.call("deliver_kit", _kit_for(part), supply, true))
 			return
+
+
+## The kit that brings `part`: the keel ring kit for the frame, the plating kit for the skin.
+func _kit_for(part: String) -> String:
+	for p: Dictionary in YardKits.parts(KIT):
+		if p.part == part:
+			return KIT
+	for id: String in YardKits.ids():
+		for p: Dictionary in YardKits.parts(id):
+			if p.part == part:
+				return id
+	return KIT
 
 
 ## A load a mover is holding with a part of `part` not yet promised to a fitter.
@@ -617,6 +933,8 @@ func _assign() -> void:
 	for m: Dictionary in members:
 		match String(m.stage):
 			"need":
+				if m.has("skin") and not _frame_done():
+					continue
 				var f := _idle("F")
 				if f.is_empty():
 					continue
@@ -631,25 +949,19 @@ func _assign() -> void:
 				m.fitter = f
 				f.task = {"kind": "fit", "member": m, "load": l, "phase": "go", "t": 0.0}
 			"held":
-				if m.part == "BoxBeam":
-					var w := _idle("W")
-					if w.is_empty():
-						continue
-					m.stage = "welding"
-					var s := _span(m)
-					w.task = {"kind": "weld", "member": m, "joints": [s.a, s.b], "phase": "go", "t": 0.0}
-				else:
-					var b := _idle("B")
-					if b.is_empty():
-						continue
-					m.stage = "bolting"
-					b.task = {"kind": "bolt", "member": m, "joints": _bolt_joints(m), "phase": "go", "t": 0.0, "bolt": 0}
-			"welded":
-				var r := _idle("R")
-				if r.is_empty():
+				var kind: String = (m.steps as Array)[int(m.step)]
+				var w := _idle(TRADE[kind])
+				if w.is_empty():
 					continue
-				m.stage = "riveting"
-				r.task = {"kind": "rivet", "member": m, "spots": [0.2, 0.5, 0.8], "phase": "go", "t": 0.0}
+				m.stage = "working"
+				match kind:
+					"weld":
+						w.task = {"kind": "weld", "member": m, "joints": _weld_joints(m), "phase": "go", "t": 0.0}
+					"rivet":
+						w.task = {"kind": "rivet", "member": m, "spots": _rivet_spots(m), "phase": "go", "t": 0.0}
+					_:
+						w.task = {"kind": "bolt", "member": m, "joints": _bolt_joints(m), "phase": "go", "t": 0.0, "bolt": 0}
+				w.task.of = (w.task.get("joints", w.task.get("spots", [])) as Array).size()
 
 
 func _idle(role: String) -> Dictionary:
@@ -774,7 +1086,7 @@ func _charge(w: Dictionary, delta: float) -> void:
 	w.vel = Vector3.ZERO
 	_face(node, node.global_position + Vector3.FORWARD, delta)
 	WorkerLook.hang(node)
-	w.charge = minf(1.0, float(w.charge) + delta / maxf(charge_seconds, 0.1))
+	w.charge = minf(1.0, float(w.charge) + delta * float(_fx(w).charge) / maxf(charge_seconds, 0.1))
 	if float(w.charge) >= 1.0:
 		w.low = false
 
@@ -783,7 +1095,8 @@ func _charge(w: Dictionary, delta: float) -> void:
 func _fly(w: Dictionary, to: Vector3, delta: float) -> bool:
 	var node: Node3D = w.node
 	var gap := to - node.position
-	var want := gap.limit_length(minf(fly_speed * float(w.get("speed", 1.0)), gap.length() * 1.6 + 0.1))
+	var fly := float(_fx(w).fly) / float(_fx(w).pace)   # its pace already sped the step up
+	var want := gap.limit_length(minf(fly_speed * float(w.get("speed", 1.0)) * fly, gap.length() * 1.6 + 0.1))
 	w.vel = (w.vel as Vector3).lerp(want, minf(1.0, delta * 3.0))
 	node.position += (w.vel as Vector3) * delta
 	if gap.length() < 0.08:
@@ -833,6 +1146,7 @@ func _fit(w: Dictionary, task: Dictionary, delta: float) -> void:
 					if piece == null:
 						piece = _spare(m.part, at)
 					piece.reparent(self, true)
+					_dress(piece, m)
 					m.piece = piece
 					task.from = piece.global_transform
 					task.phase = "carry"
@@ -861,13 +1175,13 @@ func _fit(w: Dictionary, task: Dictionary, delta: float) -> void:
 			_face(node, _span(m).mid, delta)
 			_hold(node, piece, m)
 			# The alignment laser on the part's place while it eases in.
-			task.laser = final * _centre(m.part)
+			task.laser = final * _centre(m)
 			if float(task.t) >= 1.0:
 				piece.reparent(ring_node, true)
 				m.stage = "held"
 				task.phase = "hold"
 		"hold":
-			if m.stage != "held" and m.stage != "welding" and m.stage != "bolting" or ring_node == null:
+			if bool(m.fixed) or m.stage == "done" or ring_node == null:
 				_job_done(w)
 				return
 			_face(node, _span(m).mid, delta)
@@ -880,15 +1194,15 @@ func _hold(node: Node3D, piece: Node3D, m: Dictionary) -> void:
 	var along := g.basis.x.normalized()
 	if along.dot(node.global_basis.x) < 0.0:
 		along = -along
-	var mid := g * _centre(m.part)
+	var mid := g * _centre(m)
 	var into := (mid - node.global_position).normalized()
 	var skin := 0.12
 	WorkerLook.reach(node, "R", mid + along * 0.55 - into * skin, into)
 	WorkerLook.reach(node, "L", mid - along * 0.55 - into * skin, into)
 
 
-func _centre(part: String) -> Vector3:
-	var layers: Array = Look.layers(part)
+func _centre(m: Dictionary) -> Vector3:
+	var layers: Array = _layers_of(m)
 	return (layers[0].mesh as Mesh).get_aabb().get_center() if not layers.is_empty() else Vector3.ZERO
 
 
@@ -913,15 +1227,15 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 	var m: Dictionary = task.member
 	var joints: Array = task.joints
 	if joints.is_empty():
-		m.stage = "welded"
+		_fastened(m)
 		_job_done(w)
 		return
-	var joint: Vector3 = joints[0]
-	var s := _span(m)
-	var out: Vector3 = s.out
-	var inward := ((s.mid as Vector3) - joint).normalized()
-	var face := joint + out * (float(s.skin) + 0.02) + inward * 0.06
-	var across := out.cross(inward).normalized()
+	var j: Dictionary = joints[0]
+	var out: Vector3 = j.out
+	var inward: Vector3 = j.inward
+	var face: Vector3 = j.face
+	var across: Vector3 = j.across
+	var half := float(j.half)
 	var there := _brace(w, face, out, -inward, delta)
 	WorkerLook.reach(node, "L", face + inward * 0.45 - node.global_basis.x * 0.3 + out * 0.04, -out)
 	match String(task.phase):
@@ -933,17 +1247,16 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 		"arc":
 			task.t = float(task.t) + delta
 			var k := clampf(float(task.t) / weld_seconds, 0.0, 1.0)
-			var tip := face + across * lerpf(-0.16, 0.16, k)
+			var tip := face + across * lerpf(-half, half, k)
 			WorkerLook.reach(node, "R", tip, (-out + inward * 0.3).normalized())
-			var sparks: CPUParticles3D = w.sparks
-			_spray(w, WorkerLook.tip_of(node, "R"), out)
-			sparks.emitting = true
+			var arc_at := WorkerLook.tip_of(node, "R")
+			_weld_shower(w, arc_at, out, across * (1.0 if k < 1.0 else -1.0), delta)
 			var flick := 0.5 + 0.5 * sin(_time * 47.0) * sin(_time * 31.0 + float(w.index))
 			var light: OmniLight3D = w.light
-			light.global_position = sparks.global_position + out * 0.3
+			light.global_position = arc_at + out * 0.3
 			light.light_energy = 1.4 + flick * 2.2
 			if float(task.t) >= weld_seconds:
-				_bead(face - across * 0.16, face + across * 0.16, out)
+				_bead(face - across * half, face + across * half, out)
 				joints.pop_front()
 				task.phase = "go"
 				task.t = 0.0
@@ -956,14 +1269,13 @@ func _rivet(w: Dictionary, task: Dictionary, delta: float) -> void:
 	var m: Dictionary = task.member
 	var spots: Array = task.spots
 	if spots.is_empty():
-		m.stage = "done"
+		_fastened(m)
 		_job_done(w)
 		return
-	var s := _span(m)
-	var p: Vector3 = (s.a as Vector3).lerp(s.b, float(spots[0]))
-	var out: Vector3 = s.out
-	var face := p + out * (float(s.skin) + 0.01)
-	var along := ((s.b as Vector3) - (s.a as Vector3)).normalized()
+	var spot: Dictionary = spots[0]
+	var out: Vector3 = spot.out
+	var face: Vector3 = spot.face
+	var along: Vector3 = spot.along
 	var there := _brace(w, face, out, along, delta)
 	WorkerLook.reach(node, "L", face - along * 0.35 - node.global_basis.x * 0.25 + out * 0.03, -out)
 	match String(task.phase):
@@ -987,6 +1299,7 @@ func _rivet(w: Dictionary, task: Dictionary, delta: float) -> void:
 					task.fired = true
 					_rivet_head(face, out)
 					_spray(w, face + out * 0.03, out)
+					_rivet_burst(face, out, along)
 				light.global_position = face + out * 0.3
 				light.light_energy = 3.0 * (1.0 - k)
 			WorkerLook.reach(node, "R", face, -out, kick)
@@ -1004,12 +1317,51 @@ func _bolt_joints(m: Dictionary) -> Array:
 	if m.has("joints"):
 		for j: Dictionary in m.joints:
 			out.append({"p": ring_node.global_transform * (j.p as Vector3), "out": ring_node.global_basis * (j.out as Vector3),
-					"toward": ring_node.global_basis * (j.toward as Vector3)})
+					"toward": ring_node.global_basis * (j.toward as Vector3), "n": int(j.get("n", bolts_per_joint))})
 		return out
 	var s := _span(m)
 	for end: Vector3 in [s.a, s.b]:
 		var inward := ((s.mid as Vector3) - end).normalized()
 		out.append({"p": end + inward * 0.18 + (s.out as Vector3) * float(s.skin), "out": s.out, "toward": -inward})
+	return out
+
+
+## Where a welder runs a bead (each {face, out, inward (into the part), across (the bead's line),
+## half (its half length)}, global): a beam or girder across each end where it meets the frame; a
+## hull plate a short seam along one long edge.
+func _weld_joints(m: Dictionary) -> Array:
+	var out: Array = []
+	if m.part == "HullPlate":
+		var g: Transform3D = ring_node.global_transform * (m.t as Transform3D)
+		var box := _box(m.part)
+		var o := g.basis.y.normalized()
+		var inward := -g.basis.x.normalized()
+		var edge := g * Vector3(box.end.x, box.end.y, box.get_center().z)
+		out.append({"face": edge + o * 0.02 + inward * 0.06, "out": o, "inward": inward,
+				"across": g.basis.z.normalized(), "half": seam_length * 0.5})
+		return out
+	var s := _span(m)
+	for end: Vector3 in [s.a, s.b]:
+		var o: Vector3 = s.out
+		var inward := ((s.mid as Vector3) - end).normalized()
+		out.append({"face": end + o * (float(s.skin) + 0.02) + inward * 0.06, "out": o, "inward": inward,
+				"across": o.cross(inward).normalized(), "half": 0.16})
+	return out
+
+
+## Where a riveter sets rivets (each {face, out, along}, global): a plate's four corners, set in
+## from its edges.
+func _rivet_spots(m: Dictionary) -> Array:
+	var out: Array = []
+	var g: Transform3D = ring_node.global_transform * (m.t as Transform3D)
+	var box := _box(m.part)
+	var o := g.basis.y.normalized()
+	var c := box.get_center()
+	var hx := box.size.x * 0.5 - corner_inset
+	var hz := box.size.z * 0.5 - corner_inset
+	for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var p := g * Vector3(c.x + corner.x * hx, box.end.y, c.z + corner.y * hz)
+		out.append({"face": p + o * 0.01, "out": o, "along": g.basis.z.normalized()})
 	return out
 
 
@@ -1020,15 +1372,16 @@ func _bolt(w: Dictionary, task: Dictionary, delta: float) -> void:
 	var m: Dictionary = task.member
 	var joints: Array = task.joints
 	if joints.is_empty():
-		m.stage = "done"
+		_fastened(m)
 		_job_done(w)
 		return
 	var j: Dictionary = joints[0]
+	var bolts := int(j.get("n", bolts_per_joint))
 	var out: Vector3 = (j.out as Vector3).normalized()
 	var toward: Vector3 = j.toward
 	var across := out.cross(toward).normalized()
 	var k := int(task.bolt)
-	var offset := (float(k) - (bolts_per_joint - 1) * 0.5) * 0.09
+	var offset := (float(k) - (bolts - 1) * 0.5) * 0.09
 	var face: Vector3 = (j.p as Vector3) + across * offset + out * 0.01
 	var there := _brace(w, j.p, out, toward, delta)
 	WorkerLook.reach(node, "L", (j.p as Vector3) - toward * 0.3 - node.global_basis.x * 0.25 + out * 0.03, -out)
@@ -1043,8 +1396,7 @@ func _bolt(w: Dictionary, task: Dictionary, delta: float) -> void:
 			var f := clampf(float(task.t) / bolt_seconds, 0.0, 1.0)
 			# Seat it, then spin it down; the hand turns with the socket.
 			WorkerLook.reach(node, "R", face + out * (0.06 * (1.0 - f)), -out)
-			var hand := node.get_node("HandR") as Node3D
-			hand.rotate(hand.global_basis.y.normalized(), float(task.t) * 30.0)
+			WorkerLook.spin_socket(node, float(task.t) * 30.0)
 			var light: OmniLight3D = w.light
 			light.global_position = face + out * 0.4
 			light.light_energy = 0.6 if f > 0.2 else 0.0
@@ -1055,7 +1407,7 @@ func _bolt(w: Dictionary, task: Dictionary, delta: float) -> void:
 				_bolt_head(face, out)
 				task.bolt = k + 1
 				task.t = 0.0
-				if int(task.bolt) >= bolts_per_joint:
+				if int(task.bolt) >= bolts:
 					joints.pop_front()
 					task.bolt = 0
 					task.phase = "go"
@@ -1229,6 +1581,68 @@ func _spray(w: Dictionary, at: Vector3, out: Vector3) -> void:
 	if p.one_shot:
 		p.restart()
 		p.emitting = true
+
+
+## How many of a thing are due this step at `rate` a second (the remainder carried over), for
+## worker `key`.
+func _due(key: String, rate: float, delta: float) -> int:
+	var owed := float(_owed.get(key, 0.0)) + rate * delta
+	var n := int(owed)
+	_owed[key] = owed - n
+	return n
+
+
+## The welder's arc, thrown like the grinder's spray (beenster, 19 Nov: "should be as good as
+## the grinder"): a dense fan of streaking sparks off the pool, many forking into stars, molten
+## globs that stick and glow where they land, and a little smoke.
+func _weld_shower(w: Dictionary, at: Vector3, out: Vector3, run: Vector3, delta: float) -> void:
+	if spray == null:
+		return
+	var n := out.normalized()
+	var t := run.normalized() if run.length() > 0.01 else n.cross(Vector3.UP).normalized()
+	var axis := t.cross(n).normalized()
+	var from := at + n * 0.02
+	var key := "weld%d" % int(w.index)
+	var hot := Color(1.0, 0.85, 0.45)
+	for k in _due(key, weld_spark_rate, delta):
+		# Most fly out off the pool in a wide cone; some skid back along the seam.
+		var lift := deg_to_rad(randf_range(-4.0, 6.0) if randf() < 0.25 else randf_range(15.0, 80.0))
+		var swing := randf_range(-PI, PI)
+		var side := t * cos(swing) + axis * sin(swing)
+		var d := (side * cos(lift) + n * sin(lift)).normalized()
+		var life := randf_range(0.35, 1.1)
+		var fork := randf_range(0.2, 0.55) * life if randf() < 0.18 else -1.0
+		spray.shower(from, d * randf_range(3.5, 10.0), life, hot if randf() < 0.7 else Color(1.0, 0.97, 0.85), fork)
+	for k in _due(key + "glob", weld_spark_rate * 0.05, delta):
+		var d := (n * randf_range(0.3, 1.0) + t * randf_range(-0.8, 0.8) + axis * randf_range(-0.8, 0.8)).normalized()
+		spray.glob(from, d * randf_range(1.5, 4.5), randf_range(1.0, 2.2), Color(1.0, 0.55, 0.15), randf_range(0.004, 0.012))
+	for k in _due(key + "smoke", 6.0, delta):
+		spray.dust(from + n * 0.05, (n * 0.35 + axis * randf_range(-0.1, 0.1)) * randf_range(0.3, 0.7), Color(0.75, 0.75, 0.72))
+
+
+## A rivet slammed through the plate (beenster, 19 Nov: "spray metal particles, steam and some
+## sparks"): a ring of swarf and flakes flung off the plate, a few sparks, and a burst of steam
+## from the hot rivet.
+func _rivet_burst(at: Vector3, out: Vector3, along: Vector3) -> void:
+	if spray == null:
+		return
+	var n := out.normalized()
+	var t := along.normalized()
+	var axis := t.cross(n).normalized()
+	var from := at + n * 0.02
+	for k in rivet_chips:
+		var a := randf_range(0.0, TAU)
+		var d := ((t * cos(a) + axis * sin(a)) * randf_range(0.6, 1.0) + n * randf_range(0.2, 0.9)).normalized()
+		var grey := randf_range(0.45, 0.8)
+		spray.chip(from, d * randf_range(1.0, 4.0), randf_range(1.5, 3.0), Color(grey, grey, grey * 1.04), randf_range(0.003, 0.009), 30.0)
+	for k in rivet_sparks:
+		var a := randf_range(0.0, TAU)
+		var d := ((t * cos(a) + axis * sin(a)) + n * randf_range(0.1, 0.6)).normalized()
+		spray.shower(from, d * randf_range(3.0, 8.0), randf_range(0.2, 0.55), Color(1.0, 0.8, 0.4))
+	for k in rivet_steam:
+		var a := randf_range(0.0, TAU)
+		spray.dust(from + n * 0.04, (n * randf_range(0.4, 0.9) + (t * cos(a) + axis * sin(a)) * 0.35) * randf_range(0.5, 1.2),
+				Color(0.95, 0.96, 1.0))
 
 
 static func _ease(t: float) -> float:
