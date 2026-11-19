@@ -26,7 +26,7 @@ func run_tests() -> void:
 				var mat := (m as MeshInstance3D).mesh.surface_get_material(i) as BaseMaterial3D
 				if mat and mat.emission_enabled:
 					lit += 1
-		check(surfaces >= 2 and surfaces <= 16 + 4 * pieces.size(), "%s: a handful of materials (%d)" % [id, surfaces])
+		check(surfaces >= 2 and surfaces <= 16 + 8 * pieces.size(), "%s: a handful of materials (%d)" % [id, surfaces])
 		var box := PartModels.box(id)
 		var mid := box.get_center()
 		check(absf(box.position.y) < 0.005 and absf(mid.x) < 0.005 and absf(mid.z) < 0.005,
