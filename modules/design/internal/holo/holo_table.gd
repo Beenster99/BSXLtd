@@ -67,11 +67,66 @@ func set_layer(layer: String, on: bool) -> void:
 	layers[layer] = on
 	if _layer_nodes.has(layer):
 		(_layer_nodes[layer] as Node3D).visible = on
+	if shared and bus:
+		bus.set_screen("holo.layer." + layer, on)
 
 
 func set_cut(share: float) -> void:
 	cut = clampf(share, 0.05, 1.0)
 	_apply_cut()
+	if shared and bus:
+		bus.set_screen("holo.cut", cut)
+
+
+## The design room's own table is shared (its layers, cut, turn and zoom are the same for
+## everyone in the room); the console's preview of it is too, being the same table.
+var shared := false
+## Turn and zoom are sent at most every SEND_EVERY s while they change.
+const SEND_EVERY := 0.15
+var _sent_turn := 0.0
+var _sent_zoom := 1.0
+var _send_wait := 0.0
+
+
+func share() -> void:
+	shared = true
+	for k: String in bus.screens:
+		_on_screen(k, bus.screens[k])
+	bus.screen_changed.connect(_on_screen)
+
+
+func _on_screen(key: String, value: Variant) -> void:
+	if not key.begins_with("holo."):
+		return
+	if key.begins_with("holo.layer."):
+		var layer := key.trim_prefix("holo.layer.")
+		if bool(layers.get(layer, false)) != bool(value):
+			layers[layer] = bool(value)
+			if _layer_nodes.has(layer):
+				(_layer_nodes[layer] as Node3D).visible = bool(value)
+	elif key == "holo.cut" and not is_equal_approx(cut, float(value)):
+		cut = clampf(float(value), 0.05, 1.0)
+	elif key == "holo.turn":
+		turn = float(value)
+		_sent_turn = turn
+	elif key == "holo.zoom":
+		zoom = float(value)
+		_sent_zoom = zoom
+
+
+## Sends the turn and zoom when this player has changed them (throttled).
+func _send_view(delta: float) -> void:
+	_send_wait -= delta
+	if _send_wait > 0.0:
+		return
+	if not is_equal_approx(turn, _sent_turn):
+		_sent_turn = turn
+		bus.set_screen("holo.turn", turn)
+		_send_wait = SEND_EVERY
+	if not is_equal_approx(zoom, _sent_zoom):
+		_sent_zoom = zoom
+		bus.set_screen("holo.zoom", zoom)
+		_send_wait = SEND_EVERY
 
 
 func light_rooms(ids: Array) -> void:
@@ -81,7 +136,9 @@ func light_rooms(ids: Array) -> void:
 	_dirty = true
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if shared and bus:
+		_send_view(delta)
 	if _dirty and bus:
 		_dirty = false
 		rebuild()

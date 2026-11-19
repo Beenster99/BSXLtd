@@ -7,6 +7,8 @@ extends ModuleTest
 ##   tools/run_tests.sh design
 
 const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
+const WallBoard := preload("res://modules/design/internal/room/wall_board.gd")
+const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
 
 
 class Hub:
@@ -165,7 +167,43 @@ func run_tests() -> void:
 	check(not ben.bus.walkers.has(1), "Ana leaving walk-inside tells the others")
 	room.queue_free()
 	await frames(2)
-	for r: Dictionary in [ana, ben, cal]:
+
+	# The room's screens are the same for everyone (beenster, 19 Nov co-op test: "the screens
+	# are not synchronized"): a wall panel's view and the holotable's layers, cut and turn.
+	var boards: Array = []
+	var holos: Array = []
+	for r: Dictionary in [ana, ben]:
+		var wb := WallBoard.new()
+		add_child(wb)
+		wb.setup(r.bus, "left", [["plan:0", 1.0], ["data", 1.0]], 40.0)
+		boards.append(wb)
+		var ht := HoloTable.new()
+		add_child(ht)
+		ht.setup(r.bus)
+		ht.share()
+		holos.append(ht)
+	(boards[0] as WallBoard).set_view(0, "side")
+	(holos[0] as HoloTable).set_layer("wiring", true)
+	(holos[0] as HoloTable).set_cut(0.5)
+	(holos[0] as HoloTable).turn = 1.25
+	await frames(2)
+	hub.pump()
+	check(str((boards[1] as WallBoard).panels[0].view) == "side", "Ana puts the side view on the left wall; Ben sees it there")
+	check(bool((holos[1] as HoloTable).layers.wiring) and is_equal_approx((holos[1] as HoloTable).cut, 0.5),
+			"Ana's wiring layer and cut show on Ben's table")
+	check(is_equal_approx((holos[1] as HoloTable).turn, 1.25), "and the table turns for him too")
+	(boards[1] as WallBoard).step(1, 1)
+	hub.pump()
+	check((boards[0] as WallBoard).panels[1].view == (boards[1] as WallBoard).panels[1].view,
+			"Ben steps a panel on; Ana's follows: %s" % (boards[0] as WallBoard).panels[1].view)
+	var dan := _room(hub, 11)
+	hub.join(dan.net)
+	check(str((dan.bus as DesignBus).screens.get("wall:left:0", "")) == "side" and bool((dan.bus as DesignBus).screens.get("holo.layer.wiring", false)),
+			"a late joiner gets the screens as they are")
+	for n: Node in boards + holos:
+		n.queue_free()
+	await frames(2)
+	for r: Dictionary in [ana, ben, cal, dan]:
 		(r.bus as DesignBus).free()
 
 

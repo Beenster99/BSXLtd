@@ -73,6 +73,7 @@ func setup(design_bus: DesignBus, wall_planes: Array[Dictionary]) -> void:
 	holo.name = "HoloTable"
 	add_child(holo)
 	holo.setup(bus)
+	holo.share()
 	_add_use_body()
 	for w in wall_planes:
 		_add_wall(w)

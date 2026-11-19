@@ -34,6 +34,9 @@ func run_tests() -> void:
 	check(tools.active_tool() is YardCutter, "the wheel goes round the hotbar")
 	tools.holster(true)
 	check(tools.holstered and not tools.tools[1].visible, "H puts it away")
+	var free_slot := tools.get_node_or_null("Hotbar").find_child("Holster", true, false) as PanelContainer
+	check(free_slot != null and (free_slot.get_child(0) as Label).text.ends_with("Hands free"), "the hotbar has a hands-free slot with its key")
+	check(free_slot != null and (free_slot.get_theme_stylebox("panel") as StyleBoxFlat).get_border_width(SIDE_TOP) == 2, "lit while the tool is away")
 	# A screen holding the pointer (the design room's console) hides the hotbar and keeps the keys.
 	HudSlots.claim_pointer("test_tools")
 	await frames(2)

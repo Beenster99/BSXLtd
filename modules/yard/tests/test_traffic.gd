@@ -290,6 +290,11 @@ func _kits() -> void:
 		crew.step(0.2)
 		t += 0.2
 	check(crew.service.state == "away" and crew.service.visits >= 1, "and their ship leaves again (%.0f s)" % t)
+	worn.fault = "E-17 ACTUATOR"
+	check(not crew.call_service(), "she won't come straight back: visits are at least %.0f s apart" % crew.service.min_gap)
+	crew.service.since_visit = crew.service.min_gap
+	check(crew.call_service(), "and comes again once the gap is up")
+	worn.fault = ""
 	crew.queue_free()
 	traffic.queue_free()
 	you.queue_free()

@@ -770,13 +770,14 @@ func _build_hotbar() -> void:
 	_hotbar.add_theme_constant_override("separation", 6)
 	_hotbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	anchor.add_child(_hotbar)
-	for i in tools.size():
+	# The last slot is the hand free (0.4.4 playtest: "need holster button"; H did it unseen).
+	for i in tools.size() + 1:
 		var slot := PanelContainer.new()
-		slot.name = "Slot%d" % (i + 1)
+		slot.name = "Slot%d" % (i + 1) if i < tools.size() else "Holster"
 		slot.custom_minimum_size = Vector2(118, 46)
 		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var label := Label.new()
-		label.text = "%d  %s" % [i + 1, tools[i].tool_name]
+		label.text = "%d  %s" % [i + 1, tools[i].tool_name] if i < tools.size() else "%s  Hands free" % Keys.key_name("yard.holster")
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		label.add_theme_font_override("font", ShipKit.mono_font())
@@ -791,7 +792,7 @@ func _refresh_hotbar() -> void:
 		return
 	for i in _hotbar.get_child_count():
 		var slot := _hotbar.get_child(i) as PanelContainer
-		var on := i == active_index and not holstered
+		var on := holstered if i == tools.size() else i == active_index and not holstered
 		var box := StyleBoxFlat.new()
 		box.bg_color = Color(0.04, 0.07, 0.09, 0.78) if not on else Color(0.08, 0.22, 0.26, 0.9)
 		box.border_color = Color(0.45, 0.95, 1.0, 0.95) if on else Color(0.45, 0.95, 1.0, 0.25)

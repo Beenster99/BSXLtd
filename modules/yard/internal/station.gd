@@ -66,6 +66,8 @@ const VIEWS := {
 	"build_berth": [Vector3(45, 10, -72), Vector3(0, -3, -85)],
 	"holding_berths": [Vector3(0, 45, -175), Vector3(0, -3, -80)],
 	"station_from_berth": [Vector3(-8, -2, -72), Vector3(4, 3, -18)],
+	"chargers_wall": [Vector3(70, 19, -28), Vector3(73.5, 19.5, -5)],
+	"chargers_apron": [Vector3(30, 5, -78), Vector3(33, -0.5, -65)],
 }
 ## Views of the stores at work: id -> seconds into a contract's deliveries (stage 1.7).
 ## (0.4.1: the demo brings the freighter first, about 27 s in, open till about 105 s, then

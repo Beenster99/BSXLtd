@@ -130,6 +130,32 @@ func set_focus(kind: String, id: String) -> void:
 	focus_changed.emit(kind, id)
 
 
+## What the shared screens in the design room show (beenster, 19 Nov co-op test: "the screens
+## are not synchronized"): each wall panel's view ("wall:<wall>:<panel>"), the holotable's
+## layers ("holo.layer.<name>"), cut, turn and zoom. Shared with the crew and in the join
+## snapshot; screen_changed tells every screen.
+var screens := {}
+signal screen_changed(key: String, value: Variant)
+
+
+## Sets a shared screen's state here at once and sends it to the crew.
+func set_screen(key: String, value: Variant) -> void:
+	_apply_screen({"key": key, "value": value})
+	if _net and bool(_net.call("is_online")):
+		_net.call("request", "design.screen", {"key": key, "value": value})
+
+
+func _apply_screen(p: Dictionary) -> void:
+	var key := str(p.get("key", ""))
+	if key == "":
+		return
+	var value: Variant = p.get("value")
+	if screens.has(key) and typeof(screens[key]) == typeof(value) and screens[key] == value:
+		return
+	screens[key] = value
+	screen_changed.emit(key, value)
+
+
 ## Throws a section line onto the table (axis "z" or "x" at `at` m), or clears it (axis "").
 func set_section(axis: String, at: float = 0.0) -> void:
 	var p := {"axis": axis, "at": at}
@@ -287,6 +313,7 @@ func hook_net(net: Object) -> void:
 	_net.call("register_event", "design.stored", _apply_stored, _stamp)
 	_net.call("register_event", "design.section", _apply_section, _stamp)
 	_net.call("register_event", "design.look", _apply_look, _stamp)
+	_net.call("register_event", "design.screen", _apply_screen, _stamp)
 	_net.call("register_snapshot_provider", NET_SECTION, self)
 	editor.send = func(kind: String, payload: Dictionary) -> void: _net.call("request", "design." + kind, payload)
 	editor.me = func() -> String: return "p%d" % int(_net.call("local_peer_id"))
@@ -306,7 +333,7 @@ func _unhook_net() -> void:
 	if _net.has_signal("peer_left") and _net.is_connected("peer_left", _on_peer_left):
 		_net.disconnect("peer_left", _on_peer_left)
 	for e in ["design.op", "design.undo", "design.redo", "design.open", "design.walk", "design.module", "design.stored",
-			"design.section", "design.look"]:
+			"design.section", "design.look", "design.screen"]:
 		_net.call("unregister_event", e)
 	_net.call("unregister_snapshot_provider", NET_SECTION)
 	editor.send = Callable()
@@ -463,7 +490,7 @@ static func _same(a: Dictionary, b: Dictionary) -> bool:
 
 ## The open design, for a player joining the session.
 func get_net_snapshot() -> Dictionary:
-	var out := {"walkers": walkers.keys(), "modules": library.modules(), "section": section.duplicate()}
+	var out := {"walkers": walkers.keys(), "modules": library.modules(), "section": section.duplicate(), "screens": screens.duplicate()}
 	var designs: Array = []
 	for row: Dictionary in library.list():
 		designs.append(library.stored_design(str(row.id)))
@@ -486,6 +513,10 @@ func apply_net_snapshot(data: Dictionary) -> void:
 		walkers[int(w)] = true
 	walkers_changed.emit()
 	_apply_section(data.get("section", {}))
+	var scr: Variant = data.get("screens", {})
+	if scr is Dictionary:
+		for k: String in scr:
+			_apply_screen({"key": k, "value": scr[k]})
 
 
 func _hook_yard() -> void:

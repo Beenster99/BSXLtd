@@ -19,6 +19,7 @@ extends Node3D
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const WalkBuild := preload("res://modules/design/internal/walk/walk_build.gd")
+const WalkCad := preload("res://modules/design/internal/walk/walk_cad.gd")
 
 ## Where the walk-inside world is built, from the design room, m.
 ## The sun lights only what faces space (WalkBuild.EXTERIOR): the inside is lit by its lamps.
@@ -48,6 +49,11 @@ const SERVICE_REACH := 1.5
 
 var bus: DesignBus
 var builder: WalkBuild
+## Drawn as a CAD model, a colour per class of object (beenster, 19 Nov); V swaps to the
+## near-real look.
+var cad := true
+var _cad := WalkCad.new()
+var _legend: Control
 ## The world of its own, and the root everything 3D is built under.
 var viewport: SubViewport
 var world: Node3D
@@ -95,8 +101,7 @@ func setup(design_bus: DesignBus, origin: Transform3D) -> void:
 	_built = Node3D.new()
 	_built.name = "Design"
 	world.add_child(_built)
-	builder.build(record(), _built, bus.frame_plan(), bus.structure())
-	bus.walk_built.emit(_built, builder)
+	_build()
 	_add_player()
 	_add_hud()
 	bus.design_changed.connect(_on_changed)
@@ -637,6 +642,8 @@ func _input(event: InputEvent) -> void:
 				door_here()
 			KEY_G:
 				handled = glass_here()
+			KEY_V:
+				set_cad(not cad)
 			KEY_Z:
 				if event.ctrl_pressed:
 					bus.editor.redo() if event.shift_pressed else bus.editor.undo()
@@ -651,6 +658,53 @@ func _input(event: InputEvent) -> void:
 				handled = false
 		if handled:
 			get_viewport().set_input_as_handled()
+
+
+## Builds the design (WalkBuild), in the CAD look when `cad` is on.
+func _build() -> void:
+	builder.build(record(), _built, bus.frame_plan(), bus.structure())
+	if cad:
+		_cad.apply(_built, record(), bus.catalog, builder.frame_mats)
+	bus.walk_built.emit(_built, builder)
+	if _legend:
+		_legend.visible = cad
+
+
+## The CAD look's key: a swatch and name per class, top right.
+func _add_legend() -> void:
+	var box := PanelContainer.new()
+	box.name = "CadLegend"
+	box.add_theme_stylebox_override("panel", T.box(Color(0.02, 0.05, 0.09, 0.8), T.CYAN, 1, 8.0))
+	box.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	box.offset_left = -250
+	box.offset_right = -20
+	box.offset_top = 20
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(box)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	box.add_child(col)
+	col.add_child(T.label("CAD VIEW  (V)", "display_bold", 15, T.CYAN))
+	for k: String in WalkCad.ORDER:
+		var row := HBoxContainer.new()
+		var sw := ColorRect.new()
+		sw.custom_minimum_size = Vector2(16, 16)
+		sw.color = (WalkCad.CLASSES[k].colour as Color)
+		sw.color.a = 1.0
+		row.add_child(sw)
+		row.add_child(T.label(str(WalkCad.CLASSES[k].name), "body", 14, T.TEXT))
+		col.add_child(row)
+	_legend = box
+	_legend.visible = cad
+
+
+## V: the CAD look or the near-real one.
+func set_cad(on: bool) -> void:
+	if cad == on:
+		return
+	cad = on
+	builder.forget_frame()
+	_build()
 
 
 ## A left click: put down what you hold, or pick up the part you aim at.
@@ -703,8 +757,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if _dirty and Time.get_ticks_msec() - _dirty_at >= int(rebuild_delay * 1000.0):
 		_dirty = false
-		builder.build(record(), _built, bus.frame_plan(), bus.structure())
-		bus.walk_built.emit(_built, builder)
+		_build()
 	var near: Array[Vector3] = [body.position]
 	for fig: Node3D in crew.values():
 		near.append(fig.position)
@@ -930,8 +983,9 @@ func _add_hud() -> void:
 	_where = T.label("", "mono_bold", 18, T.TEXT)
 	_where.name = "Where"
 	col.add_child(_where)
-	col.add_child(T.label("WASD walk   Shift run   Space jump   Mouse look   Tab design   Esc back to the table",
+	col.add_child(T.label("WASD walk   Shift run   Space jump   Mouse look   Tab design   V CAD or real look   Esc back to the table",
 			"body", 15, T.DIM))
+	_add_legend()
 	_aim_label = T.label("", "body_medium", 18, T.TEXT)
 	_aim_label.name = "Aim"
 	_aim_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)

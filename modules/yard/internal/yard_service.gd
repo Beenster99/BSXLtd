@@ -39,6 +39,13 @@ var crew: Node   # YardWorkers
 var ship: Node3D
 ## "away", "in", "open", "closing", "out".
 var state := "away"
+## Yard time (s) she stays away after a visit before she can be called again (0.4.4 playtest:
+## "maintenance ship turns up too often"), and how long it's been. Faulted bots wait meanwhile.
+@export var min_gap := 900.0
+var since_visit := 900.0
+## How long (s) she waits, crew all aboard, for a due bot to finish the job it's on.
+@export var wait_for_busy := 30.0
+var _idle := 0.0
 ## Each engineer: {node, job (a worker's dict or {}), stage, t, bay, sparks, light, from}.
 ## Stages: "" (free), "go" (to the bot), "tune" (on site), "lead" (taking it to the bay mouth),
 ## "dock" (into the cradle), "bay" (in the cradle), "undock" (out of the bay), "back" (to where
@@ -76,7 +83,7 @@ func build(workers: Node) -> void:
 ## Sends for TartanCo. False if she's already on her way or here, or if no bot is in poor
 ## condition (she only comes out for a faulted or badly worn bot).
 func call_in() -> bool:
-	if state != "away":
+	if state != "away" or since_visit < min_gap:
 		return false
 	if crew and crew.has_method("in_poor_condition") and not bool(crew.call("in_poor_condition")):
 		return false
@@ -88,11 +95,14 @@ func call_in() -> bool:
 	for i in ShipLook.BAYS.size():
 		ShipLook.pose_arm(ship, i, 0.0, 0.0)
 	_door = 0.0
+	_idle = 0.0
 	return true
 
 
 func step(delta: float) -> void:
 	_time += delta
+	if state == "away":
+		since_visit += delta
 	match state:
 		"in":
 			var gap := BERTH - ship.global_position
@@ -120,6 +130,16 @@ func step(delta: float) -> void:
 			if gone > approach:
 				ship.visible = false
 				state = "away"
+				since_visit = 0.0
+
+
+## True while a bot due for service is busy with a job (it comes free soon).
+func _due_busy() -> bool:
+	var from: float = float(crew.get("service_from"))
+	for w: Dictionary in crew.get("workers"):
+		if (w.fault != "" or float(w.wear) >= from) and not bool(w.servicing) and not (w.task as Dictionary).is_empty():
+			return true
+	return false
 
 
 func _glow(on: bool) -> void:
@@ -150,6 +170,7 @@ func _step_team(delta: float) -> void:
 					node.global_position = ship.global_transform * ShipLook.berth_spot(bay)
 					node.global_basis = ship.global_basis
 					node.visible = true
+				all_home = false
 				continue
 			e.stage = "home" if node.visible else ""
 			if node.visible:
@@ -184,8 +205,14 @@ func _step_team(delta: float) -> void:
 				_bay(e, bot, delta)
 	for i in ShipLook.BAYS.size():
 		ShipLook.pose_arm(ship, i, arm_work[i], _time)
+	# She leaves once everyone's aboard and no bot is waiting; a due bot still finishing a job
+	# is waited for, up to `wait_for_busy` seconds.
 	if all_home and (crew.call("needs_service", []) as Dictionary).is_empty():
-		state = "closing"
+		_idle += delta
+		if _idle >= wait_for_busy or not _due_busy():
+			state = "closing"
+	else:
+		_idle = 0.0
 
 
 ## A tune-up where the bot is: wand over its chest and shoulders, sparks, a scan light.

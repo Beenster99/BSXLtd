@@ -42,6 +42,9 @@ func setup(design_bus: DesignBus, id: String, layout: Array, density: float) -> 
 	for p in layout:
 		# A panel another module offers starts on the parts list while that module is off.
 		var view := str(p[0])
+		var shared: Variant = bus.screens.get(_key(panels.size()))
+		if shared is String and offered.has(str(shared)):
+			view = str(shared)
 		panels.append({"view": view if offered.has(view) else "data", "share": float(p[1])})
 		var slot := VBoxContainer.new()
 		slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -52,6 +55,23 @@ func setup(design_bus: DesignBus, id: String, layout: Array, density: float) -> 
 		_fill(_slots.size() - 1)
 	bus.design_changed.connect(_refresh_titles)
 	bus.wall_views_changed.connect(_on_wall_views_changed)
+	bus.screen_changed.connect(_on_screen_changed)
+
+
+## The bus key for panel `i` of this wall (shared with the crew).
+func _key(i: int) -> String:
+	return "wall:%s:%d" % [wall_id, i]
+
+
+## A crewmate (or this player) changed a panel: show it here too.
+func _on_screen_changed(key: String, value: Variant) -> void:
+	if not key.begins_with("wall:%s:" % wall_id):
+		return
+	var i := int(key.get_slice(":", 2))
+	if i < 0 or i >= panels.size() or str(panels[i].view) == str(value):
+		return
+	panels[i].view = str(value)
+	_fill(i)
 
 
 ## A module offered or took back a panel: panels showing one are built again.
@@ -90,13 +110,15 @@ func view_name(view: String) -> String:
 func step(i: int, by: int) -> void:
 	var all := views()
 	var at := all.find(str(panels[i].view))
-	panels[i].view = all[posmod(at + by, all.size())]
-	_fill(i)
+	set_view(i, all[posmod(at + by, all.size())])
 
 
+## Shows `view` on panel `i`, for everyone in the room.
 func set_view(i: int, view: String) -> void:
-	panels[i].view = view
-	_fill(i)
+	bus.set_screen(_key(i), view)
+	if str(panels[i].view) != view:
+		panels[i].view = view
+		_fill(i)
 
 
 ## The control panel `i` shows now (a PlanView, a DataChannel, a Whiteboard or the modules).
