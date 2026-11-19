@@ -55,6 +55,9 @@ func _crew() -> void:
 	add_child(crew)
 	crew.build(traffic)
 	crew.wear_per_job = 0.0   # no faults while it builds
+	crew.charge_per_job = 0.0   # nor runs flat
+	for w: Dictionary in crew.workers:
+		w.charge = 1.0
 	var roles: Array = crew.workers.map(func(w: Dictionary) -> String: return w.role)
 	check(roles.has("F") and roles.has("W") and roles.has("R") and roles.has("B"), "fitters, welders, a riveter and a bolter")
 	# A ring: bolts on the girders, and the trades clamp their feet to the work.
@@ -125,6 +128,31 @@ func _crew() -> void:
 	check(is_equal_approx(float(c.productivity), 1.0) and (c.errors as Array).is_empty(), "serviced: as new, back to work")
 	if bus:
 		bus.disconnect("workers_need_service", listener)
+	# Charging: a bot run low flies to its dock on the charging wall, hangs there with its back to
+	# the wall till it's full, then goes back to work.
+	check(crew.has_node("ChargeWall") and crew.charge_wall.get_child_count() >= crew.workers.size() + 2, "a charging wall with a dock for each bot")
+	var low: Dictionary = crew.workers[4]
+	crew._drop_task(low)
+	low.charge = 0.1
+	var on_dock := false
+	t = 0.0
+	while t < 90.0 and not on_dock:
+		crew.step(0.2)
+		t += 0.2
+		on_dock = crew._docked(low) and (low.node as Node3D).position.distance_to(crew.dock_spot(int(low.index))) < 0.05
+	check(on_dock, "a bot run low flies to its dock on the wall (%.0f s)" % t)
+	check(-(low.node as Node3D).basis.z.dot(Vector3.FORWARD) > 0.9, "and hangs there with its back to the wall")
+	var dock: Node3D = crew.charge_wall.get_node("Dock%d" % (int(low.index) + 1))
+	crew.step(0.2)
+	check((dock.get_node("Bar") as Node3D).visible and bool(crew.condition(low.node).charging), "its dock shows it charging")
+	t = 0.0
+	while t < crew.charge_seconds + 10.0 and bool(low.charging):
+		crew.step(0.5)
+		t += 0.5
+	check(not bool(low.charging) and is_equal_approx(float(low.charge), 1.0), "full, it leaves the dock (%.0f s)" % t)
+	for i in 20:
+		crew.step(0.2)
+	check((low.node as Node3D).position.distance_to(crew.dock_spot(int(low.index))) > 1.0, "and goes back to work")
 	# A finished keel: after a pause it makes way for a new one, and the crew starts again.
 	if crew.ring_node:
 		crew.ring_node.queue_free()

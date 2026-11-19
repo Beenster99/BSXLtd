@@ -159,6 +159,126 @@ static func make(role: String, number: String) -> Node3D:
 	return n
 
 
+## The bots' charging wall (beenster, 19 Nov: "the worker bots should be mounted on the wall
+## somewhere near the yard for when they are recharging"): a plated wall of `count` docks `gap`
+## apart along x, its face at z 0 facing -Z, each dock's hanging point (where a bot's origin
+## goes, its back to the wall) DOCK_OUT in front of the face at y 0. Each dock has a back clamp
+## that takes the bot's pack, a charge lead, its number, a status lamp and a charge bar
+## ("Dock<n>/Lamp", "Dock<n>/Bar": `show_charge`).
+const DOCK_OUT := 0.9
+const DOCK_BAR := 1.6
+
+static func charge_wall(count: int, gap: float) -> Node3D:
+	var wall := Node3D.new()
+	wall.name = "ChargeWall"
+	var key := "wall_%d_%d" % [count, int(gap * 100.0)]
+	if not meshes().has(key):
+		var m := YardToolMesh.new()
+		var w := count * gap + 1.0
+		# The wall: a dark plated back, a header beam with an ochre stripe, two legs down onto
+		# the dock arm's truss with a cross brace between them.
+		_shell(m, key, "trim", Vector3(0, 0.3, 0.2), Vector3(w, 5.8, 0.4), Vector2(0.15, 0.15), Basis(), 24, 10)
+		for k in range(-1, 2, 2):
+			m.box(key, "gunmetal", Vector3(k * (w * 0.5 - 0.5), -4.6, 0.2), Vector3(0.45, 4.3, 0.45), 0.05)
+		var a := Vector3(-(w * 0.5 - 0.5), -2.7, 0.2)
+		var b := Vector3(w * 0.5 - 0.5, -6.4, 0.2)
+		m.rod(key, "gunmetal", a, b, 0.09, -1.0, 10)
+		m.rod(key, "gunmetal", Vector3(-a.x, a.y, a.z), Vector3(-b.x, b.y, b.z), 0.09, -1.0, 10)
+		m.box(key, "plates", Vector3(0, 3.0, -0.12), Vector3(w + 0.3, 0.7, 0.5), 0.06)
+		m.box(key, "accent", Vector3(0, 2.78, -0.375), Vector3(w + 0.2, 0.12, 0.02), 0.01)
+		for k in range(-1, 2, 2):
+			m.box(key, "gunmetal", Vector3(k * (w * 0.5 - 0.4), -6.5, 0.6), Vector3(0.5, 0.9, 1.6), 0.05)
+		for i in count:
+			var x := (float(i) - (count - 1) * 0.5) * gap
+			m.box(key, "dark", Vector3(x + 0.08, -0.6, -0.02), Vector3(gap - 0.5, 3.6, 0.06), 0.02)
+			# The back clamp: two bars the pack rests on, jaws at their ends.
+			for y: float in [1.0, 0.25]:
+				m.box(key, "gunmetal", Vector3(x, y, -0.12), Vector3(0.95, 0.2, 0.24), 0.04)
+				for sx: float in [1.0, -1.0]:
+					m.box(key, "accent", Vector3(x + sx * 0.5, y, -0.26), Vector3(0.1, 0.24, 0.3), 0.03)
+			# The charge lead out to the pack's side, its plug.
+			m.rod(key, "dark", Vector3(x + 0.62, 0.66, -0.03), Vector3(x + 0.46, 0.66, -0.5), 0.035, -1.0, 10)
+			m.rod(key, "steel", Vector3(x + 0.46, 0.66, -0.5), Vector3(x + 0.43, 0.66, -0.58), 0.045, -1.0, 12)
+			# The bar's slot.
+			m.box(key, "dark", Vector3(x - (gap * 0.5 - 0.12), DOCK_BAR * 0.5 - 0.2, -0.06), Vector3(0.14, DOCK_BAR + 0.08, 0.04), 0.01)
+		var built := m.meshes()
+		_meshes[key] = built[key]
+	_mesh(wall, "Wall", meshes()[key], livery(LIVERY))
+	var sign := Label3D.new()
+	sign.name = "Sign"
+	sign.text = MAKER + "  CHARGING"
+	sign.font_size = 96
+	sign.pixel_size = 0.004
+	sign.outline_size = 0
+	sign.modulate = Color(0.94, 0.93, 0.9)
+	sign.position = Vector3(0, 3.05, -0.38)
+	sign.rotation.y = PI
+	wall.add_child(sign)
+	for i in count:
+		var x := (float(i) - (count - 1) * 0.5) * gap
+		var dock := Node3D.new()
+		dock.name = "Dock%d" % (i + 1)
+		dock.position = Vector3(x, 0, 0)
+		wall.add_child(dock)
+		var tag := Label3D.new()
+		tag.text = "C%d" % (i + 1)
+		tag.font_size = 64
+		tag.pixel_size = 0.004
+		tag.outline_size = 0
+		tag.modulate = (LIVERY.accent as Color).lightened(0.2)
+		tag.position = Vector3(0, 1.75, -0.06)
+		tag.rotation.y = PI
+		dock.add_child(tag)
+		var lamp := MeshInstance3D.new()
+		lamp.name = "Lamp"
+		var lm := BoxMesh.new()
+		lm.size = Vector3(0.16, 0.16, 0.04)
+		lamp.mesh = lm
+		var lmat := StandardMaterial3D.new()
+		lmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		lamp.material_override = lmat
+		lamp.position = Vector3(-(gap * 0.5 - 0.12), DOCK_BAR + 0.05, -0.08)
+		dock.add_child(lamp)
+		var bar := MeshInstance3D.new()
+		bar.name = "Bar"
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.09, 1.0, 0.03)
+		bar.mesh = bm
+		var bmat := StandardMaterial3D.new()
+		bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		bmat.albedo_color = Color(0.3, 1.0, 0.45)
+		bar.material_override = bmat
+		dock.add_child(bar)
+		show_charge(dock, -1.0, false)
+	return wall
+
+
+## A dock's lamp and bar: `charge` 0..1 of the bot on it (below 0: empty dock, lamp dim), green
+## when full, amber while charging.
+static func show_charge(dock: Node3D, charge: float, charging: bool) -> void:
+	var lamp := dock.get_node("Lamp") as MeshInstance3D
+	var bar := dock.get_node("Bar") as MeshInstance3D
+	var c := clampf(charge, 0.0, 1.0)
+	var lc := Color(0.12, 0.14, 0.16)
+	if charge >= 0.0:
+		lc = Color(1.0, 0.65, 0.1) if charging else Color(0.3, 1.0, 0.45)
+	(lamp.material_override as StandardMaterial3D).albedo_color = lc
+	bar.visible = charge >= 0.0 and c > 0.01
+	var x := lamp.position.x
+	bar.scale = Vector3(1, maxf(c, 0.01) * DOCK_BAR, 1)
+	bar.position = Vector3(x, -0.2 + c * DOCK_BAR * 0.5, -0.09)
+	(bar.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.65, 0.1).lerp(Color(0.3, 1.0, 0.45), c)
+
+
+## A bot hanging on its dock: back to the wall, arms down, legs hanging, head bowed.
+static func hang(w: Node3D) -> void:
+	rest(w, "R")
+	rest(w, "L")
+	for side: String in ["R", "L"]:
+		var sx := 1.0 if side == "R" else -1.0
+		plant(w, side, w.global_transform * Vector3(sx * 0.3, -1.3, -0.12), -w.global_basis.y)
+
+
 static func laser_material() -> StandardMaterial3D:
 	if _laser_mat == null:
 		_laser_mat = StandardMaterial3D.new()

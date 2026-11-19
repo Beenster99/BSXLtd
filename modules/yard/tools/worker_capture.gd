@@ -151,3 +151,30 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_tree().root.get_texture().get_image().save_png(out.path_join("berth_keel.png"))
+	# The charging wall: four bots run low go and hang on their docks (charging slowly, so they
+	# are all still there for the shot).
+	crew.charge_seconds = 10000.0
+	for i in [0, 2, 3, 5]:
+		var w: Dictionary = crew.workers[i]
+		crew._drop_task(w)
+		w.charge = 0.05 + 0.25 * float(i) / 5.0
+	var settled := 0.0
+	while settled < 60.0:
+		traffic.step(0.1)
+		crew.step(0.1)
+		settled += 0.1
+		if [0, 2, 3, 5].all(func(i: int) -> bool: return crew._docked(crew.workers[i])):
+			break
+	for k in [0, 2, 3, 5]:
+		crew.workers[k].charge = 0.2 + 0.15 * k
+	for k in 20:
+		crew.step(0.1)
+	var wall: Vector3 = crew.CHARGE_WALL
+	for shot: Array in [["charging_wall", wall + Vector3(4.0, 2.5, -11.0), wall + Vector3(0, -0.6, 0)],
+			["charging_close", wall + Vector3(-1.5, 1.0, -4.2), wall + Vector3(-3.4, -0.3, 0)]]:
+		cam.global_position = shot[1]
+		cam.look_at(shot[2])
+		for k in 3:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_tree().root.get_texture().get_image().save_png(out.path_join("berth_%s.png" % shot[0]))

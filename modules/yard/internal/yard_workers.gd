@@ -19,6 +19,11 @@ extends Node3D
 ## The bots are TartanCo's, and they wear: every job wears a bot a little, a worn bot slows
 ## down, and past a point it starts throwing errors and stops till it's seen to. Then the crew
 ## calls TartanCo (YardService), whose engineers come out by ship and put it right.
+##
+## They run on batteries too: every job drains a bot a little, and when it runs low it finishes
+## its job, flies to its dock on the charging wall by the dock arm (beenster, 19 Nov: "mounted on
+## the wall somewhere near the yard for when they are recharging"), hangs there with its back to
+## the wall till it's full, then goes back to work.
 
 const WorkerLook := preload("res://modules/yard/internal/yard_worker_look.gd")
 const Look := preload("res://modules/yard/internal/yard_stock_look.gd")
@@ -38,6 +43,10 @@ const CREW := ["F", "F", "W", "W", "R", "B"]
 ## and how often: after every this many rings.
 const FITOUT_KIT := "power"
 const FITOUT_EVERY := 2
+## The charging wall (station space): its face's middle at the docks' hanging height, standing on
+## the dock arm's truss (z -66, y -16) beside the build berth, and its docks' spacing (m).
+const CHARGE_WALL := Vector3(-20.0, -8.6, -67.05)
+const DOCK_GAP := 2.3
 
 ## Seconds a fitter takes to ease a part into place, a weld per joint, a rivet (pressure, then
 ## the punch).
@@ -77,6 +86,13 @@ const FITOUT_EVERY := 2
 @export var service_from := 0.3
 @export var auto_service := true
 
+@export_group("Charging")
+## How much of a full battery a job uses (0..1), the charge a bot goes to its dock at, and how
+## long a dock takes to charge one from empty (s).
+@export var charge_per_job := 0.05
+@export var recharge_at := 0.2
+@export var charge_seconds := 45.0
+
 ## A bot needs servicing (faulted, or worn past `call_at`): the bots to see to (each a worker's
 ## node). Sent once until they're all seen to. While anything listens (the TartanCo
 ## maintenance ship's module, through YardBus.workers_need_service), the yard's own service visit
@@ -108,6 +124,7 @@ var fitted_out: Array[int] = []
 var _asked := false
 var _bolt_mesh: CylinderMesh
 var _keel_done := 0.0
+var charge_wall: Node3D
 
 
 func build(stores_traffic: Node) -> void:
@@ -126,7 +143,7 @@ func build(stores_traffic: Node) -> void:
 		bot.name = "Worker%d" % (i + 1)
 		add_child(bot)
 		var w := {"node": bot, "role": role, "index": i, "task": {}, "vel": Vector3.ZERO, "wear": 0.05 * i,
-				"fault": "", "servicing": false}
+				"fault": "", "servicing": false, "charge": 1.0 - 0.13 * i, "charging": false, "route": []}
 		if role == "W":
 			w.sparks = make_sparks()
 			add_child(w.sparks)
@@ -144,6 +161,9 @@ func build(stores_traffic: Node) -> void:
 		WorkerLook.tuck(bot, "R")
 		WorkerLook.tuck(bot, "L")
 		workers.append(w)
+	charge_wall = WorkerLook.charge_wall(CREW.size(), DOCK_GAP)
+	charge_wall.position = CHARGE_WALL
+	add_child(charge_wall)
 	_rng.seed = 4021
 	service = Service.new()
 	add_child(service)
@@ -214,6 +234,7 @@ func condition(bot: Node3D) -> Dictionary:
 	if w.fault != "":
 		errors.append(String(w.fault))
 	return {"productivity": 0.0 if w.fault != "" else pace(w), "errors": errors, "wear": float(w.wear),
+			"charge": float(w.charge), "charging": bool(w.charging),
 			"model": bot.get_meta("tartanco_model", ""), "serial": bot.get_meta("serial", "")}
 
 
@@ -276,6 +297,7 @@ func _drop_task(w: Dictionary) -> void:
 ## A job done: wear on the bot, and a worn bot may fault.
 func _job_done(w: Dictionary) -> void:
 	w.task = {}
+	w.charge = maxf(0.0, float(w.charge) - charge_per_job * _rng.randf_range(0.7, 1.3))
 	w.wear = minf(1.0, float(w.wear) + wear_per_job * _rng.randf_range(0.6, 1.4))
 	if float(w.wear) > faults_from and _rng.randf() < (float(w.wear) - faults_from) * 1.6:
 		w.fault = FAULTS[_rng.randi() % FAULTS.size()]
@@ -303,9 +325,11 @@ func step(delta: float) -> void:
 		_step_fitout(delta)
 	else:
 		_keep_supplied()
+	_send_to_charge()
 	_assign()
 	for w: Dictionary in workers:
 		_work(w, delta * pace(w))
+		WorkerLook.show_charge(charge_wall.get_node("Dock%d" % (int(w.index) + 1)), float(w.charge) if _docked(w) else -1.0, bool(w.charging))
 	_check_service()
 	service.call("step", delta)
 	if ring_node and not members.is_empty() and members.all(func(m: Dictionary) -> bool: return m.stage == "done"):
@@ -607,7 +631,8 @@ func _assign() -> void:
 
 func _idle(role: String) -> Dictionary:
 	for w: Dictionary in workers:
-		if w.role == role and (w.task as Dictionary).is_empty() and w.fault == "" and not bool(w.servicing):
+		if w.role == role and (w.task as Dictionary).is_empty() and w.fault == "" and not bool(w.servicing) \
+				and not bool(w.charging):
 			return w
 	return {}
 
@@ -634,9 +659,17 @@ func _work(w: Dictionary, delta: float) -> void:
 		# The maintenance ship has it: it's theirs to move; its arms hang.
 		(node.get_node("Thrust") as Node3D).visible = false
 		return
-	if task.is_empty():
+	if task.is_empty() and bool(w.charging):
 		busy = false
-		_fly(w, _idle_spot(int(w.index)), delta)
+		_charge(w, delta)
+	elif task.is_empty():
+		busy = false
+		if not (w.route as Array).is_empty():
+			# Off its dock: out in front of the wall first.
+			if _fly(w, w.route[0], delta):
+				(w.route as Array).pop_front()
+		else:
+			_fly(w, _idle_spot(int(w.index)), delta)
 		if w.fault != "" or bool(w.servicing):
 			# Stopped: arms hanging, waiting on TartanCo, a slow tumble if it's faulted.
 			_face(node, node.global_position + Vector3(0.3, -0.25 if w.fault != "" else 0.0, -1.0), delta * 0.3)
@@ -661,8 +694,59 @@ func _work(w: Dictionary, delta: float) -> void:
 		WorkerLook.aim_laser(node, task.get("laser") if not task.is_empty() else null)
 	(node.get_node("Thrust") as Node3D).visible = (w.vel as Vector3).length() > 0.6
 	var head := node.get_node("Head") as Node3D
-	head.rotation.x = lerpf(head.rotation.x, -0.25 if busy else 0.0, minf(1.0, delta * 3.0))
+	var bow := -0.25 if busy else (-0.4 if _docked(w) else 0.0)
+	head.rotation.x = lerpf(head.rotation.x, bow, minf(1.0, delta * 3.0))
 	WorkerLook.lay_hose(node)
+
+
+# --- Charging -------------------------------------------------------------------------------
+
+## Where bot `i` hangs on the charging wall (station space).
+func dock_spot(i: int) -> Vector3:
+	return CHARGE_WALL + Vector3((float(i) - (CREW.size() - 1) * 0.5) * DOCK_GAP, 0, -WorkerLook.DOCK_OUT)
+
+
+## A bot run low, with its job done and nothing else on it, goes to charge.
+func _send_to_charge() -> void:
+	for w: Dictionary in workers:
+		if bool(w.charging) or float(w.charge) > recharge_at or not (w.task as Dictionary).is_empty() \
+				or w.fault != "" or bool(w.servicing) or bool(w.get("external", false)):
+			continue
+		w.charging = true
+		var spot := dock_spot(int(w.index))
+		w.route = [spot + Vector3(0, 0, -3.0), spot]
+
+
+## True while the bot hangs on its dock.
+func _docked(w: Dictionary) -> bool:
+	return bool(w.charging) and (w.route as Array).is_empty()
+
+
+## To its dock along its route, then hangs there charging; full, it leaves out in front of the
+## wall.
+func _charge(w: Dictionary, delta: float) -> void:
+	var node: Node3D = w.node
+	var route: Array = w.route
+	if not route.is_empty():
+		if _fly(w, route[0], delta):
+			route.pop_front()
+		if route.size() <= 1:
+			_face(node, node.global_position + Vector3.FORWARD, delta)
+		else:
+			_face(node, route[0], delta)
+		WorkerLook.rest(node, "R")
+		WorkerLook.rest(node, "L")
+		WorkerLook.tuck(node, "R")
+		WorkerLook.tuck(node, "L")
+		return
+	node.position = dock_spot(int(w.index))
+	w.vel = Vector3.ZERO
+	_face(node, node.global_position + Vector3.FORWARD, delta)
+	WorkerLook.hang(node)
+	w.charge = minf(1.0, float(w.charge) + delta / maxf(charge_seconds, 0.1))
+	if float(w.charge) >= 1.0:
+		w.charging = false
+		w.route = [dock_spot(int(w.index)) + Vector3(0, 0, -3.0)]
 
 
 ## Flies towards `to`, easing in; true once there.
