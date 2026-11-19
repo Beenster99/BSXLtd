@@ -14,9 +14,10 @@ const ROOMS := {
 	"quarters": {"name": "Sleeping quarters", "box": AABB(Vector3(20, 0, 0), Vector3(24, 3.2, 12))},
 	"airlock": {"name": "Airlock", "box": AABB(Vector3(-40, 0, -5), Vector3(6, 3.2, 6))},
 	"design_lock": {"name": "Design room airlock", "box": AABB(Vector3(-11.9, 0, -25), Vector3(1.7, 5, 2.9))},
+	"refurb": {"name": "Refurb annex", "box": AABB(Vector3(48, 0, -4), Vector3(36, 16, 30))},
 }
 ## The whole station's outside, hull included (m).
-const HULL_BOX := AABB(Vector3(-40.3, -0.7, -64.3), Vector3(124.6, 33.8, 76.6))
+const HULL_BOX := AABB(Vector3(-40.3, -0.7, -64.3), Vector3(124.6, 33.8, 90.6))
 ## The airlock's doors: x of the inner (corridor) and outer (space) door, and the door
 ## opening along z (from, to) and its height.
 const AIRLOCK_INNER_X := -34.0
@@ -44,7 +45,7 @@ const BERTH_TIERS := [
 	{"tier": 4, "name": "Giga berth", "reputation": 90.0, "size": Vector3(320, 80, 80)},
 ]
 ## How far out (z) the berths reach at the largest tier (its face less its beam): anything else
-## in the dock (TartanCo's ship, the refurb shop) stays beyond.
+## in the dock (TartanCo's ship) stays beyond.
 const DOCK_FAR_Z := -150.0
 ## Every berth's station-side face (z) and middle height (y); the gap between the build berth
 ## and each holding berth (m).

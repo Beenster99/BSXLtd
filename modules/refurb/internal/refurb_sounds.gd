@@ -1,7 +1,8 @@
 extends RefCounted
 ## The refurb shop's sounds, all made here in code (never recordings): a loop per tool (the
 ## scanner's soft warble, the nut runner's whirr, the grit blaster's hiss, the welder's crackle,
-## the test probe's hum), the pass chime, the fail buzz and the scrap clang. Built once; the
+## the test probe's hum, the plasma cutter's roar), the crane's motor, the cart's reversing beep,
+## the pass chime, the fail buzz, the scrap clang and the thunk of a part set down. Built once; the
 ## noise comes from its own seeded generator (presentation only, never the shop's RNG).
 
 const RATE := 22050
@@ -29,6 +30,9 @@ static func _make(id: String) -> AudioStreamWAV:
 			loop = false
 		"clang":
 			secs = 1.2
+			loop = false
+		"thunk":
+			secs = 0.5
 			loop = false
 	var n := int(RATE * secs)
 	var data := PackedByteArray()
@@ -59,6 +63,21 @@ static func _make(id: String) -> AudioStreamWAV:
 				v = rng.randf_range(-1.0, 1.0) * (0.12 + 0.5 * crack) + 0.1 * sin(TAU * 100.0 * t)
 			"probe":
 				v = 0.22 * sin(TAU * 60.0 * t) + 0.1 * sin(TAU * 120.0 * t) + 0.06 * sin(TAU * 420.0 * t) * (0.5 + 0.5 * sin(TAU * 3.0 * t))
+			"cutter":
+				var w := rng.randf_range(-1.0, 1.0)
+				lp += (w - lp) * 0.6
+				if rng.randf() < 0.01:
+					crack = 1.0
+				crack *= 0.99
+				v = lp * 0.45 + 0.12 * sin(TAU * 180.0 * t) + w * 0.3 * crack
+			"crane":
+				var saw := fmod(t * 95.0, 1.0) * 2.0 - 1.0
+				lp += (saw - lp) * 0.08
+				v = lp * 0.5 + 0.08 * sin(TAU * 190.0 * t) + rng.randf_range(-0.03, 0.03)
+			"beep":
+				v = 0.3 * sin(TAU * 1050.0 * t) if fmod(t, 1.0) < 0.5 else 0.0
+			"thunk":
+				v = (0.5 * sin(TAU * 70.0 * t) + 0.2 * sin(TAU * 160.0 * t)) * exp(-t * 12.0) + rng.randf_range(-0.2, 0.2) * exp(-t * 40.0)
 			"chime":
 				var f := 660.0 if t < 0.3 else 990.0
 				var tt := t if t < 0.3 else t - 0.3
