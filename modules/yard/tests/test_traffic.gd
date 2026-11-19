@@ -251,7 +251,36 @@ func _kits() -> void:
 		traffic.step(0.2)
 		crew.step(0.2)
 		t += 0.2
-	check(crew.rings_built() == rings + 1, "the worker bots asked for a frame kit and welded it on as a ring (%.0f s)" % t)
+	check(crew.rings_built() == rings + 1, "the worker bots asked for a keel ring kit, carried, welded and riveted it on as a ring (%.0f s)" % t)
+	var roles: Array = crew.workers.map(func(w: Dictionary) -> String: return w.role)
+	check(roles.has("F") and roles.has("W") and roles.has("R"), "fitters, welders and riveters in the crew")
+	var arms: Node3D = crew.workers[0].node
+	check(arms.has_node("UpperR") and arms.has_node("ForeL") and arms.has_node("HandR"), "the workers have jointed arms")
+	var movers_waited: bool = traffic.kit_orders.any(func(o: Dictionary) -> bool: return bool(o.get("wait", false)) and (o.loads as Array).size() > 0)
+	check(movers_waited, "the movers brought the ring's stock and waited by the keel with it")
+	# Wear, a fault and TartanCo.
+	var worn: Dictionary = crew.workers[2]
+	worn.wear = 0.95
+	worn.fault = "E-17 ACTUATOR"
+	t = 0.0
+	while crew.service.state == "away" and t < 30.0:
+		traffic.step(0.2)
+		crew.step(0.2)
+		t += 0.2
+	check(crew.service.state != "away", "a faulted bot sends for TartanCo")
+	check(crew.pace(worn) < 0.7, "a worn bot works slower")
+	t = 0.0
+	while (worn.fault != "" or float(worn.wear) > 0.0) and t < 400.0:
+		traffic.step(0.2)
+		crew.step(0.2)
+		t += 0.2
+	check(worn.fault == "" and is_zero_approx(float(worn.wear)), "TartanCo's engineers put it right (%.0f s)" % t)
+	t = 0.0
+	while crew.service.state != "away" and t < 400.0:
+		traffic.step(0.2)
+		crew.step(0.2)
+		t += 0.2
+	check(crew.service.state == "away" and crew.service.visits >= 1, "and their ship leaves again (%.0f s)" % t)
 	crew.queue_free()
 	traffic.queue_free()
 	you.queue_free()

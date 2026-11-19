@@ -13,6 +13,7 @@ const KITS := {
 			{"part": "SwitchCabinet", "qty": 1}]},
 	"piping": {"name": "Piping kit", "parts": [{"part": "Pipe", "qty": 6}, {"part": "FuelValve", "qty": 4}]},
 	"thrusters": {"name": "Thruster kit", "parts": [{"part": "SideThruster", "qty": 2}, {"part": "IonThruster", "qty": 1}]},
+	"keel_ring": {"name": "Keel ring kit", "parts": [{"part": "BoxBeam", "qty": 4}, {"part": "Girder", "qty": 4}]},
 	"cabin": {"name": "Cabin kit", "parts": [{"part": "Bunk", "qty": 1}, {"part": "Locker", "qty": 1}, {"part": "Seat", "qty": 1}]},
 }
 

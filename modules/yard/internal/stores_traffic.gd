@@ -138,12 +138,13 @@ func send_to_yard(items: Array) -> void:
 ## Sends a kit (YardKits id) to `to` wherever it is (a player's rig, a worker bot): mover bots
 ## take its parts off the racks and bring them, following it, and set them down by it. Returns
 ## the order's id (kit_delivered fires with it), -1 for an unknown kit. Parts out of stock are
-## left out.
-func deliver_kit(kit: String, to: Node3D) -> int:
+## left out. With `wait` the movers don't set their loads down: they hover by `to` holding them
+## until every part has been taken (`take_piece`), then go home (the worker bots' supplies).
+func deliver_kit(kit: String, to: Node3D, wait := false) -> int:
 	if not YardKits.KITS.has(kit) or to == null:
 		return -1
 	_next_kit += 1
-	var o := {"id": _next_kit, "kit": kit, "to": to, "asked": 0, "arrived": 0, "loads": [], "done": false}
+	var o := {"id": _next_kit, "kit": kit, "to": to, "asked": 0, "arrived": 0, "loads": [], "done": false, "wait": wait}
 	kit_orders.append(o)
 	var parts := YardKits.parts(kit)
 	parts.reverse()
@@ -178,15 +179,51 @@ func consume(l: Dictionary) -> void:
 		(l.node as Node).queue_free()
 
 
+## Loads movers are holding by `to`, waiting for their parts to be taken (deliver_kit's wait).
+func waiting_loads(to: Node3D) -> Array:
+	var out := []
+	for o in kit_orders:
+		if o.to == to:
+			for l: Dictionary in o.loads:
+				if l.where == "waiting" and int(l.qty) > 0:
+					out.append(l)
+	return out
+
+
+## Takes one part off a waiting load: a node at the part's place (its meshes in part space), now
+## the caller's to place. The mover goes home once its load is all taken. Null if none is left.
+func take_piece(l: Dictionary) -> Node3D:
+	var qty := int(l.qty)
+	if qty <= 0 or not is_instance_valid(l.node):
+		return null
+	var ln: Node3D = l.node
+	var layers: Array = Look.layers(l.part)
+	var at: Transform3D = load_layout(l.part, int(l.get("full", qty)))[qty - 1]
+	var piece := Node3D.new()
+	piece.name = "Piece_%s" % l.part
+	add_child(piece)
+	piece.global_transform = ln.global_transform * at
+	var kids := ln.get_children()
+	for k in layers.size():
+		var i := (qty - 1) * layers.size() + k
+		if i < kids.size():
+			var mi := kids[i] as MeshInstance3D
+			ln.remove_child(mi)
+			mi.transform = Transform3D.IDENTITY
+			piece.add_child(mi)
+	l.qty = qty - 1
+	return piece
+
+
 ## True while anything is on its way: a hauler, a load, a bot at work or a part still asked for.
 func busy() -> bool:
 	if not backlog.is_empty() or not haulers.is_empty() or not yard_asks.is_empty():
 		return true
 	for l in loads:
-		if l.where != "berth" and l.where != "delivered":
+		if l.where != "berth" and l.where != "delivered" and l.where != "waiting":
 			return true
 	for b in bots:
-		if not (b.job as Array).is_empty():
+		if not (b.job as Array).is_empty() and not (b.job[0] as Dictionary).has("wait"):
 			return true
 	return false
 
@@ -412,7 +449,7 @@ func _next_job(b: Dictionary) -> void:
 				var o := kit_order(int(l.kit))
 				if not o.is_empty() and is_instance_valid(o.to):
 					l.claimed = true
-					b.job = _kit_steps(l, o)
+					b.job = _wait_steps(l, o) if bool(o.get("wait", false)) else _kit_steps(l, o)
 					return
 				l.erase("kit")
 		for l in loads:
@@ -623,6 +660,25 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 		node.rotation = Vector3.ZERO
 		b.aboard = true
 		job.pop_front()
+	elif s.has("wait"):
+		var l: Dictionary = s.wait
+		var o: Dictionary = s.o
+		if not s.has("slot"):
+			s.slot = (o.loads as Array).size()
+			(o.loads as Array).append(l)
+			l.where = "waiting"
+			o.arrived = int(o.arrived) + int(l.qty)
+			_kit_check(o)
+		if int(l.qty) <= 0 or not is_instance_valid(o.to):
+			b.carrying = {}
+			consume(l)
+			job.pop_front()
+			return
+		# Side by side along the supply point, each load level with it, the bot over it.
+		var spot := (o.to as Node3D).global_position + Vector3(0, 0, 2.6 * float(int(s.slot) % 4)) + Vector3(0, BOT_HANG + _load_height(l), 0)
+		node.global_position = node.global_position.move_toward(spot, bot_speed * 0.6 * delta)
+		_face(node, Vector3(1, 0, 0), delta)
+		(l.node as Node3D).global_position = node.global_position - Vector3(0, BOT_HANG + _load_height(l), 0)
 	elif s.has("set"):
 		var l: Dictionary = s.set
 		var ln: Node3D = l.node
@@ -642,6 +698,15 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 
 
 # --- Mover bots ------------------------------------------------------------------------------
+
+## A supply load for the worker bots: out to them like a kit, then held there till it's used.
+func _wait_steps(l: Dictionary, o: Dictionary) -> Array:
+	var steps := _fetch_steps(l, at_or(l))
+	steps.append({"path": o.to})
+	steps.append({"wait": l, "o": o})
+	steps.append({"path_home": true})
+	return steps
+
 
 ## A kit load from the yard side to its order's target: drawn up, out by the way to the
 ## target's room, after it as it moves, and set down beside it.
@@ -858,7 +923,7 @@ func _new_load(part: String, qty: int) -> Dictionary:
 			mi.transform = t
 			node.add_child(mi)
 	_next_id += 1
-	var l := {"id": _next_id, "part": part, "qty": qty, "node": node, "where": "", "claimed": false, "slot": -1}
+	var l := {"id": _next_id, "part": part, "qty": qty, "full": qty, "node": node, "where": "", "claimed": false, "slot": -1}
 	loads.append(l)
 	return l
 
