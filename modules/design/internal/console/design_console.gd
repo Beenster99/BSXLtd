@@ -14,6 +14,7 @@ signal walk_requested
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
 const DataChannel := preload("res://modules/design/internal/views/data_channel.gd")
+const ContractFit := preload("res://modules/design/internal/views/contract_fit.gd")
 const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
 
 var bus: DesignBus
@@ -107,6 +108,7 @@ func _build() -> void:
 	data.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	data.lists = false
 	data.setup(bus, true)
+	data.assessment_requested.connect(toggle_assessment)
 	right.add_child(data)
 	_library_panel = _make_library_panel()
 	_library_panel.visible = false
@@ -913,6 +915,42 @@ func _on_save_as() -> void:
 	var rec := bus.library.current
 	if rec:
 		bus.library.save_as(rec.name + " Mk2")
+
+
+## The contract fit assessment over the whole console (FULL ASSESSMENT on the data channel).
+var _assessment_panel: Control
+
+
+func toggle_assessment() -> void:
+	if _assessment_panel and is_instance_valid(_assessment_panel):
+		_assessment_panel.queue_free()
+		_assessment_panel = null
+		return
+	var p := PanelContainer.new()
+	p.name = "Assessment"
+	p.add_theme_stylebox_override("panel", T.box(Color(T.KIOSK, 0.98), T.CYAN, 2, 12.0))
+	p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	p.offset_left = 24
+	p.offset_top = 24
+	p.offset_right = -24
+	p.offset_bottom = -24
+	var col := VBoxContainer.new()
+	p.add_child(col)
+	var head := HBoxContainer.new()
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(spacer)
+	var close := T.button("CLOSE", false, 16)
+	close.name = "BtnCloseAssessment"
+	close.pressed.connect(toggle_assessment)
+	head.add_child(close)
+	col.add_child(head)
+	var fit := ContractFit.new()
+	fit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(fit)
+	fit.setup(bus, 17)
+	add_child(p)
+	_assessment_panel = p
 
 
 func _toggle_library() -> void:
