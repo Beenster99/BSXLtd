@@ -915,7 +915,13 @@ func _mount(m: Dictionary) -> void:
 	body.rotation.y = atan2(-n.x, -n.y)
 	var vs := VsParts.instance(pt.shared_part) if pt.shared_part != "" else null
 	if vs != null:
-		vs.position.y = -VsParts.shape(pt.shared_part).mesh.get_aabb().position.y
+		var bb := VsParts.shape(pt.shared_part).mesh.get_aabb()
+		if pt.nozzle_down:
+			# Laid over: its nozzle (-Y) to the front (-Z), out from the hull.
+			vs.rotation.x = PI * 0.5
+			vs.position = Vector3(0, pt.size.y * 0.5, 0) - vs.basis * bb.get_center()
+		else:
+			vs.position.y = -bb.position.y
 		body.add_child(vs)
 	else:
 		_box_in(body, pt.size, paint(pt.colour.darkened(0.25), "metallic_paint"))

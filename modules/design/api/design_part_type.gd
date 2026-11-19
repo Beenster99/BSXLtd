@@ -25,6 +25,9 @@ extends Resource
 @export var crew := 0
 ## Fitted on the outside of the hull (thrusters, engine bells) instead of in a room.
 @export var hull_mount := false
+## Its Void Salvage part is built nozzle down (-Y); fitted on the hull it is laid over so the
+## nozzle points out from the hull (its size then reads across, height, out from the hull).
+@export var nozzle_down := false
 ## Room types it may go in ([] = any).
 @export var rooms: PackedStringArray = PackedStringArray()
 ## Needs this much clear floor in front of it to be fitted and serviced, m.

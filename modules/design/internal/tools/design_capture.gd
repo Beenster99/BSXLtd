@@ -137,7 +137,7 @@ class Runner:
 		var walk: Node3D = room.furnishing.walk
 		for shot in [["walk_hull_bow", Vector3(-2.6, 1.0, -6.3), 0.95, 0.2],
 				["walk_hull_outside", Vector3(15, 1.0, -2), 1.3, 0.05],
-				["walk_hull_stern", Vector3(10, 1.0, 13), 0.7, 0.05]]:
+				["walk_hull_stern", Vector3(7.5, 1.4, 10.5), 0.45, -0.05]]:
 			walk.body.position = shot[1]
 			walk.body.rotation.y = shot[2]
 			walk.set("_pitch", shot[3])

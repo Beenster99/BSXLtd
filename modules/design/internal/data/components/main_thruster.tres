@@ -17,6 +17,7 @@ power = -20.0
 fuel = -1
 thrust = 150.0
 hull_mount = true
+nozzle_down = true
 crew = 0
 rooms = PackedStringArray()
 access = 0.8
