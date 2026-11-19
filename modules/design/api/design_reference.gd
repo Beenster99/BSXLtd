@@ -44,16 +44,19 @@ static func build(raw: Dictionary, clauses: Array, cat: DesignCatalog) -> Dictio
 	if float(demands.get("stealth", 0.0)) > 0.0:
 		grade = "Q"
 	var forced := _forced_grades(clauses)
-	var plan := {"thrust": 0.0, "jump": 0.0, "attack": 0.0, "defence": 0.0, "power": 0.0, "sensor": 0.0, "cooling": 0.0}
+	var plan := {"thrust": 0.0, "jump": 0.0, "attack": 0.0, "defence": 0.0, "power": 0.0, "sensor": 0.0, "cooling": 0.0, "fuel": 0.0}
 	var rec: DesignRecord = null
 	var t: DesignTotals = null
 	var picks := {}
 	for round_i in ROUNDS:
 		picks = {}
 		for key: String in plan:
-			if float(plan[key]) > 0.0:
-				picks[key] = _cheapest(key, float(plan[key]), grade, forced, cat)
-		rec = _layout(demands, clauses, picks, grade, forced, cat)
+			if key != "fuel" and float(plan[key]) > 0.0:
+				picks[key] = _cheapest(key, float(plan[key]), grade, forced, cat,
+						key == "power" and demands.has("reactors") and int(demands.reactors) == 0)
+		var with_fuel := demands.duplicate()
+		with_fuel["fuel_m3"] = maxf(float(demands.get("fuel_m3", 0.0)), float(plan.fuel))
+		rec = _layout(with_fuel, clauses, picks, grade, forced, cat)
 		t = DesignTotals.compute(rec, cat)
 		var next := _needs(demands, t, plan)
 		if next == plan:
@@ -90,6 +93,9 @@ static func _needs(demands: Dictionary, t: DesignTotals, plan: Dictionary) -> Di
 	if demands.has("sensor_km"):
 		next.sensor = float(demands.sensor_km)
 	next.power = (t.power_used + float(demands.get("power", 0.0))) * MARGIN
+	# Tanks for the days asked at the last round's load and burn (equivalent() gives a first guess).
+	if demands.has("endurance_days"):
+		next.fuel = float(demands.endurance_days) * 24.0 * t.power_used * (t.burn_per_kwh if t.burn_per_kwh > 0.0 else DesignPower.DEFAULT_BURN) * MARGIN
 	if demands.has("stealth"):
 		var target := -DesignTotals.STEALTH_SCALE * log(clampf(float(demands.stealth), 1.0, 99.0) / 100.0) / MARGIN
 		var over := t.signature() - target
@@ -121,11 +127,14 @@ static func _grade_for(pt: DesignPartType, grade: String, forced: Dictionary) ->
 
 
 ## The cheapest way to buy `amount` of a rating: [{type: variant id, n}].
-static func _cheapest(key: String, amount: float, grade: String, forced: Dictionary, cat: DesignCatalog) -> Array:
+static func _cheapest(key: String, amount: float, grade: String, forced: Dictionary, cat: DesignCatalog,
+		no_reactor := false) -> Array:
 	var best: Array = []
 	var best_cost := INF
 	var field: String = BUY[key][1]
 	for base_id: String in BUY[key][0]:
+		if no_reactor and DesignPower.REACTORS.has(base_id):
+			continue
 		var base := cat.part(base_id)
 		if base == null:
 			continue

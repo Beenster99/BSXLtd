@@ -337,6 +337,14 @@ class Runner:
 		for o: Dictionary in contracts.ship_orders():
 			if contracts.ship_sign_problem(o) == "" and (pick.is_empty() or str(o.achievability.label) in ["Fair", "Generous"]):
 				pick = o
+		# Show one that works away from the sun and asks for endurance, where there is one.
+		for i in range(10):
+			var far := contracts.ship_orders().filter(func(o: Dictionary) -> bool:
+				return contracts.ship_sign_problem(o) == "" and o.demands.has("endurance_days") and str(o.get("region", "")) != "inner")
+			if not far.is_empty():
+				pick = far[0]
+				break
+			contracts.advance_cycle()
 		console.set_order(pick)
 		await _frames(30)
 		await _save(out, "contract_quote")
