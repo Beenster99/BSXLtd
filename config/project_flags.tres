@@ -189,6 +189,7 @@ flags = {
 "trades.cutting_bed": true,
 "ui": true,
 "ui.debug_tab": true,
+"ui.sun_slider": false,
 "yard": true,
 "yard.delivery_ships": true,
 "yard.dock": true,
