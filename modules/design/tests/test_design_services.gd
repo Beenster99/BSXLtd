@@ -34,7 +34,7 @@ func _structure() -> void:
 
 	var t := DesignTotals.compute(d, cat)
 	var ids := t.lines.filter(func(l): return l.kind == "hull").map(func(l): return l.id)
-	check(ids == ["frame", "hull", "welds", "rivets", "inner", "deck"], "the hull lines come first, with the joints: %s" % [ids])
+	check(ids == ["frame", "hull", "welds", "rivets", "bolts", "inner", "deck"], "the hull lines come first, with the joints: %s" % [ids])
 	var before := t.cost
 	d.apply({"op": "set_meta", "fields": {"structure": {"hull": "armoured"}}})
 	var t2 := DesignTotals.compute(d, cat)

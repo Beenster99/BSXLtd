@@ -38,10 +38,23 @@ const DOOR_H := 2.2
 ## What a joint costs to make in the yard: credits, kg, hours each.
 const WELD := {"name": "Welded joints", "cost": 12.0, "mass": 0.2, "hours": 0.08}
 const RIVET := {"name": "Rivets", "cost": 1.5, "mass": 0.05, "hours": 0.01}
+const BOLT := {"name": "Bolts", "cost": 2.0, "mass": 0.08, "hours": 0.015}
+## Inside the hull: an inner wall's thickness (the walk's wall and its linings), the gap under a
+## deck's ceiling, how far a wall stops short of the wall it meets, metres; the deck girders'
+## lanes, metres apart; stud spacing, metres.
+const INNER_WALL := 0.19
+const CEILING := 0.1
+const WALL_END := 0.1
+const LANE := 1.5
+const STUD := 0.6
+## Room types that link decks: an opening through the deck over them.
+const LINKS := ["stairs", "lift", "hatch"]
 ## The frame kit's part names, as the designers call them.
 const PART_NAMES := {"FrameNode": "Node block", "FrameRing": "Frame ring", "Stringer": "Stringer",
 		"HullPlate": "Hull plate", "CapPlate": "End plate", "WindowPane": "Glass panel", "FramePost": "Door post",
-		"FrameRail": "Door rail", "FrameSplice": "Splice"}
+		"FrameRail": "Door rail", "FrameSplice": "Splice", "DeckBeam": "Deck beam", "DeckGirder": "Deck girder",
+		"DeckTrimmer": "Deck trimmer", "DeckPlate": "Deck plate", "Stud": "Wall stud", "StudSill": "Wall sill",
+		"StudHead": "Wall head rail", "StudLintel": "Door lintel", "StudFoot": "Wall foot rail", "WallPanel": "Wall panel"}
 const EDGE_NAMES := ["roof", "starboard shoulder", "starboard side", "starboard chine", "belly", "port chine",
 		"port side", "port shoulder"]
 const JOINT_NAMES := {ConnectionData.Kind.WELD: "Weld", ConnectionData.Kind.RIVET: "Rivets",
@@ -95,7 +108,54 @@ static func propose(d: DesignRecord) -> Dictionary:
 	_glaze(d, out)
 	_panels(d, out)
 	_openings(d, out)
+	_inside(d, out)
 	return out
+
+
+## Inside the hull: a deck frame under each deck's rooms (beams across at the stations, girders
+## along, plates over, holes where stairs, lifts and hatches go up through it) and the inner
+## walls as stud walls (studs, rails, a lintel over each door, a panel each side, bolted).
+static func _inside(d: DesignRecord, p: Dictionary) -> void:
+	var h := d.deck_height
+	var decks: Array = []
+	for dk in d.decks():
+		var z0 := INF
+		var z1 := -INF
+		var holes: Array = []
+		for r: Dictionary in d.rooms_on(dk):
+			z0 = minf(z0, float(r.z))
+			z1 = maxf(z1, float(r.z) + float(r.d))
+			if dk > 0 and str(r.type) in LINKS:
+				for lo: Dictionary in d.rooms_on(dk - 1):
+					var both := Rect2(r.x, r.z, r.w, r.d).intersection(Rect2(lo.x, lo.z, lo.w, lo.d))
+					if str(lo.type) == str(r.type) and both.has_area():
+						holes.append(both)
+		if z1 > z0:
+			decks.append({"deck": dk, "top": dk * h, "z0": z0, "z1": z1, "openings": holes})
+	var walls: Array = []
+	for e: Dictionary in DesignStructure.measure(d).inner_edges:
+		var a: Vector2 = e.a
+		var b: Vector2 = e.b
+		var across := absf(a.y - b.y) < 0.01
+		if not across and absf(a.x - b.x) > 0.01:
+			continue  # an angled wall: built by hand for now
+		var t0 := minf(a.x, b.x) if across else minf(a.y, b.y)
+		var t1 := maxf(a.x, b.x) if across else maxf(a.y, b.y)
+		var at := a.y if across else a.x
+		var y0 := int(e.deck) * h
+		var doors: Array = []
+		for g: Dictionary in d.doors.values():
+			if int(g.deck) != int(e.deck) or str(g.get("a", "")) == "" or str(g.get("b", "")) == "":
+				continue
+			var gt := float(g.x) if across else float(g.z)
+			var ga := float(g.z) if across else float(g.x)
+			if absf(ga - at) < 0.05 and gt > t0 + 0.01 and gt < t1 - 0.01:
+				doors.append(gt)
+		if t1 - t0 > WALL_END * 2.0 + 0.2:
+			walls.append({"deck": int(e.deck), "across": across, "at": at, "t0": t0 + WALL_END, "t1": t1 - WALL_END,
+					"y0": y0, "y1": y0 + h - CEILING, "doors": doors})
+	p["decks"] = decks
+	p["walls"] = walls
 
 
 ## The key a designer's change to the section nearest z is stored under (DesignRecord.frame_edits).
@@ -202,7 +262,8 @@ static func section(r: Rect2) -> PackedVector2Array:
 static func counts(p: Dictionary) -> Dictionary:
 	if p.is_empty():
 		return {"stations": 0, "nodes": 0, "rings": 0, "stringers": 0, "plates": 0, "glass": 0,
-				"openings": 0, "welds": 0, "rivets": 0, "member_m": 0.0, "skin_m2": 0.0}
+				"openings": 0, "welds": 0, "rivets": 0, "bolts": 0, "member_m": 0.0, "skin_m2": 0.0,
+				"decks": 0, "deck_plates": 0, "walls": 0, "studs": 0, "wall_panels": 0}
 	var st: Array = p.stations
 	var s: Dictionary = FrameStyle.STYLES.get(str(p.style), FrameStyle.STYLES["channel"])
 	var pitch := float(s.get("rivet_pitch", 0.5))
@@ -231,9 +292,43 @@ static func counts(p: Dictionary) -> Dictionary:
 	var rings := st.size() * SIDES
 	var stringers := (st.size() - 1) * SIDES
 	var plates := stringers + 2
+	var welds := rings * 2 + stringers * 2
+	# Inside, estimated before it is built: the decks' members, plates and spot welds; the
+	# walls' studs and rails, panels and bolts.
+	var deck_plates := 0
+	var studs := 0
+	var wall_panels := 0
+	var bolts := 0
+	for dk: Dictionary in p.get("decks", []):
+		var len := float(dk.z1) - float(dk.z0)
+		var width := (_rect_near(st, (float(dk.z0) + float(dk.z1)) * 0.5) as Rect2).size.x
+		var beams := 0
+		for s2: Dictionary in st:
+			if float(s2.z) > float(dk.z0) and float(s2.z) < float(dk.z1):
+				beams += 1
+		var lanes := maxi(1, ceili(width / LANE))
+		member_m += beams * width + (lanes - 1) * len
+		welds += beams * 2 + (lanes - 1) * maxi(beams - 1, 1) * 2
+		deck_plates += lanes * maxi(beams + 1, 1)
+		welds += int(width * len / 0.5)  # spot welds
+	for w: Dictionary in p.get("walls", []):
+		var len := float(w.t1) - float(w.t0)
+		var hgt := float(w.y1) - float(w.y0)
+		var n := int(len / STUD) + 1 + 2 * (w.doors as Array).size()
+		studs += n
+		member_m += n * hgt + 2.0 * len
+		wall_panels += 2 * maxi(1, ceili(len / STUD))
+		bolts += 2 * maxi(1, ceili(len / STUD)) * (int(hgt) + 2)
+		welds += n
 	return {"stations": st.size(), "nodes": rings, "rings": rings, "stringers": stringers, "plates": plates,
 			"glass": (p.glass as Dictionary).size(), "openings": (p.openings as Array).size(),
-			"welds": rings * 2 + stringers * 2, "rivets": rivets, "member_m": member_m, "skin_m2": skin_m2}
+			"welds": welds, "rivets": rivets, "bolts": bolts, "member_m": member_m, "skin_m2": skin_m2,
+			"decks": (p.get("decks", []) as Array).size(), "deck_plates": deck_plates,
+			"walls": (p.get("walls", []) as Array).size(), "studs": studs, "wall_panels": wall_panels}
+
+
+static func _rect_near(st: Array, z: float) -> Rect2:
+	return st[station_at({"stations": st}, z)].rect
 
 
 ## Builds the proposal into `kit` (a ShipKit with a PartModel) as parts and joints: the rings,
@@ -271,6 +366,43 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 		var pieces := _cut(outline, holes)
 		var glazed := bool((p.get("cap_glass", [false, false]) as Array)[end])
 		h.cap(end, pieces, glass if glazed else shell, "", glazed)
+	var lining: Material = mats.get("lining", ShipKit.paint(Color(0.52, 0.54, 0.54), 0.2, 0.6))
+	var plating: Material = mats.get("deck", ShipKit.paint(Color(0.46, 0.48, 0.5), 0.6, 0.45))
+	var decks: Array[DeckFrame] = []
+	for dk: Dictionary in p.get("decks", []):
+		var df := DeckFrame.new(h, plating, steel)
+		df.top = float(dk.top)
+		df.z0 = float(dk.z0)
+		df.z1 = float(dk.z1)
+		df.level = "" if decks.is_empty() else "d%d" % int(dk.deck)
+		df.trim_girders = true
+		var r := _rect_near(st, (df.z0 + df.z1) * 0.5)
+		var lanes := maxi(1, ceili(r.size.x / LANE))
+		for i in range(1, lanes):
+			df.girder_x.append(r.position.x + r.size.x * float(i) / lanes)
+		for o: Rect2 in dk.openings:
+			df.openings.append(o)
+		df.build()
+		decks.append(df)
+	var walls: Array[StudWall] = []
+	for w: Dictionary in p.get("walls", []):
+		var y0 := float(w.y0)
+		var y1 := float(w.y1)
+		var t0 := float(w.t0)
+		var t1 := float(w.t1)
+		var name := "d%d_%s_%.1f_%.1f" % [int(w.deck), "x" if w.across else "z", float(w.at), t0]
+		var sw := StudWall.new(h.target, name, float(w.at) if w.across else 0.0, INNER_WALL,
+				PackedVector2Array([Vector2(t0, y0), Vector2(t1, y0), Vector2(t1, y1), Vector2(t0, y1)]), lining, steel)
+		if not w.across:
+			sw.frame = StudWall.along(float(w.at))
+		sw.floor_y = y0
+		sw.spacing = STUD
+		for t: float in w.doors:
+			sw.openings.append(Rect2(t - DOOR_W * 0.5, y0, DOOR_W, DOOR_H))
+		sw.build()
+		walls.append(sw)
+	h.set_meta("decks", decks)
+	h.set_meta("walls", walls)
 	return h
 
 

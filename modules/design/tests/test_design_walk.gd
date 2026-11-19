@@ -50,8 +50,9 @@ func run_tests() -> void:
 			% [b.lamps, b.frame.welds.size() if b.frame else 0, b.doors.size()])
 	check(walk.find_child("CableTray*", true, false) != null and walk.find_child("Pipe*", true, false) != null
 			and walk.find_child("Riser*", true, false) != null, "cable trays, fuel pipes and the riser up the stairwell")
-	check(walk.find_child("DeckPlates_r2", true, false) != null and walk.find_child("HoloOutline", true, false) != null,
-			"deck plates underfoot, and the faint hologram outline")
+	var plated := b.frame_model.parts.values().filter(func(pd): return pd.part_name == "DeckPlate").size()
+	check(plated > 4 and walk.find_child("HoloOutline", true, false) != null,
+			"deck plates underfoot on the deck frame (%d), and the faint hologram outline" % plated)
 
 	# Walk forward (towards the middle of the ship): out of the airlock into the corridor.
 	walk.body.position.x = 0.0  # in line with the door
@@ -75,7 +76,8 @@ func run_tests() -> void:
 	# Someone at the table adds a room: it appears round you.
 	bus.editor.do({"op": "add_room", "room": {"id": "rx", "type": "cargo", "x": 4, "z": 4, "w": 4, "d": 4}})
 	await frames(2)
-	check(walk.find_child("DeckPlates_rx", true, false) != null, "a room added at the table appears inside")
+	check(walk.world.find_children("*", "StaticBody3D", true, false).any(
+			func(n): return str((n.get_meta("walk", {}) as Dictionary).get("room", "")) == "rx"), "a room added at the table appears inside")
 
 	await _designing(walk, rec, bus)
 

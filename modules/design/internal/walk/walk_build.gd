@@ -188,6 +188,8 @@ func _floor(r: Dictionary, stairs: Dictionary) -> void:
 		if stairs[low_id] == str(r.id):
 			hole = shaft(rec.rooms[low_id], r).intersection(rect)
 	var covered := DesignStructure.on_deck(rec, int(r.deck) - 1, rect.get_center())
+	# On a deck frame its plates are the floor you see; this is what you stand on.
+	var framed := not (frame_plan.get("decks", []) as Array).is_empty() and not str(r.type) in DesignFrame.LINKS
 	var bed := paint(Color(0.2, 0.21, 0.23), "gunmetal")
 	var plate := paint(Color(0.46, 0.48, 0.5), "bare_steel")
 	var tiles: Array[Transform3D] = []
@@ -198,7 +200,9 @@ func _floor(r: Dictionary, stairs: Dictionary) -> void:
 		_box_in(body, Vector3(p.size.x, FLOOR - 0.02, p.size.y), bed if covered else paint(Color(0.5, 0.52, 0.55), "brushed_alloy"))
 		if not covered:
 			(body.get_child(0) as VisualInstance3D).layers = 1 | EXTERIOR
-		_shape_in(body, Vector3(p.size.x, FLOOR, p.size.y), Vector3(0, 0.01, 0))
+		(body.get_child(0) as VisualInstance3D).visible = not framed
+		# (A hair over the deck plates when they are the frame's, so the aim finds the floor.)
+		_shape_in(body, Vector3(p.size.x, FLOOR, p.size.y), Vector3(0, 0.015 if framed else 0.01, 0))
 		# Deck plates on top, with a hair of a seam between them.
 		var x := p.position.x
 		while x < p.end.x - 0.01:
@@ -210,7 +214,8 @@ func _floor(r: Dictionary, stairs: Dictionary) -> void:
 						Vector3((x + x1) * 0.5, y - 0.009, (z + z1) * 0.5)))
 				z = z1
 			x = x1
-	_multi("DeckPlates_" + str(r.id), tiles, plate)
+	if not framed:
+		_multi("DeckPlates_" + str(r.id), tiles, plate)
 
 
 ## `hole`: the stairwell's opening up through this room's ceiling (none if empty).
@@ -482,9 +487,16 @@ func _wall_piece(info: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, t0
 	var body := _body(info)
 	body.transform = Transform3D(basis, Vector3(mid.x, (y0 + y1) * 0.5, mid.y))
 	var len := t1 - t0
+	# An inner wall the frame builds as a stud wall: you see its panels; this keeps what you
+	# bump into and aim at (a hair thicker, so the aim finds the wall before its panels).
+	var studded := not outer and not (frame_plan.get("walls", []) as Array).is_empty() \
+			and (absf(dir.x) > 0.999 or absf(dir.y) > 0.999)
 	_box_in(body, Vector3(len, y1 - y0, WALL), paint(Color(0.24, 0.25, 0.27), "gunmetal"))
-	_shape_in(body, Vector3(len, y1 - y0, WALL), Vector3.ZERO)
+	_shape_in(body, Vector3(len, y1 - y0, DesignFrame.INNER_WALL + 0.012 if studded else WALL), Vector3.ZERO)
 	wall_pieces.append({"deck": int(info.deck), "a": p0, "b": p1, "y0": y0, "y1": y1, "outer": outer})
+	if studded:
+		(body.get_child(0) as VisualInstance3D).visible = false
+		return
 	# Each face: lining panels inside a room, hull plating where it faces space.
 	for side in [1.0, -1.0]:
 		# Inside the frame an outer wall is the hull's lining: its back faces the frame, not space.
@@ -526,7 +538,8 @@ func _frame() -> void:
 	frame_model = PartModel.new(frame_body, true)
 	kit.model = frame_model
 	frame = DesignFrame.build(frame_plan, kit, {"shell": paint(Color(0.5, 0.52, 0.55), "brushed_alloy"),
-			"frame": paint(Color(0.34, 0.36, 0.38), "gunmetal")})
+			"frame": paint(Color(0.34, 0.36, 0.38), "gunmetal"), "lining": paint(Color(0.52, 0.54, 0.54), "satin_paint"),
+			"deck": paint(Color(0.46, 0.48, 0.5), "bare_steel")})
 	for v in frame_body.find_children("*", "VisualInstance3D", true, false):
 		(v as VisualInstance3D).layers = 1 | EXTERIOR
 	var st: Array = frame_plan.stations
