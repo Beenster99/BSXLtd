@@ -169,6 +169,15 @@ func run_tests() -> void:
 			"G again plates it over")
 	bus.editor.undo()
 	bus.editor.undo()
+	# Aimed up at the deckhead, which is no hull panel: G glazes the panel straight on along
+	# the aim (beenster, 19 Nov).
+	walk.camera.rotation.x = 1.0
+	await _physics(2)
+	var up: Vector2i = walk.hull_panel_along_aim()
+	check(up.x >= 0 and up.y in [DesignFrame.ROOF_EDGE, 1, DesignFrame.STARBOARD], "looking up and to starboard finds the hull's shoulder: %s" % [up])
+	check(walk.glass_here() and (DesignFrame.propose(rec).glass as Dictionary).has("%d:%d" % [up.x, up.y]), "and G glazes it")
+	bus.editor.undo()
+	walk.camera.rotation.x = 0.0
 	# The wheel at her hull plates, from outside: her section there pushed out to starboard.
 	walk.body.position = Vector3(7.0, 1.0, 6.0)
 	walk.body.rotation.y = PI * 0.5  # facing -X

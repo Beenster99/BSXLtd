@@ -195,6 +195,24 @@ func run_tests() -> void:
 	for i in 3:
 		bus.editor.undo()
 	check(rec.rooms.size() == n0, "undo takes them back")
+	# A stairwell stretched up two decks by its top edge in the side view, then back.
+	console._set_view("side")
+	plan.zoom = 20.0
+	plan.centre = Vector2(30, -4)
+	bus.editor.do({"op": "add_room", "room": {"type": "stairs", "deck": 0, "x": 30, "z": 30, "w": 2, "d": 4}})
+	var stid := plan._newest(rec.rooms)
+	plan.set_tool("select")
+	_drag(plan, Vector2(32, -rec.deck_height), Vector2(32, -rec.deck_height * 2.5))
+	var flights: Array = rec.rooms.values().filter(func(r): return str(r.type) == "stairs" and is_equal_approx(float(r.z), 30.0))
+	check(flights.size() == 3 and flights.map(func(r): return int(r.deck)).max() == 2,
+			"dragging a stairwell's top edge up stacks it on the decks above: %d" % flights.size())
+	_drag(plan, Vector2(32, -rec.deck_height * 3), Vector2(32, -rec.deck_height * 1.5))
+	flights = rec.rooms.values().filter(func(r): return str(r.type) == "stairs" and is_equal_approx(float(r.z), 30.0))
+	check(flights.size() == 2, "and dragging it back down takes the top one off: %d" % flights.size())
+	bus.editor.undo()
+	bus.editor.undo()
+	bus.editor.undo()
+	check(not rec.rooms.has(stid) and rec.rooms.size() == n0, "undo clears the stairwell")
 	console._set_view("plan")
 	plan.size = Vector2(1000, 700)
 	plan.zoom = 20.0
