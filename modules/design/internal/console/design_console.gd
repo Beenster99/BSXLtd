@@ -711,7 +711,7 @@ func _on_selection(kind: String, id: String) -> void:
 	if kind == "room" and rec.rooms.has(id):
 		var r: Dictionary = rec.rooms[id]
 		var rt := bus.catalog.room(str(r.type))
-		_selection.add_child(T.label((rt.display_name if rt else str(r.type)).to_upper(), "display_bold", 18, T.ORANGE))
+		_selection.add_child(T.label("%s   %s" % [(rt.display_name if rt else str(r.type)).to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
 		var room_name := LineEdit.new()
 		room_name.placeholder_text = "Room name"
 		room_name.text = str(r.get("name", ""))
@@ -743,7 +743,7 @@ func _on_selection(kind: String, id: String) -> void:
 		var c: Dictionary = rec.components[id]
 		var pt := bus.catalog.part(str(c.type))
 		if pt:
-			_selection.add_child(T.label(pt.display_name.to_upper(), "display_bold", 18, T.ORANGE))
+			_selection.add_child(T.label("%s   %s" % [pt.display_name.to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
 			_selection.add_child(T.label("CR %s   %.1f t   %+.0f kW   %d days" % [T.money(int(pt.cost)), pt.mass / 1000.0,
 					pt.power, pt.lead_days], "mono_medium", 15, T.DIM))
 			_grade_rows(str(c.type), func(t: String) -> void:
@@ -761,7 +761,7 @@ func _on_selection(kind: String, id: String) -> void:
 		var door: Dictionary = rec.doors[id]
 		var dk := DesignCatalog.door_kind(door)
 		var fit := DesignCatalog.door_cost(door)
-		_selection.add_child(T.label(str(dk.name).to_upper(), "display_bold", 18, T.ORANGE))
+		_selection.add_child(T.label("%s   %s" % [str(dk.name).to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
 		_selection.add_child(T.label("%s x %s m   CR %s   %d kg   %.1f h%s" % [PlanView._m(DesignCatalog.door_w(door)),
 				PlanView._m(DesignCatalog.door_h(door)), T.money(int(fit.cost)), int(fit.mass), float(fit.hours),
 				"   AIRTIGHT" if bool(dk.get("airtight", false)) else ""], "mono_medium", 15, T.DIM))
@@ -791,14 +791,14 @@ func _on_selection(kind: String, id: String) -> void:
 		var w: Dictionary = rec.runs[id]
 		var spec: Dictionary = DesignServices.KINDS.get(str(w.kind), {})
 		var live: bool = DesignServices.connected(rec, bus.catalog, str(w.kind)).runs.has(id)
-		_selection.add_child(T.label(str(spec.get("name", w.kind)).to_upper(), "display_bold", 18, T.ORANGE))
+		_selection.add_child(T.label("%s   %s" % [str(spec.get("name", w.kind)).to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
 		_selection.add_child(T.label("%s m   %s" % [PlanView._m(DesignServices.length(w)),
 				"LIVE" if live else "NOT CONNECTED"], "mono_medium", 15, T.GOOD if live else T.DIM))
 		_selection.add_child(_remove_button())
 	elif kind in ["wall", "beam"] and (rec.walls if kind == "wall" else rec.beams).has(id):
 		var e: Dictionary = (rec.walls if kind == "wall" else rec.beams)[id]
 		var length := DesignStructure._v(e.a).distance_to(DesignStructure._v(e.b))
-		_selection.add_child(T.label("INNER WALL" if kind == "wall" else "BEAM", "display_bold", 18, T.ORANGE))
+		_selection.add_child(T.label("%s   %s" % ["INNER WALL" if kind == "wall" else "BEAM", DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
 		var spec := DesignStructure.option("inner" if kind == "wall" else "frame",
 				str(rec.structure.get("inner" if kind == "wall" else "frame")))
 		_selection.add_child(T.label("%s m   %s" % [PlanView._m(length), spec.get("name", "")], "mono_medium", 15, T.DIM))
@@ -806,7 +806,7 @@ func _on_selection(kind: String, id: String) -> void:
 	elif kind == "mount" and rec.mounts.has(id):
 		var pt := bus.catalog.part(str(rec.mounts[id].type))
 		if pt:
-			_selection.add_child(T.label(pt.display_name.to_upper(), "display_bold", 18, T.ORANGE))
+			_selection.add_child(T.label("%s   %s" % [pt.display_name.to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
 			_selection.add_child(T.label("ON THE HULL   CR %s   %.1f t   %.0f kN" % [T.money(int(pt.cost)),
 					pt.mass / 1000.0, pt.thrust], "mono_medium", 15, T.DIM))
 			_grade_rows(str(rec.mounts[id].type), func(t: String) -> void:

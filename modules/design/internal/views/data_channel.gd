@@ -119,7 +119,10 @@ func refresh() -> void:
 	alt = false
 	for line in t.lines:
 		var qty := "%d %s" % [int(roundf(line.qty)), str(line.unit)]
-		_body.add_child(T.row([T.cell_text(str(line.name), str(line.kind)), T.cell(qty, 80),
+		# Each line names its objects by their IDs (DesignRecord.tag).
+		var tags: Array = line.get("tags", [])
+		var sub := str(line.kind) if tags.is_empty() else "%s   %s" % [str(line.kind), " ".join(tags)]
+		_body.add_child(T.row([T.cell_text(str(line.name), sub), T.cell(qty, 80),
 				T.cell("%.1f t" % (float(line.mass) / 1000.0), 90),
 				T.cell(T.money(int(line.cost)), 120, T.TEXT)], alt))
 		alt = not alt

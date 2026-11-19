@@ -35,6 +35,9 @@ func _kinds(bus: DesignBus) -> void:
 	var t := DesignTotals.compute(d, bus.catalog)
 	var line: Dictionary = t.lines.filter(func(l): return l.kind == "door")[0]
 	check(float(line.cost) > float(DesignCatalog.DOOR_KINDS.doorway.cost) * 2.0, "a wider door costs more: %d" % int(line.cost))
+	check(line.tags == ["D1"] and DesignRecord.tag("c12") == "C12", "each line names its objects by ID: %s" % [line.tags])
+	var room_line: Dictionary = t.lines.filter(func(l): return l.kind == "room" and l.id == "cargo")[0]
+	check(room_line.tags == ["B"], "a room's ID on its line: %s" % [room_line.tags])
 	d.apply(u)
 	check(is_equal_approx(DesignCatalog.door_w(d.doors.d1), 1.2), "undo puts its width back")
 	d.apply({"op": "set_door", "id": "d1", "fields": {"kind": "hinged", "w": 3.0}})
