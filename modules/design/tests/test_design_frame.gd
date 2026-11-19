@@ -155,6 +155,18 @@ func run_tests() -> void:
 			"pushed out a quarter metre to starboard: %s -> %s" % [before, after])
 	bus.editor.undo()
 	f.close_walk()
+	await frames(2)
+
+	# With every wall panel showing her, opening the sample (dozens of edits) and an edit stay
+	# quick: the views read the rules once, when they next draw (it took 21 s and dropped the
+	# crew in co-op).
+	var t0 := Time.get_ticks_msec()
+	bus.open_sample()
+	var t_open := Time.get_ticks_msec() - t0
+	t0 = Time.get_ticks_msec()
+	bus.editor.do({"op": "add_room", "room": {"id": "zz", "type": "cargo", "deck": 0, "x": 30, "z": 30, "w": 4, "d": 4}})
+	var t_do := Time.get_ticks_msec() - t0
+	check(t_open < 3000 and t_do < 200, "the sample opens in %d ms, an edit takes %d ms" % [t_open, t_do])
 	room.queue_free()
 	await frames(2)
 

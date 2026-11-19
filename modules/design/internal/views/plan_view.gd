@@ -60,6 +60,8 @@ var _run_pts: Array[Vector2] = []
 var _hull_pts: Array[Vector2] = []
 ## The hull walls round the rooms on this deck (DesignStructure, refreshed on change).
 var _structure: DesignStructure
+var _stale := true
+var _frame_queued := false
 var _drag := {}  # what the left button is doing: {kind, id, start, edge, rect, ...}
 var _pan_from := Vector2.INF
 var _mouse := Vector2.ZERO
@@ -143,18 +145,11 @@ func _rec() -> DesignRecord:
 
 
 func _on_changed() -> void:
+	# The rules and the measured hull are read when next drawn or used, not on every edit
+	# (a sample design is dozens of edits; every wall panel shows a plan).
+	_stale = true
 	var rec := _rec()
-	problem_rooms = {}
-	problem_parts = {}
 	if rec:
-		for p in bus.problems():
-			for r in p.rooms:
-				if problem_rooms.get(r, "") != DesignRules.ERROR:
-					problem_rooms[r] = p.severity
-			for c in p.components:
-				if problem_parts.get(c, "") != DesignRules.ERROR:
-					problem_parts[c] = p.severity
-		_structure = DesignStructure.measure(rec) if mode == PLAN else null
 		if selected_kind == "room" and not rec.rooms.has(selected_id) \
 				or selected_kind == "run" and not rec.runs.has(selected_id) \
 				or selected_kind == "part" and not rec.components.has(selected_id) \
@@ -164,9 +159,32 @@ func _on_changed() -> void:
 				or selected_kind == "mount" and not rec.mounts.has(selected_id) \
 				or selected_kind == "hull" and int(selected_id) >= rec.hull_outline(deck).size():
 			select("", "")
-	if auto_frame:
-		frame_all()
+	if auto_frame and not _frame_queued:
+		_frame_queued = true
+		(func() -> void:
+			_frame_queued = false
+			frame_all()).call_deferred()
 	queue_redraw()
+
+
+## The problems and the measured hull as the design now stands.
+func _refresh() -> void:
+	if not _stale:
+		return
+	_stale = false
+	problem_rooms = {}
+	problem_parts = {}
+	_structure = null
+	if _rec() == null:
+		return
+	for p in bus.problems():
+		for r in p.rooms:
+			if problem_rooms.get(r, "") != DesignRules.ERROR:
+				problem_rooms[r] = p.severity
+		for c in p.components:
+			if problem_parts.get(c, "") != DesignRules.ERROR:
+				problem_parts[c] = p.severity
+	_structure = bus.structure() if mode == PLAN else null
 
 
 # Coordinates
@@ -213,6 +231,7 @@ func _view_bounds(rec: DesignRecord) -> Rect2:
 # Drawing
 
 func _draw() -> void:
+	_refresh()
 	draw_rect(Rect2(Vector2.ZERO, size), BG)
 	_draw_grid()
 	var rec := _rec()
@@ -347,6 +366,7 @@ func _draw_mount(m: Dictionary, sel: bool, alpha: float) -> void:
 
 ## A hull part in hand: it snaps to the nearest stretch of hull under the pointer.
 func _mount_spot(p: Vector2) -> Dictionary:
+	_refresh()
 	var near := DesignStructure.nearest_hull(_rec(), deck, p, _structure)
 	if near.is_empty() or float(near.dist) > 3.0:
 		return {}
