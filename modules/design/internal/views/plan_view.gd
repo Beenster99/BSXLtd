@@ -15,6 +15,7 @@ signal selection_changed(kind: String, id: String)
 signal tool_changed(tool: String)
 
 const RoomShape := preload("res://modules/design/internal/views/room_shape.gd")
+const PlanMarks := preload("res://modules/design/internal/views/plan_marks.gd")
 const PLAN := "plan"
 const SIDE := "side"
 const END := "end"
@@ -45,6 +46,9 @@ var problem_rooms: Dictionary = {}
 var problem_parts: Dictionary = {}
 var title := ""
 var show_title := true
+## The marks over the drawing: dimensions, the title block, tape, section line, notes, "look
+## here" and the room readout (plan_marks.gd).
+var marks: PlanMarks
 ## Keep the whole design in view as it changes and when resized (wall TVs).
 var auto_frame := false
 
@@ -89,6 +93,12 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	bus.design_changed.connect(_on_changed)
 	bus.carry_changed.connect(func(_id: String) -> void: queue_redraw())
 	bus.mirror_changed.connect(func(_a: int) -> void: queue_redraw())
+	# One pick shared by every drawing and the table (plan 3.3).
+	bus.focus_changed.connect(_on_focus)
+	bus.section_changed.connect(queue_redraw)
+	bus.look_requested.connect(_on_look)
+	marks = PlanMarks.new(self)
+	marks.build_bar(14)
 	if bus.crew:
 		bus.crew.call("attach_view", self)
 	_on_changed()
@@ -110,6 +120,8 @@ func set_tool(t: String) -> void:
 ## Esc: drops a half-drawn run, else puts the tool in hand down. False if there was nothing to
 ## cancel (the console then closes).
 func cancel() -> bool:
+	if marks and marks.cancel():
+		return true
 	if bus and bus.carrying != "":
 		bus.carry("")
 		return true
@@ -134,6 +146,32 @@ func select(kind: String, id: String) -> void:
 	selected_id = id
 	queue_redraw()
 	selection_changed.emit(kind, id)
+	if bus:
+		bus.set_focus(kind, id)
+
+
+## Something was picked on another drawing or at the table: picked here too.
+func _on_focus(kind: String, id: String) -> void:
+	if kind == selected_kind and id == selected_id:
+		return
+	select(kind, id)
+
+
+## "Look here": the drawing pulled to the spot (a plan of another deck goes to that deck if it
+## is the console's), and rings round it for a few seconds.
+func _on_look(at_deck: int, at: Vector2, who: String, colour: Color) -> void:
+	marks.on_look(at_deck, at, who, colour)
+	var rec := _rec()
+	if mode == PLAN:
+		if editable:
+			deck = at_deck
+		if deck == at_deck:
+			centre = at
+	elif rec:
+		var u := at.y if mode == SIDE else at.x
+		centre = Vector2(u, -(at_deck + 0.5) * rec.deck_height)
+	queue_redraw()
+	get_tree().create_timer(PlanMarks.LOOK_SECONDS + 0.1).timeout.connect(queue_redraw)
 
 
 ## Fits the whole design in view.
@@ -255,6 +293,7 @@ func _draw() -> void:
 	else:
 		_draw_elevation(rec)
 	_draw_drag_ghost(rec)
+	marks.draw(rec)
 	if show_title:
 		_draw_title(rec)
 
@@ -860,7 +899,10 @@ func _draw_part_ghost() -> void:
 func _draw_title(rec: DesignRecord) -> void:
 	var view_name: String = {"plan": "PLAN  DECK %d" % (deck + 1), "side": "SIDE ELEVATION",
 			"end": "END ELEVATION, FROM THE BOW"}.get(mode, mode)
-	var t := title if title != "" else "%s   %s" % [rec.name.to_upper(), view_name]
+	if title == "":
+		marks.draw_title_block(rec, view_name)
+		return
+	var t := title
 	var box := Rect2(size.x - 330, size.y - 46, 320, 36)
 	draw_rect(box, Color(BG, 0.85))
 	draw_rect(box, Color(DIM, 0.6), false, 1.0)
@@ -897,6 +939,8 @@ func _gui_input(event: InputEvent) -> void:
 		elif bus.carrying != "" or editable and (tool.begins_with("part:") or tool.begins_with("run:")
 				or tool in ["hull", "wall", "beam"] or tool.begins_with("mount:")):
 			queue_redraw()
+		elif marks.moved(event.position):
+			queue_redraw()
 		_update_cursor(event.position)
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -921,6 +965,8 @@ func _gui_input(event: InputEvent) -> void:
 				_finish_run()
 			elif mb.pressed and mb.double_click and tool == "hull" and editable:
 				_finish_hull()
+			elif mb.pressed and marks.press(mb.position, mb.shift_pressed):
+				pass
 			elif mb.pressed:
 				_press(mb.position)
 			else:
@@ -950,6 +996,11 @@ func _gui_input(event: InputEvent) -> void:
 		elif k.keycode == KEY_ESCAPE and tool != "select":
 			set_tool("select")
 			accept_event()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_EXIT and marks:
+		marks.pointer_left()
 
 
 func _zoom_at(at: Vector2, factor: float) -> void:
