@@ -84,6 +84,7 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	editable = can_edit
 	bus.design_changed.connect(_on_changed)
 	bus.carry_changed.connect(func(_id: String) -> void: queue_redraw())
+	bus.mirror_changed.connect(func(_a: int) -> void: queue_redraw())
 	_on_changed()
 
 
@@ -244,11 +245,27 @@ func _draw() -> void:
 		return
 	if mode == PLAN:
 		_draw_plan(rec)
+		_draw_mirror_line()
 	else:
 		_draw_elevation(rec)
 	_draw_drag_ghost(rec)
 	if show_title:
 		_draw_title(rec)
+
+
+## Symmetry mode's mirror line, across the whole view.
+func _draw_mirror_line() -> void:
+	if bus.mirror == DesignMirror.OFF:
+		return
+	var c := Color(0.95, 0.4, 0.85, 0.8)
+	if bus.mirror == DesignMirror.ACROSS:
+		var x := to_screen(Vector2.ZERO).x
+		draw_dashed_line(Vector2(x, 0), Vector2(x, size.y), c, 2.0, 12.0)
+		_text(Vector2(x + 6, 18), "MIRROR", c, 12)
+	else:
+		var y := to_screen(Vector2.ZERO).y
+		draw_dashed_line(Vector2(0, y), Vector2(size.x, y), c, 2.0, 12.0)
+		_text(Vector2(8, y - 6), "MIRROR", c, 12)
 
 
 func _draw_grid() -> void:
@@ -773,8 +790,7 @@ func _finish_run() -> void:
 		var pts: Array = []
 		for p in _run_pts:
 			pts.append([p.x, p.y])
-		bus.editor.do({"op": "add_run", "run": {"kind": tool.trim_prefix("run:"), "deck": deck, "points": pts}})
-		select("run", _newest(_rec().runs))
+		select("run", _add({"op": "add_run", "run": {"kind": tool.trim_prefix("run:"), "deck": deck, "points": pts}}, _rec().runs))
 	_run_pts = []
 	queue_redraw()
 
@@ -859,6 +875,9 @@ func _gui_input(event: InputEvent) -> void:
 		var k := event as InputEventKey
 		if k.keycode == KEY_R:
 			rotate_selected()
+			accept_event()
+		elif k.keycode == KEY_M:
+			bus.cycle_mirror()
 			accept_event()
 		elif k.keycode in [KEY_DELETE, KEY_BACKSPACE]:
 			delete_selected()
@@ -1082,8 +1101,7 @@ func _press(s: Vector2) -> void:
 		if not spot.is_empty():
 			spot["type"] = tool.trim_prefix("mount:")
 			spot["deck"] = deck
-			bus.editor.do({"op": "add_mount", "mount": spot})
-			select("mount", _newest(rec.mounts))
+			select("mount", _add({"op": "add_mount", "mount": spot}, rec.mounts))
 	else:
 		var hit := pick(s)
 		select(hit.get("kind", ""), hit.get("id", ""))
@@ -1174,9 +1192,8 @@ func _release(_s: Vector2) -> void:
 				# A click: the room at its usual size, centred on the click.
 				var sz := rt.default_size if rt else Vector2(4, 4)
 				rect = Rect2(_snap(d.start - sz * 0.5, rec.grid), sz)
-			bus.editor.do({"op": "add_room", "room": {"type": type_id, "deck": deck,
-					"x": rect.position.x, "z": rect.position.y, "w": rect.size.x, "d": rect.size.y}})
-			var newest := _newest(rec.rooms)
+			var newest := _add({"op": "add_room", "room": {"type": type_id, "deck": deck,
+					"x": rect.position.x, "z": rect.position.y, "w": rect.size.x, "d": rect.size.y}}, rec.rooms)
 			set_tool("select")
 			select("room", newest)
 		"room":
@@ -1202,8 +1219,8 @@ func _release(_s: Vector2) -> void:
 			var a: Vector2 = d.a
 			var b: Vector2 = d.b
 			if a.distance_to(b) >= 0.1:
-				bus.editor.do({"op": "add_" + tool, tool: {"deck": deck, "a": [a.x, a.y], "b": [b.x, b.y]}})
-				select(tool, _newest(rec.walls if tool == "wall" else rec.beams))
+				select(tool, _add({"op": "add_" + tool, tool: {"deck": deck, "a": [a.x, a.y], "b": [b.x, b.y]}},
+						rec.walls if tool == "wall" else rec.beams))
 	queue_redraw()
 
 
@@ -1318,8 +1335,7 @@ func _release_elevation(rec: DesignRecord, d: Dictionary) -> void:
 				room.merge({"z": u0, "d": len, "w": sz.x, "x": snappedf(mid.x - sz.x * 0.5, rec.grid)})
 			else:
 				room.merge({"x": u0, "w": len, "d": sz.y, "z": snappedf(mid.y - sz.y * 0.5, rec.grid)})
-			bus.editor.do({"op": "add_room", "room": room})
-			var newest := _newest(rec.rooms)
+			var newest := _add({"op": "add_room", "room": room}, rec.rooms)
 			set_tool("select")
 			select("room", newest)
 			deck = int(d.deck)
@@ -1386,9 +1402,8 @@ func _place_part(p: Vector2) -> void:
 	var room_id := rec.room_at(deck, at)
 	if room_id == "":
 		return
-	bus.editor.do({"op": "add_component", "component": {"type": tool.trim_prefix("part:"),
-			"room": room_id, "x": at.x, "z": at.y, "rot": place_rot}})
-	select("part", _newest(rec.components))
+	select("part", _add({"op": "add_component", "component": {"type": tool.trim_prefix("part:"),
+			"room": room_id, "x": at.x, "z": at.y, "rot": place_rot}}, rec.components))
 
 
 ## A door on the wall nearest the click: between the two rooms that share it there, or out
@@ -1434,8 +1449,24 @@ func _place_door(p: Vector2) -> void:
 			door.z = clampf(at.y, minf(wall[0].y, wall[1].y) + half, maxf(wall[0].y, wall[1].y) - half)
 		else:
 			door.x = clampf(at.x, minf(wall[0].x, wall[1].x) + half, maxf(wall[0].x, wall[1].x) - half)
-	bus.editor.do({"op": "add_door", "door": door})
-	select("door", _newest(rec.doors))
+	select("door", _add({"op": "add_door", "door": door}, rec.doors))
+
+
+## Does an add op, and with symmetry on (bus.mirror) its mirrored twin in the same undo step.
+## Returns the id the original got.
+func _add(op: Dictionary, table: Dictionary) -> String:
+	var before := table.duplicate()
+	bus.editor.do(DesignMirror.with_twin(_rec(), op, bus.mirror))
+	var best := ""
+	var best_n := 1 << 30
+	for id: String in table:
+		if before.has(id):
+			continue
+		var n := int(id.substr(1)) if id.substr(1).is_valid_int() else 0
+		if n < best_n:
+			best_n = n
+			best = id
+	return best
 
 
 func _newest(table: Dictionary) -> String:
