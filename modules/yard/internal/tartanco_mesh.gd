@@ -23,7 +23,21 @@ const STOCK := {
 	"glow": [Color(0.55, 0.8, 1.0), 0.0, 0.3, 4.0],
 	"visor": [Color(0.9, 0.62, 0.15), 0.9, 0.08, 0.15],
 	"suit": [Color(0.86, 0.86, 0.84), 0.05, 0.75, 0.0],
+	"tread": [Color(0.3, 0.31, 0.33), 0.8, 0.4, 0.0],
+	"hazard": [Color(0.96, 0.66, 0.06), 0.25, 0.45, 0.0],
 }
+## Stocks drawn with Void Salvage's own salvage surface (the shader, its detail maps and a
+## finish from SurfaceFinish), so TartanCo's ships wear the same paint, metal, tread and
+## rubber as the parts in the stores. Stock -> finish id. The rest (glass, lamps, screens,
+## the tartan cloth) are plain materials.
+const FINISHES := {
+	"paint": "satin_paint", "panel": "metallic_paint", "grey": "satin_paint", "yellow": "gloss_paint",
+	"dark": "satin_paint", "gunmetal": "gunmetal", "steel": "brushed_steel", "rubber": "rubber",
+	"suit": "canvas", "tread": "tread_diamond_steel", "hazard": "hazard_stripes",
+}
+const SURFACE := preload("res://shared/void_salvage/shaders/salvage_surface.gdshader")
+## How worn TartanCo keeps its kit (0 new): a working ship, looked after.
+const WEAR := 0.12
 
 static var _materials: Dictionary = {}
 static var _tartan: ImageTexture
@@ -33,6 +47,22 @@ var _groups: Dictionary = {}
 
 
 static func material(stock: String) -> Material:
+	if not _materials.has(stock) and FINISHES.has(stock):
+		var s: Array = STOCK[stock]
+		var c: Color = s[0]
+		var sm := ShaderMaterial.new()
+		sm.shader = SURFACE
+		sm.set_shader_parameter("albedo", Color(c.r, c.g, c.b))
+		sm.set_shader_parameter("metallic", s[1])
+		sm.set_shader_parameter("roughness", s[2])
+		sm.set_shader_parameter("survey_skip", true)
+		SurfaceDetail.apply(sm)
+		SurfaceFinish.apply(sm)
+		# Drawn in our colour, the finish giving grain, sheen and roughness (as YardKit.paint).
+		SurfaceFinish.set_finish(sm, FINISHES[stock], Color(c.r, c.g, c.b, 1.0))
+		sm.set_shader_parameter("material_blend", 0.0)
+		sm.set_shader_parameter("condition", Vector4(WEAR, 0.0, 0.0, float(stock.hash() % 97)))
+		_materials[stock] = sm
 	if not _materials.has(stock):
 		var s: Array = STOCK[stock]
 		var m := StandardMaterial3D.new()

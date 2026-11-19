@@ -314,26 +314,19 @@ static func _service_bays(m) -> void:
 	m.box(k, "tartan", Vector3(-6.32, -1.2, zc), Vector3(0.06, 1.6, zl - 1.0), 0.01)
 	m.box(k, "yellow", Vector3(-6.33, -0.25, zc), Vector3(0.05, 0.2, zl - 1.0), 0.01)
 	# The deck: tread plate, the transfer rail and the yellow hazard edge down the open side.
-	m.box(k, "dark", Vector3(0.2, DECK_Y + 0.01, zc), Vector3(BEAM - 1.6, 0.02, zl - 0.4), 0.0)
+	m.box(k, "tread", Vector3(0.2, DECK_Y + 0.01, zc), Vector3(BEAM - 1.6, 0.02, zl - 0.4), 0.0)
 	for x: float in [0.9, 2.1]:
 		m.box(k, "steel", Vector3(x, DECK_Y + 0.08, zc), Vector3(0.18, 0.16, zl - 0.6), 0.03)
 	m.box(k, "yellow", Vector3(1.5, DECK_Y + 0.03, zc), Vector3(0.8, 0.04, zl - 0.6), 0.0)
-	var z := z0 + 0.25
-	var stripe := false
-	while z < z1 - 0.2:
-		m.box(k, "yellow" if stripe else "dark", Vector3(OPEN_X - 0.25, DECK_Y + 0.04, z + 0.25), Vector3(0.5, 0.06, 0.5), 0.0)
-		m.box(k, "yellow" if not stripe else "dark", Vector3(OPEN_X - 0.25, ROOF_Y - 0.04, z + 0.25), Vector3(0.5, 0.06, 0.5), 0.0)
-		stripe = not stripe
-		z += 0.5
+	m.box(k, "hazard", Vector3(OPEN_X - 0.25, DECK_Y + 0.04, zc), Vector3(0.5, 0.06, zl - 0.4), 0.0)
+	m.box(k, "hazard", Vector3(OPEN_X - 0.25, ROOF_Y - 0.04, zc), Vector3(0.5, 0.06, zl - 0.4), 0.0)
 	# Frames between and at the ends of the bays: a column at the open side, a partition.
 	var frames: Array = [z0]
 	for i in BAYS.size():
 		frames.append(float(BAYS[i]) + BAY_LEN * 0.5)
 	for fz: float in frames:
 		var end := is_equal_approx(fz, z0) or is_equal_approx(fz, z1)
-		m.box(k, "yellow", Vector3(OPEN_X - 0.4, 0.8, fz), Vector3(0.8, ROOF_Y - DECK_Y, 0.8), 0.12)
-		for y in range(0, 8, 2):
-			m.box(k, "dark", Vector3(OPEN_X - 0.4, DECK_Y + 0.5 + y, fz), Vector3(0.84, 0.5, 0.84), 0.0)
+		m.box(k, "hazard", Vector3(OPEN_X - 0.4, 0.8, fz), Vector3(0.8, ROOF_Y - DECK_Y, 0.8), 0.12)
 		if end:
 			m.box(k, "paint", Vector3(0, 0.8, fz), Vector3(BEAM, ROOF_Y - DECK_Y + 1.0, 0.6), 0.1)
 		else:
