@@ -159,6 +159,96 @@ static func make(role: String, number: String) -> Node3D:
 	return n
 
 
+## A charging dock built into a berth's frame (beenster, 19 Nov: "they should attach to
+## charging stations built into the frame of the berths"): a mount plate clamped round one of the
+## frame's ribs, a back clamp that takes the bot's pack, a charge lead, and over it a header with
+## the dock's number, a status lamp and a charge bar ("Lamp", "Bar": `show_charge`). Its origin
+## is on the rib's face at the hanging height, its face to -Z; a bot hangs DOCK_OUT in front of
+## it with its back to it.
+const DOCK_OUT := 0.9
+const DOCK_BAR := 0.7
+const DOCK_BAR_X := -0.25
+
+static func charge_dock(number: int) -> Node3D:
+	if not meshes().has("charge_dock"):
+		var m := YardToolMesh.new()
+		var key := "charge_dock"
+		m.box(key, "gunmetal", Vector3(0, 0.1, -0.06), Vector3(1.5, 4.6, 0.12), 0.04)
+		for y: float in [2.2, -2.0]:
+			m.box(key, "dark", Vector3(0, y, 0.3), Vector3(0.95, 0.24, 0.72), 0.04)
+			for sx: float in [1.0, -1.0]:
+				m.bolt(key, Vector3(sx * 0.35, y, -0.125), Vector3.FORWARD, 0.025)
+		for y: float in [1.0, 0.25]:
+			m.box(key, "dark", Vector3(0, y, -0.18), Vector3(0.95, 0.2, 0.24), 0.04)
+			for sx: float in [1.0, -1.0]:
+				m.box(key, "accent", Vector3(sx * 0.5, y, -0.32), Vector3(0.1, 0.24, 0.3), 0.03)
+		m.rod(key, "dark", Vector3(0.62, 0.66, -0.12), Vector3(0.46, 0.66, -0.55), 0.035, -1.0, 10)
+		m.rod(key, "steel", Vector3(0.46, 0.66, -0.55), Vector3(0.43, 0.66, -0.63), 0.045, -1.0, 12)
+		m.box(key, "plates", Vector3(0, 2.1, -0.2), Vector3(1.5, 0.45, 0.2), 0.05)
+		m.box(key, "accent", Vector3(0, 1.9, -0.305), Vector3(1.5, 0.05, 0.01), 0.004)
+		m.box(key, "dark", Vector3(DOCK_BAR_X + DOCK_BAR * 0.5, 2.12, -0.305), Vector3(DOCK_BAR + 0.06, 0.12, 0.01), 0.004)
+		_meshes["charge_dock"] = m.meshes()[key]
+	var dock := Node3D.new()
+	dock.name = "Dock%d" % number
+	_mesh(dock, "Mount", meshes()["charge_dock"], livery(LIVERY))
+	var tag := Label3D.new()
+	tag.name = "Number"
+	tag.text = "C%d" % number
+	tag.font_size = 64
+	tag.pixel_size = 0.004
+	tag.outline_size = 0
+	tag.modulate = Color(0.08, 0.08, 0.09)
+	tag.position = Vector3(-0.52, 2.1, -0.315)
+	tag.rotation.y = PI
+	dock.add_child(tag)
+	var lamp := MeshInstance3D.new()
+	lamp.name = "Lamp"
+	var lm := BoxMesh.new()
+	lm.size = Vector3(0.14, 0.14, 0.03)
+	lamp.mesh = lm
+	var lmat := StandardMaterial3D.new()
+	lmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lamp.material_override = lmat
+	lamp.position = Vector3(0.6, 2.12, -0.32)
+	dock.add_child(lamp)
+	var bar := MeshInstance3D.new()
+	bar.name = "Bar"
+	var bm := BoxMesh.new()
+	bm.size = Vector3(1.0, 0.08, 0.02)
+	bar.mesh = bm
+	var bmat := StandardMaterial3D.new()
+	bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bar.material_override = bmat
+	dock.add_child(bar)
+	show_charge(dock, -1.0, false)
+	return dock
+
+
+## A dock's lamp and bar: `charge` 0..1 of the bot on it (below 0: empty dock, lamp dim), amber
+## while charging, green when full.
+static func show_charge(dock: Node3D, charge: float, charging: bool) -> void:
+	var lamp := dock.get_node("Lamp") as MeshInstance3D
+	var bar := dock.get_node("Bar") as MeshInstance3D
+	var c := clampf(charge, 0.0, 1.0)
+	var lc := Color(0.12, 0.14, 0.16)
+	if charge >= 0.0:
+		lc = Color(1.0, 0.65, 0.1) if charging else Color(0.3, 1.0, 0.45)
+	(lamp.material_override as StandardMaterial3D).albedo_color = lc
+	bar.visible = charge >= 0.0 and c > 0.01
+	bar.scale = Vector3(maxf(c, 0.01) * DOCK_BAR, 1, 1)
+	bar.position = Vector3(DOCK_BAR_X + c * DOCK_BAR * 0.5, 2.12, -0.32)
+	(bar.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.65, 0.1).lerp(Color(0.3, 1.0, 0.45), c)
+
+
+## A bot hanging on its dock: back to the wall, arms down, legs hanging, head bowed.
+static func hang(w: Node3D) -> void:
+	rest(w, "R")
+	rest(w, "L")
+	for side: String in ["R", "L"]:
+		var sx := 1.0 if side == "R" else -1.0
+		plant(w, side, w.global_transform * Vector3(sx * 0.3, -1.3, -0.12), -w.global_basis.y)
+
+
 static func laser_material() -> StandardMaterial3D:
 	if _laser_mat == null:
 		_laser_mat = StandardMaterial3D.new()

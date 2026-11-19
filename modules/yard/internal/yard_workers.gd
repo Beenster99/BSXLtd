@@ -19,6 +19,13 @@ extends Node3D
 ## The bots are TartanCo's, and they wear: every job wears a bot a little, a worn bot slows
 ## down, and past a point it starts throwing errors and stops till it's seen to. Then the crew
 ## calls TartanCo (YardService), whose engineers come out by ship and put it right.
+##
+## They run on batteries too (beenster, 19 Nov: "mounted on the wall somewhere near the yard for
+## when they are recharging", then "they should attach to charging stations built into the frame
+## of the berths"): between jobs each bot hangs on its own dock, built onto a rib of the berth's
+## station-side frame, back to the frame, topping up. Every job drains a bot a little; one run low
+## stays on its dock till it's full. Each bot has its own pace and is slow or quick to leave its
+## dock for a new job, so the crew never moves in unison ("They should not move in unison").
 
 const WorkerLook := preload("res://modules/yard/internal/yard_worker_look.gd")
 const Look := preload("res://modules/yard/internal/yard_stock_look.gd")
@@ -38,6 +45,13 @@ const CREW := ["F", "F", "W", "W", "R", "B"]
 ## and how often: after every this many rings.
 const FITOUT_KIT := "power"
 const FITOUT_EVERY := 2
+## The charging wall (station space): its face's middle at the docks' hanging height, standing on
+## the dock arm's truss (z -66, y -16) beside the build berth, and its docks' spacing (m).
+## Each bot's dock: on a rib of the build berth's station-side frame face (ribs every 10 m at
+## z -70, 0.6 m thick), low under the hull clamps and high over them (station space: the rib's
+## face at the hanging height).
+const DOCKS: Array[Vector3] = [Vector3(-20, -13.5, -70.3), Vector3(20, -13.5, -70.3), Vector3(-10, -13.5, -70.3),
+		Vector3(10, -13.5, -70.3), Vector3(-10, 7.5, -70.3), Vector3(10, 7.5, -70.3)]
 
 ## Seconds a fitter takes to ease a part into place, a weld per joint, a rivet (pressure, then
 ## the punch).
@@ -77,6 +91,13 @@ const FITOUT_EVERY := 2
 @export var service_from := 0.3
 @export var auto_service := true
 
+@export_group("Charging")
+## How much of a full battery a job uses (0..1), the charge a bot goes to its dock at, and how
+## long a dock takes to charge one from empty (s).
+@export var charge_per_job := 0.05
+@export var recharge_at := 0.2
+@export var charge_seconds := 45.0
+
 ## A bot needs servicing (faulted, or worn past `call_at`): the bots to see to (each a worker's
 ## node). Sent once until they're all seen to. While anything listens (the TartanCo
 ## maintenance ship's module, through YardBus.workers_need_service), the yard's own service visit
@@ -108,6 +129,7 @@ var fitted_out: Array[int] = []
 var _asked := false
 var _bolt_mesh: CylinderMesh
 var _keel_done := 0.0
+var charge_docks: Node3D
 
 
 func build(stores_traffic: Node) -> void:
@@ -126,9 +148,10 @@ func build(stores_traffic: Node) -> void:
 		bot.name = "Worker%d" % (i + 1)
 		add_child(bot)
 		var w := {"node": bot, "role": role, "index": i, "task": {}, "vel": Vector3.ZERO, "wear": 0.05 * i,
-				"fault": "", "servicing": false}
-		if role == "W":
-			w.sparks = make_sparks()
+				"fault": "", "servicing": false, "charge": 1.0 - 0.13 * i, "charging": true, "low": false, "route": [],
+				"speed": 1.0, "began": 0.0}
+		if role != "F":
+			w.sparks = make_sparks(role)
 			add_child(w.sparks)
 		if role != "F":
 			var light := OmniLight3D.new()
@@ -138,13 +161,23 @@ func build(stores_traffic: Node) -> void:
 			light.light_energy = 0.0
 			add_child(light)
 			w.light = light
-		bot.position = _idle_spot(i)
+		bot.position = dock_spot(i)
 		WorkerLook.rest(bot, "R")
 		WorkerLook.rest(bot, "L")
 		WorkerLook.tuck(bot, "R")
 		WorkerLook.tuck(bot, "L")
 		workers.append(w)
+	charge_docks = Node3D.new()
+	charge_docks.name = "ChargeDocks"
+	add_child(charge_docks)
+	for i in CREW.size():
+		var dock := WorkerLook.charge_dock(i + 1)
+		dock.position = DOCKS[i]
+		charge_docks.add_child(dock)
 	_rng.seed = 4021
+	# Each its own pace, so no two move alike.
+	for w: Dictionary in workers:
+		w.speed = _rng.randf_range(0.8, 1.2)
 	service = Service.new()
 	add_child(service)
 	service.build(self)
@@ -214,6 +247,7 @@ func condition(bot: Node3D) -> Dictionary:
 	if w.fault != "":
 		errors.append(String(w.fault))
 	return {"productivity": 0.0 if w.fault != "" else pace(w), "errors": errors, "wear": float(w.wear),
+			"charge": float(w.charge), "charging": _docked(w) and float(w.charge) < 1.0,
 			"model": bot.get_meta("tartanco_model", ""), "serial": bot.get_meta("serial", "")}
 
 
@@ -276,6 +310,7 @@ func _drop_task(w: Dictionary) -> void:
 ## A job done: wear on the bot, and a worn bot may fault.
 func _job_done(w: Dictionary) -> void:
 	w.task = {}
+	w.charge = maxf(0.0, float(w.charge) - charge_per_job * _rng.randf_range(0.7, 1.3))
 	w.wear = minf(1.0, float(w.wear) + wear_per_job * _rng.randf_range(0.6, 1.4))
 	if float(w.wear) > faults_from and _rng.randf() < (float(w.wear) - faults_from) * 1.6:
 		w.fault = FAULTS[_rng.randi() % FAULTS.size()]
@@ -303,9 +338,11 @@ func step(delta: float) -> void:
 		_step_fitout(delta)
 	else:
 		_keep_supplied()
+	_send_to_charge()
 	_assign()
 	for w: Dictionary in workers:
 		_work(w, delta * pace(w))
+		WorkerLook.show_charge(charge_docks.get_node("Dock%d" % (int(w.index) + 1)), float(w.charge) if _docked(w) else -1.0, float(w.charge) < 1.0)
 	_check_service()
 	service.call("step", delta)
 	if ring_node and not members.is_empty() and members.all(func(m: Dictionary) -> bool: return m.stage == "done"):
@@ -607,7 +644,8 @@ func _assign() -> void:
 
 func _idle(role: String) -> Dictionary:
 	for w: Dictionary in workers:
-		if w.role == role and (w.task as Dictionary).is_empty() and w.fault == "" and not bool(w.servicing):
+		if w.role == role and (w.task as Dictionary).is_empty() and w.fault == "" and not bool(w.servicing) \
+				and not bool(w.low):
 			return w
 	return {}
 
@@ -624,7 +662,7 @@ func _work(w: Dictionary, delta: float) -> void:
 	var node: Node3D = w.node
 	var task: Dictionary = w.task
 	var busy := true
-	if w.has("sparks"):
+	if w.has("sparks") and not (w.sparks as CPUParticles3D).one_shot:
 		(w.sparks as CPUParticles3D).emitting = false
 	if w.has("light"):
 		(w.light as OmniLight3D).light_energy = 0.0
@@ -634,7 +672,20 @@ func _work(w: Dictionary, delta: float) -> void:
 		# The maintenance ship has it: it's theirs to move; its arms hang.
 		(node.get_node("Thrust") as Node3D).visible = false
 		return
-	if task.is_empty():
+	delta *= float(w.speed)
+	if not task.is_empty() and bool(w.charging):
+		# A new job: each bot is slow or quick to come off its dock, so they never go together.
+		if not task.has("began"):
+			task.began = _time + _rng.randf_range(0.2, 2.5)
+		if _time < float(task.began):
+			task = {}
+		else:
+			w.charging = false
+			w.route = []
+	if task.is_empty() and bool(w.charging):
+		busy = false
+		_charge(w, delta)
+	elif task.is_empty():
 		busy = false
 		_fly(w, _idle_spot(int(w.index)), delta)
 		if w.fault != "" or bool(w.servicing):
@@ -661,15 +712,68 @@ func _work(w: Dictionary, delta: float) -> void:
 		WorkerLook.aim_laser(node, task.get("laser") if not task.is_empty() else null)
 	(node.get_node("Thrust") as Node3D).visible = (w.vel as Vector3).length() > 0.6
 	var head := node.get_node("Head") as Node3D
-	head.rotation.x = lerpf(head.rotation.x, -0.25 if busy else 0.0, minf(1.0, delta * 3.0))
+	var bow := -0.25 if busy else (-0.4 if _docked(w) else 0.0)
+	head.rotation.x = lerpf(head.rotation.x, bow, minf(1.0, delta * 3.0))
 	WorkerLook.lay_hose(node)
+
+
+# --- Charging -------------------------------------------------------------------------------
+
+## Where bot `i` hangs on its dock (station space).
+func dock_spot(i: int) -> Vector3:
+	return DOCKS[i] + Vector3(0, 0, -WorkerLook.DOCK_OUT)
+
+
+## A bot with its job done and nothing else on it goes back to its dock to top up; one run low
+## stays there till it's full.
+func _send_to_charge() -> void:
+	for w: Dictionary in workers:
+		if float(w.charge) <= recharge_at:
+			w.low = true
+		if bool(w.charging) or not (w.task as Dictionary).is_empty() \
+				or w.fault != "" or bool(w.servicing) or bool(w.get("external", false)):
+			continue
+		w.charging = true
+		var spot := dock_spot(int(w.index))
+		w.route = [spot + Vector3(_rng.randf_range(-0.6, 0.6), _rng.randf_range(-0.4, 0.4), -3.0), spot]
+
+
+## True while the bot hangs on its dock.
+func _docked(w: Dictionary) -> bool:
+	return bool(w.charging) and (w.route as Array).is_empty()
+
+
+## To its dock along its route, then hangs there charging; full, it leaves out in front of the
+## wall.
+func _charge(w: Dictionary, delta: float) -> void:
+	var node: Node3D = w.node
+	var route: Array = w.route
+	if not route.is_empty():
+		if _fly(w, route[0], delta):
+			route.pop_front()
+		if route.size() <= 1:
+			_face(node, node.global_position + Vector3.FORWARD, delta)
+		else:
+			_face(node, route[0], delta)
+		WorkerLook.rest(node, "R")
+		WorkerLook.rest(node, "L")
+		WorkerLook.tuck(node, "R")
+		WorkerLook.tuck(node, "L")
+		return
+	node.position = dock_spot(int(w.index))
+	w.vel = Vector3.ZERO
+	_face(node, node.global_position + Vector3.FORWARD, delta)
+	WorkerLook.hang(node)
+	w.charge = minf(1.0, float(w.charge) + delta / maxf(charge_seconds, 0.1))
+	if float(w.charge) >= 1.0:
+		w.low = false
 
 
 ## Flies towards `to`, easing in; true once there.
 func _fly(w: Dictionary, to: Vector3, delta: float) -> bool:
 	var node: Node3D = w.node
 	var gap := to - node.position
-	var want := gap.limit_length(minf(fly_speed, gap.length() * 1.6 + 0.1))
+	var want := gap.limit_length(minf(fly_speed * float(w.get("speed", 1.0)), gap.length() * 1.6 + 0.1))
 	w.vel = (w.vel as Vector3).lerp(want, minf(1.0, delta * 3.0))
 	node.position += (w.vel as Vector3) * delta
 	if gap.length() < 0.08:
@@ -822,7 +926,7 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 			var tip := face + across * lerpf(-0.16, 0.16, k)
 			WorkerLook.reach(node, "R", tip, (-out + inward * 0.3).normalized())
 			var sparks: CPUParticles3D = w.sparks
-			sparks.global_position = WorkerLook.tip_of(node, "R")
+			_spray(w, WorkerLook.tip_of(node, "R"), out)
 			sparks.emitting = true
 			var flick := 0.5 + 0.5 * sin(_time * 47.0) * sin(_time * 31.0 + float(w.index))
 			var light: OmniLight3D = w.light
@@ -872,6 +976,7 @@ func _rivet(w: Dictionary, task: Dictionary, delta: float) -> void:
 				if not task.has("fired"):
 					task.fired = true
 					_rivet_head(face, out)
+					_spray(w, face + out * 0.03, out)
 				light.global_position = face + out * 0.3
 				light.light_energy = 3.0 * (1.0 - k)
 			WorkerLook.reach(node, "R", face, -out, kick)
@@ -933,6 +1038,9 @@ func _bolt(w: Dictionary, task: Dictionary, delta: float) -> void:
 			var light: OmniLight3D = w.light
 			light.global_position = face + out * 0.4
 			light.light_energy = 0.6 if f > 0.2 else 0.0
+			if f > 0.2:
+				_spray(w, face + out * 0.05, out)
+				(w.sparks as CPUParticles3D).emitting = true
 			if float(task.t) >= bolt_seconds:
 				_bolt_head(face, out)
 				task.bolt = k + 1
@@ -1039,30 +1147,78 @@ func _rivet_material() -> StandardMaterial3D:
 	return _rivet_mat
 
 
-## The torch's sparks: bright specks flung out and drifting on (zero g: no fall).
-func make_sparks() -> CPUParticles3D:
+## Sparks for each trade, flung out and drifting on (zero g: no fall), white hot to orange to
+## dark: the welder's torch a constant spray, the riveter's gun a burst at each rivet, the
+## bolter's runner a fizz while the nut bites.
+func make_sparks(role := "W") -> CPUParticles3D:
 	var p := CPUParticles3D.new()
 	p.name = "Sparks"
 	p.emitting = false
-	p.amount = 48
-	p.lifetime = 0.5
-	p.explosiveness = 0.0
 	p.direction = Vector3.UP
-	p.spread = 180.0
-	p.initial_velocity_min = 1.5
-	p.initial_velocity_max = 4.0
 	p.gravity = Vector3.ZERO
-	p.scale_amount_min = 0.01
-	p.scale_amount_max = 0.025
+	p.local_coords = false
+	p.damping_min = 0.5
+	p.damping_max = 2.0
+	match role:
+		"W":
+			p.amount = 260
+			p.lifetime = 1.1
+			p.spread = 75.0
+			p.initial_velocity_min = 2.0
+			p.initial_velocity_max = 8.0
+			p.scale_amount_min = 0.012
+			p.scale_amount_max = 0.035
+		"R":
+			p.amount = 110
+			p.lifetime = 0.8
+			p.one_shot = true
+			p.explosiveness = 0.9
+			p.spread = 85.0
+			p.initial_velocity_min = 3.0
+			p.initial_velocity_max = 10.0
+			p.scale_amount_min = 0.012
+			p.scale_amount_max = 0.03
+		_:
+			p.amount = 90
+			p.lifetime = 0.6
+			p.spread = 60.0
+			p.initial_velocity_min = 1.5
+			p.initial_velocity_max = 5.0
+			p.scale_amount_min = 0.008
+			p.scale_amount_max = 0.02
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1.0, 0.97, 0.85))
+	ramp.set_color(1, Color(0.6, 0.12, 0.02, 0.0))
+	ramp.add_point(0.35, Color(1.0, 0.7, 0.25))
+	p.color_ramp = ramp
 	var m := SphereMesh.new()
 	m.radius = 1.0
 	m.height = 2.0
 	m.radial_segments = 6
 	m.rings = 3
-	m.material = Look.glow_material(Color(1.0, 0.75, 0.35))
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.6, 0.2)
+	mat.emission_energy_multiplier = 3.0
+	m.material = mat
 	p.mesh = m
-	p.local_coords = false
 	return p
+
+
+## Points a bot's sparks out of the work at `at` along `out`; the riveter's burst fires once.
+func _spray(w: Dictionary, at: Vector3, out: Vector3) -> void:
+	if not w.has("sparks"):
+		return
+	var p: CPUParticles3D = w.sparks
+	var y := out.normalized()
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	p.global_transform = Transform3D(Basis(x, y, x.cross(y)), at)
+	if p.one_shot:
+		p.restart()
+		p.emitting = true
 
 
 static func _ease(t: float) -> float:

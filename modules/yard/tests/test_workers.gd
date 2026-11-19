@@ -55,6 +55,9 @@ func _crew() -> void:
 	add_child(crew)
 	crew.build(traffic)
 	crew.wear_per_job = 0.0   # no faults while it builds
+	crew.charge_per_job = 0.0   # nor runs flat
+	for w: Dictionary in crew.workers:
+		w.charge = 1.0
 	var roles: Array = crew.workers.map(func(w: Dictionary) -> String: return w.role)
 	check(roles.has("F") and roles.has("W") and roles.has("R") and roles.has("B"), "fitters, welders, a riveter and a bolter")
 	# A ring: bolts on the girders, and the trades clamp their feet to the work.
@@ -125,6 +128,46 @@ func _crew() -> void:
 	check(is_equal_approx(float(c.productivity), 1.0) and (c.errors as Array).is_empty(), "serviced: as new, back to work")
 	if bus:
 		bus.disconnect("workers_need_service", listener)
+	# Charging: between jobs each bot hangs on its own dock, built onto a rib of the berth's
+	# frame; one run low stays there till it's full, then is back on the work.
+	check(crew.has_node("ChargeDocks") and crew.charge_docks.get_child_count() == crew.workers.size(), "a charging dock in the berth's frame for each bot")
+	var on_ribs: bool = crew.DOCKS.all(func(d: Vector3) -> bool: return is_equal_approx(fposmod(d.x, 10.0), 0.0) and d.z > -70.5 and d.z < -70.0)
+	check(on_ribs, "each dock on a rib of the berth's station-side frame")
+	var spots: Array = []
+	for i in crew.workers.size():
+		spots.append(crew.dock_spot(i))
+	var apart := true
+	for i in spots.size():
+		for j in range(i + 1, spots.size()):
+			apart = apart and (spots[i] as Vector3).distance_to(spots[j]) > 3.0
+	check(apart, "no two docks close enough for one bot to sit on another")
+	var low: Dictionary = crew.workers[4]
+	crew._drop_task(low)
+	low.charge = 0.1
+	var on_dock := false
+	t = 0.0
+	while t < 90.0 and not on_dock:
+		crew.step(0.2)
+		t += 0.2
+		on_dock = crew._docked(low) and (low.node as Node3D).position.distance_to(crew.dock_spot(int(low.index))) < 0.05
+	check(on_dock, "a bot with nothing to do flies to its dock (%.0f s)" % t)
+	check(-(low.node as Node3D).basis.z.dot(Vector3.FORWARD) > 0.9, "and hangs there with its back to the frame")
+	var dock: Node3D = crew.charge_docks.get_node("Dock%d" % (int(low.index) + 1))
+	crew.step(0.2)
+	check((dock.get_node("Bar") as Node3D).visible and bool(crew.condition(low.node).charging), "its dock shows it charging")
+	check(crew._idle(low.role).is_empty(), "run low, it takes no work")
+	t = 0.0
+	while t < crew.charge_seconds / 0.8 + 10.0 and bool(low.low):
+		crew.step(0.5)
+		t += 0.5
+	check(not bool(low.low) and is_equal_approx(float(low.charge), 1.0), "till it's full (%.0f s)" % t)
+	check(crew._idle(low.role) == low, "then it's ready for work again")
+	var paces: Array = crew.workers.map(func(w: Dictionary) -> float: return snappedf(float(w.speed), 0.01))
+	var differ := true
+	for i in paces.size():
+		differ = differ and paces.count(paces[i]) == 1
+	check(differ, "every bot has its own pace, so they don't move in unison %s" % str(paces))
+	check(crew.workers.all(func(w: Dictionary) -> bool: return w.role == "F" or w.has("sparks")), "welders, riveters and bolters all throw sparks")
 	# A finished keel: after a pause it makes way for a new one, and the crew starts again.
 	if crew.ring_node:
 		crew.ring_node.queue_free()
