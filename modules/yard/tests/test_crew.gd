@@ -64,6 +64,14 @@ func run_tests() -> void:
 	var stand_in: Node3D = a.call("avatar", b_id)
 	var drawn := stand_in.find_children("*", "GeometryInstance3D", true, false).filter(func(g: Node) -> bool: return (g as GeometryInstance3D).layers != 0) if stand_in else []
 	check(stand_in != null and drawn.is_empty(), "the plain stand-in is hidden")
+	# A lit crewmate's torch puts the wearer's meshes back on a layer every half second
+	# (graphics' unshadow): the stand-in stays hidden (0.4.4: a friend drawn twice).
+	if stand_in:
+		for g in stand_in.find_children("*", "GeometryInstance3D", true, false):
+			(g as GeometryInstance3D).set_layer_mask_value(20, true)
+		await frames(2)
+		drawn = stand_in.find_children("*", "GeometryInstance3D", true, false).filter(func(g: Node) -> bool: return (g as GeometryInstance3D).layers != 0)
+		check(drawn.is_empty(), "and stays hidden when a helmet torch puts it back on a layer")
 
 	held = b.call("held", b_id)
 	held.merge({"deck": false, "tool": "", "lamp": false}, true)
