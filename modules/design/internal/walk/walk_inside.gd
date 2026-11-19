@@ -36,6 +36,8 @@ const SERVICE_REACH := 1.5
 @export var run_speed := 6.0
 ## Jump speed, m/s.
 @export var jump_speed := 4.2
+## Up or down a ladder, m/s.
+@export var climb_speed := 1.8
 ## Gravity, m/s2.
 @export var gravity := 9.8
 ## Mouse look, radians per pixel.
@@ -448,7 +450,17 @@ func _physics_process(delta: float) -> void:
 	var speed := run_speed if running else walk_speed
 	body.velocity.x = dir.x * speed
 	body.velocity.z = dir.z * speed
-	if body.is_on_floor():
+	var ladder: Dictionary = builder.ladder_at(body.position)
+	if not ladder.is_empty() and move.y != 0.0:
+		# On a ladder: forward climbs, back climbs down; at the top you step off forward.
+		body.velocity.y = -move.y * climb_speed
+		if move.y < 0.0 and body.position.y - 0.9 > float(ladder.y1) - 0.05:
+			# Over the top: off the ladder onto the deck behind you, away from its wall (+Z).
+			body.velocity = Vector3(0, 0.3, climb_speed * 1.4)
+		else:
+			body.velocity.x *= 0.2
+			body.velocity.z *= 0.2
+	elif body.is_on_floor():
 		body.velocity.y = 0.0
 		if InputMap.has_action(Keys.JUMP) and Input.is_action_just_pressed(Keys.JUMP) and not is_palette_open():
 			body.velocity.y = jump_speed

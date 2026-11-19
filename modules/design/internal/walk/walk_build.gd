@@ -27,6 +27,8 @@ const DOOR_W := 1.2
 ## How fast a lift platform rides, m/s, and how long you stand on it before it goes, s.
 const LIFT_SPEED := 1.6
 const LIFT_DWELL := 1.0
+## A hatch's opening through the deck, m square.
+const HATCH := 1.0
 const DOOR_H := 2.2
 ## Stairs: the flight's width at most, and the landing at its top, m.
 const RAMP_W := 1.2
@@ -50,6 +52,8 @@ var ramps: PackedStringArray = []
 var doors: Array[Dictionary] = []
 ## Each lift shaft: {id, body (the platform), rect, decks, rooms (deck -> room id), gates, at, target}.
 var lifts: Array[Dictionary] = []
+## Each ladder up a hatch: {rect (where you can climb it, floor plan), y0, y1 (its top)}.
+var ladders: Array[Dictionary] = []
 var lamps := 0
 var ribs := 0
 var _paints: Dictionary = {}
@@ -71,6 +75,7 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	ramps.clear()
 	doors.clear()
 	lifts.clear()
+	ladders.clear()
 	_outline.clear()
 	lamps = 0
 	ribs = 0
@@ -91,10 +96,11 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	for e in st.inner_edges:
 		_wall(e, false)
 	for low_id: String in stairs:
-		if str(rec.rooms[low_id].type) == "lift":
+		if str(rec.rooms[low_id].type) in ["lift", "hatch"]:
 			continue
 		_stairs(rec.rooms[low_id], rec.rooms[stairs[low_id]])
 	_lifts(stairs)
+	_ladders(stairs)
 	_components()
 	_services()
 	_draw_outline()
@@ -121,8 +127,13 @@ static func stairwells(d: DesignRecord, cat: DesignCatalog) -> Dictionary:
 ## The opening between a deck-linking room and the one over it: the stairs' flight, or a
 ## lift's whole shaft.
 static func shaft(low: Dictionary, upper: Dictionary) -> Rect2:
+	var both := Rect2(low.x, low.z, low.w, low.d).intersection(Rect2(upper.x, upper.z, upper.w, upper.d))
 	if str(low.type) == "lift":
-		return Rect2(low.x, low.z, low.w, low.d).intersection(Rect2(upper.x, upper.z, upper.w, upper.d))
+		return both
+	if str(low.type) == "hatch":
+		# A metre-square opening against the hatch's -Z wall, the ladder up that wall.
+		var side := minf(HATCH, minf(both.size.x, both.size.y))
+		return Rect2(both.get_center().x - side * 0.5, both.position.y, side, side)
 	return ramp_plan(low).rect
 
 
@@ -696,6 +707,61 @@ func update_lifts(near: Array[Vector3], delta: float) -> void:
 			lift.target = called
 		if int(lift.target) != int(lift.at):
 			_set_gates(lift)
+
+
+# Hatches
+
+## A hatch: an opening through the deck over it, a hazard rim round the opening, and a ladder
+## up the hatch's back wall (its -Z side) from the floor to a hand-hold over the deck above.
+func _ladders(stairs: Dictionary) -> void:
+	var h := rec.deck_height
+	for low_id: String in stairs:
+		var low: Dictionary = rec.rooms[low_id]
+		if str(low.type) != "hatch":
+			continue
+		var up: Dictionary = rec.rooms[stairs[low_id]]
+		var rect := shaft(low, up)
+		var y0 := int(low.deck) * h
+		var y1 := int(up.deck) * h
+		var steel := paint(Color(0.86, 0.62, 0.16), "satin_paint")
+		var wall_z := rect.position.y + WALL * 0.5 + LINING + 0.12
+		var cx := rect.get_center().x
+		for side in [-0.22, 0.22]:
+			var rail := MeshInstance3D.new()
+			rail.mesh = _box_mesh(Vector3(0.04, y1 - y0 + 1.0, 0.04))
+			rail.material_override = steel
+			rail.position = Vector3(cx + side, (y0 + y1 + 1.0) * 0.5, wall_z)
+			root.add_child(rail)
+		var rungs: Array[Transform3D] = []
+		var y := y0 + 0.3
+		while y < y1 + 0.95:
+			rungs.append(Transform3D(Basis.from_scale(Vector3(0.44, 0.03, 0.03)), Vector3(cx, y, wall_z)))
+			y += 0.3
+		_multi("Ladder_" + low_id, rungs, steel)
+		_outline_box(Transform3D(Basis.IDENTITY, Vector3(cx, (y0 + y1 + 1.0) * 0.5, wall_z)), Vector3(0.48, y1 - y0 + 1.0, 0.06))
+		var rim := MeshInstance3D.new()
+		rim.mesh = _box_mesh(Vector3(rect.size.x, 0.014, rect.size.y))
+		rim.material_override = paint(Color(0.9, 0.7, 0.1), "hazard_stripes")
+		rim.position = Vector3(rect.get_center().x, y1 + 0.007, rect.get_center().y)
+		rim.scale = Vector3(1.0, 1.0, 1.0)
+		var frame := MeshInstance3D.new()
+		frame.mesh = _box_mesh(Vector3(rect.size.x + 0.16, 0.012, rect.size.y + 0.16))
+		frame.material_override = rim.material_override
+		frame.position = Vector3(rect.get_center().x, y1 + 0.006, rect.get_center().y)
+		root.add_child(frame)
+		ladders.append({"id": low_id, "rect": rect, "y0": y0, "y1": y1})
+
+
+## The ladder someone at `p` (capsule middle) is on, or {}.
+func ladder_at(p: Vector3) -> Dictionary:
+	for l in ladders:
+		var feet := p.y - 0.9
+		var zone: Rect2 = l.rect
+		if feet > float(l.y1) - 0.05:
+			zone = zone.grow(0.45)  # stepping off at the top carries you clear of the opening
+		if zone.has_point(Vector2(p.x, p.z)) and feet > float(l.y0) - 0.1 and feet < float(l.y1) + 0.3:
+			return l
+	return {}
 
 
 # Stairs

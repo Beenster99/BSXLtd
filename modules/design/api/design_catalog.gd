@@ -5,7 +5,7 @@ extends RefCounted
 const ROOMS_DIR := "res://modules/design/internal/data/rooms"
 const PARTS_DIR := "res://modules/design/internal/data/components"
 ## Order rooms appear in on the palette.
-const ROOM_ORDER: PackedStringArray = ["bridge", "airlock", "corridor", "stairs", "lift", "quarters",
+const ROOM_ORDER: PackedStringArray = ["bridge", "airlock", "corridor", "access", "stairs", "lift", "hatch", "quarters",
 		"mess", "medbay", "cargo", "engineering", "reactor", "fuel", "workshop"]
 
 var rooms: Dictionary = {}  # id -> DesignRoomType
