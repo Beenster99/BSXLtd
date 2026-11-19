@@ -386,7 +386,13 @@ func _fill_orders() -> void:
 		var title := T.label(str(current.get("title", "")), "body_medium", 15, T.ORANGE)
 		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_palette.add_child(title)
-		var lines := T.label("\n".join(ShipOrders.demand_lines(current)), "mono_medium", 13, T.DIM)
+		if current.has("size"):
+			var who := T.label(_order_tag(current), "mono_medium", 12, T.DIM)
+			who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_palette.add_child(who)
+			_palette.add_child(_achievability_label(current, 14))
+		var lines := T.label("\n".join(ShipOrders.demand_lines(current) + ShipOrders.clause_lines(current)), "mono_medium", 13, T.DIM)
+		lines.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_palette.add_child(lines)
 	var row := HBoxContainer.new()
 	var pick := T.button("%s ORDERS (%d)" % ["HIDE" if _orders_open else "PICK FROM", orders.size()], false, 14)
@@ -406,13 +412,57 @@ func _fill_orders() -> void:
 	if not _orders_open:
 		return
 	for o: Dictionary in orders:
-		var b := T.button("%s\nCR %s for the yard, %d days" % [str(o.title), T.money(int(o.pay)), int(o.days)],
-				str(o.id) == str(current.get("id", "")), 13)
+		var text := "%s\nCR %s for the yard, %d days" % [str(o.title), T.money(int(o.pay)), int(o.days)]
+		if o.has("achievability"):
+			text = "%s\nBudget CR %s · %s · %d criteria%s" % [str(o.title), T.money(int(o.budget)),
+					str(o.achievability.label).to_upper(), ShipOrders.criteria_count(o),
+					" · NEEDS %s STANDING" % ContractClients.level_name(int(o.needs_level)).to_upper() if o.get("locked", false) else ""]
+		var b := T.button(text, str(o.id) == str(current.get("id", "")), 13)
 		b.name = "Order_" + str(o.id)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.tooltip_text = "%s\n\n%s" % [str(o.brief), "\n".join(ShipOrders.demand_lines(o))]
+		b.add_theme_color_override("font_color", _achievability_colour(o))
+		b.tooltip_text = _order_tooltip(o)
 		b.pressed.connect(set_order.bind(o))
 		_palette.add_child(b)
+
+
+## "Large · Mining · Deepcut Minerals (Businesslike)" for an order.
+static func _order_tag(o: Dictionary) -> String:
+	return "%s · %s · %s (%s)" % [str(ShipOrders.SIZES.get(str(o.size), {}).get("name", o.size)),
+			ShipClients.sector_name(str(o.get("sector", ""))), str(o.client_name), str(o.get("temper", ""))]
+
+
+## How the budget compares with the cheapest build, coloured: green generous, amber tight,
+## red unrealistic.
+static func _achievability_colour(o: Dictionary) -> Color:
+	match str(o.get("achievability", {}).get("label", "")):
+		"Generous", "Fair":
+			return T.GOOD
+		"Tight":
+			return T.AMBER
+		"Long shot":
+			return T.ORANGE
+		"Unrealistic":
+			return T.BAD
+	return T.TEXT
+
+
+static func _achievability_label(o: Dictionary, size: int) -> Label:
+	var a: Dictionary = o.achievability
+	var l := T.label("%s: budget CR %s against about CR %s for the cheapest build. %s" % [str(a.label).to_upper(),
+			T.money(int(o.budget)), T.money(int(o.estimate)), str(a.line)], "body_medium", size, _achievability_colour(o))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
+
+static func _order_tooltip(o: Dictionary) -> String:
+	if not o.has("achievability"):
+		return "%s\n\n%s" % [str(o.brief), "\n".join(ShipOrders.demand_lines(o))]
+	var a: Dictionary = o.achievability
+	return "%s\n%s\n\n%s\n\n%s\n\nWHAT THEY WANT\n%s\n\n%s: CR %s budget, about CR %s for the cheapest build (x%.2f)." % [
+			str(o.title), _order_tag(o), str(o.story), str(o.brief),
+			"\n".join(ShipOrders.demand_lines(o) + ShipOrders.clause_lines(o)),
+			str(a.label).to_upper(), T.money(int(o.budget)), T.money(int(o.estimate)), float(a.ratio)]
 
 
 ## Makes the open design answer `order` ({} for none), one undo step.

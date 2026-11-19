@@ -87,6 +87,10 @@ const FIT_JOBS_FLAG := "contracts.fit_jobs"
 ## Orders for new ships with demands on their ratings (ShipOrders): the design office
 ## scores a design against one.
 const SHIP_ORDERS_FLAG := "contracts.ship_orders"
+## Wave 4's variety of ship orders: every sector and size, clients with back stories, special
+## clauses and budgets judged against the cheapest build (ShipOrders, ShipClients). Off, the
+## four legacy orders a cycle.
+const SHIP_VARIETY_FLAG := "contracts.ship_variety"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -379,7 +383,9 @@ func document(job_id: String, doc_id: String) -> Dictionary:
 func ship_orders() -> Array[Dictionary]:
 	if not Flags.is_on(SHIP_ORDERS_FLAG):
 		return []
-	return ShipOrders.for_cycle(_cycle)
+	if Flags.is_on(SHIP_VARIETY_FLAG):
+		return ShipOrders.for_cycle(_cycle, ShipOrders.PER_CYCLE, true, level_of)
+	return ShipOrders.for_cycle(_cycle, ShipOrders.LEGACY_PER_CYCLE, false)
 
 
 func board(tab: String) -> Array[ContractJob]:
