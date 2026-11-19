@@ -68,6 +68,89 @@ var frame_body: RigidBody3D
 var frame_model: PartModel
 var _paints: Dictionary = {}
 var _outline: Array[Vector3] = []
+## The materials the frame was built in ({shell, frame, lining, deck}), for WalkCad.
+var frame_mats: Dictionary = {}
+## Openings cut in outer walls for glass in the hull beside them (tests).
+var windows := 0
+var _glass: Array[Dictionary] = []
+
+
+## The glazed hull panels (frame_plan.glass) as boxes: [{x0, x1, y0, y1, z0, z1}], ship space.
+func _glass_boxes() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if frame_plan.is_empty():
+		return out
+	var st: Array = frame_plan.stations
+	for key: String in (frame_plan.glass as Dictionary):
+		var k := int(key.get_slice(":", 0))
+		var e := int(key.get_slice(":", 1))
+		if k < 0 or k + 1 >= st.size():
+			continue
+		var box := {"x0": INF, "x1": -INF, "y0": INF, "y1": -INF,
+				"z0": float(st[k].z), "z1": float(st[k + 1].z)}
+		for s in [st[k], st[k + 1]]:
+			var prof: PackedVector2Array = s.profile
+			if prof.size() < 3:
+				continue
+			for p: Vector2 in [prof[e % prof.size()], prof[(e + 1) % prof.size()]]:
+				box.x0 = minf(box.x0, p.x)
+				box.x1 = maxf(box.x1, p.x)
+				box.y0 = minf(box.y0, p.y)
+				box.y1 = maxf(box.y1, p.y)
+		if box.x0 <= box.x1:
+			out.append(box)
+	return out
+
+
+## Whether glass in the hull lies over `rect` (x, z) above `top` m: the ceiling stays open.
+func _glass_over(rect: Rect2, top: float) -> bool:
+	for g in _glass:
+		if float(g.y1) > top - 0.05 and float(g.x1) > rect.position.x + 0.1 and float(g.x0) < rect.end.x - 0.1 \
+				and float(g.z1) > rect.position.y + 0.1 and float(g.z0) < rect.end.y - 0.1:
+			return true
+	return false
+
+
+## Where along an outer wall (from a along dir, length m, facing out_dir) glass in the hull is
+## beside it at this deck's height: [{t0, t1, sill, head}] openings, m.
+func _window_spans(a: Vector2, dir: Vector2, length: float, out_dir: Vector2, y0: float, y1: float) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if absf(dir.y) < 0.7:
+		return out  # only the side walls (along the ship) face side panels
+	var x := a.x
+	for g in _glass:
+		var gx := (float(g.x0) + float(g.x1)) * 0.5
+		if (gx - x) * out_dir.x <= 0.05:
+			continue
+		var sill := maxf(y0 + WINDOW_SILL, float(g.y0))
+		var head := minf(y1 - WINDOW_HEAD, float(g.y1))
+		if head - sill < 0.4:
+			continue
+		var za := a.y
+		var zb := a.y + dir.y * length
+		var t0 := clampf((float(g.z0) - za) / dir.y, 0.0, length)
+		var t1 := clampf((float(g.z1) - za) / dir.y, 0.0, length)
+		if t0 > t1:
+			var tmp := t0
+			t0 = t1
+			t1 = tmp
+		t0 += WINDOW_POST
+		t1 -= WINDOW_POST
+		if t1 - t0 > 0.3:
+			out.append({"t0": t0, "t1": t1, "sill": sill, "head": head})
+	return out
+
+
+## A window opening's sill over the floor, its head under the deckhead and the post left
+## each side, m.
+const WINDOW_SILL := 0.85
+const WINDOW_HEAD := 0.25
+const WINDOW_POST := 0.15
+
+
+## Forget the frame built last, so the next build makes it afresh (a change of look).
+func forget_frame() -> void:
+	_built_plan = {}
 ## The frame kept from the last build when the proposal hasn't changed (moving a part, a door
 ## inside, a run): building it is most of a rebuild's second.
 var _kept := {}
@@ -102,6 +185,7 @@ func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structur
 	lifts.clear()
 	ladders.clear()
 	_outline.clear()
+	windows = 0
 	lamps = 0
 	ribs = 0
 	frame = null
@@ -111,6 +195,7 @@ func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structur
 	if rec == null:
 		return
 	frame_plan = next_plan
+	_glass = _glass_boxes()
 	var stairs := stairwells(rec, catalog)
 	for r: Dictionary in rec.rooms.values():
 		if not DesignRecord.is_square(r):
@@ -263,9 +348,13 @@ func _ceiling(r: Dictionary, shaft_hole: Rect2, rect: Rect2, tag: String) -> voi
 			panels.append(Transform3D(Basis.from_scale(Vector3(x1 - x - 0.012, 0.02, piece.size.y - 0.02)),
 					Vector3((x + x1) * 0.5, under - 0.01, piece.get_center().y)))
 			x = x1
-	_multi("Ceiling_" + tag, panels, paint(Color(0.62, 0.64, 0.65), "satin_paint"))
+	# Under glass in the hull (a bridge's glazed roof): no ceiling or roof plate to hide it, so
+	# the view goes up through it (beenster, 19 Nov: "windows don't work").
+	var glazed := _glass_over(rect, top)
+	if not glazed:
+		_multi("Ceiling_" + tag, panels, paint(Color(0.62, 0.64, 0.65), "satin_paint"))
 	# A roof of hull plate where no room stands over this one.
-	if not DesignStructure.on_deck(rec, int(r.deck) + 1, rect.get_center()):
+	if not glazed and not DesignStructure.on_deck(rec, int(r.deck) + 1, rect.get_center()):
 		var roof := MeshInstance3D.new()
 		roof.name = "Roof_" + tag
 		roof.mesh = _box_mesh(Vector3(rect.size.x, FLOOR - 0.02, rect.size.y))
@@ -564,9 +653,25 @@ func _wall(e: Dictionary, outer: bool) -> void:
 				"airtight": bool(DesignCatalog.door_kind(d).get("airtight", false))})
 	gaps.sort_custom(func(p, q): return p.t0 < q.t0)
 	var info := {"kind": "wall", "deck": deck, "a": a, "b": b, "outer": outer}
+	# Glass in the hull beside an outer wall: the wall opens there (sill to head) to look out.
+	if outer and inside_pos != inside_neg:
+		var out_dir := normal if inside_neg else -normal
+		for w in _window_spans(a, dir, length, out_dir, y0, y1):
+			var clash := false
+			for g in gaps:
+				clash = clash or (w.t0 < float(g.t1) and w.t1 > float(g.t0))
+			if not clash:
+				gaps.append(w)
+		gaps.sort_custom(func(p, q): return p.t0 < q.t0)
 	var start := 0.0
 	for g in gaps:
 		_wall_piece(info, a, dir, normal, start, g.t0, y0, y1, inside_pos, inside_neg, outer)
+		if g.has("sill"):
+			_wall_piece(info, a, dir, normal, g.t0, g.t1, y0, float(g.sill), inside_pos, inside_neg, outer)
+			_wall_piece(info, a, dir, normal, g.t0, g.t1, float(g.head), y1, inside_pos, inside_neg, outer)
+			windows += 1
+			start = g.t1
+			continue
 		_wall_piece(info, a, dir, normal, g.t0, g.t1, y0 + float(g.h), y1, inside_pos, inside_neg, outer)
 		_door(g, a, dir, normal, y0, outer)
 		start = g.t1
@@ -647,9 +752,10 @@ func _frame() -> void:
 	var kit := ShipKit.new(frame_body)
 	frame_model = PartModel.new(frame_body, true)
 	kit.model = frame_model
-	frame = DesignFrame.build(frame_plan, kit, {"shell": paint(Color(0.5, 0.52, 0.55), "brushed_alloy"),
+	frame_mats = {"shell": paint(Color(0.5, 0.52, 0.55), "brushed_alloy"),
 			"frame": paint(Color(0.34, 0.36, 0.38), "gunmetal"), "lining": paint(Color(0.52, 0.54, 0.54), "satin_paint"),
-			"deck": paint(Color(0.46, 0.48, 0.5), "bare_steel")})
+			"deck": paint(Color(0.46, 0.48, 0.5), "bare_steel")}
+	frame = DesignFrame.build(frame_plan, kit, frame_mats)
 	for v in frame_body.find_children("*", "VisualInstance3D", true, false):
 		(v as VisualInstance3D).layers = 1 | EXTERIOR
 	_sills()
