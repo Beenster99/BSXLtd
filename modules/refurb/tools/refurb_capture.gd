@@ -1,5 +1,6 @@
 extends Node
-## Pictures of the refurb shop on its own (no station: quick), for the thread's screenshots page.
+## Pictures of the refurb works on its own (no station: quick, with a stand-in floor and the
+## station's room light faked), for the thread's screenshots page.
 ##   xvfb-run -s "-screen 0 1920x1080x24" godot --path . --rendering-driver opengl3 \
 ##       res://modules/refurb/tools/refurb_capture.tscn -- --out=/abs/dir [--at=200] [--size=1600x900]
 
@@ -48,6 +49,22 @@ func _run() -> void:
 	sun.light_energy = 1.1
 	sun.shadow_enabled = true
 	add_child(sun)
+	# The station lays the annex's floor and lights the room; here a stand-in of each.
+	var floor_mi := MeshInstance3D.new()
+	var fm := BoxMesh.new()
+	fm.size = Vector3(36.0, 0.3, 30.0)
+	floor_mi.mesh = fm
+	floor_mi.position = Vector3(0, -0.15, 0)
+	floor_mi.material_override = load("res://modules/refurb/internal/refurb_paint.gd").call("paint", Color(0.5, 0.52, 0.55), 0.2, 0.55, "tread_diamond_paint")
+	add_child(floor_mi)
+	for x: float in [-12.0, 0.0, 12.0]:
+		for z: float in [-10.0, 0.0, 10.0]:
+			var o := OmniLight3D.new()
+			o.position = Vector3(x, 9.0, z)
+			o.omni_range = 16.0
+			o.omni_attenuation = 0.35
+			o.light_energy = 0.5
+			add_child(o)
 	var shop: Node3D = Shop.new()
 	add_child(shop)
 	shop.call("setup", null, null, RefurbWorks.new())
@@ -92,7 +109,7 @@ func _in_yard(out: String, at: float, only: PackedStringArray) -> void:
 	shop.call("fast_forward", at)
 	var cam: Camera3D = station.get("view_camera")
 	var views: Dictionary = shop.call("view_points")
-	views["refurb_from_stores"] = [Vector3(52, 8, -60), shop.to_global(Vector3(0, 2, 0))]
+	views["refurb_outside"] = [Vector3(120, 30, 50), shop.to_global(Vector3(0, 6, 0))]
 	for id: String in views:
 		if not only.is_empty() and not only.has(id):
 			continue

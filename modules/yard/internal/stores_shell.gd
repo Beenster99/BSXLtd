@@ -40,11 +40,12 @@ func build(kit, hull: Material, wall: Material, dark: Material, orange: Material
 	_kit = kit
 	var k = kit
 	var yellow: Material = k.paint(Color(1.0, 0.78, 0.1), 0.1, 0.6, "enamel")
-	# The back wall onto the corridor (its door at x 28..32), the west wall, and the east wall
+	# The back wall onto the corridor (its door at x 28..32; the refurb annex's at x 68..82), the
+	# west wall, and the east wall
 	# with goods in's opening.
 	# (They stop under the ceiling, which runs over their tops.)
 	var h := HEIGHT - 0.02
-	k.wall(true, Z_BACK, X0, X1, 0.0, h, wall, [[28.0, 32.0, 3.0]])
+	k.wall(true, Z_BACK, X0, X1, 0.0, h, wall, [[28.0, 32.0, 3.0], [68.0, 82.0, 12.0]])
 	k.wall(false, X0, Z_YARD, Z_BACK, 0.0, h, wall)
 	k.wall(false, X1, Z_YARD, Z_BACK, 0.0, h, wall, [[GOODS_IN_Z.x, GOODS_IN_Z.y, GOODS_IN_H]])
 	# The yard side, both storeys: a lintel over each open face on columns, the air curtain

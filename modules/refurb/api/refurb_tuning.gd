@@ -3,11 +3,21 @@ extends Resource
 ## The refurb shop's numbers (beenster tunes these in the inspector: modules/refurb/internal/
 ## data/refurb_tuning.tres). Times are seconds of yard time, money is credits, condition 0..1.
 
-@export var version := 1
+@export var version := 2
 
 @export_group("Shop")
-## Work cradles (one refurbishing bot each).
+## Light-line cradles (one refurbishing bot each) for parts up to light_max long.
 @export var cradles := 4
+## The longest a part may be (m) for the light line; longer parts go to the heavy stand, under
+## the crane, and the biggest the annex takes (its door and stand).
+@export var light_max := 3.2
+@export var heavy_max := 10.5
+## Bots that only work the heavy stand (RF-2H), and the most bots on one heavy part at once
+## (idle light-line bots join in).
+@export var heavy_crew := 2
+@export var team_max := 4
+## Seconds a team takes to cut up a scrapped heavy part for the skip, at a bot's normal pace.
+@export var cut_seconds := 14.0
 ## Slots on the second-hand intake rack and on the refurbished rack.
 @export var intake_slots := 6
 @export var out_slots := 6
@@ -49,19 +59,35 @@ extends Resource
 @export var fly_speed := 2.6
 @export var pace_min := 0.85
 @export var pace_max := 1.18
-## Charge used per second of work, gained per second on the dock; a bot docks between lots
-## when under recharge_at.
+## Charge used per second of work, gained per second on its charger rack; a bot goes back to
+## charge (and stays till full) when under recharge_at, and tops up there whenever idle.
 @export var drain := 0.0035
 @export var recharge := 0.06
 @export var recharge_at := 0.3
 ## Seconds a bot works one spot before moving round the part.
 @export var spot_seconds := 3.5
 
+@export_group("Crane and cart")
+## The overhead crane: travel (m/s, along the runway and the bridge), hoist (m/s) and the
+## seconds it takes to sling or unsling a load.
+@export var crane_speed := 2.0
+@export var hoist_speed := 1.1
+@export var crane_hold := 1.4
+## The goods-in cart that brings second-hand parts through from the stores hall: speed (m/s),
+## seconds to load it at goods in, the speed its rollers push a light part onto the intake
+## (m/s), and how many light parts it takes a trip.
+@export var cart_speed := 3.0
+@export var cart_load := 2.5
+@export var cart_unload_speed := 1.2
+@export var cart_carry := 3
+
 @export_group("Stand-in dealer")
-## Until the parts market sells second-hand parts, a used-parts dealer's tug drops lots here:
-## the first after this many seconds, then one every gap (min, max) while the intake has room.
+## Until the parts market sells second-hand parts, a used-parts dealer's lots arrive at goods
+## in: the first after this many seconds, then one every gap (min, max) while little waits.
 @export var dealer_first := 3.0
 @export var dealer_gap := Vector2(35.0, 65.0)
-## The condition its lots come in at (min, max), and the biggest part it brings (m, longest side).
+## The condition its lots come in at (min, max), the biggest part it brings (m, longest side),
+## and the chance a lot is a big one for the heavy stand.
 @export var dealer_condition := Vector2(0.25, 0.8)
-@export var dealer_max_size := 3.2
+@export var dealer_max_size := 10.5
+@export var dealer_heavy_chance := 0.3

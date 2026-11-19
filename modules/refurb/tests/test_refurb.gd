@@ -1,8 +1,11 @@
 extends ModuleTest
-## Refurbishing bots (beenster, 19 Nov): second-hand parts come in at Reclaimed grade, a TartanCo
-## RF-2 takes each through inspect, strip, clean, rebuild and test, and a part that passes leaves
-## certified at Standard, the same size, for a cost; a cracked one is scrapped. The shop runs on
-## the yard's shared clock: the same log replayed to the same tick is the same shop.
+## Refurbishing bots (beenster, 19 Nov; 0.4.4 playtest): second-hand parts come in at Reclaimed
+## grade at goods in, the works' cart brings them into the annex, a TartanCo RF-2 takes a small
+## one through inspect, strip, clean, rebuild and test on its cradle, and a big one goes under the
+## crane onto the heavy stand where a team works it. A part that passes leaves certified at
+## Standard, the same size, for a cost; a cracked one is scrapped (a big one cut up first). Idle
+## bots go home to the charger rack. The works runs on the yard's shared clock: the same log
+## replayed to the same tick is the same works.
 ##   tools/run_tests.sh refurb
 
 const TYPE := "reactor_small:3R"
@@ -11,7 +14,13 @@ const TYPE := "reactor_small:3R"
 func run_tests() -> void:
 	var cat := DesignCatalog.load_default()
 	var works := RefurbWorks.new(null, cat)
-	check(works.bots.size() == works.tuning.cradles and works.cradles.size() == works.tuning.cradles, "one refurbisher per cradle")
+	check(works.bots.size() == works.tuning.cradles + works.tuning.heavy_crew and works.cradles.size() == works.tuning.cradles + 1,
+			"one refurbisher per light cradle, a heavy crew for the heavy stand")
+	var slots := {}
+	for b in works.bots:
+		slots[works.dock_point(int(b.id))] = true
+		check((b.pos as Vector3).distance_to(works.dock_point(int(b.id))) < 0.01, "%s starts on its charger" % b.serial)
+	check(slots.size() == works.bots.size(), "each bot has its own charger slot")
 	var paces := {}
 	for b in works.bots:
 		paces[snappedf(float(b.pace), 0.001)] = true
@@ -26,24 +35,31 @@ func run_tests() -> void:
 	check(float(bad.scrap) > float(good.scrap), "a worn part is likelier to be scrapped")
 	check(float(good.cost) < float(good.new_price) * 0.5, "refurbishing costs well under a new part (%.0f of %.0f)" % [good.cost, good.new_price])
 	check(works.estimate("no_such_part", 0.5).is_empty(), "an unknown type has no estimate")
+	check(not bool(good.heavy), "a 3R reactor is a light-line part")
 
-	# The stand-in dealer's types: graded machinery with a Void Salvage model, Reclaimed, small.
+	# The stand-in dealer's types: graded machinery with a Void Salvage model, Reclaimed, up to
+	# the heavy stand's biggest.
 	var types := RefurbWorks.dealer_types(cat, works.tuning.dealer_max_size)
 	check(types.size() >= 8, "the dealer has a range of parts (%d)" % types.size())
 	var all_r := true
+	var big := 0
 	for t in types:
 		all_r = all_r and t.ends_with("R")
+		big += int(RefurbWorks.longest(cat.part(t)) > works.tuning.light_max)
 	check(all_r, "the dealer sells Reclaimed parts")
+	check(big >= 8, "some of them are big parts for the heavy stand (%d)" % big)
 
-	# A part through the shop, no dealer.
+	# A part through the works, no dealer: goods in, the cart, the rollers, a cradle.
 	works.standin_dealer = false
 	var id := works.receive(TYPE, 0.9)
-	check(id > 0 and String(works.lots[id].where) == RefurbWorks.AT_INTAKE, "a delivered part goes on the intake rack")
+	check(id > 0 and String(works.lots[id].where) == RefurbWorks.AT_BACKLOG, "a delivered part waits at goods in")
 	var seen_stages := {}
+	var seen_where := {}
 	var t := 0.0
 	while t < 600.0 and String(works.lots[id].where) not in [RefurbWorks.AT_OUT, RefurbWorks.AT_SCRAP]:
 		works.step(1.0 / 60.0)
 		t += 1.0 / 60.0
+		seen_where[String(works.lots[id].where)] = true
 		var st := int(works.lots[id].stage)
 		if st >= 0:
 			seen_stages[st] = true
@@ -55,13 +71,58 @@ func run_tests() -> void:
 		check(works.scrapped == 1 and works.stock.is_empty(), "a scrapped part is not in stock")
 	else:
 		check(String(lot.where) == RefurbWorks.AT_OUT, "the part is done within ten minutes (%.0f s)" % t)
+		check(seen_where.has(RefurbWorks.AT_CART) and seen_where.has(RefurbWorks.AT_INTAKE) and seen_where.has(RefurbWorks.AT_CARRIED),
+				"it came in on the cart, onto the rollers, and a bot carried it (%s)" % [seen_where.keys()])
 		check(seen_stages.size() >= 6, "it went through all five stages (%s)" % [seen_stages.keys()])
 		check(float(lot.condition) >= works.tuning.pass_at, "it leaves in good condition (%.2f)" % lot.condition)
 		check(int(works.stock.get(String(good.result), 0)) == 1 and works.certified == 1, "it is in stock as a Standard part")
 		check(works.spent > 0.0 and is_equal_approx(works.spent, float(lot.cost)), "refurbishing it was paid for (%.0f)" % works.spent)
 		check(works.take(String(good.result)) and works.stock.is_empty(), "taking it out of stock")
 		check(not works.take(String(good.result)), "nothing left to take")
-	check(String(works.bots[0].state) in [RefurbWorks.BOT_RETURN, RefurbWorks.BOT_DOCK], "the bot goes back to its dock")
+	check(String(works.bots[0].state) in [RefurbWorks.BOT_RETURN, RefurbWorks.BOT_DOCK], "the bot goes back to its charger")
+	for i in 60 * 30:
+		works.step(1.0 / 60.0)
+	check((works.bots[0].pos as Vector3).distance_to(works.dock_point(0)) < 0.05, "with nothing to do it hangs on its charger rack")
+	check(String(works.cart.phase) == "park", "the cart is back at goods in")
+
+	# A big part: the cart brings it, the crane lifts it onto the heavy stand, a team works it,
+	# the crane takes it to the heavy out bay (or, cut up, to the skip).
+	var wh := RefurbWorks.new(null, cat)
+	wh.standin_dealer = false
+	var big_type := ""
+	for bt in types:
+		if RefurbWorks.longest(cat.part(bt)) > 7.0:
+			big_type = bt
+			break
+	var hid := wh.receive(big_type, 0.85)
+	check(hid > 0 and bool(wh.lots[hid].heavy), "a %s (%.1f m) is a heavy-stand part" % [big_type, RefurbWorks.longest(cat.part(big_type))])
+	var hw := {}
+	var team_max := 0
+	var heavy_light_help := false
+	var th := 0.0
+	while th < 1500.0 and String(wh.lots[hid].where) not in [RefurbWorks.AT_OUT, RefurbWorks.AT_SCRAP]:
+		wh.step(1.0 / 60.0)
+		th += 1.0 / 60.0
+		hw[String(wh.lots[hid].where)] = true
+		var team := wh.heavy_team(hid)
+		team_max = maxi(team_max, team.size())
+		for b in team:
+			heavy_light_help = heavy_light_help or String(b.role) == "light"
+	var hl: Dictionary = wh.lots[hid]
+	check(hw.has(RefurbWorks.AT_CART) and hw.has(RefurbWorks.AT_CRANE) and hw.has(RefurbWorks.AT_CRADLE), "it came on the cart and went under the crane (%s)" % [hw.keys()])
+	check(String(hl.where) in [RefurbWorks.AT_OUT, RefurbWorks.AT_SCRAP], "the big part is done within 25 minutes (%.0f s, %s)" % [th, hl.where])
+	check(team_max >= 3 and heavy_light_help, "a team works it, idle light-line bots joining in (most %d)" % team_max)
+	if String(hl.where) == RefurbWorks.AT_OUT:
+		check(wh.heavy_out == hid and (hl.pos as Vector3).distance_to(RefurbWorks.HEAVY_OUT_AT) < 0.05, "the crane set it in the heavy out bay")
+		check(int(wh.stock.get(String(hl.result), 0)) == 1, "it is in stock")
+	for i in 60 * 60:
+		wh.step(1.0 / 60.0)
+	check(not wh.crane_busy() and wh.cradles[wh.heavy_index()] < 0, "the crane is parked and the stand free")
+	var home := 0
+	for b in wh.bots:
+		home += int((b.pos as Vector3).distance_to(wh.dock_point(int(b.id))) < 0.05)
+	check(home == wh.bots.size(), "every bot is home on the charger rack (%d of %d)" % [home, wh.bots.size()])
+	check(wh.receive("box_beam:6R", 0.5) < 0 or RefurbWorks.longest(cat.part("box_beam:6R")) <= wh.tuning.heavy_max, "a part too big for the annex is turned away")
 
 	# Worn parts: some scrapped at inspection, some sent back once from the bench test.
 	var w2 := RefurbWorks.new(null, cat)
@@ -79,7 +140,7 @@ func run_tests() -> void:
 	var docked := 0
 	for b in w2.bots:
 		docked += int(String(b.state) == RefurbWorks.BOT_DOCK)
-	check(docked == w2.bots.size(), "with nothing left, every bot is back on its dock")
+	check(docked == w2.bots.size(), "with nothing left, every bot is back on its charger")
 
 	# Determinism: the dealer on, ten minutes run twice from scratch, the same shop.
 	var a := RefurbWorks.new(null, cat)
@@ -89,6 +150,10 @@ func run_tests() -> void:
 	for i in 60 * 600:
 		b2.step(1.0 / 60.0)
 	check(a.lots.size() >= 6, "the stand-in dealer brought lots in ten minutes (%d)" % a.lots.size())
+	var heavies := 0
+	for l: Dictionary in a.lots.values():
+		heavies += int(bool(l.heavy))
+	check(heavies >= 1, "some of them big (%d)" % heavies)
 	check(a.fingerprint() == b2.fingerprint(), "the same ticks make the same shop")
 	b2.reset()
 	for i in 60 * 600:
@@ -103,12 +168,16 @@ func run_tests() -> void:
 	await _shop()
 
 
-## The shop drawn on a local clock: the requests go through its log, its bots draw, the board
+## The works drawn on a local clock: the requests go through its log, its bots draw, the board
 ## reads the state.
 func _shop() -> void:
 	var bus := Modules.bus("refurb") as RefurbBus
 	check(bus != null, "the refurb module loads")
-	check(RefurbBus.shop_at().z <= -180.0, "the shop sits out beyond the berths (z %.0f)" % RefurbBus.shop_at().z)
+	var annex: AABB = YardLayout.ROOMS["refurb"].box
+	var hall: AABB = YardLayout.ROOMS["racking"].box
+	check(annex.has_point(RefurbBus.shop_at() + Vector3(0, 0.1, 0)) and YardLayout.room_at(RefurbBus.shop_at() + Vector3(0, 1, 0)) == "refurb", "the works sits in its annex")
+	check(is_equal_approx(annex.position.z, hall.end.z) and annex.position.x >= hall.position.x and annex.end.x <= hall.end.x, "the annex is behind the stores hall")
+	check(YardLayout.has_gravity(RefurbBus.shop_at() + Vector3(0, 1, 0)), "the annex has the station's gravity")
 	var holder := Node3D.new()
 	add_child(holder)
 	var shop: Node3D = RefurbBus.Shop.new()
@@ -119,7 +188,7 @@ func _shop() -> void:
 	shop.call("request", {"kind": "refurb.in", "type": TYPE, "condition": 0.97})
 	shop.call("run_ticks", 2)
 	check(works.lots.size() == 1, "a request is applied at its tick")
-	shop.call("run_ticks", 60 * 45)
+	shop.call("run_ticks", 60 * 60)
 	shop.call("draw", 0.016)
 	await frames(2)
 	check(works.lots_at(RefurbWorks.AT_CRADLE).size() == 1, "the part is on a cradle (%s)" % works.fingerprint())
