@@ -22,8 +22,21 @@ var occupancy_mass := 0.0
 var cargo_max := 0.0
 var build_hours := 0.0
 ## kW made and used; balance = made - used.
+## made counts what solar delivers where she works (DesignPower), not batteries.
 var power_made := 0.0
 var power_used := 0.0
+## Power by source (DesignPower): solar's rating in full sun and what it delivers in her working
+## region; what fuel-burning sources make; stores' capacity, kWh, and their rating, kW.
+var region := DesignPower.DEFAULT_REGION
+var solar_rated := 0.0
+var solar_kw := 0.0
+var fuelled_kw := 0.0
+var store_kwh := 0.0
+var store_kw := 0.0
+## Fuel burned a kWh across the fuelled sources, weighted by their output, m3.
+var burn_per_kwh := 0.0
+## Reactors aboard (DesignPower.REACTORS).
+var reactors := 0
 var thrust := 0.0
 var crew := 0
 var cargo_m3 := 0.0
@@ -52,6 +65,9 @@ var lines: Array[Dictionary] = []
 static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStructure = null,
 		plan: Variant = null) -> DesignTotals:
 	var t := DesignTotals.new()
+	t.region = DesignPower.region_of(d)
+	var sun := DesignPower.sun(t.region)
+	var burn_sum := 0.0
 	var room_lines := {}
 	for r: Dictionary in d.rooms.values():
 		var rt := cat.room(str(r.type))
@@ -110,9 +126,20 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		line.hours += pt.build_hours
 		part_lines[pt.id] = line
 		if pt.power >= 0.0:
-			t.power_made += pt.power
+			match DesignPower.kind_of(pt.id, pt.power):
+				"solar":
+					t.solar_rated += pt.power
+					t.solar_kw += pt.power * sun
+				"store":
+					t.store_kw += pt.power
+					t.store_kwh += pt.power * float(DesignPower.STORE_HOURS.get(DesignPower.base_id(pt.id), 1.0))
+				"fuelled":
+					t.fuelled_kw += pt.power
+					burn_sum += pt.power * DesignPower.burn_of(pt.id)
 		else:
 			t.power_used -= pt.power
+		if DesignPower.base_id(pt.id) in DesignPower.REACTORS:
+			t.reactors += 1
 		t.thrust += pt.thrust
 		t.crew += pt.crew
 		t.lead_days = maxi(t.lead_days, pt.lead_days)
@@ -163,6 +190,8 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		t.cost += line.cost
 		t.mass += line.mass
 		t.build_hours += line.hours
+	t.power_made = t.solar_kw + t.fuelled_kw
+	t.burn_per_kwh = burn_sum / t.fuelled_kw if t.fuelled_kw > 0.0 else 0.0
 	t.fuel_mass = t.fuel_m3 * FUEL_KG_PER_M3
 	t.occupancy_mass = float(t.crew) * PERSON_KG
 	t.cargo_max = t.cargo_m3 * CARGO_KG_PER_M3
@@ -195,6 +224,35 @@ func flying_mass() -> float:
 
 func power_balance() -> float:
 	return power_made - power_used
+
+
+## kW the fuel-burning sources must make to carry the load once solar has given what it can.
+func fuelled_load() -> float:
+	return clampf(power_used - solar_kw, 0.0, fuelled_kw)
+
+
+## Days she runs without refuelling at her full working load: the tanks over what her
+## generators and reactors burn; DesignPower.ENDURANCE_CAP when solar carries it all (with the
+## stores to ride out shadow) or nothing burns. 0 when she cannot carry her load at all.
+func endurance_days() -> float:
+	if power_balance() < 0.0:
+		return 0.0
+	var load := fuelled_load()
+	if load <= 0.0:
+		return DesignPower.ENDURANCE_CAP if solar_rides_shadow() else 0.0
+	var per_day := load * 24.0 * burn_per_kwh
+	if per_day <= 0.0:
+		return DesignPower.ENDURANCE_CAP
+	return minf(DesignPower.ENDURANCE_CAP, fuel_m3 / per_day)
+
+
+## True when the ship needs no stores for shadow (fuelled power covers the load) or has the
+## stores to carry the load through her region's shadow hours.
+func solar_rides_shadow() -> bool:
+	var gap := maxf(0.0, power_used - fuelled_kw)
+	if gap <= 0.0 or solar_kw <= 0.0:
+		return true
+	return store_kw >= gap and store_kwh >= gap * DesignPower.shadow_hours(region)
 
 
 ## Acceleration at full thrust, m/s2 (0 with no mass).
@@ -232,7 +290,8 @@ func defence_rating() -> float:
 const SIGNATURE_PER_KW := 0.15
 const SIGNATURE_PER_KN := 0.05
 func signature() -> float:
-	return maxf(0.0, parts_signature + power_made * SIGNATURE_PER_KW + thrust * SIGNATURE_PER_KN)
+	var kw := fuelled_kw + solar_kw * DesignPower.SOLAR_SIGNATURE_SHARE
+	return maxf(0.0, parts_signature + kw * SIGNATURE_PER_KW + thrust * SIGNATURE_PER_KN)
 
 
 ## Stealth, 0 (lit up like a beacon) to 100 (invisible): falls off with the signature.
@@ -245,7 +304,8 @@ func stealth() -> float:
 ##   cargo_m3, crew, budget (most it may cost), max_mass or dry_mass (most, kg), wet_mass (most,
 ##   kg), fuel_mass (least, kg: a long haul wants a lot), occupancy_mass (least, kg), cargo_max
 ##   (least, kg), accel (m/s2), build_days (most), jump_ly, speed (m/s), defence, attack
-##   (damage a second), stealth (0..100), fuel_m3, power (spare kW), sensor_km
+##   (damage a second), stealth (0..100), fuel_m3, power (spare kW), sensor_km,
+##   endurance_days (least: days without refuelling), reactors (most aboard: 0 = no reactor)
 ## Returns one row per demand: {key, label, need, have, ok, share (0..1, 1 = met)}.
 func fit(demands: Dictionary, crew_hours_per_day: float = 8.0) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -313,6 +373,13 @@ func fit(demands: Dictionary, crew_hours_per_day: float = 8.0) -> Array[Dictiona
 			"sensor_km":
 				have = sensor_km
 				label = "Sensor range, km"
+			"endurance_days":
+				have = endurance_days()
+				label = "Days without refuelling"
+			"reactors":
+				have = reactors
+				more_is_better = false
+				label = "Reactors aboard" if need > 0.0 else "No reactor aboard"
 			_:
 				continue
 		var ok := have >= need if more_is_better else have <= need
