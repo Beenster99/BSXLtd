@@ -21,6 +21,7 @@ flags = {
 "contracts.stages": false,
 "contracts.vs_orders": false,
 "contracts.fit_jobs": false,
+"contracts.ship_orders": true,
 "core": true,
 "core.fresh_saves": true,
 "design": true,
