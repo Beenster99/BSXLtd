@@ -83,6 +83,8 @@ flags = {
 "ship_bay.crusher": false,
 "ship_bay.trolleys": false,
 "ship_bay.lifts": false,
+"supply": true,
+"supply.wall": true,
 "shared_components": true,
 "trades": true,
 "trades.bolting": true,

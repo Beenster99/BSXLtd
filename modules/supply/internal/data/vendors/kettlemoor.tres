@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SupplyVendor" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/supply/api/supply_vendor.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "kettlemoor"
+display_name = "Kettlemoor Salvage Exchange"
+tagline = "Reclaimed and refurbished, all sizes, cash or trade"
+colour = Color(0.690, 0.627, 0.537, 1)
+categories = PackedStringArray()
+grades = PackedStringArray("R")
+price_factor = 0.8
+spread = 0.14
+volatility = 0.09
+reliability = 0.71
+lead_days = -1
+stock = 4
+restock_days = 4
+volume_percent = {
+10: 5,
+25: 9,
+50: 14
+}
+deals_per_week = 3
+deal_percent = Vector2i(10, 30)
+standing_start = 35
