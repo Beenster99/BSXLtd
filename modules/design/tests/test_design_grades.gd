@@ -227,6 +227,31 @@ func _palette() -> void:
 	if b:
 		b.pressed.emit()
 		check(console.plan.tool == "part:reactor_small:5H", "picking it arms that variant: %s" % console.plan.tool)
+	# The compact list: a search finds parts across every group, closed or not, as you type.
+	var search := console.find_child("CompSearch", true, false) as LineEdit
+	check(search != null and console.find_child("CompGroups", true, false) is HFlowContainer,
+			"the components have a search box and group chips")
+	if search:
+		console._open_groups = {}
+		search.text = "reactor"
+		search.text_changed.emit("reactor")
+		await frames(1)
+		var hits := console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false)
+		var all_reactors := hits.size() > 0
+		for h: Node in hits:
+			all_reactors = all_reactors and "reactor" in (h as Button).text.to_lower()
+		check(all_reactors, "a search shows only matching parts, groups closed: %d" % hits.size())
+		check(console.find_child("CompSearch", true, false) == search, "typing keeps the search box (and its focus)")
+		search.text_changed.emit("zzzz")
+		await frames(1)
+		check(console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false).is_empty(),
+				"a search that matches nothing shows no parts")
+		search.text_changed.emit("")
+		await frames(1)
+		check(console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false).is_empty(),
+				"no search and no open group: no rows")
+	check(DesignConsole.short_money(950.0) == "950" and DesignConsole.short_money(12400.0) == "12k"
+			and DesignConsole.short_money(3100000.0) == "3.1M", "costs are written short on the rows")
 	var cargo_b := console.find_child("DoorKind_cargo", true, false) as Button
 	check(cargo_b != null, "the door kinds are on the palette")
 	if cargo_b:
