@@ -119,6 +119,10 @@ func run_tests() -> void:
 		bus.editor.undo()
 	check(rec.frame_edits.is_empty() and (DesignFrame.propose(rec).glass as Dictionary) == (plan.glass as Dictionary), "undo takes the changes back")
 
+	# Cables beside a wall go into it; pipes on the lowest deck under its plates.
+	bus.editor.do({"op": "add_run", "run": {"id": "w1", "kind": "wire", "deck": 0, "points": [[0.7, -2.8], [0.7, -1.2]]}})
+	bus.editor.do({"op": "add_run", "run": {"id": "p1", "kind": "fuel", "deck": 0, "points": [[0.0, -4.0], [0.0, 2.0]]}})
+
 	# Walk inside it.
 	var room := Node3D.new()
 	add_child(room)
@@ -130,6 +134,11 @@ func run_tests() -> void:
 	var walk: Node3D = f.walk
 	var b: WalkBuild = walk.builder
 	check(b.frame_body != null and b.frame_model.parts.size() > 100, "walk-inside builds the real frame")
+	var cw := walk.find_child("CableInWall", true, false) as Node3D
+	var pu := walk.find_child("PipeUnderDeck", true, false) as Node3D
+	check(cw != null and is_equal_approx(cw.position.x, 1.0) and pu != null and pu.position.y < -0.2
+			and walk.find_child("ServiceXray", true, false) != null,
+			"the cable run inside the airlock's wall, the fuel pipe under the deck, both seen faintly through")
 	check(walk.find_child("Sill_%s" % str(rec.doors.values().filter(func(d): return str(d.b) == "" and float(d.x) == 3.0)[0].id), true, false) != null,
 			"a sill across to the skin at the airlock door")
 	var w: Node3D = walk.world

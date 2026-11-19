@@ -38,6 +38,10 @@ const PLATE := 1.0
 const PANEL := 1.2
 const HULL_PANEL := 2.0
 ## Frame girder size by the design's frame weight: [width, depth], m.
+## A pipe under the lowest deck's plates (below its beams), metres from the deck's top; a cable
+## run within this of a stud wall's line goes into the wall, metres.
+const UNDER_DECK := -0.3
+const WALL_REACH := 0.6
 const GIRDERS := {"light": [0.1, 0.12], "standard": [0.14, 0.18], "heavy": [0.2, 0.26]}
 ## The hologram's only tell.
 const OUTLINE := Color(0.62, 0.86, 1.0, 0.42)
@@ -960,13 +964,24 @@ func _services() -> void:
 	var tray_y := h - FLOOR - float(spec[1]) - 0.12
 	var pipe_y := 0.35
 	var tray := paint(Color(0.55, 0.57, 0.6), "galvanised")
+	# With the structure framed the services hide where a real ship's do: cables beside a stud
+	# wall go into its cavity, pipes on the lowest deck under its deck plates. You see them
+	# faintly through what hides them (the x-ray lines).
+	var under_deck := not (frame_plan.get("decks", []) as Array).is_empty()
+	var xray: Array = []  # [a, b, colour]
 	for w: Dictionary in rec.runs.values():
 		var kind := str(w.kind)
 		if not DesignServices.KINDS.has(kind):
 			continue
 		var col: Color = DesignServices.KINDS[kind].colour
 		var pts := DesignServices.points(w)
-		var y := int(w.deck) * h + (tray_y if kind == "wire" else pipe_y)
+		var in_wall := {}
+		if kind == "wire":
+			var routed := _into_walls(pts, int(w.deck))
+			in_wall = routed.moved
+			pts = routed.pts
+		var below := kind != "wire" and under_deck and int(w.deck) == 0
+		var y := int(w.deck) * h + (tray_y if kind == "wire" else (UNDER_DECK if below else pipe_y))
 		var mat := paint(col.darkened(0.25), "satin_paint") if kind == "wire" else paint(col.darkened(0.15), "gloss_paint")
 		for i in pts.size() - 1:
 			var a := Vector3(pts[i].x, y, pts[i].y)
@@ -975,6 +990,17 @@ func _services() -> void:
 				continue
 			var xf := FrameParts.along(a, b, Vector3.UP)
 			var len := a.distance_to(b)
+			if in_wall.has(i) or below:
+				xray.append([a, b, col])
+			if in_wall.has(i):
+				# A cable bundle up in the wall's cavity, behind its panels.
+				var cw := MeshInstance3D.new()
+				cw.name = "CableInWall"
+				cw.mesh = _box_mesh(Vector3(len + 0.1, 0.06, 0.06))
+				cw.material_override = mat
+				cw.transform = xf
+				root.add_child(cw, true)
+				continue
 			if kind == "wire":
 				# The tray, and the cable bundle lying in it.
 				var t := MeshInstance3D.new()
@@ -990,7 +1016,7 @@ func _services() -> void:
 				root.add_child(cab)
 			else:
 				var pipe := MeshInstance3D.new()
-				pipe.name = "Pipe"
+				pipe.name = "PipeUnderDeck" if below else "Pipe"
 				var cyl := CylinderMesh.new()
 				cyl.top_radius = 0.045
 				cyl.bottom_radius = 0.045
@@ -1035,6 +1061,68 @@ func _services() -> void:
 				r.material_override = mat
 				r.position = Vector3(end.x, (y + y2) * 0.5, end.y)
 				root.add_child(r, true)
+	_xray(xray)
+
+
+## Where a cable run's stretches lie along a stud wall on its deck (within reach of its line,
+## mostly over its span): moved onto the wall's line, into its cavity. Returns the stretches
+## moved (index -> true) and the points: {moved, pts}.
+func _into_walls(from: PackedVector2Array, deck: int) -> Dictionary:
+	var pts := from.duplicate()
+	var moved := {}
+	for i in pts.size() - 1:
+		var a := pts[i]
+		var b := pts[i + 1]
+		for wl: Dictionary in frame_plan.get("walls", []):
+			if int(wl.deck) != deck:
+				continue
+			var across: bool = wl.across
+			# Along the wall: the stretch runs the way the wall does.
+			if across != (absf(a.y - b.y) < 0.01) or (not across and absf(a.x - b.x) > 0.01):
+				continue
+			var off := (a.y if across else a.x) - float(wl.at)
+			if absf(off) > WALL_REACH:
+				continue
+			var lo := minf(a.x, b.x) if across else minf(a.y, b.y)
+			var hi := maxf(a.x, b.x) if across else maxf(a.y, b.y)
+			var over := minf(hi, float(wl.t1)) - maxf(lo, float(wl.t0))
+			if over < (hi - lo) * 0.5:
+				continue
+			if across:
+				pts[i].y = float(wl.at)
+				pts[i + 1].y = float(wl.at)
+			else:
+				pts[i].x = float(wl.at)
+				pts[i + 1].x = float(wl.at)
+			moved[i] = true
+			break
+	return {"moved": moved, "pts": pts}
+
+
+## The hidden services drawn faintly through whatever hides them, in their colours.
+func _xray(lines: Array) -> void:
+	if lines.is_empty():
+		return
+	var im := ImmediateMesh.new()
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.no_depth_test = true
+	m.vertex_color_use_as_albedo = true
+	im.surface_begin(Mesh.PRIMITIVE_LINES, m)
+	for l: Array in lines:
+		var c: Color = l[2]
+		c.a = 0.7
+		im.surface_set_color(c)
+		im.surface_add_vertex(l[0])
+		im.surface_set_color(c)
+		im.surface_add_vertex(l[1])
+	im.surface_end()
+	var mi := MeshInstance3D.new()
+	mi.name = "ServiceXray"
+	mi.mesh = im
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
 
 
 # Parts
