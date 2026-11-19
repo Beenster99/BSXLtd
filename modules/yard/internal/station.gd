@@ -186,6 +186,8 @@ func _ready() -> void:
 	view_camera.far = 60000.0
 	view_camera.fov = 70.0
 	add_child(view_camera)
+	if YardSounds.enabled():
+		add_child(YardSounds.new().setup(self))
 	_build_hud()
 	_bus = Modules.bus("yard")
 	if _bus:
