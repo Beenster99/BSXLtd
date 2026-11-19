@@ -46,6 +46,15 @@ signal stage_signed_off(contract_id: String, stage_id: String)
 ## the stage being worked.
 signal stage_changed(job_id: String, stage_id: String, state: String)
 signal cycle_advanced(cycle: int)
+## Ship contracts (plan 4.3 to 4.6). A client signed off a design BSX quoted for one of its
+## ship orders: stages [{id, name, value, expected_day}] (ShipOrders.payment_plan), the first
+## (the deposit) paid now. Business books it; stage_signed_off pays each later stage, and
+## contract_handed_over pays the delivery. contract_adjusted comes before the handover, once
+## for each thing the trial found (+ a bonus, - held back or late).
+signal contract_accepted_staged(contract_id: String, stages: Array, due_day: int)
+signal contract_adjusted(contract_id: String, amount: int, reason: String)
+## A ship contract was signed, paid a stage or went through its trial: views redraw.
+signal ship_contract_changed(contract_id: String)
 ## The whole board came in from the host (a join, or any change there): panels redraw.
 signal board_changed
 
@@ -87,6 +96,17 @@ const FIT_JOBS_FLAG := "contracts.fit_jobs"
 ## Orders for new ships with demands on their ratings (ShipOrders): the design office
 ## scores a design against one.
 const SHIP_ORDERS_FLAG := "contracts.ship_orders"
+## Wave 4's variety of ship orders: every sector and size, clients with back stories, special
+## clauses and budgets judged against the cheapest build (ShipOrders, ShipClients). Off, the
+## four legacy orders a cycle.
+const SHIP_VARIETY_FLAG := "contracts.ship_variety"
+## Quoting, signing, staged payments and the trial for ship orders (plan 4.3 to 4.6).
+const SHIP_CONTRACTS_FLAG := "contracts.ship_contracts"
+## Until the build (Wave 5) can say when the keel is laid and the fit-out done, those
+## payments come in on the day they are expected.
+const STAGE_STANDIN_FLAG := "contracts.stage_standin"
+## Ship contract ids: SHIP_PREFIX + the order's id.
+const SHIP_PREFIX := "sc_"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -108,6 +128,10 @@ var _standing: Dictionary = {}
 ## The board's cycle: the game day when Business runs the clock (day_closed), else a count
 ## of advance_cycle() calls.
 var _cycle := 0
+## Signed ship contracts, id -> {id, order, design_id, design_name, price, cost, start_day,
+## due_day, stages: [{id, name, share, value, trigger, expected_day, paid, paid_day}],
+## state ("building", "delivered"), trial ({} until delivered)}.
+var _ships: Dictionary = {}
 var _generator := Generator.new()
 
 
@@ -166,6 +190,7 @@ func _hook_clock() -> void:
 
 
 func _on_day_closed(day: int) -> void:
+	_pay_due_stages(day + 1)
 	advance_cycle(day + 1)
 
 
@@ -379,7 +404,211 @@ func document(job_id: String, doc_id: String) -> Dictionary:
 func ship_orders() -> Array[Dictionary]:
 	if not Flags.is_on(SHIP_ORDERS_FLAG):
 		return []
-	return ShipOrders.for_cycle(_cycle)
+	if Flags.is_on(SHIP_VARIETY_FLAG):
+		var out := ShipOrders.for_cycle(_cycle, ShipOrders.PER_CYCLE, true, level_of)
+		var have := berth_tier()
+		for o: Dictionary in out:
+			o["berth_short"] = have > 0 and int(o.get("berth", 1)) > have
+		return out
+	return ShipOrders.for_cycle(_cycle, ShipOrders.LEGACY_PER_CYCLE, false)
+
+
+# Ship contracts: quote, sign-off, staged payments, the trial (plan 4.3 to 4.6)
+
+## Today, as Business counts it (the board's cycle without Business).
+func today() -> int:
+	var business := Modules.bus("business")
+	if business and business.has_method("get_day"):
+		return int(business.call("get_day"))
+	return _cycle
+
+
+## The yard's build berth tier today (YardBus.berth_tier, by name), or 0 with no yard: then
+## berths are not checked.
+func berth_tier() -> int:
+	var yard := Modules.bus("yard")
+	if yard and yard.has_method("berth_tier"):
+		return int(yard.call("berth_tier"))
+	return 0
+
+
+## The contract signed for `order_id`, or {}.
+func ship_contract_for(order_id: String) -> Dictionary:
+	return _ships.get(SHIP_PREFIX + order_id, {})
+
+
+func ship_contract(contract_id: String) -> Dictionary:
+	return _ships.get(contract_id, {})
+
+
+## Every signed ship contract, oldest first.
+func ship_contracts() -> Array:
+	var out: Array = _ships.values()
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.start_day) < int(b.start_day) \
+			or (int(a.start_day) == int(b.start_day) and str(a.id) < str(b.id)))
+	return out
+
+
+## Why `order` cannot be signed now ("" if it can).
+func ship_sign_problem(order: Dictionary) -> String:
+	if not Flags.is_on(SHIP_CONTRACTS_FLAG):
+		return "ship contracts are switched off"
+	var id := str(order.get("id", ""))
+	if id == "":
+		return "no ship order"
+	if _ships.has(SHIP_PREFIX + id):
+		return "already signed"
+	if bool(order.get("locked", false)) or level_of(str(order.get("client", ""))) < int(order.get("needs_level", 0)):
+		return "the client does not know BSX well enough for an order this size"
+	var have := berth_tier()
+	if have > 0 and int(order.get("berth", 1)) > have:
+		return "she needs the %s: the yard's berths are too small" % ShipOrders.berth_name(int(order.berth)).to_lower()
+	return ""
+
+
+## Sends BSX's quote for `order`, built to the design `design_id` whose parts cost `cost` CR.
+## The client signs it off at ShipOrders.quote's price (never over its budget) and pays the
+## deposit. Through the host in multiplayer.
+func request_sign_ship(order: Dictionary, design_id: String, design_name: String, cost: int) -> void:
+	_request_action({"op": "sign_ship", "order": order, "design": design_id, "design_name": design_name, "cost": cost})
+
+
+## The trial on the delivered ship: `rows` are the order's criteria scored on the design
+## (DesignContractCheck.all). Through the host in multiplayer.
+func request_deliver_ship(contract_id: String, rows: Array) -> void:
+	_request_action({"op": "deliver_ship", "contract": contract_id, "rows": rows})
+
+
+## A stage paid by hand (keel laid, fit-out done), until the build says so (Wave 5).
+func request_ship_stage(contract_id: String, stage_id: String) -> void:
+	_request_action({"op": "ship_stage", "contract": contract_id, "stage": stage_id})
+
+
+func _request_action(p: Dictionary) -> void:
+	var net := _net()
+	if net and net.has_method("request") and _online_client():
+		net.call("request", ACTION_EVENT, p)
+		return
+	var ok: Variant = _validate_action(1, p)
+	if ok is Dictionary:
+		_apply_action(ok)
+	else:
+		push_warning("Contracts: %s" % str(ok))
+
+
+## Host: signs `order`. Returns the contract id ("" if it could not).
+func sign_ship(order: Dictionary, design_id: String, design_name: String, cost: int) -> String:
+	if ship_sign_problem(order) != "":
+		return ""
+	var q := ShipOrders.quote(order, cost)
+	var start := today()
+	var due := start + maxi(1, int(order.get("days", 30)))
+	var id := SHIP_PREFIX + str(order.id)
+	var stages: Array = []
+	for st: Dictionary in ShipOrders.payment_plan(int(q.price), start, due):
+		st["paid"] = false
+		st["paid_day"] = -1
+		stages.append(st)
+	stages[0].paid = true
+	stages[0].paid_day = start
+	_ships[id] = {"id": id, "order": order.duplicate(true), "design_id": design_id, "design_name": design_name,
+		"price": int(q.price), "cost": int(cost), "start_day": start, "due_day": due, "stages": stages,
+		"state": "building", "trial": {}}
+	var plan: Array = []
+	for st: Dictionary in stages:
+		plan.append({"id": st.id, "name": st.name, "value": st.value, "expected_day": st.expected_day})
+	contract_accepted_staged.emit(id, plan, due)
+	ship_contract_changed.emit(id)
+	return id
+
+
+## Host: pays the next stage of `contract_id` if it is `stage_id` (not the delivery: the trial
+## pays that).
+func pay_ship_stage(contract_id: String, stage_id: String) -> bool:
+	var c: Dictionary = _ships.get(contract_id, {})
+	if c.is_empty() or c.state != "building" or stage_id == "delivery":
+		return false
+	for st: Dictionary in c.stages:
+		if st.paid:
+			continue
+		if str(st.id) != stage_id:
+			return false
+		st.paid = true
+		st.paid_day = today()
+		stage_signed_off.emit(contract_id, stage_id)
+		ship_contract_changed.emit(contract_id)
+		return true
+	return false
+
+
+## The stand-in for the build: stages (not the delivery) come in on their expected day.
+func _pay_due_stages(day: int) -> void:
+	if not Flags.is_on(STAGE_STANDIN_FLAG) or (multiplayer.has_multiplayer_peer() and not multiplayer.is_server()):
+		return
+	for c: Dictionary in _ships.values():
+		for st: Dictionary in c.stages:
+			if c.state == "building" and not st.paid and str(st.id) != "delivery" and int(st.expected_day) <= day:
+				pay_ship_stage(str(c.id), str(st.id))
+
+
+## Host: the surveyors' trial and the handover. The delivery payment moves by the trial
+## (ShipOrders.trial: a bonus for each demand beaten, a hold-back for each criterion missed,
+## a deduction for each day late), standing with the client moves by it too.
+func deliver_ship(contract_id: String, rows: Array) -> Dictionary:
+	var c: Dictionary = _ships.get(contract_id, {})
+	if c.is_empty() or c.state != "building":
+		return {}
+	# Stages the build never paid (no stand-in) come in with the delivery.
+	for st: Dictionary in c.stages:
+		if not st.paid and str(st.id) != "delivery":
+			pay_ship_stage(contract_id, str(st.id))
+	var day := today()
+	var late := maxi(0, day - int(c.due_day))
+	var t := ShipOrders.trial(rows, int(c.price), late)
+	t["day"] = day
+	t["days_late"] = late
+	# The delivery payment never goes below nothing: lateness gives way first, then hold-back.
+	var last: Dictionary = c.stages.back()
+	var short := -(int(last.value) + int(t.bonus) - int(t.holdback) - int(t.late))
+	if short > 0:
+		var cut := mini(short, int(t.late))
+		t.late = int(t.late) - cut
+		t.holdback = maxi(0, int(t.holdback) - (short - cut))
+		t.adjustment = int(t.bonus) - int(t.holdback) - int(t.late)
+	if int(t.bonus) > 0:
+		contract_adjusted.emit(contract_id, int(t.bonus), "Beat the order on %s" % ", ".join(t.beats))
+	if int(t.holdback) > 0:
+		contract_adjusted.emit(contract_id, -int(t.holdback), "Held back: missed %s" % ", ".join(t.misses))
+	if int(t.late) > 0:
+		contract_adjusted.emit(contract_id, -int(t.late), "%d days late" % late)
+	last.paid = true
+	last.paid_day = day
+	last["paid_value"] = maxi(0, int(last.value) + int(t.adjustment))
+	c.state = "delivered"
+	c.trial = t
+	add_standing(str(c.order.get("client", "")), int(t.standing))
+	contract_handed_over.emit(contract_id, float(t.quality), (t.misses as Array).size())
+	ship_contract_changed.emit(contract_id)
+	return t
+
+
+## Each open ship contract's payments, for the Business accounts screen and its cash
+## forecast: [{contract_id, title, client, value, due_day, stages: [{id, name, share, amount,
+## expected_day, trigger, paid, paid_day}], trial: {bonus, holdback}, parts_to_buy}].
+## parts_to_buy is the design's parts at cost (nothing is bought for it yet until Wave 5).
+func payment_profiles() -> Array:
+	var out: Array = []
+	for c: Dictionary in ship_contracts():
+		if c.state != "building":
+			continue
+		var stages: Array = []
+		for st: Dictionary in c.stages:
+			stages.append({"id": st.id, "name": st.name, "share": st.share, "amount": int(st.value),
+				"expected_day": int(st.expected_day), "trigger": st.trigger, "paid": bool(st.paid), "paid_day": int(st.paid_day)})
+		out.append({"contract_id": c.id, "title": str(c.order.get("title", c.id)), "client": str(c.order.get("client_name", "")),
+			"value": int(c.price), "due_day": int(c.due_day), "stages": stages,
+			"trial": ShipOrders.trial_range(c.order, int(c.price)), "parts_to_buy": int(c.cost)})
+	return out
 
 
 func board(tab: String) -> Array[ContractJob]:
@@ -738,6 +967,27 @@ func apply_net_snapshot(data: Dictionary) -> void:
 
 func _validate_action(_sender: int, p: Dictionary) -> Variant:
 	var op := str(p.get("op", ""))
+	match op:
+		"sign_ship":
+			if not p.get("order") is Dictionary:
+				return "no ship order"
+			# The host's own copy of the order, so a player cannot sign one never posted.
+			var own := {}
+			for o: Dictionary in ship_orders():
+				if str(o.id) == str((p.order as Dictionary).get("id", "")):
+					own = o
+			if own.is_empty():
+				return "that order is no longer on the board"
+			var why := ship_sign_problem(own)
+			return {"op": op, "order": own, "design": str(p.get("design", "")), "design_name": str(p.get("design_name", "")),
+				"cost": maxi(0, int(p.get("cost", 0)))} if why == "" else why
+		"deliver_ship":
+			var c := ship_contract(str(p.get("contract", "")))
+			if c.is_empty() or c.state != "building":
+				return "no ship contract being built"
+			return p if p.get("rows") is Array else "no trial results"
+		"ship_stage":
+			return p if not ship_contract(str(p.get("contract", ""))).is_empty() else "no such ship contract"
 	var job := get_job(str(p.get("job", "")))
 	if job == null:
 		return "no such job"
@@ -765,6 +1015,12 @@ func _apply_action(p: Dictionary) -> void:
 			_set_active(str(p.get("job", "")))
 		"sign_stage":
 			sign_off_stage(str(p.get("job", "")), str(p.get("stage", "")), str(p.get("by", "surveyor")), bool(p.get("force", false)))
+		"sign_ship":
+			sign_ship(p.order, str(p.design), str(p.design_name), int(p.cost))
+		"deliver_ship":
+			deliver_ship(str(p.contract), p.rows)
+		"ship_stage":
+			pay_ship_stage(str(p.contract), str(p.stage))
 
 
 ## Asks for an offer from a client at a tier (1 to 3), whatever BSX's standing with them:
@@ -1167,7 +1423,7 @@ func save_data() -> Dictionary:
 	var jobs := {}
 	for id: String in _jobs:
 		jobs[id] = Store.to_save(_jobs[id])
-	return {"jobs": jobs, "active": _active, "standing": _standing, "cycle": _cycle}
+	return {"jobs": jobs, "active": _active, "standing": _standing, "cycle": _cycle, "ships": _ships.duplicate(true)}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -1185,4 +1441,10 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	for id: String in data.get("standing", {}):
 		_standing[id] = int(data["standing"][id])
 	_cycle = int(data.get("cycle", 0))
+	_ships = {}
+	var ships: Variant = data.get("ships", {})
+	if ships is Dictionary:
+		for id: String in ships:
+			if ships[id] is Dictionary and (ships[id] as Dictionary).has("stages"):
+				_ships[id] = (ships[id] as Dictionary).duplicate(true)
 	seed_board()

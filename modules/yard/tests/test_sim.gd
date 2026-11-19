@@ -18,13 +18,16 @@ func run_tests() -> void:
 		bus.name = "yard"
 		Modules.add_child(bus)
 		bus.register_module()
+	bus.reset_data()
 	# The host's yard: a kit called, the airlock cycled out, a contract started, a minute run.
 	var a := _open()
 	check(bus.sim_epoch >= 0.0, "opening the yard starts its clock")
 	a.call("call_kit")
 	(a.get("airlock") as Node).call("use", "out")
 	a.call("ask_demo_contract")
-	check(bus.sim_log.size() == 3, "a kit, the airlock and a contract are logged (%d)" % bus.sim_log.size())
+	var fleet0 := bus.sim_fleet.duplicate(true)
+	check(bus.add_worker_bot("W"), "a welder bought from TartanCo")
+	check(bus.sim_log.size() == 4, "a kit, the airlock, a contract and a new bot are logged (%d)" % bus.sim_log.size())
 	check(int((a.get("airlock") as Node).get("state")) == 0, "the airlock waits for its tick")
 	var sim: Node = a.get("sim")
 	var t0 := Time.get_ticks_usec()
@@ -34,6 +37,7 @@ func run_tests() -> void:
 	check(ms < 2.0, "a tick is cheap enough to catch up a late joiner (%.3f ms)" % ms)
 	check(int((a.get("airlock") as Node).get("state")) == 1, "the airlock cycled out at its tick")
 	check((a.get("traffic").get("kit_orders") as Array).size() >= 1, "the kit's mover set off")
+	check((a.get("workers").get("workers") as Array).size() == 7, "the new bot joined the crew at its tick")
 	var host := _state(a)
 	var log := bus.sim_log.duplicate(true)
 	a.queue_free()
@@ -41,17 +45,63 @@ func run_tests() -> void:
 	# A friend's yard, opened later: replays the host's log from tick 0 to the same tick.
 	var b := _open()
 	bus.sim_log.assign(log)
+	bus.sim_fleet = fleet0   # the crew at the host's tick 0
 	(b.get("sim") as Node).call("restart")
 	(b.get("sim") as Node).call("run_ticks", TICKS)
 	var friend := _state(b)
 	check(host == friend, "the friend's yard is the host's, tick for tick%s" % _diff(host, friend))
 	b.queue_free()
 	await frames(2)
+	await _fleet(bus)
 	# The host stamps what a player does half a second ahead (when online) for the trip out.
 	bus.sim_epoch = Time.get_ticks_usec() / 1_000_000.0 - 10.0
 	var stamped: Variant = bus._sim_validate(2, {"kind": "kit", "kit": "keel_ring"})
 	check(stamped is Dictionary and int(stamped.peer) == 2 and int(stamped.tick) >= 590, "the host stamps the sender and the tick")
 	await _online()
+
+
+## Buying and upgrading TartanCo bots through the bus: on the clock, saved, back next time.
+func _fleet(bus: YardBus) -> void:
+	var cat := YardBus.tartanco_catalogue()
+	check(YardBus.worker_bot_price("W") == 65000 and YardBus.worker_mark_price(3) > 0 and YardBus.worker_module_price("servo_set") > 0
+			and cat.bots.size() == 4 and cat.marks.size() == 5 and cat.modules.size() == 6, "TartanCo's prices and catalogue")
+	check(YardBus.worker_bot_price("X") == -1, "no price for what they don't sell")
+	bus.reset_data()
+	var s := _open()
+	var crew: Node = s.get("workers")
+	var sim: Node = s.get("sim")
+	check(bus.worker_fleet_state().size() == 6, "TartanCo's first six")
+	check(bus.add_worker_bot("R") and bus.set_worker_mark(6, 3), "buy a riveter and make it a Mk3")
+	_catch_up(sim, bus)
+	check(bus.fit_worker_module(6, "servo_set") and bus.fit_worker_module(6, "thrusters"), "fit two modules in its two slots")
+	check(not bus.fit_worker_module(6, "sensor_suite"), "no third module on a Mk3")
+	_catch_up(sim, bus)
+	var live: Array = crew.call("fleet_state")
+	check(live.size() == 7 and int(live[6].mark) == 3 and (live[6].modules as Array).size() == 2, "the crew has it: %s" % str(live.back()))
+	check(bus.worker_fleet == live, "and the company's save matches the crew")
+	check(bus.remove_worker_module(6, "thrusters"), "take one out")
+	_catch_up(sim, bus)
+	var saved := bus.save_data()
+	s.queue_free()
+	await frames(2)
+	bus.reset_data()
+	check(bus.worker_fleet_state().size() == 6, "a new game has the first six")
+	bus.load_data(saved, bus.save_version())
+	var again := _open()
+	_catch_up(again.get("sim"), bus)
+	var back: Array = (again.get("workers") as Node).call("fleet_state")
+	check(back.size() == 7 and int(back[6].mark) == 3 and back[6].modules == ["servo_set"], "loaded, the yard opens with the saved crew: %s" % str(back.back()))
+	again.queue_free()
+	await frames(2)
+	# Bought from a screen with the yard shut: kept for when it opens.
+	check(bus.add_worker_bot("B") and bus.worker_fleet.size() == 8, "a bot bought with the yard shut is kept")
+	bus.reset_data()
+
+
+## Runs the yard to just past the last thing logged.
+func _catch_up(sim: Node, bus: YardBus) -> void:
+	var last := int(bus.sim_log.back().tick) if not bus.sim_log.is_empty() else 0
+	sim.call("run_ticks", maxi(1, last + 1 - int(sim.get("tick"))))
 
 
 ## Two players over ENet: the friend gets the host's clock when joining and agrees on the tick;

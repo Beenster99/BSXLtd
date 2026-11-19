@@ -65,6 +65,15 @@ func run_tests() -> void:
 			# The aim picks the nearest to its line: this one, or one as near (two a few mm apart).
 			var a := station.aimed
 			var ok := _same_spot(station, a, i) or (a >= 0 and rig.aim_distance(station.points_world[a]) <= rig.aim_distance(station.points_world[i]) + 0.002)
+			# On a busy machine (CI) the physics space can lag the moved worker a step more, and
+			# the aim then finds nothing (aimed -1): give it a few more steps before judging.
+			for r in 3:
+				if ok or a >= 0:
+					break
+				await get_tree().physics_frame
+				station.update(0.0)
+				a = station.aimed
+				ok = _same_spot(station, a, i) or (a >= 0 and rig.aim_distance(station.points_world[a]) <= rig.aim_distance(station.points_world[i]) + 0.002)
 			seen[0] += 1 if ok else 0
 			if not ok:
 				print("joint %d not picked: aimed %d, %.3f m off the line, depth %.3f" % [i, a, rig.aim_distance(station.points_world[i]), depth])

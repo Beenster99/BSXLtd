@@ -40,8 +40,7 @@ func setup(bus: Object) -> void:
 	for n in advancers:
 		n.set_physics_process(false)
 	if _bus:
-		for e: Dictionary in _bus.get("sim_log"):
-			_enqueue(e)
+		_take_log()
 		_bus.connect("sim_logged", _enqueue)
 
 
@@ -55,8 +54,7 @@ func restart() -> void:
 	_queue.clear()
 	tick = 0
 	if _bus:
-		for e: Dictionary in _bus.get("sim_log"):
-			_enqueue(e)
+		_take_log()
 
 
 ## The tick everything should be at now, or -1 while the shared clock is not known yet.
@@ -98,6 +96,13 @@ func run_tick() -> void:
 func run_ticks(count: int) -> void:
 	for i in count:
 		run_tick()
+
+
+## The crew as it stood at tick 0 first, then everything logged since.
+func _take_log() -> void:
+	_enqueue({"kind": "fleet", "tick": 0, "n": -1, "state": (_bus.get("sim_fleet") as Array).duplicate(true)})
+	for e: Dictionary in _bus.get("sim_log"):
+		_enqueue(e)
 
 
 ## Files a logged event by tick, then the host's order (an event logged late, for a tick
