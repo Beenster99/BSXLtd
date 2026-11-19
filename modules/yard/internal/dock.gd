@@ -5,6 +5,7 @@ extends Node3D
 ## berths from Wave 5; for now they stand empty. Where they are: YardLayout.BERTHS.
 
 const Kit := preload("res://modules/yard/internal/yard_kit.gd")
+const Solar := preload("res://modules/yard/internal/solar_array.gd")
 
 ## Floodlight brightness and reach.
 @export var flood_energy := 6.0
@@ -15,6 +16,11 @@ const Kit := preload("res://modules/yard/internal/yard_kit.gd")
 var kit
 var berth_nodes: Dictionary = {}
 var _blinkers: Array[MeshInstance3D] = []
+## Every floodlight: {berth, pan (Node3D, turns about y), tilt (Node3D, turns about its x),
+## spot, aim (where it is turning to, station space)}.
+var floods: Array[Dictionary] = []
+## How fast the floods turn to a new aim (rad/s).
+@export var flood_turn_speed := 0.6
 var _time := 0.0
 
 
@@ -27,6 +33,8 @@ func build() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	for f: Dictionary in floods:
+		_turn_flood(f, delta)
 	var on := fmod(_time, blink_period) < blink_period * 0.3
 	for b in _blinkers:
 		b.visible = on
@@ -71,20 +79,14 @@ func _berth(b: Dictionary) -> void:
 	var label: Label3D = kit.sign(str(b.name), name_at, Vector3.BACK, 0.08 if build_berth else 0.06, Kit.ORANGE, 128)
 	label.shaded = false
 	kit.box(Vector3(0.6, 2.2, 0.6), Vector3(name_at.x, hi.y + 1.1, hi.z), dark)
-	# Floodlights on the top corners, aimed at the berth's middle.
+	# Floodlights on all eight corners (0.4.1 playtest: "movable flood lights on all corners not
+	# just top"), each on a pan and tilt yoke, aimed at the berth's middle.
 	var centre := box.get_center()
 	for x: float in [lo.x, hi.x]:
-		for z: float in [lo.z, hi.z]:
-			var at := Vector3(x, hi.y + 1.5, z)
-			kit.box(Vector3(1.2, 0.8, 1.2), at, kit.glow(Kit.LAMP, 4.0), false)
-			var spot := SpotLight3D.new()
-			spot.light_energy = flood_energy
-			spot.spot_range = flood_range if build_berth else flood_range * 0.8
-			spot.spot_angle = 40.0
-			spot.light_color = Color(1.0, 0.96, 0.88)
-			spot.shadow_enabled = false
-			add_child(spot)
-			spot.look_at_from_position(at, centre, Vector3.UP)
+		for y: float in [lo.y, hi.y]:
+			for z: float in [lo.z, hi.z]:
+				var at := Vector3(x, y + (1.6 if y == hi.y else -1.6), z)
+				_flood(node, at, centre, build_berth, dark)
 	# Blinking marker lamps on the bottom corners.
 	for x: float in [lo.x, hi.x]:
 		for z: float in [lo.z, hi.z]:
@@ -102,6 +104,14 @@ func _dock_arm() -> void:
 	_truss(Vector3(-100, y, z), Vector3(100, y, z), white, dark)
 	_truss(Vector3(-6.0, y, z), Vector3(-6.0, -1.2, -21.0), white, dark)
 	_truss(Vector3(30.0, y, z), Vector3(30.0, -1.2, -29.0), white, dark)
+	# Solar wings off both ends of the arm, up and down, turned to the sun.
+	var sun_h := Vector3(0.55, 0.0, -0.35).normalized()
+	var face := Basis(sun_h.cross(Vector3.UP), sun_h, Vector3.UP)
+	for x: float in [-106.0, 106.0]:
+		_truss(Vector3(x - signf(x) * 5.0, y, z), Vector3(x, y, z), white, dark)
+		kit.box(Vector3(0.5, 76.0, 0.5), Vector3(x, y, z), dark, false)
+		for up: float in [-1.0, 1.0]:
+			Solar.build(self, "ArmSolar_%d_%d" % [int(x), int(up)], Vector3(x, y + up * 20.5, z), face, 4, 11)
 	# Walkway lamps along the arm, so you can find your way out in the dark.
 	for i in range(-9, 10):
 		kit.box(Vector3(0.25, 0.25, 0.25), Vector3(i * 10.0, y + 1.3, z), kit.glow(Color(0.4, 0.8, 1.0), 5.0), false)
@@ -127,3 +137,76 @@ func _truss(a: Vector3, b: Vector3, chord_mat: Material, rung_mat: Material) -> 
 		kit.box(Vector3(1.6, 0.12, 0.12), Vector3(0, -0.7, zz), rung_mat, false, holder)
 		kit.box(Vector3(0.12, 1.6, 0.12), Vector3(0.7, 0, zz), rung_mat, false, holder)
 		kit.box(Vector3(0.12, 1.6, 0.12), Vector3(-0.7, 0, zz), rung_mat, false, holder)
+
+
+## Points a berth's floodlights at `target` (station space; they turn there at
+## flood_turn_speed), or back at the berth's middle with Vector3.INF.
+func aim_floods(berth_id: String, target := Vector3.INF) -> void:
+	for f: Dictionary in floods:
+		if f.berth == berth_id:
+			f.aim = f.home if target == Vector3.INF else target
+
+
+## A floodlight: a bracket on the frame, a yoke that pans, a head that tilts, its lens lit and
+## its spot inside it.
+func _flood(berth: Node3D, at: Vector3, target: Vector3, build_berth: bool, dark: Material) -> void:
+	var grey: Material = kit.paint(Color(0.3, 0.32, 0.35), 0.6, 0.4, "gunmetal")
+	var down := at.y < target.y
+	var mount := Node3D.new()
+	mount.name = "Flood"
+	mount.position = at
+	berth.add_child(mount)
+	_piece(mount, Vector3(1.4, 0.3, 1.4), Vector3(0, -0.85 if not down else 0.85, 0), dark)
+	_piece(mount, Vector3(0.3, 0.6, 0.3), Vector3(0, -0.55 if not down else 0.55, 0), grey)
+	var pan := Node3D.new()
+	pan.name = "Pan"
+	mount.add_child(pan)
+	for sx: float in [-0.75, 0.75]:
+		_piece(pan, Vector3(0.12, 1.0, 0.3), Vector3(sx, 0, 0), grey)
+	_piece(pan, Vector3(1.4, 0.14, 0.26), Vector3(0, -0.5 if not down else 0.5, 0), grey)
+	var tilt := Node3D.new()
+	tilt.name = "Tilt"
+	pan.add_child(tilt)
+	_piece(tilt, Vector3(1.3, 0.9, 0.7), Vector3(0, 0, 0.1), dark)
+	_piece(tilt, Vector3(1.4, 1.0, 0.12), Vector3(0, 0, -0.3), grey)
+	_piece(tilt, Vector3(1.16, 0.76, 0.04), Vector3(0, 0, -0.37), kit.glow(Kit.LAMP, 4.0))
+	for fy: float in [-0.3, -0.1, 0.1, 0.3]:   # cooling fins on its back
+		_piece(tilt, Vector3(1.2, 0.04, 0.3), Vector3(0, fy, 0.58), grey)
+	var spot := SpotLight3D.new()
+	spot.light_energy = flood_energy * 0.7
+	spot.spot_range = flood_range if build_berth else flood_range * 0.8
+	spot.spot_angle = 36.0
+	spot.light_color = Color(1.0, 0.96, 0.88)
+	spot.shadow_enabled = false
+	spot.position = Vector3(0, 0, -0.45)
+	tilt.add_child(spot)
+	var f := {"berth": String(berth.name).trim_prefix("Berth_"), "pan": pan, "tilt": tilt, "spot": spot, "home": target, "aim": target}
+	floods.append(f)
+	_turn_flood(f, 1000.0)
+
+
+## Turns a flood towards its aim, pan about y and tilt about x, by at most flood_turn_speed.
+func _turn_flood(f: Dictionary, delta: float) -> void:
+	var pan: Node3D = f.pan
+	var tilt: Node3D = f.tilt
+	if not pan.is_inside_tree():
+		return
+	var to: Vector3 = f.aim - pan.global_position
+	if to.length() < 0.01:
+		return
+	var want_yaw := atan2(-to.x, -to.z)
+	var want_pitch := atan2(to.y, Vector2(to.x, to.z).length())
+	var step := flood_turn_speed * delta
+	pan.rotation.y = rotate_toward(pan.rotation.y, want_yaw, step)
+	tilt.rotation.x = rotate_toward(tilt.rotation.x, want_pitch, step)
+
+
+func _piece(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var b := BoxMesh.new()
+	b.size = size
+	mi.mesh = b
+	mi.material_override = mat
+	mi.position = at
+	parent.add_child(mi)
+	return mi

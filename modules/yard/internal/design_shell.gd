@@ -1,6 +1,6 @@
 extends RefCounted
 ## The design room as a creative space (0.4.0 playtest): a glazed barrel vault over the room
-## from the window to the back, peaking at YardBus.DESIGN_ROOM_PEAK, with the planet and the
+## from the window to the back, peaking at YardBus.DESIGN_ROOM_PEAK, with the galaxy and the
 ## stars through it; a mezzanine along the back wall with a glass rail and a stair at its left
 ## end; the corridor door under it. The walls are left bare for the Design Room module's
 ## screens (YardBus.design_room_walls()): no lamps, pipes or signs on them.

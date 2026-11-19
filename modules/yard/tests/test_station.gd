@@ -87,7 +87,7 @@ func _design_room(bus: YardBus, station: Node3D) -> void:
 
 
 func _gravity_and_walking(station: Node3D) -> void:
-	for id: String in ["design", "corridor", "racking", "contracts", "crew", "airlock", "design_lock"]:
+	for id: String in ["design", "corridor", "racking", "contracts", "crew", "quarters", "airlock", "design_lock"]:
 		var c: Vector3 = (YardLayout.ROOMS[id].box as AABB).get_center()
 		check(YardLayout.room_at(c) == id and YardLayout.has_gravity(c), "%s has gravity" % id)
 	check(not YardLayout.has_gravity(Vector3(-45, 1, -2)), "past the airlock it is weightless")
@@ -388,6 +388,34 @@ func _dock(station: Node3D) -> void:
 				check(not box.intersects(other.box), "berths %s and %s do not overlap" % [b.name, other.name])
 	var lights := dock.find_children("*", "SpotLight3D", true, false)
 	check(lights.size() >= 12, "the berths are floodlit")
+	# Sleeping quarters: eight cabins, each with Void Salvage's bunk, off the corridor.
+	var bunks := station.find_children("Bunk_*", "Node3D", true, false)
+	check(bunks.size() == 8, "eight cabins with a bunk each in the quarters (%d)" % bunks.size())
+	var in_quarters := bunks.all(func(b: Node3D) -> bool: return YardLayout.room_at(b.global_position + Vector3(0, 0.3, 0)) == "quarters")
+	check(in_quarters, "the bunks are in the sleeping quarters")
+	var door_q := PhysicsRayQueryParameters3D.create(Vector3(32, 1.2, -2), Vector3(32, 1.2, 5.5))
+	check(station.get_world_3d().direct_space_state.intersect_ray(door_q).is_empty(), "the quarters open off the corridor")
+	# Floodlights on all eight corners of every berth, on yokes that turn to a new aim.
+	var floods: Array = dock.get("floods")
+	check(floods.size() == berths.size() * 8, "a floodlight on every corner of every berth (%d)" % floods.size())
+	var low := floods.filter(func(f: Dictionary) -> bool: return (f.pan as Node3D).global_position.y < (berths[0].box as AABB).position.y + 1.0 and f.berth == "build_1")
+	check(low.size() == 4, "the bottom corners have floods too")
+	var f0: Dictionary = floods[0]
+	var lens := func(f: Dictionary) -> Vector3: return -(f.spot as SpotLight3D).global_basis.z
+	var home_dir: Vector3 = (f0.home - (f0.spot as SpotLight3D).global_position).normalized()
+	check(lens.call(f0).dot(home_dir) > 0.97, "each flood is aimed at its berth's middle")
+	var spot_at: Vector3 = (berths[0].box as AABB).position + Vector3(5, 5, 5)
+	dock.call("aim_floods", f0.berth, spot_at)
+	for i in 120:
+		dock.call("_process", 0.05)
+	var new_dir: Vector3 = (spot_at - (f0.spot as SpotLight3D).global_position).normalized()
+	check(lens.call(f0).dot(new_dir) > 0.97, "the floods turn to a new aim")
+	dock.call("aim_floods", f0.berth)
+	# Solar arrays of Void Salvage's own panels on the roofs and the dock arm.
+	var panels := 0
+	for a: Node in station.find_children("*Solar*", "Node3D", true, false):
+		panels += int(a.get_meta("panels", 0))
+	check(panels >= 400, "hundreds of real solar panels (%d)" % panels)
 	# The build berth is seen from the design room's window.
 	var space := station.get_world_3d().direct_space_state
 	var eye := Vector3(0, 1.7, -20)
