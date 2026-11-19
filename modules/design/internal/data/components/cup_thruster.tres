@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "cup_thruster"
+display_name = "Cup thruster"
+short = "CUP"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(0.9, 0.9, 0.7)
+cost = 5200.0
+mass = 260.0
+build_hours = 3.0
+power = -5.0
+thrust = 16.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 2
+shared_part = "CupThruster"
+category = "propulsion"
+size_class = 1
+min_class = 1
+max_class = 4
+integrity = 95.0
+signature = 5.0

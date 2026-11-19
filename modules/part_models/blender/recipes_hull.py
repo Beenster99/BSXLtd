@@ -322,3 +322,100 @@ RECIPES = {
     "docking_port": r_docking_port, "blast_door": r_blast_door, "bulkhead_plating": r_bulkhead_plating,
     "landing_gear": r_landing_gear, "drill": r_drill, "name_board": r_name_board,
 }
+
+
+def r_tow_hook(p, s):
+    # A stern tow hardpoint: a heavy plate and gusseted bracket against the hull, a pin through
+    # its jaws and a forged hook hanging from it, its mouth pointing out from the hull.
+    w, h, d = s
+    mount_plate(p, s, 0.1)
+    p.box((w * 0.7, h * 0.7, d * 0.35), (0, h * 0.5, d * 0.5 - 0.1 - d * 0.175), "gunmetal", 0.03)
+    for sx in (-1, 1):
+        p.prism([(d * 0.5 - 0.1, h * 0.2), (d * 0.5 - 0.1, h * 0.8), (-d * 0.15, h * 0.62), (-d * 0.15, h * 0.38)],
+                0.08, (sx * w * 0.22, 0, 0), "x", "hazard", 0.01)
+    p.cyl(0.06, w * 0.6, (0, h * 0.5, -d * 0.1), "x", "chrome", 16)
+    for sx in (-1, 1):
+        p.cyl(0.09, 0.03, (sx * w * 0.3, h * 0.5, -d * 0.1), "x", "dark", 6)
+    # The hook: an eye on the pin, a shank out from the hull, the bend and the tip curling up.
+    p.torus(0.1, 0.035, (0, h * 0.5, -d * 0.1), "x", "dark", 20, 8)
+    p.rod((0, h * 0.5 - 0.1, -d * 0.1), (0, h * 0.25, -d * 0.32), 0.05, "dark", 12)
+    bend = p.torus(0.14, 0.05, (0, h * 0.25 + 0.0, -d * 0.32 - 0.14), "x", "dark", 24, 8)
+    p.rod((0, h * 0.25, -d * 0.46), (0, h * 0.42, -d * 0.48), 0.045, "dark", 12)
+    p.box((0.12, 0.03, 0.12), (0, h * 0.44, -d * 0.48), "hazard", 0.006)
+    p.box((w * 0.6, 0.05, 0.01), (0, h * 0.86, d * 0.5 - 0.105), "hazard", 0.0)
+    p.lamp(0.025, (w * 0.3, h * 0.86, d * 0.5 - 0.1), "-z", "lamp_amber")
+
+
+RECIPES["tow_hook"] = r_tow_hook
+
+
+def r_landing_gear_small(p, s):
+    # A light skid leg: one telescoping strut from a small hull pad down to a round swivel foot,
+    # a drag link braced back to the pad.
+    w, h, d = s
+    p.box((w * 0.9, 0.12, d * 0.6), (0, h - 0.06, d * 0.15), "gunmetal", 0.015)
+    p.cyl(0.07, h * 0.45, (0, h * 0.7, 0.0), "y", "gunmetal", 18)
+    p.cyl(0.045, h * 0.5, (0, h * 0.33, 0.0), "y", "chrome", 18)
+    p.torus(0.07, 0.015, (0, h * 0.48, 0.0), "y", "dark", 18, 6)
+    p.rod((0, h - 0.12, d * 0.35), (0, h * 0.42, 0.04), 0.022, "gunmetal")
+    p.sphere(0.06, (0, 0.11, 0), "gunmetal")
+    p.floor_box((w * 0.9, 0.04, d * 0.95), (0, 0, 0), "dark", 0.02)
+    p.cyl(w * 0.42, 0.03, (0, 0.055, 0), "y", "rubber", 24)
+    p.floor_box((w * 0.6, 0.03, d * 0.9), (0, 0.04, 0), "rubber", 0.01)
+    p.box((0.1, 0.03, 0.01), (0, h * 0.78, -0.075), "hazard", 0.0)
+
+
+def r_landing_gear_large(p, s):
+    # A heavy leg: twin oleo pistons in an A-frame from a wide hull bracket to a broad articulated
+    # pad, a drag brace and its retract jack behind, hydraulic lines down the pistons.
+    w, h, d = s
+    p.box((w * 0.9, 0.3, d * 0.6), (0, h - 0.15, d * 0.18), "gunmetal", 0.03)
+    for sx in (-1, 1):
+        x0, x1 = sx * w * 0.32, sx * w * 0.12
+        p.rod((x0, h - 0.3, 0.0), (x0 * 0.7 + x1 * 0.3, h * 0.45, 0.0), 0.11, "gunmetal", 16)
+        p.rod((x0 * 0.7 + x1 * 0.3, h * 0.47, 0.0), (x1, 0.32, 0.0), 0.075, "chrome", 16)
+        p.torus(0.11, 0.02, (x0 * 0.7 + x1 * 0.3, h * 0.46, 0.0), "y", "dark", 16, 6)
+        p.rod((x0 + sx * 0.12, h - 0.3, 0.08), (x1 + sx * 0.1, 0.36, 0.08), 0.018, "copper", 6)
+    p.box((w * 0.4, 0.14, 0.24), (0, 0.32, 0.0), "gunmetal", 0.02)
+    p.rod((0, h - 0.3, d * 0.42), (0, h * 0.35, 0.0), 0.06, "gunmetal")
+    p.rod((0, h - 0.3, -d * 0.1), (0, h * 0.6, -d * 0.38), 0.05, "gunmetal")
+    p.rod((0, h * 0.6, -d * 0.38), (0, 0.4, -0.05), 0.04, "hazard")
+    p.cyl(0.13, w * 0.3, (0, 0.22, 0), "x", "gunmetal", 16)
+    p.floor_box((w, 0.12, d * 0.95), (0, 0, 0), "dark", 0.03)
+    p.floor_box((w * 0.86, 0.05, d * 0.82), (0, 0.12, 0), "rubber", 0.015)
+    for sx in (-1, 1):
+        p.box((0.05, 0.06, d * 0.9), (sx * w * 0.47, 0.15, 0), "hazard", 0.01)
+    p.box((0.3, 0.05, 0.01), (0, h - 0.15, -d * 0.12 - 0.005), "hazard", 0.0)
+    p.lamp(0.03, (w * 0.35, h - 0.2, -d * 0.12), "-z", "lamp_amber")
+
+
+def r_landing_gear_xl(p, s):
+    # A capital-ship bogie: a deep trunnion block on the hull, two main oleos down to a crossbeam,
+    # four pads on rocking arms under it, drag braces fore and aft, jacks and hydraulic lines.
+    w, h, d = s
+    p.box((w * 0.8, 0.45, d * 0.55), (0, h - 0.225, 0), "gunmetal", 0.04)
+    p.cyl(0.18, w * 0.7, (0, h - 0.55, 0), "x", "dark", 20)
+    for sx in (-1, 1):
+        x = sx * w * 0.2
+        p.cyl(0.2, h * 0.35, (x, h * 0.62, 0), "y", "gunmetal", 20)
+        p.cyl(0.14, h * 0.3, (x, h * 0.32, 0), "y", "chrome", 20)
+        p.torus(0.2, 0.03, (x, h * 0.45, 0), "y", "dark", 20, 6)
+        p.rod((x + sx * 0.22, h - 0.45, 0.1), (x + sx * 0.16, h * 0.2, 0.1), 0.025, "copper", 6)
+    p.box((w * 0.9, 0.28, 0.36), (0, h * 0.16, 0), "gunmetal", 0.03)
+    for sz in (-1, 1):
+        p.rod((0, h - 0.45, sz * d * 0.25), (0, h * 0.2, sz * d * 0.06), 0.08, "gunmetal")
+        p.rod((sx * 0, h * 0.7, sz * d * 0.38), (0, h * 0.25, sz * d * 0.12), 0.05, "hazard")
+        for sx in (-1, 1):
+            x, z = sx * w * 0.27, sz * d * 0.27
+            p.rod((x, h * 0.16, sz * 0.12), (x, 0.32, z), 0.07, "gunmetal")
+            p.cyl(0.1, 0.16, (x, 0.3, z), "x", "dark", 14)
+            p.floor_box((w * 0.42, 0.1, d * 0.42), (x, 0, z), "dark", 0.02)
+            p.floor_box((w * 0.36, 0.05, d * 0.36), (x, 0.1, z), "rubber", 0.012)
+    p.box((w * 0.5, 0.06, 0.01), (0, h - 0.225, -d * 0.275 - 0.005), "hazard", 0.0)
+    for sx in (-1, 1):
+        p.lamp(0.04, (sx * w * 0.32, h - 0.3, -d * 0.275), "-z", "lamp_amber")
+
+
+RECIPES["landing_gear_small"] = r_landing_gear_small
+RECIPES["landing_gear_large"] = r_landing_gear_large
+RECIPES["landing_gear_xl"] = r_landing_gear_xl

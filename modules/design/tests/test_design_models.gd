@@ -40,6 +40,12 @@ func run_tests() -> void:
 		check(holder.get_child(0).has_meta("part_model") and is_equal_approx((holder.get_child(0) as Node3D).scale.x, big.model_scale),
 				"a bigger size class draws its base model scaled up (%.2f)" % big.model_scale)
 		holder.free()
+	# The tug's tow hook (contracts ask for one): a hull hardpoint rated in tonnes, x2 a size up.
+	var hook := catalog.part("tow_hook")
+	check(hook != null and hook.hull_mount and hook.tow_t == 300.0 and PartModels.has("tow_hook"),
+			"the tow hook is a hull fitting rated 300 t, with a model")
+	var hook4 := catalog.part("tow_hook:4S")
+	check(hook4 != null and is_equal_approx(hook4.tow_t, 600.0), "a size 4 tow hook tows twice as much")
 	Flags.set_flag("design.part_models", false)
 	holder = Node3D.new()
 	WalkBuild.component_look(holder, fridge, fridge.size, 0, kit)

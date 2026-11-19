@@ -39,6 +39,9 @@ const ENTRIES: Dictionary = {
 	"IonThruster": {"name": "Ion thruster", "category": "engines", "material": "alloy", "kg": 400.0},
 	"SideThruster": {"name": "Side thruster", "category": "engines", "material": "alloy", "kg": 200.0},
 	"LiftThruster": {"name": "Lift thruster", "category": "engines", "material": "alloy", "kg": 300.0},
+	"CupThruster": {"name": "Cup thruster", "category": "engines", "material": "alloy", "kg": 260.0},
+	"OctagonThruster": {"name": "Octagon multi-nozzle thruster", "category": "engines", "material": "steel", "kg": 1400.0},
+	"OvalEngine": {"name": "Oval twin engine", "category": "engines", "material": "steel", "kg": 3600.0},
 	# Machinery and fluids
 	"Assembler": {"name": "Assembler", "category": "machinery", "material": "steel", "kg": 2400.0},
 	"FuelTank": {"name": "Fuel tank", "category": "fluids", "material": "steel", "kg": 900.0},
@@ -282,6 +285,9 @@ static func _build(id: String) -> PartShapes.PartShape:
 		"IonThruster": return WreckParts.ion_thruster(0.8, 1.2)
 		"SideThruster": return WreckParts.thruster_pod(0.6, 0.5, 0.8)
 		"LiftThruster": return WreckParts.ducted_fan(0.6, 0.6)
+		"CupThruster": return WreckParts.cup_thruster(0.45, 0.7)
+		"OctagonThruster": return WreckParts.octagon_thruster(1.6, 0.8)
+		"OvalEngine": return WreckParts.oval_engine(2.6, 1.5, 1.0)
 		"Assembler": return WreckParts.machine_unit(Vector3(1.6, 1.8, 1.2))
 		"FuelTank": return WreckParts.tank(0.6, 2.8)
 		"SideTank": return WreckParts.banded_tank(0.6, 2.4)

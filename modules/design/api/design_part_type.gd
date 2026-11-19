@@ -66,6 +66,8 @@ extends Resource
 @export var tank := 0.0
 ## Sensor range, km.
 @export var sensor := 0.0
+## Tow rating: tonnes it can tow (tow hooks; contracts that want a tug read it).
+@export var tow_t := 0.0
 ## Set on a derived size/grade variant (DesignCatalog.part("reactor_small:5H")): its base type's
 ## id, its size class and grade code, and how much bigger its model is drawn than the base's.
 var base_id := ""

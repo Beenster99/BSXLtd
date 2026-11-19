@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "landing_gear_small"
+display_name = "Landing gear (small)"
+short = "LGS"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(0.5, 1.2, 0.8)
+cost = 2000.0
+mass = 180.0
+build_hours = 2.0
+power = -0.3
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.6
+lead_days = 1
+category = "propulsion"
+size_class = 1
+min_class = 1
+max_class = 2
+integrity = 90.0
