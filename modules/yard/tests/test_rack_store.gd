@@ -13,6 +13,9 @@ func run_tests() -> void:
 	check(store.filled_count(YardRackStore.LONG) == 0, "a new store is empty")
 	check(store.slots.size() >= 300, "hundreds of places (%d)" % store.slots.size())
 
+	# Every part is a Void Salvage part, by its part_name (0.4.1: "use parts from void salvage").
+	var unknown := (YardRackStore.PARTS.keys() as Array).filter(func(id: String) -> bool: return not VsParts.has(id))
+	check(unknown.is_empty(), "every part the stores keep is a Void Salvage part %s" % [unknown])
 	# Every part fits the racks of its kind.
 	for part: String in YardRackStore.PARTS:
 		var p: Dictionary = YardRackStore.PARTS[part]
@@ -69,19 +72,19 @@ func run_tests() -> void:
 	var filling := YardRackStore.new()
 	var storeys := {}
 	for n in 12:
-		var at := filling.reserve("box_beam_6", 6)
+		var at := filling.reserve("BoxBeam", 6)
 		if at >= 0:
 			storeys[YardRackStore.storey_of(filling.slot_position(at).y)] = true
 	check(storeys.size() == 2, "deliveries are put away on both storeys")
 
 	# Deliveries are put away; bots take parts out.
 	var empty := YardRackStore.new()
-	var slot := empty.store("hull_plate", 6)
+	var slot := empty.store("HullPlate", 6)
 	check(slot >= 0 and empty.slot_kind(slot) == YardRackStore.PLATE, "hull plates go on a plate rack")
-	check(empty.store("hull_plate", 4) == slot and int(empty.slots[slot].qty) == 10, "more of them join the same stack")
-	check(empty.store("hull_plate", 8) != slot, "a stack that would overflow starts another")
-	check(empty.count("hull_plate") == 18, "18 hull plates in stock")
-	check(empty.find("hull_plate") >= 0, "the stores find them")
+	check(empty.store("HullPlate", 4) == slot and int(empty.slots[slot].qty) == 10, "more of them join the same stack")
+	check(empty.store("HullPlate", 8) != slot, "a stack that would overflow starts another")
+	check(empty.count("HullPlate") == 18, "18 hull plates in stock")
+	check(empty.find("HullPlate") >= 0, "the stores find them")
 	check(empty.take(slot, 3) == 3 and int(empty.slots[slot].qty) == 7, "a bot takes three")
 	check(empty.take(slot, 99) == 7 and empty.slots[slot].part == "", "and the rest empties the place")
 	check(empty.store("nonsense", 1) == -1, "an unknown part is refused")
@@ -89,6 +92,6 @@ func run_tests() -> void:
 	full.fill_demo(1.0)
 	for i in full.slots.size():
 		if full.slot_kind(i) == YardRackStore.HEAVY:
-			full.slots[i].part = "reactor"
+			full.slots[i].part = "Reactor"
 			full.slots[i].qty = 1
-	check(full.store("engine_bell", 1) == -1, "full heavy cradles take nothing more")
+	check(full.store("MainThruster", 1) == -1, "full heavy cradles take nothing more")

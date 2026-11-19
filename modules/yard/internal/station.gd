@@ -61,18 +61,18 @@ const BUSY_VIEWS := {"stores_ship": 50.0, "stores_ship_hold": 62.0, "stores_well
 ## What a demo contract buys (0.4.0 playtest: "when we start a new contract and start to buy
 ## the parts this should be a busy area"), and what the yard then asks for first.
 const DEMO_ORDER := [
-	{"part": "hull_plate", "qty": 36}, {"part": "box_beam_6", "qty": 18}, {"part": "deck_plate", "qty": 20},
-	{"part": "pipe_4", "qty": 30}, {"part": "girder_4", "qty": 16}, {"part": "junction_box", "qty": 16},
-	{"part": "switch_cabinet", "qty": 4}, {"part": "battery_rack", "qty": 2}, {"part": "generator", "qty": 2},
-	{"part": "hydrogen_engine", "qty": 2}, {"part": "tank_large", "qty": 3}, {"part": "thruster_pod", "qty": 4},
-	{"part": "radiator", "qty": 8}, {"part": "armour_slab", "qty": 8}, {"part": "valve", "qty": 20},
-	{"part": "gyroscope", "qty": 1}, {"part": "reactor", "qty": 1},
+	{"part": "HullPlate", "qty": 36}, {"part": "BoxBeam", "qty": 18}, {"part": "DeckPlate", "qty": 20},
+	{"part": "Pipe", "qty": 30}, {"part": "Girder", "qty": 16}, {"part": "JunctionBox", "qty": 16},
+	{"part": "SwitchCabinet", "qty": 4}, {"part": "BatteryRack", "qty": 2}, {"part": "Generator", "qty": 2},
+	{"part": "HydrogenEngine", "qty": 2}, {"part": "FuelTank", "qty": 3}, {"part": "SideThruster", "qty": 4},
+	{"part": "Radiator", "qty": 8}, {"part": "ArmourSlab", "qty": 8}, {"part": "FuelValve", "qty": 20},
+	{"part": "Gyroscope", "qty": 1}, {"part": "Reactor", "qty": 1},
 	# More than the freighter carries: the rest follows by hauler.
-	{"part": "hull_plate", "qty": 48}, {"part": "pipe_4", "qty": 20}, {"part": "deck_plate", "qty": 20},
+	{"part": "HullPlate", "qty": 48}, {"part": "Pipe", "qty": 20}, {"part": "DeckPlate", "qty": 20},
 ]
 const DEMO_TO_YARD := [
-	{"part": "box_beam_6", "qty": 12}, {"part": "girder_4", "qty": 8}, {"part": "hull_plate", "qty": 24},
-	{"part": "hydrogen_engine", "qty": 1}, {"part": "tank_large", "qty": 2}, {"part": "deck_plate", "qty": 10},
+	{"part": "BoxBeam", "qty": 12}, {"part": "Girder", "qty": 8}, {"part": "HullPlate", "qty": 24},
+	{"part": "HydrogenEngine", "qty": 1}, {"part": "FuelTank", "qty": 2}, {"part": "DeckPlate", "qty": 10},
 ]
 
 ## Views of you in the suit: id -> [your feet, where you face, the camera, lamp on] (station space).

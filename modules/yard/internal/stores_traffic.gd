@@ -644,19 +644,14 @@ func _berth_spot() -> Vector3:
 func _new_load(part: String, qty: int) -> Dictionary:
 	var node := Node3D.new()
 	node.name = "Load_%s" % part
-	var look: Dictionary = Look.look(part)
+	var layers: Array = Look.layers(part)
 	for t: Transform3D in load_layout(part, qty):
-		var mi := MeshInstance3D.new()
-		mi.mesh = look.mesh
-		mi.material_override = Look.material()
-		mi.transform = t
-		node.add_child(mi)
-		if look.glow != null:
-			var g := MeshInstance3D.new()
-			g.mesh = look.glow
-			g.material_override = Look.glow_material(look.glow_colour)
-			g.transform = t
-			node.add_child(g)
+		for l: Dictionary in layers:
+			var mi := MeshInstance3D.new()
+			mi.mesh = l.mesh
+			mi.material_override = l.material
+			mi.transform = t
+			node.add_child(mi)
 	_next_id += 1
 	var l := {"id": _next_id, "part": part, "qty": qty, "node": node, "where": "", "claimed": false, "slot": -1}
 	loads.append(l)
@@ -763,13 +758,11 @@ func _make_hauler(i: int, brand: Dictionary) -> Node3D:
 	hull.mesh = hm.hull
 	hull.material_override = livery
 	n.add_child(hull)
-	var bell: Dictionary = Look.look("engine_bell")
+	var bell: Array = Look.layers("MainThruster")
 	for dz: float in [-2.2, 2.2]:
-		var e := _part(n, bell.mesh, Vector3(14.6, -1.0, dz), Look.material(), Vector3(0, 0, -PI * 0.5))
-		if bell.glow != null:
-			var g := _part(n, bell.glow, Vector3(14.6, -1.0, dz), Look.glow_material(bell.glow_colour), Vector3(0, 0, -PI * 0.5))
-			g.name = "EngineGlow"
-		e.name = "Engine"
+		for j in bell.size():
+			var e := _part(n, bell[j].mesh, Vector3(14.6, -1.0, dz), bell[j].material, Vector3(0, 0, -PI * 0.5))
+			e.name = "Engine" if j == 0 else "EngineGlow"
 	var ramp := Node3D.new()
 	ramp.name = "Ramp"
 	ramp.position = Vector3(-8.0, -3.0, 0)
