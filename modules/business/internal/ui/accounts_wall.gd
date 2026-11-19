@@ -112,7 +112,8 @@ func setup(business_bus: BusinessBus, density: float) -> void:
 	for s in ["ledger_entry_added", "day_closed", "loan_taken", "loan_repaid", "owner_changed", "wallet_changed",
 			"payslip_issued", "reputation_changed", "order_placed", "delivery_arrived", "stock_added", "went_insolvent"]:
 		if bus.has_signal(s):
-			bus.connect(s, _queue.unbind(_arg_count(s)))
+			var n := _arg_count(s)
+			bus.connect(s, _queue.unbind(n) if n > 0 else _queue)
 	resized.connect(_fit_columns)
 	refresh()
 
@@ -377,7 +378,7 @@ func _crew_card() -> PanelContainer:
 		body.add_child(_label("Nobody on shift.", "body", fs - 1, T.DIM))
 		return c
 	body.add_child(_row([_cell("CREW", 0, T.DIM), _cell("LEVEL", 4, T.DIM), _cell("WAGE", 5, T.DIM),
-			_cell("LAST SLIP", 6, T.DIM), _cell("WALLET", 6, T.DIM)], HEAD))
+			_cell("PAYSLIP", 6, T.DIM), _cell("WALLET", 6, T.DIM)], HEAD))
 	var n := 0
 	for p: Dictionary in crew:
 		var who := _label(str(p.name) + ("  (OWNER)" if p.owner else ""), "body_medium", fs, T.TEXT)
