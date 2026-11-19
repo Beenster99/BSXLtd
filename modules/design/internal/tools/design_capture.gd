@@ -252,7 +252,8 @@ class Runner:
 			scroll = scroll.get_parent()
 		await _frames(5)
 		if scroll:
-			(scroll as ScrollContainer).scroll_vertical = int(head.position.y) - 40
+			var sc := scroll as ScrollContainer
+			sc.scroll_vertical = int(head.global_position.y - sc.global_position.y) + sc.scroll_vertical - 40
 		await _frames(30)
 		await _save(out, "parts_palette")
 		# A client's ship order picked, the data channel scoring against it, and a selected

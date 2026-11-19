@@ -15,6 +15,7 @@ func run_tests() -> void:
 	_variants()
 	_ratings()
 	_masses()
+	_moving()
 	_doors()
 	_orders()
 	await _palette()
@@ -152,6 +153,33 @@ func _masses() -> void:
 	check(fit.fuel_mass.ok and fit.occupancy_mass.ok and not fit.cargo_max.ok, "fuel, occupancy and cargo max are minimums")
 
 
+## Moving parts carry what the moving parts test reads: opening, travel time, power while
+## moving, rated load and ground clearance, scaled by size and grade like the rest.
+func _moving() -> void:
+	for id in ["landing_foot_pad", "landing_skid", "undercarriage_leg", "undercarriage_doors", "clamshell_doors",
+			"side_hold_door", "belly_hatch", "tail_ramp", "airstair", "stabiliser_jack", "hydraulic_ram", "door_motor",
+			"docking_clamp", "folding_solar_array", "folding_radiator", "antenna_mast", "crane_boom", "gangway_tube"]:
+		var pt := cat.part(id)
+		check(pt != null and pt.category != "" and pt.size_class > 0, "%s is in the catalogue, sized and graded" % id)
+		if pt != null:
+			check(pt.move_s > 0.0 or pt.move_kw > 0.0 or pt.load_kg > 0.0, "%s has moving-part figures" % id)
+	for id in ["cargo_ramp", "landing_gear", "airlock_door", "blast_door", "docking_port", "tow_winch", "turret"]:
+		check(cat.part(id).move_s > 0.0, "%s says how long it takes to move" % id)
+	for pt: DesignPartType in cat.parts.values():
+		if pt.move_s > 0.0:
+			check(pt.move_kind in ["hinge_out", "hinge_up", "slide", "spin", "leg", "belt"] and pt.move_range > 0.0,
+					"%s says how it moves and how far" % pt.id)
+	var leg := cat.part("undercarriage_leg")
+	check(leg.load_kg > 0.0 and leg.clearance > 0.0, "a leg has a load per leg and a ground clearance")
+	check(cat.part("clamshell_doors").open_size.x > float(DesignCatalog.DOOR_KINDS.cargo.max_w), "clamshell doors open wider than the biggest cargo door")
+	var big := cat.part("undercarriage_leg:5H")
+	check(big.load_kg > leg.load_kg * 3.0 and big.clearance > leg.clearance, "a bigger, Hardened leg bears more and stands taller")
+	check(cat.part("tail_ramp:4P").move_s < cat.part("tail_ramp").move_s, "a Precision ramp opens faster")
+	check(cat.part("crane_boom:6S").move_kw > cat.part("crane_boom").move_kw, "a bigger boom draws more while it slews")
+	for k: String in DesignCatalog.DOOR_KINDS:
+		check(DesignCatalog.DOOR_KINDS[k].has("move_s") and DesignCatalog.DOOR_KINDS[k].has("move_kw"), "door kind %s has move figures" % k)
+
+
 ## Door kinds: a plain door, an open doorway and a wide cargo door, priced on the parts list
 ## and checked against the wall they stand in.
 func _doors() -> void:
@@ -227,6 +255,31 @@ func _palette() -> void:
 	if b:
 		b.pressed.emit()
 		check(console.plan.tool == "part:reactor_small:5H", "picking it arms that variant: %s" % console.plan.tool)
+	# The compact list: a search finds parts across every group, closed or not, as you type.
+	var search := console.find_child("CompSearch", true, false) as LineEdit
+	check(search != null and console.find_child("CompGroups", true, false) is HFlowContainer,
+			"the components have a search box and group chips")
+	if search:
+		console._open_groups = {}
+		search.text = "reactor"
+		search.text_changed.emit("reactor")
+		await frames(1)
+		var hits := console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false)
+		var all_reactors := hits.size() > 0
+		for h: Node in hits:
+			all_reactors = all_reactors and "reactor" in (h as Button).text.to_lower()
+		check(all_reactors, "a search shows only matching parts, groups closed: %d" % hits.size())
+		check(console.find_child("CompSearch", true, false) == search, "typing keeps the search box (and its focus)")
+		search.text_changed.emit("zzzz")
+		await frames(1)
+		check(console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false).is_empty(),
+				"a search that matches nothing shows no parts")
+		search.text_changed.emit("")
+		await frames(1)
+		check(console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false).is_empty(),
+				"no search and no open group: no rows")
+	check(DesignConsole.short_money(950.0) == "950" and DesignConsole.short_money(12400.0) == "12k"
+			and DesignConsole.short_money(3100000.0) == "3.1M", "costs are written short on the rows")
 	var cargo_b := console.find_child("DoorKind_cargo", true, false) as Button
 	check(cargo_b != null, "the door kinds are on the palette")
 	if cargo_b:

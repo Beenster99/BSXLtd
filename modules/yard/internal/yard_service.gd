@@ -73,9 +73,12 @@ func build(workers: Node) -> void:
 				"sparks": sparks, "light": light, "from": Vector3.ZERO})
 
 
-## Sends for TartanCo. False if she's already on her way or here.
+## Sends for TartanCo. False if she's already on her way or here, or if no bot is in poor
+## condition (she only comes out for a faulted or badly worn bot).
 func call_in() -> bool:
 	if state != "away":
+		return false
+	if crew and crew.has_method("in_poor_condition") and not bool(crew.call("in_poor_condition")):
 		return false
 	state = "in"
 	ship.visible = true

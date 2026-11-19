@@ -27,6 +27,8 @@ flags = {
 "core.loading_screen": true,
 "design": true,
 "design.room": true,
+"fleet": true,
+"fleet.screen": true,
 "graphics": true,
 "graphics.gi": true,
 "graphics.hover": true,
