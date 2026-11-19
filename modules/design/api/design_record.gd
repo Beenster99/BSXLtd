@@ -25,8 +25,10 @@ extends RefCounted
 ##   {op = "shift_decks", by}   # every deck moved up by `by` (1: a new empty deck under the lowest)
 ##   {op = "add_wall", wall = {id?, deck, a = [x, z], b = [x, z]}}   # an inner wall drawn anywhere
 ##   {op = "remove_wall", id}
+##   {op = "set_wall", id, fields = {a?, b?}}   # an end moved
 ##   {op = "add_beam", beam = {id?, deck, a = [x, z], b = [x, z]}}   # a beam under the deckhead
 ##   {op = "remove_beam", id}
+##   {op = "set_beam", id, fields = {a?, b?}}
 ##   {op = "add_mount", mount = {id?, type, deck, x, z, angle}}   # a part on the outside of the hull
 ##   {op = "set_mount", id, fields = {...}}
 ##   {op = "remove_mount", id}
@@ -212,6 +214,24 @@ func _apply(op: Dictionary) -> Dictionary:
 			if key == "wall":
 				return _add_entry(walls, e, "i", "wall", "remove_wall")
 			return _add_entry(beams, e, "b", "beam", "remove_beam")
+		"set_wall", "set_beam":
+			var table := walls if op.op == "set_wall" else beams
+			var eid := str(op.get("id", ""))
+			var f: Dictionary = op.get("fields", {}).duplicate(true)
+			if not table.has(eid):
+				return {}
+			for end: String in ["a", "b"]:
+				if f.has(end):
+					var v: Array = f[end]
+					if v.size() < 2:
+						return {}
+					f[end] = [float(v[0]), float(v[1])]
+			var e: Dictionary = table[eid]
+			var na: Array = f.get("a", e.a)
+			var nb: Array = f.get("b", e.b)
+			if Vector2(float(na[0]), float(na[1])).distance_to(Vector2(float(nb[0]), float(nb[1]))) < 0.1:
+				return {}
+			return _set_fields(table, eid, f, str(op.op))
 		"remove_wall":
 			return _remove_entry(walls, str(op.get("id", "")), "wall", "add_wall")
 		"remove_beam":

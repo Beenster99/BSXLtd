@@ -229,7 +229,7 @@ func _fill_palette() -> void:
 		_door_buttons[k] = b
 		kinds.add_child(b)
 	_palette.add_child(kinds)
-	_palette.add_child(T.label("HULL SHAPE  (click its corners, drag them to reshape)", "display_medium", 15, T.DIM))
+	_palette.add_child(T.label("HULL SHAPE  (drag a corner, or a side for a new corner)", "display_medium", 15, T.DIM))
 	var shape := HBoxContainer.new()
 	for spec in [["hull", "DRAW HULL", func() -> void: plan.set_tool("hull")],
 			["hull_rooms", "ROUND THE ROOMS", hull_round_rooms],
@@ -242,7 +242,7 @@ func _fill_palette() -> void:
 			_tool_buttons["hull"] = b
 		shape.add_child(b)
 	_palette.add_child(shape)
-	_palette.add_child(T.label("STRUCTURE  (drag from one end to the other)", "display_medium", 15, T.DIM))
+	_palette.add_child(T.label("STRUCTURE  (drag end to end; drag an end to move it)", "display_medium", 15, T.DIM))
 	var frame := HBoxContainer.new()
 	for spec in [["wall", "INNER WALL"], ["beam", "BEAM"]]:
 		var b := T.button(spec[1], false, 15)
