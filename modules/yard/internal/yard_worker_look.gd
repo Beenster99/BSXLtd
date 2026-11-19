@@ -3,8 +3,8 @@ extends RefCounted
 ## should be more functional, android style ... heavy bots with arms which articulate to help
 ## them do their work, holding objects and welding, riveting or bolting objects in place"):
 ## TartanCo's heavy work android, one core in four trades, after beenster's reference sheets.
-## A deep chest of rounded plates over a ribbed waist, rounded ochre shoulder caps, a thin
-## long head on a slender neck with two round eyes, a backpack with RCS pods at its corners and the trade's
+## A deep chest of rounded plates over a ribbed waist, rounded ochre shoulder caps, a narrow
+## upright block of a head low on its collar, with two round eyes, a backpack with RCS pods at its corners and the trade's
 ## own kit, two arms (shoulder, upper arm, elbow, forearm, a tool on a
 ## quick-change wrist) and two legs (hip, thigh, knee, shin, a clawed magnetic clamp):
 ##   W-3 the welder:   a gimballed torch on an umbilical from two consumable tanks
@@ -46,7 +46,7 @@ const ANKLE := 0.17
 const HOSE_PORT := Vector3(0.4, 0.94, 0.5)
 const HOSE_LINKS := 8
 ## Where the fitter's alignment laser sits on its head (head space).
-const LASER := Vector3(-0.085, 0.42, -0.1)
+const LASER := Vector3(-0.07, 0.355, -0.12)
 
 static var _meshes: Dictionary = {}
 static var _liveries: Dictionary = {}
@@ -91,7 +91,7 @@ static func make(role: String, number: String) -> Node3D:
 	_mesh(n, "Pack", m[spec.pack], mat)
 	var head := Node3D.new()
 	head.name = "Head"
-	head.position = Vector3(0, 1.06, -0.04)
+	head.position = Vector3(0, 1.04, -0.04)
 	head.scale = Vector3.ONE * 1.3
 	n.add_child(head)
 	_mesh(head, "HeadMesh", m.head_F if role == "F" else m.head, mat)
@@ -456,34 +456,31 @@ static func _body(m: YardToolMesh) -> void:
 		_shell(m, "body", "plates", s + Vector3(sx * 0.03, 0.17, 0), Vector3(0.22, 0.07, 0.28), Vector2(0.6, 0.6))
 		m.ring("body", "dark", s + Vector3(sx * 0.05, 0.05, 0), 0.16, 0.01, Vector3.RIGHT, 24, 5)
 
-## The head: thin and long on a slender neck of rods, the crown swept back, two round eyes and a
-## vented faceplate; the fitter's ("head_F") also has its alignment laser on its brow.
+## The head: a narrow upright block on a short neck, a visor slot with two round eyes, a vented
+## jaw; the fitter's ("head_F") also has its alignment laser on its brow.
 static func _head(m: YardToolMesh, key: String) -> void:
-	# The neck: a dark spine between two steel struts.
-	m.rod(key, "dark", Vector3(0, -0.02, 0.02), Vector3(0, 0.24, 0.0), 0.035, 0.03, 12)
+	m.rod(key, "dark", Vector3(0, -0.04, 0), Vector3(0, 0.07, 0), 0.06, 0.055, 14)
+	m.ring(key, "gunmetal", Vector3(0, 0.02, 0), 0.06, 0.01, Vector3.UP, 14, 4)
+	# The skull: a tall narrow block with softened edges, a stripe over its crown.
+	_shell(m, key, "plates", Vector3(0, 0.23, 0.0), Vector3(0.2, 0.34, 0.26), Vector2(0.2, 0.22), Basis(), 22, 14)
+	_shell(m, key, "accent", Vector3(0, 0.398, 0.0), Vector3(0.06, 0.03, 0.24), Vector2(0.3, 0.3))
 	for sx: float in [1.0, -1.0]:
-		m.rod(key, "steel", Vector3(sx * 0.05, -0.02, 0.0), Vector3(sx * 0.035, 0.22, -0.03), 0.013, -1.0, 8)
-	m.ring(key, "gunmetal", Vector3(0, 0.1, 0.01), 0.04, 0.008, Vector3.UP, 14, 4)
-	# The skull, long and narrow, its crown swept up and back.
-	var tilt := Basis(Vector3.RIGHT, 0.32)
-	_shell(m, key, "plates", Vector3(0, 0.39, 0.03), Vector3(0.19, 0.42, 0.27), Vector2(0.85, 0.8), tilt, 22, 14)
-	_shell(m, key, "trim", Vector3(0, 0.34, 0.07), Vector3(0.2, 0.18, 0.2), Vector2(0.8, 0.8))
-	_shell(m, key, "accent", Vector3(0, 0.47, 0.06), Vector3(0.05, 0.3, 0.26), Vector2(0.8, 0.8), tilt)
-	# The faceplate: a narrow jaw with a vent grille.
-	_shell(m, key, "trim", Vector3(0, 0.25, -0.06), Vector3(0.12, 0.14, 0.1), Vector2(0.7, 0.7))
-	for k in 4:
-		m.rod(key, "dark", Vector3(-0.035, 0.21 + k * 0.022, -0.11), Vector3(0.035, 0.21 + k * 0.022, -0.11), 0.006, -1.0, 6)
-	# The eyes: round, deep set, glowing.
+		_shell(m, key, "trim", Vector3(sx * 0.1, 0.24, 0.02), Vector3(0.03, 0.2, 0.16), Vector2(0.3, 0.3))
+	# The visor slot and the eyes in it.
+	_shell(m, key, "dark", Vector3(0, 0.26, -0.125), Vector3(0.17, 0.08, 0.03), Vector2(0.3, 0.3))
 	for sx: float in [1.0, -1.0]:
-		var eye := Vector3(sx * 0.048, 0.36, -0.1)
-		m.rod(key, "dark", eye + Vector3(0, 0, 0.03), eye + Vector3(0, 0, -0.01), 0.04, 0.036, 16)
-		m.rod(key, "glass", eye + Vector3(0, 0, -0.01), eye + Vector3(0, 0, -0.014), 0.03, -1.0, 16)
-		m.ring(key, "cyan", eye + Vector3(0, 0, -0.016), 0.021, 0.006, Vector3.BACK, 18, 5)
+		var eye := Vector3(sx * 0.045, 0.26, -0.13)
+		m.rod(key, "glass", eye, eye + Vector3(0, 0, -0.014), 0.027, -1.0, 16)
+		m.ring(key, "cyan", eye + Vector3(0, 0, -0.016), 0.02, 0.005, Vector3.BACK, 18, 5)
 		m.rod(key, "cyan", eye + Vector3(0, 0, -0.014), eye + Vector3(0, 0, -0.018), 0.006, -1.0, 8)
+	# The jaw: a vented block.
+	_shell(m, key, "trim", Vector3(0, 0.12, -0.1), Vector3(0.14, 0.1, 0.07), Vector2(0.25, 0.3))
+	for k in 3:
+		m.box(key, "dark", Vector3(0, 0.1 + k * 0.022, -0.137), Vector3(0.09, 0.008, 0.006), 0.002)
 	if key == "head_F":
-		_shell(m, key, "trim", LASER + Vector3(0, 0, 0.05), Vector3(0.05, 0.05, 0.12), Vector2(0.6, 0.6))
-		m.rod(key, "steel", LASER, LASER + Vector3(0, 0, -0.03), 0.02, -1.0, 10)
-		m.rod(key, "red_lamp", LASER + Vector3(0, 0, -0.03), LASER + Vector3(0, 0, -0.035), 0.012, -1.0, 10)
+		_shell(m, key, "trim", LASER + Vector3(0, 0, 0.05), Vector3(0.04, 0.04, 0.1), Vector2(0.4, 0.4))
+		m.rod(key, "steel", LASER, LASER + Vector3(0, 0, -0.02), 0.016, -1.0, 10)
+		m.rod(key, "red_lamp", LASER + Vector3(0, 0, -0.02), LASER + Vector3(0, 0, -0.025), 0.01, -1.0, 10)
 
 ## One arm's two bones, each hanging along -Y from its joint (mirrors as it is): an actuator
 ## core with rounded plates over it, pistons, a big elbow, a forearm in ochre armour, umbilicals.
