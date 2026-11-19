@@ -58,6 +58,9 @@ func setup(design_bus: DesignBus) -> void:
 	_dirty = true
 	if bus.crew:
 		bus.crew.call("attach_holo", self)
+	# Picked on any drawing: lit here (plan 3.3).
+	bus.focus_changed.connect(func(kind: String, id: String) -> void:
+		light_rooms([id] if kind == "room" else []))
 
 
 func set_layer(layer: String, on: bool) -> void:
@@ -87,6 +90,7 @@ func _process(_delta: float) -> void:
 		model.rotation.y = align + turn
 		model.scale = Vector3.ONE * scale_fit * zoom
 	_apply_cut()
+	_apply_section()
 
 
 ## The render layer only the hologram is on as well, so the console's 3D view can show it alone.
@@ -161,6 +165,7 @@ func _mat(col: Color, alpha: float, rim := 1.0) -> ShaderMaterial:
 	m.set_shader_parameter("tint", Color(col, alpha))
 	m.set_shader_parameter("rim", rim)
 	m.set_shader_parameter("cut_y", _cut_y)
+	m.set_shader_parameter("section_plane", _section)
 	_materials.append(m)
 	return m
 
@@ -458,6 +463,28 @@ func _build_power(rec: DesignRecord, parent: Node3D) -> void:
 		if best != Vector3.INF:
 			segs.append_array([best, u])
 	_lines(parent, segs, _mat(Color(0.5, 1.0, 0.5), 0.9))
+
+
+## The section line from the walls (bus.section) as a cutting plane in world space.
+var _section := NO_SECTION
+const NO_SECTION := Vector4(0, 0, 1, 1000000.0)
+
+
+func _apply_section() -> void:
+	var plane := NO_SECTION
+	var ship := model.get_node_or_null("Ship") as Node3D if model else null
+	if bus and not bus.section.is_empty() and ship and ship.is_inside_tree():
+		var axis := str(bus.section.axis)
+		var at := float(bus.section.at)
+		var local := Vector3(0, 0, 1) if axis == "z" else Vector3(1, 0, 0)
+		var p := ship.to_global(local * at)
+		var n := (ship.global_basis * local).normalized()
+		plane = Vector4(n.x, n.y, n.z, n.dot(p))
+	if plane.is_equal_approx(_section):
+		return
+	_section = plane
+	for m in _materials:
+		m.set_shader_parameter("section_plane", _section)
 
 
 func _apply_cut() -> void:
