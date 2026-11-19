@@ -209,6 +209,19 @@ func _attributes(rec: DesignRecord, t: DesignTotals) -> void:
 		["Services", "%d runs" % rec.runs.size(), T.TEXT],
 		["Grid", "%s m" % PlanView._m(rec.grid), T.TEXT],
 	])
+	var bf := bus.berth_fit()
+	if not bf.is_empty():
+		var b: Dictionary = bf.berth
+		_section("BERTH", [
+			["Berth", "%s, %s x %s x %s m" % [str(b.name), PlanView._m(snappedf(float(b.length), 0.1)),
+					PlanView._m(snappedf(float(b.beam), 0.1)), PlanView._m(snappedf(float(b.height), 0.1))], T.TEXT],
+			["She needs", "%s x %s x %s m" % [PlanView._m(snappedf(bf.length + 2.0 * DesignBerth.CLEARANCE, 0.1)),
+					PlanView._m(snappedf(bf.beam + 2.0 * DesignBerth.CLEARANCE, 0.1)),
+					PlanView._m(snappedf(bf.height + 2.0 * DesignBerth.CLEARANCE, 0.1))], T.GOOD if bf.ok else T.BAD],
+			["Fits", "yes, with %s m for the bots" % PlanView._m(DesignBerth.CLEARANCE) if bf.ok
+					else "NO: too " + ", ".join(bf.over.map(func(k: String) -> String: return {"length": "long", "beam": "wide", "height": "tall"}[k])),
+					T.GOOD if bf.ok else T.BAD],
+		])
 	if not by_kind.is_empty():
 		var kinds: Array = []
 		for k: String in by_kind:
@@ -231,6 +244,14 @@ func _attributes(rec: DesignRecord, t: DesignTotals) -> void:
 		["Used", "%d kW" % int(t.power_used), T.TEXT],
 		["Spare", "%d%%" % int(100.0 * (made - t.power_used) / made) if made > 0.0 else "none",
 				T.GOOD if made >= t.power_used and made > 0.0 else T.BAD],
+		["Region", str(DesignPower.REGION_NAMES.get(t.region, t.region)), T.TEXT],
+		["Solar", "%d kW rated, %d delivered" % [int(t.solar_rated), int(t.solar_kw)] if t.solar_rated > 0.0
+				else "none", T.TEXT if t.solar_kw >= t.solar_rated * 0.5 else T.AMBER],
+		["Fuelled", "%d kW%s" % [int(t.fuelled_kw), "  (%d reactor%s)" % [t.reactors, "" if t.reactors == 1 else "s"]
+				if t.reactors > 0 else ""], T.TEXT],
+		["Batteries", "%d kWh" % int(t.store_kwh), T.TEXT if t.solar_rides_shadow() else T.AMBER],
+		["Endurance", ("%d days" % int(t.endurance_days())) + ("+" if t.endurance_days() >= DesignPower.ENDURANCE_CAP else ""),
+				T.TEXT if t.endurance_days() > 0.0 else T.BAD],
 		["Thrust", "%d kN" % int(t.thrust), T.TEXT if t.thrust > 0.0 else T.AMBER],
 		["Thrust/mass", "%.2f m/s2" % t.acceleration(), T.TEXT],
 		["Jump rating", "%d" % int(t.jump_rating), T.TEXT],
