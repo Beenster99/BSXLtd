@@ -19,7 +19,7 @@ const CATEGORIES: Array = [["flight", "Flight and control"], ["power", "Power"],
 ## Kinds of door a door in the record can be ("kind", "door" when missing): its opening, m,
 ## whether it has leaves that slide shut, and what one costs to fit.
 const DOOR_KINDS: Dictionary = {
-	"door": {"name": "Sliding door", "short": "DOOR", "w": 1.2, "h": 2.2, "leaves": true,
+	"door": {"name": "Sliding door", "short": "SLIDING", "w": 1.2, "h": 2.2, "leaves": true,
 			"cost": 2400.0, "mass": 180.0, "hours": 3.0},
 	"doorway": {"name": "Open doorway", "short": "DOORWAY", "w": 1.2, "h": 2.2, "leaves": false,
 			"cost": 300.0, "mass": 25.0, "hours": 1.0},
