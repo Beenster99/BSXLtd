@@ -127,6 +127,12 @@ func _header(a: DesignAssessment) -> Control:
 					snappedf(float(bf.berth.height), 0.1), DesignBerth.CLEARANCE], "display_medium", _s(0.85), T.BAD)
 			bl.name = "BerthNeeded"
 			info.add_child(bl)
+		elif bus.order_needs_larger_berth():
+			var ol := _wrap("NEEDS A LARGER BERTH: this order wants the %s; the company has the %s." % [
+					ShipOrders.berth_name(int(a.order.get("berth", 1))).to_lower(), str(bus.berth().name).to_lower()],
+					"display_medium", _s(0.85), T.BAD)
+			ol.name = "BerthNeeded"
+			info.add_child(ol)
 	# The verdict block.
 	var verdict := PanelContainer.new()
 	var col := _status_colour(a.status)

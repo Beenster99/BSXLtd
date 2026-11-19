@@ -5,7 +5,7 @@ extends RefCounted
 ## the current build berth (DesignBus.berth()), DEFAULT when the yard is off. The hull needs
 ## CLEARANCE all round for the bots to work.
 
-const DEFAULT: Dictionary = {"name": "Build berth", "length": 60.0, "beam": 30.0, "height": 30.0}
+const DEFAULT: Dictionary = {"name": "Build berth", "tier": 1, "length": 60.0, "beam": 30.0, "height": 30.0}
 ## Room for the bots to work round the hull on every side, m.
 const CLEARANCE := 2.0
 
@@ -35,7 +35,7 @@ static func fit(d: DesignRecord, berth: Dictionary) -> Dictionary:
 static func from_yard(v: Variant, name := "") -> Dictionary:
 	var out := DEFAULT.duplicate()
 	if v is Dictionary and (v as Dictionary).has("length"):
-		for k: String in ["name", "length", "beam", "height"]:
+		for k: String in ["name", "tier", "length", "beam", "height"]:
 			if (v as Dictionary).has(k):
 				out[k] = v[k]
 		return out
@@ -47,7 +47,7 @@ static func from_yard(v: Variant, name := "") -> Dictionary:
 		if sz.x > sz.z:
 			sz = Vector3(sz.z, sz.y, sz.x)
 	if sz.x > 0.0 and sz.y > 0.0 and sz.z > 0.0:
-		out = {"name": name if name != "" else str(DEFAULT.name), "length": sz.z, "beam": sz.x, "height": sz.y}
+		out = {"name": name if name != "" else str(DEFAULT.name), "tier": 1, "length": sz.z, "beam": sz.x, "height": sz.y}
 	return out
 
 

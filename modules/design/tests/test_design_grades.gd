@@ -15,6 +15,7 @@ func run_tests() -> void:
 	_variants()
 	_ratings()
 	_masses()
+	_moving()
 	_doors()
 	_orders()
 	await _palette()
@@ -150,6 +151,33 @@ func _masses() -> void:
 		fit[f.key] = f
 	check(not fit.dry_mass.ok and fit.wet_mass.ok, "dry and wet mass are caps")
 	check(fit.fuel_mass.ok and fit.occupancy_mass.ok and not fit.cargo_max.ok, "fuel, occupancy and cargo max are minimums")
+
+
+## Moving parts carry what the moving parts test reads: opening, travel time, power while
+## moving, rated load and ground clearance, scaled by size and grade like the rest.
+func _moving() -> void:
+	for id in ["landing_foot_pad", "landing_skid", "undercarriage_leg", "undercarriage_doors", "clamshell_doors",
+			"side_hold_door", "belly_hatch", "tail_ramp", "airstair", "stabiliser_jack", "hydraulic_ram", "door_motor",
+			"docking_clamp", "folding_solar_array", "folding_radiator", "antenna_mast", "crane_boom", "gangway_tube"]:
+		var pt := cat.part(id)
+		check(pt != null and pt.category != "" and pt.size_class > 0, "%s is in the catalogue, sized and graded" % id)
+		if pt != null:
+			check(pt.move_s > 0.0 or pt.move_kw > 0.0 or pt.load_kg > 0.0, "%s has moving-part figures" % id)
+	for id in ["cargo_ramp", "landing_gear", "airlock_door", "blast_door", "docking_port", "tow_winch", "turret"]:
+		check(cat.part(id).move_s > 0.0, "%s says how long it takes to move" % id)
+	for pt: DesignPartType in cat.parts.values():
+		if pt.move_s > 0.0:
+			check(pt.move_kind in ["hinge_out", "hinge_up", "slide", "spin", "leg", "belt"] and pt.move_range > 0.0,
+					"%s says how it moves and how far" % pt.id)
+	var leg := cat.part("undercarriage_leg")
+	check(leg.load_kg > 0.0 and leg.clearance > 0.0, "a leg has a load per leg and a ground clearance")
+	check(cat.part("clamshell_doors").open_size.x > float(DesignCatalog.DOOR_KINDS.cargo.max_w), "clamshell doors open wider than the biggest cargo door")
+	var big := cat.part("undercarriage_leg:5H")
+	check(big.load_kg > leg.load_kg * 3.0 and big.clearance > leg.clearance, "a bigger, Hardened leg bears more and stands taller")
+	check(cat.part("tail_ramp:4P").move_s < cat.part("tail_ramp").move_s, "a Precision ramp opens faster")
+	check(cat.part("crane_boom:6S").move_kw > cat.part("crane_boom").move_kw, "a bigger boom draws more while it slews")
+	for k: String in DesignCatalog.DOOR_KINDS:
+		check(DesignCatalog.DOOR_KINDS[k].has("move_s") and DesignCatalog.DOOR_KINDS[k].has("move_kw"), "door kind %s has move figures" % k)
 
 
 ## Door kinds: a plain door, an open doorway and a wide cargo door, priced on the parts list

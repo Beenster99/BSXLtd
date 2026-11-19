@@ -355,6 +355,11 @@ func _brief_area(s: Sim) -> void:
 			var short := need * (1.0 + BEAT_BY) - have
 			_find(BONUS, "brief", "%s is %s short of the performance bonus (%s)." % [_name(r), _n(short),
 					_n(need * (1.0 + BEAT_BY))], 0.0)
+	# The order's special clauses (ShipOrders.CLAUSES: rooms, parts, grades) are part of the brief.
+	for r in DesignContractCheck.clauses(order, _rec, _cat):
+		_check(ar, str(r.label), "%s of %s" % [_n(r.have), _n(r.need)], r.ok, r.share)
+		if not r.ok:
+			_find(PITFALL, "brief", "Clause not met: %s." % str(r.label))
 	_finish(ar)
 
 

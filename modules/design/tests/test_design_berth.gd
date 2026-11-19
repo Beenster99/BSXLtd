@@ -42,4 +42,10 @@ func run_tests() -> void:
 	bus.editor.do({"op": "set_meta", "fields": {"name": "Big one again"}})
 	check(not bus.problems().any(func(p: Dictionary) -> bool: return p.code == "berth"), "a bigger berth clears it")
 	check(rec != null, "a design was open")
+	bus.berth_override = {"name": "Starter berth", "tier": 1, "length": 60.0, "beam": 30.0, "height": 30.0}
+	rec.order = {"id": "o", "berth": 3}
+	check(bus.order_needs_larger_berth(), "an order wanting tier 3 needs a larger berth than tier 1")
+	rec.order = {"id": "o", "berth": 1}
+	check(not bus.order_needs_larger_berth(), "a tier 1 order fits tier 1")
+	rec.order = {}
 	bus.berth_override = {}

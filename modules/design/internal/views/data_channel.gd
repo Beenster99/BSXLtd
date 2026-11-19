@@ -122,6 +122,10 @@ func refresh() -> void:
 			_body.add_child(T.label(str(rec.order.get("title", "")), "body_medium", 16, T.ORANGE))
 		for row in t.fit(want):
 			_body.add_child(_fit_row(row))
+		# The order's special clauses (rooms, parts, grades), scored like the demands.
+		if demands.is_empty():
+			for row in DesignContractCheck.clauses(rec.order, rec, bus.catalog):
+				_body.add_child(_fit_row(row))
 		var a := bus.assessment()
 		if a and not rec.order.is_empty() and demands.is_empty():
 			var col := T.GOOD if a.status == DesignAssessment.READY else (T.BAD if a.status == DesignAssessment.NOT_VIABLE else T.AMBER)
