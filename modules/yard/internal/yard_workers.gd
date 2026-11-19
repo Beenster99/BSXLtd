@@ -85,10 +85,12 @@ const DOCKS: Array[Vector3] = [Vector3(-20, -13.5, -70.3), Vector3(20, -13.5, -7
 @export var slow_from := 0.4
 @export var worn_pace := 0.55
 @export var faults_from := 0.6
-## TartanCo is sent for when a bot faults or one is this worn; on a visit every bot worn past
-## `service_from` gets seen to.
-@export var call_at := 0.75
-@export var service_from := 0.3
+## A bot is in poor condition when it has faulted or is worn this far (beenster, 19 Nov: "the
+## TartanCo maintenance ship should only appear when a TartanCo bot is in poor condition"):
+## TartanCo is sent for then, and on a visit only bots worn past `service_from` (the same
+## mark) get seen to, so she never comes out for bots in fair shape.
+@export var call_at := 0.7
+@export var service_from := 0.7
 @export var auto_service := true
 
 @export_group("Charging")
@@ -198,6 +200,11 @@ func rings_built() -> int:
 ## Sends for TartanCo's engineers now (false if they're already coming or here).
 func call_service() -> bool:
 	return bool(service.call("call_in"))
+
+
+## True when a bot has faulted or is worn past `call_at`.
+func in_poor_condition() -> bool:
+	return workers.any(func(w: Dictionary) -> bool: return w.fault != "" or float(w.wear) >= call_at)
 
 
 ## A bot waiting to be seen to (faulted, or worn past `service_from`), idle, and not already
