@@ -45,9 +45,9 @@ func run_tests() -> void:
 	check(walk.ramps == PackedStringArray(["r7"]), "the stairs are a ramp up to the deck above: %s" % [walk.ramps])
 	check(walk.find_child("Part_c3", true, false) != null, "the parts stand in their rooms")
 	var b: WalkBuild = walk.builder
-	check(b.lamps == rec.rooms.size() and b.ribs > 10 and b.doors.size() == rec.doors.size(),
-			"a lamp in every room, frame ribs up the outer walls, a sliding door in every doorway: %d %d %d"
-			% [b.lamps, b.ribs, b.doors.size()])
+	check(b.lamps == rec.rooms.size() and b.frame != null and b.frame.welds.size() > 10 and b.doors.size() == rec.doors.size(),
+			"a lamp in every room, a welded frame round the rooms, a sliding door in every doorway: %d %d %d"
+			% [b.lamps, b.frame.welds.size() if b.frame else 0, b.doors.size()])
 	check(walk.find_child("CableTray*", true, false) != null and walk.find_child("Pipe*", true, false) != null
 			and walk.find_child("Riser*", true, false) != null, "cable trays, fuel pipes and the riser up the stairwell")
 	check(walk.find_child("DeckPlates_r2", true, false) != null and walk.find_child("HoloOutline", true, false) != null,
@@ -67,7 +67,7 @@ func run_tests() -> void:
 	var plan := WalkBuild.ramp_plan(rec.rooms["r7"])
 	var top: Rect2 = plan.rect
 	var p := walk.world.global_transform * Vector3(top.get_center().x, 10, top.end.y - 0.3)
-	var q := PhysicsRayQueryParameters3D.create(p, p - Vector3(0, 20, 0), WalkInside.LAYER)
+	var q := PhysicsRayQueryParameters3D.create(p, p - Vector3(0, 20, 0), WalkInside.LAYER, [b.frame_body.get_rid()])
 	var hit := walk.world.get_world_3d().direct_space_state.intersect_ray(q)
 	var hy: float = (walk.world.global_transform.affine_inverse() * (hit.position as Vector3)).y if hit else -99.0
 	check(hit and hy > rec.deck_height - 0.5 and hy < rec.deck_height, "the ramp's top end is just under deck 2: %.2f" % hy)

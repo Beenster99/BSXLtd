@@ -41,6 +41,10 @@ class Runner:
 		Router.goto("design.room")
 		await _frames(20)
 		var room: Node = get_tree().current_scene
+		if "--frame" in OS.get_cmdline_user_args():
+			await _frame_shots(room, out)
+			get_tree().quit()
+			return
 		room.console.plan.select("room", "r4")
 		room.console.plan.set_tool("room:workshop")
 		await _frames(30)
@@ -142,6 +146,40 @@ class Runner:
 			walk.body.rotation.y = shot[2]
 			walk.set("_pitch", shot[3])
 			walk.camera.rotation.x = shot[3]
+			await _frames(20)
+			await _save(out, shot[0])
+		room.furnishing.close_walk()
+
+	## The structure proposed round the sample: from outside with its skin, then as a bare
+	## skeleton of rings, stringers and node blocks, and on the holotable.
+	func _frame_shots(room: Node, out: String) -> void:
+		room.furnishing.open_console()
+		for layer in ["frame", "plates", "components", "power"]:
+			(room.console.find_child("Layer_" + layer, true, false) as Button).button_pressed = layer in ["frame", "plates"]
+		(room.console.find_child("Cut", true, false) as HSlider).value = 1.0
+		room.console._set_view("plan")
+		await _frames(30)
+		await _save(out, "frame_holo")
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		await _frames(5)
+		walk.set_physics_process(false)
+		var b: Object = walk.get("builder")
+		var plan: Dictionary = b.get("frame_plan")
+		var st: Array = plan.stations
+		var mid := Vector3(0, 1.5, (float(st[0].z) + float(st[st.size() - 1].z)) * 0.5)
+		var model: PartModel = b.get("frame_model")
+		for shot in [["frame_outside", 0.9, 0.3, 17.0, false], ["frame_skeleton", 0.9, 0.3, 17.0, true]]:
+			for p: PartData in model.parts.values():
+				var skin: bool = p.part_name in ["HullPlate", "CapPlate"] or p.kind == PartData.Kind.GLASS
+				var vis := model.part_visual(p.id)
+				if vis:
+					vis.visible = not (skin and shot[4])
+			var yaw: float = shot[1]
+			var up := float(shot[3]) * float(shot[2])
+			walk.body.position = mid + Vector3(sin(yaw), 0, cos(yaw)) * float(shot[3]) + Vector3(0, up, 0)
+			walk.body.rotation.y = yaw
+			walk.camera.rotation.x = -atan2(up, float(shot[3]))
 			await _frames(20)
 			await _save(out, shot[0])
 		room.furnishing.close_walk()

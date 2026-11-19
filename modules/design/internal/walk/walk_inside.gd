@@ -155,7 +155,7 @@ func aim() -> Dictionary:
 		return {}
 	var inv := world.global_transform.affine_inverse()
 	return {"info": (hit.collider as Object).get_meta("walk"), "point": inv * (hit.position as Vector3),
-			"normal": (hit.normal as Vector3)}
+			"normal": (hit.normal as Vector3), "collider": hit.collider, "shape": int(hit.shape)}
 
 
 # Designing from inside
@@ -519,6 +519,10 @@ func _aim_text() -> String:
 			return "%s\nF door here   Wheel push or pull this wall" % what
 		"floor":
 			return "Deck plating\nTab  parts and hull"
+		"frame":
+			var part := builder.frame_part(a.collider, int(a.shape))
+			var joint := builder.frame_joint(a.point)
+			return DesignFrame.describe(part, joint, builder.frame_model)
 	return ""
 
 
