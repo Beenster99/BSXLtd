@@ -115,10 +115,10 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 	cam.environment = env
 	cam.fov = 50
 	root.add_child(cam)
-	var want := {"weld": "arc", "rivet": "press", "bolt": "run", "fit": "fit", "fitout": "fit"}
+	var want := {"weld": "arc", "seam": "arc", "rivet": "press", "bolt": "run", "pipe": "run", "fit": "fit", "fitout": "fit"}
 	var got := {}
 	var t := 0.0
-	while got.size() < want.size() and t < 1500.0:
+	while got.size() < want.size() and t < 3000.0:
 		traffic.step(0.1)
 		crew.step(0.1)
 		t += 0.1
@@ -129,6 +129,11 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 			var key: String = task.kind
 			if key == "fit" and (task.member as Dictionary).has("load"):
 				key = "fitout"
+			# TartanCo's joining rule at work: a hull plate's short seam, a pipe's clamp bolts.
+			if key == "weld" and task.member.part == "HullPlate":
+				key = "seam"
+			if key == "bolt" and task.member.part == "Pipe":
+				key = "pipe"
 			if got.has(key) or task.phase != want[key]:
 				continue
 			if key in ["weld", "bolt"] and float(task.t) < 0.5:

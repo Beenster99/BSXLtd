@@ -35,6 +35,17 @@ func _look() -> void:
 		var foot := bot.get_node("FootR") as Node3D
 		check(foot.global_position.distance_to(sole + Vector3.UP * WorkerLook.ANKLE) < 0.02, "%s's foot clamps where it's put" % role)
 		bot.queue_free()
+	# Only the nut runner's drive and socket turn as it runs a bolt home (beenster, 19 Nov: "only
+	# the tool should rotate").
+	var bolter := WorkerLook.make("B", "06")
+	add_child(bolter)
+	var hand := bolter.get_node("HandR") as Node3D
+	var before := hand.global_transform
+	WorkerLook.spin_socket(bolter, 2.0)
+	var spin := bolter.get_node_or_null("HandR/Spin") as Node3D
+	check(spin != null and not spin.transform.basis.is_equal_approx(Basis()), "the bolter's socket turns")
+	check(hand.global_transform.is_equal_approx(before), "and the runner and hand stay still")
+	bolter.queue_free()
 	var fitter := WorkerLook.make("F", "02")
 	add_child(fitter)
 	check(fitter.has_node("Laser"), "the fitter has its alignment laser")
@@ -60,9 +71,12 @@ func _crew() -> void:
 		w.charge = 1.0
 	var roles: Array = crew.workers.map(func(w: Dictionary) -> String: return w.role)
 	check(roles.has("F") and roles.has("W") and roles.has("R") and roles.has("B"), "fitters, welders, a riveter and a bolter")
-	# A ring: bolts on the girders, and the trades clamp their feet to the work.
+	# A ring, by TartanCo's joining rule: its beams and girders welded, then its skin riveted at the
+	# plate corners (the hull plates welded along a short seam too); the trades clamp their feet to
+	# the work.
 	var rings: int = crew.rings_built()
 	var clamped := {}
+	var jobs := {}
 	var t := 0.0
 	while crew.rings_built() == rings and t < 900.0:
 		traffic.step(0.2)
@@ -70,6 +84,9 @@ func _crew() -> void:
 		t += 0.2
 		for w: Dictionary in crew.workers:
 			var task: Dictionary = w.task
+			if not task.is_empty() and not jobs.has(task.kind):
+				var c: Dictionary = crew.condition(w.node)
+				jobs[task.kind] = "%s|%s|%s" % [c.state, c.job_kind, c.job]
 			if not task.is_empty() and task.kind != "fit" and task.phase != "go":
 				var foot := (w.node as Node3D).get_node("FootR") as Node3D
 				var m: Dictionary = task.member
@@ -79,12 +96,28 @@ func _crew() -> void:
 				if off > float(s.skin) and off < float(s.skin) + WorkerLook.ANKLE + 0.08:
 					clamped[w.role] = true
 	check(crew.rings_built() == rings + 1, "a ring went on (%.0f s)" % t)
-	var bolted := 0
+	check(jobs.has("rivet") and String(jobs.rivet).begins_with("working|rivet|Riveting keel ring") and String(jobs.rivet).contains("rivet 1/4"),
+			"a busy bot's condition says what it's on: %s" % str(jobs.values()))
+	var heads := {"bolt": 0, "rivet": 0, "bead": 0, "hull": 0, "lining": 0}
 	for n in (crew.rings.back() as Node3D).get_children():
 		if n is MeshInstance3D and (n as MeshInstance3D).mesh == crew._bolt_mesh:
-			bolted += 1
-	check(bolted >= 4 * crew.bolts_per_joint * 2, "the bolter ran %d bolts into the girders' ends" % bolted)
-	check(clamped.has("W") and clamped.has("R") and clamped.has("B"), "welders, riveters and bolters clamp on to the work (%s)" % str(clamped.keys()))
+			heads.bolt += 1
+		elif n is MeshInstance3D and (n as MeshInstance3D).mesh == crew._rivet_mesh:
+			heads.rivet += 1
+		elif _shows(n, "HullPlate"):
+			heads.hull += 1
+		elif _shows(n, "DeckPlate"):
+			heads.lining += 1
+		elif n is MeshInstance3D:
+			heads.bead += 1
+	check(heads.bolt == 0, "no bolts in the frame or skin: beams are welded, plates riveted (%d)" % heads.bolt)
+	check(heads.hull == 6 and heads.lining == 4, "the bay skinned: %d hull plates, %d inner linings" % [heads.hull, heads.lining])
+	check(heads.rivet == 4 * (heads.hull + heads.lining), "every plate riveted at its four corners (%d rivets)" % heads.rivet)
+	check(heads.bead >= 8 * 2 + heads.hull, "beams and girders welded at both ends, each hull plate a short seam (%d beads)" % heads.bead)
+	var steps: Array = crew._member_list(true).map(func(m: Dictionary) -> String: return "%s:%s" % [m.part, ",".join(Workers.JOINING.get(m.part, ["bolt"]))])
+	check(steps.has("BoxBeam:weld") and steps.has("Girder:weld") and steps.has("HullPlate:rivet,weld") and steps.has("DeckPlate:rivet"),
+			"the joining rule: %s" % str(steps))
+	check(clamped.has("W") and clamped.has("R"), "welders and riveters clamp on to the work (%s)" % str(clamped.keys()))
 	# A fit-out: the power kit brought to the lead fitter when it's wanted, set on the ring and
 	# bolted down.
 	t = 0.0
@@ -101,6 +134,14 @@ func _crew() -> void:
 		if String(n.name).begins_with("Piece_") and not String(n.name).contains("BoxBeam") and not String(n.name).contains("Girder"):
 			fitted += 1
 	check(fitted >= 3, "%d components set in the ring" % fitted)
+	var bolts := 0
+	for n in ring.get_children():
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh == crew._bolt_mesh:
+			bolts += 1
+	check(bolts >= 4 + 2 * 4, "components bolted down, the rack with four bolts (%d bolts)" % bolts)
+	check(Workers.fitout_kit(4) == "power" and Workers.fitout_kit(6) == "piping", "fit-outs take turns: power, then pipes (bolted)")
+	var pipe: Dictionary = crew._next_spot(crew._mount_spots(), "Pipe")
+	check((pipe.joints as Array).size() == 3, "a pipe is bolted on at three clamps")
 	# Service by the maintenance ship: it listens on the yard's bus, so the yard's own visit stays
 	# away and the ship takes the bot, works on it and hands it back.
 	var bus := Modules.bus("yard")
@@ -116,6 +157,13 @@ func _crew() -> void:
 	check(asked.bots.has(w.node), "a faulted bot asks for the maintenance ship")
 	check(not bus or crew.service.state == "away", "and the yard's own visit stays away while the ship's module listens")
 	var c: Dictionary = crew.condition(w.node)
+	check(c.state == "faulted" and c.role == String(w.role) and c.has("speed") and c.has("job") and c.has("job_kind"),
+			"its condition has the fleet screen's fields: %s" % str(c))
+	var busy: Array = crew.workers.filter(func(x: Dictionary) -> bool: return not (x.task as Dictionary).is_empty())
+	if not busy.is_empty():
+		var bc: Dictionary = crew.condition(busy[0].node)
+		check(bc.state == "working" and String(bc.job).contains("keel ring") and bc.job_kind == busy[0].task.kind,
+				"a busy bot says what it's on: %s" % bc.job)
 	check(is_zero_approx(float(c.productivity)) and (c.errors as Array).has("E-42 SERVO HEAT"), "its condition shows the error")
 	check(crew.begin_service(w.node), "the ship takes it")
 	var held_at: Vector3 = (w.node as Node3D).global_position + Vector3(0, 3, 0)
@@ -182,3 +230,12 @@ func _crew() -> void:
 	crew.queue_free()
 	traffic.queue_free()
 	await frames(1)
+
+
+## Whether `n` is a piece of `part` (it draws the part's body mesh).
+func _shows(n: Node, part: String) -> bool:
+	var body: Mesh = (preload("res://modules/yard/internal/yard_stock_look.gd").layers(part)[0] as Dictionary).mesh
+	for c in n.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh == body:
+			return true
+	return false
