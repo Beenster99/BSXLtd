@@ -440,6 +440,70 @@ func _draw_room(rec: DesignRecord, r: Dictionary) -> void:
 		border = SELECT
 		width = 3.0
 	draw_rect(sr, border, false, width)
+	_draw_link_mark(rec, r, sr, col)
+
+
+## Stairs, lifts and hatches: treads, a cross for the shaft, a ladder; and which decks they reach.
+func _draw_link_mark(rec: DesignRecord, r: Dictionary, sr: Rect2, col: Color) -> void:
+	var rt := bus.catalog.room(str(r.type))
+	if rt == null or not rt.links_decks:
+		return
+	var ink := Color(col.lightened(0.3), 0.7)
+	match str(r.type):
+		"stairs":
+			var along_z := float(r.d) >= float(r.w)
+			var n := int((float(r.d) if along_z else float(r.w)) / 0.3)
+			for i in range(1, n):
+				var t := float(i) / n
+				if along_z:
+					var y := lerpf(sr.position.y, sr.end.y, t)
+					draw_line(Vector2(sr.position.x + 3, y), Vector2(sr.end.x - 3, y), ink, 1.0)
+				else:
+					var x := lerpf(sr.position.x, sr.end.x, t)
+					draw_line(Vector2(x, sr.position.y + 3), Vector2(x, sr.end.y - 3), ink, 1.0)
+		"lift":
+			draw_line(sr.position, sr.end, ink, 1.5)
+			draw_line(Vector2(sr.end.x, sr.position.y), Vector2(sr.position.x, sr.end.y), ink, 1.5)
+		_:
+			var c := sr.get_center()
+			var h := minf(minf(sr.size.x, sr.size.y) * 0.35, zoom * 0.5)
+			draw_rect(Rect2(c - Vector2(h, h), Vector2(h, h) * 2.0), ink, false, 1.5)
+	var reach: Array[String] = []
+	if _stacked(rec, r, 1) != "":
+		reach.append("UP")
+	if _stacked(rec, r, -1) != "":
+		reach.append("DOWN")
+	var t2 := " / ".join(reach) if not reach.is_empty() else "ONE DECK ONLY"
+	_text(Vector2(sr.position.x + 4, sr.end.y - 5), t2, SELECT if not reach.is_empty() else WARN, 11, sr.size.x - 6)
+
+
+## The room of the same kind stacked on the deck `step` above (or below) `r`, "" if none.
+func _stacked(rec: DesignRecord, r: Dictionary, step: int) -> String:
+	var rect := Rect2(r.x, r.z, r.w, r.d)
+	for u: Dictionary in rec.rooms_on(int(r.deck) + step):
+		if str(u.type) == str(r.type) and Rect2(u.x, u.z, u.w, u.d).intersection(rect).get_area() >= 1.0:
+			return str(u.id)
+	return ""
+
+
+## The decks a stairwell, lift or hatch spans: the stack of rooms of its kind over each other.
+func _stack(rec: DesignRecord, r: Dictionary) -> Dictionary:
+	var ids := {int(r.deck): str(r.id)}
+	var cur := r
+	while true:
+		var up := _stacked(rec, cur, 1)
+		if up == "":
+			break
+		cur = rec.rooms[up]
+		ids[int(cur.deck)] = up
+	cur = r
+	while true:
+		var down := _stacked(rec, cur, -1)
+		if down == "":
+			break
+		cur = rec.rooms[down]
+		ids[int(cur.deck)] = down
+	return ids
 
 
 ## The room's name and size, over its components, on a dark tab so it always reads.
@@ -1133,7 +1197,12 @@ func _press_elevation(rec: DesignRecord, s: Vector2) -> void:
 		if not sr.grow(EDGE_GRAB).has_point(s):
 			continue
 		var edge := 0
-		if absf(s.x - sr.position.x) < EDGE_GRAB:
+		var rt := bus.catalog.room(str(r.type))
+		if rt and rt.links_decks and absf(s.y - sr.position.y) < EDGE_GRAB:
+			edge = 2  # the top: stretch it up (or back down) a deck at a time
+		elif rt and rt.links_decks and absf(s.y - sr.end.y) < EDGE_GRAB:
+			edge = -2
+		elif absf(s.x - sr.position.x) < EDGE_GRAB:
 			edge = -1
 		elif absf(s.x - sr.end.x) < EDGE_GRAB:
 			edge = 1
@@ -1156,6 +1225,18 @@ func _drag_elevation(rec: DesignRecord, p: Vector2) -> void:
 			var dk := int(_drag.deck)
 			var u0 := span.x
 			var u1 := span.y
+			if absi(int(_drag.edge)) == 2:
+				var st := _stack(rec, rec.rooms[_drag.id])
+				var lo: int = st.keys().min()
+				var hi: int = st.keys().max()
+				var at := _deck_at(rec, p.y)
+				if int(_drag.edge) == 2:
+					hi = maxi(at, lo)
+				else:
+					lo = mini(at, hi)
+				_drag.decks = Vector2i(lo, hi)
+				_drag.rect = Rect2(span.x, -(hi + 1.0) * rec.deck_height, span.y - span.x, (hi - lo + 1) * rec.deck_height)
+				return
 			match int(_drag.edge):
 				-1:
 					u0 = minf(span.x + du, span.y - rec.grid)
@@ -1195,6 +1276,9 @@ func _release_elevation(rec: DesignRecord, d: Dictionary) -> void:
 			select("room", newest)
 			deck = int(d.deck)
 		"room":
+			if d.has("decks"):
+				_stretch(rec, str(d.id), d.decks)
+				return
 			if not d.has("u"):
 				return
 			var r: Dictionary = rec.rooms.get(str(d.id), {})
@@ -1207,6 +1291,24 @@ func _release_elevation(rec: DesignRecord, d: Dictionary) -> void:
 			if to == from and dk == int(r.deck):
 				return
 			_move_room_with_contents(rec, str(d.id), from, to, {"deck": dk} if dk != int(r.deck) else {})
+
+
+## A stairwell, lift or hatch made to span decks lo..hi: its kind stacked over itself on each,
+## the ones outside taken out. One undo step.
+func _stretch(rec: DesignRecord, room_id: String, decks: Vector2i) -> void:
+	var r: Dictionary = rec.rooms.get(room_id, {})
+	if r.is_empty():
+		return
+	var st := _stack(rec, r)
+	var ops: Array = []
+	for dk in range(decks.x, decks.y + 1):
+		if not st.has(dk):
+			ops.append({"op": "add_room", "room": {"type": str(r.type), "deck": dk, "x": r.x, "z": r.z, "w": r.w, "d": r.d}})
+	for dk: int in st:
+		if dk < decks.x or dk > decks.y:
+			ops.append({"op": "remove_room", "id": st[dk]})
+	if not ops.is_empty():
+		bus.editor.do({"op": "batch", "ops": ops})
 
 
 ## A moved room takes its components (and drops doors that no longer fit) in one undo step.
