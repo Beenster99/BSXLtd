@@ -27,6 +27,8 @@ const FLAG := "yard"
 const STATION := "yard.station"
 const DOCK := "yard.dock"
 const RACKING := "yard.racking"
+## The freight lines' own couriers, haulers and freighters (19 Nov), else the 0.4.1 looks.
+const DELIVERY_SHIPS := "yard.delivery_ships"
 
 ## The design room's inside (m): width (x), the side walls' height, depth (z).
 const DESIGN_ROOM_SIZE := Vector3(24, 6, 18)

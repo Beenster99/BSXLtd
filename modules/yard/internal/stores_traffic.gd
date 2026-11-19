@@ -16,6 +16,8 @@ const StoresShellRef := preload("res://modules/yard/internal/stores_shell.gd")
 const BotLook := preload("res://modules/yard/internal/yard_bot_look.gd")
 const HaulerLook := preload("res://modules/yard/internal/yard_hauler_look.gd")
 const FreighterLook := preload("res://modules/yard/internal/yard_freighter_look.gd")
+## The freight lines' own courier, hauler and freighter (19 Nov, flag yard.delivery_ships).
+const Ships := preload("res://modules/yard/internal/yard_delivery_ships.gd")
 
 signal delivered(part: String, qty: int)
 signal sent(part: String, qty: int)
@@ -73,6 +75,8 @@ var _mats: Dictionary = {}
 var _next_id := 0
 var _next_brand := 0
 var _ship: Dictionary = {}
+## The lines' own ships (YardDeliveryShips) in place of the 0.4.1 hauler and freighter.
+var _lines_ships := false
 ## Kits on their way (deliver_kit): {id, kit, to (Node3D), asked (parts), arrived (parts),
 ## loads (the loads set down so far), done}.
 var kit_orders: Array[Dictionary] = []
@@ -94,6 +98,7 @@ const ROOM_DOORS := {
 
 func build(rack_store: YardRackStore) -> void:
 	store = rack_store
+	_lines_ships = Flags.is_on(YardBus.DELIVERY_SHIPS)
 	for b in YardRackStore.GOODS_IN_BAYS.size():
 		_bay_spots.append([null, null, null, null, null, null, null, null, null, null, null, null])
 	for b in YardRackStore.DISPATCH_BAYS.size():
@@ -268,18 +273,25 @@ func _call_haulers() -> void:
 		var berth: Vector3 = YardRackStore.HAULER_BERTHS[i]
 		var brand: Dictionary = BotLook.BRANDS[_next_brand % BotLook.BRANDS.size()]
 		_next_brand += 1
-		var node := _make_hauler(i, brand)
+		# A courier for one or two loads, else a hauler (the lines' own ships, under the flag).
+		var size := Ships.size_for(cargo.size()) if _lines_ships else ""
+		var node: Node3D
+		if _lines_ships:
+			node = Ships.make(brand, size)
+			node.name = "Hauler%d" % i
+		else:
+			node = _make_hauler(i, brand)
 		node.position = berth + Vector3(hauler_approach + 30.0 * i, 6.0, 0)
 		add_child(node)
-		var h := {"node": node, "berth": i, "kind": "hauler", "state": "in", "loads": [], "t": 0.0, "brand": brand, "crew": []}
-		for k in hauler_crew:
-			_add_crew(h, brand, Vector3(3.0 + k * 2.6, 1.2, -1.9 + k * 3.8), k)
+		var h := {"node": node, "berth": i, "kind": "hauler", "state": "in", "loads": [], "t": 0.0, "brand": brand, "crew": [], "size": size}
+		for k in (1 if size == Ships.SMALL else hauler_crew):
+			_add_crew(h, brand, Ships.crew_park(size, k) if _lines_ships else Vector3(3.0 + k * 2.6, 1.2, -1.9 + k * 3.8), k)
 		for k in cargo.size():
 			var l := _new_load(cargo[k].part, int(cargo[k].qty))
 			l.where = "hauler"
 			l.hold = k
 			node.add_child(l.node)
-			l.node.position = _hold_spot(k)
+			l.node.position = Ships.hold_spot(size, k) if _lines_ships else _hold_spot(k)
 			(h.loads as Array).append(l)
 		haulers.append(h)
 
@@ -288,10 +300,15 @@ func _call_haulers() -> void:
 func _call_ship() -> void:
 	var brand: Dictionary = BotLook.BRANDS[_next_brand % BotLook.BRANDS.size()]
 	_next_brand += 1
-	var node := _make_freighter(brand)
+	var node: Node3D
+	if _lines_ships:
+		node = Ships.make(brand, Ships.LARGE)
+		node.name = "Freighter"
+	else:
+		node = _make_freighter(brand)
 	node.position = SHIP_BERTH + Vector3(hauler_approach + 120.0, 0.0, 0.0)
 	add_child(node)
-	var h := {"node": node, "berth": -1, "kind": "ship", "state": "in", "loads": [], "t": 0.0, "brand": brand, "crew": []}
+	var h := {"node": node, "berth": -1, "kind": "ship", "state": "in", "loads": [], "t": 0.0, "brand": brand, "crew": [], "size": "large"}
 	var k := 0
 	while not backlog.is_empty() and k < ship_loads:
 		var it: Dictionary = backlog.pop_front()
@@ -379,6 +396,10 @@ func _open_by(h: Dictionary, delta: float, opening: bool) -> float:
 		top.position.y = move_toward(top.position.y, travel if opening else 0.0, delta * (1.2 if opening else 1.6))
 		bottom.position.y = -top.position.y
 		return top.position.y / travel
+	if _lines_ships:   # the frames' lids stand up
+		var t := move_toward(Ships.open_of(node), 1.0 if opening else 0.0, delta * (0.55 if opening else 0.8))
+		Ships.set_open(node, t)
+		return t
 	var ramp: Node3D = node.get_node("Ramp")
 	ramp.rotation.z = move_toward(ramp.rotation.z, 1.45 if opening else 0.0, delta * (0.8 if opening else 1.2))
 	return ramp.rotation.z / 1.45
@@ -519,7 +540,10 @@ func _crew_job(b: Dictionary) -> void:
 	if _unload_job(b, h):
 		return
 	if (h.loads as Array).any(func(l: Dictionary) -> bool: return l.where == "hauler"):
-		b.job = [{"fly": hn.position + Vector3(-10.0, 3.0 + float(b.index % 2) * 1.5, (b.park as Vector3).z)}]   # wait at the ramp
+		if _lines_ships and h.kind != "ship":   # wait over the frames
+			b.job = [{"fly": hn.position + Ships.wait_spot(String(h.size), int(b.index))}]
+		else:
+			b.job = [{"fly": hn.position + Vector3(-10.0, 3.0 + float(b.index % 2) * 1.5, (b.park as Vector3).z)}]   # wait at the ramp
 		return
 	b.job = [{"fly": hn.position + (b.park as Vector3)}, {"board": h}]
 
@@ -545,6 +569,9 @@ func _unload_job(b: Dictionary, h: Dictionary) -> bool:
 		var ln: Node3D = l.node
 		# A hauler's loads are drawn out over its ramp; in her hold a bot goes in over each.
 		var mouth := ln.global_position if h.kind == "ship" else (h.node as Node3D).position + Vector3(-11.0, 1.0, ln.position.z)
+		if _lines_ships and h.kind != "ship":
+			# Drawn straight up out of its frame, high enough to clear the command module.
+			mouth = Vector3(ln.global_position.x, (h.node as Node3D).position.y + Ships.clear_y(String(h.size)), ln.global_position.z)
 		b.job = _fetch_steps(l, mouth) + _carry_steps(l, spot.at, func() -> void: _to_bay(l), false)
 		return true
 	return false
