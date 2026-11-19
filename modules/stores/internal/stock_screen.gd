@@ -26,7 +26,7 @@ const FILTERS: PackedStringArray = ["ALL", "LONG", "PLATE", "COMPONENTS", "HEAVY
 ## Table columns: key, heading, width in characters of table text (0 = the part name, takes the rest).
 const COLUMNS := [["name", "PART", 0.0], ["racks", "RACKS", 12.0], ["qty", "HELD", 6.0], ["places", "PLACES", 7.0],
 		["room", "ROOM", 6.0], ["inbound", "INBOUND", 8.0], ["need", "DESIGN", 7.0], ["short", "SHORT", 7.0],
-		["unit_cost", "UNIT CR", 8.5], ["value", "VALUE CR", 10.5], ["mass", "TONNES", 8.0]]
+		["unit_cost", "UNIT CR", 9.5], ["value", "VALUE CR", 10.5], ["mass", "TONNES", 8.0]]
 ## Seconds between refreshes while the racks keep changing.
 const REFRESH_GAP := 0.4
 
@@ -122,14 +122,12 @@ func setup(stores_bus: StoresBus, density: float) -> void:
 	detail_box.add_theme_stylebox_override("panel", T.box(CARD, LINE, 1, fs * 0.45))
 	detail_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(detail_box)
-	var dscroll := ScrollContainer.new()
-	dscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	detail_box.add_child(dscroll)
+	detail_box.clip_contents = true
 	_detail = VBoxContainer.new()
 	_detail.name = "Detail"
 	_detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail.add_theme_constant_override("separation", 2)
-	dscroll.add_child(_detail)
+	detail_box.add_child(_detail)
 	bus.report_changed.connect(func() -> void: _due = true)
 	refresh()
 
@@ -299,7 +297,9 @@ func _fill_kinds(r: StoresReport) -> void:
 		var title := _label(StoresReport.KIND_TITLES[k].to_upper(), "display_bold", fs, KIND_COLOURS[k])
 		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		top.add_child(title)
-		top.add_child(_label("%d units" % int(info.qty), "mono_bold", fs - 1, T.TEXT))
+		var units := _label("%d units" % int(info.qty), "mono_bold", fs - 1, T.TEXT)
+		units.clip_text = false
+		top.add_child(units)
 		var bar := _Bar.new()
 		bar.value = StoresReport.share(int(info.filled), int(info.places))
 		bar.colour = KIND_COLOURS[k]
@@ -443,19 +443,19 @@ func _fill_detail(r: StoresReport) -> void:
 	if not bay.is_empty():
 		var rack: Dictionary = r.racks[int(bay[0])]
 		var b: Dictionary = rack.bays[int(bay[1])]
-		_detail.add_child(_label("%s  BAY %d  ·  %s" % [rack.id, int(bay[1]) + 1, StoresReport.STOREY_NAMES[int(rack.storey)].to_upper()],
-				"display_bold", fs + 1, KIND_COLOURS[int(rack.kind)]))
-		_detail.add_child(_label("%d of %d places in use" % [int(b.filled), int(b.places)], "mono_medium", fs - 2, T.DIM))
+		_detail.add_child(_wrap(_label("%s  BAY %d  ·  %s" % [rack.id, int(bay[1]) + 1, StoresReport.STOREY_NAMES[int(rack.storey)].to_upper()],
+				"display_bold", fs + 1, KIND_COLOURS[int(rack.kind)])))
+		_detail.add_child(_wrap(_label("%d of %d places in use" % [int(b.filled), int(b.places)], "mono_medium", fs - 2, T.DIM)))
 		var parts: Dictionary = b.parts
 		if parts.is_empty():
-			_detail.add_child(_label("Empty.", "body", fs - 1, T.DIM))
+			_detail.add_child(_wrap(_label("Empty.", "body", fs - 1, T.DIM)))
 		for id: String in parts:
-			_detail.add_child(_label("%3d × %s" % [int(parts[id]), YardRackStore.PARTS[id].name], "mono_medium", fs - 2, T.TEXT))
+			_detail.add_child(_wrap(_label("%3d × %s" % [int(parts[id]), YardRackStore.PARTS[id].name], "mono_medium", fs - 2, T.TEXT)))
 		_detail.add_child(HSeparator.new())
 	var l := r.line(selected)
 	if l.is_empty():
 		if bay.is_empty():
-			_detail.add_child(_label("Pick a line or a bay to see where its parts are.", "body", fs - 1, T.DIM))
+			_detail.add_child(_wrap(_label("Pick a line or a bay to see where its parts are.", "body", fs - 1, T.DIM)))
 		return
 	var head := HBoxContainer.new()
 	_detail.add_child(head)
@@ -464,21 +464,21 @@ func _fill_detail(r: StoresReport) -> void:
 	head.add_child(t)
 	head.add_child(_label(StoresReport.KIND_TITLES[int(l.kind)].to_upper(), "mono_bold", fs - 3, KIND_COLOURS[int(l.kind)]))
 	var size: Vector3 = YardRackStore.PARTS[str(l.id)].size
-	_detail.add_child(_label("%d held in %d places (%d to a place)  ·  room for %d more  ·  %.1f × %.1f × %.1f m" % [
-			int(l.qty), int(l.places), int(l.stack), int(l.room), size.x, size.y, size.z], "mono_medium", fs - 3, T.DIM))
+	_detail.add_child(_wrap(_label("%d held in %d places (%d to a place)  ·  room for %d more  ·  %.1f × %.1f × %.1f m" % [
+			int(l.qty), int(l.places), int(l.stack), int(l.room), size.x, size.y, size.z], "mono_medium", fs - 3, T.DIM)))
 	var money := "CR %s each  ·  CR %s held  ·  %.2f t" % [T.money(int(l.unit_cost)), T.money(int(l.value)), float(l.mass) / 1000.0] \
 			if float(l.unit_cost) > 0.0 else "No catalogue price"
-	_detail.add_child(_label(money, "mono_medium", fs - 3, T.DIM))
+	_detail.add_child(_wrap(_label(money, "mono_medium", fs - 3, T.DIM)))
 	if int(l.need) > 0:
 		var ok := int(l.short) == 0
-		_detail.add_child(_label("Open design needs %d: %s" % [int(l.need), "covered" if ok else "%d short" % int(l.short)],
-				"body_medium", fs - 1, T.GOOD if ok else T.BAD))
+		_detail.add_child(_wrap(_label("Open design needs %d: %s" % [int(l.need), "covered" if ok else "%d short" % int(l.short)],
+				"body_medium", fs - 1, T.GOOD if ok else T.BAD)))
 	if int(l.inbound) > 0:
-		_detail.add_child(_label("+%d on the way in from goods in" % int(l.inbound), "body_medium", fs - 1, T.CYAN))
+		_detail.add_child(_wrap(_label("+%d on the way in from goods in" % int(l.inbound), "body_medium", fs - 1, T.CYAN)))
 	if int(l.qty) <= 0:
-		_detail.add_child(_label("None on the racks.", "body", fs - 1, T.BAD))
+		_detail.add_child(_wrap(_label("None on the racks.", "body", fs - 1, T.BAD)))
 		return
-	_detail.add_child(_label("PLACES", "mono_bold", fs - 3, T.ORANGE))
+	_detail.add_child(_wrap(_label("PLACES", "mono_bold", fs - 3, T.ORANGE)))
 	for i: int in l.slots:
 		var row := HBoxContainer.new()
 		_detail.add_child(row)
@@ -486,11 +486,21 @@ func _fill_detail(r: StoresReport) -> void:
 		where.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(where)
 		var storey := YardRackStore.storey_of(store.slot_position(i).y)
-		row.add_child(_label("%s  %d/%d" % ["UPPER" if storey == 1 else "GROUND", int(store.slots[i].qty), int(l.stack)],
-				"mono_medium", fs - 3, T.DIM))
+		var count := _label("%s  %d/%d" % ["UPPER" if storey == 1 else "GROUND", int(store.slots[i].qty), int(l.stack)],
+				"mono_medium", fs - 3, T.DIM)
+		count.clip_text = false
+		row.add_child(count)
 
 
 # --- Bits --------------------------------------------------------------------------------
+
+func _wrap(l: Label) -> Label:
+	l.clip_text = false
+	l.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return l
+
 
 func _card(title: String, value: String, sub: String, colour: Color) -> PanelContainer:
 	var card := PanelContainer.new()
@@ -513,6 +523,9 @@ func _label(text: String, face: String, size: int, colour: Color) -> Label:
 	l.add_theme_font_size_override("font_size", maxi(8, size))
 	l.add_theme_color_override("font_color", colour)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Never wider than its place: the wrist's glass makes text bigger than a wall's.
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	return l
 
 
