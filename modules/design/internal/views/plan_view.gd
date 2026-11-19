@@ -15,6 +15,7 @@ signal selection_changed(kind: String, id: String)
 signal tool_changed(tool: String)
 
 const RoomShape := preload("res://modules/design/internal/views/room_shape.gd")
+const PlanMarks := preload("res://modules/design/internal/views/plan_marks.gd")
 const PLAN := "plan"
 const SIDE := "side"
 const END := "end"
@@ -45,6 +46,9 @@ var problem_rooms: Dictionary = {}
 var problem_parts: Dictionary = {}
 var title := ""
 var show_title := true
+## The marks over the drawing: dimensions, the title block, tape, section line, notes, "look
+## here" and the room readout (plan_marks.gd).
+var marks: PlanMarks
 ## Keep the whole design in view as it changes and when resized (wall TVs).
 var auto_frame := false
 
@@ -89,6 +93,12 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	bus.design_changed.connect(_on_changed)
 	bus.carry_changed.connect(func(_id: String) -> void: queue_redraw())
 	bus.mirror_changed.connect(func(_a: int) -> void: queue_redraw())
+	# One pick shared by every drawing and the table (plan 3.3).
+	bus.focus_changed.connect(_on_focus)
+	bus.section_changed.connect(queue_redraw)
+	bus.look_requested.connect(_on_look)
+	marks = PlanMarks.new(self)
+	marks.build_bar(14)
 	if bus.crew:
 		bus.crew.call("attach_view", self)
 	_on_changed()
@@ -110,6 +120,8 @@ func set_tool(t: String) -> void:
 ## Esc: drops a half-drawn run, else puts the tool in hand down. False if there was nothing to
 ## cancel (the console then closes).
 func cancel() -> bool:
+	if marks and marks.cancel():
+		return true
 	if bus and bus.carrying != "":
 		bus.carry("")
 		return true
@@ -134,6 +146,32 @@ func select(kind: String, id: String) -> void:
 	selected_id = id
 	queue_redraw()
 	selection_changed.emit(kind, id)
+	if bus:
+		bus.set_focus(kind, id)
+
+
+## Something was picked on another drawing or at the table: picked here too.
+func _on_focus(kind: String, id: String) -> void:
+	if kind == selected_kind and id == selected_id:
+		return
+	select(kind, id)
+
+
+## "Look here": the drawing pulled to the spot (a plan of another deck goes to that deck if it
+## is the console's), and rings round it for a few seconds.
+func _on_look(at_deck: int, at: Vector2, who: String, colour: Color) -> void:
+	marks.on_look(at_deck, at, who, colour)
+	var rec := _rec()
+	if mode == PLAN:
+		if editable:
+			deck = at_deck
+		if deck == at_deck:
+			centre = at
+	elif rec:
+		var u := at.y if mode == SIDE else at.x
+		centre = Vector2(u, -(at_deck + 0.5) * rec.deck_height)
+	queue_redraw()
+	get_tree().create_timer(PlanMarks.LOOK_SECONDS + 0.1).timeout.connect(queue_redraw)
 
 
 ## Fits the whole design in view.
@@ -255,6 +293,7 @@ func _draw() -> void:
 	else:
 		_draw_elevation(rec)
 	_draw_drag_ghost(rec)
+	marks.draw(rec)
 	if show_title:
 		_draw_title(rec)
 
@@ -280,18 +319,18 @@ func _draw_grid() -> void:
 		step *= 2.0
 	var a := to_ship(Vector2.ZERO)
 	var b := to_ship(size)
-	var x := floorf(a.x / step) * step
-	while x <= b.x:
-		var major := is_zero_approx(fmod(absf(x), 5.0)) or is_equal_approx(fmod(absf(x), 5.0), 5.0)
-		draw_line(Vector2(to_screen(Vector2(x, 0)).x, 0), Vector2(to_screen(Vector2(x, 0)).x, size.y),
-				GRID_MAJOR if major else GRID)
-		x += step
-	var y := floorf(a.y / step) * step
-	while y <= b.y:
-		var major := is_zero_approx(fmod(absf(y), 5.0)) or is_equal_approx(fmod(absf(y), 5.0), 5.0)
-		draw_line(Vector2(0, to_screen(Vector2(0, y)).y), Vector2(size.x, to_screen(Vector2(0, y)).y),
-				GRID_MAJOR if major else GRID)
-		y += step
+	# Counted in whole steps, so the 5 m lines stay major however fine the grid.
+	var per5 := maxi(int(round(5.0 / step)), 1)
+	var i := int(floorf(a.x / step))
+	while i * step <= b.x:
+		var sx := to_screen(Vector2(i * step, 0)).x
+		draw_line(Vector2(sx, 0), Vector2(sx, size.y), GRID_MAJOR if i % per5 == 0 else GRID)
+		i += 1
+	var k := int(floorf(a.y / step))
+	while k * step <= b.y:
+		var sy := to_screen(Vector2(0, k * step)).y
+		draw_line(Vector2(0, sy), Vector2(size.x, sy), GRID_MAJOR if k % per5 == 0 else GRID)
+		k += 1
 
 
 func _draw_plan(rec: DesignRecord) -> void:
@@ -604,7 +643,7 @@ func _draw_door(rec: DesignRecord, door: Dictionary) -> void:
 	# Which way the wall runs: the room's side the door sits on (at any angle).
 	var along := DesignRecord.side_at(rec.rooms.get(str(door.a), {"x": 0, "z": 0, "w": 0, "d": 0}), p)
 	var kind := DesignCatalog.door_kind(door)
-	var half := maxf(DesignRules.MIN_DOOR, float(kind.w) - 0.2) * 0.5
+	var half := maxf(DesignRules.MIN_DOOR, DesignCatalog.door_w(door) - 0.2) * 0.5
 	var a := p - along * half
 	var b := p + along * half
 	var sa := to_screen(a)
@@ -665,6 +704,18 @@ func _draw_elevation(rec: DesignRecord) -> void:
 		var col := _room_colour(r)
 		draw_rect(sr, Color(col, 0.18))
 		draw_rect(sr, SELECT if selected_kind == "room" and str(r.id) == selected_id else Color(col, 0.9), false, 2.0)
+	# The selected room's ends to drag (and its top and bottom for stairs, lifts and hatches),
+	# drawn over the rest.
+	if editable and selected_kind == "room" and rec.rooms.has(selected_id):
+		var sel: Dictionary = rec.rooms[selected_id]
+		var ssr := Rect2(to_screen(_room_view_rect(rec, sel).position), _room_view_rect(rec, sel).size * zoom)
+		draw_rect(ssr, SELECT, false, 3.0)
+		for x: float in [ssr.position.x, ssr.end.x]:
+			draw_rect(Rect2(x - 4, ssr.get_center().y - 14, 8, 28), SELECT)
+		var srt := bus.catalog.room(str(sel.type))
+		if srt and srt.links_decks:
+			for y: float in [ssr.position.y, ssr.end.y]:
+				draw_rect(Rect2(ssr.get_center().x - 14, y - 4, 28, 8), SELECT)
 	# Names, nearest rooms first, skipping any that would print over another.
 	var taken: Array[Rect2] = []
 	var fs := clampi(int(zoom * 0.4), 8, 15)
@@ -848,7 +899,10 @@ func _draw_part_ghost() -> void:
 func _draw_title(rec: DesignRecord) -> void:
 	var view_name: String = {"plan": "PLAN  DECK %d" % (deck + 1), "side": "SIDE ELEVATION",
 			"end": "END ELEVATION, FROM THE BOW"}.get(mode, mode)
-	var t := title if title != "" else "%s   %s" % [rec.name.to_upper(), view_name]
+	if title == "":
+		marks.draw_title_block(rec, view_name)
+		return
+	var t := title
 	var box := Rect2(size.x - 330, size.y - 46, 320, 36)
 	draw_rect(box, Color(BG, 0.85))
 	draw_rect(box, Color(DIM, 0.6), false, 1.0)
@@ -863,7 +917,9 @@ func _text(pos: Vector2, s: String, col: Color, fs: int, width: float = -1.0) ->
 
 
 static func _m(v: float) -> String:
-	return ("%d" % int(v)) if is_equal_approx(v, roundf(v)) else ("%.1f" % v)
+	if is_equal_approx(v, roundf(v)):
+		return "%d" % int(v)
+	return ("%.1f" % v) if is_equal_approx(v * 10.0, roundf(v * 10.0)) else ("%.2f" % v)
 
 
 # Input
@@ -882,6 +938,8 @@ func _gui_input(event: InputEvent) -> void:
 			_drag_move(event.position)
 		elif bus.carrying != "" or editable and (tool.begins_with("part:") or tool.begins_with("run:")
 				or tool in ["hull", "wall", "beam"] or tool.begins_with("mount:")):
+			queue_redraw()
+		elif marks.moved(event.position):
 			queue_redraw()
 		_update_cursor(event.position)
 	elif event is InputEventMouseButton:
@@ -907,6 +965,8 @@ func _gui_input(event: InputEvent) -> void:
 				_finish_run()
 			elif mb.pressed and mb.double_click and tool == "hull" and editable:
 				_finish_hull()
+			elif mb.pressed and marks.press(mb.position, mb.shift_pressed):
+				pass
 			elif mb.pressed:
 				_press(mb.position)
 			else:
@@ -936,6 +996,11 @@ func _gui_input(event: InputEvent) -> void:
 		elif k.keycode == KEY_ESCAPE and tool != "select":
 			set_tool("select")
 			accept_event()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_EXIT and marks:
+		marks.pointer_left()
 
 
 func _zoom_at(at: Vector2, factor: float) -> void:
@@ -1104,6 +1169,12 @@ func pick(s: Vector2) -> Dictionary:
 
 func _update_cursor(s: Vector2) -> void:
 	if not editable or tool != "select" or not _drag.is_empty():
+		return
+	if mode != PLAN:
+		var eh := _elevation_pick(_rec(), s) if _rec() else {}
+		var e := int(eh.get("edge", 0))
+		mouse_default_cursor_shape = Control.CURSOR_ARROW if eh.is_empty() else (Control.CURSOR_HSIZE if absi(e) == 1
+				else (Control.CURSOR_VSIZE if absi(e) == 2 else Control.CURSOR_MOVE))
 		return
 	var hit := pick(s)
 	var shape := Control.CURSOR_ARROW
@@ -1330,10 +1401,27 @@ func _press_elevation(rec: DesignRecord, s: Vector2) -> void:
 		return
 	if tool != "select":
 		return
-	# The nearest room under the pointer (the elevation draws the far ones first).
+	var hit := _elevation_pick(rec, s)
+	if hit.is_empty():
+		select("", "")
+		return
+	var r: Dictionary = rec.rooms[hit.id]
+	select("room", str(r.id))
+	_drag = {"kind": "room", "id": str(r.id), "edge": int(hit.edge), "start": p, "span": _span_of(r), "deck": int(r.deck),
+			"rect": _room_view_rect(rec, r)}
+
+
+## The room under the pointer in an elevation and which edge of it: {id, edge} (edge -1/1 its
+## ends along the view, 2/-2 its top and bottom for rooms that link decks, 0 the room itself),
+## or {}. The selected room is tried first, so its ends can be grabbed where rooms behind it
+## line up with them; then the nearest room (the elevation draws the far ones first).
+func _elevation_pick(rec: DesignRecord, s: Vector2) -> Dictionary:
 	var list: Array = rec.rooms.values()
 	list.sort_custom(func(a, b):
 		return float(a.x) + float(a.w) > float(b.x) + float(b.w) if mode == SIDE else float(a.z) + float(a.d) < float(b.z) + float(b.d))
+	if selected_kind == "room" and rec.rooms.has(selected_id):
+		list.erase(rec.rooms[selected_id])
+		list.push_front(rec.rooms[selected_id])
 	for r: Dictionary in list:
 		var rr := _room_view_rect(rec, r)
 		var sr := Rect2(to_screen(rr.position), rr.size * zoom)
@@ -1349,12 +1437,8 @@ func _press_elevation(rec: DesignRecord, s: Vector2) -> void:
 			edge = -1
 		elif absf(s.x - sr.end.x) < EDGE_GRAB:
 			edge = 1
-		select("room", str(r.id))
-		var span := _span_of(r)
-		_drag = {"kind": "room", "id": str(r.id), "edge": edge, "start": p, "span": span, "deck": int(r.deck),
-				"rect": rr}
-		return
-	select("", "")
+		return {"id": str(r.id), "edge": edge}
+	return {}
 
 
 func _drag_elevation(rec: DesignRecord, p: Vector2) -> void:

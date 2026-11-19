@@ -559,7 +559,9 @@ func _wall(e: Dictionary, outer: bool) -> void:
 			continue
 		var dw := DesignCatalog.door_w(d)
 		gaps.append({"id": str(d.id), "t0": maxf(t - dw * 0.5, 0.0), "t1": minf(t + dw * 0.5, length),
-				"h": DesignCatalog.door_h(d), "leaves": bool(DesignCatalog.door_kind(d).leaves)})
+				"h": DesignCatalog.door_h(d), "leaves": bool(DesignCatalog.door_kind(d).leaves),
+				"style": str(DesignCatalog.door_kind(d).get("style", "split")),
+				"airtight": bool(DesignCatalog.door_kind(d).get("airtight", false))})
 	gaps.sort_custom(func(p, q): return p.t0 < q.t0)
 	var info := {"kind": "wall", "deck": deck, "a": a, "b": b, "outer": outer}
 	var start := 0.0
@@ -762,24 +764,65 @@ func _door(g: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, y0: float, 
 	_shape_in(frame, Vector3(0.08, dh, depth), Vector3(w * 0.5 - 0.04, dh * 0.5, 0))
 	if not bool(g.get("leaves", true)):
 		return  # an open doorway: frame and sill, no leaves
-	# Two leaves that slide apart into the wall.
-	var half := (w - 0.16) * 0.5
-	var leaves: Array[Node3D] = []
-	for side in [-1.0, 1.0]:
-		var leaf := MeshInstance3D.new()
-		leaf.name = "Leaf"
-		leaf.mesh = _box_mesh(Vector3(half, dh - 0.12, 0.05))
-		leaf.material_override = paint(Color(0.56, 0.58, 0.6), "brushed_steel")
-		leaf.position = Vector3(side * half * 0.5, (dh - 0.1) * 0.5, 0)
-		var stripe := MeshInstance3D.new()
-		stripe.mesh = _box_mesh(Vector3(half, 0.08, 0.056))
-		stripe.material_override = trim
-		stripe.position = Vector3(0, 0.1, 0)
-		leaf.add_child(stripe)
+	var style := str(g.get("style", "split"))
+	var steel := paint(Color(0.56, 0.58, 0.6), "brushed_steel")
+	var clear := w - 0.16
+	if style == "split":
+		# Two leaves that slide apart into the wall.
+		var half := clear * 0.5
+		var leaves: Array[Node3D] = []
+		for side in [-1.0, 1.0]:
+			var leaf := _leaf(Vector3(half, dh - 0.12, 0.05), steel, trim)
+			leaf.position = Vector3(side * half * 0.5, (dh - 0.1) * 0.5, 0)
+			frame.add_child(leaf)
+			leaves.append(leaf)
+		doors.append({"id": str(g.id), "centre": Vector3(c2.x, y0 + 1.0, c2.y), "left": leaves[0], "right": leaves[1],
+				"half": half, "open": 0.0, "style": style})
+		return
+	# One leaf: it slides aside, swings on hinges at one jamb, or rolls up into the head.
+	var thick := 0.12 if bool(g.get("airtight", false)) else (0.04 if style == "swing" else 0.05)
+	var leaf := _leaf(Vector3(clear, dh - 0.12, thick), steel if style != "roll" else paint(Color(0.42, 0.44, 0.46), "gunmetal"), trim)
+	var holder: Node3D = leaf
+	if style == "swing":
+		# Hung from the left jamb: a pivot there, the leaf beside it.
+		var pivot := Node3D.new()
+		pivot.name = "Hinge"
+		pivot.position = Vector3(-clear * 0.5, (dh - 0.1) * 0.5, 0)
+		leaf.position = Vector3(clear * 0.5, 0, 0)
+		pivot.add_child(leaf)
+		frame.add_child(pivot)
+		holder = pivot
+	else:
+		leaf.position = Vector3(0, (dh - 0.1) * 0.5, 0)
 		frame.add_child(leaf)
-		leaves.append(leaf)
-	doors.append({"id": str(g.id), "centre": Vector3(c2.x, y0 + 1.0, c2.y), "left": leaves[0], "right": leaves[1],
-			"half": half, "open": 0.0})
+	if bool(g.get("airtight", false)):
+		# A pressure door's locking wheel, both faces.
+		for face in [-1.0, 1.0]:
+			var wheel := MeshInstance3D.new()
+			var tm := TorusMesh.new()
+			tm.inner_radius = 0.13
+			tm.outer_radius = 0.17
+			wheel.mesh = tm
+			wheel.material_override = trim
+			wheel.rotation = Vector3(PI * 0.5, 0, 0)
+			wheel.position = Vector3(0, 0.05, face * (thick * 0.5 + 0.02))
+			leaf.add_child(wheel)
+	doors.append({"id": str(g.id), "centre": Vector3(c2.x, y0 + 1.0, c2.y), "left": holder, "right": holder,
+			"half": clear, "open": 0.0, "style": style, "rest": holder.position, "h": dh - 0.12})
+
+
+## A door leaf with a trim stripe across it.
+func _leaf(size: Vector3, mat: Material, trim: Material) -> MeshInstance3D:
+	var leaf := MeshInstance3D.new()
+	leaf.name = "Leaf"
+	leaf.mesh = _box_mesh(size)
+	leaf.material_override = mat
+	var stripe := MeshInstance3D.new()
+	stripe.mesh = _box_mesh(Vector3(size.x, 0.08, size.z + 0.006))
+	stripe.material_override = trim
+	stripe.position = Vector3(0, 0.1, 0)
+	leaf.add_child(stripe)
+	return leaf
 
 
 ## Opens each door as someone comes near (`near`: room-space points) and closes it after.
@@ -797,8 +840,19 @@ func update_doors(near: Array[Vector3], delta: float) -> void:
 		d.open = move_toward(float(d.open), want, delta * 2.5)
 		var s := smoothstep(0.0, 1.0, float(d.open))
 		var half: float = d.half
-		(d.left as Node3D).position.x = -half * 0.5 - s * half * 0.95
-		(d.right as Node3D).position.x = half * 0.5 + s * half * 0.95
+		match str(d.get("style", "split")):
+			"slide":
+				(d.left as Node3D).position.x = (d.rest as Vector3).x - s * half * 0.95
+			"swing":
+				(d.left as Node3D).rotation.y = s * deg_to_rad(100.0)
+			"roll":
+				var leaf := d.left as Node3D
+				var h: float = d.h
+				leaf.scale.y = 1.0 - 0.92 * s
+				leaf.position.y = (d.rest as Vector3).y + h * 0.46 * s
+			_:
+				(d.left as Node3D).position.x = -half * 0.5 - s * half * 0.95
+				(d.right as Node3D).position.x = half * 0.5 + s * half * 0.95
 
 
 # Lifts
