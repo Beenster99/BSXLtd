@@ -492,6 +492,14 @@ func _hook_yard() -> void:
 	var yard := Modules.bus("yard")
 	if yard and yard.has_signal("station_ready") and not yard.is_connected("station_ready", furnish_station):
 		yard.connect("station_ready", furnish_station)
+	# The berth grows with reputation: re-check the fit when it does.
+	if yard and yard.has_signal("berth_tier_changed") and not yard.is_connected("berth_tier_changed", _on_berth_tier):
+		yard.connect("berth_tier_changed", _on_berth_tier)
+
+
+func _on_berth_tier(_tier: int = 0) -> void:
+	_problems_of = null
+	design_changed.emit()
 
 
 ## The design room's wall planes: the station's (the yard module's design_room_walls), or
@@ -515,6 +523,39 @@ func furnish_station(_station: Node3D = null) -> void:
 	var f: Node3D = Furnishing.new()
 	root.add_child(f)
 	f.call("setup", self, room_walls())
+
+
+## The company's current build berth, {name, length, beam, height} of clear space, m: the yard
+## module's `build_berth()` (it grows with reputation), else its first "build" berth, else
+## DesignBerth.DEFAULT. `berth_override` wins (tests, previews).
+var berth_override: Dictionary = {}
+func berth() -> Dictionary:
+	if not berth_override.is_empty():
+		return DesignBerth.from_yard(berth_override)
+	var yard := Modules.bus("yard")
+	if yard and yard.has_method("build_berth"):
+		return DesignBerth.from_yard(yard.call("build_berth"))
+	var list_fn := "current_berths" if yard and yard.has_method("current_berths") else "berths"
+	if yard and yard.has_method(list_fn):
+		for b: Dictionary in yard.call(list_fn):
+			if str(b.get("kind", "")) == "build" and b.get("box") is AABB:
+				return DesignBerth.from_yard(b.box, str(b.get("name", "")))
+	return DesignBerth.DEFAULT.duplicate()
+
+
+## True when the open design's ship order needs a bigger berth tier (ShipOrders' "berth") than
+## the company has now.
+func order_needs_larger_berth() -> bool:
+	if library.current == null or library.current.order.is_empty():
+		return false
+	return int(library.current.order.get("berth", 1)) > int(berth().get("tier", 1))
+
+
+## How the open design sits in the build berth (DesignBerth.fit).
+func berth_fit() -> Dictionary:
+	if library.current == null:
+		return {}
+	return DesignBerth.fit(library.current, berth())
 
 
 func unregister_module() -> void:
@@ -614,6 +655,9 @@ func problems() -> Array[Dictionary]:
 		return []
 	if _problems_of != library.current:
 		_problems = DesignRules.check(library.current, catalog, totals())
+		var bp := DesignBerth.problem(berth_fit())
+		if not bp.is_empty():
+			_problems.append(bp)
 		for id: String in checks:
 			var more: Variant = (checks[id] as Callable).call(library.current, catalog, totals())
 			if more is Array:
