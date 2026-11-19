@@ -98,6 +98,30 @@ class Part:
     def __init__(self, pid):
         self.id = pid
         self.objects = []
+        # Moving parts: every primitive goes to the current piece ("base" is the fixed one).
+        self.piece = "base"
+        self.pieces = {}
+        self.top = {}
+
+    def moving(self, name, pivot, parent="base", kind="hinge", axis=(1, 0, 0), stowed=0.0, deployed=0.0,
+               seconds=2.0, order=1, **extra):
+        """From here on, primitives belong to the moving piece `name`, which turns (hinge, degrees)
+        or slides (slide, metres) about or along `axis` (part space) through `pivot` (game
+        coordinates, as built). The model is built at value 0; `stowed` and `deployed` are the
+        values at the two ends of an Operate (0 is the pose as built). `order`: pieces with a lower
+        number move first when deploying, the same number together. `extra` (contact=...) goes
+        into the motion note; a contact's `at` is in game coordinates as built."""
+        self.pieces[name] = dict(name=name, parent=parent, kind=kind, axis=list(axis), stowed=stowed,
+                                 deployed=deployed, seconds=seconds, order=order, pivot=Vector(pivot), **extra)
+        self.piece = name
+
+    def fixed(self):
+        """Back to the fixed base."""
+        self.piece = "base"
+
+    def note(self, **kw):
+        """Top-level facts for the motion note (power_kw, load_kg, opening)."""
+        self.top.update(kw)
 
     def _add(self, obj, material, bevel):
         obj.data.materials.clear()
@@ -110,6 +134,7 @@ class Part:
             mod.harden_normals = False
         for p in obj.data.polygons:
             p.use_smooth = False
+        obj["piece"] = self.piece
         self.objects.append(obj)
         return obj
 
@@ -320,40 +345,103 @@ class Part:
     # --- finishing ---
 
     def join(self):
-        """Applies the bevels and joins every piece into one mesh (one surface a material, so a
-        part is a handful of draw calls)."""
-        bpy.ops.object.select_all(action="DESELECT")
+        """Applies the bevels and joins the primitives into one mesh (one surface a material, so a
+        part is a handful of draw calls); a moving part into one mesh a piece."""
+        groups = {}
         for o in self.objects:
-            o.select_set(True)
-        bpy.context.view_layer.objects.active = self.objects[0]
-        bpy.ops.object.convert(target="MESH")
-        bpy.ops.object.join()
-        o = bpy.context.view_layer.objects.active
-        o.name = self.id
-        o.data.name = self.id
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        self.objects = [o]
+            groups.setdefault(o.get("piece", "base"), []).append(o)
+        joined = []
+        for name in ["base"] + [n for n in self.pieces if n in groups]:
+            objs = groups.get(name, [])
+            if not objs:
+                continue
+            bpy.ops.object.select_all(action="DESELECT")
+            for o in objs:
+                o.select_set(True)
+            bpy.context.view_layer.objects.active = objs[0]
+            bpy.ops.object.convert(target="MESH")
+            bpy.ops.object.join()
+            o = bpy.context.view_layer.objects.active
+            o.name = self.id if not self.pieces else name
+            o.data.name = o.name
+            o["piece"] = name
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            joined.append(o)
+        self.objects = joined
 
     def fit(self, size):
         """Scales the joined part along each axis to exactly `size` (game x, y, z), its footprint
-        centred on the origin and its foot on the floor. Returns the scale used per axis."""
+        centred on the origin and its foot on the floor, then sets each moving piece's origin on its
+        pivot, parented as declared. Returns the scale used per axis."""
         lo, hi = self.bounds()
         got = hi - lo
         k = [size[i] / got[i] if got[i] > 1e-6 else 1.0 for i in range(3)]
         mid = (lo + hi) * 0.5
-        o = self.objects[0]
-        for v in o.data.vertices:
-            g = Vector((v.co.x, v.co.z, -v.co.y))
-            g = Vector(((g.x - mid.x) * k[0], (g.y - lo.y) * k[1], (g.z - mid.z) * k[2]))
-            v.co = B(g)
-        o.data.update()
+
+        def tx(g):
+            return Vector(((g.x - mid.x) * k[0], (g.y - lo.y) * k[1], (g.z - mid.z) * k[2]))
+
+        for o in self.objects:
+            for v in o.data.vertices:
+                v.co = B(tx(Vector((v.co.x, v.co.z, -v.co.y))))
+            o.data.update()
+        self.scale = k
+        by_name = {o["piece"]: o for o in self.objects}
+        for name, pc in self.pieces.items():
+            pc["pivot"] = tx(pc["pivot"])
+            if "contact" in pc:
+                pc["contact"]["at"] = tx(Vector(pc["contact"]["at"])) - pc["pivot"]
+            if pc["kind"] == "slide":
+                f = sum(abs(pc["axis"][i]) * k[i] for i in range(3)) / max(1e-6, sum(abs(a) for a in pc["axis"]))
+                pc["stowed"] *= f
+                pc["deployed"] *= f
+        for name, pc in self.pieces.items():
+            o = by_name.get(name)
+            if o is None:
+                continue
+            shift = B(pc["pivot"])
+            for v in o.data.vertices:
+                v.co -= shift
+            o.data.update()
+            par = pc["parent"]
+            ppiv = self.pieces[par]["pivot"] if par in self.pieces else Vector((0, 0, 0))
+            o.parent = by_name[par]
+            o.matrix_parent_inverse = Matrix.Identity(4)
+            o.location = B(pc["pivot"] - ppiv)
         return k
 
+    def motion(self):
+        """The motion note (written beside the .glb as <id>.motion.json), or None if nothing moves."""
+        if not self.pieces:
+            return None
+        out = dict(self.top)
+        out.setdefault("power_kw", 0.0)
+        out.setdefault("load_kg", 0.0)
+        pieces = []
+        for pc in self.pieces.values():
+            d = {kk: vv for kk, vv in pc.items() if kk != "pivot"}
+            d["pivot"] = [round(c, 4) for c in pc["pivot"]]
+            d["unit"] = {"hinge": "deg", "slide": "m", "spin": "deg", "belt": "m/s"}[pc["kind"]]
+            if pc["kind"] != "belt":
+                d["min"] = min(pc["stowed"], pc["deployed"], 0.0)
+                d["max"] = max(pc["stowed"], pc["deployed"], 0.0)
+                d["rest"] = 0.0
+            if "swing" in pc:
+                d["min"], d["max"] = -pc["swing"], pc["swing"]
+            if "contact" in d:
+                d["contact"] = {"at": [round(c, 4) for c in pc["contact"]["at"]], "radius": pc["contact"]["radius"]}
+            for kk in ("stowed", "deployed", "min", "max"):
+                if kk in d:
+                    d[kk] = round(d[kk], 4)
+            pieces.append(d)
+        out["pieces"] = pieces
+        return out
+
     def export(self, path):
-        o = self.objects[0]
         bpy.ops.object.select_all(action="DESELECT")
-        o.select_set(True)
-        bpy.context.view_layer.objects.active = o
+        for o in self.objects:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = self.objects[0]
         bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True,
                                   export_apply=True, export_yup=True, export_materials="EXPORT",
                                   export_normals=True, export_animations=False, export_extras=False)

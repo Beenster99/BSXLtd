@@ -13,6 +13,7 @@ model to its catalogue box exactly and fails if a side needed more than TOLERANC
 The game never runs Blender: the .glb files are committed with these scripts.
 """
 
+import json
 import os
 import re
 import sys
@@ -60,6 +61,14 @@ def build(pid):
             bad.append("%s scaled %.2f to fit %.2f m" % (axis, k[i], size[i]))
     os.makedirs(OUT, exist_ok=True)
     p.export(os.path.join(OUT, pid + ".glb"))
+    note = p.motion()
+    path = os.path.join(OUT, pid + ".motion.json")
+    if note:
+        with open(path, "w") as f:
+            json.dump(note, f, indent=1)
+            f.write("\n")
+    elif os.path.exists(path):
+        os.remove(path)
     return bad
 
 

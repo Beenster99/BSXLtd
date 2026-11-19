@@ -1,0 +1,56 @@
+{
+ "power_kw": 3.0,
+ "load_kg": 0.0,
+ "opening": [
+  1.5,
+  2.04
+ ],
+ "pieces": [
+  {
+   "name": "leaf_l",
+   "parent": "base",
+   "kind": "slide",
+   "axis": [
+    -1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.73,
+   "seconds": 2.5,
+   "order": 1,
+   "pivot": [
+    -0.005,
+    0.0374,
+    0.0095
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 0.73,
+   "rest": 0.0
+  },
+  {
+   "name": "leaf_r",
+   "parent": "base",
+   "kind": "slide",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.73,
+   "seconds": 2.5,
+   "order": 1,
+   "pivot": [
+    0.005,
+    0.0374,
+    0.0095
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 0.73,
+   "rest": 0.0
+  }
+ ]
+}

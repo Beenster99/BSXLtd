@@ -230,23 +230,54 @@ def r_docking_port(p, s):
 
 
 def r_blast_door(p, s):
+    # A blast door: a heavy frame with a header, and two armoured leaves that slide apart into
+    # the jambs (moving parts leaf_l and leaf_r).
     w, h, d = s
     for sx in (-1, 1):
         p.floor_box((0.25, h, d), (sx * (w * 0.5 - 0.125), 0, 0), "gunmetal", 0.02)
         for i in range(6):
             p.box((0.04, 0.04, 0.02), (sx * (w * 0.5 - 0.125), 0.2 + i * (h - 0.4) / 5, -d * 0.5 - 0.005), "chrome", 0.004)
     p.floor_box((w, 0.3, d), (0, h - 0.3, 0), "gunmetal", 0.02)
+    p.box((w, 0.06, d), (0, 0.03, 0), "dark", 0.004)
+    p.lamp(0.04, (0, h - 0.15, -d * 0.5), "-z", "lamp_red")
+    p.lamp(0.04, (w * 0.3, h - 0.15, -d * 0.5), "-z", "lamp_amber")
     lw = (w - 0.5) * 0.5
-    for sx in (-1, 1):
+    p.note(power_kw=3.0, load_kg=0.0, opening=[round(w - 0.5, 3), round(h - 0.36, 3)])
+    for sx, name in ((-1, "leaf_l"), (1, "leaf_r")):
         x = sx * lw * 0.5
+        p.moving(name, (sx * 0.005, 0.02, 0), kind="slide", axis=(sx, 0, 0), stowed=0.0, deployed=lw - 0.02,
+                 seconds=2.5, order=1)
         p.floor_box((lw - 0.01, h - 0.32, d * 0.6), (x, 0.02, 0), HULL, 0.015)
         for i in range(6):
             y = 0.1 + i * (h - 0.5) / 5
             p.box((lw * 0.4, 0.08, 0.02), (x - sx * lw * 0.2, y, -d * 0.3 - 0.01), "hazard", 0.0, rot_z=sx * 0.6)
         p.box((lw * 0.8, 0.2, 0.03), (x, h * 0.55, -d * 0.3 - 0.015), "dark", 0.006)
-    p.box((w, 0.06, d), (0, 0.03, 0), "dark", 0.004)
-    p.lamp(0.04, (0, h - 0.15, -d * 0.5), "-z", "lamp_red")
-    p.lamp(0.04, (w * 0.3, h - 0.15, -d * 0.5), "-z", "lamp_amber")
+        p.box((0.04, h - 0.4, d * 0.62), (sx * 0.02, 0.06 + (h - 0.4) * 0.5, 0), "rubber", 0.0)
+    p.fixed()
+
+
+def r_cargo_ramp(p, s):
+    # A cargo ramp in the hull: a hinge sill along the bottom (knuckles and a pin), and the ramp,
+    # closed flush in the hull, that swings out and down on it: treads, side curbs, a toe lip.
+    w, h, d = s
+    p.cyl(0.05, w, (0, 0.05, 0.0), "x", "dark", 14)
+    for i in range(5):
+        p.cyl(0.06, 0.12, (-w * 0.45 + i * w * 0.225, 0.05, 0.0), "x", "gunmetal", 14)
+    p.note(power_kw=6.0, load_kg=8000.0, opening=[round(w * 0.92, 3), round(h * 0.96, 3)])
+    p.moving("ramp", (0, 0.05, 0.0), kind="hinge", axis=(1, 0, 0), stowed=0.0, deployed=-100.0, seconds=6.0, order=1)
+    for i in range(4):
+        p.cyl(0.06, 0.12, (-w * 0.34 + i * w * 0.225, 0.05, 0.0), "x", "steel", 14)
+    p.box((w, h - 0.1, d * 0.6), (0, 0.1 + (h - 0.1) * 0.5, d * 0.2), HULL, 0.01)
+    for sx in (-1, 1):
+        p.box((0.1, h - 0.12, d * 0.9), (sx * (w * 0.5 - 0.05), 0.11 + (h - 0.12) * 0.5, 0), "hazard", 0.01)
+    n = 9
+    for i in range(n):
+        y = 0.3 + i * (h - 0.5) / (n - 1)
+        p.box((w * 0.86, 0.04, d * 0.35), (0, y, -d * 0.2), "dark", 0.004)
+    p.box((w * 0.9, 0.06, d), (0, h - 0.03, 0), "gunmetal", 0.008)
+    for sx in (-1, 1):
+        p.lamp(0.02, (sx * (w * 0.5 - 0.05), h - 0.12, -d * 0.45), "-z", "lamp_amber")
+    p.fixed()
 
 
 def r_bulkhead_plating(p, s):
@@ -267,18 +298,30 @@ def r_bulkhead_plating(p, s):
 def r_landing_gear(p, s):
     # A hull fitting: plate at +Z, the leg out along -Z... a landing leg stands down instead, so
     # it hangs from the plate down to a foot pad at the floor, the pad's middle under the plate.
+    # Moving parts: the strut folds back into the hull about its top trunnion, the oleo slides up
+    # into the strut, the foot rocks on its axle to sit flat on uneven ground.
     w, h, d = s
+    top = h - 0.3
     p.box((w * 0.8, 0.3, d * 0.5), (0, h - 0.15, d * 0.25), "gunmetal", 0.02)
+    p.box((0.16, 0.04, 0.01), (0, h - 0.12, -0.005), "hazard", 0.0)
+    p.note(power_kw=4.0, load_kg=0.0)
+    p.moving("strut", (0, top, 0.0), kind="hinge", axis=(1, 0, 0), stowed=-90.0, deployed=0.0, seconds=4.0, order=1)
+    p.cyl(0.14, 0.24, (0, top, 0.0), "x", "dark", 16)
     p.cyl(0.12, h * 0.5, (0, h * 0.62, 0.0), "y", "gunmetal", 20)
-    p.cyl(0.08, h * 0.45, (0, h * 0.3, 0.0), "y", "chrome", 20)
-    for sx in (-1, 1):
-        p.rod((sx * 0.25, h - 0.3, d * 0.3), (sx * 0.08, h * 0.35, 0.0), 0.04, "gunmetal")
-    p.rod((0, h - 0.3, -0.1), (0, h * 0.45, -d * 0.35), 0.04, "gunmetal")
-    p.rod((0, h * 0.45, -d * 0.35), (0, h * 0.15, 0.0), 0.035, "hazard")
-    p.cyl(0.12, 0.2, (0, 0.12, 0), "x", "gunmetal", 16)
-    p.floor_box((w, 0.08, d * 0.9), (0, 0, -d * 0.0), "dark", 0.02)
-    p.floor_box((w * 0.8, 0.04, d * 0.7), (0, 0.08, 0), "rubber", 0.01)
     p.box((0.16, 0.04, 0.01), (0, h * 0.7, -0.125), "hazard", 0.0)
+    for sx in (-1, 1):
+        p.rod((sx * 0.25, top, 0.02), (sx * 0.08, h * 0.38, 0.0), 0.04, "gunmetal")
+    p.rod((0, top, -0.1), (0, h * 0.45, -d * 0.35), 0.04, "gunmetal")
+    p.rod((0, h * 0.45, -d * 0.35), (0, h * 0.4, -0.1), 0.035, "hazard")
+    p.moving("oleo", (0, h * 0.37, 0.0), parent="strut", kind="slide", axis=(0, 1, 0), stowed=h * 0.18,
+             deployed=0.0, seconds=1.5, order=2)
+    p.cyl(0.08, h * 0.45, (0, h * 0.3, 0.0), "y", "chrome", 20)
+    p.torus(0.085, 0.015, (0, h * 0.37, 0.0), "y", "dark", 20, 6)
+    p.moving("foot", (0, 0.12, 0.0), parent="oleo", kind="hinge", axis=(1, 0, 0), stowed=0.0, deployed=0.0,
+             seconds=0.5, order=2, swing=12.0, contact={"at": (0, 0, 0), "radius": w * 0.45})
+    p.cyl(0.12, 0.2, (0, 0.12, 0), "x", "gunmetal", 16)
+    p.floor_box((w, 0.08, d * 0.9), (0, 0, 0), "dark", 0.02)
+    p.floor_box((w * 0.8, 0.04, d * 0.7), (0, 0.08, 0), "rubber", 0.01)
 
 
 def r_drill(p, s):
@@ -347,6 +390,7 @@ def r_tow_hook(p, s):
 
 
 RECIPES["tow_hook"] = r_tow_hook
+RECIPES["cargo_ramp"] = r_cargo_ramp
 
 
 def r_landing_gear_small(p, s):

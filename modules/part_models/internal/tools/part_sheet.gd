@@ -2,7 +2,8 @@ extends Node3D
 ## Contact sheets of part models, one framed shot a part, for checking looks and screenshots:
 ##   godot --path . res://modules/part_models/internal/tools/part_sheet.tscn -- --out=/tmp/sheets
 ##       [--ids=fridge,desk] [--vs=Reactor,Seat] [--cols=6] [--cell=360] [--name=sheet]
-## Without --ids it shoots every PartModels id. Needs a window (xvfb-run works).
+## Without --ids it shoots every PartModels id. "landing_gear@0.5" poses a moving part (0 stowed,
+## 1 deployed: PartModels.pose). Needs a window (xvfb-run works).
 
 var _cell := 360
 var _cols := 6
@@ -72,11 +73,17 @@ func _ready() -> void:
 	for i in items.size():
 		var kind: String = items[i][0]
 		var id: String = items[i][1]
+		var pose := -1.0
+		if id.contains("@"):
+			pose = float(id.get_slice("@", 1))
+			id = id.get_slice("@", 0)
 		var n: Node3D = PartModels.instance(id) if kind == "bsx" else VsParts.instance(id)
 		if n == null:
 			push_warning("no model: " + id)
 			continue
 		vp.add_child(n)
+		if pose >= 0.0:
+			PartModels.pose(n, id, pose)
 		var box := _box(n)
 		if kind == "vs":
 			n.position.y -= box.position.y
