@@ -97,8 +97,7 @@ func register_module() -> void:
 	if Flags.is_on("trades.hover_board"):
 		register_board_keys()
 	if Flags.is_on(SPECS_CHANNEL):
-		HudSlots.register_holo_channel(SPECS_CHANNEL, "Specs",
-				func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
+		offer_specs_channel()
 	if TRADES.any(func(t: String) -> bool: return Flags.is_on("trades." + t)):
 		Router.register_scene(WORKBENCH, BENCH_SCENE)
 	if Flags.is_on("trades.cutting_bed") or Flags.is_on("trades.beam_designer"):
@@ -121,6 +120,12 @@ func register_module() -> void:
 
 
 ## Ship and Bay built its shipyard: put you in it, the worker with every tool to hand.
+## The wrist's Specs channel (the old ship fitting game's; off in the shipbuilder).
+func offer_specs_channel() -> void:
+	HudSlots.register_holo_channel(SPECS_CHANNEL, "Specs",
+			func(glass: bool) -> Control: return TradesSpecsScreen.new(glass), 55)
+
+
 func _on_shipyard_ready(yard: Node3D) -> void:
 	var rig: Node3D = load(BENCH_SCENE).instantiate()
 	rig.set("in_yard", true)
