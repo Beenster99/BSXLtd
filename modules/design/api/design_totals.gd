@@ -11,7 +11,15 @@ extends RefCounted
 var floor_area := 0.0
 var volume := 0.0
 var cost := 0.0
+## Dry mass, kg: everything built into her (hull, rooms, parts, doors, wires and pipes), her
+## tanks, hold and berths empty. Shelving and racking are always empty: she is a new ship.
 var mass := 0.0
+## What she carries when she flies, kg: the fuel in her tanks when full (FUEL_KG_PER_M3), and
+## her people (PERSON_KG for each bunk: a crew member with suit, kit and effects).
+var fuel_mass := 0.0
+var occupancy_mass := 0.0
+## The most her holds and racking are rated to carry, kg (CARGO_KG_PER_M3 of cargo space).
+var cargo_max := 0.0
 var build_hours := 0.0
 ## kW made and used; balance = made - used.
 var power_made := 0.0
@@ -47,13 +55,14 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 	var room_lines := {}
 	for r: Dictionary in d.rooms.values():
 		var rt := cat.room(str(r.type))
-		var area := float(r.w) * float(r.d)
+		var area := DesignRecord.room_area(r)
 		t.floor_area += area
 		t.volume += area * d.deck_height
 		if rt == null:
 			continue
 		var line: Dictionary = room_lines.get(rt.id, {"kind": "room", "id": rt.id,
-				"name": rt.display_name, "qty": 0.0, "unit": "m2", "cost": 0.0, "mass": 0.0, "hours": 0.0})
+				"name": rt.display_name, "qty": 0.0, "unit": "m2", "cost": 0.0, "mass": 0.0, "hours": 0.0, "tags": []})
+		line.tags.append(DesignRecord.tag(str(r.id)))
 		line.qty += area
 		line.cost += area * rt.cost_per_m2
 		line.mass += area * rt.mass_per_m2
@@ -93,7 +102,8 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		if pt == null:
 			continue
 		var line: Dictionary = part_lines.get(pt.id, {"kind": "component", "id": pt.id,
-				"name": pt.display_name, "qty": 0.0, "unit": "x", "cost": 0.0, "mass": 0.0, "hours": 0.0})
+				"name": pt.display_name, "qty": 0.0, "unit": "x", "cost": 0.0, "mass": 0.0, "hours": 0.0, "tags": []})
+		line.tags.append(DesignRecord.tag(str(c.id)))
 		line.qty += 1.0
 		line.cost += pt.cost
 		line.mass += pt.mass
@@ -123,13 +133,20 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		var k := str(g.get("kind", "door"))
 		if not DesignCatalog.DOOR_KINDS.has(k):
 			k = "door"
-		door_n[k] = int(door_n.get(k, 0)) + 1
+		var sum: Dictionary = door_n.get(k, {"qty": 0.0, "cost": 0.0, "mass": 0.0, "hours": 0.0, "tags": []})
+		sum.tags.append(DesignRecord.tag(str(g.id)))
+		var c := DesignCatalog.door_cost(g)
+		sum.qty += 1.0
+		sum.cost += c.cost
+		sum.mass += c.mass
+		sum.hours += c.hours
+		door_n[k] = sum
 	for k: String in DesignCatalog.DOOR_ORDER:
 		if door_n.has(k):
 			var dk: Dictionary = DesignCatalog.DOOR_KINDS[k]
-			var n := float(door_n[k])
-			t.lines.append({"kind": "door", "id": k, "name": dk.name, "qty": n, "unit": "x",
-					"cost": n * float(dk.cost), "mass": n * float(dk.mass), "hours": n * float(dk.hours)})
+			var sum: Dictionary = door_n[k]
+			t.lines.append({"kind": "door", "id": k, "name": dk.name, "qty": sum.qty, "unit": "x",
+					"cost": sum.cost, "mass": sum.mass, "hours": sum.hours, "tags": sum.tags})
 	var run_m := {}
 	for w: Dictionary in d.runs.values():
 		if DesignServices.KINDS.has(str(w.kind)):
@@ -146,7 +163,34 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		t.cost += line.cost
 		t.mass += line.mass
 		t.build_hours += line.hours
+	t.fuel_mass = t.fuel_m3 * FUEL_KG_PER_M3
+	t.occupancy_mass = float(t.crew) * PERSON_KG
+	t.cargo_max = t.cargo_m3 * CARGO_KG_PER_M3
 	return t
+
+
+## Full tanks, kg a m3 (a refined drive fuel).
+const FUEL_KG_PER_M3 := 800.0
+## One person aboard with suit, kit, effects and their share of stores, kg.
+const PERSON_KG := 100.0
+## The rated load of a m3 of hold or racking, kg (mixed freight).
+const CARGO_KG_PER_M3 := 400.0
+
+
+## Dry mass, kg: as built, nothing aboard.
+func dry_mass() -> float:
+	return mass
+
+
+## Wet mass, kg: dry, with her tanks full.
+func wet_mass() -> float:
+	return mass + fuel_mass
+
+
+## What she weighs as she flies, kg: wet, with her people aboard and her hold empty. The
+## ratings (acceleration, top speed, jump range) are for this.
+func flying_mass() -> float:
+	return wet_mass() + occupancy_mass
 
 
 func power_balance() -> float:
@@ -155,15 +199,17 @@ func power_balance() -> float:
 
 ## Acceleration at full thrust, m/s2 (0 with no mass).
 func acceleration() -> float:
-	return thrust * 1000.0 / mass if mass > 0.0 else 0.0
+	var m := flying_mass()
+	return thrust * 1000.0 / m if m > 0.0 else 0.0
 
 
 ## Light years the ship goes on one jump: the drives' ratings (ly for a 100 t ship) over its
-## mass in hundreds of tonnes; nothing without a drive or with no fuel aboard.
+## flying mass in hundreds of tonnes; nothing without a drive or with no fuel aboard.
 func jump_range() -> float:
-	if jump_rating <= 0.0 or mass <= 0.0 or fuel_m3 <= 0.0:
+	var m := flying_mass()
+	if jump_rating <= 0.0 or m <= 0.0 or fuel_m3 <= 0.0:
 		return 0.0
-	return jump_rating * 100000.0 / mass
+	return jump_rating * 100000.0 / m
 
 
 ## Top speed, m/s: grows with the square root of the acceleration (drag-free flight capped by
@@ -196,9 +242,10 @@ func stealth() -> float:
 
 
 ## How the design meets a contract's demands. `demands` takes any of:
-##   cargo_m3, crew, budget (most it may cost), max_mass (kg), accel (m/s2), build_days (most),
-##   jump_ly, speed (m/s), defence, attack (damage a second), stealth (0..100), fuel_m3,
-##   power (spare kW), sensor_km
+##   cargo_m3, crew, budget (most it may cost), max_mass or dry_mass (most, kg), wet_mass (most,
+##   kg), fuel_mass (least, kg: a long haul wants a lot), occupancy_mass (least, kg), cargo_max
+##   (least, kg), accel (m/s2), build_days (most), jump_ly, speed (m/s), defence, attack
+##   (damage a second), stealth (0..100), fuel_m3, power (spare kW), sensor_km
 ## Returns one row per demand: {key, label, need, have, ok, share (0..1, 1 = met)}.
 func fit(demands: Dictionary, crew_hours_per_day: float = 8.0) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -218,10 +265,23 @@ func fit(demands: Dictionary, crew_hours_per_day: float = 8.0) -> Array[Dictiona
 				have = cost
 				more_is_better = false
 				label = "Cost, credits"
-			"max_mass":
+			"max_mass", "dry_mass":
 				have = mass
 				more_is_better = false
-				label = "Mass, kg"
+				label = "Dry mass, kg"
+			"wet_mass":
+				have = wet_mass()
+				more_is_better = false
+				label = "Wet mass, kg"
+			"fuel_mass":
+				have = fuel_mass
+				label = "Fuel load, kg"
+			"occupancy_mass":
+				have = occupancy_mass
+				label = "Occupancy mass, kg"
+			"cargo_max":
+				have = cargo_max
+				label = "Cargo max, kg"
 			"accel":
 				have = acceleration()
 				label = "Acceleration, m/s2"

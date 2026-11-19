@@ -113,6 +113,26 @@ func _gravity_and_walking(station: Node3D) -> void:
 	await physics_steps(20)
 	check(rig.head.rotation.x - pitch0 > 0.15 and absf(rig.global_basis.y.dot(Vector3.UP) - 1.0) < 0.01,
 			"looking up tilts the head, the body stays upright")
+	# Walking and turning together (0.4.3 playtest: "my character sways a bit when walking and
+	# turning"): the body, and so the view, stays upright the whole way.
+	rig.place(rig.feet(), rig.feet() + Vector3(10, 0, 0))
+	await physics_steps(2)
+	var sway := 0.0
+	Input.action_press(Keys.FORWARD)
+	Input.action_press(Keys.RUN)
+	for i in 90:
+		rig.look(Vector2(40.0 if (i / 30) % 2 == 0 else -60.0, 0.0))
+		await physics_steps(1)
+		sway = maxf(sway, rad_to_deg(acos(clampf(rig.global_basis.y.dot(Vector3.UP), -1.0, 1.0))))
+	Input.action_release(Keys.FORWARD)
+	Input.action_release(Keys.RUN)
+	for i in 30:
+		await physics_steps(1)
+		sway = maxf(sway, rad_to_deg(acos(clampf(rig.global_basis.y.dot(Vector3.UP), -1.0, 1.0))))
+	print("  sway walking and turning: %.3f deg" % sway)
+	check(sway < 0.05, "walking and turning, no sway (%.3f deg)" % sway)
+	rig.place(Vector3(4.0, 0.0, -1.5), Vector3(10.0, 1.5, -1.5))
+	await physics_steps(5)
 	# A screen holding the mouse (a console) keeps you still.
 	HudSlots.claim_pointer("yard.test")
 	var held_at := rig.feet()

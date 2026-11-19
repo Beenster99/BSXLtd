@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "tie_down_rails"
+display_name = "Cargo tie-down rails"
+short = "TIE"
+colour = Color(0.9, 0.75, 0.2, 1)
+size = Vector3(3.0, 0.08, 4.0)
+cost = 900.0
+mass = 160.0
+build_hours = 2.0
+power = 0.0
+rooms = PackedStringArray("cargo")
+access = 0.8
+lead_days = 1
+category = "cargo"
+size_class = 3
+min_class = 2
+max_class = 6
+integrity = 150.0
+cargo = 4.0
