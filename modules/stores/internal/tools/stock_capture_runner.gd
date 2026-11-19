@@ -24,12 +24,12 @@ func _run() -> void:
 		design.open_sample()
 	if "--station" in OS.get_cmdline_user_args():
 		Router.goto(YardBus.SCENE)
-		await _frames(90)
+		await _frames(25)
 		for ch in HudSlots.holo_channels():
 			print("StockCapture: channel ", ch.id, " ", ch.label)
 		for ch in HudSlots.holo_channels():
 			HudSlots.open_holo(str(ch.id))
-			await _frames(45)
+			await _frames(12)
 			await _save(out, "wrist_" + str(ch.id).replace(".", "_"))
 		get_tree().quit()
 		return
