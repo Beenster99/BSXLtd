@@ -68,6 +68,12 @@ var frame_body: RigidBody3D
 var frame_model: PartModel
 var _paints: Dictionary = {}
 var _outline: Array[Vector3] = []
+## The frame kept from the last build when the proposal hasn't changed (moving a part, a door
+## inside, a run): building it is most of a rebuild's second.
+var _kept := {}
+var _built_plan: Dictionary = {}
+## How many times the frame itself was built (tests).
+var frame_builds := 0
 
 
 func _init(design_catalog: DesignCatalog) -> void:
@@ -77,6 +83,14 @@ func _init(design_catalog: DesignCatalog) -> void:
 ## Builds `record` under `parent` (cleared first). `plan` and `structure`: its proposed frame
 ## and measured structure when already worked out (the bus keeps both per edit).
 func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structure: DesignStructure = null) -> void:
+	var next_plan := {}
+	if record:
+		next_plan = plan.duplicate(true) if not plan.is_empty() else DesignFrame.propose(record)
+	_kept = {}
+	if frame_body and is_instance_valid(frame_body) and parent == root and frame_body.get_parent() == root \
+			and not next_plan.is_empty() and next_plan == _built_plan:
+		root.remove_child(frame_body)
+		_kept = {"body": frame_body, "frame": frame, "model": frame_model}
 	rec = record
 	root = parent
 	for c in root.get_children():
@@ -96,7 +110,7 @@ func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structur
 	frame_plan = {}
 	if rec == null:
 		return
-	frame_plan = plan.duplicate(true) if not plan.is_empty() else DesignFrame.propose(rec)
+	frame_plan = next_plan
 	var stairs := stairwells(rec, catalog)
 	for r: Dictionary in rec.rooms.values():
 		_floor(r, stairs)
@@ -532,7 +546,18 @@ func _wall_piece(info: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, t0
 ## and a sill across the gap at each outer door from the room's wall to the skin.
 func _frame() -> void:
 	if frame_plan.is_empty():
+		_built_plan = {}
 		return
+	if not _kept.is_empty():
+		frame_body = _kept.body
+		frame = _kept.frame
+		frame_model = _kept.model
+		_kept = {}
+		root.add_child(frame_body)
+		_sills()
+		return
+	frame_builds += 1
+	_built_plan = frame_plan.duplicate(true)
 	frame_body = RigidBody3D.new()
 	frame_body.name = "Frame"
 	frame_body.freeze = true
@@ -549,6 +574,11 @@ func _frame() -> void:
 			"deck": paint(Color(0.46, 0.48, 0.5), "bare_steel")})
 	for v in frame_body.find_children("*", "VisualInstance3D", true, false):
 		(v as VisualInstance3D).layers = 1 | EXTERIOR
+	_sills()
+
+
+## A sill across the gap at each outer door, from the room's wall to the skin.
+func _sills() -> void:
 	var st: Array = frame_plan.stations
 	for o: Dictionary in frame_plan.openings:
 		var g: Dictionary = rec.doors.get(str(o.name).trim_prefix("door_"), {})

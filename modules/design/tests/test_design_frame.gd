@@ -152,6 +152,14 @@ func run_tests() -> void:
 	var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
 	var part := b.frame_part(hit.get("collider"), int(hit.get("shape", -1))) if hit else null
 	check(part != null and part.part_name == "HullPlate", "from outside you see her hull plates: %s" % [part.part_name if part else hit])
+	# An edit that leaves the frame as it was keeps the frame built (co-op lag, 19 Nov).
+	var builds0 := b.frame_builds
+	bus.editor.do({"op": "set_run", "id": "w1", "fields": {"points": [[0.7, -2.8], [0.7, -1.6]]}})
+	await frames(3)
+	check(b.frame_builds == builds0 and b.frame_body != null and b.frame_body.is_inside_tree(),
+			"moving a cable rebuilds the ship but keeps her frame (%d builds)" % b.frame_builds)
+	bus.editor.undo()
+	await frames(3)
 
 	# Shape it from inside: G at the corridor's outer wall glazes the panel behind it.
 	walk.body.position = Vector3(0.0, 1.0, 1.0)
