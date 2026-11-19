@@ -196,7 +196,8 @@ func save_module(module_name: String, room_id: String) -> String:
 		final_name = "%s %d" % [clean, n]
 		n += 1
 	_modules[id] = {"id": id, "name": final_name, "saved_at": int(Time.get_unix_time_from_system()),
-			"room": {"type": r.type, "w": float(r.w), "d": float(r.d), "name": str(r.get("name", ""))},
+			"room": {"type": r.type, "w": float(r.w), "d": float(r.d), "name": str(r.get("name", "")),
+					"outline": (r.outline as Array).duplicate(true) if DesignRecord.is_shaped(r) else null},
 			"components": comps, "runs": runs}
 	modules_changed.emit()
 	return id
@@ -282,7 +283,8 @@ func place_module_op(module_id: String, rec: DesignRecord, deck: int, at: Vector
 	var corner := (at - size * 0.5).snapped(Vector2.ONE * rec.grid)
 	var rid := rec.peek_id("r")
 	var ops: Array = [{"op": "add_room", "room": {"id": rid, "type": m.room.type, "deck": deck,
-			"x": corner.x, "z": corner.y, "w": size.x, "d": size.y, "name": m.room.get("name", "")}}]
+			"x": corner.x, "z": corner.y, "w": size.x, "d": size.y, "name": m.room.get("name", ""),
+			"outline": m.room.get("outline")}}]
 	for c: Dictionary in m.components:
 		ops.append({"op": "add_component", "component": {"type": c.type, "room": rid,
 				"x": corner.x + float(c.x), "z": corner.y + float(c.z), "rot": int(c.rot)}})

@@ -14,6 +14,7 @@ signal selection_changed(kind: String, id: String)
 ## The tool went back to select (after placing, or Esc).
 signal tool_changed(tool: String)
 
+const RoomShape := preload("res://modules/design/internal/views/room_shape.gd")
 const PLAN := "plan"
 const SIDE := "side"
 const END := "end"
@@ -62,6 +63,9 @@ var _hull_pts: Array[Vector2] = []
 var _structure: DesignStructure
 var _stale := true
 var _frame_queued := false
+## Shift held: a room's corner drag keeps its sides square (its neighbours follow), and a
+## side's handle puts a square step in it; otherwise corners move freely, sides at any angle.
+var keep_square := false
 var _drag := {}  # what the left button is doing: {kind, id, start, edge, rect, ...}
 var _pan_from := Vector2.INF
 var _mouse := Vector2.ZERO
@@ -462,7 +466,17 @@ func _draw_room(rec: DesignRecord, r: Dictionary) -> void:
 		rect = _drag.rect
 	var sr := Rect2(to_screen(rect.position), rect.size * zoom)
 	var col := _room_colour(r)
-	draw_rect(sr, Color(col, 0.22))
+	# Its floor as drawn: a shaped room's outline (moved and stretched with a drag), or the box.
+	var poly := _room_outline(r, rect)
+	var spoly := PackedVector2Array()
+	for p in poly:
+		spoly.append(to_screen(p))
+	var shaped: bool = DesignRecord.is_shaped(r) or (_drag.get("kind", "") == "room_poly" and str(_drag.id) == str(r.id))
+	if shaped:
+		if Geometry2D.triangulate_polygon(spoly).size() > 0:
+			draw_colored_polygon(spoly, Color(col, 0.22))
+	else:
+		draw_rect(sr, Color(col, 0.22))
 	var border := Color(col, 0.95)
 	var width := 2.0
 	match problem_rooms.get(r.id, ""):
@@ -474,8 +488,34 @@ func _draw_room(rec: DesignRecord, r: Dictionary) -> void:
 	if selected_kind == "room" and selected_id == r.id:
 		border = SELECT
 		width = 3.0
-	draw_rect(sr, border, false, width)
+	if shaped:
+		var ring := spoly.duplicate()
+		ring.append(spoly[0])
+		draw_polyline(ring, border, width)
+	else:
+		draw_rect(sr, border, false, width)
+	# Selected: its corners to drag, and a step handle mid-side to put a step in that side.
+	if editable and mode == PLAN and selected_kind == "room" and selected_id == r.id:
+		for i in spoly.size():
+			draw_rect(Rect2(spoly[i] - Vector2(4, 4), Vector2(8, 8)), SELECT)
+			var mid := (spoly[i] + spoly[(i + 1) % spoly.size()]) * 0.5
+			draw_colored_polygon(PackedVector2Array([mid + Vector2(0, -5), mid + Vector2(5, 0), mid + Vector2(0, 5),
+					mid + Vector2(-5, 0)]), Color(SELECT, 0.7))
 	_draw_link_mark(rec, r, sr, col)
+
+
+## A room's outline in ship space as it will be drawn: mid-drag the drag's own outline, else
+## its outline (a shaped room's corners, a box's four) moved and stretched to `rect`.
+func _room_outline(r: Dictionary, rect: Rect2) -> PackedVector2Array:
+	if _drag.get("kind", "") == "room_poly" and str(_drag.id) == str(r.id) and _drag.has("poly"):
+		return _drag.poly
+	var poly := DesignRecord.room_poly(r)
+	var sx := rect.size.x / maxf(float(r.w), 0.01)
+	var sz := rect.size.y / maxf(float(r.d), 0.01)
+	var out := PackedVector2Array()
+	for p in poly:
+		out.append(rect.position + Vector2((p.x - float(r.x)) * sx, (p.y - float(r.z)) * sz))
+	return out
 
 
 ## Stairs, lifts and hatches: treads, a cross for the shaft, a ladder; and which decks they reach.
@@ -561,22 +601,19 @@ func _draw_room_label(r: Dictionary) -> void:
 
 func _draw_door(rec: DesignRecord, door: Dictionary) -> void:
 	var p := Vector2(door.x, door.z)
-	# Which way the wall runs: along x if the door sits on a room's top or bottom edge.
-	var along_x := false
-	var ra := rec.room_rect(str(door.a))
-	if absf(p.y - ra.position.y) < 0.05 or absf(p.y - ra.end.y) < 0.05:
-		along_x = true
+	# Which way the wall runs: the room's side the door sits on (at any angle).
+	var along := DesignRecord.side_at(rec.rooms.get(str(door.a), {"x": 0, "z": 0, "w": 0, "d": 0}), p)
 	var kind := DesignCatalog.door_kind(door)
 	var half := maxf(DesignRules.MIN_DOOR, float(kind.w) - 0.2) * 0.5
-	var a := p - (Vector2(half, 0) if along_x else Vector2(0, half))
-	var b := p + (Vector2(half, 0) if along_x else Vector2(0, half))
+	var a := p - along * half
+	var b := p + along * half
 	var sa := to_screen(a)
 	var sb := to_screen(b)
 	draw_line(sa, sb, BG, 6.0)
 	var col := DOOR if str(door.b) != "" else Color("6fc8e8")
 	if selected_kind == "door" and selected_id == door.id:
 		col = SELECT
-	var n := (Vector2(0, 1) if along_x else Vector2(1, 0)) * 4.0
+	var n := Vector2(-along.y, along.x) * 4.0
 	if bool(kind.leaves):
 		draw_line(sa, sb, col, 4.0 if str(door.get("kind", "")) == "cargo" else 2.0)
 	else:
@@ -834,6 +871,8 @@ static func _m(v: float) -> String:
 func _gui_input(event: InputEvent) -> void:
 	if bus == null:
 		return
+	if event is InputEventWithModifiers:
+		keep_square = (event as InputEventWithModifiers).shift_pressed
 	if event is InputEventMouseMotion:
 		_mouse = event.position
 		if _pan_from != Vector2.INF:
@@ -929,7 +968,16 @@ func turn_room(room_id: String) -> void:
 	var size := Vector2(float(r.d), float(r.w))
 	var at := _snap(mid - size * 0.5, rec.grid)
 	var mid2 := at + size * 0.5
-	var ops: Array = [{"op": "set_room", "id": room_id, "fields": {"x": at.x, "z": at.y, "w": size.x, "d": size.y}}]
+	var fields := {"x": at.x, "z": at.y, "w": size.x, "d": size.y}
+	if DesignRecord.is_shaped(r):
+		# Its corners turned with it, about its middle.
+		var pts: Array = []
+		for p in DesignRecord.room_poly(r):
+			var rel := p - mid
+			var q := mid2 + Vector2(-rel.y, rel.x) - at
+			pts.append([snappedf(q.x, 0.01), snappedf(q.y, 0.01)])
+		fields["outline"] = pts
+	var ops: Array = [{"op": "set_room", "id": room_id, "fields": fields}]
 	for c: Dictionary in rec.components.values():
 		if c.room == room_id:
 			var rel := Vector2(float(c.x), float(c.z)) - mid
@@ -972,6 +1020,15 @@ func pick(s: Vector2) -> Dictionary:
 	if rec == null or mode != PLAN:
 		return {}
 	var p := to_ship(s)
+	if editable and selected_kind == "room" and rec.rooms.has(selected_id) and int(rec.rooms[selected_id].deck) == deck:
+		# The selected room's corners and step handles (a non-rectangular room, beenster 19 Nov).
+		var poly := DesignRecord.room_poly(rec.rooms[selected_id])
+		for i in poly.size():
+			if to_screen(poly[i]).distance_to(s) < 7.0:
+				return {"kind": "room_vertex", "id": selected_id, "index": i}
+		for i in poly.size():
+			if to_screen((poly[i] + poly[(i + 1) % poly.size()]) * 0.5).distance_to(s) < 7.0:
+				return {"kind": "room_step", "id": selected_id, "index": i}
 	if editable:
 		var outline := rec.hull_outline(deck)
 		for i in outline.size():
@@ -1022,6 +1079,12 @@ func pick(s: Vector2) -> Dictionary:
 	var list := rec.rooms_on(deck)
 	list.reverse()
 	for r in list:
+		if DesignRecord.is_shaped(r):
+			# A shaped room is picked only on its floor (a click in its notch goes through); its
+			# sides are moved with its corner and step handles.
+			if DesignRecord.room_has(r, p):
+				return {"kind": "room", "id": r.id, "edge": Vector2i.ZERO}
+			continue
 		var sr := Rect2(to_screen(Vector2(r.x, r.z)), Vector2(r.w, r.d) * zoom)
 		if not sr.grow(EDGE_GRAB).has_point(s):
 			continue
@@ -1106,6 +1169,11 @@ func _press(s: Vector2) -> void:
 			select("mount", _add({"op": "add_mount", "mount": spot}, rec.mounts))
 	else:
 		var hit := pick(s)
+		if str(hit.get("kind", "")) in ["room_vertex", "room_step"]:
+			_drag = {"kind": "room_poly", "id": hit.id, "how": hit.kind, "index": int(hit.index), "start": p,
+					"orig": DesignRecord.room_poly(rec.rooms[hit.id])}
+			queue_redraw()
+			return
 		select(hit.get("kind", ""), hit.get("id", ""))
 		if hit.get("kind", "") == "room":
 			_drag = {"kind": "room", "id": hit.id, "edge": hit.edge, "start": p,
@@ -1170,6 +1238,9 @@ func _drag_move(s: Vector2) -> void:
 			_drag.pos = _snap(_drag.orig + (p - _drag.start), rec.grid * 0.5)
 		"hull_pt", "line_end":
 			_drag.pos = _snap(p, _grid() * 0.5)
+		"room_poly":
+			var delta := _snap(p - _drag.start, rec.grid)
+			_drag.poly = RoomShape.reshape(_drag.orig, str(_drag.how), int(_drag.index), delta, keep_square)
 		"line":
 			_drag.b = _snap(p, _grid() * 0.5)
 	queue_redraw()
@@ -1214,6 +1285,11 @@ func _release(_s: Vector2) -> void:
 				var pts: Array = rec.hull.get(str(deck), []).duplicate(true)
 				pts[int(d.index)] = [d.pos.x, d.pos.y]
 				bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
+		"room_poly":
+			if d.has("poly"):
+				var fields := RoomShape.fields(d.poly)
+				if not fields.is_empty():
+					bus.editor.do({"op": "set_room", "id": d.id, "fields": fields})
 		"line_end":
 			if d.has("pos") and d.pos != d.orig:
 				bus.editor.do({"op": "set_" + str(d.what), "id": d.id, "fields": {str(d.end): [d.pos.x, d.pos.y]}})
