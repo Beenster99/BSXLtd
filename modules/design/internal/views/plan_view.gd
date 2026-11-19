@@ -81,7 +81,7 @@ func _init() -> void:
 func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = false) -> void:
 	bus = design_bus
 	mode = view_mode
-	editable = can_edit and mode == PLAN
+	editable = can_edit
 	bus.design_changed.connect(_on_changed)
 	bus.carry_changed.connect(func(_id: String) -> void: queue_redraw())
 	_on_changed()
@@ -524,7 +524,7 @@ func _draw_elevation(rec: DesignRecord) -> void:
 		var sr := Rect2(to_screen(rr.position), rr.size * zoom)
 		var col := _room_colour(r)
 		draw_rect(sr, Color(col, 0.18))
-		draw_rect(sr, Color(col, 0.9), false, 2.0)
+		draw_rect(sr, SELECT if selected_kind == "room" and str(r.id) == selected_id else Color(col, 0.9), false, 2.0)
 	# Names, nearest rooms first, skipping any that would print over another.
 	var taken: Array[Rect2] = []
 	var fs := clampi(int(zoom * 0.4), 8, 15)
@@ -551,6 +551,14 @@ func _draw_elevation(rec: DesignRecord) -> void:
 
 
 func _draw_drag_ghost(_rec_unused: DesignRecord) -> void:
+	if mode != PLAN:
+		if _drag.has("rect") and str(_drag.get("kind", "")) in ["new_room", "room"]:
+			var gr: Rect2 = _drag.rect
+			var gs := Rect2(to_screen(gr.position), gr.size * zoom)
+			draw_rect(gs, Color(SELECT, 0.15))
+			draw_rect(gs, SELECT, false, 2.0)
+			_text(gs.position + Vector2(4, -6), "%s m  DECK %d" % [_m(gr.size.x), _deck_at(_rec(), gr.position.y + 0.01) + 1], SELECT, 13)
+		return
 	if bus.carrying != "" and mode == PLAN:
 		_draw_module_ghost()
 		return
@@ -801,6 +809,31 @@ func rotate_selected() -> void:
 		var c: Dictionary = _rec().components.get(selected_id, {})
 		if not c.is_empty():
 			bus.editor.do({"op": "set_component", "id": selected_id, "fields": {"rot": (int(c.rot) + 1) % 4}})
+	elif selected_kind == "room":
+		turn_room(selected_id)
+
+
+## Turns a room a quarter (clockwise from above) about its middle, its parts with it; its
+## doors come out (they no longer sit on its walls). One undo step.
+func turn_room(room_id: String) -> void:
+	var rec := _rec()
+	var r: Dictionary = rec.rooms.get(room_id, {}) if rec else {}
+	if r.is_empty():
+		return
+	var mid := Vector2(float(r.x) + float(r.w) * 0.5, float(r.z) + float(r.d) * 0.5)
+	var size := Vector2(float(r.d), float(r.w))
+	var at := _snap(mid - size * 0.5, rec.grid)
+	var mid2 := at + size * 0.5
+	var ops: Array = [{"op": "set_room", "id": room_id, "fields": {"x": at.x, "z": at.y, "w": size.x, "d": size.y}}]
+	for c: Dictionary in rec.components.values():
+		if c.room == room_id:
+			var rel := Vector2(float(c.x), float(c.z)) - mid
+			var q := mid2 + Vector2(-rel.y, rel.x)
+			ops.append({"op": "set_component", "id": c.id, "fields": {"x": q.x, "z": q.y, "rot": (int(c.get("rot", 0)) + 1) % 4}})
+	for door: Dictionary in rec.doors.values():
+		if door.a == room_id or door.b == room_id:
+			ops.append({"op": "remove_door", "id": door.id})
+	bus.editor.do({"op": "batch", "ops": ops})
 
 
 func delete_selected() -> void:
@@ -912,7 +945,10 @@ func _update_cursor(s: Vector2) -> void:
 func _press(s: Vector2) -> void:
 	grab_focus()
 	var rec := _rec()
-	if rec == null or mode != PLAN:
+	if rec == null:
+		return
+	if mode != PLAN:
+		_press_elevation(rec, s)
 		return
 	var p := to_ship(s)
 	if bus.carrying != "":
@@ -970,6 +1006,10 @@ func _drag_move(s: Vector2) -> void:
 	if rec == null or _drag.is_empty():
 		return
 	var p := to_ship(s)
+	if mode != PLAN:
+		_drag_elevation(rec, p)
+		queue_redraw()
+		return
 	match str(_drag.kind):
 		"new_room":
 			var a: Vector2 = _drag.start
@@ -1012,6 +1052,10 @@ func _release(_s: Vector2) -> void:
 		return
 	var d := _drag
 	_drag = {}
+	if mode != PLAN:
+		_release_elevation(rec, d)
+		queue_redraw()
+		return
 	match str(d.kind):
 		"new_room":
 			var type_id := tool.trim_prefix("room:")
@@ -1051,10 +1095,129 @@ func _release(_s: Vector2) -> void:
 	queue_redraw()
 
 
+# Drawing in the elevations: rooms drawn and moved along the ship (side) or across it (end),
+# and between decks; the other way they take the room type's usual size, on the ship's middle.
+
+## The deck a height in the elevation (its y, up negative) is on.
+func _deck_at(rec: DesignRecord, v: float) -> int:
+	return maxi(int(floor(-v / rec.deck_height)), 0)
+
+
+## A room's span along the elevation's axis (z in the side view, x in the end view).
+func _span_of(r: Dictionary) -> Vector2:
+	return Vector2(float(r.z), float(r.z) + float(r.d)) if mode == SIDE else Vector2(float(r.x), float(r.x) + float(r.w))
+
+
+func _row(rec: DesignRecord, u0: float, u1: float, dk: int) -> Rect2:
+	return Rect2(minf(u0, u1), -(dk + 1.0) * rec.deck_height, absf(u1 - u0), rec.deck_height)
+
+
+func _press_elevation(rec: DesignRecord, s: Vector2) -> void:
+	var p := to_ship(s)
+	if not editable:
+		return
+	if tool.begins_with("room:"):
+		var u := snappedf(p.x, rec.grid)
+		var dk := _deck_at(rec, p.y)
+		_drag = {"kind": "new_room", "start": Vector2(u, p.y), "deck": dk, "rect": _row(rec, u, u, dk)}
+		return
+	if tool != "select":
+		return
+	# The nearest room under the pointer (the elevation draws the far ones first).
+	var list: Array = rec.rooms.values()
+	list.sort_custom(func(a, b):
+		return float(a.x) + float(a.w) > float(b.x) + float(b.w) if mode == SIDE else float(a.z) + float(a.d) < float(b.z) + float(b.d))
+	for r: Dictionary in list:
+		var rr := _room_view_rect(rec, r)
+		var sr := Rect2(to_screen(rr.position), rr.size * zoom)
+		if not sr.grow(EDGE_GRAB).has_point(s):
+			continue
+		var edge := 0
+		if absf(s.x - sr.position.x) < EDGE_GRAB:
+			edge = -1
+		elif absf(s.x - sr.end.x) < EDGE_GRAB:
+			edge = 1
+		select("room", str(r.id))
+		var span := _span_of(r)
+		_drag = {"kind": "room", "id": str(r.id), "edge": edge, "start": p, "span": span, "deck": int(r.deck),
+				"rect": rr}
+		return
+	select("", "")
+
+
+func _drag_elevation(rec: DesignRecord, p: Vector2) -> void:
+	match str(_drag.kind):
+		"new_room":
+			var a: Vector2 = _drag.start
+			_drag.rect = _row(rec, a.x, snappedf(p.x, rec.grid), int(_drag.deck))
+		"room":
+			var span: Vector2 = _drag.span
+			var du := snappedf(p.x - (_drag.start as Vector2).x, rec.grid)
+			var dk := int(_drag.deck)
+			var u0 := span.x
+			var u1 := span.y
+			match int(_drag.edge):
+				-1:
+					u0 = minf(span.x + du, span.y - rec.grid)
+				1:
+					u1 = maxf(span.y + du, span.x + rec.grid)
+				_:
+					u0 += du
+					u1 += du
+					dk = maxi(int(_drag.deck) + roundi(((_drag.start as Vector2).y - p.y) / rec.deck_height), 0)
+			_drag.u = Vector2(u0, u1)
+			_drag.to_deck = dk
+			_drag.rect = _row(rec, u0, u1, dk)
+
+
+func _release_elevation(rec: DesignRecord, d: Dictionary) -> void:
+	match str(d.kind):
+		"new_room":
+			var type_id := tool.trim_prefix("room:")
+			var rt := bus.catalog.room(type_id)
+			var sz := rt.default_size if rt else Vector2(4, 4)
+			var r: Rect2 = d.rect
+			var u0 := r.position.x
+			var len := r.size.x
+			if len < rec.grid:
+				# A click: the room at its usual length, centred on the click.
+				len = sz.y if mode == SIDE else sz.x
+				u0 = snappedf((d.start as Vector2).x - len * 0.5, rec.grid)
+			var mid := rec.bounds().get_center()
+			var room := {"type": type_id, "deck": int(d.deck)}
+			if mode == SIDE:
+				room.merge({"z": u0, "d": len, "w": sz.x, "x": snappedf(mid.x - sz.x * 0.5, rec.grid)})
+			else:
+				room.merge({"x": u0, "w": len, "d": sz.y, "z": snappedf(mid.y - sz.y * 0.5, rec.grid)})
+			bus.editor.do({"op": "add_room", "room": room})
+			var newest := _newest(rec.rooms)
+			set_tool("select")
+			select("room", newest)
+			deck = int(d.deck)
+		"room":
+			if not d.has("u"):
+				return
+			var r: Dictionary = rec.rooms.get(str(d.id), {})
+			if r.is_empty():
+				return
+			var u: Vector2 = d.u
+			var from := Rect2(r.x, r.z, r.w, r.d)
+			var to := Rect2(r.x, u.x, r.w, u.y - u.x) if mode == SIDE else Rect2(u.x, r.z, u.y - u.x, r.d)
+			var dk := int(d.get("to_deck", r.deck))
+			if to == from and dk == int(r.deck):
+				return
+			_move_room_with_contents(rec, str(d.id), from, to, {"deck": dk} if dk != int(r.deck) else {})
+
+
 ## A moved room takes its components (and drops doors that no longer fit) in one undo step.
-func _move_room_with_contents(rec: DesignRecord, room_id: String, from: Rect2, to: Rect2) -> void:
-	var ops: Array = [{"op": "set_room", "id": room_id, "fields": {
-			"x": to.position.x, "z": to.position.y, "w": to.size.x, "d": to.size.y}}]
+func _move_room_with_contents(rec: DesignRecord, room_id: String, from: Rect2, to: Rect2, extra: Dictionary = {}) -> void:
+	var fields := {"x": to.position.x, "z": to.position.y, "w": to.size.x, "d": to.size.y}
+	fields.merge(extra, true)
+	var ops: Array = [{"op": "set_room", "id": room_id, "fields": fields}]
+	if not extra.is_empty() and from.size == to.size and from.position == to.position:
+		for door: Dictionary in rec.doors.values():
+			if door.a == room_id or door.b == room_id:
+				ops.append({"op": "remove_door", "id": door.id})
 	if from.size == to.size:
 		var delta := to.position - from.position
 		for c: Dictionary in rec.components.values():

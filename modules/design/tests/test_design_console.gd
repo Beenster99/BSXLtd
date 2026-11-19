@@ -158,6 +158,49 @@ func run_tests() -> void:
 	check(bus.library.modules().size() == 1 and bus.library.module(mid).name == "Crew mess", "modules are kept in the save")
 	rec = bus.library.current
 
+	# R turns a room a quarter about its middle.
+	plan.set_deck(0)
+	plan.set_tool("room:cargo")
+	_drag(plan, Vector2(20, 0), Vector2(26, 2))
+	var tid := plan.selected_id
+	var tr: Dictionary = rec.rooms[tid]
+	check(is_equal_approx(float(tr.w), 6.0) and is_equal_approx(float(tr.d), 2.0), "a 6 x 2 m room to turn")
+	plan.rotate_selected()
+	check(is_equal_approx(float(tr.w), 2.0) and is_equal_approx(float(tr.d), 6.0) and is_equal_approx(float(tr.x) + 1.0, 23.0),
+			"R turns the room a quarter about its middle: %s" % [tr])
+	bus.editor.undo()
+	bus.editor.undo()
+
+	# Drawing in the side elevation: along the ship and up the decks.
+	console._set_view("side")
+	plan.size = Vector2(1000, 700)
+	plan.zoom = 20.0
+	plan.centre = Vector2(10, -3)
+	plan.set_tool("room:cargo")
+	var n0 := rec.rooms.size()
+	_drag(plan, Vector2(10, -1.5), Vector2(14, -1.5))
+	var sid := plan.selected_id
+	var sr: Dictionary = rec.rooms.get(sid, {})
+	check(rec.rooms.size() == n0 + 1 and int(sr.get("deck", -1)) == 0 and is_equal_approx(float(sr.get("z", 0)), 10.0)
+			and is_equal_approx(float(sr.get("d", 0)), 4.0), "a room drawn in the side elevation: %s" % [sr])
+	_drag(plan, Vector2(12, -1.5), Vector2(16, -4.5))
+	check(int(sr.deck) == 1 and is_equal_approx(float(sr.z), 14.0), "dragged up a deck and aft in the side view: %s" % [sr])
+	console._set_view("end")
+	plan.zoom = 20.0
+	plan.centre = Vector2(0, -3)
+	plan.set_tool("room:cargo")
+	_drag(plan, Vector2(-6, -1.5), Vector2(-2, -1.5))
+	var er: Dictionary = rec.rooms.get(plan.selected_id, {})
+	check(is_equal_approx(float(er.get("x", 0)), -6.0) and is_equal_approx(float(er.get("w", 0)), 4.0), "and in the end elevation: %s" % [er])
+	for i in 3:
+		bus.editor.undo()
+	check(rec.rooms.size() == n0, "undo takes them back")
+	console._set_view("plan")
+	plan.size = Vector2(1000, 700)
+	plan.zoom = 20.0
+	plan.centre = Vector2.ZERO
+	check(console._holo_cam.cull_mask == HoloTable.VIEW_LAYER, "the console's 3D view shows the hologram alone")
+
 	# DECK - on the lowest deck adds a deck under it: everything moves up one.
 	var low_before: Array = rec.rooms.values().map(func(r): return int(r.deck))
 	plan.set_deck(0)

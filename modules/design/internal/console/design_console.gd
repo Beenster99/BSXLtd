@@ -390,6 +390,14 @@ func _holo_panel() -> Control:
 	svc.add_child(_holo_view)
 	_holo_cam = Camera3D.new()
 	_holo_cam.fov = 45.0
+	# The hologram alone, on a dark field: not the room round the table.
+	_holo_cam.cull_mask = HoloTable.VIEW_LAYER
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.01, 0.03, 0.05)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.5, 0.6, 0.7)
+	_holo_cam.environment = env
 	_holo_view.add_child(_holo_cam)
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 4)
@@ -443,9 +451,11 @@ func _process(_delta: float) -> void:
 		return
 	if _holo_view.world_3d != get_viewport().world_3d:
 		_holo_view.world_3d = get_viewport().world_3d
-	var target := holo.global_position + Vector3(0, holo.TABLE_HEIGHT + 0.6, 0)
-	var off := Vector3(sin(_cam_turn), 0, cos(_cam_turn)) * cos(_cam_pitch) * _cam_dist
-	off.y = sin(_cam_pitch) * _cam_dist
+	# Framed on the hologram: its middle, far enough back to see all of it.
+	var target := holo.model.global_transform * holo.view_middle
+	var dist := holo.view_radius * holo.model.scale.x / sin(deg_to_rad(_holo_cam.fov * 0.5)) * 1.05
+	var off := Vector3(sin(_cam_turn), 0, cos(_cam_turn)) * cos(_cam_pitch) * dist
+	off.y = sin(_cam_pitch) * dist
 	_holo_cam.global_position = target + off
 	_holo_cam.look_at(target)
 
@@ -483,7 +493,8 @@ func _change_deck(step: int) -> void:
 
 func _set_view(v: String) -> void:
 	plan.mode = v
-	plan.editable = v == PlanView.PLAN
+	if v != PlanView.PLAN and not (plan.tool == "select" or plan.tool.begins_with("room:")):
+		plan.set_tool("select")  # the elevations draw and move rooms only
 	plan.frame_all()
 	for k: String in _view_buttons:
 		var on: bool = k == v
