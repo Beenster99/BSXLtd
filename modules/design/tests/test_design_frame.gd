@@ -88,6 +88,24 @@ func run_tests() -> void:
 	bus.editor.undo()
 	check((DesignFrame.propose(rec).stations as Array).size() == st.size(), "undo puts the frame back")
 
+	# Designers shape it: a panel glazed or plated, a section pushed out. Undo takes it back.
+	var mid := (float(st[4].z) + float(st[5].z)) * 0.5
+	bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(mid, DesignFrame.STARBOARD), "value": {"glass": true}})
+	bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key((float(st[0].z) + float(st[1].z)) * 0.5, 0), "value": {"glass": false}})
+	var shaped := DesignFrame.propose(rec)
+	check((shaped.glass as Dictionary).has("4:%d" % DesignFrame.STARBOARD) and not (shaped.glass as Dictionary).has("0:0"),
+			"a window in her side, the bridge roof plated over: %s" % [shaped.glass.keys()])
+	var r0: Rect2 = st[3].rect
+	bus.editor.do({"op": "set_frame", "key": DesignFrame.section_key(float(st[3].z)), "value": {"grow": [0.0, 1.0, 0.5, 0.0]}})
+	var r1: Rect2 = DesignFrame.propose(rec).stations[3].rect
+	check(is_equal_approx(r1.size.x, r0.size.x + 1.0) and is_equal_approx(r1.end.y, r0.end.y + 0.5) and is_equal_approx(r1.position.x, r0.position.x),
+			"her section pushed out a metre to starboard and half up: %s -> %s" % [r0, r1])
+	var copy := DesignRecord.from_dict(rec.to_dict())
+	check(copy.frame_edits == rec.frame_edits and copy.frame_edits.size() == 3, "the changes are saved with the design")
+	for i in 3:
+		bus.editor.undo()
+	check(rec.frame_edits.is_empty() and (DesignFrame.propose(rec).glass as Dictionary) == (plan.glass as Dictionary), "undo takes the changes back")
+
 	# Walk inside it.
 	var room := Node3D.new()
 	add_child(room)
@@ -107,12 +125,58 @@ func run_tests() -> void:
 	var hit := w.get_world_3d().direct_space_state.intersect_ray(q)
 	var part := b.frame_part(hit.get("collider"), int(hit.get("shape", -1))) if hit else null
 	check(part != null and part.part_name == "HullPlate", "from outside you see her hull plates: %s" % [part.part_name if part else hit])
+
+	# Shape it from inside: G at the corridor's outer wall glazes the panel behind it.
+	walk.body.position = Vector3(0.0, 1.0, 1.0)
+	walk.body.rotation.y = -PI * 0.5  # facing +X
+	walk.camera.rotation.x = 0.0
+	walk.set("_pitch", 0.0)
+	await _physics(4)
+	var fa: Dictionary = walk.frame_aimed()
+	check(not fa.is_empty() and int(fa.edge) == DesignFrame.STARBOARD and int(fa.bay) >= 0, "the hull side behind the wall: %s" % [fa])
+	check(walk.glass_here() and rec.frame_edits.size() == 1 and (DesignFrame.propose(rec).glass as Dictionary).has("%d:%d" % [int(fa.bay), DesignFrame.STARBOARD]),
+			"G puts a window there: %s" % [rec.frame_edits])
+	await frames(2)
+	walk.camera.rotation.x = 0.0
+	await _physics(2)
+	check(walk.glass_here() and rec.frame_edits.size() == 1 and not (DesignFrame.propose(rec).glass as Dictionary).has("%d:%d" % [int(fa.bay), DesignFrame.STARBOARD]),
+			"G again plates it over")
+	bus.editor.undo()
+	bus.editor.undo()
+	# The wheel at her hull plates, from outside: her section there pushed out to starboard.
+	walk.body.position = Vector3(7.0, 1.0, 6.0)
+	walk.body.rotation.y = PI * 0.5  # facing -X
+	await _physics(4)
+	var fo: Dictionary = walk.frame_aimed()
+	var before: Rect2 = walk.builder.frame_plan.stations[int(fo.get("station", 0))].rect
+	check(not fo.is_empty() and fo.part != null and walk.push_hull(1), "the wheel on her plating: %s" % [fo.get("part")])
+	var after: Rect2 = DesignFrame.propose(rec).stations[int(fo.get("station", 0))].rect
+	check(is_equal_approx(after.end.x, before.end.x + 0.25) and is_equal_approx(after.position.x, before.position.x),
+			"pushed out a quarter metre to starboard: %s -> %s" % [before, after])
+	bus.editor.undo()
 	f.close_walk()
+	await frames(2)
+
+	# With every wall panel showing her, opening the sample (dozens of edits) and an edit stay
+	# quick: the views read the rules once, when they next draw (it took 21 s and dropped the
+	# crew in co-op).
+	var t0 := Time.get_ticks_msec()
+	bus.open_sample()
+	var t_open := Time.get_ticks_msec() - t0
+	t0 = Time.get_ticks_msec()
+	bus.editor.do({"op": "add_room", "room": {"id": "zz", "type": "cargo", "deck": 0, "x": 30, "z": 30, "w": 4, "d": 4}})
+	var t_do := Time.get_ticks_msec() - t0
+	check(t_open < 3000 and t_do < 200, "the sample opens in %d ms, an edit takes %d ms" % [t_open, t_do])
 	room.queue_free()
 	await frames(2)
 
 
 ## The hull's section at z, between the stations either side (x across, y up).
+func _physics(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
+
+
 static func _rect_at(st: Array, z: float) -> Rect2:
 	for i in range(1, st.size()):
 		if z <= float(st[i].z) + 0.001:

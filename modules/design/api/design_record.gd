@@ -68,6 +68,10 @@ var structure := {"frame": "standard", "spacing": 2.0, "hull": "standard", "inne
 ## deck with an outline must sit inside it, its sides are the outer hull, and the deck is
 ## plated all the way out to it. A deck with no outline is hulled round its rooms as before.
 var hull: Dictionary = {}
+## The designers' changes to the proposed structure (DesignFrame): key -> value.
+##   "panel:<z>:<edge>" -> {glass: bool}     the hull panel over edge <edge> of the bay at z
+##   "section:<z>" -> {grow: [port, starboard, roof, belly]}   the ring nearest z pushed out, m
+var frame_edits: Dictionary = {}
 ## Parts fitted on the outside of the hull (thrusters, engines): id -> {id, type, deck, x, z,
 ## angle}, (x, z) on the hull's side and `angle` the way its front faces (radians, from +X
 ## towards +Z: the hull's outward normal where it was fitted).
@@ -144,6 +148,21 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _set_fields(runs, str(op.get("id", "")), op.get("fields", {}), "set_run")
 		"remove_run":
 			return _remove_entry(runs, str(op.get("id", "")), "run", "add_run")
+		"set_frame":
+			var key := str(op.get("key", ""))
+			if key == "":
+				return {}
+			var was: Variant = frame_edits.get(key)
+			var value: Variant = op.get("value")
+			if value is Dictionary and not (value as Dictionary).is_empty():
+				if was is Dictionary and was == value:
+					return {}
+				frame_edits[key] = (value as Dictionary).duplicate(true)
+			elif was == null:
+				return {}
+			else:
+				frame_edits.erase(key)
+			return {"op": "set_frame", "key": key, "value": (was as Dictionary).duplicate(true) if was is Dictionary else null}
 		"set_hull":
 			var dk := str(int(op.get("deck", 0)))
 			var outline: Array = []
@@ -490,7 +509,7 @@ func to_dict() -> Dictionary:
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
 		"runs": _sorted(runs), "structure": structure.duplicate(),
 		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
-		"hull": hull.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts),
+		"hull": hull.duplicate(true), "frame_edits": frame_edits.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts),
 	}
 
 
@@ -518,6 +537,7 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 	var hd: Dictionary = data.get("hull", {})
 	for dk in hd:
 		d.hull[str(dk)] = (hd[dk] as Array).duplicate(true)
+	d.frame_edits = (data.get("frame_edits", {}) as Dictionary).duplicate(true)
 	for wv: Dictionary in data.get("walls", []):
 		var wall := wv.duplicate(true)
 		wall.deck = int(wall.get("deck", 0))

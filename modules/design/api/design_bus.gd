@@ -31,9 +31,25 @@ signal carry_changed(module_id: String)
 
 
 func _init() -> void:
-	library.opened.connect(func(_r: DesignRecord) -> void: design_changed.emit())
-	library.edited.connect(func(_op: Dictionary) -> void: design_changed.emit())
-	library.list_changed.connect(func() -> void: design_changed.emit())
+	library.opened.connect(func(_r: DesignRecord) -> void: _changed())
+	library.edited.connect(func(_op: Dictionary) -> void: _changed())
+	library.list_changed.connect(func() -> void: _changed())
+
+
+## Every view of the design hears of an edit; what they all read (the rules, the measured
+## structure) is worked out once, when first asked for after it.
+func _changed() -> void:
+	_problems = []
+	_problems_of = null
+	_structure = null
+	_structure_of = null
+	design_changed.emit()
+
+
+var _problems: Array[Dictionary] = []
+var _problems_of: DesignRecord
+var _structure: DesignStructure
+var _structure_of: DesignRecord
 
 
 const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
@@ -149,6 +165,12 @@ func describe_op(op: Dictionary) -> String:
 	elif op.has("mount") and op.mount is Dictionary:
 		var pt := catalog.part(str(op.mount.get("type", "")))
 		thing = pt.display_name if pt else "a part on the hull"
+	if kind == "set_frame":
+		var key := str(op.get("key", ""))
+		var v: Variant = op.get("value")
+		if key.begins_with("panel:"):
+			return "put a window in the hull" if v is Dictionary and bool(v.get("glass", false)) else "plated over a hull panel"
+		return "reshaped the hull"
 	var verb := kind.get_slice("_", 0)
 	var noun := kind.substr(verb.length() + 1).replace("_", " ")
 	match verb:
@@ -313,4 +335,17 @@ func totals() -> DesignTotals:
 func problems() -> Array[Dictionary]:
 	if library.current == null:
 		return []
-	return DesignRules.check(library.current, catalog)
+	if _problems_of != library.current:
+		_problems = DesignRules.check(library.current, catalog)
+		_problems_of = library.current
+	return _problems
+
+
+## The open design's measured structure (DesignStructure.measure), kept till the next edit.
+func structure() -> DesignStructure:
+	if library.current == null:
+		return null
+	if _structure_of != library.current:
+		_structure = DesignStructure.measure(library.current)
+		_structure_of = library.current
+	return _structure

@@ -91,9 +91,91 @@ static func propose(d: DesignRecord) -> Dictionary:
 		stations.append({"z": zs[i], "label": "f%d" % i, "rect": rect, "profile": section(rect)})
 	var out := {"style": style_id, "weight": weight, "spacing": spacing, "clearance": clear,
 			"stations": stations, "glass": {}, "openings": [], "skip": {}}
+	_grow(d, stations)
 	_glaze(d, out)
+	_panels(d, out)
 	_openings(d, out)
 	return out
+
+
+## The key a designer's change to the section nearest z is stored under (DesignRecord.frame_edits).
+static func section_key(z: float) -> String:
+	return "section:%.1f" % z
+
+
+## The key a designer's change to the panel over `edge` of the bay round z is stored under.
+static func panel_key(z: float, edge: int) -> String:
+	return "panel:%.1f:%d" % [z, edge]
+
+
+## The bay (from station k to k + 1) that holds z, -1 if none.
+static func bay_at(p: Dictionary, z: float) -> int:
+	var st: Array = p.get("stations", [])
+	for k in st.size() - 1:
+		if z >= float(st[k].z) - 0.001 and z < float(st[k + 1].z) + 0.001:
+			return k
+	return -1
+
+
+## The station nearest z, -1 if none.
+static func station_at(p: Dictionary, z: float) -> int:
+	var st: Array = p.get("stations", [])
+	var best := -1
+	for i in st.size():
+		if best < 0 or absf(float(st[i].z) - z) < absf(float(st[best].z) - z):
+			best = i
+	return best
+
+
+## Which sides of a section a point on it is on: [port, starboard, roof, belly] as 0 or 1, the
+## ones the point is near (a chamfer is two).
+static func sides_at(rect: Rect2, x: float, y: float) -> Array:
+	var c := rect.get_center()
+	var dx := (x - c.x) / maxf(rect.size.x * 0.5, 0.01)
+	var dy := (y - c.y) / maxf(rect.size.y * 0.5, 0.01)
+	var s := [1 if dx < -0.6 else 0, 1 if dx > 0.6 else 0, 1 if dy > 0.6 else 0, 1 if dy < -0.6 else 0]
+	if s.max() == 0:
+		if absf(dx) > absf(dy):
+			s[0 if dx < 0.0 else 1] = 1
+		else:
+			s[3 if dy < 0.0 else 2] = 1
+	return s
+
+
+## The designers' pushed-out sections: each moves its nearest station's sides out, never in
+## past the proposal (the rooms and the frame's room round them).
+static func _grow(d: DesignRecord, st: Array) -> void:
+	for key: String in d.frame_edits:
+		if not key.begins_with("section:"):
+			continue
+		var g: Array = (d.frame_edits[key] as Dictionary).get("grow", [])
+		if g.size() < 4 or st.is_empty():
+			continue
+		var i := station_at({"stations": st}, float(key.get_slice(":", 1)))
+		var r: Rect2 = st[i].rect
+		var port := maxf(float(g[0]), 0.0)
+		var stbd := maxf(float(g[1]), 0.0)
+		var roof := maxf(float(g[2]), 0.0)
+		var belly := maxf(float(g[3]), 0.0)
+		r = Rect2(r.position - Vector2(port, belly), r.size + Vector2(port + stbd, roof + belly))
+		st[i].rect = r
+		st[i].profile = section(r)
+
+
+## The designers' panels: glass or metal, over the proposal's (glass over the bridge).
+static func _panels(d: DesignRecord, p: Dictionary) -> void:
+	var glass: Dictionary = p.glass
+	for key: String in d.frame_edits:
+		if not key.begins_with("panel:"):
+			continue
+		var k := bay_at(p, float(key.get_slice(":", 1)))
+		if k < 0:
+			continue
+		var gk := "%d:%d" % [k, int(key.get_slice(":", 2))]
+		if bool((d.frame_edits[key] as Dictionary).get("glass", false)):
+			glass[gk] = true
+		else:
+			glass.erase(gk)
 
 
 ## Room the frame takes between the rooms' walls and the skin's outer face: the plate, the
