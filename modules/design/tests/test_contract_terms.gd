@@ -10,6 +10,7 @@ const DesignConsole := preload("res://modules/design/internal/console/design_con
 
 
 func run_tests() -> void:
+	_motion_rows()
 	var contracts := Modules.bus("contracts") as ContractsBus
 	if contracts == null or not Flags.is_on(ContractsBus.SHIP_CONTRACTS_FLAG) or not Flags.is_on(ContractsBus.SHIP_ORDERS_FLAG):
 		check(true, "ship contracts are off")
@@ -79,3 +80,16 @@ func _texts(n: Node) -> String:
 	for c in n.get_children():
 		out += _texts(c)
 	return out
+
+
+## The surveyors' cycle of the moving parts reads as two trial rows.
+func _motion_rows() -> void:
+	check(DesignContractCheck.motion_rows({}).is_empty(), "nothing moves, no legs: no motion rows")
+	var rows := DesignContractCheck.motion_rows({"parts": [{"name": "Ramp", "clear": true}, {"name": "Bay doors", "clear": false}],
+			"ground": {"legs": 3, "problems": [{"severity": DesignRules.ERROR, "text": "tips"}]}})
+	check(rows.size() == 2 and not rows[0].ok and rows[0].notes == ["Bay doors"] and not rows[1].ok,
+			"a part that clashes or a ship that tips fails its trial row")
+	var ok := DesignContractCheck.motion_rows({"parts": [{"name": "Ramp", "clear": true}], "ground": {"legs": 4, "problems": []}})
+	check(ok.all(func(r: Dictionary) -> bool: return r.ok), "parts that move clear and a ship that stands pass")
+	var t := ShipOrders.trial(rows, 1_000_000)
+	check((t.misses as Array).has("Moving parts cycle clear"), "the trial counts a clash as a miss")

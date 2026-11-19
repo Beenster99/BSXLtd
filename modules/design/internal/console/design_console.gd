@@ -550,6 +550,11 @@ func deliver_for_trial() -> void:
 	if c.is_empty() or str(c.design_id) != rec.id:
 		return
 	var rows := DesignContractCheck.all(c.order, rec, bus.catalog, bus.totals())
+	var motion := Modules.bus("motion")
+	if motion and motion.has_method("cycle"):
+		var cyc: Variant = motion.call("cycle", rec)
+		if cyc is Dictionary:
+			rows.append_array(DesignContractCheck.motion_rows(cyc))
 	contracts.request_deliver_ship(str(c.id), rows)
 
 
