@@ -37,12 +37,18 @@ var library := DesignLibrary.new()
 var editor := DesignEditor.new(library)
 ## The ready-made module picked up to drop on a plan (the console's or a wall's), or "".
 var carrying := ""
+## The crew on the drawings: each other's cursors, friends walking inside, smart pings
+## (internal/crew/design_crew.gd; plans and holotables attach themselves to it).
+var crew: Node
 
 ## A module was picked up or put down.
 signal carry_changed(module_id: String)
 
 
 func _init() -> void:
+	crew = CrewMarks.new()
+	crew.set("bus", self)
+	add_child(crew)
 	library.opened.connect(func(_r: DesignRecord) -> void: _changed())
 	library.edited.connect(func(_op: Dictionary) -> void: _changed())
 	library.list_changed.connect(func() -> void: _changed())
@@ -67,6 +73,7 @@ var _structure_of: DesignRecord
 const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
 const Samples := preload("res://modules/design/internal/sample_designs.gd")
 const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
+const CrewMarks := preload("res://modules/design/internal/crew/design_crew.gd")
 
 
 func register_module() -> void:
@@ -134,11 +141,13 @@ func hook_net(net: Object) -> void:
 	editor.me = func() -> String: return "p%d" % int(_net.call("local_peer_id"))
 	if not library.opened.is_connected(_share_open):
 		library.opened.connect(_share_open)
+	crew.call("hook", _net)
 
 
 func _unhook_net() -> void:
 	if _net == null:
 		return
+	crew.call("unhook")
 	if _net.has_signal("peer_left") and _net.is_connected("peer_left", _on_peer_left):
 		_net.disconnect("peer_left", _on_peer_left)
 	for e in ["design.op", "design.undo", "design.redo", "design.open", "design.walk"]:

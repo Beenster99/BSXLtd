@@ -56,6 +56,8 @@ func setup(design_bus: DesignBus) -> void:
 	bus = design_bus
 	bus.design_changed.connect(func() -> void: _dirty = true)
 	_dirty = true
+	if bus.crew:
+		bus.crew.call("attach_holo", self)
 
 
 func set_layer(layer: String, on: bool) -> void:

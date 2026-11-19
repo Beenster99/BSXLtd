@@ -689,6 +689,9 @@ func _physics_process(delta: float) -> void:
 	body.move_and_slide()
 	if body.position.y < -30.0:
 		spawn()
+	# The crew outside see where you are on their plans and the holotable.
+	if bus.crew:
+		bus.crew.call("walk_at", body.position - Vector3(0, 0.9, 0), body.rotation.y)
 
 
 func _process(delta: float) -> void:
