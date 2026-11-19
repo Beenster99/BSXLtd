@@ -104,6 +104,16 @@ const PAYSLIPS_SECTION := "business.payslips"
 const CompanyPanel := preload("res://modules/business/internal/ui/company_panel.gd")
 ## Node name of Business's things in the shipyard (monitors, fallback crates).
 const YARD_NODE := "BusinessYard"
+## The detailed ACCOUNTS panel on the design room's walls (DesignBus.register_wall_view), behind
+## its own flag. Design is reached by name: it is optional and loads after Business.
+const AccountsWall := preload("res://modules/business/internal/ui/accounts_wall.gd")
+const ACCOUNTS_WALL_FLAG := "business.accounts_wall"
+const ACCOUNTS_WALL_VIEW := "accounts"
+## The same panel on the F1 wrist screen: its channel, place (10 stock, 20 parts market, 30
+## contract fit, 40 accounts, 50 crew) and the px per m it's drawn at there.
+const WRIST_ACCOUNTS := "business.accounts"
+const WRIST_ACCOUNTS_ORDER := 40
+const WRIST_PX_PER_M := 150.0
 ## Settings > Debug > Company (flag business.debug): instant deliveries (orders arrive the
 ## moment they're placed; the host's setting counts, it delivers) and buttons that fill the
 ## wallet, the company account and reputation, for testing.
@@ -190,6 +200,7 @@ func register_module() -> void:
 ## Contracts' and Ship and Bay's signals and hooks. Safe to run more than once.
 func _hook_up_modules() -> void:
 	_listen_to_contracts()
+	_offer_accounts_wall()
 	var yard_bus := Modules.bus("ship_bay") as ShipBayBus
 	if yard_bus and Flags.is_on("business.market") and not yard_bus.shipyard_ready.is_connected(_on_shipyard_ready):
 		yard_bus.shipyard_ready.connect(_on_shipyard_ready)
@@ -206,6 +217,9 @@ func _hook_up_modules() -> void:
 
 
 func unregister_module() -> void:
+	var design := Modules.bus("design")
+	if design and design.has_method("unregister_wall_view"):
+		design.call("unregister_wall_view", ACCOUNTS_WALL_VIEW)
 	if Modules.modules_ready.is_connected(_hook_up_modules):
 		Modules.modules_ready.disconnect(_hook_up_modules)
 	var yard_bus := Modules.bus("ship_bay")
@@ -228,9 +242,35 @@ func unregister_module() -> void:
 	HudSlots.unregister_holo_readout(CASH_READOUT)
 
 
+## Offers the ACCOUNTS panel to the design room's walls, where the design room takes panels
+## from other modules. Safe to run more than once.
+func _offer_accounts_wall() -> void:
+	var design := Modules.bus("design")
+	if design == null or not design.has_method("register_wall_view") or not Flags.is_on(ACCOUNTS_WALL_FLAG):
+		return
+	if (design.get("wall_views") as Dictionary).has(ACCOUNTS_WALL_VIEW):
+		return
+	design.call("register_wall_view", ACCOUNTS_WALL_VIEW, "ACCOUNTS", make_accounts_wall)
+
+
+## The detailed ACCOUNTS panel for a wall drawn at `px_per_m` (it sizes its text from it).
+func make_accounts_wall(px_per_m: float) -> Control:
+	var s := AccountsWall.new()
+	s.setup(self, px_per_m)
+	return s
+
+
 ## Puts the terminal's channels on the wrist holo screen (HudSlots), so a player can order
 ## from anywhere in the yard.
+## With the new ACCOUNTS screen on (beenster, 19 Nov: the F1 wrist cleared of old-game
+## channels), the wrist's Accounts is that screen, the same one as on the walls, and the old
+## Buy/Sell and Accounts pages go (the parts market wall screen buys now).
 func _offer_screen_channels() -> void:
+	if Flags.is_on(ACCOUNTS_WALL_FLAG):
+		HudSlots.register_holo_channel(WRIST_ACCOUNTS, "Accounts", func(_glass: bool) -> Control:
+			return make_accounts_wall(WRIST_PX_PER_M), WRIST_ACCOUNTS_ORDER)
+		HudSlots.register_holo_readout(CASH_READOUT, func() -> String: return "CR %s" % TerminalKit.money(get_cash()))
+		return
 	if not Flags.is_on("business.market"):
 		return
 	for id: String in SCREEN_CHANNELS:
@@ -650,6 +690,155 @@ func accounts_summary(days: int) -> Dictionary:
 		else:
 			out -= e.amount
 	return {"income": income, "outgoings": out, "net": income - out, "groups": groups, "days": per_day}
+
+
+## Ledger categories' names for the detailed accounts (ACCOUNTS wall screen).
+const CATEGORY_NAMES := {"deposit": "Deposits", "goodwill": "Goodwill", "payment": "Contract payments",
+		"penalty": "Late penalties", "scrap": "Scrap sales", "salvage": "Salvage sales",
+		"resale": "Parts resold", "parts": "Parts bought", "refund": "Refunds", "wages": "Wages", "bonus": "Bonuses",
+		"rent": "Bay rent", "loan": "Loans drawn", "repayment": "Loan repayments", "upgrade": "Upgrades",
+		"debug": "Testing"}
+
+
+## Everything the detailed ACCOUNTS screen shows, over the last `days` game days up to today
+## (0 = since the company started). Money is whole CR; outgoings are positive numbers.
+##   period: {days, first, last}       the days covered (0-based day numbers)
+##   cash, reputation, insolvent, days_in_debt
+##   now: accounts_summary's {income, outgoings, net} for the period, prev: the same span before it
+##   lines: [{group, category, name, in, out, count}] by group (ACCOUNT_GROUPS order) then size
+##   balance: [{day, in, out, close}] closing cash each day of the period, oldest first
+##   contracts: [{id, state, value, deposit, received, penalties, parts, margin, due_day, stages, stages_paid}]
+##   loans: get_loans() plus each one's settle amount; owed, loan_room
+##   stock: {value, lines, top: [{part, name, qty, value}]}  parts on hand at their market value
+##   on_order: {count, value}  orders paid and still on their way
+##   crew: [{name, level, wage, wallet, last_slip}]  everyone in the session
+##   burn: {rent, wages, loans, per_day}  what a day costs now; runway: days the cash lasts (-1 = no burn)
+##   sheet: {assets: {cash, stock, on_order}, liabilities: {loans, overdraft}, worth}
+##   recent: the period's newest ledger entries (up to 40), newest first
+func accounts_report(days: int) -> Dictionary:
+	var today := get_day()
+	var span := today + 1 if days <= 0 else days
+	var first := maxi(0, today - span + 1)
+	var now := accounts_summary(today - first + 1)
+	var prev := {"income": 0, "outgoings": 0, "net": 0}
+	var prev_first := first - span
+	var by_cat := {}
+	var per_day := {}
+	for d in range(first, today + 1):
+		per_day[d] = {"day": d, "in": 0, "out": 0, "close": 0}
+	for e: LedgerEntry in _books.ledger:
+		if e.day >= first and e.day <= today:
+			var line: Dictionary = by_cat.get(e.category, {})
+			if line.is_empty():
+				line = {"group": account_group(e.category), "category": e.category,
+						"name": str(CATEGORY_NAMES.get(e.category, e.category.capitalize())), "in": 0, "out": 0, "count": 0}
+				by_cat[e.category] = line
+			line[("in" if e.amount > 0 else "out")] += absi(e.amount)
+			line.count += 1
+			per_day[e.day]["in" if e.amount > 0 else "out"] += absi(e.amount)
+		elif first > 0 and e.day >= prev_first and e.day < first:
+			if e.amount > 0:
+				prev.income += e.amount
+			else:
+				prev.outgoings -= e.amount
+	prev.net = prev.income - prev.outgoings
+	var order := ACCOUNT_GROUPS.keys() + ["other"]
+	var lines: Array = by_cat.values()
+	lines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ga := order.find(a.group)
+		var gb := order.find(b.group)
+		if ga != gb:
+			return ga < gb
+		return int(a["in"]) + int(a.out) > int(b["in"]) + int(b.out))
+	# Closing cash each day, worked back from today's.
+	var balance: Array = []
+	var close := _books.cash
+	for d in range(today, first - 1, -1):
+		var day_row: Dictionary = per_day[d]
+		day_row.close = close
+		close -= int(day_row["in"]) - int(day_row.out)
+		balance.push_front(day_row)
+	# Contracts on the books, open ones first, newest last within each.
+	var contracts: Array = []
+	for id: String in _books.contracts:
+		var c := _books.contract_balance(id)
+		var received := 0
+		for e: LedgerEntry in _books.ledger:
+			if e.ref == id and e.amount > 0 and account_group(e.category) == "contracts":
+				received += e.amount
+		contracts.append({"id": id, "state": str(c.get("state", "")), "value": int(c.get("value", 0)),
+				"deposit": int(c.get("deposit", 0)), "received": received, "penalties": int(c.get("penalties", 0)),
+				"parts": int(c.get("parts", 0)), "margin": int(c.get("margin", 0)), "due_day": int(c.get("due_day", 0)),
+				"stages": (c.get("stages", []) as Array).size(), "stages_paid": (c.get("stages_paid", {}) as Dictionary).size()})
+	contracts.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a.state == "open") and b.state != "open")
+	var loans := get_loans()
+	for l in loans:
+		l["settle"] = _books.company.settle_amount(l)
+	# Stock at its market value (a part's new price times its condition's share).
+	var stock_value := 0
+	var stock_lines := 0
+	var top: Array = []
+	var detail := get_stock_detail()
+	for part: String in detail:
+		var qty := 0
+		var value := 0
+		for cond: String in detail[part]:
+			var n := int(detail[part][cond])
+			qty += n
+			value += roundi(maxi(0, get_catalogue().value_of(part)) * PartCondition.price_factor(cond) * n)
+		if qty <= 0:
+			continue
+		stock_lines += 1
+		stock_value += value
+		top.append({"part": part, "name": part_name(part), "qty": qty, "value": value})
+	top.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.value) > int(b.value))
+	var on_order := {"count": 0, "value": 0}
+	for o in get_orders(PartsOrder.State.PLACED):
+		on_order.count += 1
+		on_order.value += o.cost
+	# The crew and what a day costs now.
+	var crew: Array = []
+	var wages := 0
+	var levels := crew_levels()
+	var names := crew_names()
+	for id: int in names:
+		var who := str(names[id])
+		var level := int(levels.get(who, player_level(who)))
+		var slips := get_payslips(who)
+		var wage := wage_for(level) if levels.has(who) else 0
+		wages += wage
+		crew.append({"name": who, "level": level, "wage": wage, "wallet": get_wallet(who),
+				"last_slip": slips.back() if not slips.is_empty() else {}, "owner": is_owner(who)})
+	var rules := get_rules()
+	var monthly := 0
+	for l in loans:
+		monthly += int(l.monthly)
+	var loans_per_day := ceili(float(monthly) / maxi(1, rules.days_per_month))
+	var per_day_cost := rules.bay_rent_per_day + wages + loans_per_day
+	var owed := _books.company.owed()
+	var cash := _books.cash
+	var assets := {"cash": maxi(0, cash), "stock": stock_value, "on_order": int(on_order.value)}
+	var liabilities := {"loans": owed, "overdraft": maxi(0, -cash)}
+	var recent: Array = []
+	for i in range(_books.ledger.size() - 1, -1, -1):
+		var e: LedgerEntry = _books.ledger[i]
+		if e.day < first:
+			break
+		recent.append(e)
+		if recent.size() >= 40:
+			break
+	return {"period": {"days": span, "first": first, "last": today}, "cash": cash, "reputation": _books.reputation,
+			"insolvent": _books.insolvent, "days_in_debt": _books.days_in_debt, "grace_days": rules.insolvency_grace_days,
+			"now": {"income": now.income, "outgoings": now.outgoings, "net": now.net}, "prev": prev,
+			"has_prev": first > 0, "lines": lines, "balance": balance, "contracts": contracts,
+			"loans": loans, "owed": owed, "loan_room": loan_room(),
+			"stock": {"value": stock_value, "lines": stock_lines, "top": top.slice(0, 8)}, "on_order": on_order,
+			"crew": crew, "burn": {"rent": rules.bay_rent_per_day, "wages": wages, "loans": loans_per_day, "per_day": per_day_cost},
+			"runway": (cash / per_day_cost if cash > 0 else 0) if per_day_cost > 0 else -1,
+			"sheet": {"assets": assets, "liabilities": liabilities,
+					"worth": assets.cash + assets.stock + assets.on_order - owed - liabilities.overdraft},
+			"recent": recent, "owner": company_owner()}
 
 
 ## 0 to 100.
