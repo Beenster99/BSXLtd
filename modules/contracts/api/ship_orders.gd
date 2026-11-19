@@ -36,7 +36,7 @@ const SCALED: PackedStringArray = ["crew", "cargo_m3", "attack", "defence", "pow
 const CLAUSES: Dictionary = {
 	"rough_landing": {"kind": "part", "parts": ["landing_gear"], "count": 4, "cost": 26000, "text": "Must land on rough ground: at least four landing legs"},
 	"docking_port": {"kind": "part", "parts": ["docking_port"], "count": 1, "cost": 15000, "text": "A docking port for station work"},
-	"no_reclaimed": {"kind": "no_grade", "grade": "R", "cost": 0, "text": "No part older than new: nothing Reclaimed"},
+	"no_reclaimed": {"kind": "no_grade", "grade": "R", "cost": 0, "text": "Nothing Reclaimed: every part new"},
 	"medbay": {"kind": "room", "room": "medbay", "min_m2": 12.0, "cost": 22000, "text": "A medbay of at least 12 m2"},
 	"surgery": {"kind": "part", "parts": ["surgery_unit"], "count": 1, "cost": 75000, "text": "A surgery unit in the medbay"},
 	"recreation": {"kind": "room", "room": "recreation", "min_m2": 20.0, "cost": 20000, "text": "A recreation room of at least 20 m2"},
@@ -388,8 +388,17 @@ static func demand_lines(order: Dictionary) -> PackedStringArray:
 	var demands: Dictionary = order.get("demands", {})
 	for key: String in demands:
 		var n: Array = names.get(key, [key, "", true])
-		out.append("%s %s %s %s" % [n[0], "at least" if n[2] else "at most", str(int(demands[key])), n[1]])
+		out.append("%s %s %s %s" % [n[0], "at least" if n[2] else "at most", _thousands(int(demands[key])), n[1]])
 	return out
+
+
+static func _thousands(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
 
 
 ## The special clauses as lines a player reads.

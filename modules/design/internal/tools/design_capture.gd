@@ -45,6 +45,10 @@ class Runner:
 			await _parts_shots(room, out)
 			get_tree().quit()
 			return
+		if "--orders" in OS.get_cmdline_user_args():
+			await _order_shots(room, out)
+			get_tree().quit()
+			return
 		if "--frame" in OS.get_cmdline_user_args():
 			await _frame_shots(room, out)
 			get_tree().quit()
@@ -277,6 +281,41 @@ class Runner:
 			(data_scroll as ScrollContainer).scroll_vertical += 300
 		await _frames(30)
 		await _save(out, "parts_order")
+
+	## Wave 4: the board of ship orders open on the console (orders_list), then one picked,
+	## with its client, budget against the cheapest build, and its demands and clauses scored
+	## on the data channel (orders_picked).
+	func _order_shots(room: Node, out: String) -> void:
+		var console: Node = room.console
+		var contracts := Modules.bus("contracts") as ContractsBus
+		for i in range(12):
+			contracts.advance_cycle()
+			var o := contracts.ship_orders()
+			if o.any(func(x): return x.achievability.label == "Unrealistic") and o.any(func(x): return x.size in ["capital", "mega"]):
+				break
+		console._orders_open = true
+		console._fill_palette()
+		await _frames(30)
+		await _save(out, "orders_list")
+		var orders := contracts.ship_orders()
+		var pick: Dictionary = orders[0]
+		for o in orders:
+			if (o.clauses as Array).size() >= 2 and o.size in ["small", "medium"]:
+				pick = o
+				break
+		console.set_order(pick)
+		await _frames(10)
+		for n in room.console.data.find_children("*", "Label", true, false):
+			if (n as Label).text == "CONTRACT FIT":
+				var sc: Node = n
+				while sc and not sc is ScrollContainer:
+					sc = sc.get_parent()
+				if sc:
+					await _frames(5)
+					var c := sc as ScrollContainer
+					c.scroll_vertical += int((n as Control).global_position.y - c.global_position.y) - 20
+		await _frames(30)
+		await _save(out, "orders_picked")
 
 	func _frames(n: int) -> void:
 		for i in n:
