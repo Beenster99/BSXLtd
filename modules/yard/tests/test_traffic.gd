@@ -260,7 +260,11 @@ func _kits() -> void:
 	check(arms.has_node("UpperR") and arms.has_node("ForeL") and arms.has_node("HandR"), "the workers have jointed arms")
 	var movers_waited: bool = traffic.kit_orders.any(func(o: Dictionary) -> bool: return bool(o.get("wait", false)) and (o.loads as Array).size() > 0)
 	check(movers_waited, "the movers brought the ring's stock and waited by the keel with it")
-	# Wear, a fault and TartanCo.
+	# Wear, a fault and TartanCo. She never comes out while every bot is in fair shape.
+	for w: Dictionary in crew.workers:
+		w.wear = minf(float(w.wear), 0.5)
+		w.fault = ""
+	check(not crew.call_service() and crew.service.state == "away", "TartanCo stays away while no bot is in poor condition")
 	var worn: Dictionary = crew.workers[2]
 	worn.wear = 0.95
 	worn.fault = "E-17 ACTUATOR"
