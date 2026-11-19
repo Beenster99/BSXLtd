@@ -15,6 +15,7 @@ extends RefCounted
 ##   {op = "remove_room", id}            # its doors and components go with it
 ##   {op = "add_door", door = {id?, a, b, deck, x, z}}     # b = "" is a door to space
 ##   {op = "remove_door", id}
+##   {op = "set_door", id, fields = {kind?, x?, z?}}   # kind: DesignCatalog.DOOR_KINDS
 ##   {op = "add_component", component = {id?, type, room, x, z, rot?}}
 ##   {op = "set_component", id, fields = {...}}
 ##   {op = "remove_component", id}
@@ -121,6 +122,8 @@ func _apply(op: Dictionary) -> Dictionary:
 			door["x"] = float(door.get("x", 0.0))
 			door["z"] = float(door.get("z", 0.0))
 			return _add_entry(doors, door, "d", "door", "remove_door")
+		"set_door":
+			return _set_fields(doors, str(op.get("id", "")), op.get("fields", {}), "set_door")
 		"remove_door":
 			return _remove_entry(doors, str(op.get("id", "")), "door", "add_door")
 		"add_component":
