@@ -50,6 +50,10 @@ class Runner:
 			await _order_shots(room, out)
 			get_tree().quit()
 			return
+		if "--contract" in OS.get_cmdline_user_args():
+			await _contract_shots(room, out)
+			get_tree().quit()
+			return
 		if "--fit" in OS.get_cmdline_user_args():
 			await _fit_shots(room, out)
 			get_tree().quit()
@@ -321,6 +325,37 @@ class Runner:
 					c.scroll_vertical += int((n as Control).global_position.y - c.global_position.y) - 20
 		await _frames(30)
 		await _save(out, "orders_picked")
+
+	## Wave 4 staged payments (--contract): the quote under a picked order (contract_quote),
+	## the contract details page before signing (contract_terms_quote), signed with the keel
+	## paid (contract_terms_signed), and after the trial (contract_terms_delivered).
+	func _contract_shots(room: Node, out: String) -> void:
+		var console: Node = room.console
+		var contracts := Modules.bus("contracts") as ContractsBus
+		var pick := {}
+		for o: Dictionary in contracts.ship_orders():
+			if contracts.ship_sign_problem(o) == "" and (pick.is_empty() or str(o.achievability.label) in ["Fair", "Generous"]):
+				pick = o
+		console.set_order(pick)
+		await _frames(30)
+		await _save(out, "contract_quote")
+		console.toggle_contract_terms()
+		await _frames(30)
+		await _save(out, "contract_terms_quote")
+		console.toggle_contract_terms()
+		(console.find_child("SendQuote", true, false) as Button).pressed.emit()
+		await _frames(5)
+		var c := contracts.ship_contract_for(str(pick.id))
+		contracts.pay_ship_stage(str(c.id), "keel")
+		console.toggle_contract_terms()
+		await _frames(30)
+		await _save(out, "contract_terms_signed")
+		console.toggle_contract_terms()
+		console.deliver_for_trial()
+		await _frames(5)
+		console.toggle_contract_terms()
+		await _frames(30)
+		await _save(out, "contract_terms_delivered")
 
 	## The contract fit assessment against a client's ship order: full screen at the console
 	## and on the left-hand wall (--fit).

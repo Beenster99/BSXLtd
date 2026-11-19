@@ -458,3 +458,105 @@ static func clause_lines(order: Dictionary) -> PackedStringArray:
 ## Every criterion the order sets (demands, then clauses), counted.
 static func criteria_count(order: Dictionary) -> int:
 	return (order.get("demands", {}) as Dictionary).size() + (order.get("clauses", []) as Array).size()
+
+
+# --- Quotes, staged payments and the trial (plan 4.3 to 4.6) ---------------------------------
+
+## The payments a signed ship contract is paid in, in order: share of the price, what sets
+## it off, and when it is expected (share of the build time from signing). Starting values,
+## to tune at test point 4.
+const PAYMENT_STAGES: Array = [
+	{"id": "deposit", "name": "Deposit", "share": 0.2, "at": 0.0, "trigger": "Paid when the client signs off the design."},
+	{"id": "keel", "name": "Keel laid", "share": 0.2, "at": 0.35, "trigger": "Paid when the frame is complete in the dock."},
+	{"id": "fit_out", "name": "Fit-out", "share": 0.2, "at": 0.7, "trigger": "Paid when the hull is closed and the main machinery is in."},
+	{"id": "delivery", "name": "Delivery", "share": 0.4, "at": 1.0, "trigger": "Paid after the surveyors' trial, adjusted by its result."},
+]
+## The trial moves the delivery payment: each demand beaten by BEAT_BY earns BONUS_PER_BEAT
+## of the price (BONUS_MAX beats at most); each criterion missed holds back HOLDBACK_PER_MISS
+## of the price (lost if she is handed over anyway); each day late takes LATE_PER_DAY. The
+## delivery payment never goes below nothing.
+const BEAT_BY := 0.25
+const BONUS_PER_BEAT := 0.03
+const BONUS_MAX := 3
+const HOLDBACK_PER_MISS := 0.05
+const LATE_PER_DAY := 0.01
+## Standing with the client after delivery: STANDING_DELIVERED for a ship to spec, plus
+## STANDING_PER_BEAT a demand beaten; a miss costs STANDING_PER_MISS, a day late STANDING_PER_LATE.
+const STANDING_DELIVERED := 12
+const STANDING_PER_BEAT := 2
+const STANDING_PER_MISS := 4
+const STANDING_PER_LATE := 1
+
+
+## BSX's quote for building `order` to a design that costs `cost` CR: the parts and hours at
+## cost plus the yard's fee, never more than the client's budget (the yard eats the
+## difference). {price, cost, fee, margin, over_budget (bool: the build alone costs more than
+## the budget), line}.
+static func quote(order: Dictionary, cost: float) -> Dictionary:
+	var budget := float((order.get("demands", {}) as Dictionary).get("budget", 0.0))
+	var fee := float(order.get("pay", 0))
+	var price := cost + fee
+	if budget > 0.0:
+		price = minf(price, budget)
+	price = roundf(price / 1000.0) * 1000.0
+	var over := budget > 0.0 and cost > budget
+	var line := "The client's budget does not cover the build: CR %s over." % _thousands(int(cost - budget)) if over \
+			else ("Price CR %s: the build at cost and the yard's fee of CR %s." % [_thousands(int(price)), _thousands(int(price - cost))])
+	return {"price": int(price), "cost": int(cost), "fee": int(fee), "margin": int(price - cost), "over_budget": over, "line": line}
+
+
+## The payment schedule for a contract at `price` signed on `start_day` and due on `due_day`:
+## one row a stage, {id, name, share, value (CR), expected_day, trigger}. Amounts add up to
+## the price exactly (the last stage takes the rounding).
+static func payment_plan(price: int, start_day: int, due_day: int) -> Array:
+	var out: Array = []
+	var left := price
+	for i in PAYMENT_STAGES.size():
+		var st: Dictionary = PAYMENT_STAGES[i]
+		var value := left if i == PAYMENT_STAGES.size() - 1 else int(roundf(price * float(st.share) / 1000.0) * 1000.0)
+		left -= value
+		out.append({"id": st.id, "name": st.name, "share": st.share, "value": value, "trigger": st.trigger,
+			"expected_day": start_day + int(roundf(float(due_day - start_day) * float(st.at)))})
+	return out
+
+
+## The trial's verdict on a delivered ship: `rows` are DesignTotals.fit and
+## DesignContractCheck rows for the order, `price` the contract price, `days_late` past the
+## due day. {met, misses: [labels], beats: [labels], bonus, holdback, late, adjustment (CR on
+## the delivery payment), grade (A to E), quality (0..1), standing (points with the client)}.
+static func trial(rows: Array, price: int, days_late: int = 0) -> Dictionary:
+	var misses: Array = []
+	var beats: Array = []
+	var share_sum := 0.0
+	for r: Dictionary in rows:
+		share_sum += float(r.get("share", 0.0))
+		# "Top speed, m/s" reads as "Top speed" in the verdict.
+		var label := str(r.label) if r.get("clause", false) else str(r.label).get_slice(",", 0)
+		if not r.get("ok", false):
+			misses.append(label)
+			continue
+		var key := str(r.get("key", ""))
+		if r.get("clause", false) or key in ["budget", "max_mass", "dry_mass", "wet_mass", "build_days"]:
+			continue
+		if float(r.need) > 0.0 and float(r.have) >= float(r.need) * (1.0 + BEAT_BY) and beats.size() < BONUS_MAX:
+			beats.append(label)
+	var bonus := int(roundf(price * BONUS_PER_BEAT * beats.size() / 1000.0) * 1000.0)
+	var holdback := int(roundf(price * HOLDBACK_PER_MISS * misses.size() / 1000.0) * 1000.0)
+	var late := int(roundf(price * LATE_PER_DAY * maxi(0, days_late) / 1000.0) * 1000.0)
+	var quality := share_sum / maxf(1.0, rows.size())
+	var grade := "A"
+	if not misses.is_empty() or days_late > 0:
+		grade = "B" if misses.size() <= 1 and days_late <= 2 else ("C" if misses.size() <= 2 else ("D" if quality >= 0.6 else "E"))
+	var standing := STANDING_DELIVERED + STANDING_PER_BEAT * beats.size() - STANDING_PER_MISS * misses.size() \
+			- STANDING_PER_LATE * maxi(0, days_late)
+	return {"met": misses.is_empty(), "misses": misses, "beats": beats, "bonus": bonus, "holdback": holdback,
+		"late": late, "adjustment": bonus - holdback - late, "grade": grade, "quality": quality, "standing": standing}
+
+
+## Best and worst the trial can do to the delivery payment of `order` at `price`: {bonus
+## (every demand beaten, up to BONUS_MAX), holdback (every criterion missed)}.
+static func trial_range(order: Dictionary, price: int) -> Dictionary:
+	var demands := (order.get("demands", {}) as Dictionary).size()
+	var criteria := criteria_count(order)
+	return {"bonus": int(roundf(price * BONUS_PER_BEAT * mini(BONUS_MAX, demands - 1) / 1000.0) * 1000.0),
+		"holdback": int(roundf(price * HOLDBACK_PER_MISS * criteria / 1000.0) * 1000.0)}

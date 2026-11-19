@@ -24,6 +24,8 @@ flags = {
 "contracts.fit_jobs": false,
 "contracts.ship_orders": true,
 "contracts.ship_variety": true,
+"contracts.ship_contracts": true,
+"contracts.stage_standin": true,
 "core": true,
 "core.fresh_saves": true,
 "core.loading_screen": true,
