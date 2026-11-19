@@ -74,6 +74,8 @@ func _changed() -> void:
 	_totals_of = null
 	_plan = {}
 	_plan_of = null
+	_assessment = null
+	_assessment_of = null
 	design_changed.emit()
 
 
@@ -85,6 +87,8 @@ var _totals: DesignTotals
 var _totals_of: DesignRecord
 var _plan: Dictionary = {}
 var _plan_of: DesignRecord
+var _assessment: DesignAssessment
+var _assessment_of: DesignRecord
 
 
 const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
@@ -454,6 +458,17 @@ func frame_plan() -> Dictionary:
 		_plan = DesignFrame.propose(library.current)
 		_plan_of = library.current
 	return _plan
+
+
+## How the open design answers its ship order (DesignAssessment), kept till the next edit
+## (null with nothing open). Every contract fit view reads this one.
+func assessment() -> DesignAssessment:
+	if library.current == null:
+		return null
+	if _assessment_of != library.current:
+		_assessment = DesignAssessment.assess(library.current, catalog, totals(), problems(), library.current.order)
+		_assessment_of = library.current
+	return _assessment
 
 
 ## The open design's problems ([] with nothing open).

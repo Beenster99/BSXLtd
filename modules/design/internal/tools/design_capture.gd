@@ -6,7 +6,8 @@ extends Node
 ## room furnished inside the orbital yard's station instead.
 ## Saves console.png (the design console), room.png (the room with its walls and table),
 ## holo_cut.png (the holotable cut through deck 1), wall_left.png, wall_right.png (what two walls show)
-## and walk_*.png (walk-inside mode).
+## and walk_*.png (walk-inside mode). With --fit: fit_console.png, fit_wall.png and fit_room.png
+## (the contract fit assessment).
 
 const SIZE := Vector2i(1920, 1080)
 
@@ -43,6 +44,10 @@ class Runner:
 		var room: Node = get_tree().current_scene
 		if "--parts" in OS.get_cmdline_user_args():
 			await _parts_shots(room, out)
+			get_tree().quit()
+			return
+		if "--fit" in OS.get_cmdline_user_args():
+			await _fit_shots(room, out)
 			get_tree().quit()
 			return
 		if "--frame" in OS.get_cmdline_user_args():
@@ -277,6 +282,35 @@ class Runner:
 			(data_scroll as ScrollContainer).scroll_vertical += 300
 		await _frames(30)
 		await _save(out, "parts_order")
+
+	## The contract fit assessment against a client's ship order: full screen at the console
+	## and on the right-hand wall (--fit).
+	func _fit_shots(room: Node, out: String) -> void:
+		var contracts := Modules.bus("contracts") as ContractsBus
+		var orders := contracts.ship_orders() if contracts else ([] as Array[Dictionary])
+		var pick: Dictionary = {}
+		for o: Dictionary in orders:
+			if str(o.role) == "tug":
+				pick = o
+		if pick.is_empty() and not orders.is_empty():
+			pick = orders[0]
+		room.console.set_order(pick)
+		await _frames(10)
+		room.console.toggle_assessment()
+		await _frames(30)
+		await _save(out, "fit_console")
+		room.console.toggle_assessment()
+		var wall: Node = room.walls["wall_right"]
+		await _frames(10)
+		var img: Image = wall.viewport.get_texture().get_image()
+		img.save_png(out.path_join("fit_wall.png"))
+		print("DesignCapture: ", out.path_join("fit_wall.png"))
+		room.set_room_view(true)
+		var cam: Camera3D = room.camera
+		cam.position = Vector3(2.0, 2.4, 1.0)
+		cam.look_at(Vector3(12.0, 2.6, -1.0))
+		await _frames(30)
+		await _save(out, "fit_room")
 
 	func _frames(n: int) -> void:
 		for i in n:

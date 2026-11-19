@@ -5,6 +5,9 @@ extends PanelContainer
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 
+## The full contract fit assessment was asked for (the console opens it full screen).
+signal assessment_requested
+
 var bus: DesignBus
 ## Contract demands to score against (Wave 4 fills these from the contract).
 var demands: Dictionary = {}
@@ -95,6 +98,22 @@ func refresh() -> void:
 			_body.add_child(T.label(str(rec.order.get("title", "")), "body_medium", 16, T.ORANGE))
 		for row in t.fit(want):
 			_body.add_child(_fit_row(row))
+		var a := bus.assessment()
+		if a and not rec.order.is_empty() and demands.is_empty():
+			var col := T.GOOD if a.status == DesignAssessment.READY else (T.BAD if a.status == DesignAssessment.NOT_VIABLE else T.AMBER)
+			var line := HBoxContainer.new()
+			line.add_theme_constant_override("separation", 8)
+			line.add_child(T.tag(a.status, col, 14))
+			var what := T.label("%d%% overall  ·  %d pitfalls  ·  %d cheap wins" % [int(roundf(a.score * 100.0)),
+					a.findings_of(DesignAssessment.PITFALL).size(), a.findings_of(DesignAssessment.WIN).size()], "body_medium", 16, T.TEXT)
+			what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			line.add_child(what)
+			if compact:
+				var open := T.button("FULL ASSESSMENT", true, 14)
+				open.name = "BtnAssessment"
+				open.pressed.connect(func() -> void: assessment_requested.emit())
+				line.add_child(open)
+			_body.add_child(line)
 	_body.add_child(T.label("WILL IT WORK", "display_bold", 20, T.TEXT))
 	if problems.is_empty():
 		_body.add_child(T.label("Nothing flagged", "body", 17, T.GOOD))
