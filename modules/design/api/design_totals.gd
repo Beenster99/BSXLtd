@@ -59,6 +59,7 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 				["hull", DesignStructure.option("hull", str(spec.hull)), fc.skin_m2 if framed else st.outer_area, "m2"],
 				["welds", DesignFrame.WELD, float(fc.welds), "x"],
 				["rivets", DesignFrame.RIVET, float(fc.rivets), "x"],
+				["bolts", DesignFrame.BOLT, float(fc.bolts), "x"],
 				["inner", DesignStructure.option("inner", str(spec.inner)), st.inner_area + (st.outer_area if framed else 0.0), "m2"],
 				["deck", DesignStructure.DECK, st.floor_area, "m2"]]:
 			var o: Dictionary = row[1]

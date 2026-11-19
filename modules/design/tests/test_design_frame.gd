@@ -69,6 +69,16 @@ func run_tests() -> void:
 	check(h.cap_plates.size() > 1, "the stern plate cut round its door: %d pieces" % h.cap_plates.size())
 	var glass := kit.model.parts.values().filter(func(p): return p.kind == PartData.Kind.GLASS)
 	check(glass.size() >= 3, "glass panels over the bridge: %d" % glass.size())
+	check(int(names.get("DeckBeam", 0)) > 0 and int(names.get("DeckPlate", 0)) > 0 and int(names.get("DeckGirder", 0)) > 0,
+			"a deck frame under the rooms: beams, girders and plates")
+	check(int(names.get("Stud", 0)) > 0 and int(names.get("WallPanel", 0)) > 0 and int(names.get("StudLintel", 0)) > 0,
+			"inner walls as stud walls, a lintel over each door")
+	var decks: Array = h.get_meta("decks")
+	var walls: Array = h.get_meta("walls")
+	check(decks.size() == 2 and (decks[1] as DeckFrame).openings.is_empty() and walls.size() >= 3,
+			"a deck frame on each deck, %d stud walls" % walls.size())
+	var bolted: int = kit.model.connections.filter(func(c): return c.kind == ConnectionData.Kind.BOLT).size()
+	check(bolted > 20, "the wall panels bolted on: %d bolts" % bolted)
 	var ring: PartData = h.rings[2][DesignFrame.STARBOARD]
 	check(DesignFrame.describe(ring).begins_with("Frame ring, frame 2, starboard side"), DesignFrame.describe(ring))
 	body.free()
@@ -79,6 +89,9 @@ func run_tests() -> void:
 	var welds: Array = t.lines.filter(func(l): return l.id == "welds")
 	check(welds.size() == 1 and int(welds[0].qty) == int(fc.welds) and float(welds[0].cost) > 0.0,
 			"the welds are on the parts list and priced: %s" % [welds])
+	var bolts: Array = t.lines.filter(func(l): return l.id == "bolts")
+	check(bolts.size() == 1 and int(bolts[0].qty) == int(fc.bolts) and int(fc.studs) > 0 and int(fc.deck_plates) > 0,
+			"the walls' bolts, studs and the deck plates counted: %s" % [fc])
 
 	# Designers change it: closer frames, a heavier frame. Undo takes it back.
 	bus.editor.do({"op": "set_meta", "fields": {"structure": {"spacing": 1.0, "frame": "heavy"}}})

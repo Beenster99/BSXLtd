@@ -169,12 +169,13 @@ class Runner:
 		var st: Array = plan.stations
 		var mid := Vector3(0, 1.5, (float(st[0].z) + float(st[st.size() - 1].z)) * 0.5)
 		var model: PartModel = b.get("frame_model")
-		for shot in [["frame_outside", 0.9, 0.3, 17.0, false], ["frame_skeleton", 0.9, 0.3, 17.0, true]]:
+		var skin_names := ["HullPlate", "CapPlate", "WindowPane"]
+		for shot in [["frame_outside", 0.9, 0.3, 17.0, []], ["frame_skeleton", 0.9, 0.3, 17.0, skin_names],
+				["frame_inner", 0.6, 0.55, 12.0, skin_names + ["WallPanel", "DeckPlate"]]]:
 			for p: PartData in model.parts.values():
-				var skin: bool = p.part_name in ["HullPlate", "CapPlate"] or p.kind == PartData.Kind.GLASS
 				var vis := model.part_visual(p.id)
 				if vis:
-					vis.visible = not (skin and shot[4])
+					vis.visible = not (p.part_name in shot[4] or p.kind == PartData.Kind.GLASS and not (shot[4] as Array).is_empty())
 			var yaw: float = shot[1]
 			var up := float(shot[3]) * float(shot[2])
 			walk.body.position = mid + Vector3(sin(yaw), 0, cos(yaw)) * float(shot[3]) + Vector3(0, up, 0)
@@ -182,6 +183,16 @@ class Runner:
 			walk.camera.rotation.x = -atan2(up, float(shot[3]))
 			await _frames(20)
 			await _save(out, shot[0])
+		for p: PartData in model.parts.values():
+			var vis := model.part_visual(p.id)
+			if vis:
+				vis.visible = true
+		# Inside: the corridor, looking along it at the stud walls and the deck plates.
+		walk.body.position = Vector3(0.0, 1.0, 3.2)
+		walk.body.rotation.y = 0.35
+		walk.camera.rotation.x = -0.25
+		await _frames(20)
+		await _save(out, "frame_room")
 		room.furnishing.close_walk()
 
 	## The furnished design room inside the orbital yard's station.
