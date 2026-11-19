@@ -3,9 +3,9 @@ extends RefCounted
 ## should be more functional, android style ... heavy bots with arms which articulate to help
 ## them do their work, holding objects and welding, riveting or bolting objects in place"):
 ## TartanCo's heavy work android, one core in four trades, after beenster's reference sheets.
-## A deep chest of layered plates over a ribbed waist, big ochre pauldrons with TartanCo's
-## tartan on their faces, a visored head with stereo work lamps, a backpack with RCS pods at its
-## corners and the trade's own kit, two arms (shoulder, upper arm, elbow, forearm, a tool on a
+## A deep chest of rounded plates over a ribbed waist, big rounded ochre pauldrons, a domed
+## visored head with stereo work lamps, a backpack with RCS pods at its corners and the trade's
+## own kit, two arms (shoulder, upper arm, elbow, forearm, a tool on a
 ## quick-change wrist) and two legs (hip, thigh, knee, shin, a magnetic clamp foot):
 ##   W-3 the welder:   a gimballed torch on an umbilical from two consumable tanks
 ##   R-3 the riveter:  a force-controlled rivet gun fed by a belt from the drum on its back
@@ -52,7 +52,6 @@ static var _meshes: Dictionary = {}
 static var _liveries: Dictionary = {}
 static var _hose_mesh: CylinderMesh
 static var _belt_mesh: BoxMesh
-static var _tartan: StandardMaterial3D
 static var _laser_mat: StandardMaterial3D
 
 
@@ -74,37 +73,6 @@ static func livery(brand: Dictionary = LIVERY) -> ShaderMaterial:
 		mat.set_shader_parameter("light_energy", 2.4)
 		_liveries[id] = mat
 	return _liveries[id]
-
-
-## TartanCo's own sett, woven 2/2: a red ground, navy and green bands, a yellow over-check.
-static func tartan_image() -> Image:
-	var sett := [
-		[Color(0.6, 0.07, 0.09), 8], [Color(0.07, 0.09, 0.24), 4], [Color(0.6, 0.07, 0.09), 2],
-		[Color(0.05, 0.27, 0.13), 6], [Color(0.95, 0.78, 0.2), 1], [Color(0.05, 0.27, 0.13), 6],
-		[Color(0.6, 0.07, 0.09), 2], [Color(0.07, 0.09, 0.24), 3],
-	]
-	var threads: Array[Color] = []
-	for s: Array in sett:
-		for i in int(s[1]):
-			threads.append(s[0])
-	var n := threads.size()
-	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
-	for y in n:
-		for x in n:
-			var warp := ((x + y) / 2) % 2 == 0
-			var c: Color = threads[x] if warp else threads[y]
-			img.set_pixel(x, y, c.lerp(threads[x].lerp(threads[y], 0.5), 0.3))
-	return img
-
-
-static func tartan_material() -> StandardMaterial3D:
-	if _tartan == null:
-		_tartan = StandardMaterial3D.new()
-		_tartan.albedo_texture = ImageTexture.create_from_image(tartan_image())
-		_tartan.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-		_tartan.uv1_scale = Vector3(1.5, 1.5, 1.0)
-		_tartan.roughness = 0.75
-	return _tartan
 
 
 ## A worker of trade `role` ("F", "W", "R", "B" or TartanCo's "E"), numbered `number`. Its
@@ -137,28 +105,16 @@ static func make(role: String, number: String) -> Node3D:
 		_mesh(n, "Thigh" + side, m.thigh, mat)
 		_mesh(n, "Shin" + side, m.shin, mat)
 		_mesh(n, "Foot" + side, m.foot, mat)
-	# TartanCo's tartan on each pauldron's outer face and on the backpack's lid.
-	for t: Array in [[Vector3(SHOULDER.x + 0.272, SHOULDER.y + 0.1, SHOULDER.z), PI * 0.5, Vector2(0.42, 0.18)],
-			[Vector3(-SHOULDER.x - 0.272, SHOULDER.y + 0.1, SHOULDER.z), -PI * 0.5, Vector2(0.42, 0.18)]]:
-		var q := MeshInstance3D.new()
-		q.name = "Tartan"
-		var qm := QuadMesh.new()
-		qm.size = t[2]
-		q.mesh = qm
-		q.material_override = tartan_material()
-		q.position = t[0]
-		q.rotation.y = t[1]
-		n.add_child(q)
 	# Its code and number in the chest's inset, the maker's name on the pauldrons and backpack (a
 	# label reads from its +Z: the chest's is turned to face forward, -Z).
 	var dark := (spec.livery.plates as Color).get_luminance() < 0.5
 	var ink := Color(0.95, 0.95, 0.95) if dark else Color(0.08, 0.08, 0.09)
 	var lit := Color(0.94, 0.93, 0.9)
-	for t: Array in [[spec.code, Vector3(0, 0.75, -0.385), PI, 0.0024, lit],
-			[number, Vector3(0, 0.62, -0.385), PI, 0.0015, (spec.livery.accent as Color).lightened(0.2)],
-			[MAKER, Vector3(0, 0.36, 0.59), 0.0, 0.0016, Color(0.92, 0.92, 0.9)],
-			[MAKER, Vector3(SHOULDER.x + 0.274, SHOULDER.y - 0.06, SHOULDER.z), PI * 0.5, 0.0012, ink],
-			[MAKER, Vector3(-SHOULDER.x - 0.274, SHOULDER.y - 0.06, SHOULDER.z), -PI * 0.5, 0.0012, ink]]:
+	for t: Array in [[spec.code, Vector3(0, 0.75, -0.392), PI, 0.0024, lit],
+			[number, Vector3(0, 0.62, -0.392), PI, 0.0015, (spec.livery.accent as Color).lightened(0.2)],
+			[MAKER, Vector3(0, 0.36, 0.597), 0.0, 0.0016, Color(0.92, 0.92, 0.9)],
+			[MAKER, Vector3(SHOULDER.x + 0.295, SHOULDER.y + 0.1, SHOULDER.z), PI * 0.5, 0.0009, ink],
+			[MAKER, Vector3(-SHOULDER.x - 0.295, SHOULDER.y + 0.1, SHOULDER.z), -PI * 0.5, 0.0009, ink]]:
 		var tag := Label3D.new()
 		tag.name = "Code" if t[0] == spec.code else ("Number" if t[0] == number else "Maker")
 		tag.text = t[0]
@@ -423,14 +379,47 @@ static func _build() -> Dictionary:
 	return m.meshes()
 
 
-## Pelvis, waist, chest and the shoulders' armour (the limbs and the backpack are their own).
+## A rounded shell (a superellipsoid) centred at `at`, `size` across: `e.x` rounds it top to
+## bottom, `e.y` round its sides (1 an ellipsoid, towards 0 a box with soft edges), smooth.
+static func _shell(m: YardToolMesh, key: String, stock: String, at: Vector3, size: Vector3, e := Vector2(0.5, 0.5), basis := Basis(), seg := 18, rings := 12) -> void:
+	var h := size * 0.5
+	var f := func(w: float, p: float) -> float: return signf(w) * pow(absf(w), p)
+	var pt := func(i: int, j: int) -> Array:
+		var phi := -PI * 0.5 + PI * j / rings
+		var th := TAU * i / seg
+		var cp := cos(phi)
+		var sp := sin(phi)
+		var ct := cos(th)
+		var st := sin(th)
+		var p := Vector3(h.x * f.call(cp, e.x) * f.call(ct, e.y), h.y * f.call(sp, e.x), h.z * f.call(cp, e.x) * f.call(st, e.y))
+		var n := Vector3(f.call(cp, 2.0 - e.x) * f.call(ct, 2.0 - e.y) / h.x, f.call(sp, 2.0 - e.x) / h.y,
+				f.call(cp, 2.0 - e.x) * f.call(st, 2.0 - e.y) / h.z)
+		return [at + basis * p, (basis * n).normalized()]
+	for j in rings:
+		for i in seg:
+			var q: Array = [pt.call(i, j), pt.call(i + 1, j), pt.call(i + 1, j + 1), pt.call(i, j + 1)]
+			for t: Array in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]:
+				var a: Vector3 = t[0][0]
+				var b: Vector3 = t[1][0]
+				var c: Vector3 = t[2][0]
+				var flat := (b - a).cross(c - a)
+				if flat.length_squared() < 1e-12:
+					continue
+				if flat.dot((a + b + c) / 3.0 - at) < 0.0:
+					m._tri(key, stock, a, c, b, t[0][1], t[2][1], t[1][1])
+				else:
+					m._tri(key, stock, a, b, c, t[0][1], t[1][1], t[2][1])
+
+
+## Pelvis, waist, chest and the shoulders' armour (the limbs and the backpack are their own),
+## all in rounded shells.
 static func _body(m: YardToolMesh) -> void:
 	# Pelvis and hip housings.
-	m.box("body", "trim", Vector3(0, -0.12, 0), Vector3(0.64, 0.26, 0.46), 0.06)
-	m.box("body", "plates", Vector3(0, -0.12, -0.21), Vector3(0.44, 0.22, 0.08), 0.03)
-	m.box("body", "accent", Vector3(0, -0.15, -0.255), Vector3(0.22, 0.1, 0.02), 0.008)
+	_shell(m, "body", "trim", Vector3(0, -0.12, 0), Vector3(0.66, 0.28, 0.48), Vector2(0.5, 0.45))
+	_shell(m, "body", "plates", Vector3(0, -0.12, -0.2), Vector3(0.44, 0.22, 0.1), Vector2(0.5, 0.5))
+	_shell(m, "body", "accent", Vector3(0, -0.15, -0.25), Vector3(0.22, 0.1, 0.03), Vector2(0.5, 0.5))
 	for sx: float in [1.0, -1.0]:
-		m.box("body", "plates", Vector3(sx * 0.34, -0.08, 0), Vector3(0.1, 0.3, 0.4), 0.035)
+		_shell(m, "body", "plates", Vector3(sx * 0.34, -0.08, 0), Vector3(0.12, 0.32, 0.4), Vector2(0.6, 0.6))
 		m.rod("body", "dark", Vector3(sx * 0.14, HIP.y, 0), Vector3(sx * 0.4, HIP.y, 0), 0.13, -1.0, 22)
 		m.ring("body", "steel", Vector3(sx * 0.4, HIP.y, 0), 0.1, 0.014, Vector3.RIGHT, 20, 5)
 	# The waist: ribbed and dark, a pivot under the chest.
@@ -439,91 +428,80 @@ static func _body(m: YardToolMesh) -> void:
 		m.ring("body", "dark", Vector3(0, 0.05 + k * 0.055, 0), 0.26 + k * 0.006, 0.014, Vector3.UP, 28, 6)
 	for sx: float in [1.0, -1.0]:
 		m.rod("body", "steel", Vector3(sx * 0.2, -0.02, -0.14), Vector3(sx * 0.24, 0.4, -0.16), 0.022, -1.0, 10)
-	# The chest: a deep core, then the plates layered over it, an inset for the trade's code.
-	m.box("body", "trim", Vector3(0, 0.68, 0.02), Vector3(1.08, 0.72, 0.72), 0.08)
-	m.box("body", "plates", Vector3(0, 0.72, -0.31), Vector3(0.88, 0.56, 0.12), 0.07)
-	m.box("body", "dark", Vector3(0, 0.7, -0.37), Vector3(0.36, 0.3, 0.02), 0.01)
-	m.box("body", "plates", Vector3(0, 0.42, -0.29), Vector3(0.66, 0.16, 0.12), 0.05)
+	# The chest: a deep rounded core, the breastplate over it, an inset for the trade's code.
+	_shell(m, "body", "trim", Vector3(0, 0.68, 0.02), Vector3(1.08, 0.74, 0.74), Vector2(0.55, 0.5), Basis(), 24, 14)
+	_shell(m, "body", "plates", Vector3(0, 0.72, -0.3), Vector3(0.9, 0.58, 0.16), Vector2(0.45, 0.45), Basis(), 24, 14)
+	_shell(m, "body", "dark", Vector3(0, 0.69, -0.37), Vector3(0.36, 0.3, 0.03), Vector2(0.4, 0.4))
+	_shell(m, "body", "plates", Vector3(0, 0.42, -0.28), Vector3(0.66, 0.18, 0.14), Vector2(0.6, 0.5))
 	for sx: float in [1.0, -1.0]:
-		# Ochre armour over the ribs and the chest's flanks, vents and bolts.
-		m.box("body", "accent", Vector3(sx * 0.33, 0.7, -0.375), Vector3(0.18, 0.4, 0.04), 0.03)
-		m.box("body", "plates", Vector3(sx * 0.47, 0.64, 0.02), Vector3(0.14, 0.54, 0.6), 0.05)
+		# Ochre armour over the ribs and rounded flanks, vents and bolts.
+		_shell(m, "body", "accent", Vector3(sx * 0.34, 0.7, -0.36), Vector3(0.18, 0.42, 0.06), Vector2(0.5, 0.5))
+		_shell(m, "body", "plates", Vector3(sx * 0.46, 0.64, 0.02), Vector3(0.16, 0.56, 0.62), Vector2(0.55, 0.55))
 		for k in 4:
-			m.box("body", "dark", Vector3(sx * 0.545, 0.5 + k * 0.07, 0.12), Vector3(0.01, 0.03, 0.26), 0.004)
-		for y: float in [0.46, 0.94]:
-			for z: float in [-0.2, 0.24]:
-				m.bolt("body", Vector3(sx * 0.542, y, z), Vector3(sx, 0, 0), 0.014)
-		m.bolt("body", Vector3(sx * 0.24, 0.96, -0.374), Vector3.FORWARD, 0.014)
-		m.bolt("body", Vector3(sx * 0.24, 0.48, -0.374), Vector3.FORWARD, 0.014)
-	for y: float in [0.5, 0.92]:
-		m.box("body", "dark", Vector3(0, y, -0.373), Vector3(0.18, 0.006, 0.006), 0.002)
-	m.box("body", "dark", Vector3(0, 1.02, -0.3), Vector3(0.42, 0.05, 0.08), 0.014)
+			m.rod("body", "dark", Vector3(sx * 0.538, 0.5 + k * 0.07, 0.0), Vector3(sx * 0.538, 0.5 + k * 0.07, 0.22), 0.012, -1.0, 8)
+		m.bolt("body", Vector3(sx * 0.24, 0.96, -0.36), Vector3.FORWARD, 0.014)
+		m.bolt("body", Vector3(sx * 0.24, 0.48, -0.36), Vector3.FORWARD, 0.014)
+	m.rod("body", "dark", Vector3(-0.2, 1.0, -0.3), Vector3(0.2, 1.0, -0.3), 0.03, -1.0, 12)
 	# Collar and neck.
 	m.rod("body", "dark", Vector3(0, 0.98, -0.04), Vector3(0, 1.12, -0.04), 0.14, 0.11, 20)
 	m.ring("body", "gunmetal", Vector3(0, 1.02, -0.04), 0.22, 0.035, Vector3.UP, 24, 6)
 	for sx: float in [1.0, -1.0]:
 		m.rod("body", "steel", Vector3(sx * 0.16, 0.98, 0.04), Vector3(sx * 0.07, 1.12, -0.02), 0.022, -1.0, 8)
-	# The pauldrons: a heavy ochre shell in layers over the shoulder's joint housing.
+	# The pauldrons: a heavy rounded ochre shell in layers over the shoulder's joint housing.
 	for sx: float in [1.0, -1.0]:
 		var s := Vector3(SHOULDER.x * sx, SHOULDER.y, SHOULDER.z)
 		m.rod("body", "dark", s - Vector3(sx * 0.2, 0, 0), s + Vector3(sx * 0.04, 0, 0), 0.17, -1.0, 24)
-		m.box("body", "accent", s + Vector3(sx * 0.04, 0.12, 0), Vector3(0.44, 0.3, 0.56), 0.1)
-		m.box("body", "plates", s + Vector3(sx * 0.02, 0.29, 0), Vector3(0.36, 0.08, 0.46), 0.035)
-		m.box("body", "accent", s + Vector3(sx * 0.18, -0.06, 0), Vector3(0.14, 0.2, 0.5), 0.05)
-		m.box("body", "dark", s + Vector3(sx * 0.248, 0.08, 0), Vector3(0.01, 0.24, 0.44), 0.004)
-		m.box("body", "dark", s + Vector3(sx * 0.04, 0.12, -0.285), Vector3(0.3, 0.2, 0.01), 0.004)
-		for z: float in [-0.2, 0.2]:
-			m.bolt("body", s + Vector3(sx * 0.25, 0.22, z), Vector3(sx, 0, 0), 0.016)
+		_shell(m, "body", "accent", s + Vector3(sx * 0.05, 0.1, 0), Vector3(0.46, 0.38, 0.58), Vector2(0.7, 0.65), Basis(), 24, 14)
+		_shell(m, "body", "plates", s + Vector3(sx * 0.03, 0.27, 0), Vector3(0.38, 0.12, 0.48), Vector2(0.6, 0.6))
+		_shell(m, "body", "accent", s + Vector3(sx * 0.15, -0.08, 0), Vector3(0.18, 0.2, 0.5), Vector2(0.7, 0.6))
+		m.ring("body", "dark", s + Vector3(sx * 0.05, 0.1, 0), 0.24, 0.012, Vector3.RIGHT, 28, 5)
 
 
-## The head: a helmet block, a visor band with two stereo lamps, sensor pods each side, an
+## The head: a domed helmet, a visor band with two stereo lamps, sensor pods each side, an
 ## antenna; the fitter's ("head_F") also has its alignment laser over its brow.
 static func _head(m: YardToolMesh, key: String) -> void:
-	m.box(key, "plates", Vector3(0, 0.15, 0.02), Vector3(0.4, 0.32, 0.42), 0.07)
-	m.box(key, "accent", Vector3(0, 0.32, 0.02), Vector3(0.26, 0.04, 0.32), 0.015)
-	m.box(key, "dark", Vector3(0, 0.13, -0.19), Vector3(0.34, 0.14, 0.05), 0.02)
-	m.box(key, "glass", Vector3(0, 0.13, -0.215), Vector3(0.3, 0.09, 0.01), 0.004)
+	_shell(m, key, "plates", Vector3(0, 0.16, 0.02), Vector3(0.4, 0.36, 0.42), Vector2(0.7, 0.6), Basis(), 22, 14)
+	_shell(m, key, "accent", Vector3(0, 0.3, 0.02), Vector3(0.12, 0.1, 0.4), Vector2(0.7, 0.7))
+	_shell(m, key, "dark", Vector3(0, 0.13, -0.17), Vector3(0.34, 0.15, 0.1), Vector2(0.55, 0.6))
+	_shell(m, key, "glass", Vector3(0, 0.13, -0.2), Vector3(0.3, 0.09, 0.05), Vector2(0.5, 0.5))
 	m.box(key, "cyan", Vector3(0, 0.085, -0.222), Vector3(0.22, 0.008, 0.004), 0.002)
 	for sx: float in [1.0, -1.0]:
 		m.rod(key, "dark", Vector3(sx * 0.09, 0.14, -0.2), Vector3(sx * 0.09, 0.14, -0.235), 0.04, -1.0, 16)
 		m.rod(key, "lamp", Vector3(sx * 0.09, 0.14, -0.235), Vector3(sx * 0.09, 0.14, -0.242), 0.03, -1.0, 16)
-		m.box(key, "trim", Vector3(sx * 0.225, 0.14, 0.02), Vector3(0.06, 0.2, 0.3), 0.02)
-		m.rod(key, "gunmetal", Vector3(sx * 0.25, 0.14, -0.04), Vector3(sx * 0.29, 0.14, -0.04), 0.06, 0.05, 16)
+		_shell(m, key, "trim", Vector3(sx * 0.2, 0.14, 0.02), Vector3(0.08, 0.22, 0.3), Vector2(0.6, 0.6))
+		m.rod(key, "gunmetal", Vector3(sx * 0.23, 0.14, -0.04), Vector3(sx * 0.29, 0.14, -0.04), 0.06, 0.05, 16)
 		m.rod(key, "cyan", Vector3(sx * 0.29, 0.14, -0.04), Vector3(sx * 0.295, 0.14, -0.04), 0.03, -1.0, 12)
-	m.box(key, "dark", Vector3(0, 0.02, -0.12), Vector3(0.24, 0.06, 0.14), 0.015)
-	m.rod(key, "dark", Vector3(0.13, 0.3, 0.16), Vector3(0.13, 0.54, 0.18), 0.008, 0.004, 8)
+	_shell(m, key, "dark", Vector3(0, 0.02, -0.12), Vector3(0.24, 0.07, 0.14), Vector2(0.6, 0.6))
+	m.rod(key, "dark", Vector3(0.13, 0.28, 0.16), Vector3(0.13, 0.54, 0.18), 0.008, 0.004, 8)
 	m.rod(key, "red_lamp", Vector3(0.13, 0.54, 0.18), Vector3(0.13, 0.56, 0.18), 0.014, -1.0, 8)
 	if key == "head_F":
-		m.box(key, "trim", LASER + Vector3(0, -0.01, 0.06), Vector3(0.12, 0.08, 0.18), 0.02)
+		_shell(m, key, "trim", LASER + Vector3(0, -0.01, 0.06), Vector3(0.12, 0.08, 0.18), Vector2(0.6, 0.6))
 		m.rod(key, "steel", LASER + Vector3(0, 0, 0.0), LASER + Vector3(0, 0, -0.04), 0.03, -1.0, 12)
 		m.rod(key, "red_lamp", LASER + Vector3(0, 0, -0.04), LASER + Vector3(0, 0, -0.045), 0.016, -1.0, 10)
 		m.rod(key, "glass", LASER + Vector3(0.06, 0, 0.0), LASER + Vector3(0.06, 0, -0.03), 0.022, -1.0, 12)
 
 
 ## One arm's two bones, each hanging along -Y from its joint (mirrors as it is): an actuator
-## core with plates over it, pistons, a big elbow, a forearm in ochre armour, umbilicals.
+## core with rounded plates over it, pistons, a big elbow, a forearm in ochre armour, umbilicals.
 static func _arm(m: YardToolMesh) -> void:
 	m.rod("upper", "gunmetal", Vector3.ZERO, Vector3(0, -UPPER, 0), 0.09, 0.08, 18)
-	m.box("upper", "plates", Vector3(0, -0.27, -0.01), Vector3(0.28, 0.38, 0.27), 0.06)
-	m.box("upper", "accent", Vector3(0, -0.2, -0.15), Vector3(0.18, 0.16, 0.03), 0.01)
-	m.box("upper", "dark", Vector3(0.145, -0.28, -0.01), Vector3(0.012, 0.26, 0.17), 0.004)
+	_shell(m, "upper", "plates", Vector3(0, -0.27, -0.01), Vector3(0.28, 0.4, 0.27), Vector2(0.55, 0.9))
+	_shell(m, "upper", "accent", Vector3(0, -0.2, -0.135), Vector3(0.16, 0.16, 0.05), Vector2(0.6, 0.6))
 	for sx: float in [1.0, -1.0]:
 		m.rod("upper", "dark", Vector3(sx * 0.1, -0.08, 0.14), Vector3(sx * 0.1, -0.3, 0.15), 0.03, -1.0, 10)
 		m.rod("upper", "steel", Vector3(sx * 0.1, -0.3, 0.15), Vector3(sx * 0.1, -0.54, 0.12), 0.018, -1.0, 8)
 	m.rod("upper", "dark", Vector3(-0.15, -UPPER, 0), Vector3(0.15, -UPPER, 0), 0.12, -1.0, 22)
 	for sx: float in [1.0, -1.0]:
 		m.ring("upper", "steel", Vector3(sx * 0.152, -UPPER, 0), 0.08, 0.014, Vector3.RIGHT, 18, 5)
-	m.box("upper", "plates", Vector3(0, -UPPER + 0.02, 0.1), Vector3(0.2, 0.14, 0.08), 0.03)
+	_shell(m, "upper", "plates", Vector3(0, -UPPER + 0.02, 0.1), Vector3(0.2, 0.16, 0.1), Vector2(0.7, 0.7))
 	m.rod("fore", "gunmetal", Vector3.ZERO, Vector3(0, -FORE, 0), 0.08, 0.07, 18)
-	m.box("fore", "accent", Vector3(0, -0.28, -0.02), Vector3(0.32, 0.42, 0.3), 0.07)
-	m.box("fore", "plates", Vector3(0, -0.28, 0.14), Vector3(0.26, 0.36, 0.06), 0.03)
-	m.box("fore", "dark", Vector3(0, -0.36, -0.175), Vector3(0.18, 0.18, 0.02), 0.006)
-	m.box("fore", "trim", Vector3(0, -0.12, -0.17), Vector3(0.22, 0.05, 0.03), 0.01)
-	m.box("fore", "dark", Vector3(0.165, -0.3, -0.02), Vector3(0.012, 0.28, 0.2), 0.004)
-	m.box("fore", "dark", Vector3(-0.165, -0.3, -0.02), Vector3(0.012, 0.28, 0.2), 0.004)
+	_shell(m, "fore", "accent", Vector3(0, -0.28, -0.02), Vector3(0.32, 0.44, 0.3), Vector2(0.55, 0.85))
+	_shell(m, "fore", "plates", Vector3(0, -0.28, 0.12), Vector3(0.24, 0.36, 0.08), Vector2(0.6, 0.7))
+	_shell(m, "fore", "dark", Vector3(0, -0.36, -0.16), Vector3(0.16, 0.16, 0.04), Vector2(0.6, 0.6))
+	m.ring("fore", "trim", Vector3(0, -0.1, -0.02), 0.13, 0.02, Vector3.UP, 24, 6)
 	for k in 3:
-		m.box("fore", "rubber", Vector3(0.0, -0.08 - k * 0.15, 0.2), Vector3(0.06, 0.02, 0.04), 0.004)
-	m.rod("fore", "rubber", Vector3(0.06, -0.04, 0.19), Vector3(0.06, -0.52, 0.17), 0.022, -1.0, 10)
+		m.box("fore", "rubber", Vector3(0.0, -0.08 - k * 0.15, 0.17), Vector3(0.06, 0.02, 0.04), 0.008)
+	m.rod("fore", "rubber", Vector3(0.06, -0.04, 0.17), Vector3(0.06, -0.52, 0.15), 0.022, -1.0, 10)
 	m.rod("fore", "dark", Vector3(0, -0.5, 0), Vector3(0, -FORE, 0), 0.095, -1.0, 20)
 	m.ring("fore", "accent", Vector3(0, -FORE + 0.01, 0), 0.095, 0.012, Vector3.UP, 20, 5)
 
@@ -532,59 +510,60 @@ static func _arm(m: YardToolMesh) -> void:
 ## armour facing -Z, forward), the clamp foot stands on its sole with its toe to -Z.
 static func _leg(m: YardToolMesh) -> void:
 	m.rod("thigh", "gunmetal", Vector3.ZERO, Vector3(0, -THIGH, 0), 0.11, 0.095, 18)
-	m.box("thigh", "plates", Vector3(0, -0.26, -0.03), Vector3(0.3, 0.42, 0.3), 0.06)
-	m.box("thigh", "accent", Vector3(0, -0.24, -0.185), Vector3(0.2, 0.26, 0.03), 0.012)
-	m.box("thigh", "dark", Vector3(0.155, -0.28, -0.03), Vector3(0.012, 0.3, 0.2), 0.004)
-	m.box("thigh", "dark", Vector3(-0.155, -0.28, -0.03), Vector3(0.012, 0.3, 0.2), 0.004)
+	_shell(m, "thigh", "plates", Vector3(0, -0.26, -0.03), Vector3(0.3, 0.44, 0.3), Vector2(0.55, 0.9))
+	_shell(m, "thigh", "accent", Vector3(0, -0.24, -0.165), Vector3(0.18, 0.26, 0.06), Vector2(0.6, 0.6))
 	m.rod("thigh", "steel", Vector3(0, -0.06, 0.15), Vector3(0, -0.5, 0.13), 0.026, -1.0, 10)
 	m.rod("thigh", "dark", Vector3(-0.14, -THIGH, 0), Vector3(0.14, -THIGH, 0), 0.12, -1.0, 22)
-	m.box("shin", "accent", Vector3(0, -0.02, -0.12), Vector3(0.22, 0.2, 0.1), 0.04)
+	# A domed knee cap over the joint.
+	_shell(m, "shin", "accent", Vector3(0, -0.02, -0.11), Vector3(0.22, 0.22, 0.12), Vector2(0.8, 0.8))
 	m.rod("shin", "gunmetal", Vector3.ZERO, Vector3(0, -SHIN, 0), 0.09, 0.08, 18)
-	m.box("shin", "plates", Vector3(0, -0.3, -0.05), Vector3(0.28, 0.4, 0.24), 0.06)
-	m.box("shin", "trim", Vector3(0, -0.3, 0.1), Vector3(0.18, 0.34, 0.08), 0.02)
-	m.box("shin", "accent", Vector3(0, -0.36, -0.175), Vector3(0.16, 0.12, 0.02), 0.008)
+	_shell(m, "shin", "plates", Vector3(0, -0.3, -0.04), Vector3(0.28, 0.42, 0.26), Vector2(0.55, 0.85))
+	_shell(m, "shin", "trim", Vector3(0, -0.3, 0.09), Vector3(0.18, 0.34, 0.1), Vector2(0.6, 0.7))
+	_shell(m, "shin", "accent", Vector3(0, -0.36, -0.165), Vector3(0.14, 0.12, 0.04), Vector2(0.6, 0.6))
 	for sx: float in [1.0, -1.0]:
 		m.rod("shin", "steel", Vector3(sx * 0.15, -0.12, 0.04), Vector3(sx * 0.15, -0.48, 0.04), 0.018, -1.0, 8)
 	m.rod("shin", "dark", Vector3(-0.11, -SHIN, 0), Vector3(0.11, -SHIN, 0), 0.09, -1.0, 18)
-	# The foot (origin at the ankle, sole ANKLE below): a heavy sole, a clamp jaw at the toe and
-	# heel, three magnetic pads.
-	m.box("foot", "dark", Vector3(0, -0.04, 0), Vector3(0.18, 0.12, 0.16), 0.03)
-	m.box("foot", "trim", Vector3(0, -0.11, -0.06), Vector3(0.3, 0.1, 0.48), 0.035)
-	m.box("foot", "accent", Vector3(0, -0.07, -0.25), Vector3(0.26, 0.08, 0.08), 0.02)
-	m.box("foot", "plates", Vector3(0, -0.05, -0.12), Vector3(0.2, 0.06, 0.18), 0.02)
+	# The foot (origin at the ankle, sole ANKLE below): a rounded heavy sole, a clamp jaw at the
+	# toe and heel, three magnetic pads.
+	_shell(m, "foot", "dark", Vector3(0, -0.04, 0), Vector3(0.18, 0.14, 0.18), Vector2(0.7, 0.7))
+	_shell(m, "foot", "trim", Vector3(0, -0.11, -0.06), Vector3(0.3, 0.11, 0.5), Vector2(0.45, 0.55))
+	_shell(m, "foot", "accent", Vector3(0, -0.07, -0.24), Vector3(0.26, 0.09, 0.1), Vector2(0.6, 0.6))
+	_shell(m, "foot", "plates", Vector3(0, -0.05, -0.12), Vector3(0.2, 0.07, 0.2), Vector2(0.6, 0.6))
 	for k in 3:
-		m.box("foot", "gunmetal", Vector3((k - 1) * 0.09, -0.15, -0.3), Vector3(0.06, 0.06, 0.08), 0.012)
-	m.box("foot", "gunmetal", Vector3(0, -0.15, 0.2), Vector3(0.16, 0.05, 0.06), 0.012)
+		_shell(m, "foot", "gunmetal", Vector3((k - 1) * 0.09, -0.15, -0.3), Vector3(0.06, 0.06, 0.08), Vector2(0.6, 0.6), Basis(), 10, 6)
+	_shell(m, "foot", "gunmetal", Vector3(0, -0.15, 0.2), Vector3(0.16, 0.05, 0.07), Vector2(0.6, 0.6), Basis(), 12, 6)
 	for p: Vector3 in [Vector3(-0.08, -0.16, -0.14), Vector3(0.08, -0.16, -0.14), Vector3(0, -0.16, 0.08)]:
 		m.rod("foot", "steel", p, p - Vector3(0, ANKLE - 0.16 + 0.012, 0), 0.055, 0.06, 16)
 
 
-## Each trade's backpack, on the frame they share: four RCS pods, status lamps, then the trade's
-## kit (the welder's tanks, the riveter's drum, the bolter's socket carousel, the fitter's rack
-## of spare effectors).
+## Each trade's backpack, on the frame they share: four rounded RCS pods, status lamps, then the
+## trade's kit (the welder's tanks, the riveter's drum, the bolter's socket carousel, the
+## fitter's rack of spare effectors).
 static func _pack(m: YardToolMesh, key: String) -> void:
-	m.box(key, "gunmetal", Vector3(0, 0.64, 0.44), Vector3(0.8, 0.86, 0.22), 0.04)
+	_shell(m, key, "gunmetal", Vector3(0, 0.64, 0.44), Vector3(0.8, 0.88, 0.24), Vector2(0.4, 0.4), Basis(), 22, 12)
 	for sx: float in [1.0, -1.0]:
 		for y: float in [1.04, 0.22]:
 			var pod := Vector3(sx * 0.5, y, 0.5)
 			m.rod(key, "dark", Vector3(sx * 0.36, y, 0.46), pod, 0.035, -1.0, 10)
-			m.box(key, "trim", pod, Vector3(0.17, 0.17, 0.19), 0.035)
+			_shell(m, key, "trim", pod, Vector3(0.18, 0.18, 0.2), Vector2(0.75, 0.75), Basis(), 14, 8)
 			m.rod(key, "dark", pod + Vector3(0, 0, 0.095), pod + Vector3(0, 0, 0.15), 0.05, 0.065, 12)
 			m.rod(key, "dark", pod + Vector3(sx * 0.085, 0, 0), pod + Vector3(sx * 0.14, 0, 0), 0.04, 0.055, 12)
 			m.rod(key, "dark", pod + Vector3(0, signf(y - 0.6) * 0.085, 0), pod + Vector3(0, signf(y - 0.6) * 0.14, 0), 0.04, 0.055, 12)
 	for k in 3:
 		m.box(key, "accent_light", Vector3(-0.402, 0.5 + k * 0.08, 0.4), Vector3(0.006, 0.04, 0.05), 0.002)
-	m.box(key, "dark", Vector3(0, 1.1, 0.5), Vector3(0.46, 0.08, 0.1), 0.02)
-	m.box(key, "plates", Vector3(0, 0.36, 0.565), Vector3(0.5, 0.14, 0.04), 0.015)
+	_shell(m, key, "dark", Vector3(0, 1.1, 0.5), Vector3(0.46, 0.09, 0.12), Vector2(0.6, 0.6))
+	_shell(m, key, "plates", Vector3(0, 0.36, 0.565), Vector3(0.5, 0.14, 0.05), Vector2(0.5, 0.5))
 	match key:
 		"pack_W":
 			for sx: float in [1.0, -1.0]:
 				m.rod(key, "steel", Vector3(sx * 0.2, 0.46, 0.64), Vector3(sx * 0.2, 1.0, 0.64), 0.13, -1.0, 22)
-				m.rod(key, "dark", Vector3(sx * 0.2, 1.0, 0.64), Vector3(sx * 0.2, 1.08, 0.64), 0.06, 0.045, 12)
-				m.rod(key, "brass", Vector3(sx * 0.2, 1.08, 0.64), Vector3(sx * 0.2, 1.12, 0.64), 0.03, -1.0, 10)
+				_shell(m, key, "steel", Vector3(sx * 0.2, 1.0, 0.64), Vector3(0.26, 0.12, 0.26), Vector2(0.9, 1.0), Basis(), 18, 8)
+				_shell(m, key, "steel", Vector3(sx * 0.2, 0.46, 0.64), Vector3(0.26, 0.12, 0.26), Vector2(0.9, 1.0), Basis(), 18, 8)
+				m.rod(key, "dark", Vector3(sx * 0.2, 1.04, 0.64), Vector3(sx * 0.2, 1.1, 0.64), 0.06, 0.045, 12)
+				m.rod(key, "brass", Vector3(sx * 0.2, 1.1, 0.64), Vector3(sx * 0.2, 1.14, 0.64), 0.03, -1.0, 10)
 				m.ring(key, "accent", Vector3(sx * 0.2, 0.58, 0.64), 0.132, 0.014, Vector3.UP, 22, 5)
 				m.ring(key, "accent", Vector3(sx * 0.2, 0.9, 0.64), 0.132, 0.014, Vector3.UP, 22, 5)
-			m.box(key, "trim", HOSE_PORT, Vector3(0.12, 0.12, 0.12), 0.025)
+			_shell(m, key, "trim", HOSE_PORT, Vector3(0.13, 0.13, 0.13), Vector2(0.7, 0.7))
 		"pack_R":
 			# The rivet drum, on its side behind the right shoulder, a magazine box beside it.
 			m.rod(key, "dark", Vector3(0.02, 0.7, 0.64), Vector3(0.36, 0.7, 0.64), 0.27, -1.0, 28)
@@ -594,27 +573,27 @@ static func _pack(m: YardToolMesh, key: String) -> void:
 				var a := TAU * k / 14.0
 				var p := Vector3(0.37, 0.7 + cos(a) * 0.19, 0.64 + sin(a) * 0.19)
 				m.rod(key, "brass", p - Vector3(0.01, 0, 0), p + Vector3(0.02, 0, 0), 0.02, -1.0, 6)
-			m.box(key, "plates", Vector3(-0.22, 0.7, 0.62), Vector3(0.24, 0.52, 0.24), 0.04)
-			m.box(key, "accent", Vector3(-0.22, 0.86, 0.745), Vector3(0.16, 0.08, 0.01), 0.004)
-			m.box(key, "trim", HOSE_PORT, Vector3(0.12, 0.12, 0.12), 0.025)
+			_shell(m, key, "plates", Vector3(-0.22, 0.7, 0.62), Vector3(0.24, 0.54, 0.26), Vector2(0.5, 0.55))
+			_shell(m, key, "accent", Vector3(-0.22, 0.86, 0.74), Vector3(0.16, 0.08, 0.03), Vector2(0.6, 0.6))
+			_shell(m, key, "trim", HOSE_PORT, Vector3(0.13, 0.13, 0.13), Vector2(0.7, 0.7))
 		"pack_B":
 			# The socket carousel: a lidded drum of spare sockets, a nut hopper below it.
 			m.rod(key, "plates", Vector3(0, 0.5, 0.66), Vector3(0, 0.98, 0.66), 0.25, 0.23, 24)
 			m.ring(key, "accent", Vector3(0, 0.98, 0.66), 0.23, 0.02, Vector3.UP, 24, 5)
-			m.rod(key, "dark", Vector3(0, 0.98, 0.66), Vector3(0, 1.03, 0.66), 0.18, 0.14, 20)
+			_shell(m, key, "dark", Vector3(0, 0.99, 0.66), Vector3(0.38, 0.1, 0.38), Vector2(0.8, 1.0), Basis(), 22, 8)
 			for k in 10:
 				var a := TAU * k / 10.0
 				var p := Vector3(cos(a) * 0.25, 0.66, 0.66 + sin(a) * 0.25)
 				m.rod(key, "steel", p, p + Vector3(0, 0.12, 0), 0.035, -1.0, 6)
-			m.box(key, "trim", Vector3(0.3, 0.34, 0.6), Vector3(0.16, 0.2, 0.18), 0.03)
+			_shell(m, key, "trim", Vector3(0.3, 0.34, 0.6), Vector3(0.17, 0.21, 0.19), Vector2(0.6, 0.6))
 		"pack_F":
 			# A rack of interchangeable effectors: two spare suction plates and a spare jaw.
-			m.box(key, "dark", Vector3(0, 0.72, 0.6), Vector3(0.66, 0.56, 0.12), 0.03)
+			_shell(m, key, "dark", Vector3(0, 0.72, 0.6), Vector3(0.66, 0.56, 0.13), Vector2(0.45, 0.45))
 			for sx: float in [1.0, -1.0]:
 				m.rod(key, "rubber", Vector3(sx * 0.17, 0.82, 0.66), Vector3(sx * 0.17, 0.82, 0.72), 0.1, 0.11, 18)
 				m.rod(key, "steel", Vector3(sx * 0.17, 0.82, 0.72), Vector3(sx * 0.17, 0.82, 0.73), 0.04, -1.0, 10)
-			m.box(key, "accent", Vector3(0, 0.54, 0.68), Vector3(0.3, 0.12, 0.06), 0.015)
-			m.box(key, "dark", Vector3(0, 0.54, 0.72), Vector3(0.1, 0.16, 0.04), 0.01)
+			_shell(m, key, "accent", Vector3(0, 0.54, 0.68), Vector3(0.3, 0.12, 0.07), Vector2(0.6, 0.6))
+			_shell(m, key, "dark", Vector3(0, 0.54, 0.72), Vector3(0.1, 0.16, 0.05), Vector2(0.6, 0.6))
 
 
 ## W-3's torch: a quick-change block, the gun body, a gimbal ring, a copper nozzle; the arc's tip

@@ -23,8 +23,8 @@ func _look() -> void:
 	for role: String in ["F", "W", "R", "B"]:
 		var bot := WorkerLook.make(role, "01")
 		add_child(bot)
-		var parts := ["UpperR", "ForeL", "HandR", "ThighR", "ShinL", "FootR", "Pack", "Tartan"]
-		check(parts.all(func(n: String) -> bool: return bot.has_node(n)), "%s has arms, legs, a pack and its tartan" % role)
+		var parts := ["UpperR", "ForeL", "HandR", "ThighR", "ShinL", "FootR", "Pack"]
+		check(parts.all(func(n: String) -> bool: return bot.has_node(n)), "%s has arms, legs, and a pack" % role)
 		check(String(bot.get_meta("tartanco_model")).begins_with(role) and String(bot.get_meta("serial")) != "",
 				"%s carries its TartanCo model and serial" % role)
 		var tip := bot.global_position + Vector3(0.3, 0.4, -1.2)
