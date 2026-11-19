@@ -19,3 +19,4 @@ crew = 0
 rooms = PackedStringArray("cargo", "workshop")
 access = 1.0
 lead_days = 1
+shared_part = "CargoRack"

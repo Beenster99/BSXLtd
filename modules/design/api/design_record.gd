@@ -26,6 +26,9 @@ extends RefCounted
 ##   {op = "remove_wall", id}
 ##   {op = "add_beam", beam = {id?, deck, a = [x, z], b = [x, z]}}   # a beam under the deckhead
 ##   {op = "remove_beam", id}
+##   {op = "add_mount", mount = {id?, type, deck, x, z, angle}}   # a part on the outside of the hull
+##   {op = "set_mount", id, fields = {...}}
+##   {op = "remove_mount", id}
 ##   {op = "add_layer", layer = {id?, name, visible?, order?}}   # a whiteboard layer
 ##   {op = "set_layer", id, fields = {name?, visible?, order?}}
 ##   {op = "remove_layer", id}           # its strokes go with it
@@ -65,6 +68,10 @@ var structure := {"frame": "standard", "spacing": 2.0, "hull": "standard", "inne
 ## deck with an outline must sit inside it, its sides are the outer hull, and the deck is
 ## plated all the way out to it. A deck with no outline is hulled round its rooms as before.
 var hull: Dictionary = {}
+## Parts fitted on the outside of the hull (thrusters, engines): id -> {id, type, deck, x, z,
+## angle}, (x, z) on the hull's side and `angle` the way its front faces (radians, from +X
+## towards +Z: the hull's outward normal where it was fitted).
+var mounts: Dictionary = {}
 ## Inner walls drawn anywhere: wall id -> {id, deck, a: [x, z], b: [x, z]}.
 var walls: Dictionary = {}
 ## Beams placed by hand under a deckhead: beam id -> {id, deck, a: [x, z], b: [x, z]}.
@@ -169,6 +176,19 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _remove_entry(walls, str(op.get("id", "")), "wall", "add_wall")
 		"remove_beam":
 			return _remove_entry(beams, str(op.get("id", "")), "beam", "add_beam")
+		"add_mount":
+			var m: Dictionary = op.get("mount", {}).duplicate()
+			if str(m.get("type", "")) == "":
+				return {}
+			m["deck"] = int(m.get("deck", 0))
+			m["x"] = float(m.get("x", 0.0))
+			m["z"] = float(m.get("z", 0.0))
+			m["angle"] = float(m.get("angle", 0.0))
+			return _add_entry(mounts, m, "h", "mount", "remove_mount")
+		"set_mount":
+			return _set_fields(mounts, str(op.get("id", "")), op.get("fields", {}), "set_mount")
+		"remove_mount":
+			return _remove_entry(mounts, str(op.get("id", "")), "mount", "add_mount")
 		"add_layer":
 			var layer: Dictionary = op.get("layer", {}).duplicate()
 			layer["name"] = str(layer.get("name", "Layer"))
@@ -470,7 +490,7 @@ func to_dict() -> Dictionary:
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
 		"runs": _sorted(runs), "structure": structure.duplicate(),
 		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
-		"hull": hull.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams),
+		"hull": hull.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts),
 	}
 
 
@@ -506,6 +526,10 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		var beam := bv.duplicate(true)
 		beam.deck = int(beam.get("deck", 0))
 		d.beams[str(beam.id)] = beam
+	for mv: Dictionary in data.get("mounts", []):
+		var m := mv.duplicate(true)
+		m.deck = int(m.get("deck", 0))
+		d.mounts[str(m.id)] = m
 	for l: Dictionary in data.get("sketch_layers", []):
 		var layer := l.duplicate()
 		layer.order = int(layer.get("order", 0))
@@ -518,7 +542,7 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		d.structure[k] = st[k]
 	d.structure.spacing = float(d.structure.spacing)
 	d._next = int(data.get("next", 1))
-	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams]:
+	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams, d.mounts]:
 		for eid: String in table:
 			d._bump_next(eid)
 	return d

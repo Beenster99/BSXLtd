@@ -5,7 +5,7 @@ extends RefCounted
 const ROOMS_DIR := "res://modules/design/internal/data/rooms"
 const PARTS_DIR := "res://modules/design/internal/data/components"
 ## Order rooms appear in on the palette.
-const ROOM_ORDER: PackedStringArray = ["bridge", "airlock", "corridor", "stairs", "quarters",
+const ROOM_ORDER: PackedStringArray = ["bridge", "airlock", "corridor", "stairs", "lift", "quarters",
 		"mess", "medbay", "cargo", "engineering", "reactor", "fuel", "workshop"]
 
 var rooms: Dictionary = {}  # id -> DesignRoomType
@@ -21,9 +21,12 @@ static func load_default() -> DesignCatalog:
 	for res in _load_dir(PARTS_DIR):
 		var p := res as DesignPartType
 		if p:
-			# A part built from a Void Salvage part takes its size as built.
+			# A part built from a Void Salvage part takes its size and mass as built.
 			if p.shared_part != "" and VsParts.has(p.shared_part):
 				p.size = VsParts.size(p.shared_part)
+				p.mass = VsParts.mass(p.shared_part)
+				if p.nozzle_down:
+					p.size = Vector3(p.size.x, p.size.z, p.size.y)
 			c.parts[p.id] = p
 	return c
 

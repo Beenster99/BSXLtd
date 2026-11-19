@@ -66,7 +66,7 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 	for k in keys:
 		t.lines.append(room_lines[k])
 	var part_lines := {}
-	for c: Dictionary in d.components.values():
+	for c: Dictionary in d.components.values() + d.mounts.values():
 		var pt := cat.part(str(c.type))
 		if pt == null:
 			continue

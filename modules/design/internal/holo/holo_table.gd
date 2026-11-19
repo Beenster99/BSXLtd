@@ -276,6 +276,17 @@ func _build_components(rec: DesignRecord, parent: Node3D) -> void:
 		var h := minf(pt.size.y, rec.deck_height - 0.1)
 		_box(parent, Vector3(f.get_center().x, y + h * 0.5 + 0.05, f.get_center().y),
 				Vector3(f.size.x, h, f.size.y), _mat(pt.colour, 0.3, 0.8))
+	# Parts on the hull stand out from its side.
+	for m: Dictionary in rec.mounts.values():
+		var mp := bus.catalog.part(str(m.type))
+		if mp == null:
+			continue
+		var n := Vector2.from_angle(float(m.angle))
+		var at := Vector2(float(m.x), float(m.z)) + n * mp.size.z * 0.5
+		var h := minf(mp.size.y, rec.deck_height - 0.1)
+		var box := _box(parent, Vector3(at.x, float(m.deck) * rec.deck_height + rec.deck_height * 0.5, at.y),
+				Vector3(mp.size.z, h, mp.size.x), _mat(mp.colour, 0.35, 0.9))
+		box.rotation.y = -float(m.angle)
 
 
 ## Wires (just under the deckhead) or pipes (just over the floor), and the risers between

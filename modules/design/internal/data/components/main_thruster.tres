@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "main_thruster"
+display_name = "Main thruster"
+short = "MTH"
+colour = Color(1.0, 0.55, 0.25, 1)
+size = Vector3(1.9, 1.8, 1.9)
+cost = 28000.0
+mass = 2600.0
+build_hours = 16.0
+power = -20.0
+fuel = -1
+thrust = 150.0
+hull_mount = true
+nozzle_down = true
+crew = 0
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 5
+shared_part = "MainThruster"

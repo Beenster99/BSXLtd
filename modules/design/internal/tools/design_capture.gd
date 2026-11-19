@@ -118,6 +118,9 @@ class Runner:
 		ed.do({"op": "set_hull", "deck": 0, "points": [[-8, -6.5], [-3, -11.5], [3.5, -11.5], [8, -3], [8, 6], [-8, 6]]})
 		ed.do({"op": "add_wall", "wall": {"deck": 0, "a": [-8, 2], "b": [-3, 2]}})
 		ed.do({"op": "add_beam", "beam": {"deck": 0, "a": [-6, -7], "b": [-2, -7]}})
+		for x in [-4.5, 4.5]:
+			ed.do({"op": "add_mount", "mount": {"type": "main_thruster", "deck": 0, "x": x, "z": 6, "angle": PI * 0.5}})
+		ed.do({"op": "add_mount", "mount": {"type": "thruster_pack", "deck": 0, "x": 8, "z": 1, "angle": 0.0}})
 		room.furnishing.open_console()
 		room.console._set_view("plan")
 		room.console.plan.select("hull", "1")
@@ -133,7 +136,8 @@ class Runner:
 		room.furnishing.open_walk()
 		var walk: Node3D = room.furnishing.walk
 		for shot in [["walk_hull_bow", Vector3(-2.6, 1.0, -6.3), 0.95, 0.2],
-				["walk_hull_outside", Vector3(15, 1.0, -2), 1.3, 0.05]]:
+				["walk_hull_outside", Vector3(15, 1.0, -2), 1.3, 0.05],
+				["walk_hull_stern", Vector3(7.5, 1.4, 10.5), 0.45, -0.05]]:
 			walk.body.position = shot[1]
 			walk.body.rotation.y = shot[2]
 			walk.set("_pitch", shot[3])

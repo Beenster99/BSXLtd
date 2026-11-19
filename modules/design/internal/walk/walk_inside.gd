@@ -454,6 +454,8 @@ func _physics_process(delta: float) -> void:
 			body.velocity.y = jump_speed
 	else:
 		body.velocity.y -= gravity * delta
+	var near: Array[Vector3] = [body.position]
+	builder.update_lifts(near, delta)
 	body.move_and_slide()
 	if body.position.y < -30.0:
 		spawn()
