@@ -253,7 +253,7 @@ func _bot_row(r: Dictionary, alt: bool) -> Control:
 	who.add_theme_constant_override("separation", -3)
 	who.custom_minimum_size.x = _w(6.6)
 	who.add_child(_label(str(r.serial), "mono_bold", fs, T.TEXT))
-	who.add_child(_label("%s %s" % [r.model, str(r.trade).to_upper()], "display_medium", fs - 4, T.DIM))
+	who.add_child(_label("%s %s %s" % [r.model, str(r.mark).to_upper(), str(r.trade).to_upper()], "display_medium", fs - 4, T.DIM))
 	h.add_child(who)
 	var state := _label(str(r.state_name), "mono_bold", fs - 2, STATE_COLOURS.get(str(r.state), T.STEEL))
 	state.custom_minimum_size.x = _w(7.2)
@@ -371,15 +371,21 @@ func _fill_bot() -> void:
 	var up := _card("UPGRADES")
 	var uv: VBoxContainer = up.get_child(0)
 	var fitted: Array = r.upgrades
+	if str(r.mark) != "":
+		uv.add_child(_fact("Mark", "%s, %d module slot%s, %d free" % [r.mark, int(r.slots), "" if int(r.slots) == 1 else "s",
+				maxi(0, int(r.slots) - fitted.size())]))
 	if fitted.is_empty():
-		uv.add_child(_label("Factory standard, nothing fitted. TartanCo's upgrade path is on its way.", "body", fs - 2, T.DIM))
-	else:
-		var flow := HFlowContainer.new()
-		flow.add_theme_constant_override("h_separation", 4)
-		for u: Variant in fitted:
-			var un := str((u as Dictionary).get("name", (u as Dictionary).get("id", "?"))) if u is Dictionary else str(u)
-			flow.add_child(T.tag(un, T.CYAN, fs - 3))
-		uv.add_child(flow)
+		uv.add_child(_label("No modules fitted.", "body", fs - 2, T.DIM))
+	for u: Variant in fitted:
+		var d: Dictionary = u if u is Dictionary else {"name": str(u)}
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", int(fs * 0.4))
+		line.add_child(T.tag(str(d.get("name", d.get("id", "?"))), T.CYAN, fs - 3))
+		var eff := _label(str(d.get("line", "")), "body", fs - 3, T.DIM)
+		eff.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		eff.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		line.add_child(eff)
+		uv.add_child(line)
 	_side.add_child(up)
 	# Its group: the first command.
 	var gc := _card("GROUP")
@@ -515,7 +521,7 @@ func _task_row(g: Dictionary, t: Dictionary, i: int, n: int) -> Control:
 	what.add_child(nl)
 	what.add_child(_label("%s  %s  %s %s  %.1f H  %s" % [str(FleetOrders.STAGE_NAMES.get(str(t.stage), t.stage)).to_upper(),
 			str(FleetOrders.TRADES.get(str(t.trade), t.trade)).to_upper(), _qty(float(t.qty)), str(t.unit).to_upper(),
-			float(t.hours), str(t.get("joins", "")).to_upper()], "display_medium", fs - 5, T.DIM))
+			float(t.hours), str(t.get("joins", "")).to_upper()], "display_medium", fs - 4, T.DIM))
 	h.add_child(what)
 	h.add_child(_stepper(int(t.priority), func(pr: int) -> void:
 		bus.command({"op": "task_priority", "group": str(g.id), "task": str(t.id), "priority": pr}), "Priority"))
@@ -533,7 +539,7 @@ func _task_row(g: Dictionary, t: Dictionary, i: int, n: int) -> Control:
 
 
 func _qty(q: float) -> String:
-	return str(int(q)) if is_equal_approx(q, roundf(q)) else "%.1f" % q
+	return "%d" % roundi(q) if q >= 10.0 or is_equal_approx(q, roundf(q)) else "%.1f" % q
 
 
 ## "- Normal +" for a priority 1..5.

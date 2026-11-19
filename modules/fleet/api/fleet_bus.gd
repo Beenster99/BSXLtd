@@ -92,7 +92,8 @@ func make_screen(px_per_m: float, glass := false) -> Control:
 
 ## One row per TartanCo bot in the yard ([] while no station is open):
 ## {serial, model, role, trade, state, state_name, job, condition (0..1), band ("good", "fair",
-## "poor"), wear, charge (0..1), charging, productivity, errors, upgrades: [{id, name}],
+## "poor"), wear, charge (0..1), charging, productivity, errors, mark ("Mk3".. or ""), slots,
+## upgrades: [{id, name, line}],
 ## location, where (station-space Vector3), group (id or "")}.
 func rows() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -133,6 +134,7 @@ static func row_for(node_name: String, c: Dictionary, where: Vector3, meta: Dict
 			"charge": clampf(float(c.get("charge", 1.0)), 0.0, 1.0), "charging": charging,
 			"productivity": float(c.get("productivity", 1.0)), "errors": errors.duplicate(),
 			"upgrades": (c.get("upgrades", []) as Array).duplicate(true), "speed": float(c.get("speed", 1.0)),
+			"mark": str(c.get("mark_name", "")), "slots": int(c.get("slots", 0)),
 			"location": location(where, state, node_name), "where": where}
 
 

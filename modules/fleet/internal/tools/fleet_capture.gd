@@ -13,7 +13,7 @@ func _ready() -> void:
 
 func _run() -> void:
 	var out := "user://fleet_shots"
-	var ticks := 60 * 60 * 20
+	var ticks := 60 * 60 * 5
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--out="):
 			out = arg.trim_prefix("--out=")
@@ -31,7 +31,7 @@ func _run() -> void:
 	add_child(station)
 	var sim: Node = station.get("sim")
 	sim.set_process(false)
-	# Twenty minutes of work, so the crew wears, runs down and charges.
+	# Five minutes of work, so the crew wears, runs down and charges.
 	sim.call("run_ticks", ticks)
 	if station.has_method("show_view"):
 		station.call("show_view", "build_berth")
