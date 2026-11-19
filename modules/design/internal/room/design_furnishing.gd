@@ -29,6 +29,21 @@ const POINTER := "design.console"
 ## The mouse claim while walking inside the design.
 const WALK_POINTER := "design.walk"
 
+## How near the table (its middle, across the floor) the holotable keys work, m. The table
+## is 7 m by 3.4 m, so this is about an arm's length off its long edge.
+const TABLE_REACH := 4.5
+## Turning with the arrow keys, radians a second.
+const TURN_RATE := 1.6
+## Zooming with the arrow keys: times bigger a second.
+const ZOOM_RATE := 1.8
+const ZOOM_MIN := 0.4
+const ZOOM_MAX := 4.0
+## Each Page Down cuts away this share of the model's height from the top.
+const CUT_STEP := 0.2
+## What N steps through: the layers as they were set, every layer, then each layer alone.
+const LAYER_VIEWS: PackedStringArray = ["as set", "everything", "rooms", "frame", "plates",
+		"components", "wiring", "pipes", "power"]
+
 ## The design room's inside, m (the station's design room is this size).
 const ROOM_SIZE := Vector3(24, 6, 18)
 
@@ -45,6 +60,9 @@ var _layer: CanvasLayer
 ## Walk-inside mode while it's open, else null.
 var walk: WalkInside
 var _camera_before: Camera3D
+## Where N is in LAYER_VIEWS, and the layers as they were before the first press.
+var layer_view := 0
+var _layers_as_set: Dictionary = {}
 
 
 func setup(design_bus: DesignBus, wall_planes: Array[Dictionary]) -> void:
@@ -157,6 +175,68 @@ func _exit_tree() -> void:
 	HudSlots.release_pointer(WALK_POINTER)
 
 
+## True when the player stands at the table with the console shut: the holotable keys work.
+func at_table() -> bool:
+	if holo == null or walk or is_console_open() or not is_inside_tree():
+		return false
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return false
+	var d := holo.to_local(cam.global_position)
+	return Vector2(d.x, d.z).length() <= TABLE_REACH
+
+
+func _process(delta: float) -> void:
+	if not at_table():
+		return
+	var spin := Input.get_action_strength(DesignBus.KEY_HOLO_RIGHT) \
+			- Input.get_action_strength(DesignBus.KEY_HOLO_LEFT)
+	if spin != 0.0:
+		holo.turn += spin * TURN_RATE * delta
+	var grow := Input.get_action_strength(DesignBus.KEY_HOLO_IN) \
+			- Input.get_action_strength(DesignBus.KEY_HOLO_OUT)
+	if grow != 0.0:
+		holo.zoom = clampf(holo.zoom * pow(ZOOM_RATE, grow * delta), ZOOM_MIN, ZOOM_MAX)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_echo() or not at_table():
+		return
+	if event.is_action_pressed(DesignBus.KEY_HOLO_LAYER):
+		next_layer_view()
+	elif event.is_action_pressed(DesignBus.KEY_HOLO_CUT_DOWN):
+		holo.set_cut(holo.cut - CUT_STEP)
+	elif event.is_action_pressed(DesignBus.KEY_HOLO_CUT_UP):
+		holo.set_cut(holo.cut + CUT_STEP)
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+## N at the table: the next of LAYER_VIEWS on the hologram. Returns its name.
+func next_layer_view() -> String:
+	if layer_view == 0:
+		_layers_as_set = holo.layers.duplicate()
+	layer_view = (layer_view + 1) % LAYER_VIEWS.size()
+	var view := LAYER_VIEWS[layer_view]
+	for layer: String in HoloTable.LAYERS:
+		var on: bool
+		match view:
+			"as set": on = bool(_layers_as_set.get(layer, false))
+			"everything": on = true
+			_: on = layer == view
+		holo.set_layer(layer, on)
+	return view
+
+
+## "Rooms", "Everything": what N shows now, for the hint.
+func layer_view_name() -> String:
+	var view := LAYER_VIEWS[layer_view]
+	if HoloTable.LAYER_NAMES.has(view):
+		return HoloTable.LAYER_NAMES[view] + " only"
+	return view.capitalize()
+
+
 func _input(event: InputEvent) -> void:
 	if walk and event is InputEventKey and event.pressed and not event.echo \
 			and event.physical_keycode == KEY_ESCAPE:
@@ -188,8 +268,12 @@ func _add_use_body() -> void:
 	body.set_meta("yard_use", open_console)
 	body.set_meta("yard_hint", func() -> String:
 		var rec := bus.library.current
-		return "%s  Design at the holotable%s" % [Keys.prompt(Keys.INTERACT),
-				("  (" + rec.name + ")") if rec else ""])
+		return "%s  Design at the holotable%s\n%s%s turn   %s%s zoom   %s layers: %s   %s%s cut" % [
+				Keys.prompt(Keys.INTERACT), ("  (" + rec.name + ")") if rec else "",
+				Keys.prompt(DesignBus.KEY_HOLO_LEFT), Keys.prompt(DesignBus.KEY_HOLO_RIGHT),
+				Keys.prompt(DesignBus.KEY_HOLO_IN), Keys.prompt(DesignBus.KEY_HOLO_OUT),
+				Keys.prompt(DesignBus.KEY_HOLO_LAYER), layer_view_name(),
+				Keys.prompt(DesignBus.KEY_HOLO_CUT_UP), Keys.prompt(DesignBus.KEY_HOLO_CUT_DOWN)])
 	holo.add_child(body)
 
 

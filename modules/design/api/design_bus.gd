@@ -19,6 +19,18 @@ signal design_changed
 const SAVE_SECTION := "design"
 const ROOM_SCENE := "design.room"
 const ROOM_FLAG := "design.room"
+## Keys at the holotable, standing at it with the console shut (the arrows and N are free of
+## every other module's keys).
+const KEY_HOLO_LEFT := "design.holo_left"
+const KEY_HOLO_RIGHT := "design.holo_right"
+const KEY_HOLO_IN := "design.holo_in"
+const KEY_HOLO_OUT := "design.holo_out"
+const KEY_HOLO_LAYER := "design.holo_layer"
+const KEY_HOLO_CUT_DOWN := "design.holo_cut_down"
+const KEY_HOLO_CUT_UP := "design.holo_cut_up"
+const KEY_GROUP := "Design room"
+const HOLO_KEYS: PackedStringArray = [KEY_HOLO_LEFT, KEY_HOLO_RIGHT, KEY_HOLO_IN, KEY_HOLO_OUT,
+		KEY_HOLO_LAYER, KEY_HOLO_CUT_DOWN, KEY_HOLO_CUT_UP]
 
 var catalog: DesignCatalog = DesignCatalog.load_default()
 var library := DesignLibrary.new()
@@ -65,6 +77,13 @@ func register_module() -> void:
 		Modules.modules_ready.connect(_hook_net, CONNECT_ONE_SHOT)
 	if Flags.is_on(ROOM_FLAG):
 		Router.register_scene(ROOM_SCENE, ROOM_PATH)
+		Keys.register(KEY_HOLO_LEFT, "Holotable: turn the hologram left", KEY_LEFT, KEY_GROUP)
+		Keys.register(KEY_HOLO_RIGHT, "Holotable: turn the hologram right", KEY_RIGHT, KEY_GROUP)
+		Keys.register(KEY_HOLO_IN, "Holotable: zoom in", KEY_UP, KEY_GROUP)
+		Keys.register(KEY_HOLO_OUT, "Holotable: zoom out", KEY_DOWN, KEY_GROUP)
+		Keys.register(KEY_HOLO_LAYER, "Holotable: next layer", KEY_N, KEY_GROUP)
+		Keys.register(KEY_HOLO_CUT_DOWN, "Holotable: cut away the top deck", KEY_PAGEDOWN, KEY_GROUP)
+		Keys.register(KEY_HOLO_CUT_UP, "Holotable: put the top deck back", KEY_PAGEUP, KEY_GROUP)
 		Menu.register_entry(ROOM_SCENE, "Design room", ROOM_SCENE, 30)
 		Shots.register("design_console", ROOM_SCENE, _shot_setup.bind(false), 40)
 		Shots.register("design_room", ROOM_SCENE, _shot_setup.bind(true), 40)
@@ -284,6 +303,8 @@ func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
 	Menu.unregister_entry(ROOM_SCENE)
 	Menu.unregister_settings_section(Menu.DEBUG, "design.debug")
+	for k: String in HOLO_KEYS:
+		Keys.unregister(k)
 
 
 ## Opens a new design holding the sample skiff (Debug tab, tests, screenshots).

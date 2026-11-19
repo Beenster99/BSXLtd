@@ -427,17 +427,60 @@ func frame_aimed() -> Dictionary:
 	return {"part": part, "bay": bay, "edge": edge, "point": at, "station": station}
 
 
-## G on a hull panel: glass in it, or metal back.
+## G on a hull panel: glass in it, or metal back. Aimed at anything that isn't a skin panel
+## (a ring, a lining, a room's wall, the deckhead), it is the hull panel straight on along
+## the aim (beenster, 19 Nov: G seemed to do nothing).
 func glass_here() -> bool:
 	var f := frame_aimed()
-	if f.is_empty() or int(f.bay) < 0 or int(f.edge) < 0:
+	var k := -1
+	var edge := -1
+	if not f.is_empty() and int(f.bay) >= 0 and int(f.edge) >= 0:
+		k = int(f.bay)
+		edge = int(f.edge)
+	else:
+		var along := hull_panel_along_aim()
+		k = along.x
+		edge = along.y
+	if k < 0 or edge < 0:
 		return false
 	var st: Array = builder.frame_plan.stations
-	var k := int(f.bay)
 	var z := (float(st[k].z) + float(st[k + 1].z)) * 0.5
-	var glazed := (builder.frame_plan.glass as Dictionary).has("%d:%d" % [k, int(f.edge)])
-	bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(z, int(f.edge)), "value": {"glass": not glazed}})
+	var glazed := (builder.frame_plan.glass as Dictionary).has("%d:%d" % [k, edge])
+	bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(z, edge), "value": {"glass": not glazed}})
 	return true
+
+
+## The hull panel the view runs into: (bay, edge), or (-1, -1) looking fore or aft out of the
+## hull's ends. Worked out from the frame's cross-section where you stand.
+func hull_panel_along_aim() -> Vector2i:
+	var plan := builder.frame_plan
+	if plan.is_empty() or camera == null:
+		return Vector2i(-1, -1)
+	var inv := world.global_transform.affine_inverse()
+	var from: Vector3 = inv * camera.global_position
+	var dir: Vector3 = inv.basis * -camera.global_basis.z
+	var st: Array = plan.stations
+	var rect: Rect2 = st[DesignFrame.station_at(plan, from.z)].rect
+	var poly := DesignFrame.section(rect)
+	var o := Vector2(from.x, from.y)
+	var d := Vector2(dir.x, dir.y)
+	if d.length() < 0.05:
+		return Vector2i(-1, -1)
+	var best := INF
+	var edge := -1
+	for i in poly.size():
+		var hit: Variant = Geometry2D.segment_intersects_segment(o, o + d * 1000.0, poly[i], poly[(i + 1) % poly.size()])
+		if hit != null:
+			var t := ((hit as Vector2) - o).length() / d.length()
+			if t < best:
+				best = t
+				edge = i
+	if edge < 0:
+		return Vector2i(-1, -1)
+	var z := from.z + dir.z * best
+	if z < float(st[0].z) or z > float(st[st.size() - 1].z):
+		return Vector2i(-1, -1)
+	return Vector2i(DesignFrame.bay_at(plan, z), edge)
 
 
 ## The mouse wheel on the frame: her section there pushed out (or back in) on the side you
@@ -693,7 +736,7 @@ func _aim_text() -> String:
 					DesignStructure.option("hull", str(rec.structure.hull)).name,
 					DesignStructure.option("frame", str(rec.structure.frame)).name] if a.info.outer \
 					else "Inner wall: %s" % DesignStructure.option("inner", str(rec.structure.inner)).name
-			return "%s\nF door here   Wheel push or pull this wall%s" % [what, "   G glass or metal" if a.info.outer and not builder.frame_plan.is_empty() else ""]
+			return "%s\nF door here   Wheel push or pull this wall%s" % [what, "   G glass in the hull this way" if not builder.frame_plan.is_empty() else ""]
 		"floor":
 			return "Deck plating\nTab  parts and hull"
 		"frame":

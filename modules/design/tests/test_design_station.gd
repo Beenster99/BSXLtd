@@ -85,6 +85,49 @@ func run_tests() -> void:
 	check(f.call("is_console_open") and HudSlots.pointer_claimed(), "using it opens the console and frees the mouse")
 	f.call("close_console")
 	check(not f.call("is_console_open") and not HudSlots.pointer_claimed(), "leaving gives the mouse back")
+	# Walking up to the table: the arrows turn and zoom the hologram, N steps the layers,
+	# Page Up / Down cut it; F still opens the console (beenster, 19 Nov).
+	check(str((use.get_meta("yard_hint") as Callable).call()).contains("turn"), "the table's hint lists its keys")
+	var cam := Camera3D.new()
+	holo.add_child(cam)
+	cam.position = Vector3(0, 1.7, HoloTable.TABLE_SIZE.y * 0.5 + 1.0)
+	cam.make_current()
+	await frames(1)
+	check(f.call("at_table"), "standing a metre off the table's edge counts as at the table")
+	var turn0: float = holo.get("turn")
+	var zoom0: float = holo.get("zoom")
+	Input.action_press(DesignBus.KEY_HOLO_RIGHT)
+	Input.action_press(DesignBus.KEY_HOLO_IN)
+	await frames(10)
+	Input.action_release(DesignBus.KEY_HOLO_RIGHT)
+	Input.action_release(DesignBus.KEY_HOLO_IN)
+	check(float(holo.get("turn")) > turn0 and float(holo.get("zoom")) > zoom0,
+			"holding the arrows turns and zooms the hologram (%.2f, %.2f)" % [holo.get("turn"), holo.get("zoom")])
+	check(str(f.call("next_layer_view")) == "everything" and (holo.get("layers") as Dictionary).values().all(func(v): return v),
+			"N first shows every layer")
+	check(str(f.call("next_layer_view")) == "rooms" and (holo.get("layers") as Dictionary).values().count(true) == 1
+			and holo.get("layers").rooms, "then each layer alone")
+	for i in HoloTable.LAYERS.size() - 1:
+		f.call("next_layer_view")
+	check(str(f.call("next_layer_view")) == "as set" and not holo.get("layers").wiring and holo.get("layers").frame,
+			"and round to the layers as they were set")
+	var ev := InputEventAction.new()
+	ev.action = DesignBus.KEY_HOLO_CUT_DOWN
+	ev.pressed = true
+	f.call("_unhandled_input", ev)
+	check(float(holo.get("cut")) < 1.0, "Page Down cuts the top away")
+	holo.call("set_cut", 1.0)
+	cam.position = Vector3(0, 1.7, 9.0)
+	await frames(1)
+	var turn1: float = holo.get("turn")
+	Input.action_press(DesignBus.KEY_HOLO_RIGHT)
+	await frames(5)
+	Input.action_release(DesignBus.KEY_HOLO_RIGHT)
+	check(not f.call("at_table") and is_equal_approx(float(holo.get("turn")), turn1), "away from the table the arrows do nothing")
+	(use.get_meta("yard_use") as Callable).call()
+	check(not f.call("at_table"), "with the console open the walk-up keys stand down")
+	f.call("close_console")
+	cam.queue_free()
 	bus.furnish_station()
 	check(root.get_children().filter(func(c): return c.name == "DesignFurnishing").size() == 1,
 			"furnishing twice does not double up")
