@@ -64,6 +64,47 @@ func unregister_wall_view(id: String) -> void:
 		wall_views_changed.emit()
 
 
+## Checks other modules add to WILL IT WORK (the motion module's clashes and ground check):
+## id -> Callable(rec: DesignRecord, catalog: DesignCatalog, totals: DesignTotals) ->
+## Array of DesignRules problem dicts. They run with the rules, once per edit (problems()).
+var checks: Dictionary = {}
+## Buttons other modules put on the console's top bar (the motion module's OPERATE):
+## id -> {label, press: Callable(), tip, order}.
+var console_tools: Dictionary = {}
+signal console_tools_changed
+## The holotable built its hologram again: `ship` is its "Ship" node (design space, metres;
+## the table's turn, zoom, cut and section apply to anything put under it).
+signal holo_built(table: Node3D, ship: Node3D)
+## Walk-inside built the design at full size under `root` (design space, metres).
+signal walk_built(root: Node3D, builder: Object)
+
+
+## Adds a check to WILL IT WORK; it runs once per edit with the rules.
+func register_check(id: String, check: Callable) -> void:
+	checks[id] = check
+	_problems_of = null
+	_assessment_of = null
+	design_changed.emit()
+
+
+func unregister_check(id: String) -> void:
+	if checks.erase(id):
+		_problems_of = null
+		_assessment_of = null
+		design_changed.emit()
+
+
+## Puts a button on the console's top bar (lowest order first).
+func register_console_tool(id: String, label: String, press: Callable, tip: String = "", order: int = 50) -> void:
+	console_tools[id] = {"label": label, "press": press, "tip": tip, "order": order}
+	console_tools_changed.emit()
+
+
+func unregister_console_tool(id: String) -> void:
+	if console_tools.erase(id):
+		console_tools_changed.emit()
+
+
 ## Symmetry mode for this player's plans (DesignMirror: OFF, ACROSS or ALONG); not shared.
 var mirror := 0
 signal mirror_changed(axis: int)
@@ -573,6 +614,12 @@ func problems() -> Array[Dictionary]:
 		return []
 	if _problems_of != library.current:
 		_problems = DesignRules.check(library.current, catalog, totals())
+		for id: String in checks:
+			var more: Variant = (checks[id] as Callable).call(library.current, catalog, totals())
+			if more is Array:
+				for p: Variant in more:
+					if p is Dictionary:
+						_problems.append(p)
 		_problems_of = library.current
 	return _problems
 

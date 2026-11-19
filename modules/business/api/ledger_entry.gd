@@ -14,6 +14,8 @@ const WAGES := "wages"
 const BONUS := "bonus"
 const LOAN := "loan"
 const REPAYMENT := "repayment"
+## A ship's trial result at delivery: a bonus (+) or money held back (-).
+const TRIAL := "trial"
 ## Bales and ingots sold to the metal broker.
 const SCRAP := "scrap"
 ## Parts from stock sold to another company (Buy/Sell).
