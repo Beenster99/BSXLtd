@@ -158,6 +158,21 @@ func run_tests() -> void:
 	check(bus.library.modules().size() == 1 and bus.library.module(mid).name == "Crew mess", "modules are kept in the save")
 	rec = bus.library.current
 
+	# DECK - on the lowest deck adds a deck under it: everything moves up one.
+	var low_before: Array = rec.rooms.values().map(func(r): return int(r.deck))
+	plan.set_deck(0)
+	console._change_deck(-1)
+	var low_after: Array = rec.rooms.values().map(func(r): return int(r.deck))
+	check(plan.deck == 0 and rec.rooms_on(0).is_empty() and low_after == low_before.map(func(v): return v + 1),
+			"DECK - below the lowest deck adds a new empty deck under it")
+	plan.set_tool("room:cargo")
+	_drag(plan, Vector2(-3, -2), Vector2(3, 2))
+	check(rec.rooms_on(0).size() == 1, "and you can draw rooms on it")
+	bus.editor.undo()
+	bus.editor.undo()
+	check(rec.rooms.values().map(func(r): return int(r.deck)) == low_before, "undo takes the new deck back out")
+	plan.set_tool("select")
+
 	# Saves through the console.
 	console._on_save()
 	check(not bus.library.dirty, "save stores the design")

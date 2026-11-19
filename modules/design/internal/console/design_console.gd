@@ -473,6 +473,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _change_deck(step: int) -> void:
+	var rec := bus.library.current
+	if step < 0 and plan.deck == 0 and rec and not rec.rooms.is_empty():
+		# Below the lowest deck: everything moves up one, and you're on the new deck under it.
+		bus.editor.do({"op": "shift_decks", "by": 1})
 	plan.set_deck(plan.deck + step)
 	_deck_label.text = "DECK %d" % (plan.deck + 1)
 

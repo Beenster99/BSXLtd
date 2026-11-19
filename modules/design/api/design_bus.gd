@@ -165,6 +165,8 @@ func describe_op(op: Dictionary) -> String:
 	elif op.has("mount") and op.mount is Dictionary:
 		var pt := catalog.part(str(op.mount.get("type", "")))
 		thing = pt.display_name if pt else "a part on the hull"
+	if kind == "shift_decks":
+		return "added a deck below" if int(op.get("by", 0)) > 0 else "took out the deck below"
 	if kind == "set_frame":
 		var key := str(op.get("key", ""))
 		var v: Variant = op.get("value")
