@@ -290,7 +290,7 @@ def r_stabiliser_jack(p, s):
     p.cyl(0.07, 0.22, (w * 0.3, h - 0.13, 0), "x", "gunmetal", 16)
     for i in range(5):
         p.torus(0.072, 0.008, (w * 0.25 + i * 0.03, h - 0.13, 0), "x", "dark", 16, 4)
-    p.cyl(w * 0.2, h * 0.5, (0, h * 0.58, 0), "y", GEAR, 24)
+    p.cyl(w * 0.2, h * 0.56, (0, h * 0.61, 0), "y", GEAR, 24)
     p.torus(w * 0.2, 0.01, (0, h * 0.34, 0), "y", "dark", 24, 4)
     p.box((w * 0.3, 0.12, 0.005), (0, h * 0.6, -w * 0.2 - 0.003), "white", 0.0)
     p.note(power_kw=5.0, load_kg=25000.0)
