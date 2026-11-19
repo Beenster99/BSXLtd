@@ -37,6 +37,7 @@ func run_tests() -> void:
 	_bonuses_and_penalties()
 	_cheap_wins()
 	_status()
+	_tow()
 	_speed()
 	await _screen()
 
@@ -115,6 +116,19 @@ func _cheap_wins() -> void:
 	var courier := assess(skiff(), order({"crew": 2.0, "budget": 3000000.0}, "courier"))
 	check(not courier.moves.any(func(m: Dictionary) -> bool: return str(m.how.get("to", "")).ends_with("R")),
 			"a courier's optimiser never offers reclaimed parts")
+
+
+func _tow() -> void:
+	var o := order({"crew": 2.0, "budget": 3000000.0}, "tug")
+	var a := assess(skiff(), o)
+	var before: Dictionary = (a.area("role").checks as Array)[0]
+	check(not before.ok, "a tug with no tow gear fails the towing check")
+	var d := skiff()
+	d.apply({"op": "add_component", "component": {"type": "tow_hook", "room": "r5", "x": 2.0, "z": 0.0}})
+	var b := assess(d, o)
+	var after: Dictionary = (b.area("role").checks as Array)[0]
+	check(after.ok and str(after.have).ends_with(" t"), "a tow hook passes it and shows its tonnes (%s)" % after.have)
+	check(is_equal_approx(b.tow_t(), cat.part("tow_hook").tow_t), "tow_t sums the hook's rating (%.0f t)" % b.tow_t())
 
 
 func _status() -> void:

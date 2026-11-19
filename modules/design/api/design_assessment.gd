@@ -103,7 +103,7 @@ const ROLE_CHECKS: Dictionary = {
 	"courier": [["No reclaimed parts", "no_reclaimed", "Reclaimed kit is loud and gives her away."],
 		["Light (under 150 t)", "light", "Mass costs speed and range on every run."],
 		["Signature dampers or radiators", "dampers", "Quiet is designed in, not hoped for."]],
-	"tug": [["A tow winch or tractor beam", "tow", "A tug that cannot tow is a slow hauler."],
+	"tug": [["A tow hook, winch or tractor beam", "tow", "A tug that cannot tow is a slow hauler."],
 		["Power to spare (20%)", "power_reserve", "The winch and tractor draw hard."],
 		["Hardened frame parts", "hardened", "Salvage work bangs the hull about."]],
 }
@@ -514,7 +514,10 @@ func _role_area(s: Sim) -> void:
 		return
 	for spec: Array in ROLE_CHECKS[role]:
 		var ok := _role_check(str(spec[1]), s)
-		_check(ar, str(spec[0]), "yes" if ok else "no", ok, 1.0 if ok else 0.0)
+		var have := "yes" if ok else "no"
+		if str(spec[1]) == "tow" and tow_t() > 0.0:
+			have = "%s t" % _n(tow_t())
+		_check(ar, str(spec[0]), have, ok, 1.0 if ok else 0.0)
 		if not ok:
 			_find(RISK, "role", "%s: %s" % [spec[0], spec[2]])
 	_finish(ar)
@@ -554,8 +557,18 @@ func _role_check(id: String, s: Sim) -> bool:
 		"dampers":
 			return _placed_base("signature_damper") or _placed_base("radiator") or _placed_base("heat_sink")
 		"tow":
-			return _placed_base("tow_winch") or _placed_base("tractor_beam")
+			return _placed_base("tow_hook") or _placed_base("tow_winch") or _placed_base("tractor_beam")
 	return false
+
+
+## Tonnes the fitted tow gear is rated for (tow hooks and the like: DesignPartType.tow_t).
+func tow_t() -> float:
+	var sum := 0.0
+	for id: String in _placed:
+		var pt := _cat.part(id)
+		if pt:
+			sum += pt.tow_t * int(_placed[id])
+	return sum
 
 
 func _placed_base(base_id: String) -> bool:
