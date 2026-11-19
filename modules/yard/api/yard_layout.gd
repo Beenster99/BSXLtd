@@ -32,11 +32,34 @@ const DESIGN_LOCK_DOOR_X := Vector2(-11.6, -10.3)
 const DESIGN_LOCK_DOOR_H := 2.4
 
 ## The dock (stage 1.2): one build berth in front of the design room's window, and a
-## holding berth either side.
+## holding berth either side. The berths grow with the company's reputation (beenster, 19 Nov:
+## "maybe that comes with an automatic upgrade to the berths"; bought as a company upgrade from
+## Wave 8). Each tier: the reputation (0-100) it comes at, and the build berth's frame inside
+## (m: length along x, the keel's way; height; beam along z). The holding berths are the same
+## size, so a hull parked from the build berth still fits.
+const BERTH_TIERS := [
+	{"tier": 1, "name": "Starter berth", "reputation": 0.0, "size": Vector3(60, 30, 30)},
+	{"tier": 2, "name": "Long berth", "reputation": 40.0, "size": Vector3(110, 40, 40)},
+	{"tier": 3, "name": "Capital berth", "reputation": 70.0, "size": Vector3(200, 60, 60)},
+	{"tier": 4, "name": "Giga berth", "reputation": 90.0, "size": Vector3(320, 80, 80)},
+]
+## How far out (z) the berths reach at the largest tier (its face less its beam): anything else
+## in the dock (TartanCo's ship, the refurb shop) stays beyond.
+const DOCK_FAR_Z := -150.0
+## Every berth's station-side face (z) and middle height (y); the gap between the build berth
+## and each holding berth (m).
+const BERTH_FACE_Z := -70.0
+const BERTH_MIDDLE_Y := -3.0
+const HOLDING_GAP := 30.0
+## Room the worker bots need round a hull in a berth, each side (m): a design fits a berth when
+## its bounding box is no bigger than the berth less twice this (berth_clear_size). The design
+## room's own fit check leaves the same 2 m.
+const WORK_CLEARANCE := 2.0
+## The first tier's berths (what the dock had before tiers).
 const BERTHS := [
 	{"id": "build_1", "name": "B1", "kind": "build", "box": AABB(Vector3(-30, -18, -100), Vector3(60, 30, 30))},
-	{"id": "hold_1", "name": "H1", "kind": "holding", "box": AABB(Vector3(-100, -15, -98), Vector3(40, 24, 24))},
-	{"id": "hold_2", "name": "H2", "kind": "holding", "box": AABB(Vector3(60, -15, -98), Vector3(40, 24, 24))},
+	{"id": "hold_1", "name": "H1", "kind": "holding", "box": AABB(Vector3(-120, -18, -100), Vector3(60, 30, 30))},
+	{"id": "hold_2", "name": "H2", "kind": "holding", "box": AABB(Vector3(60, -18, -100), Vector3(60, 30, 30))},
 ]
 
 
@@ -57,8 +80,50 @@ static func has_gravity(point: Vector3) -> bool:
 	return false
 
 
-static func berths() -> Array[Dictionary]:
+## The berths at `tier` (1 to 3): {id, name, kind ("build" or "holding"), box (station space)}.
+static func berths(tier := 1) -> Array[Dictionary]:
+	var size := berth_size(tier)
+	var lo := Vector3(-size.x * 0.5, BERTH_MIDDLE_Y - size.y * 0.5, BERTH_FACE_Z - size.z)
+	var step := size.x + HOLDING_GAP
 	var out: Array[Dictionary] = []
-	for b: Dictionary in BERTHS:
-		out.append(b.duplicate())
+	out.append({"id": "build_1", "name": "B1", "kind": "build", "box": AABB(lo, size)})
+	out.append({"id": "hold_1", "name": "H1", "kind": "holding", "box": AABB(lo - Vector3(step, 0, 0), size)})
+	out.append({"id": "hold_2", "name": "H2", "kind": "holding", "box": AABB(lo + Vector3(step, 0, 0), size)})
 	return out
+
+
+## The tier a company with `reputation` (0-100) has.
+static func berth_tier_for(reputation: float) -> int:
+	var tier := 1
+	for t: Dictionary in BERTH_TIERS:
+		if reputation >= float(t.reputation):
+			tier = int(t.tier)
+	return tier
+
+
+static func berth_tier_info(tier: int) -> Dictionary:
+	for t: Dictionary in BERTH_TIERS:
+		if int(t.tier) == tier:
+			return t.duplicate()
+	return BERTH_TIERS[0].duplicate()
+
+
+## A berth's frame inside at `tier` (m: length x, height y, beam z).
+static func berth_size(tier: int) -> Vector3:
+	return berth_tier_info(tier).size
+
+
+## The biggest hull (bounding box, m: length, height, beam) the build berth takes at `tier`,
+## leaving the bots room to work round it.
+static func berth_clear_size(tier: int) -> Vector3:
+	return berth_size(tier) - Vector3.ONE * WORK_CLEARANCE * 2.0
+
+
+
+## The smallest tier whose build berth takes a hull `length_m` long (0 when none does). Only
+## the length counts: hulls are longer than they are tall or wide.
+static func berth_for_length(length_m: float) -> int:
+	for t: Dictionary in BERTH_TIERS:
+		if length_m <= berth_clear_size(int(t.tier)).x:
+			return int(t.tier)
+	return 0

@@ -31,6 +31,8 @@ signal station_closed
 signal workers_need_service(bots: Array)
 ## The yard's shared clock: an event was logged for a tick (see yard_sim.gd).
 signal sim_logged(entry: Dictionary)
+## The company's berth tier changed (reputation): the dock grows (or shrinks) to it.
+signal berth_tier_changed(tier: int)
 ## The shared clock started again from another moment (a new session's yard).
 signal sim_reset
 
@@ -84,6 +86,7 @@ var worker_fleet: Array = []
 var sim_log: Array[Dictionary] = []
 var _sim_n := 0
 var _net: Object
+var _seen_tier := 1
 
 
 func register_module() -> void:
@@ -199,14 +202,87 @@ static func has_gravity(point: Vector3) -> bool:
 	return YardLayout.has_gravity(point)
 
 
-## The dock's berths: {id, name, kind ("build" or "holding"), box (AABB, station space)}.
-static func berths() -> Array[Dictionary]:
-	return YardLayout.berths()
+## The dock's berths at `tier` (1, the starter yard, by default; current_berths() for the
+## company's now): {id, name, kind ("build" or "holding"), box (AABB, station space)}.
+static func berths(tier := 1) -> Array[Dictionary]:
+	return YardLayout.berths(tier)
+
+
+## The berth tiers (data): [{tier, name, reputation (0-100 it comes at), size (the build
+## berth's frame inside, m: length along x, height, beam along z)}].
+static func berth_tiers() -> Array:
+	return YardLayout.BERTH_TIERS.duplicate(true)
+
+
+## The company's berth tier now: it follows reputation (the business module's; the starter
+## berth without it). The max reputation debug setting gives the largest at once.
+func berth_tier() -> int:
+	var business := Modules.bus("business")
+	if business == null or not business.has_method("get_reputation"):
+		return 1
+	return YardLayout.berth_tier_for(float(business.call("get_reputation")))
+
+
+## The company's berths now (as berths()).
+func current_berths() -> Array[Dictionary]:
+	return YardLayout.berths(berth_tier())
+
+
+## The company's build berth now, for the design room's fit check: {name, tier, length (x),
+## height, beam (z)}, the frame's full clear space inside (m; leave the bots their room).
+func build_berth() -> Dictionary:
+	var tier := berth_tier()
+	var info := YardLayout.berth_tier_info(tier)
+	var size: Vector3 = info.size
+	return {"name": info.name, "tier": tier, "length": size.x, "height": size.y, "beam": size.z}
+
+
+## The biggest hull the build berth takes now (bounding box, m: length along x, height, beam),
+## leaving the worker bots YardLayout.WORK_CLEARANCE all round. At `tier` with one given.
+func build_berth_clear_size(tier := 0) -> Vector3:
+	return YardLayout.berth_clear_size(tier if tier > 0 else berth_tier())
+
+
+## The smallest tier whose build berth takes a hull of bounding box `size` (m: length,
+## height, beam), or 0 when none does.
+static func berth_tier_for_hull(size: Vector3) -> int:
+	for t: Dictionary in YardLayout.BERTH_TIERS:
+		var clear := YardLayout.berth_clear_size(int(t.tier))
+		if size.x <= clear.x and size.y <= clear.y and size.z <= clear.z:
+			return int(t.tier)
+	return 0
+
+
+## The smallest berth tier a ship `length_m` long needs (the contracts' ship orders), 0 when
+## none takes it. Mass doesn't count: the berths hold any weight.
+static func berth_for(length_m: float, _mass_t := 0.0) -> int:
+	return YardLayout.berth_for_length(length_m)
+
+
+## True when the company's build berth takes a hull of bounding box `size` now.
+func hull_fits_berth(size: Vector3) -> bool:
+	var need := berth_tier_for_hull(size)
+	return need > 0 and need <= berth_tier()
+
+
+func _hook_business() -> void:
+	var business := Modules.bus("business")
+	if business and business.has_signal("reputation_changed") and not business.is_connected("reputation_changed", _on_reputation):
+		business.connect("reputation_changed", _on_reputation)
+	_seen_tier = berth_tier()
+
+
+func _on_reputation(_value: float = 0.0, _delta: float = 0.0, _reason: String = "") -> void:
+	var tier := berth_tier()
+	if tier != _seen_tier:
+		_seen_tier = tier
+		berth_tier_changed.emit(tier)
 
 
 func _station_opened(s: Node3D) -> void:
 	_station = s
 	_hook_net()
+	_hook_business()
 	sim_start()
 	var crew := _workers()
 	if crew and crew.has_signal("service_needed"):

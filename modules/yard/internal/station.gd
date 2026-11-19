@@ -173,10 +173,7 @@ func _ready() -> void:
 	add_child(design_lock)
 	design_lock.call("build", kit)
 	if Flags.is_on(YardBus.DOCK):
-		dock = Dock.new()
-		dock.name = "Dock"
-		add_child(dock)
-		dock.call("build")
+		_build_dock()
 		practice = PracticeFrame.new()
 		practice.position = PRACTICE_AT
 		practice.rotation.y = PI * 0.5   # its panels face the airlock
@@ -202,6 +199,7 @@ func _ready() -> void:
 	if _bus:
 		_bus.call("_station_opened", self)
 		_bus.connect("sim_reset", _on_sim_reset)
+		_bus.connect("berth_tier_changed", _on_berth_tier)
 	sim.call("setup", _bus)
 	# The loading screen waits for the shared clock (a guest: the host's answer, then the
 	# replay to where the others are).
@@ -219,6 +217,8 @@ func _exit_tree() -> void:
 		_bus.call("_station_closed", self)
 		if _bus.is_connected("sim_reset", _on_sim_reset):
 			_bus.disconnect("sim_reset", _on_sim_reset)
+		if _bus.is_connected("berth_tier_changed", _on_berth_tier):
+			_bus.disconnect("berth_tier_changed", _on_berth_tier)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
@@ -522,6 +522,28 @@ func _show_note(text: String) -> void:
 		_note.text = text
 		_note_left = 4.0
 		_note.visible = true
+
+
+# --- The dock ---------------------------------------------------------------------------------
+
+## The berths at the company's tier (they grow with reputation).
+func _build_dock(tier := 0) -> void:
+	var bus := Modules.bus("yard")
+	if tier <= 0:
+		tier = int(bus.call("berth_tier")) if bus else 1
+	dock = Dock.new()
+	dock.name = "Dock"
+	add_child(dock)
+	dock.call("build", tier)
+
+
+## Reputation moved the berths up (or down) a tier: the dock is built again at the new size.
+func _on_berth_tier(tier: int) -> void:
+	if dock == null:
+		return
+	remove_child(dock)
+	dock.queue_free()
+	_build_dock(tier)
 
 
 # --- The shared clock ------------------------------------------------------------------------
