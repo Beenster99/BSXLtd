@@ -16,6 +16,8 @@ var going_out := false
 var inner_door: AnimatableBody3D
 var outer_door: AnimatableBody3D
 var _t := 0.0
+## Where a pressed panel goes instead of cycling here at once (the station's shared clock).
+var on_use: Callable
 var _lamps: Array[MeshInstance3D] = []
 var _lamp_mats: Dictionary = {}
 var _kit
@@ -58,6 +60,25 @@ func cycle(out: bool) -> void:
 	going_out = out
 	state = State.CLOSING
 	_t = 0.0
+
+
+## A panel pressed: "in", "out" or "toggle". Through `on_use` when the station shares it with
+## the other players (co-op sync), which calls `operate` at the same moment on every machine.
+func use(mode: String) -> void:
+	if on_use.is_valid():
+		on_use.call(mode)
+	else:
+		operate(mode)
+
+
+func operate(mode: String) -> void:
+	match mode:
+		"in":
+			cycle(false)
+		"out":
+			cycle(true)
+		_:
+			toggle()
 
 
 ## Whichever way is the other way.
@@ -172,13 +193,8 @@ func _panel(at: Vector3, facing: Vector3, where: String) -> void:
 	mi.material_override = _kit.glow(Color(0.2, 0.5, 0.9), 1.5)
 	mi.position = facing * 0.02
 	area.add_child(mi)
-	match where:
-		"corridor":
-			area.set_meta("yard_use", func() -> void: cycle(false))
-		"outside":
-			area.set_meta("yard_use", func() -> void: cycle(true))
-		_:
-			area.set_meta("yard_use", toggle)
+	var mode: String = {"corridor": "in", "outside": "out"}.get(where, "toggle")
+	area.set_meta("yard_use", func() -> void: use(mode))
 	area.set_meta("yard_hint", func() -> String: return _hint(where))
 	area.add_to_group("gfx_interactable")
 	area.set_meta("gfx_id", "airlock:" + where)

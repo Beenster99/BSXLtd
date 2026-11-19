@@ -18,6 +18,7 @@ const Solar := preload("res://modules/yard/internal/solar_array.gd")
 const Quarters := preload("res://modules/yard/internal/quarters.gd")
 const YardWorkers := preload("res://modules/yard/internal/yard_workers.gd")
 const LivedIn := preload("res://modules/yard/internal/lived_in.gd")
+const YardSim := preload("res://modules/yard/internal/yard_sim.gd")
 const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
 ## Where the practice frame floats: just out of the airlock (station space).
 const PRACTICE_AT := Vector3(-47.5, -0.6, -2.0)
@@ -135,6 +136,11 @@ var _next_kit := 0
 var workers: Node3D
 var _weld_drive: Dictionary = {}
 var _bus: Node
+## The yard's shared clock: steps the stores, the worker crew and the airlocks (co-op sync).
+var sim: Node
+## Where a mover takes a kit for a player who isn't drawn here.
+var _kit_spot: Node3D
+var _stock_set := false
 
 
 func _ready() -> void:
@@ -189,9 +195,12 @@ func _ready() -> void:
 	if YardSounds.enabled():
 		add_child(YardSounds.new().setup(self))
 	_build_hud()
+	_build_sim()
 	_bus = Modules.bus("yard")
 	if _bus:
 		_bus.call("_station_opened", self)
+		_bus.connect("sim_reset", _on_sim_reset)
+	sim.call("setup", _bus)
 	var start: String = Router.args.get("view", "")
 	if start != "":
 		show_view(start)
@@ -202,6 +211,8 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if _bus and is_instance_valid(_bus):
 		_bus.call("_station_closed", self)
+		if _bus.is_connected("sim_reset", _on_sim_reset):
+			_bus.disconnect("sim_reset", _on_sim_reset)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
@@ -210,9 +221,13 @@ func _rack_store() -> YardRackStore:
 	var store: YardRackStore = bus.get("rack_store") if bus else null
 	if store == null:
 		store = YardRackStore.new()
-		store.fill_demo()
 		if bus:
 			bus.set("rack_store", store)
+	# Every yard starts from the same stock (the shared clock replays from it on every machine).
+	if not _stock_set:
+		_stock_set = true
+		store.pending.clear()
+		store.fill_demo()
 	return store
 
 
@@ -244,8 +259,13 @@ func show_view(id: String) -> void:
 	view_camera.current = true
 
 
-## Starts a demo contract: buys its parts, and the yard asks for its first ones (F at the
-## contracts desk, and the busy views).
+## F at the contracts desk: a demo contract for everyone in the yard, on the shared clock.
+func ask_demo_contract() -> void:
+	_sim_ask({"kind": "contract"})
+
+
+## Starts a demo contract: buys its parts, and the yard asks for its first ones (the shared
+## clock's "contract", and the busy views).
 func start_demo_contract() -> void:
 	if traffic == null:
 		return
@@ -432,6 +452,8 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if _note and sim and bool(sim.get("catching_up")):
+		_show_note("Catching up with the yard...")
 	if _note and _note_left > 0.0:
 		_note_left -= delta
 		_note.visible = _note_left > 0.0
@@ -463,20 +485,93 @@ func _unhandled_input(event: InputEvent) -> void:
 			call_kit()
 
 
-## Calls a mover bot with the next kit (YardKits, in turn) to wherever you are; says so on
-## the HUD. Returns the kit's id ("" without the stores).
+## Calls a mover bot with the next kit (YardKits, in turn) to wherever you are, on the shared
+## clock (it sets off a moment later, on every player's screen); the HUD says so when it does.
+## Returns the kit's id ("" without the stores).
 func call_kit() -> String:
 	if traffic == null:
 		return ""
 	var ids := YardKits.ids()
-	var kit: String = ids[_next_kit % ids.size()]
+	var kit_id: String = ids[_next_kit % ids.size()]
 	_next_kit += 1
-	var id := int(traffic.call("deliver_kit", kit, mover))
+	_sim_ask({"kind": "kit", "kit": kit_id})
+	return kit_id
+
+
+func _show_note(text: String) -> void:
 	if _note:
-		_note.text = "Mover bot on its way with a %s" % YardKits.display_name(kit).to_lower() if id >= 0 else "No stock for a %s" % YardKits.display_name(kit).to_lower()
+		_note.text = text
 		_note_left = 4.0
 		_note.visible = true
-	return kit
+
+
+# --- The shared clock ------------------------------------------------------------------------
+
+func _build_sim() -> void:
+	sim = YardSim.new()
+	sim.name = "YardSim"
+	for n: Node in [traffic, workers]:
+		if n:
+			sim.steppers.append(n)
+	for n: Node in [airlock, design_lock]:
+		sim.advancers.append(n)
+	sim.apply = _apply_sim
+	add_child(sim)
+	_kit_spot = Node3D.new()
+	_kit_spot.name = "KitSpot"
+	_kit_spot.position = START + Vector3(0, 1.0, 0)
+	add_child(_kit_spot)
+	airlock.set("on_use", func(mode: String) -> void: _sim_ask({"kind": "lock", "lock": "airlock", "mode": mode}))
+	design_lock.set("on_use", func(mode: String) -> void: _sim_ask({"kind": "lock", "lock": "design_lock", "mode": mode}))
+
+
+func _sim_ask(entry: Dictionary) -> void:
+	if _bus:
+		_bus.call("sim_request", entry)
+	else:
+		entry.tick = int(sim.get("tick"))
+		entry.peer = 1
+		_apply_sim(entry)
+
+
+## A logged event, at its tick: the same on every machine.
+func _apply_sim(e: Dictionary) -> void:
+	var mine := int(e.get("peer", 1)) == _local_peer()
+	match String(e.get("kind", "")):
+		"kit":
+			if traffic == null:
+				return
+			var to: Node3D = mover if mine else crew.crewmates.get(int(e.get("peer", 0)), _kit_spot)
+			var kit_id := String(e.get("kit", ""))
+			var id := int(traffic.call("deliver_kit", kit_id, to))
+			if mine:
+				var what := YardKits.display_name(kit_id).to_lower()
+				_show_note("Mover bot on its way with a %s" % what if id >= 0 else "No stock for a %s" % what)
+		"contract":
+			start_demo_contract()
+		"order":
+			if traffic:
+				traffic.call("order", e.get("items", []))
+		"send":
+			if traffic:
+				traffic.call("send_to_yard", e.get("items", []))
+		"lock":
+			var lock: Node = design_lock if String(e.get("lock", "")) == "design_lock" else airlock
+			lock.call("operate", String(e.get("mode", "toggle")))
+
+
+func _local_peer() -> int:
+	var net := Modules.bus("multiplayer")
+	return int(net.call("local_peer_id")) if net else 1
+
+
+## The shared clock started again from another moment (this machine joined a session while in
+## the yard, or left one): before anything ran, take the new log; else open the yard afresh.
+func _on_sim_reset() -> void:
+	if int(sim.get("tick")) == 0:
+		sim.call("restart")
+	elif Router.has_scene(YardBus.SCENE):
+		Router.goto.call_deferred(YardBus.SCENE)
 
 
 func _walk_again() -> void:
@@ -731,7 +826,7 @@ func _furnish_contracts(k) -> void:
 	cs.shape = shape
 	area.add_child(cs)
 	area.position = Vector3(-7.0, 1.45, 5.4)
-	area.set_meta("yard_use", start_demo_contract)
+	area.set_meta("yard_use", ask_demo_contract)
 	area.set_meta("yard_hint", _contract_hint)
 	area.add_to_group("gfx_interactable")
 	area.set_meta("gfx_id", "contracts_desk")
