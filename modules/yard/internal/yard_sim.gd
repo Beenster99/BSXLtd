@@ -25,6 +25,9 @@ var steppers: Array[Node] = []
 var advancers: Array[Node] = []
 ## Ticks run since the epoch.
 var tick := 0
+## The pace (Game time): each tick moves things on by TICK * rate (0 holds them; the locks
+## always run at their own pace, so nobody is shut in an airlock while time is paused).
+var rate := 1.0
 ## True while well behind the shared clock (replaying after joining).
 var catching_up := false
 
@@ -53,6 +56,7 @@ func _exit_tree() -> void:
 func restart() -> void:
 	_queue.clear()
 	tick = 0
+	rate = 1.0
 	if _bus:
 		_take_log()
 
@@ -77,15 +81,18 @@ func _process(_delta: float) -> void:
 	catching_up = target - tick > BEHIND
 
 
-## One tick: the events due, then everything moved on by TICK.
+## One tick: the events due, then everything moved on by TICK at the pace (the locks by TICK).
 func run_tick() -> void:
 	while not _queue.is_empty() and int(_queue[0].tick) <= tick:
 		var e: Dictionary = _queue.pop_front()
-		if apply.is_valid():
+		if String(e.get("kind", "")) == "rate":
+			rate = maxf(0.0, float(e.get("rate", 1.0)))
+		elif apply.is_valid():
 			apply.call(e)
-	for n in steppers:
-		if is_instance_valid(n):
-			n.call("step", TICK)
+	if rate > 0.0:
+		for n in steppers:
+			if is_instance_valid(n):
+				n.call("step", TICK * rate)
 	for n in advancers:
 		if is_instance_valid(n):
 			n.call("advance", TICK)
@@ -100,6 +107,7 @@ func run_ticks(count: int) -> void:
 
 ## The crew as it stood at tick 0 first, then everything logged since.
 func _take_log() -> void:
+	rate = float(_bus.get("sim_epoch_rate"))
 	_enqueue({"kind": "fleet", "tick": 0, "n": -1, "state": (_bus.get("sim_fleet") as Array).duplicate(true)})
 	for e: Dictionary in _bus.get("sim_log"):
 		_enqueue(e)

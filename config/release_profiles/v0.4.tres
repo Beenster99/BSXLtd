@@ -103,6 +103,8 @@ flags = {
 "shared_components": true,
 "stores": true,
 "stores.wall": true,
+"time": true,
+"time.hud": true,
 "trades": true,
 "trades.bolting": true,
 "trades.jump": true,
