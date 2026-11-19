@@ -142,7 +142,8 @@ static func _room_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Diction
 static func _door_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
 	for door: Dictionary in d.doors.values():
 		if not _door_fits(d, door):
-			out.append(_problem("door_off_wall", ERROR, "A door is not on a wall between its rooms",
+			var what := str(DesignCatalog.door_kind(door).name).to_lower()
+			out.append(_problem("door_off_wall", ERROR, "A %s is not on a wall between its rooms, or the wall is too short for it" % what,
 					[door.a, door.b].filter(func(x): return str(x) != ""), [], [door.id]))
 
 
@@ -150,14 +151,16 @@ static func _door_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
 ## for MIN_DOOR along it.
 static func _door_fits(d: DesignRecord, door: Dictionary) -> bool:
 	var p := Vector2(float(door.x), float(door.z))
+	# The clear wall a door needs: its opening less the jambs' play (MIN_DOOR for a plain door).
+	var dw := maxf(MIN_DOOR, DesignCatalog.door_w(door) - 0.2)
 	if str(door.b) == "":
 		var r := d.room_rect(str(door.a))
 		if r.size == Vector2.ZERO:
 			return false
 		var on_x := (absf(p.x - r.position.x) < 0.05 or absf(p.x - r.end.x) < 0.05) \
-				and p.y - MIN_DOOR * 0.5 >= r.position.y - 0.01 and p.y + MIN_DOOR * 0.5 <= r.end.y + 0.01
+				and p.y - dw * 0.5 >= r.position.y - 0.01 and p.y + dw * 0.5 <= r.end.y + 0.01
 		var on_z := (absf(p.y - r.position.y) < 0.05 or absf(p.y - r.end.y) < 0.05) \
-				and p.x - MIN_DOOR * 0.5 >= r.position.x - 0.01 and p.x + MIN_DOOR * 0.5 <= r.end.x + 0.01
+				and p.x - dw * 0.5 >= r.position.x - 0.01 and p.x + dw * 0.5 <= r.end.x + 0.01
 		if not (on_x or on_z):
 			return false
 		# Outer wall: nothing else on the far side.
@@ -167,14 +170,14 @@ static func _door_fits(d: DesignRecord, door: Dictionary) -> bool:
 		else:
 			outward = Vector2(0, -0.1 if absf(p.y - r.position.y) < 0.05 else 0.1)
 		return d.room_at(int(door.deck), p + outward) == ""
-	var wall := d.shared_wall(str(door.a), str(door.b), MIN_DOOR)
+	var wall := d.shared_wall(str(door.a), str(door.b), dw)
 	if wall.is_empty():
 		return false
 	var along := (wall[1] - wall[0]).normalized()
 	var t := (p - wall[0]).dot(along)
 	var off := (p - wall[0] - along * t).length()
 	var length := wall[0].distance_to(wall[1])
-	return off < 0.05 and t >= MIN_DOOR * 0.5 - 0.01 and t <= length - MIN_DOOR * 0.5 + 0.01
+	return off < 0.05 and t >= dw * 0.5 - 0.01 and t <= length - dw * 0.5 + 0.01
 
 
 ## Which rooms can be walked to: from any airlock, through doors and stairwells. Worked out

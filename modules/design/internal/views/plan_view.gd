@@ -87,6 +87,10 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	_on_changed()
 
 
+## What the DOOR tool places (DesignCatalog.DOOR_KINDS).
+var door_kind := "door"
+
+
 func set_tool(t: String) -> void:
 	tool = t
 	_drag = {}
@@ -531,7 +535,8 @@ func _draw_door(rec: DesignRecord, door: Dictionary) -> void:
 	var ra := rec.room_rect(str(door.a))
 	if absf(p.y - ra.position.y) < 0.05 or absf(p.y - ra.end.y) < 0.05:
 		along_x = true
-	var half := DesignRules.MIN_DOOR * 0.5
+	var kind := DesignCatalog.door_kind(door)
+	var half := maxf(DesignRules.MIN_DOOR, float(kind.w) - 0.2) * 0.5
 	var a := p - (Vector2(half, 0) if along_x else Vector2(0, half))
 	var b := p + (Vector2(half, 0) if along_x else Vector2(0, half))
 	var sa := to_screen(a)
@@ -540,8 +545,11 @@ func _draw_door(rec: DesignRecord, door: Dictionary) -> void:
 	var col := DOOR if str(door.b) != "" else Color("6fc8e8")
 	if selected_kind == "door" and selected_id == door.id:
 		col = SELECT
-	draw_line(sa, sb, col, 2.0)
 	var n := (Vector2(0, 1) if along_x else Vector2(1, 0)) * 4.0
+	if bool(kind.leaves):
+		draw_line(sa, sb, col, 4.0 if str(door.get("kind", "")) == "cargo" else 2.0)
+	else:
+		draw_dashed_line(sa, sb, col, 2.0, 4.0)  # an open doorway
 	draw_line(sa - n, sa + n, col, 2.0)
 	draw_line(sb - n, sb + n, col, 2.0)
 
@@ -1367,7 +1375,8 @@ func _place_door(p: Vector2) -> void:
 	var at: Vector2 = best.at
 	var out: Vector2 = best.out
 	var rr: Rect2 = best.rect
-	var half := DesignRules.MIN_DOOR * 0.5
+	var dw := maxf(DesignRules.MIN_DOOR, float(DesignCatalog.DOOR_KINDS[door_kind].w) - 0.2)
+	var half := dw * 0.5
 	# Snap along the wall, kept a half door from the corners.
 	if out.x != 0:
 		at.y = clampf(snappedf(at.y, rec.grid * 0.5), rr.position.y + half, rr.end.y - half)
@@ -1375,8 +1384,10 @@ func _place_door(p: Vector2) -> void:
 		at.x = clampf(snappedf(at.x, rec.grid * 0.5), rr.position.x + half, rr.end.x - half)
 	var other := rec.room_at(deck, at + out * 0.1)
 	var door := {"a": best.room, "b": other, "deck": deck, "x": at.x, "z": at.y}
+	if door_kind != "door":
+		door["kind"] = door_kind
 	if other != "":
-		var wall := rec.shared_wall(best.room, other, DesignRules.MIN_DOOR)
+		var wall := rec.shared_wall(best.room, other, dw)
 		if wall.is_empty():
 			return
 		if out.x != 0:

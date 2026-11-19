@@ -29,6 +29,8 @@ var _pick_size := 0
 var _pick_grade := DesignGrades.DEFAULT_GRADE
 ## Component groups open on the palette (category -> true).
 var _open_groups: Dictionary = {"flight": true}
+## Door kind buttons under the tools (kind -> Button).
+var _door_buttons: Dictionary = {}
 var _selection: VBoxContainer
 var _tool_buttons: Dictionary = {}
 var _view_buttons: Dictionary = {}
@@ -204,6 +206,7 @@ func _fill_palette() -> void:
 		_palette.remove_child(c)
 		c.queue_free()
 	_tool_buttons = {}
+	_door_buttons = {}
 	_palette.add_child(T.label("TOOLS", "display_bold", 20, T.TEXT))
 	var tools := HBoxContainer.new()
 	for spec in [["select", "SELECT"], ["door", "DOOR"]]:
@@ -213,6 +216,19 @@ func _fill_palette() -> void:
 		_tool_buttons[spec[0]] = b
 		tools.add_child(b)
 	_palette.add_child(tools)
+	var kinds := HBoxContainer.new()
+	for k: String in DesignCatalog.DOOR_ORDER:
+		var dk: Dictionary = DesignCatalog.DOOR_KINDS[k]
+		var b := T.button(str(dk.short), false, 13)
+		b.name = "DoorKind_" + k
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.tooltip_text = "%s: %.1f m wide, CR %s" % [dk.name, float(dk.w), T.money(int(dk.cost))]
+		b.pressed.connect(func() -> void:
+			plan.door_kind = k
+			plan.set_tool("door"))
+		_door_buttons[k] = b
+		kinds.add_child(b)
+	_palette.add_child(kinds)
 	_palette.add_child(T.label("HULL SHAPE  (click its corners, drag them to reshape)", "display_medium", 15, T.DIM))
 	var shape := HBoxContainer.new()
 	for spec in [["hull", "DRAW HULL", func() -> void: plan.set_tool("hull")],
@@ -441,6 +457,10 @@ func _mark_tools() -> void:
 		var on := id == plan.tool
 		var st := T.box(T.PLATE_HI if on else T.PLATE, T.ORANGE if on else T.EDGE, 2, 8.0)
 		b.add_theme_stylebox_override("normal", st)
+	for k: String in _door_buttons:
+		var on := plan.tool == "door" and plan.door_kind == k
+		(_door_buttons[k] as Button).add_theme_stylebox_override("normal",
+				T.box(T.PLATE_HI if on else T.PLATE, T.ORANGE if on else T.EDGE, 2, 8.0))
 
 
 func _holo_panel() -> Control:
