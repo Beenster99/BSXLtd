@@ -128,11 +128,12 @@ const MAX_BOTS := 10
 @export var worn_pace := 0.55
 @export var faults_from := 0.6
 ## A bot is in poor condition when it has faulted or is worn this far (beenster, 19 Nov: "the
-## TartanCo maintenance ship should only appear when a TartanCo bot is in poor condition"):
-## TartanCo is sent for then, and on a visit only bots worn past `service_from` (the same
-## mark) get seen to, so she never comes out for bots in fair shape.
-@export var call_at := 0.7
-@export var service_from := 0.7
+## TartanCo maintenance ship should only appear when a TartanCo bot is in poor condition";
+## 0.4.4 playtest: "maintenance ship turns up too often"): TartanCo is sent for then (and no
+## sooner than YardService.min_gap after her last visit); once she's here her engineers see to
+## every bot worn past `service_from` too, so one visit lasts the crew a good while.
+@export var call_at := 0.85
+@export var service_from := 0.5
 @export var auto_service := true
 
 @export_group("Charging")
