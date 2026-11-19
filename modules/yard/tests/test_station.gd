@@ -388,6 +388,19 @@ func _dock(station: Node3D) -> void:
 				check(not box.intersects(other.box), "berths %s and %s do not overlap" % [b.name, other.name])
 	var lights := dock.find_children("*", "SpotLight3D", true, false)
 	check(lights.size() >= 12, "the berths are floodlit")
+	# Lived in: steam off the coffee, dust in the stores, a fan turning, a lamp that stutters.
+	var lived := station.get_node_or_null("LivedIn")
+	check(lived != null and lived.get_node_or_null("Steam") is CPUParticles3D and lived.get_node_or_null("Dust") is CPUParticles3D, "steam off the coffee machine and dust in the stores")
+	var fan := lived.get_node("VentFan") as Node3D
+	var turned := fan.rotation
+	lived.call("_process", 0.5)
+	check(not fan.rotation.is_equal_approx(turned), "the corridor's vent fan turns")
+	# Worker bots at the keel frame in the build berth; K calls a mover with the next kit.
+	var crew := station.get("workers") as Node3D
+	check(crew != null and crew.call("foreman") != null and int(crew.call("rings_built")) >= 3, "worker bots at a keel frame in the build berth")
+	var kit: String = station.call("call_kit")
+	check(YardKits.KITS.has(kit) and (station.get("traffic").get("kit_orders") as Array).size() >= 1, "K sends a mover bot with a %s" % kit)
+	check((station.get_node("Hud/KitNote") as Label).visible, "and says so on the HUD")
 	# Sleeping quarters: eight cabins, each with Void Salvage's bunk, off the corridor.
 	var bunks := station.find_children("Bunk_*", "Node3D", true, false)
 	check(bunks.size() == 8, "eight cabins with a bunk each in the quarters (%d)" % bunks.size())

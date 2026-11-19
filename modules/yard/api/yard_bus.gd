@@ -67,6 +67,7 @@ func register_module() -> void:
 	for i in names.size():
 		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, "Orbital yard")
 	Keys.register("yard.holster", "Put the tool away", KEY_H, "Orbital yard")
+	Keys.register("yard.kit", "Call a mover bot with the next kit", KEY_K, "Orbital yard")
 	for view: String in ["station_outside", "corridor", "design_room", "design_vault", "design_mezzanine", "design_window", "design_lock", "stores_hall",
 			"stores_long", "stores_components", "stores_heavy", "stores_goods_in", "stores_yard_side",
 			"stores_deliveries", "stores_put_away", "stores_to_yard", "contracts", "crew", "airlock"]:

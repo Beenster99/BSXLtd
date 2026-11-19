@@ -16,6 +16,8 @@ const DesignShell := preload("res://modules/yard/internal/design_shell.gd")
 const Dock := preload("res://modules/yard/internal/dock.gd")
 const Solar := preload("res://modules/yard/internal/solar_array.gd")
 const Quarters := preload("res://modules/yard/internal/quarters.gd")
+const YardWorkers := preload("res://modules/yard/internal/yard_workers.gd")
+const LivedIn := preload("res://modules/yard/internal/lived_in.gd")
 const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
 ## Where the practice frame floats: just out of the airlock (station space).
 const PRACTICE_AT := Vector3(-47.5, -0.6, -2.0)
@@ -30,6 +32,9 @@ const VIEWS := {
 	"dock_solar": [Vector3(70, 10, -30), Vector3(106, -10, -66)],
 	"stores_roof": [Vector3(0, 52, 10), Vector3(48, 32, -36)],
 	"sky_galaxy": [Vector3(0, 1.7, -15), Vector3(-35, 42, -84)],
+	"workers": [Vector3(14, 5, -70), Vector3(-8, 0, -85)],
+	"crew_lived_in": [Vector3(17.5, 1.8, 10.5), Vector3(4, 1.0, 1.5)],
+	"corridor_services": [Vector3(-31, 2.0, -2.0), Vector3(10, 2.8, -1.0)],
 	"design_room": [Vector3(9.5, 5.2, -5.5), Vector3(-4, 1.2, -18)],
 	"design_vault": [Vector3(7, 1.7, -20.5), Vector3(-3, 7.5, -8)],
 	"design_mezzanine": [Vector3(-2, 1.7, -17), Vector3(-6, 3.0, -6)],
@@ -124,6 +129,10 @@ var dock: Node3D
 var practice: Node3D
 var design_root: Node3D
 var _hint: Label
+var _note: Label
+var _note_left := 0.0
+var _next_kit := 0
+var workers: Node3D
 var _weld_drive: Dictionary = {}
 var _bus: Node
 
@@ -143,6 +152,10 @@ func _ready() -> void:
 		traffic.name = "StoresTraffic"
 		add_child(traffic)
 		traffic.call("build", _rack_store())
+		if Flags.is_on(YardBus.DOCK):
+			workers = YardWorkers.new()
+			add_child(workers)
+			workers.call("build", traffic)
 	airlock = Airlock.new()
 	airlock.name = "Airlock"
 	add_child(airlock)
@@ -416,7 +429,10 @@ func _physics_process(_delta: float) -> void:
 	mover.place(head - Vector3(0, YardRig.FEET + YardRig.EYE, 0), at)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _note and _note_left > 0.0:
+		_note_left -= delta
+		_note.visible = _note_left > 0.0
 	if _hint and mover:
 		var h: String = mover.call("hint")
 		_hint.text = h
@@ -441,6 +457,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		_walk_again()
 		if event.is_action_pressed(Keys.INTERACT) and not HudSlots.pointer_claimed():
 			mover.call("use")
+		elif event.is_action_pressed("yard.kit"):
+			call_kit()
+
+
+## Calls a mover bot with the next kit (YardKits, in turn) to wherever you are; says so on
+## the HUD. Returns the kit's id ("" without the stores).
+func call_kit() -> String:
+	if traffic == null:
+		return ""
+	var ids := YardKits.ids()
+	var kit: String = ids[_next_kit % ids.size()]
+	_next_kit += 1
+	var id := int(traffic.call("deliver_kit", kit, mover))
+	if _note:
+		_note.text = "Mover bot on its way with a %s" % YardKits.display_name(kit).to_lower() if id >= 0 else "No stock for a %s" % YardKits.display_name(kit).to_lower()
+		_note_left = 4.0
+		_note.visible = true
+	return kit
 
 
 func _walk_again() -> void:
@@ -459,6 +493,21 @@ func _build_hud() -> void:
 	dot.position -= Vector2(2, 2)
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(dot)
+	_note = Label.new()
+	_note.name = "KitNote"
+	_note.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_note.offset_top = 60
+	_note.offset_bottom = 100
+	_note.offset_left = -300
+	_note.offset_right = 300
+	_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_note.add_theme_font_size_override("font_size", 20)
+	_note.add_theme_color_override("font_color", Color(0.55, 0.9, 1.0))
+	_note.add_theme_color_override("font_outline_color", Color.BLACK)
+	_note.add_theme_constant_override("outline_size", 6)
+	_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_note.visible = false
+	layer.add_child(_note)
 	_hint = Label.new()
 	_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hint.offset_top = -120
@@ -549,7 +598,8 @@ func _build_station() -> void:
 	k.wall(true, 0.0, -34.0, 46.0, 0.0, 3.2, wall, [[-7.0, -5.0, 2.4], [9.0, 11.0, 2.4], [31.0, 33.0, 2.4]])
 	k.wall(false, 46.0, -4.0, 0.0, 0.0, 3.2, wall)
 	for x in range(-30, 46, 6):
-		k.ceiling_lamp(Vector3(x, 3.2, -2.0), Vector2(1.6, 0.4), 0.7, 6.0)
+		if x != 18:   # the one at x 18 flickers (LivedIn)
+			k.ceiling_lamp(Vector3(x, 3.2, -2.0), Vector2(1.6, 0.4), 0.7, 6.0)
 	for z: float in [-3.85, -0.15]:
 		k.span(Vector3(-34.0, 0.0, z - 0.04), Vector3(46.0, 0.012, z + 0.04), orange, false)
 	# Along both walls: a dark skirting, a lower wall in darker satin with an orange line along
@@ -596,6 +646,9 @@ func _build_station() -> void:
 	k.wall(false, 44.0, 0.0, 12.1, 0.0, 3.17, wall)
 	k.wall(true, 12.0, 20.1, 43.9, 0.0, 3.17, wall, [[22.6, 23.6, 2.2, 1.2], [28.6, 29.6, 2.2, 1.2], [34.6, 35.6, 2.2, 1.2], [40.6, 41.6, 2.2, 1.2]], 0.2, pane)
 	Quarters.new().build(k, self)
+
+	# What makes it lived in: service runs, steam, mugs, plants, wear, drips and dust.
+	LivedIn.new().build(k, self)
 
 	# Outside: the hull's colours and a name the dock can read.
 	for x: float in [-30.0, 4.0]:

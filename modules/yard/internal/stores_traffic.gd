@@ -19,6 +19,8 @@ const FreighterLook := preload("res://modules/yard/internal/yard_freighter_look.
 
 signal delivered(part: String, qty: int)
 signal sent(part: String, qty: int)
+## A kit (YardKits) has all arrived where it was asked for: its order's id and its loads.
+signal kit_delivered(order_id: int, kit: String)
 
 ## Bots' speed (m/s) and how long a tractor draw takes (s).
 @export var bot_speed := 9.0
@@ -27,7 +29,9 @@ signal sent(part: String, qty: int)
 @export var hauler_speed := 28.0
 @export var hauler_approach := 260.0
 @export var store_bots := 10
-@export var yard_bots := 4
+@export var yard_bots := 6
+## How long a kit's loads stay where a mover bot set them down for you before they go back (s).
+@export var kit_keep_seconds := 150.0
 ## Loads one hauler carries at most.
 @export var hauler_loads := 6
 ## Each hauler's own bots, in its freight line's livery, that help unload it (0.4.1).
@@ -69,6 +73,23 @@ var _mats: Dictionary = {}
 var _next_id := 0
 var _next_brand := 0
 var _ship: Dictionary = {}
+## Kits on their way (deliver_kit): {id, kit, to (Node3D), asked (parts), arrived (parts),
+## loads (the loads set down so far), done}.
+var kit_orders: Array[Dictionary] = []
+var _next_kit := 0
+var _clock := 0.0
+
+## The yard bots are mover bots too: out of the stores by its corridor door, along the
+## corridor and in at a room's door (station space, m; y is the bots' corridor height).
+const STORES_DOOR := Vector3(30.0, 2.4, -4.0)
+const MOVER_AISLE_X := 33.5
+const CORRIDOR_Z := -2.0
+const CORRIDOR_Y := 2.4
+## room id -> its corridor door's x and a point just inside it (z).
+const ROOM_DOORS := {
+	"design": Vector2(6.25, -6.5), "contracts": Vector2(-6.0, 2.5), "crew": Vector2(10.0, 2.5),
+	"quarters": Vector2(32.0, 2.5), "airlock": Vector2(-36.0, -2.0), "design_lock": Vector2(6.25, -6.5),
+}
 
 
 func build(rack_store: YardRackStore) -> void:
@@ -114,12 +135,55 @@ func send_to_yard(items: Array) -> void:
 			yard_asks.append({"part": it.part, "qty": int(it.qty)})
 
 
+## Sends a kit (YardKits id) to `to` wherever it is (a player's rig, a worker bot): mover bots
+## take its parts off the racks and bring them, following it, and set them down by it. Returns
+## the order's id (kit_delivered fires with it), -1 for an unknown kit. Parts out of stock are
+## left out.
+func deliver_kit(kit: String, to: Node3D) -> int:
+	if not YardKits.KITS.has(kit) or to == null:
+		return -1
+	_next_kit += 1
+	var o := {"id": _next_kit, "kit": kit, "to": to, "asked": 0, "arrived": 0, "loads": [], "done": false}
+	kit_orders.append(o)
+	var parts := YardKits.parts(kit)
+	parts.reverse()
+	for it: Dictionary in parts:
+		if not YardRackStore.PARTS.has(it.part):
+			continue
+		var have := mini(int(it.qty), store.count(it.part))
+		if have <= 0:
+			continue
+		o.asked = int(o.asked) + have
+		yard_asks.push_front({"part": it.part, "qty": have, "kit": o.id})   # ahead of the yard's own asks
+	if int(o.asked) == 0:
+		o.done = true
+		kit_delivered.emit(o.id, kit)
+	return o.id
+
+
+func kit_order(id: int) -> Dictionary:
+	for o in kit_orders:
+		if int(o.id) == id:
+			return o
+	return {}
+
+
+## Takes a delivered load away (a worker bot fitted it, or nobody wanted it).
+func consume(l: Dictionary) -> void:
+	for i in loads.size():
+		if int(loads[i].id) == int(l.id):
+			loads.remove_at(i)
+			break
+	if is_instance_valid(l.node):
+		(l.node as Node).queue_free()
+
+
 ## True while anything is on its way: a hauler, a load, a bot at work or a part still asked for.
 func busy() -> bool:
 	if not backlog.is_empty() or not haulers.is_empty() or not yard_asks.is_empty():
 		return true
 	for l in loads:
-		if l.where != "berth":
+		if l.where != "berth" and l.where != "delivered":
 			return true
 	for b in bots:
 		if not (b.job as Array).is_empty():
@@ -133,7 +197,11 @@ func _process(delta: float) -> void:
 
 ## Moves everything on by `delta` seconds (tests call it directly).
 func step(delta: float) -> void:
+	_clock += delta
 	_step_haulers(delta)
+	for l in loads.duplicate():
+		if l.where == "delivered" and not l.get("kept", false) and _clock - float(l.get("landed_at", 0.0)) > kit_keep_seconds:
+			consume(l)
 	for b in bots.duplicate():
 		if b.has("hauler") and bool(b.aboard) and b.hauler.state != "open":
 			BotLook.animate(b.node, delta, false)
@@ -340,6 +408,14 @@ func _next_job(b: Dictionary) -> void:
 	if b.yard:
 		# A load waiting at the yard side goes out to the build berth.
 		for l in loads:
+			if l.where == "dispatch" and not l.claimed and l.has("kit"):
+				var o := kit_order(int(l.kit))
+				if not o.is_empty() and is_instance_valid(o.to):
+					l.claimed = true
+					b.job = _kit_steps(l, o)
+					return
+				l.erase("kit")
+		for l in loads:
 			if l.where == "dispatch" and not l.claimed:
 				l.claimed = true
 				var spot := _berth_spot()
@@ -360,6 +436,10 @@ func _next_job(b: Dictionary) -> void:
 		while not yard_asks.is_empty():
 			var ask: Dictionary = yard_asks[0]
 			var slot := store.find(ask.part)
+			if slot < 0 and ask.has("kit"):   # gone since it was asked for: the kit comes without it
+				yard_asks.pop_front()
+				_kit_short(int(ask.kit), int(ask.qty))
+				continue
 			if slot < 0:
 				break
 			var spot := _free_spot(_dispatch_spots, YardRackStore.DISPATCH_BAYS)
@@ -370,6 +450,8 @@ func _next_job(b: Dictionary) -> void:
 			if int(ask.qty) <= 0:
 				yard_asks.pop_front()
 			var l := _new_load(ask.part, n)
+			if ask.has("kit"):
+				l.kit = int(ask.kit)
 			add_child(l.node)
 			l.where = "rack"
 			l.claimed = true
@@ -507,6 +589,34 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 		if s.t >= 1.0:
 			l.where = "carried"
 			job.pop_front()
+	elif s.has("path") or s.has("path_home"):
+		if not s.has("points"):
+			if s.has("path_home"):   # back the way it came, then home
+				var back := _mover_way(b.home, node.position)
+				back.reverse()
+				back.append(b.home)
+				s.points = back
+			else:
+				s.points = _mover_way(node.position, (s.path as Node3D).global_position)
+		var points: Array = s.points
+		if points.is_empty():
+			job.pop_front()
+		else:
+			var to: Vector3 = points[0]
+			node.position = node.position.move_toward(to, bot_speed * delta)
+			_face(node, to - node.position, delta)
+			if node.position.distance_to(to) < 0.01:
+				points.pop_front()
+	elif s.has("follow"):
+		var o: Dictionary = s.follow
+		if not is_instance_valid(o.to):
+			job.pop_front()
+			return
+		var to := _beside(node.position, o.to as Node3D, s.l)
+		node.position = node.position.move_toward(to, bot_speed * 0.8 * delta)
+		_face(node, (o.to as Node3D).global_position - node.position, delta)
+		if node.position.distance_to(to) < 0.2:
+			job.pop_front()
 	elif s.has("board"):
 		node.reparent((s.board as Dictionary).node)
 		node.position = b.park
@@ -519,6 +629,8 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 		if not s.has("t"):
 			s.t = 0.0
 			s.from = ln.global_position
+			if s.has("at_fn"):
+				s.at = (s.at_fn as Callable).call(b)
 			l.where = "setting"
 		s.t += delta / draw_seconds
 		ln.global_position = (s.from as Vector3).lerp(s.at, _ease(minf(s.t, 1.0)))
@@ -527,6 +639,99 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 			l.claimed = false
 			(s.done as Callable).call()
 			job.pop_front()
+
+
+# --- Mover bots ------------------------------------------------------------------------------
+
+## A kit load from the yard side to its order's target: drawn up, out by the way to the
+## target's room, after it as it moves, and set down beside it.
+func _kit_steps(l: Dictionary, o: Dictionary) -> Array:
+	var steps := _fetch_steps(l, at_or(l))
+	steps.append({"path": o.to})
+	steps.append({"follow": o, "l": l})
+	steps.append({"set": l, "at_fn": func(bot: Dictionary) -> Vector3: return _drop_at(bot, o.to as Node3D, l),
+			"done": func() -> void: _kit_landed(l, o)})
+	steps.append({"path_home": true})
+	return steps
+
+
+## The way from the stores' yard side to `to`: up the aisle and out of the stores by its
+## corridor door, along the corridor, in at the room's door; out of the open face to the dock;
+## by the well to the upper storey. The last leg (following it) is the follow step's.
+func _mover_way(from: Vector3, to: Vector3) -> Array:
+	var room := YardLayout.room_at(to + Vector3(0, 0.3, 0))
+	var low := YARD_CRUISE_Y
+	var pts: Array = [Vector3(from.x, maxf(low, from.y), from.z)]
+	if room == "":   # outside: out of the open face
+		pts.append(Vector3(from.x, low, StoresShellRef.Z_YARD - 6.0))
+	elif room == "racking":
+		if _storey(to) == 1:
+			pts.append(Vector3(YardRackStore.WELL_X, low, clampf(to.z, -60.0, -8.0)))
+			pts.append(Vector3(YardRackStore.WELL_X, YardRackStore.UPPER_FLOOR_Y + 4.0, clampf(to.z, -60.0, -8.0)))
+	else:
+		pts.append(Vector3(MOVER_AISLE_X, low, from.z))
+		pts.append(Vector3(MOVER_AISLE_X, low, STORES_DOOR.z - 2.5))
+		pts.append(Vector3(STORES_DOOR.x, CORRIDOR_Y, STORES_DOOR.z - 2.0))
+		pts.append(Vector3(STORES_DOOR.x, CORRIDOR_Y, CORRIDOR_Z))
+		if ROOM_DOORS.has(room):
+			var d: Vector2 = ROOM_DOORS[room]
+			pts.append(Vector3(d.x, CORRIDOR_Y, CORRIDOR_Z))
+			pts.append(Vector3(d.x, CORRIDOR_Y, d.y))
+	return pts
+
+
+## Where a mover hovers to set a load down by `to`: 1.8 m short of it on the way in, its load
+## just clear of the floor (in a room) or level with it (in zero g).
+func _beside(from: Vector3, to: Node3D, l: Dictionary) -> Vector3:
+	var p := to.global_position
+	var flat := Vector3(from.x - p.x, 0, from.z - p.z)
+	if flat.length() < 0.1:
+		flat = Vector3.BACK
+	var at := p + flat.normalized() * 1.8
+	if YardLayout.has_gravity(p):
+		at.y = _floor_under(p) + _load_height(l) + BOT_HANG + 0.5
+	return at
+
+
+func _drop_at(b: Dictionary, to: Node3D, l: Dictionary) -> Vector3:
+	var at: Vector3 = (b.node as Node3D).global_position
+	if YardLayout.has_gravity(to.global_position):
+		return Vector3(at.x, _floor_under(to.global_position), at.z)
+	return at - Vector3(0, BOT_HANG + _load_height(l) + 0.2, 0)
+
+
+func _floor_under(p: Vector3) -> float:
+	if YardLayout.room_at(p + Vector3(0, 0.3, 0)) == "racking":
+		return YardRackStore.floor_y(_storey(p))
+	return 0.0
+
+
+func _kit_landed(l: Dictionary, o: Dictionary) -> void:
+	l.where = "delivered"
+	l.landed_at = _clock
+	(o.loads as Array).append(l)
+	o.arrived = int(o.arrived) + int(l.qty)
+	_kit_check(o)
+
+
+func _kit_short(id: int, qty: int) -> void:
+	var o := kit_order(id)
+	if o.is_empty():
+		return
+	o.asked = int(o.asked) - qty
+	_kit_check(o)
+
+
+func _kit_check(o: Dictionary) -> void:
+	if not bool(o.done) and int(o.arrived) >= int(o.asked):
+		o.done = true
+		kit_delivered.emit(int(o.id), String(o.kit))
+
+
+func _face(node: Node3D, way: Vector3, delta: float) -> void:
+	var flat := Vector3(way.x, 0, way.z)
+	if flat.length() > 0.3:
+		node.rotation.y = lerp_angle(node.rotation.y, atan2(-flat.x, -flat.z), minf(1.0, delta * 4.0))
 
 
 ## Up to the bot's cruise height, across, and down: over the racks, never through them. Between
@@ -700,7 +905,7 @@ func _load_height(l: Dictionary) -> float:
 
 func _home(i: int, yard: bool) -> Vector3:
 	if yard:
-		return Vector3(20.0 + i % 4 * 7.0, 4.0, -70.0)
+		return Vector3(18.0 + float(i % 6) * 6.0, 4.0, -70.0)
 	return Vector3(71.0 + float(i % 2) * 6.0, 9.0, -52.0 + float(i / 2) * 9.0)
 
 
