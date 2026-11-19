@@ -84,6 +84,22 @@ func run_tests() -> void:
 	two.apply({"op": "set_room", "id": "s1", "fields": {"x": 5.0}})
 	check(not DesignRules.reachable(two, cat).has("u1"), "and not once the stairwells no longer line up")
 
+	# Reached the way walk-inside builds her (beenster, 19 Nov): inside a drawn hull the deck
+	# round the rooms is floor, so doors out onto it join up there; and a door joins whatever
+	# rooms stand either side of it, whichever two it was drawn between.
+	var open := small_ship()
+	open.apply({"op": "remove_door", "id": "d7"})
+	check(not DesignRules.reachable(open, cat).has("r1"), "without its door the bridge is cut off")
+	open.apply({"op": "add_door", "door": {"id": "dx", "a": "r1", "b": "r4", "x": 0, "z": -6}})
+	check(DesignRules.reachable(open, cat).has("r1"), "a door standing on the bridge's wall to the corridor joins them, drawn between any two")
+	open.apply({"op": "remove_door", "id": "dx"})
+	open.apply({"op": "add_door", "door": {"id": "dn", "a": "r1", "b": "", "x": 0.5, "z": -10}})
+	open.apply({"op": "add_door", "door": {"id": "dw", "a": "r2", "b": "", "x": -1, "z": 2}})
+	check(not DesignRules.reachable(open, cat).has("r1"), "with no hull drawn, doors out lead into space")
+	open.apply({"op": "set_hull", "deck": 0, "points": [[-9, -12], [9, -12], [9, 8], [-9, 8]]})
+	check(DesignRules.reachable(open, cat).has("r1"), "inside a drawn hull the open deck joins the doors onto it")
+	check(not DesignRules.check(open, cat).any(func(p): return p.code == "no_route"), "and the check says nothing is cut off")
+
 
 func _expect(d: DesignRecord, op: Dictionary, code: String) -> void:
 	var undo := d.apply(op)

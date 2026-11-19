@@ -177,18 +177,24 @@ static func _door_fits(d: DesignRecord, door: Dictionary) -> bool:
 	return off < 0.05 and t >= MIN_DOOR * 0.5 - 0.01 and t <= length - MIN_DOOR * 0.5 + 0.01
 
 
-## Which rooms can be walked to: from any airlock, through doors and stairwells.
+## Which rooms can be walked to: from any airlock, through doors and stairwells. Worked out
+## the way walk-inside builds the ship (beenster, 19 Nov: the check said no way to the bridge
+## where he could walk there): a door is a gap in whatever wall it stands on, so it joins the
+## spaces either side of where it stands, whichever rooms it was drawn between; and inside a
+## drawn hull, the deck round the rooms is floor too, so doors out onto it join up there.
 static func reachable(d: DesignRecord, cat: DesignCatalog) -> Dictionary:
 	var links := {}
 	for r: String in d.rooms:
 		links[r] = []
 	for door: Dictionary in d.doors.values():
-		if str(door.b) == "" or not links.has(door.a) or not links.has(door.b):
+		var sides := door_sides(d, door)
+		if sides.size() < 2 or sides[0] == "" or sides[1] == "":
 			continue
-		if not _door_fits(d, door):
-			continue
-		links[door.a].append(door.b)
-		links[door.b].append(door.a)
+		for k in 2:
+			if not links.has(sides[k]):
+				links[sides[k]] = []
+		links[sides[0]].append(sides[1])
+		links[sides[1]].append(sides[0])
 	# Stairwells join where one stands over another on the next deck.
 	var stairs: Array[Dictionary] = []
 	for r: Dictionary in d.rooms.values():
@@ -210,11 +216,38 @@ static func reachable(d: DesignRecord, cat: DesignCatalog) -> Dictionary:
 			queue.append(r.id)
 	while not queue.is_empty():
 		var cur: String = queue.pop_front()
-		for nxt: String in links[cur]:
+		for nxt: String in links.get(cur, []):
 			if not seen.has(nxt):
 				seen[nxt] = true
 				queue.append(nxt)
+	for k: String in seen.keys():
+		if not d.rooms.has(k):
+			seen.erase(k)
 	return seen
+
+
+## What a door opens between: the two spaces either side of where it stands, each a room id,
+## "deck:<n>" (the open deck inside that deck's hull) or "" (outside the ship). Empty when it
+## stands on no wall (the same space both sides).
+static func door_sides(d: DesignRecord, door: Dictionary) -> PackedStringArray:
+	var deck := int(door.deck)
+	var p := Vector2(float(door.x), float(door.z))
+	for off: Vector2 in [Vector2(0.15, 0), Vector2(0, 0.15)]:
+		var a := _space_at(d, deck, p + off)
+		var b := _space_at(d, deck, p - off)
+		if a != b:
+			return PackedStringArray([a, b])
+	return PackedStringArray()
+
+
+static func _space_at(d: DesignRecord, deck: int, p: Vector2) -> String:
+	var r := d.room_at(deck, p)
+	if r != "":
+		return r
+	var outline := d.hull_outline(deck)
+	if outline.size() >= 3 and Geometry2D.is_point_in_polygon(p, outline):
+		return "deck:%d" % deck
+	return ""
 
 
 static func _route_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictionary]) -> void:
@@ -223,8 +256,10 @@ static func _route_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictio
 		return  # no airlock: _ship_checks says so
 	var outside := false
 	for door: Dictionary in d.doors.values():
-		if str(door.b) == "" and _door_fits(d, door):
-			var rt := cat.room(str(d.rooms.get(door.a, {}).get("type", "")))
+		var sides := door_sides(d, door)
+		if sides.size() == 2 and "" in sides:
+			var room := sides[0] if sides[1] == "" else sides[1]
+			var rt := cat.room(str(d.rooms.get(room, {}).get("type", "")))
 			outside = outside or (rt != null and rt.is_airlock)
 	if not outside:
 		out.append(_problem("no_way_out", ERROR, "No airlock has an outer door"))
