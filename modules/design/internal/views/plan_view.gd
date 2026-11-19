@@ -665,6 +665,18 @@ func _draw_elevation(rec: DesignRecord) -> void:
 		var col := _room_colour(r)
 		draw_rect(sr, Color(col, 0.18))
 		draw_rect(sr, SELECT if selected_kind == "room" and str(r.id) == selected_id else Color(col, 0.9), false, 2.0)
+	# The selected room's ends to drag (and its top and bottom for stairs, lifts and hatches),
+	# drawn over the rest.
+	if editable and selected_kind == "room" and rec.rooms.has(selected_id):
+		var sel: Dictionary = rec.rooms[selected_id]
+		var ssr := Rect2(to_screen(_room_view_rect(rec, sel).position), _room_view_rect(rec, sel).size * zoom)
+		draw_rect(ssr, SELECT, false, 3.0)
+		for x: float in [ssr.position.x, ssr.end.x]:
+			draw_rect(Rect2(x - 4, ssr.get_center().y - 14, 8, 28), SELECT)
+		var srt := bus.catalog.room(str(sel.type))
+		if srt and srt.links_decks:
+			for y: float in [ssr.position.y, ssr.end.y]:
+				draw_rect(Rect2(ssr.get_center().x - 14, y - 4, 28, 8), SELECT)
 	# Names, nearest rooms first, skipping any that would print over another.
 	var taken: Array[Rect2] = []
 	var fs := clampi(int(zoom * 0.4), 8, 15)
@@ -1107,6 +1119,12 @@ func pick(s: Vector2) -> Dictionary:
 func _update_cursor(s: Vector2) -> void:
 	if not editable or tool != "select" or not _drag.is_empty():
 		return
+	if mode != PLAN:
+		var eh := _elevation_pick(_rec(), s) if _rec() else {}
+		var e := int(eh.get("edge", 0))
+		mouse_default_cursor_shape = Control.CURSOR_ARROW if eh.is_empty() else (Control.CURSOR_HSIZE if absi(e) == 1
+				else (Control.CURSOR_VSIZE if absi(e) == 2 else Control.CURSOR_MOVE))
+		return
 	var hit := pick(s)
 	var shape := Control.CURSOR_ARROW
 	if hit.get("kind", "") == "room":
@@ -1332,10 +1350,27 @@ func _press_elevation(rec: DesignRecord, s: Vector2) -> void:
 		return
 	if tool != "select":
 		return
-	# The nearest room under the pointer (the elevation draws the far ones first).
+	var hit := _elevation_pick(rec, s)
+	if hit.is_empty():
+		select("", "")
+		return
+	var r: Dictionary = rec.rooms[hit.id]
+	select("room", str(r.id))
+	_drag = {"kind": "room", "id": str(r.id), "edge": int(hit.edge), "start": p, "span": _span_of(r), "deck": int(r.deck),
+			"rect": _room_view_rect(rec, r)}
+
+
+## The room under the pointer in an elevation and which edge of it: {id, edge} (edge -1/1 its
+## ends along the view, 2/-2 its top and bottom for rooms that link decks, 0 the room itself),
+## or {}. The selected room is tried first, so its ends can be grabbed where rooms behind it
+## line up with them; then the nearest room (the elevation draws the far ones first).
+func _elevation_pick(rec: DesignRecord, s: Vector2) -> Dictionary:
 	var list: Array = rec.rooms.values()
 	list.sort_custom(func(a, b):
 		return float(a.x) + float(a.w) > float(b.x) + float(b.w) if mode == SIDE else float(a.z) + float(a.d) < float(b.z) + float(b.d))
+	if selected_kind == "room" and rec.rooms.has(selected_id):
+		list.erase(rec.rooms[selected_id])
+		list.push_front(rec.rooms[selected_id])
 	for r: Dictionary in list:
 		var rr := _room_view_rect(rec, r)
 		var sr := Rect2(to_screen(rr.position), rr.size * zoom)
@@ -1351,12 +1386,8 @@ func _press_elevation(rec: DesignRecord, s: Vector2) -> void:
 			edge = -1
 		elif absf(s.x - sr.end.x) < EDGE_GRAB:
 			edge = 1
-		select("room", str(r.id))
-		var span := _span_of(r)
-		_drag = {"kind": "room", "id": str(r.id), "edge": edge, "start": p, "span": span, "deck": int(r.deck),
-				"rect": rr}
-		return
-	select("", "")
+		return {"id": str(r.id), "edge": edge}
+	return {}
 
 
 func _drag_elevation(rec: DesignRecord, p: Vector2) -> void:

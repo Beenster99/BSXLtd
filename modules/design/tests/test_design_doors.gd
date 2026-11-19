@@ -13,6 +13,7 @@ func run_tests() -> void:
 	var bus := Modules.bus("design") as DesignBus
 	_kinds(bus)
 	await _console(bus)
+	await _elevations(bus)
 
 
 func _kinds(bus: DesignBus) -> void:
@@ -91,3 +92,35 @@ func _console(bus: DesignBus) -> void:
 
 
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
+
+
+## Rooms resized in the side and end views (beenster, 19 Nov), by the selected room's ends even
+## where a neighbour's end lines up with them.
+func _elevations(bus: DesignBus) -> void:
+	bus.library.reset_data()
+	var rec := bus.library.create("Elevations")
+	bus.editor.do({"op": "add_room", "room": {"type": "bridge", "deck": 0, "x": 0, "z": 0, "w": 4, "d": 4}})
+	bus.editor.do({"op": "add_room", "room": {"type": "cargo", "deck": 0, "x": 0, "z": 4, "w": 6, "d": 6}})
+	var bridge := "r1"
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	var plan := PlanView.new()
+	plan.setup(bus, PlanView.PLAN, true)
+	plan.size = Vector2(1200, 800)
+	layer.add_child(plan)
+	await frames(2)
+	for view: String in [PlanView.SIDE, PlanView.END]:
+		plan.mode = view
+		plan.frame_all()
+		plan.select("room", bridge)
+		var r: Dictionary = rec.rooms[bridge]
+		var rr := plan._room_view_rect(rec, r)
+		var at := Vector2(rr.end.x, rr.get_center().y)
+		check(int(plan._elevation_pick(rec, plan.to_screen(at)).get("edge", 0)) == 1, "%s: the selected room's end is grabbed" % view)
+		plan._press(plan.to_screen(at))
+		plan._drag_move(plan.to_screen(at + Vector2(-1, 0)))
+		plan._release(plan.to_screen(at + Vector2(-1, 0)))
+		var size := float(rec.rooms[bridge].d if view == PlanView.SIDE else rec.rooms[bridge].w)
+		check(is_equal_approx(size, 3.0), "%s view: the bridge shortened to 3 m: %s" % [view, rec.rooms[bridge]])
+		bus.editor.undo()
+	layer.queue_free()
