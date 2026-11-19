@@ -21,6 +21,8 @@ const HELD_EVERY := 0.2
 const LAMP_AT := Vector3(0.12, 0.08, -0.25)
 ## The stand-in's own render layers, kept on each of its shapes while it is out of sight.
 const STAND_IN_LAYERS := &"yard_stand_in_layers"
+## Runs after the other modules' _process (higher goes later), so nothing redraws the stand-in.
+const STAND_IN_PRIORITY := 100
 
 ## The station's own rig: what this player streams.
 var rig: YardRig
@@ -109,6 +111,10 @@ class Crewmate:
 
 func _ready() -> void:
 	name = "Crew"
+	# After everything else's _process: the helmet torch puts a lit crewmate's meshes back on a
+	# render layer every half second (graphics' unshadow), so the stand-in is hidden again after
+	# it, each frame (0.4.4 playtest: a friend drawn twice, the plain orange suit over the yard's).
+	process_priority = STAND_IN_PRIORITY
 	for n: Node3D in [_body, _head]:
 		n.top_level = true
 		add_child(n)
@@ -152,6 +158,7 @@ func _process(delta: float) -> void:
 		_head.global_transform = rig.head.global_transform
 	for peer: int in crewmates:
 		(crewmates[peer] as Crewmate).follow(delta)
+		_hide_stand_in(peer)
 	_held_left -= delta
 	if _held_left <= 0.0:
 		_held_left = HELD_EVERY
@@ -273,7 +280,10 @@ func _hide_stand_in(peer: int) -> void:
 		var gi := g as GeometryInstance3D
 		if not gi.has_meta(STAND_IN_LAYERS):
 			gi.set_meta(STAND_IN_LAYERS, gi.layers)
-		gi.layers = 0 if c.visible else int(gi.get_meta(STAND_IN_LAYERS))
+		if c.visible:
+			gi.layers = 0
+		else:
+			gi.layers |= int(gi.get_meta(STAND_IN_LAYERS))
 		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if c.visible else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
