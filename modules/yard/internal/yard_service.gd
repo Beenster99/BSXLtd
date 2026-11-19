@@ -12,7 +12,7 @@ extends Node3D
 ##     handling arm comes down and works it over while the engineer runs the diagnostics at
 ##     the console, then they fly it back to the keel, fault cleared.
 ## Then they go back aboard, the shutters come down and she leaves, bow first. Presentation over
-## the crew's own wear and faults (YardWorkers: needs_service, serviced; a bot with "held" set
+## the crew's own wear and faults (YardWorkers: needs_service, serviced; a bot with "external" set
 ## is flown by the engineer, not the crew).
 
 const ShipLook := preload("res://modules/yard/internal/yard_service_ship_look.gd")
@@ -165,7 +165,7 @@ func _step_team(delta: float) -> void:
 					e.t = 0.0
 					if String(job.get("fault", "")) != "":
 						e.from = bot.global_position
-						job.held = true
+						job.external = true
 						e.stage = "lead"
 					else:
 						e.stage = "tune"
@@ -240,7 +240,7 @@ func _lead(e: Dictionary, bot: Node3D, delta: float) -> void:
 		"undock":
 			e.stage = "back"
 		"back":
-			(e.job as Dictionary).held = false
+			(e.job as Dictionary).external = false
 			_done(e)
 
 
@@ -268,7 +268,7 @@ func _bay(e: Dictionary, bot: Node3D, delta: float) -> void:
 
 func _done(e: Dictionary) -> void:
 	var job: Dictionary = e.job
-	job.erase("held")
+	job.erase("external")
 	crew.call("serviced", job)
 	visits += 1
 	e.job = {}

@@ -19,6 +19,16 @@ extends Node
 signal station_ready(station: Node3D)
 ## The scene closed.
 signal station_closed
+## Worker bots in the build berth need TartanCo (one faulted, or worn past its call point): the
+## bots to see to (Node3Ds, see worker_bots). Sent once until they've all been seen to. While
+## anything is connected here, the yard's own stand-in service visit stays away and the
+## listener (the TartanCo maintenance ship) does the servicing:
+##   yard.workers_need_service.connect(func(bots): ...)
+##   yard.worker_condition(bot)      # {productivity 0..1, errors: Array[String], wear, model, serial}
+##   yard.begin_worker_service(bot)  # it stops work and keeps still: yours to move or hold
+##   yard.end_worker_service(bot)    # as new, its errors cleared, back to work
+## Each bot has metas "tartanco_model" (W-3, R-3, B-3, F-3) and "serial".
+signal workers_need_service(bots: Array)
 
 const SCENE := "yard.station"
 const SCENE_PATH := "res://modules/yard/internal/station.tscn"
@@ -27,6 +37,8 @@ const FLAG := "yard"
 const STATION := "yard.station"
 const DOCK := "yard.dock"
 const RACKING := "yard.racking"
+## The freight lines' own couriers, haulers and freighters (19 Nov), else the 0.4.1 looks.
+const DELIVERY_SHIPS := "yard.delivery_ships"
 
 ## The design room's inside (m): width (x), the side walls' height, depth (z).
 const DESIGN_ROOM_SIZE := Vector3(24, 6, 18)
@@ -169,7 +181,46 @@ static func berths() -> Array[Dictionary]:
 
 func _station_opened(s: Node3D) -> void:
 	_station = s
+	var crew := _workers()
+	if crew and crew.has_signal("service_needed"):
+		crew.connect("service_needed", func(bots: Array) -> void: workers_need_service.emit(bots))
 	station_ready.emit(s)
+
+
+## The worker bots building in the build berth (TartanCo's androids), [] while no station is
+## open.
+func worker_bots() -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	var crew := _workers()
+	if crew:
+		out.assign(crew.call("bots"))
+	return out
+
+
+## A worker bot's condition: {productivity 0..1 (0 while it has an error), errors, wear, model,
+## serial}, or {} for a node that isn't one.
+func worker_condition(bot: Node3D) -> Dictionary:
+	var crew := _workers()
+	return crew.call("condition", bot) if crew else {}
+
+
+## TartanCo's engineers take a worker bot: it puts its job down and keeps still till
+## end_worker_service. False if it isn't one.
+func begin_worker_service(bot: Node3D) -> bool:
+	var crew := _workers()
+	return bool(crew.call("begin_service", bot)) if crew else false
+
+
+## TartanCo's engineers are done with a worker bot: as new, back to work.
+func end_worker_service(bot: Node3D) -> void:
+	var crew := _workers()
+	if crew:
+		crew.call("end_service", bot)
+
+
+func _workers() -> Node:
+	var s := station()
+	return s.get("workers") as Node if s else null
 
 
 func _station_closed(s: Node3D) -> void:
