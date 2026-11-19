@@ -96,7 +96,7 @@ func refresh() -> void:
 			elif kind == "spin":
 				how += " %d°" % int(MotionMovers.spin_half(mv) * 2.0)
 			elif kind == "leg":
-				how += " %s m" % _m(MotionMovers.leg_reach(mv))
+				how += " %s m" % _m(float(mv.size.y))
 			_body.add_child(T.row([T.cell_text(str(mv.name), str(s.get("note", ""))), T.cell(how, _w(170)),
 					T.cell("%s x %s m" % [_m(o.x), _m(o.y)] if o.x > 0.0 else "-", _w(140)),
 					T.cell("%s s" % _m(float(s.get("seconds", 0.0))), _w(70)),

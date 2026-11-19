@@ -15,6 +15,9 @@ var blocks: Dictionary = {}
 ## mover id -> the part as walk-inside drew it (its body: "Part_<id>" or "Mount_<id>"), hidden
 ## while our moving pieces stand in for it.
 var drawn: Dictionary = {}
+## mover id -> {model: Node3D, id: String, motion: Dictionary}: a part drawn with its own moving
+## 3D model (the part_models module's), posed as it moves instead of a stand-in.
+var models: Dictionary = {}
 
 
 func setup(motion_bus: MotionBus) -> void:
@@ -26,12 +29,21 @@ func setup(motion_bus: MotionBus) -> void:
 	var fits := {}
 	for o: Dictionary in r.openings:
 		fits[o.id] = o
+	# The part models module is optional: reached by name.
+	var pm := Modules.bus("part_models")
 	for mv: Dictionary in r.movers:
-		_add(mv, r.clashes.has(mv.id), fits.get(mv.id, {}))
+		var body: Node = null
 		if root and mv.kind != "door":
-			var body := root.find_child(("Part_" if mv.kind == "component" else "Mount_") + str(mv.ref), true, false)
-			if body:
-				drawn[mv.id] = body
+			body = root.find_child(("Part_" if mv.kind == "component" else "Mount_") + str(mv.ref), true, false)
+		var model: Node3D = null
+		if body and pm and pm.has_method("find_model"):
+			model = pm.call("find_model", body)
+		var motion: Dictionary = pm.call("motion", str(model.get_meta("part_model"))) if model else {}
+		if model and not (motion.get("pieces", []) as Array).is_empty():
+			models[mv.id] = {"model": model, "id": str(model.get_meta("part_model")), "motion": motion}
+		elif body:
+			drawn[mv.id] = body
+		_add(mv, r.clashes.has(mv.id), fits.get(mv.id, {}), models.has(mv.id))
 	bus.operate_changed.connect(_show)
 	_show()
 
@@ -64,14 +76,15 @@ func _box(parent: Node3D, xf: Transform3D, size: Vector3, mat: Material) -> Mesh
 	return mi
 
 
-func _add(mv: Dictionary, clash: bool, opening: Dictionary) -> void:
+func _add(mv: Dictionary, clash: bool, opening: Dictionary, real_model := false) -> void:
 	var holder := Node3D.new()
 	holder.name = "Mover_" + str(mv.id).replace(":", "_")
 	add_child(holder)
 	var pieces: Array[MeshInstance3D] = []
 	var pm := _mat(CLASH if clash else PIECE, 0.9, 1.3)
 	# Walk-inside opens its own doors as you come near: a door shows only its sweep and block.
-	for p: Dictionary in (MotionMovers.pieces(mv, 0.0) if mv.kind != "door" else []):
+	# A part with its own moving model shows that, posed: no stand-in.
+	for p: Dictionary in (MotionMovers.pieces(mv, 0.0) if mv.kind != "door" and not real_model else []):
 		var mi := _box(holder, p.xf, p.size, pm)
 		mi.name = str(p.name)
 		pieces.append(mi)
@@ -101,6 +114,27 @@ func _add(mv: Dictionary, clash: bool, opening: Dictionary) -> void:
 	blocks[mv.id] = block
 
 
+## Poses a part's own model at t: its hinges and slides through the part models module, its
+## turning pieces (spin) swung across their travel here.
+func pose_model(m: Dictionary, t: float, spin_half_deg: float) -> void:
+	var pm := Modules.bus("part_models")
+	if pm:
+		pm.call("pose", m.model, m.id, t)
+	for pc: Dictionary in m.motion.get("pieces", []):
+		if str(pc.get("kind", "")) != "spin":
+			continue
+		var node := (m.model as Node3D).find_child(str(pc.name), true, false) as Node3D
+		if node == null:
+			continue
+		if not node.has_meta("spin_rest"):
+			node.set_meta("spin_rest", node.transform)
+		var rest: Transform3D = node.get_meta("spin_rest")
+		var a: Array = pc.get("axis", [0, 1, 0])
+		var axis := Vector3(float(a[0]), float(a[1]), float(a[2])).normalized()
+		var ang := deg_to_rad(spin_half_deg) * sin(t * PI * 2.0)
+		node.transform = Transform3D(rest.basis * Basis(axis, ang), rest.origin)
+
+
 func _show() -> void:
 	for id: String in parts:
 		var p: Dictionary = parts[id]
@@ -110,6 +144,11 @@ func _show() -> void:
 			mi.visible = bus.operating or (leg and bus.grounded)
 	for id: String in blocks:
 		(blocks[id] as Node3D).visible = false
+	# Parts with their own model rest stowed, or legs down when she is set down.
+	for id: String in models:
+		var p: Dictionary = parts.get(id, {})
+		if not p.is_empty():
+			pose_model(models[id], bus.phase_of(p.mv), MotionMovers.spin_half(p.mv))
 	for id: String in drawn:
 		var p: Dictionary = parts.get(id, {})
 		var stand_in := bus.operating or (not p.is_empty() and str(p.mv.spec.kind) == "leg" and bus.grounded)
@@ -133,3 +172,5 @@ func _process(_delta: float) -> void:
 				bm.size = ps[i].size
 		if blocks.has(id):
 			(blocks[id] as Node3D).visible = bus.operating and t > 0.98
+		if models.has(id):
+			pose_model(models[id], t, MotionMovers.spin_half(p.mv))

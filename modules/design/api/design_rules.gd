@@ -97,6 +97,31 @@ static func access_zone(c: Dictionary, pt: DesignPartType) -> Rect2:
 	return Rect2(f.end.x, f.position.y, a, f.size.y)
 
 
+## How a hull part is fitted, as walk-inside builds it (and the holotable and the motion module
+## read it): its own space (origin on its foot in the middle, front -Z along the hull's outward
+## normal). Most stand against the plating halfway up their deck's wall; a landing leg
+## (DesignPartType.under_hull) hangs under the hull's edge from the lowest deck's belly.
+const MOUNT_WALL := 0.14
+const MOUNT_LINING := 0.025
+const MOUNT_FLOOR := 0.1
+## The belly under the lowest deck's floor, m (deck plate, frame and skin).
+const BELLY := 0.4
+
+
+static func mount_transform(d: DesignRecord, m: Dictionary, pt: DesignPartType) -> Transform3D:
+	var n := Vector2.from_angle(float(m.angle))
+	var basis := Basis(Vector3.UP, atan2(-n.x, -n.y))
+	var p := Vector2(float(m.x), float(m.z))
+	if pt.under_hull():
+		var decks := d.decks()
+		var low := float(decks[0]) if not decks.is_empty() else float(m.deck)
+		var under := p - n * (pt.size.z * 0.5 + 0.1)
+		return Transform3D(basis, Vector3(under.x, low * d.deck_height - BELLY - pt.size.y, under.y))
+	var at := p + n * (MOUNT_WALL * 0.5 + MOUNT_LINING + pt.size.z * 0.5)
+	var y := float(m.deck) * d.deck_height + (d.deck_height - MOUNT_FLOOR - pt.size.y) * 0.5
+	return Transform3D(basis, Vector3(at.x, y, at.y))
+
+
 static func _problem(code: String, severity: String, text: String, rooms: Array = [],
 		components: Array = [], doors: Array = []) -> Dictionary:
 	return {"code": code, "severity": severity, "text": text, "rooms": rooms,

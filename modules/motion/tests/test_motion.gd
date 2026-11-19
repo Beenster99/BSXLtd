@@ -118,7 +118,9 @@ func _ground(cat: DesignCatalog) -> void:
 	# Every leg deploys clear of the hull parts next to it.
 	check(MotionCheck.clashes(rec, cat).is_empty(), "the legs deploy clear: %s" % [MotionCheck.clashes(rec, cat)])
 	var feet: Array = g.feet
-	check(float(feet[0].at.y) < -0.5, "a deployed foot reaches below her belly: %.2f" % float(feet[0].at.y))
+	check(float(feet[0].at.y) < -2.0, "a deployed foot stands its leg's height below her belly: %.2f" % float(feet[0].at.y))
+	var leg_xf := DesignRules.mount_transform(rec, rec.mounts["m1"], cat.part("landing_gear"))
+	check(leg_xf.origin.x > -4.0 and leg_xf.origin.y < -2.0, "a leg hangs under the hull's edge, not on its side: %s" % [leg_xf.origin])
 	var two := MotionGround.check(_lander(2), cat, DesignTotals.compute(_lander(2), cat))
 	check(two.cases.is_empty() and two.problems.size() == 1 and two.problems[0].severity == DesignRules.ERROR,
 			"two legs can't stand her: %s" % [two.problems])
@@ -172,6 +174,24 @@ func _views(design: DesignBus, bus: MotionBus) -> void:
 	# Walk-inside gets the same at full size.
 	var root := Node3D.new()
 	add_child(root)
+	design.walk_built.emit(root, null)
+	# A part drawn with its own moving model (the part models module's) is posed, not stood in for.
+	var mount := Node3D.new()
+	mount.name = "Mount_m1"
+	root.add_child(mount)
+	var model := Node3D.new()
+	model.set_meta("part_model", "landing_gear")
+	mount.add_child(model)
+	var gear_rec := _lander(4)
+	design.library.adopt(gear_rec.to_dict())
+	design.walk_built.emit(root, null)
+	var gear_walk := root.get_node_or_null("MotionWalk")
+	var posed: Dictionary = gear_walk.get("models") if gear_walk else {}
+	check(posed.has("mount:m1") and gear_walk.find_child("Mover_mount_m1", false, false).find_child("strut", true, false) == null,
+			"a leg drawn with its own model is posed, with no stand-in: %s" % [posed.keys()])
+	root.remove_child(mount)
+	mount.free()
+	design.library.adopt(rec.to_dict())
 	design.walk_built.emit(root, null)
 	var walk := root.get_node_or_null("MotionWalk")
 	check(walk != null and walk.find_child("Sweep", true, false) != null and walk.find_child("TestBlock", true, false) != null, "walk-inside gets the swept volume and a test block at full size")

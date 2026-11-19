@@ -1319,14 +1319,11 @@ func _mount(m: Dictionary) -> void:
 	var pt := catalog.part(str(m.type))
 	if pt == null:
 		return
-	var n := Vector2.from_angle(float(m.angle))
-	var at := Vector2(float(m.x), float(m.z)) + n * (WALL * 0.5 + LINING + pt.size.z * 0.5)
 	var body := _body({"kind": "mount", "id": str(m.id)})
 	body.name = "Mount_" + str(m.id)
-	var y := float(m.deck) * rec.deck_height + (rec.deck_height - FLOOR - pt.size.y) * 0.5
-	body.position = Vector3(at.x, y, at.y)
-	# Its front (-Z) turned to the hull's outward normal.
-	body.rotation.y = atan2(-n.x, -n.y)
+	# Against the plating, its front (-Z) turned to the hull's outward normal; a landing leg
+	# under the hull's edge (DesignRules.mount_transform).
+	body.transform = DesignRules.mount_transform(rec, m, pt)
 	var vs := VsParts.instance(pt.shared_part) if pt.shared_part != "" else null
 	var model := part_model(pt) if vs == null else null
 	if vs != null:

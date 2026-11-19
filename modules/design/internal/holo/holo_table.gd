@@ -412,12 +412,10 @@ func _build_components(rec: DesignRecord, parent: Node3D) -> void:
 		var mp := bus.catalog.part(str(m.type))
 		if mp == null:
 			continue
-		var n := Vector2.from_angle(float(m.angle))
-		var at := Vector2(float(m.x), float(m.z)) + n * mp.size.z * 0.5
-		var h := minf(mp.size.y, rec.deck_height - 0.1)
-		var box := _box(parent, Vector3(at.x, float(m.deck) * rec.deck_height + rec.deck_height * 0.5, at.y),
-				Vector3(mp.size.z, h, mp.size.x), _mat(mp.colour, 0.35, 0.9))
-		box.rotation.y = -float(m.angle)
+		# Fitted as walk-inside fits it (a landing leg under the hull's edge).
+		var xf := DesignRules.mount_transform(rec, m, mp)
+		var box := _box(parent, Vector3.ZERO, mp.size, _mat(mp.colour, 0.35, 0.9))
+		box.transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, mp.size.y * 0.5, 0))
 
 
 ## Wires (just under the deckhead) or pipes (just over the floor), and the risers between

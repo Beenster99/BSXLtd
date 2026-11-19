@@ -18,10 +18,6 @@ const PAD_NAMES := {"flat": "Flat pad", "rough": "Rough ground"}
 ## A rough pad: a cross slope, degrees, and bumps, m.
 const ROUGH_SLOPE := 3.0
 const ROUGH_BUMPS := 0.18
-## How much each leg's oleo can take up, up or down, as a share of its reach.
-const STROKE := 0.25
-## The hull's belly under the lowest deck's floor, m (deck plate, frame and skin).
-const BELLY := 0.4
 ## The least clearance under her belly, m.
 const MIN_CLEARANCE := 0.3
 ## She should stand a slope or gust of at least this before she tips, degrees.
@@ -130,14 +126,14 @@ static func check(rec: DesignRecord, cat: DesignCatalog, totals: DesignTotals, m
 	var feet: Array[Dictionary] = []
 	for mv in lg:
 		feet.append({"id": mv.id, "name": mv.name, "at": MotionMovers.foot_point(mv), "rated": float(mv.spec.get("load_kg", 0.0)),
-				"stroke": MotionMovers.leg_reach(mv) * STROKE})
+				"stroke": MotionMovers.leg_stroke(mv)})
 	out.feet = feet
 	if feet.size() < 3 or _in_a_line(feet):
 		problems.append(_problem(DesignRules.ERROR, "She needs at least three landing legs, not all in one line, to stand: she has %d" % feet.size(),
 				_ids(lg)))
 		out.problems = problems
 		return out
-	var belly := float(rec.decks()[0]) * rec.deck_height - BELLY
+	var belly := float(rec.decks()[0]) * rec.deck_height - DesignRules.BELLY
 	var cases: Array[Dictionary] = []
 	for pad in PADS:
 		for load in ["empty", "full"]:

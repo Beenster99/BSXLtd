@@ -14,9 +14,10 @@ extends RefCounted
 ##   kind "spin": an arm turns about the vertical: cranes, turrets, radars. range: degrees of
 ##     travel either side of its front (180 = all the way round); reach: arm length, m (0 = its
 ##     depth); a hull mount turns only through the half facing out.
-##   kind "leg": landing gear, legs, jacks: a strut folded along the hull swings down and its
-##     oleo runs out. range: how far the foot reaches below the part's foot, m (0 = 0.75 x its
-##     height); load_kg is per foot.
+##   kind "leg": landing gear, legs, jacks, hung under the hull (DesignPartType.under_hull): a
+##     strut folded along the hull swings down and its oleo runs out to the part's own foot.
+##     stroke: how far the oleo runs (it takes up uneven ground), m (0 = a fifth of its height);
+##     load_kg is per foot.
 ##   kind "belt": a conveyor's belt runs; nothing sweeps. range: belt speed, m/s.
 ## The catalogue's own figures (DesignPartType open_size, move_s, move_kw, load_kg, clearance,
 ## and move_kind / move_range when they exist) win over the numbers here.
@@ -79,6 +80,9 @@ static func spec(pt: DesignPartType) -> Dictionary:
 		return {}
 	var base_id := pt.base_id if pt.base_id != "" else pt.id
 	var s: Dictionary = SPECS.get(base_id, {}).duplicate()
+	# The landing gear's sizes (small, large, XL) move as it does.
+	if s.is_empty() and base_id.begins_with("landing_gear"):
+		s = SPECS["landing_gear"].duplicate()
 	# A part this table doesn't know moves as the catalogue says (its move_kind and move_range;
 	# a "slide" is read from its name, and a turn's range is its whole travel).
 	var kind_v: Variant = pt.get("move_kind")

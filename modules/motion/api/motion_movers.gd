@@ -64,13 +64,10 @@ static func list(rec: DesignRecord, cat: DesignCatalog) -> Array[Dictionary]:
 	return out
 
 
-## A hull part's own space, as walk-inside fits it: against the plating, halfway up the deck's
-## wall, its front (-Z) along the hull's outward normal.
+## A hull part's own space, as walk-inside fits it (DesignRules.mount_transform): against the
+## plating, or a landing leg under the hull's edge.
 static func mount_base(rec: DesignRecord, m: Dictionary, pt: DesignPartType) -> Transform3D:
-	var n := Vector2.from_angle(float(m.angle))
-	var at := Vector2(float(m.x), float(m.z)) + n * (WALL * 0.5 + LINING + pt.size.z * 0.5)
-	var y := float(m.deck) * rec.deck_height + (rec.deck_height - FLOOR - pt.size.y) * 0.5
-	return Transform3D(Basis(Vector3.UP, atan2(-n.x, -n.y)), Vector3(at.x, y, at.y))
+	return DesignRules.mount_transform(rec, m, pt)
 
 
 ## A door's own space: on its wall at floor level, X along the wall, -Z into room a (the side
@@ -148,20 +145,19 @@ static func local_pieces(mv: Dictionary, t: float) -> Array[Dictionary]:
 			out.append(_piece("arm", Transform3D(Basis(Vector3.UP, a), Vector3(0, S.y * 0.85, 0))
 					* Transform3D(Basis.IDENTITY, Vector3(0, 0, -reach * 0.5)), Vector3(w, 0.25, reach)))
 		"leg":
-			# Folded along the hull (+X) from a pivot at its top, it swings down, then its oleo
-			# runs out and the foot reaches below.
+			# Hung under the hull: folded flat along it (+X) from a pivot at its top, it swings
+			# down, then its oleo runs out and the foot comes to rest at the part's own foot.
 			var swing := clampf(t / 0.6, 0.0, 1.0)
 			var run := clampf((t - 0.6) / 0.4, 0.0, 1.0)
 			var w := clampf(S.x * 0.3, 0.15, 0.8)
-			var reach := leg_reach(mv)
-			var pivot := Vector3(0, S.y, 0)
-			var rot := Basis(Vector3.BACK, deg_to_rad(90.0) * (1.0 - swing))
-			var leg := Transform3D(rot, pivot)
-			out.append(_piece("strut", leg * Transform3D(Basis.IDENTITY, Vector3(0, -S.y * 0.5, 0)), Vector3(w, S.y, w)))
-			var oleo := reach * run
-			out.append(_piece("oleo", leg * Transform3D(Basis.IDENTITY, Vector3(0, -S.y - oleo * 0.5 + 0.1, 0)),
-					Vector3(w * 0.7, oleo + 0.2, w * 0.7)))
-			out.append(_piece("foot", leg * Transform3D(Basis.IDENTITY, Vector3(0, -S.y - oleo - 0.05, 0)),
+			var stroke := leg_stroke(mv)
+			var strut := maxf(S.y - stroke - 0.1, 0.2)
+			var leg := Transform3D(Basis(Vector3.BACK, deg_to_rad(90.0) * (1.0 - swing)), Vector3(0, S.y, 0))
+			out.append(_piece("strut", leg * Transform3D(Basis.IDENTITY, Vector3(0, -strut * 0.5, 0)), Vector3(w, strut, w)))
+			var oleo := stroke * run
+			out.append(_piece("oleo", leg * Transform3D(Basis.IDENTITY, Vector3(0, -strut - oleo * 0.5 + 0.05, 0)),
+					Vector3(w * 0.7, oleo + 0.1, w * 0.7)))
+			out.append(_piece("foot", leg * Transform3D(Basis.IDENTITY, Vector3(0, -strut - oleo - 0.05, 0)),
 					Vector3(foot_radius(mv) * 2.0, 0.1, foot_radius(mv) * 2.0)))
 		"door_split":
 			var half := float(mv.size.x) * 0.5 - 0.08
@@ -196,20 +192,22 @@ static func spin_half(mv: Dictionary) -> float:
 	return minf(r, 90.0) if str(mv.kind) == "mount" else r
 
 
-## How far a leg's foot reaches below the part's own foot, m.
-static func leg_reach(mv: Dictionary) -> float:
-	var r := float(mv.spec.get("range", 0.0))
-	return r if r > 0.0 else float(mv.size.y) * 0.75
+## How far a leg's oleo runs and can take up uneven ground, m: the catalogue's move_range
+## when it is a leg's, else a fifth of its height.
+static func leg_stroke(mv: Dictionary) -> float:
+	var r := float(mv.spec.get("stroke", 0.0))
+	return r if r > 0.0 else float(mv.size.y) * 0.2
 
 
 static func foot_radius(mv: Dictionary) -> float:
 	return clampf(float(mv.size.x) * 0.45, 0.2, 2.0)
 
 
-## Where a deployed leg's foot touches, design space (the middle of the pad's sole).
+## Where a deployed leg's foot touches, design space: the middle of its foot, the part's own
+## foot (the leg hangs its full height under the hull).
 static func foot_point(mv: Dictionary) -> Vector3:
 	var base: Transform3D = mv.base
-	return base * Vector3(0, -leg_reach(mv) - 0.1, 0)
+	return base * Vector3.ZERO
 
 
 static func _piece(n: String, xf: Transform3D, size: Vector3) -> Dictionary:

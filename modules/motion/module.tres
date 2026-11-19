@@ -7,7 +7,7 @@
 script = ExtResource("1")
 id = "motion"
 display_name = "Moving parts"
-version = "0.1.0"
+version = "0.2.0"
 depends_on = PackedStringArray("design", "multiplayer")
 flag = "motion"
 bus = ExtResource("2")
