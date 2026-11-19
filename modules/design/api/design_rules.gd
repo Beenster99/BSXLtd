@@ -346,5 +346,9 @@ static func _ship_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Diction
 	if t.power_balance() < 0.0:
 		out.append(_problem("power", ERROR, "Not enough power: %.0f kW made, %.0f kW used" % [
 				t.power_made, t.power_used]))
+	if not t.solar_rides_shadow():
+		out.append(_problem("solar_shadow", WARNING, "Solar with too little battery for shadow: %.0f kWh stored, %.0f kWh needed (%s)" % [
+				t.store_kwh, maxf(0.0, t.power_used - t.fuelled_kw) * DesignPower.shadow_hours(t.region),
+				str(DesignPower.REGION_NAMES.get(t.region, t.region)).to_lower()]))
 	if t.thrust <= 0.0:
 		out.append(_problem("no_engine", WARNING, "No engine or thrusters yet"))

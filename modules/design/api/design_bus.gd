@@ -476,6 +476,30 @@ func furnish_station(_station: Node3D = null) -> void:
 	f.call("setup", self, room_walls())
 
 
+## The company's current build berth, {name, length, beam, height} of clear space, m: the yard
+## module's `build_berth()` (it grows with reputation), else its first "build" berth, else
+## DesignBerth.DEFAULT. `berth_override` wins (tests, previews).
+var berth_override: Dictionary = {}
+func berth() -> Dictionary:
+	if not berth_override.is_empty():
+		return DesignBerth.from_yard(berth_override)
+	var yard := Modules.bus("yard")
+	if yard and yard.has_method("build_berth"):
+		return DesignBerth.from_yard(yard.call("build_berth"))
+	if yard and yard.has_method("berths"):
+		for b: Dictionary in yard.call("berths"):
+			if str(b.get("kind", "")) == "build" and b.get("box") is AABB:
+				return DesignBerth.from_yard(b.box, str(b.get("name", "")))
+	return DesignBerth.DEFAULT.duplicate()
+
+
+## How the open design sits in the build berth (DesignBerth.fit).
+func berth_fit() -> Dictionary:
+	if library.current == null:
+		return {}
+	return DesignBerth.fit(library.current, berth())
+
+
 func unregister_module() -> void:
 	_unhook_net()
 	HudSlots.unregister_holo_channel(FIT_CHANNEL)
@@ -573,6 +597,9 @@ func problems() -> Array[Dictionary]:
 		return []
 	if _problems_of != library.current:
 		_problems = DesignRules.check(library.current, catalog, totals())
+		var bp := DesignBerth.problem(berth_fit())
+		if not bp.is_empty():
+			_problems.append(bp)
 		_problems_of = library.current
 	return _problems
 

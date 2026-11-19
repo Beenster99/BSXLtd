@@ -119,6 +119,14 @@ func _header(a: DesignAssessment) -> Control:
 			demands.add_child(T.tag(line, T.STEEL, _s(0.75)))
 		demands.add_child(T.tag("Delivery in %d days" % int(a.order.get("days", 0)), T.STEEL, _s(0.75)))
 		info.add_child(demands)
+		var bf := bus.berth_fit()
+		if not bf.is_empty() and not bf.ok:
+			var bl := _wrap("NEEDS A LARGER BERTH: she is %s x %s x %s m and the %s is %s x %s x %s m, less %s m clearance each side." % [
+					snappedf(bf.length, 0.1), snappedf(bf.beam, 0.1), snappedf(bf.height, 0.1),
+					str(bf.berth.name).to_lower(), snappedf(float(bf.berth.length), 0.1), snappedf(float(bf.berth.beam), 0.1),
+					snappedf(float(bf.berth.height), 0.1), DesignBerth.CLEARANCE], "display_medium", _s(0.85), T.BAD)
+			bl.name = "BerthNeeded"
+			info.add_child(bl)
 	# The verdict block.
 	var verdict := PanelContainer.new()
 	var col := _status_colour(a.status)
