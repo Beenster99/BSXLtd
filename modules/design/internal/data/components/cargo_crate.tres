@@ -10,6 +10,7 @@ display_name = "Cargo crate"
 short = "CRT"
 colour = Color(0.75, 0.5, 0.3, 1)
 size = Vector3(1.3, 1.3, 1.0)
+shared_part = "CargoCrate"
 cost = 400.0
 mass = 120.0
 build_hours = 0.5

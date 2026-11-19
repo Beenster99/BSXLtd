@@ -10,6 +10,7 @@ display_name = "Shelving"
 short = "SHF"
 colour = Color(0.7, 0.7, 0.55, 1)
 size = Vector3(1.6, 2.0, 0.45)
+shared_part = "Shelving"
 cost = 300.0
 mass = 50.0
 build_hours = 0.4

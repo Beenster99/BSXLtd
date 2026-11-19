@@ -10,6 +10,7 @@ display_name = "Ore bin"
 short = "OBN"
 colour = Color(0.75, 0.5, 0.3, 1)
 size = Vector3(1.4, 1.4, 2.0)
+shared_part = "OreBin"
 cost = 3000.0
 mass = 800.0
 build_hours = 3.0

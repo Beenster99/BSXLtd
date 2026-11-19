@@ -10,6 +10,7 @@ display_name = "Survival kit station"
 short = "SVK"
 colour = Color(0.45, 0.85, 0.55, 1)
 size = Vector3(1.1, 2.0, 0.9)
+shared_part = "SurvivalKit"
 cost = 4000.0
 mass = 160.0
 build_hours = 2.0

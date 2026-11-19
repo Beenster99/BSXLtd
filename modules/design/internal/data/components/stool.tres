@@ -10,6 +10,7 @@ display_name = "Bar stool"
 short = "STL"
 colour = Color(0.8, 0.6, 0.5, 1)
 size = Vector3(0.45, 0.75, 0.45)
+shared_part = "Stool"
 cost = 150.0
 mass = 12.0
 build_hours = 0.2

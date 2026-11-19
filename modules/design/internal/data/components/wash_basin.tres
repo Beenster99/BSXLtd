@@ -10,6 +10,7 @@ display_name = "Wash basin"
 short = "BSN"
 colour = Color(0.6, 0.75, 1.0, 1)
 size = Vector3(0.6, 0.9, 0.5)
+shared_part = "Basin"
 cost = 500.0
 mass = 40.0
 build_hours = 1.0
