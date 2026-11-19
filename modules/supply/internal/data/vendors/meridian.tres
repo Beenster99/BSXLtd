@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SupplyVendor" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/supply/api/supply_vendor.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "meridian"
+display_name = "Meridian General Supply"
+tagline = "One counter for the whole ship, at a fair price"
+colour = Color(0.788, 0.627, 1.000, 1)
+categories = PackedStringArray()
+grades = PackedStringArray("S", "L", "H")
+price_factor = 1.0
+spread = 0.07
+volatility = 0.04
+reliability = 0.86
+lead_days = 1
+stock = 8
+restock_days = 3
+volume_percent = {
+10: 3,
+25: 5,
+50: 8
+}
+deals_per_week = 2
+deal_percent = Vector2i(6, 18)
+standing_start = 40

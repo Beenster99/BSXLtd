@@ -10,6 +10,7 @@ extends Node
 ##   bus.totals()                       # DesignTotals of the open design (parts list, cost...)
 ##   bus.problems()                     # DesignRules.check of the open design
 ##   bus.design_changed.connect(...)    # any edit, open or save
+##   bus.register_wall_view(id, title, make)  # offer a panel to the room's walls
 ##
 ## Features (Flags): "design" (the module: designs in the save), "design.room" (the design
 ## room scene and its menu entry, off until the room is ready to play at test point 2).
@@ -28,9 +29,11 @@ const KEY_HOLO_OUT := "design.holo_out"
 const KEY_HOLO_LAYER := "design.holo_layer"
 const KEY_HOLO_CUT_DOWN := "design.holo_cut_down"
 const KEY_HOLO_CUT_UP := "design.holo_cut_up"
+## At the holotable: put what the hologram shows up on the wall you face (plan 3.3).
+const KEY_HOLO_SEND := "design.holo_send"
 const KEY_GROUP := "Design room"
 const HOLO_KEYS: PackedStringArray = [KEY_HOLO_LEFT, KEY_HOLO_RIGHT, KEY_HOLO_IN, KEY_HOLO_OUT,
-		KEY_HOLO_LAYER, KEY_HOLO_CUT_DOWN, KEY_HOLO_CUT_UP]
+		KEY_HOLO_LAYER, KEY_HOLO_CUT_DOWN, KEY_HOLO_CUT_UP, KEY_HOLO_SEND]
 
 var catalog: DesignCatalog = DesignCatalog.load_default()
 var library := DesignLibrary.new()
@@ -43,9 +46,83 @@ var crew: Node
 
 ## A module was picked up or put down.
 signal carry_changed(module_id: String)
+## Panels other modules offer the design room's walls (the parts market...): view id ->
+## {title, make: Callable(px_per_m: float) -> Control}. WallBoard steps through them after its own.
+var wall_views: Dictionary = {}
+## A module offered or took back a wall panel.
+signal wall_views_changed
+
+
+## Offers a panel to the walls: `make` builds its Control for a wall drawn at px_per_m.
+func register_wall_view(id: String, title: String, make: Callable) -> void:
+	wall_views[id] = {"title": title, "make": make}
+	wall_views_changed.emit()
+
+
+func unregister_wall_view(id: String) -> void:
+	if wall_views.erase(id):
+		wall_views_changed.emit()
+
+
 ## Symmetry mode for this player's plans (DesignMirror: OFF, ACROSS or ALONG); not shared.
 var mirror := 0
 signal mirror_changed(axis: int)
+
+
+## What this player has picked on any drawing or the table (plan 3.3: touch a room on a wall
+## plan and it lights up on the holotable, and the other way round): {kind, id}; not shared.
+var focus := {}
+signal focus_changed(kind: String, id: String)
+## The section line thrown from a wall drawing onto the table as a cutting plane (plan 3.3),
+## shared with the crew: {axis ("z": a cut across the ship at z = at; "x": along it at
+## x = at), at}, or {} for none.
+var section := {}
+signal section_changed
+## "Look here" (plan 3.4): someone pulled everyone's view to a spot on a deck.
+signal look_requested(deck: int, at: Vector2, who: String, colour: Color)
+
+
+func set_focus(kind: String, id: String) -> void:
+	if str(focus.get("kind", "")) == kind and str(focus.get("id", "")) == id:
+		return
+	focus = {"kind": kind, "id": id} if id != "" else {}
+	focus_changed.emit(kind, id)
+
+
+## Throws a section line onto the table (axis "z" or "x" at `at` m), or clears it (axis "").
+func set_section(axis: String, at: float = 0.0) -> void:
+	var p := {"axis": axis, "at": at}
+	if _net and bool(_net.call("is_online")):
+		_net.call("request", "design.section", p)
+	else:
+		_apply_section(p)
+
+
+func _apply_section(p: Dictionary) -> void:
+	var axis := str(p.get("axis", ""))
+	section = {"axis": axis, "at": float(p.get("at", 0.0))} if axis in ["x", "z"] else {}
+	section_changed.emit()
+
+
+## Pulls everyone's drawings (and this player's) to a spot on a deck.
+func look_here(deck: int, at: Vector2) -> void:
+	var p := {"deck": deck, "x": at.x, "z": at.y}
+	if _net and bool(_net.call("is_online")):
+		_net.call("request", "design.look", p)
+	else:
+		_apply_look(p)
+
+
+func _apply_look(p: Dictionary) -> void:
+	var peer := int(p.get("peer", 0))
+	var who := "You"
+	var col := Color(1.0, 0.7, 0.2)
+	if _net and peer != 0:
+		if _net.has_method("player_name"):
+			who = str(_net.call("player_name", peer))
+		if _net.has_method("player_colour"):
+			col = _net.call("player_colour", peer)
+	look_requested.emit(int(p.get("deck", 0)), Vector2(float(p.get("x", 0.0)), float(p.get("z", 0.0))), who, col)
 
 
 ## OFF, then mirrored across the centre line, then fore and aft, then off again.
@@ -74,6 +151,8 @@ func _changed() -> void:
 	_totals_of = null
 	_plan = {}
 	_plan_of = null
+	_assessment = null
+	_assessment_of = null
 	design_changed.emit()
 
 
@@ -85,16 +164,24 @@ var _totals: DesignTotals
 var _totals_of: DesignRecord
 var _plan: Dictionary = {}
 var _plan_of: DesignRecord
+var _assessment: DesignAssessment
+var _assessment_of: DesignRecord
 
 
 const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
 const Samples := preload("res://modules/design/internal/sample_designs.gd")
 const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
 const CrewMarks := preload("res://modules/design/internal/crew/design_crew.gd")
+const ContractFitView := preload("res://modules/design/internal/views/contract_fit.gd")
+## The contract fit assessment on the wrist screen (F1): its channel id and place (the wrist
+## order: 10 stock, 20 parts market, 30 contract fit, 40 accounts, 50 crew).
+const FIT_CHANNEL := "design.fit"
+const FIT_CHANNEL_ORDER := 30
 
 
 func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, library)
+	HudSlots.register_holo_channel(FIT_CHANNEL, "Contract fit", _fit_channel, FIT_CHANNEL_ORDER)
 	if Modules.ready_done:
 		_hook_net()
 	else:
@@ -108,6 +195,7 @@ func register_module() -> void:
 		Keys.register(KEY_HOLO_LAYER, "Holotable: next layer", KEY_N, KEY_GROUP)
 		Keys.register(KEY_HOLO_CUT_DOWN, "Holotable: cut away the top deck", KEY_PAGEDOWN, KEY_GROUP)
 		Keys.register(KEY_HOLO_CUT_UP, "Holotable: put the top deck back", KEY_PAGEUP, KEY_GROUP)
+		Keys.register(KEY_HOLO_SEND, "Holotable: show this view on the wall you face", KEY_J, KEY_GROUP)
 		Menu.register_entry(ROOM_SCENE, "Design room", ROOM_SCENE, 30)
 		Shots.register("design_console", ROOM_SCENE, _shot_setup.bind(false), 40)
 		Shots.register("design_room", ROOM_SCENE, _shot_setup.bind(true), 40)
@@ -156,6 +244,8 @@ func hook_net(net: Object) -> void:
 	# Saved modules and designs are shared with the crew (beenster, 19 Nov).
 	_net.call("register_event", "design.module", _apply_module, _stamp)
 	_net.call("register_event", "design.stored", _apply_stored, _stamp)
+	_net.call("register_event", "design.section", _apply_section, _stamp)
+	_net.call("register_event", "design.look", _apply_look, _stamp)
 	_net.call("register_snapshot_provider", NET_SECTION, self)
 	editor.send = func(kind: String, payload: Dictionary) -> void: _net.call("request", "design." + kind, payload)
 	editor.me = func() -> String: return "p%d" % int(_net.call("local_peer_id"))
@@ -174,7 +264,8 @@ func _unhook_net() -> void:
 	crew.call("unhook")
 	if _net.has_signal("peer_left") and _net.is_connected("peer_left", _on_peer_left):
 		_net.disconnect("peer_left", _on_peer_left)
-	for e in ["design.op", "design.undo", "design.redo", "design.open", "design.walk", "design.module", "design.stored"]:
+	for e in ["design.op", "design.undo", "design.redo", "design.open", "design.walk", "design.module", "design.stored",
+			"design.section", "design.look"]:
 		_net.call("unregister_event", e)
 	_net.call("unregister_snapshot_provider", NET_SECTION)
 	editor.send = Callable()
@@ -331,7 +422,7 @@ static func _same(a: Dictionary, b: Dictionary) -> bool:
 
 ## The open design, for a player joining the session.
 func get_net_snapshot() -> Dictionary:
-	var out := {"walkers": walkers.keys(), "modules": library.modules()}
+	var out := {"walkers": walkers.keys(), "modules": library.modules(), "section": section.duplicate()}
 	var designs: Array = []
 	for row: Dictionary in library.list():
 		designs.append(library.stored_design(str(row.id)))
@@ -353,6 +444,7 @@ func apply_net_snapshot(data: Dictionary) -> void:
 	for w in data.get("walkers", []):
 		walkers[int(w)] = true
 	walkers_changed.emit()
+	_apply_section(data.get("section", {}))
 
 
 func _hook_yard() -> void:
@@ -386,11 +478,19 @@ func furnish_station(_station: Node3D = null) -> void:
 
 func unregister_module() -> void:
 	_unhook_net()
+	HudSlots.unregister_holo_channel(FIT_CHANNEL)
 	Saves.unregister_section(SAVE_SECTION)
 	Menu.unregister_entry(ROOM_SCENE)
 	Menu.unregister_settings_section(Menu.DEBUG, "design.debug")
 	for k: String in HOLO_KEYS:
 		Keys.unregister(k)
+
+
+## The wrist channel's view: the same contract fit screen as the walls, at wall-sized text.
+func _fit_channel(_glass: bool) -> Control:
+	var v := ContractFitView.new()
+	v.setup(self, 24)
+	return v
 
 
 ## Opens a new design holding the sample skiff (Debug tab, tests, screenshots).
@@ -454,6 +554,17 @@ func frame_plan() -> Dictionary:
 		_plan = DesignFrame.propose(library.current)
 		_plan_of = library.current
 	return _plan
+
+
+## How the open design answers its ship order (DesignAssessment), kept till the next edit
+## (null with nothing open). Every contract fit view reads this one.
+func assessment() -> DesignAssessment:
+	if library.current == null:
+		return null
+	if _assessment_of != library.current:
+		_assessment = DesignAssessment.assess(library.current, catalog, totals(), problems(), library.current.order)
+		_assessment_of = library.current
+	return _assessment
 
 
 ## The open design's problems ([] with nothing open).

@@ -128,7 +128,7 @@ func _ask_delete(button: Button, slot: String) -> void:
 
 func _go() -> void:
 	var start := Menu.start()
-	Router.goto(start.scene, start.args)
+	Router.goto_loading(start.scene, start.args)
 
 
 func _can_start() -> bool:

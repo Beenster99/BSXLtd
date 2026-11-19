@@ -380,10 +380,14 @@ func _apply_deck_gyros(state: PhysicsDirectBodyState3D, dt: float) -> void:
 	_deck_pitch = clampf(_deck_pitch + _look_debt.y, -deck_pitch_limit, deck_pitch_limit)
 	_look_debt.y = 0.0
 	head.rotation = Vector3(_deck_pitch, 0, 0)
-	var level := state.transform.basis.y.cross(Vector3.UP) * 8.0
-	var target := Vector3.UP * yaw + level
-	var blend := 1.0 - exp(-gyro_response * 1.5 * dt)
-	state.angular_velocity = state.angular_velocity.lerp(target, blend)
+	# Held exactly upright, turning only round the deck's up (0.4.3 playtest: "my character
+	# sways a bit when walking and turning"). A soft spring back to upright let the boots'
+	# grip on the floor tip the body (and the eye with it) up to 7 degrees and wobble back.
+	var forward := -state.transform.basis.z
+	var flat := Vector3(forward.x, 0.0, forward.z)
+	if flat.length() > 0.05:
+		state.transform = Transform3D(Basis.looking_at(flat.normalized(), Vector3.UP), state.transform.origin)
+	state.angular_velocity = Vector3.UP * yaw
 
 
 func _take_mouse() -> void:

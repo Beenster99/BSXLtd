@@ -13,8 +13,8 @@ const WalkInside := preload("res://modules/design/internal/walk/walk_inside.gd")
 ## What each wall's panels show at first: wall id -> [[view, share of the width], ...].
 ## Anyone can change a panel with its < and > (WallBoard.views()).
 const WALL_LAYOUT := {
-	"wall_left": [["plan:0", 0.45], ["side", 0.33], ["end", 0.22]],
-	"wall_right": [["data", 0.3], ["plan:1", 0.4], ["side", 0.3]],
+	"wall_left": [["plan:0", 0.38], ["fit", 0.62]],
+	"wall_right": [["market", 0.62], ["plan:1", 0.38]],
 	"wall_back_low_left": [["whiteboard", 0.65], ["plan:0", 0.35]],
 	"wall_back_low_right": [["data", 1.0]],
 	"wall_back_high": [["side", 0.6], ["plan:1", 0.4]],
@@ -56,6 +56,7 @@ var bus: DesignBus
 var holo: HoloTable
 var console: DesignConsole
 var walls: Dictionary = {}  # wall id -> TouchScreen (its content a WallBoard)
+var boards: Dictionary = {}  # wall id -> its WallBoard
 var _layer: CanvasLayer
 ## Walk-inside mode while it's open, else null.
 var walk: WalkInside
@@ -208,9 +209,47 @@ func _unhandled_input(event: InputEvent) -> void:
 		holo.set_cut(holo.cut - CUT_STEP)
 	elif event.is_action_pressed(DesignBus.KEY_HOLO_CUT_UP):
 		holo.set_cut(holo.cut + CUT_STEP)
+	elif event.is_action_pressed(DesignBus.KEY_HOLO_SEND):
+		send_view_to_wall()
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+
+## J at the table (plan 3.3): what the hologram shows put up on the wall you face, on that
+## wall's widest panel: the plan of the top deck left when it is cut down, else the side or the
+## end elevation, whichever way you are looking at the ship. Returns [wall id, view] or [].
+func send_view_to_wall() -> Array:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var rec: DesignRecord = bus.library.current
+	if cam == null or rec == null or boards.is_empty():
+		return []
+	var look := -cam.global_basis.z
+	var view := ""
+	if holo.cut < 0.999:
+		var levels: PackedInt32Array = rec.decks()
+		var height := (levels[levels.size() - 1] + 1) * rec.deck_height
+		view = "plan:%d" % clampi(int(floor(holo.cut * height / rec.deck_height - 0.01)), 0, levels[levels.size() - 1])
+	else:
+		var ship := holo.model.get_node_or_null("Ship") as Node3D
+		var along := (ship.global_basis.z if ship else Vector3.FORWARD).normalized()
+		view = "end" if absf(look.normalized().dot(along)) > 0.7 else "side"
+	var best := ""
+	var best_dot := -INF
+	for id: String in walls:
+		var screen := walls[id] as Node3D
+		var facing := screen.global_basis.z.normalized()  # out of the wall, into the room
+		var d := look.normalized().dot(-facing)
+		if d > best_dot:
+			best_dot = d
+			best = id
+	var board: WallBoard = boards[best]
+	var widest := 0
+	for i in board.panels.size():
+		if float(board.panels[i].share) > float(board.panels[widest].share):
+			widest = i
+	board.set_view(widest, view)
+	return [best, view]
 
 
 ## N at the table: the next of LAYER_VIEWS on the hologram. Returns its name.
@@ -268,12 +307,13 @@ func _add_use_body() -> void:
 	body.set_meta("yard_use", open_console)
 	body.set_meta("yard_hint", func() -> String:
 		var rec := bus.library.current
-		return "%s  Design at the holotable%s\n%s%s turn   %s%s zoom   %s layers: %s   %s%s cut" % [
+		return "%s  Design at the holotable%s\n%s%s turn   %s%s zoom   %s layers: %s   %s%s cut   %s to the wall" % [
 				Keys.prompt(Keys.INTERACT), ("  (" + rec.name + ")") if rec else "",
 				Keys.prompt(DesignBus.KEY_HOLO_LEFT), Keys.prompt(DesignBus.KEY_HOLO_RIGHT),
 				Keys.prompt(DesignBus.KEY_HOLO_IN), Keys.prompt(DesignBus.KEY_HOLO_OUT),
 				Keys.prompt(DesignBus.KEY_HOLO_LAYER), layer_view_name(),
-				Keys.prompt(DesignBus.KEY_HOLO_CUT_UP), Keys.prompt(DesignBus.KEY_HOLO_CUT_DOWN)])
+				Keys.prompt(DesignBus.KEY_HOLO_CUT_UP), Keys.prompt(DesignBus.KEY_HOLO_CUT_DOWN),
+				Keys.prompt(DesignBus.KEY_HOLO_SEND)])
 	holo.add_child(body)
 
 
@@ -292,3 +332,4 @@ func _add_wall(w: Dictionary) -> void:
 	screen.transform = (w.transform as Transform3D) * Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0, -0.08))
 	add_child(screen)
 	walls[w.id] = screen
+	boards[w.id] = board
