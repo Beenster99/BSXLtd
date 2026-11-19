@@ -37,7 +37,9 @@ const BUY: Dictionary = {
 ## The reference build for `demands` (DesignTotals.fit keys) and `clauses` (ShipOrders
 ## clauses). Returns {record: DesignRecord, totals: DesignTotals, cost, met: bool,
 ## misses: PackedStringArray (the demands it could not reach, by key)}.
-static func build(demands: Dictionary, clauses: Array, cat: DesignCatalog) -> Dictionary:
+static func build(raw: Dictionary, clauses: Array, cat: DesignCatalog) -> Dictionary:
+	# Masses asked for (fuel_mass, occupancy_mass, cargo_max) are built as fuel, bunks and hold.
+	var demands := ShipOrders.equivalent(raw)
 	var grade := "S"
 	if float(demands.get("stealth", 0.0)) > 0.0:
 		grade = "Q"
@@ -58,7 +60,7 @@ static func build(demands: Dictionary, clauses: Array, cat: DesignCatalog) -> Di
 			break
 		plan = next
 	var misses: PackedStringArray = []
-	for row in t.fit(_rated(demands)):
+	for row in t.fit(_rated(raw)):
 		if not row.ok:
 			misses.append(str(row.key))
 	return {"record": rec, "totals": t, "cost": t.cost, "met": misses.is_empty(), "misses": misses}
@@ -67,7 +69,7 @@ static func build(demands: Dictionary, clauses: Array, cat: DesignCatalog) -> Di
 ## The demands the build is held to (cost, mass and time are what it is judged by, not aimed at).
 static func _rated(demands: Dictionary) -> Dictionary:
 	var out := demands.duplicate()
-	for k in ["budget", "max_mass", "build_days"]:
+	for k in ["budget", "max_mass", "dry_mass", "wet_mass", "build_days"]:
 		out.erase(k)
 	return out
 
@@ -75,7 +77,7 @@ static func _rated(demands: Dictionary) -> Dictionary:
 ## How much of each rating to buy next round, from what the last round's ship came to.
 static func _needs(demands: Dictionary, t: DesignTotals, plan: Dictionary) -> Dictionary:
 	var next := plan.duplicate()
-	var mass := maxf(t.mass, 1000.0)
+	var mass := maxf(t.flying_mass(), 1000.0)
 	if demands.has("speed"):
 		var accel := pow(float(demands.speed) / DesignTotals.SPEED_PER_ROOT_ACCEL, 2.0)
 		next.thrust = accel * mass / 1000.0 * MARGIN
@@ -89,7 +91,7 @@ static func _needs(demands: Dictionary, t: DesignTotals, plan: Dictionary) -> Di
 		next.sensor = float(demands.sensor_km)
 	next.power = (t.power_used + float(demands.get("power", 0.0))) * MARGIN
 	if demands.has("stealth"):
-		var target := -DesignTotals.STEALTH_SCALE * log(clampf(float(demands.stealth), 1.0, 99.0) / 100.0)
+		var target := -DesignTotals.STEALTH_SCALE * log(clampf(float(demands.stealth), 1.0, 99.0) / 100.0) / MARGIN
 		var over := t.signature() - target
 		if over > 0.0:
 			next.cooling = float(plan.cooling) + over * MARGIN

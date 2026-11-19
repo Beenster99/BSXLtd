@@ -14,6 +14,7 @@ func run_tests() -> void:
 	_catalogue()
 	_variants()
 	_ratings()
+	_masses()
 	_doors()
 	_orders()
 	await _palette()
@@ -116,6 +117,39 @@ func _ratings() -> void:
 	var dry := _ship("S")
 	dry.apply({"op": "remove_room", "id": "r3"})
 	check(DesignTotals.compute(dry, cat).jump_range() == 0.0, "no fuel aboard, no jump")
+
+
+## Dry, wet and occupancy mass, and the cargo the holds and racking are rated to carry.
+func _masses() -> void:
+	var d := _ship("S")
+	d.apply({"op": "add_room", "room": {"id": "r4", "type": "quarters", "x": 5, "z": 0, "w": 4, "d": 4}})
+	d.apply({"op": "add_room", "room": {"id": "r5", "type": "cargo", "x": 8, "z": 4, "w": 8, "d": 8}})
+	var t := DesignTotals.compute(d, cat)
+	print("masses: dry %.1f t, fuel %.1f t (%.1f m3), wet %.1f t, occupancy %.1f t (%d aboard), flying %.1f t, cargo max %.1f t (%.0f m3)" % [
+			t.dry_mass() / 1000.0, t.fuel_mass / 1000.0, t.fuel_m3, t.wet_mass() / 1000.0, t.occupancy_mass / 1000.0,
+			t.crew, t.flying_mass() / 1000.0, t.cargo_max / 1000.0, t.cargo_m3])
+	check(t.dry_mass() == t.mass, "dry mass is the built mass")
+	check(is_equal_approx(t.fuel_mass, t.fuel_m3 * DesignTotals.FUEL_KG_PER_M3) and t.fuel_mass > 0.0, "full tanks weigh")
+	check(is_equal_approx(t.wet_mass(), t.mass + t.fuel_mass), "wet mass is dry plus fuel")
+	check(t.crew > 0 and is_equal_approx(t.occupancy_mass, t.crew * DesignTotals.PERSON_KG), "occupancy mass counts the bunks")
+	check(t.flying_mass() > t.wet_mass(), "she flies wet and crewed")
+	check(is_equal_approx(t.cargo_max, t.cargo_m3 * DesignTotals.CARGO_KG_PER_M3) and t.cargo_max > 0.0, "a cargo room sets cargo max")
+	check(is_equal_approx(t.acceleration(), t.thrust * 1000.0 / t.flying_mass()), "the ratings use the flying mass")
+	var racked := _ship("S")
+	racked.apply({"op": "add_room", "room": {"id": "r5", "type": "cargo", "x": 8, "z": 4, "w": 8, "d": 8}})
+	var before := DesignTotals.compute(racked, cat)
+	racked.apply({"op": "add_component", "component": {"id": "k1", "type": "pallet_racking", "room": "r5", "x": 12, "z": 5, "rot": 0}})
+	var after := DesignTotals.compute(racked, cat)
+	check(after.cargo_max > before.cargo_max and after.mass > before.mass, "racking adds cargo max and dry mass, not a load")
+	check(after.fuel_mass == before.fuel_mass and after.occupancy_mass == before.occupancy_mass, "empty racking carries nothing")
+	for id in ["pallet_racking", "longspan_shelving", "mezzanine_racking", "container_mounting", "tie_down_rails"]:
+		var pt := cat.part(id)
+		check(pt != null and pt.category == "cargo" and pt.size.x >= 2.5, "%s: big cargo kit" % id)
+	var fit := {}
+	for f in t.fit({"dry_mass": 1.0, "wet_mass": 1e9, "fuel_mass": 1.0, "occupancy_mass": 1.0, "cargo_max": 1e9}):
+		fit[f.key] = f
+	check(not fit.dry_mass.ok and fit.wet_mass.ok, "dry and wet mass are caps")
+	check(fit.fuel_mass.ok and fit.occupancy_mass.ok and not fit.cargo_max.ok, "fuel, occupancy and cargo max are minimums")
 
 
 ## Door kinds: a plain door, an open doorway and a wide cargo door, priced on the parts list

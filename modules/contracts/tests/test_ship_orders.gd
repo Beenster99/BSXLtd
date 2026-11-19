@@ -10,6 +10,7 @@ func run_tests() -> void:
 	_board()
 	_variety()
 	_achievability()
+	_masses()
 	_legacy_and_locks()
 
 
@@ -64,7 +65,8 @@ func _variety() -> void:
 	for r in ShipOrders.ROLES:
 		roles += 1 if seen.has("role:" + r) else 0
 	check(roles >= ShipOrders.ROLES.size() - 2, "nearly every kind of ship turns up in 80 cycles: %d of %d" % [roles, ShipOrders.ROLES.size()])
-	for k in ["jump_ly", "speed", "defence", "attack", "stealth", "sensor_km", "cargo_m3", "crew", "power"]:
+	for k in ["jump_ly", "speed", "defence", "attack", "stealth", "sensor_km", "cargo_m3", "crew", "power",
+			"fuel_mass", "wet_mass", "occupancy_mass", "cargo_max"]:
 		check(seen.has("demand:" + k), "some orders demand %s" % k)
 	var clauses := 0
 	for id in ShipOrders.CLAUSES:
@@ -104,6 +106,18 @@ func _achievability() -> void:
 	check(ShipOrders.estimate({"crew": 2.0, "attack": 120.0, "speed": 200.0}) < est, "being quiet costs extra")
 	check(ShipOrders.estimate({"cargo_m3": 400.0, "crew": 3.0, "jump_ly": 8.0}) < ShipOrders.estimate({"cargo_m3": 400.0, "crew": 3.0, "jump_ly": 16.0}),
 			"longer range costs more")
+
+
+func _masses() -> void:
+	var rng := RandomNumberGenerator.new()
+	var haul := ShipOrders.make("brine_freight", "hauler", "small", rng, "t")
+	check(float(haul.demands.fuel_mass) >= 8000.0 and int(haul.demands.fuel_mass) % 1000 == 0, "a hauler asks for whole tonnes of fuel")
+	var lines := " ".join(ShipOrders.demand_lines(haul))
+	check(lines.contains("Fuel load at least") and lines.contains(" t"), "masses read in tonnes: %s" % lines)
+	var e := ShipOrders.equivalent({"fuel_mass": 16000.0, "occupancy_mass": 1000.0, "cargo_max": 40000.0})
+	check(is_equal_approx(float(e.fuel_m3), 20.0) and int(e.crew) == 10 and is_equal_approx(float(e.cargo_m3), 100.0),
+			"mass demands read as fuel, people and hold space for the estimate")
+	check(ShipOrders.estimate({"cargo_max": 80000.0, "crew": 3.0}) > ShipOrders.estimate({"cargo_max": 20000.0, "crew": 3.0}), "a bigger load costs more")
 
 
 func _legacy_and_locks() -> void:

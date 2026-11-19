@@ -5,7 +5,10 @@ extends RefCounted
 ## (ROLES) at a size from a small cutter to a mega project (SIZES), with several demands the
 ## finished ship is scored against (DesignTotals.fit keys: crew, cargo_m3, budget, jump_ly,
 ## speed, defence, attack, stealth, sensor_km, power, fuel_m3, max_mass) and special clauses
-## (CLAUSES: rooms, parts and grades it must have, checked by DesignContractCheck).
+## (CLAUSES: rooms, parts and grades it must have, checked by DesignContractCheck). The masses
+## are in kg (MASS_KEYS, shown in tonnes): dry_mass and wet_mass are caps, fuel_mass (long
+## hauls need a lot of fuel), occupancy_mass (the people aboard) and cargo_max (the holds'
+## rated load) are minimums.
 ##
 ## Every order carries an estimate of the cheapest honest build (estimate(), calibrated
 ## against DesignReference's real builds) and how its budget compares (achievability()): a
@@ -27,7 +30,15 @@ const SIZES: Dictionary = {
 const SIZE_ORDER: PackedStringArray = ["small", "medium", "large", "capital", "mega"]
 ## Demands that grow with the size of the ship (the rest are ratings: a big ship is no
 ## faster or quieter for being big).
-const SCALED: PackedStringArray = ["crew", "cargo_m3", "attack", "defence", "power", "fuel_m3"]
+const SCALED: PackedStringArray = ["crew", "cargo_m3", "attack", "defence", "power", "fuel_m3",
+	"fuel_mass", "occupancy_mass", "cargo_max", "dry_mass", "wet_mass"]
+## Demands given in kg, shown to players in tonnes.
+const MASS_KEYS: PackedStringArray = ["dry_mass", "max_mass", "wet_mass", "fuel_mass", "occupancy_mass", "cargo_max"]
+## The DesignTotals rates the mass demands convert by (kg per m3 of fuel, a person, kg per m3
+## of hold), so the estimate can read them as fuel, crew and cargo space.
+const FUEL_KG_PER_M3 := 800.0
+const PERSON_KG := 100.0
+const CARGO_KG_PER_M3 := 400.0
 
 ## Special clauses an order can carry. kind: "room" (a room of that type, min_m2 at least),
 ## "part" (count of the first of parts, or any of them), "no_grade" (no part in that grade),
@@ -63,6 +74,9 @@ const CLAUSES: Dictionary = {
 	"survey_array": {"kind": "part", "parts": ["survey_array"], "count": 1, "cost": 17000, "text": "A survey array"},
 	"radar": {"kind": "part", "parts": ["radar_array"], "count": 1, "cost": 19000, "text": "A long-range radar on the hull"},
 	"media_wall": {"kind": "part", "parts": ["media_wall"], "count": 1, "cost": 9000, "text": "A media wall for the guests"},
+	"ore_detector": {"kind": "part", "parts": ["ore_detector"], "count": 1, "cost": 13000, "text": "An ore detector on the hull"},
+	"ore_bins": {"kind": "part", "parts": ["ore_bin"], "count": 4, "count_scaled": true, "cost": 13000, "text": "Ore bins in the hold"},
+	"mining_lasers": {"kind": "part", "parts": ["mining_laser"], "count": 2, "count_scaled": true, "cost": 34000, "text": "Mining lasers on the hull"},
 	"bar": {"kind": "part", "parts": ["bar_counter"], "count": 1, "cost": 4000, "text": "A bar. Obviously."},
 }
 
@@ -96,15 +110,27 @@ const ROLES: Dictionary = {
 	"prospector": {"name": "Prospector", "sector": "mining", "sizes": ["small"],
 		"brief": "Good eyes and a modest hold: find the seam, sample it, bring the proof home.",
 		"demands": {"sensor_km": [50, 110], "cargo_m3": [30, 80], "crew": [2, 3], "jump_ly": [6, 12]},
-		"clauses": ["survey_array", "rough_landing", "drills"], "picks": [1, 2]},
+		"clauses": ["survey_array", "rough_landing", "drills", "ore_detector", "mining_lasers"], "picks": [1, 2]},
+	"ice_harvester": {"name": "Ice harvester", "sector": "mining", "sizes": ["small", "medium"],
+		"brief": "She cuts ice off comets and brings it home as water and fuel. Cold work, slow money, steady contracts.",
+		"demands": {"cargo_max": [16000, 40000], "power": [15, 35], "crew": [2, 3], "jump_ly": [5, 9]},
+		"clauses": ["mining_lasers", "ore_bins", "rough_landing", "workshop"], "picks": [1, 2]},
+	"gas_skimmer": {"name": "Gas skimmer", "sector": "mining", "sizes": ["medium", "large"],
+		"brief": "Dives into a gas giant's upper air, fills her tanks and climbs out before the storms take her. Fast, tough and thirsty.",
+		"demands": {"fuel_mass": [8000, 20000], "defence": [40, 80], "speed": [140, 190], "power": [10, 30], "crew": [2, 3]},
+		"clauses": ["hardened_weapons", "point_defence", "no_reclaimed", "workshop"], "picks": [1, 2]},
+	"asteroid_tug": {"name": "Asteroid tug", "sector": "mining", "sizes": ["small", "medium"],
+		"brief": "Nudges a whole rock into a safe orbit for the rigs to work. All muscle: power, a strong frame and the gear to grab hold.",
+		"demands": {"power": [30, 70], "defence": [50, 100], "crew": [2, 3], "speed": [110, 150]},
+		"clauses": ["tractor", "tow_winch", "ore_detector"], "picks": [1, 2]},
 	"ore_hauler": {"name": "Ore hauler", "sector": "mining", "sizes": ["medium", "large"],
 		"brief": "A hold, a drive and a crew who don't mind the dust. She runs ore from the rigs to the smelters.",
 		"demands": {"cargo_m3": [70, 140], "crew": [2, 4], "power": [10, 30], "jump_ly": [5, 9]},
-		"clauses": ["cargo_ramp", "rough_landing", "workshop"], "picks": [1, 2]},
+		"clauses": ["cargo_ramp", "rough_landing", "workshop", "ore_bins"], "picks": [1, 2]},
 	"mining_barge": {"name": "Mining barge", "sector": "mining", "sizes": ["large", "capital"],
 		"brief": "A floating mine: drills on the hull, a refinery inside, and power for both.",
 		"demands": {"cargo_m3": [50, 100], "power": [20, 40], "crew": [3, 5], "defence": [30, 60]},
-		"clauses": ["drills", "refinery", "workshop", "mess"], "picks": [2, 3]},
+		"clauses": ["drills", "refinery", "workshop", "mess", "ore_detector", "ore_bins", "mining_lasers"], "picks": [2, 3]},
 	"mother_rig": {"name": "Mining mother rig", "sector": "mining", "sizes": ["mega"],
 		"brief": "A whole mining town that moves: it parks on a belt for a decade and eats it.",
 		"demands": {"cargo_m3": [60, 100], "power": [25, 45], "crew": [3, 5], "defence": [30, 50], "jump_ly": [4, 7]},
@@ -112,15 +138,15 @@ const ROLES: Dictionary = {
 	# Trade
 	"hauler": {"name": "Freight hauler", "sector": "trade", "sizes": ["small", "medium"], "legacy": true,
 		"brief": "A working hull for the freight runs: room in the hold, a crew that can live aboard, and enough range to reach the next port.",
-		"demands": {"cargo_m3": [60, 160], "crew": [2, 4], "jump_ly": [6, 12]},
+		"demands": {"cargo_max": [24000, 64000], "fuel_mass": [8000, 20000], "crew": [2, 4], "jump_ly": [6, 12]},
 		"clauses": ["cargo_ramp", "docking_port", "no_reclaimed"], "picks": [0, 2]},
 	"freighter": {"name": "Freighter", "sector": "trade", "sizes": ["medium", "large"],
 		"brief": "A proper merchantman: big hold, long legs, a mess for the crew and a ramp for the dockers.",
-		"demands": {"cargo_m3": [100, 200], "crew": [2, 4], "jump_ly": [8, 14], "speed": [90, 130]},
+		"demands": {"cargo_max": [40000, 80000], "fuel_mass": [10000, 24000], "crew": [2, 4], "jump_ly": [8, 14], "speed": [90, 130]},
 		"clauses": ["cargo_ramp", "mess", "docking_port", "point_defence"], "picks": [1, 2]},
 	"bulk_carrier": {"name": "Bulk carrier", "sector": "trade", "sizes": ["capital"],
 		"brief": "Cheap tonnes over long distances. Every credit spent on her has to come back in freight.",
-		"demands": {"cargo_m3": [140, 220], "crew": [2, 3], "jump_ly": [6, 10]},
+		"demands": {"cargo_max": [56000, 88000], "fuel_mass": [8000, 16000], "crew": [2, 3], "jump_ly": [6, 10]},
 		"clauses": ["cargo_ramp", "docking_port", "workshop"], "picks": [1, 2]},
 	"container_ship": {"name": "Container ship", "sector": "trade", "sizes": ["mega"],
 		"brief": "The largest thing that moves freight: a spine of containers with a drive at one end.",
@@ -142,7 +168,7 @@ const ROLES: Dictionary = {
 	# Courier
 	"courier": {"name": "Fast courier", "sector": "courier", "sizes": ["small"], "legacy": true,
 		"brief": "Small, fast and hard to see. What she carries is nobody's business.",
-		"demands": {"speed": [180, 260], "stealth": [30, 55], "jump_ly": [10, 20], "crew": [1, 2]},
+		"demands": {"speed": [180, 260], "stealth": [30, 55], "jump_ly": [10, 20], "crew": [1, 2], "wet_mass": [70000, 120000]},
 		"clauses": ["quiet_drives", "no_reclaimed"], "picks": [0, 1]},
 	"express_packet": {"name": "Express packet", "sector": "courier", "sizes": ["small", "medium"],
 		"brief": "Mail and parcels across the cluster on a timetable. Range and speed sell her, the hold pays for her.",
@@ -168,7 +194,7 @@ const ROLES: Dictionary = {
 	# Transport
 	"liner": {"name": "Passenger liner", "sector": "transport", "sizes": ["medium", "large"], "legacy": true,
 		"brief": "Berths, a galley and somewhere to sit. The passengers judge her by the cabins; the line judges her by the range.",
-		"demands": {"crew": [6, 12], "jump_ly": [8, 16], "speed": [110, 150]},
+		"demands": {"occupancy_mass": [600, 1200], "jump_ly": [8, 16], "speed": [110, 150]},
 		"clauses": ["mess", "medbay", "recreation", "no_reclaimed"], "picks": [1, 3]},
 	"crew_shuttle": {"name": "Crew shuttle", "sector": "transport", "sizes": ["small"],
 		"brief": "A seat for everyone and a door at each end. She ferries shifts out to the rigs and lands anywhere.",
@@ -180,12 +206,12 @@ const ROLES: Dictionary = {
 		"clauses": ["rough_landing", "medbay", "point_defence", "hardened_weapons"], "picks": [2, 3]},
 	"colony_ship": {"name": "Colony ship", "sector": "transport", "sizes": ["capital", "mega"],
 		"brief": "A town's worth of people and everything they need to start again, a long way from anywhere.",
-		"demands": {"crew": [6, 10], "cargo_m3": [40, 80], "jump_ly": [10, 16]},
+		"demands": {"occupancy_mass": [600, 1000], "cargo_m3": [40, 80], "fuel_mass": [6000, 12000], "jump_ly": [10, 16]},
 		"clauses": ["cryo", "medbay", "gravity", "workshop", "mess", "rough_landing"], "picks": [3, 5]},
 	# Research
 	"explorer": {"name": "Survey explorer", "sector": "research", "sizes": ["small", "medium"], "legacy": true,
 		"brief": "Long legs and good eyes: she goes where there are no ports, so range and sensors come first.",
-		"demands": {"jump_ly": [16, 30], "sensor_km": [60, 140], "crew": [2, 4]},
+		"demands": {"jump_ly": [16, 30], "fuel_mass": [6000, 16000], "sensor_km": [60, 140], "crew": [2, 4]},
 		"clauses": ["survey_array", "workshop", "medbay"], "picks": [0, 2]},
 	"science_vessel": {"name": "Science vessel", "sector": "research", "sizes": ["medium", "large"],
 		"brief": "A laboratory that travels: room for the scientists, power for their kit, and sensors to point at the strange.",
@@ -323,6 +349,8 @@ static func round_figure(key: String, v: float) -> float:
 	if key == "budget":
 		var step := 10000.0 if v < 1000000.0 else (100000.0 if v < 20000000.0 else 1000000.0)
 		return roundf(v / step) * step
+	if MASS_KEYS.has(key):
+		return maxf(1000.0, roundf(v / 1000.0) * 1000.0)
 	if v >= 1000.0:
 		return roundf(v / 100.0) * 100.0
 	if v >= 50.0:
@@ -336,20 +364,34 @@ static func round_figure(key: String, v: float) -> float:
 ## the numbers want refitting when the catalogue's prices move). A ship is a hull round her
 ## rooms (AREA) and what each rating takes on top; speed and jump range cost more the heavier
 ## she is (MASS, tonnes); being quiet costs more on a ship that also fights or runs fast.
-const MASS: Dictionary = {"base": 8.47, "per_area": 1.884, "per_attack": 0.044, "per_defence": 0.128,
-	"per_jump_area": 0.0272, "per_thrust_area": 0.112, "per_clause_k": 0.091}
+const MASS: Dictionary = {"base": 13.64, "per_area": 2.159, "per_attack": 0.05724, "per_defence": 0.1257,
+	"per_jump_area": 0.06976, "per_thrust_area": 0.3013, "per_clause_k": 0.07652}
 const COST: Dictionary = {
-	"base": 130300.0, "per_m2": 1277.0, "per_attack": 1013.0, "per_defence": 326.7, "per_power": 542.8,
-	"per_sensor": 111.5, "per_jump_t": 128.3, "per_thrust_t": 321.9,
-	"per_stealth": 663.8, "stealth_attack": 1935.0, "stealth_speed": 643.0, "per_clause": 2.21,
+	"base": 126600.0, "per_m2": 1285.0, "per_attack": 1044.0, "per_defence": 304.9, "per_power": 534.6,
+	"per_sensor": 90.01, "per_jump_t": 116.6, "per_thrust_t": 328.2,
+	"per_stealth": -1211.0, "stealth_attack": 1814.0, "stealth_speed": 1450.0, "per_clause": 2.274,
 }
+## The demands with the mass ones read as what they need aboard: fuel_mass as fuel_m3,
+## occupancy_mass as crew, cargo_max as cargo_m3 (each the larger of the two when both are set).
+static func equivalent(demands: Dictionary) -> Dictionary:
+	var d := demands.duplicate()
+	if d.has("fuel_mass"):
+		d.fuel_m3 = maxf(float(d.get("fuel_m3", 0.0)), float(d.fuel_mass) / FUEL_KG_PER_M3)
+	if d.has("occupancy_mass"):
+		d.crew = maxf(float(d.get("crew", 0.0)), ceilf(float(d.occupancy_mass) / PERSON_KG))
+	if d.has("cargo_max"):
+		d.cargo_m3 = maxf(float(d.get("cargo_m3", 0.0)), float(d.cargo_max) / CARGO_KG_PER_M3)
+	return d
+
+
 ## Floor area a ship of these demands needs, m2: bridge and engineering, quarters, hold.
 static func area_for(demands: Dictionary) -> float:
 	return 20.0 + maxf(float(demands.get("crew", 2.0)), 1.0) * 4.5 + float(demands.get("cargo_m3", 0.0)) / 2.4 \
 			+ float(demands.get("fuel_m3", 0.0)) / 2.5
 
 
-static func estimate(demands: Dictionary, clauses: Array = []) -> float:
+static func estimate(raw: Dictionary, clauses: Array = []) -> float:
+	var demands := equivalent(raw)
 	var g := func(k: String) -> float: return float(demands.get(k, 0.0))
 	var area := area_for(demands)
 	var a75 := pow(area, 0.75)
@@ -363,7 +405,7 @@ static func estimate(demands: Dictionary, clauses: Array = []) -> float:
 	var cost: float = COST.base + COST.per_m2 * area + COST.per_attack * g.call("attack") + COST.per_defence * g.call("defence") \
 			+ COST.per_power * g.call("power") + COST.per_sensor * g.call("sensor_km") \
 			+ COST.per_jump_t * g.call("jump_ly") * tonnes + COST.per_thrust_t * thrust * tonnes \
-			+ COST.per_stealth * st + COST.stealth_attack * st * g.call("attack") / 100.0 + COST.stealth_speed * st * thrust \
+			+ maxf(0.0, COST.per_stealth * st + COST.stealth_attack * st * g.call("attack") / 100.0 + COST.stealth_speed * st * thrust) \
 			+ COST.per_clause * clause_cost
 	return maxf(cost, COST.base)
 
@@ -383,12 +425,16 @@ static func demand_lines(order: Dictionary) -> PackedStringArray:
 		"jump_ly": ["Jump range", "ly", true], "speed": ["Top speed", "m/s", true],
 		"defence": ["Defence", "", true], "attack": ["Attack", "dmg/s", true], "stealth": ["Stealth", "/ 100", true],
 		"sensor_km": ["Sensor range", "km", true], "power": ["Spare power", "kW", true], "fuel_m3": ["Fuel", "m3", true],
-		"budget": ["Cost", "CR", false], "max_mass": ["Mass", "kg", false], "build_days": ["Build time", "days", false]}
+		"budget": ["Cost", "CR", false], "max_mass": ["Dry mass", "t", false], "dry_mass": ["Dry mass", "t", false],
+		"wet_mass": ["Wet mass", "t", false], "fuel_mass": ["Fuel load", "t", true],
+		"occupancy_mass": ["Occupancy mass", "t", true], "cargo_max": ["Cargo max", "t", true],
+		"build_days": ["Build time", "days", false]}
 	var out: PackedStringArray = []
 	var demands: Dictionary = order.get("demands", {})
 	for key: String in demands:
 		var n: Array = names.get(key, [key, "", true])
-		out.append("%s %s %s %s" % [n[0], "at least" if n[2] else "at most", _thousands(int(demands[key])), n[1]])
+		var v := float(demands[key])
+		out.append("%s %s %s %s" % [n[0], "at least" if n[2] else "at most", _thousands(int(v / 1000.0) if MASS_KEYS.has(key) else int(v)), n[1]])
 	return out
 
 
