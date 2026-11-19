@@ -40,7 +40,7 @@ extends RefCounted
 ##   {op = "remove_layer", id}           # its strokes go with it
 ##   {op = "add_stroke", stroke = {id?, layer, tool, colour, width, points = [[x, y], ...]}}
 ##   {op = "remove_stroke", id}
-##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?, structure? (merged)}}
+##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?, structure? (merged), order?}}
 ##   {op = "batch", ops = [...]}         # applied in order, undone in reverse
 ## The undo of a remove re-adds what was removed with its old id, so ids stay stable.
 
@@ -53,6 +53,9 @@ const GRIDS: PackedFloat32Array = [0.5, 1.0, 2.0]
 var id := ""
 var name := "New design"
 var notes := ""
+## The ship order this design answers (ShipOrders: {id, client_name, title, demands, pay,
+## days, ...}), {} for none: the data channel scores the design against its demands.
+var order: Dictionary = {}
 ## Grid step, m. Swappable; rooms already placed keep their size.
 var grid := 1.0
 ## Floor to floor, m.
@@ -453,6 +456,9 @@ func _set_meta(fields: Dictionary) -> Dictionary:
 			"deck_height":
 				old.deck_height = deck_height
 				deck_height = maxf(float(fields.deck_height), 2.0)
+			"order":
+				old.order = order.duplicate(true)
+				order = (fields.order as Dictionary).duplicate(true) if fields.order is Dictionary else {}
 			"structure":
 				old.structure = structure.duplicate()
 				for k2 in (fields.structure as Dictionary):
@@ -711,7 +717,7 @@ func snap(v: float) -> float:
 
 func to_dict() -> Dictionary:
 	return {
-		"format": FORMAT, "id": id, "name": name, "notes": notes, "grid": grid,
+		"format": FORMAT, "id": id, "name": name, "notes": notes, "grid": grid, "order": order.duplicate(true),
 		"deck_height": deck_height, "next": _next,
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
 		"runs": _sorted(runs), "structure": structure.duplicate(),
@@ -723,6 +729,8 @@ func to_dict() -> Dictionary:
 static func from_dict(data: Dictionary) -> DesignRecord:
 	var d := DesignRecord.new(str(data.get("id", "")), str(data.get("name", "New design")))
 	d.notes = str(data.get("notes", ""))
+	var o: Variant = data.get("order", {})
+	d.order = (o as Dictionary).duplicate(true) if o is Dictionary else {}
 	d.grid = float(data.get("grid", 1.0))
 	d.deck_height = float(data.get("deck_height", 3.0))
 	for r: Dictionary in data.get("rooms", []):

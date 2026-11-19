@@ -10,6 +10,7 @@ display_name = "Flight recorder"
 short = "FDR"
 colour = Color(0.4, 0.95, 0.85, 1)
 size = Vector3(0.5, 0.4, 0.6)
+shared_part = "FlightRecorder"
 cost = 3000.0
 mass = 25.0
 build_hours = 1.0

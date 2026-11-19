@@ -65,6 +65,34 @@ const ENTRIES: Dictionary = {
 	"HullPlate": {"name": "Hull plate", "category": "hull", "material": "steel"},
 	"DeckPlate": {"name": "Deck plate", "category": "hull", "material": "steel"},
 	"ArmourSlab": {"name": "Armour slab", "category": "hull", "material": "tungsten"},
+	# Fitted out (the design office's catalogue, 2026-11-19): Void Salvage's own builders,
+	# nothing new copied.
+	"CornerSofa": {"name": "Corner sofa", "category": "fittings", "material": "alloy", "kg": 150.0},
+	"Armchair": {"name": "Armchair", "category": "fittings", "material": "alloy", "kg": 45.0},
+	"Stool": {"name": "Bar stool", "category": "fittings", "material": "alloy", "kg": 12.0},
+	"MessTable": {"name": "Mess table", "category": "fittings", "material": "steel", "kg": 80.0},
+	"Table": {"name": "Table", "category": "fittings", "material": "alloy", "kg": 40.0},
+	"HoloTable": {"name": "Holo table", "category": "electronics", "material": "alloy", "kg": 350.0},
+	"MediaWall": {"name": "Media wall", "category": "electronics", "material": "alloy", "kg": 160.0},
+	"DoubleBed": {"name": "Double bed", "category": "fittings", "material": "alloy", "kg": 160.0},
+	"BunkRack": {"name": "Triple bunk stack", "category": "fittings", "material": "steel", "kg": 260.0},
+	"SleepPod": {"name": "Sleep pod", "category": "fittings", "material": "alloy", "kg": 150.0},
+	"Toilet": {"name": "Toilet", "category": "fittings", "material": "steel", "kg": 60.0},
+	"Basin": {"name": "Wash basin", "category": "fittings", "material": "steel", "kg": 40.0},
+	"Shower": {"name": "Shower cubicle", "category": "fittings", "material": "alloy", "kg": 120.0},
+	"Planter": {"name": "Planter", "category": "fittings", "material": "alloy", "kg": 200.0},
+	"Shelving": {"name": "Shelving", "category": "cargo", "material": "steel", "kg": 50.0},
+	"SuitLocker": {"name": "Suit locker", "category": "fittings", "material": "steel", "kg": 180.0},
+	"SurvivalKit": {"name": "Survival kit station", "category": "fittings", "material": "steel", "kg": 160.0},
+	"Ladder": {"name": "Ladder", "category": "frame", "material": "steel", "kg": 40.0},
+	"Railing": {"name": "Railing", "category": "frame", "material": "steel", "kg": 30.0},
+	"RoofHatch": {"name": "Roof hatch", "category": "fittings", "material": "steel", "kg": 120.0},
+	"CargoCrate": {"name": "Cargo crate", "category": "cargo", "material": "steel", "kg": 120.0},
+	"OreBin": {"name": "Ore bin", "category": "cargo", "material": "steel", "kg": 800.0},
+	"CargoRamp": {"name": "Cargo ramp", "category": "fittings", "material": "steel", "kg": 1800.0},
+	"GravityGenerator": {"name": "Gravity generator", "category": "electronics", "material": "steel", "kg": 2400.0},
+	"Searchlight": {"name": "Searchlight", "category": "electronics", "material": "alloy", "kg": 60.0},
+	"FlightRecorder": {"name": "Flight recorder", "category": "electronics", "material": "steel", "kg": 25.0},
 }
 
 ## The paint a part's body wears, by category (its builder's vertex colours carry the trim,
@@ -258,6 +286,32 @@ static func _build(id: String) -> PartShapes.PartShape:
 		"HullPlate": return FrameParts.rect(1.5, 2.5)
 		"DeckPlate": return PartShapes.inset_panel(1.2, 2.4, 0.04, 0.1)
 		"ArmourSlab": return WreckParts.armour_slab(2.0, 2.8)
+		"CornerSofa": return WreckParts.corner_sofa()
+		"Armchair": return WreckParts.armchair()
+		"Stool": return WreckParts.stool()
+		"MessTable": return WreckParts.mess_table()
+		"Table": return WreckParts.table(1.2, 0.8, 0.75)
+		"HoloTable": return WreckParts.holo_table()
+		"MediaWall": return WreckParts.media_wall()
+		"DoubleBed": return WreckParts.double_bed()
+		"BunkRack": return WreckParts.bunk_rack()
+		"SleepPod": return WreckParts.sleep_pod()
+		"Toilet": return WreckParts.toilet()
+		"Basin": return WreckParts.basin()
+		"Shower": return WreckParts.shower()
+		"Planter": return WreckParts.planter()
+		"Shelving": return WreckParts.shelf_rack(1.6, 2.0, 0.45)
+		"SuitLocker": return WreckParts.survival_locker(0.9, 2.1, 0.6)
+		"SurvivalKit": return WreckParts.survival_kit()
+		"Ladder": return WreckParts.ladder(3.0)
+		"Railing": return WreckParts.railing(2.0)
+		"RoofHatch": return WreckParts.roof_hatch()
+		"CargoCrate": return WreckParts.cargo_crate()
+		"OreBin": return WreckParts.ore_bin()
+		"CargoRamp": return WreckParts.cargo_ramp()
+		"GravityGenerator": return WreckParts.gravity_generator()
+		"Searchlight": return WreckParts.searchlight()
+		"FlightRecorder": return WreckParts.flight_recorder()
 	return null
 
 

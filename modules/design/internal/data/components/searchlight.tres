@@ -10,6 +10,7 @@ display_name = "Searchlight"
 short = "SLT"
 colour = Color(0.4, 0.95, 0.85, 1)
 size = Vector3(1.0, 1.0, 0.9)
+shared_part = "Searchlight"
 cost = 1800.0
 mass = 60.0
 build_hours = 1.0

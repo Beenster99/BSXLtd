@@ -10,6 +10,7 @@ display_name = "Railing"
 short = "RAL"
 colour = Color(0.55, 0.58, 0.62, 1)
 size = Vector3(2.0, 1.05, 0.1)
+shared_part = "Railing"
 cost = 200.0
 mass = 30.0
 build_hours = 0.5

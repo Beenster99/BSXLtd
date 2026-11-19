@@ -89,6 +89,8 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	bus.design_changed.connect(_on_changed)
 	bus.carry_changed.connect(func(_id: String) -> void: queue_redraw())
 	bus.mirror_changed.connect(func(_a: int) -> void: queue_redraw())
+	if bus.crew:
+		bus.crew.call("attach_view", self)
 	_on_changed()
 
 

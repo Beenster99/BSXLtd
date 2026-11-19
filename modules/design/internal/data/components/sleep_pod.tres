@@ -10,6 +10,7 @@ display_name = "Sleep pod"
 short = "SLP"
 colour = Color(0.6, 0.75, 1.0, 1)
 size = Vector3(0.95, 1.05, 2.2)
+shared_part = "SleepPod"
 cost = 3500.0
 mass = 150.0
 build_hours = 2.0
