@@ -68,6 +68,11 @@ var _palette: PanelContainer
 var _palette_list: VBoxContainer
 var _pitch := 0.0
 var _dirty := false
+## An edit rebuilds the ship here once edits have stopped for this long, s: a rebuild takes
+## about a second on the sample, so a run of edits (yours or the crew's) costs one, not each
+## (beenster, 19 Nov: lag for players when a room is added).
+var rebuild_delay := 0.35
+var _dirty_at := 0
 ## The crew walking about in here too: peer id -> their figure (it follows their walk).
 var crew: Dictionary = {}
 
@@ -90,7 +95,7 @@ func setup(design_bus: DesignBus, origin: Transform3D) -> void:
 	_built = Node3D.new()
 	_built.name = "Design"
 	world.add_child(_built)
-	builder.build(record(), _built)
+	builder.build(record(), _built, bus.frame_plan(), bus.structure())
 	_add_player()
 	_add_hud()
 	bus.design_changed.connect(_on_changed)
@@ -692,9 +697,9 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if _dirty:
+	if _dirty and Time.get_ticks_msec() - _dirty_at >= int(rebuild_delay * 1000.0):
 		_dirty = false
-		builder.build(record(), _built)
+		builder.build(record(), _built, bus.frame_plan(), bus.structure())
 	var near: Array[Vector3] = [body.position]
 	for fig: Node3D in crew.values():
 		near.append(fig.position)
@@ -755,6 +760,7 @@ static func _axis(neg_x: String, pos_x: String, neg_y: String, pos_y: String) ->
 
 func _on_changed() -> void:
 	_dirty = true
+	_dirty_at = Time.get_ticks_msec()
 	if is_palette_open():
 		_fill_palette()
 

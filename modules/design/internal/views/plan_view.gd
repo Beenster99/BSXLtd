@@ -381,19 +381,31 @@ func _mount_spot(p: Vector2) -> Dictionary:
 
 ## Beams placed by hand: a dashed orange line, the selected one solid.
 func _draw_beams(rec: DesignRecord) -> void:
-	for b: Dictionary in rec.beams.values():
-		if int(b.deck) != deck:
-			continue
-		var a := to_screen(DesignStructure._v(b.a))
-		var e := to_screen(DesignStructure._v(b.b))
-		var sel: bool = selected_kind == "beam" and selected_id == b.id
-		if sel:
-			draw_line(a, e, SELECT, 4.0)
-		else:
-			draw_dashed_line(a, e, Color(1.0, 0.7, 0.35, 0.9), clampf(zoom * 0.1, 2.0, 5.0), 8.0)
-	for w: Dictionary in rec.walls.values():
-		if int(w.deck) == deck and selected_kind == "wall" and selected_id == w.id:
-			draw_line(to_screen(DesignStructure._v(w.a)), to_screen(DesignStructure._v(w.b)), SELECT, 4.0)
+	for kind: String in ["beam", "wall"]:
+		for b: Dictionary in (rec.beams if kind == "beam" else rec.walls).values():
+			if int(b.deck) != deck:
+				continue
+			var ends := _line_ends(kind, b)
+			var a := to_screen(ends[0])
+			var e := to_screen(ends[1])
+			var sel: bool = selected_kind == kind and selected_id == b.id
+			var dragged: bool = _drag.get("kind", "") == "line_end" and str(_drag.id) == str(b.id)
+			if sel or dragged:
+				draw_line(a, e, SELECT, 4.0)
+			elif kind == "beam":
+				draw_dashed_line(a, e, Color(1.0, 0.7, 0.35, 0.9), clampf(zoom * 0.1, 2.0, 5.0), 8.0)
+			# Its ends are nodes to grab.
+			if editable:
+				for at in [a, e]:
+					draw_rect(Rect2(at - Vector2(3.5, 3.5), Vector2(7, 7)), SELECT if sel or dragged else INK, not (sel or dragged), 1.2)
+
+
+## A beam's or wall's two ends, an end being dragged where it is going.
+func _line_ends(kind: String, b: Dictionary) -> Array[Vector2]:
+	var out: Array[Vector2] = [DesignStructure._v(b.a), DesignStructure._v(b.b)]
+	if _drag.get("kind", "") == "line_end" and str(_drag.what) == kind and str(_drag.id) == str(b.id) and _drag.has("pos"):
+		out[0 if str(_drag.end) == "a" else 1] = _drag.pos
+	return out
 
 
 func _draw_run(w: Dictionary) -> void:
@@ -971,9 +983,21 @@ func pick(s: Vector2) -> Dictionary:
 		for e: Dictionary in (rec.beams if kind == "beam" else rec.walls).values():
 			if int(e.deck) != deck:
 				continue
+			# Its ends are nodes: grab one to move it (beenster, 19 Nov).
+			if editable:
+				for end: String in ["a", "b"]:
+					if to_screen(DesignStructure._v(e[end])).distance_to(s) < 8.0:
+						return {"kind": kind, "id": e.id, "end": end}
 			var q := Geometry2D.get_closest_point_to_segment(p, DesignStructure._v(e.a), DesignStructure._v(e.b))
 			if to_screen(q).distance_to(s) < 6.0:
 				return {"kind": kind, "id": e.id}
+	if editable:
+		# A hull side: grabbing it puts a new corner there to drag.
+		var outline := rec.hull_outline(deck)
+		for i in outline.size():
+			var q := Geometry2D.get_closest_point_to_segment(p, outline[i], outline[(i + 1) % outline.size()])
+			if to_screen(q).distance_to(s) < 6.0:
+				return {"kind": "hull_edge", "id": str(i), "at": q}
 	var list := rec.rooms_on(deck)
 	list.reverse()
 	for r in list:
@@ -1071,6 +1095,19 @@ func _press(s: Vector2) -> void:
 			_drag = {"kind": "part", "id": hit.id, "start": p, "orig": Vector2(c.x, c.z)}
 		elif hit.get("kind", "") == "hull":
 			_drag = {"kind": "hull_pt", "index": int(hit.id), "orig": rec.hull_outline(deck)[int(hit.id)]}
+		elif hit.get("kind", "") == "hull_edge":
+			# A new corner on that side, where it was grabbed, dragged from there.
+			var at := _snap(hit.at, _grid() * 0.5)
+			var pts: Array = rec.hull.get(str(deck), []).duplicate(true)
+			var i := int(hit.id) + 1
+			pts.insert(i, [at.x, at.y])
+			bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
+			select("hull", str(i))
+			_drag = {"kind": "hull_pt", "index": i, "orig": at}
+		elif hit.get("kind", "") in ["beam", "wall"] and hit.has("end"):
+			var table := rec.beams if hit.kind == "beam" else rec.walls
+			_drag = {"kind": "line_end", "what": hit.kind, "id": hit.id, "end": hit.end,
+					"orig": DesignStructure._v(table[hit.id][hit.end])}
 
 
 func _drag_move(s: Vector2) -> void:
@@ -1111,7 +1148,7 @@ func _drag_move(s: Vector2) -> void:
 			_drag.rect = r
 		"part":
 			_drag.pos = _snap(_drag.orig + (p - _drag.start), rec.grid * 0.5)
-		"hull_pt":
+		"hull_pt", "line_end":
 			_drag.pos = _snap(p, _grid() * 0.5)
 		"line":
 			_drag.b = _snap(p, _grid() * 0.5)
@@ -1158,6 +1195,9 @@ func _release(_s: Vector2) -> void:
 				var pts: Array = rec.hull.get(str(deck), []).duplicate(true)
 				pts[int(d.index)] = [d.pos.x, d.pos.y]
 				bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
+		"line_end":
+			if d.has("pos") and d.pos != d.orig:
+				bus.editor.do({"op": "set_" + str(d.what), "id": d.id, "fields": {str(d.end): [d.pos.x, d.pos.y]}})
 		"line":
 			var a: Vector2 = d.a
 			var b: Vector2 = d.b

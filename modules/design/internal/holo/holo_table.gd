@@ -225,10 +225,15 @@ func _build_rooms(rec: DesignRecord, parent: Node3D) -> void:
 	_lines(parent, door_edges, _mat(Color(0.6, 1.0, 0.95), 0.95))
 
 
+## The open design's proposed frame, the bus's copy (worked out once per edit).
+func _plan(rec: DesignRecord) -> Dictionary:
+	return bus.frame_plan() if bus and rec == bus.library.current else DesignFrame.propose(rec)
+
+
 ## The frame the hull is built on (DesignFrame.propose): a ring round every station, joined
 ## corner to corner by stringers.
 func _build_frame(rec: DesignRecord, parent: Node3D) -> void:
-	var plan := DesignFrame.propose(rec)
+	var plan := _plan(rec)
 	var h := rec.deck_height
 	var segs := PackedVector3Array()
 	var st: Array = plan.get("stations", [])
@@ -252,11 +257,11 @@ func _build_frame(rec: DesignRecord, parent: Node3D) -> void:
 
 ## The outer hull plating (walls facing space) and the inner walls, as see-through panels.
 func _build_plates(rec: DesignRecord, parent: Node3D) -> void:
-	var st := DesignStructure.measure(rec)
+	var st := bus.structure() if bus and rec == bus.library.current else DesignStructure.measure(rec)
 	var h := rec.deck_height
 	var outer := _mat(Color(0.7, 0.8, 0.9), 0.14, 0.6)
 	var inner := _mat(Color(0.6, 0.75, 0.9), 0.07, 0.4)
-	var plan := DesignFrame.propose(rec)
+	var plan := _plan(rec)
 	_build_skin(plan, parent, outer, _mat(Color(0.45, 0.75, 1.0), 0.3, 0.9))
 	var edges: Array = [[st.inner_edges, inner, 0.04]]
 	if plan.is_empty():

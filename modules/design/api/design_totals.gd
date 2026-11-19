@@ -39,7 +39,10 @@ var hull_mass := 0.0
 var lines: Array[Dictionary] = []
 
 
-static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
+## `structure` and `plan` (DesignStructure.measure, DesignFrame.propose of `d`) can be passed
+## in when already worked out: they are the slow part (the bus keeps both per edit).
+static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStructure = null,
+		plan: Variant = null) -> DesignTotals:
 	var t := DesignTotals.new()
 	var room_lines := {}
 	for r: Dictionary in d.rooms.values():
@@ -61,11 +64,11 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 		t.cargo_m3 += area * d.deck_height * rt.cargo_share
 		t.fuel_m3 += area * d.deck_height * rt.fuel_share
 	if t.floor_area > 0.0:
-		var st := DesignStructure.measure(d)
+		var st := structure if structure else DesignStructure.measure(d)
 		var spec := d.structure
 		# The structure proposed round the rooms (DesignFrame): its members, its skin and the
 		# joints that hold them; the rooms' outer walls stand inside it as linings.
-		var fc := DesignFrame.counts(DesignFrame.propose(d))
+		var fc := DesignFrame.counts(plan as Dictionary if plan is Dictionary else DesignFrame.propose(d))
 		var framed := int(fc.stations) > 0
 		for row: Array in [["frame", DesignStructure.option("frame", str(spec.frame)), fc.member_m if framed else st.frame_m, "m"],
 				["hull", DesignStructure.option("hull", str(spec.hull)), fc.skin_m2 if framed else st.outer_area, "m2"],
