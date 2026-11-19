@@ -113,8 +113,12 @@ func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structur
 	frame_plan = next_plan
 	var stairs := stairwells(rec, catalog)
 	for r: Dictionary in rec.rooms.values():
-		_floor(r, stairs)
-		_ceiling(r, shaft(r, rec.rooms[stairs[str(r.id)]]) if stairs.has(str(r.id)) else Rect2())
+		# A shaped room is built a rectangle of floor and ceiling at a time.
+		var cells := DesignRecord.room_cells(r)
+		for i in cells.size():
+			var tag := str(r.id) + ("" if i == 0 else "_%d" % i)
+			_floor(r, stairs, cells[i], tag)
+			_ceiling(r, shaft(r, rec.rooms[stairs[str(r.id)]]) if stairs.has(str(r.id)) else Rect2(), cells[i], tag)
 	for deck in rec.decks():
 		if rec.hull_outline(deck).size() >= 3:
 			_open_deck(deck)
@@ -199,13 +203,14 @@ static func minus(rect: Rect2, hole: Rect2) -> Array[Rect2]:
 
 # Floors and ceilings
 
-func _floor(r: Dictionary, stairs: Dictionary) -> void:
-	var rect := Rect2(r.x, r.z, r.w, r.d)
+func _floor(r: Dictionary, stairs: Dictionary, rect: Rect2, tag: String) -> void:
 	var y := int(r.deck) * rec.deck_height
 	var hole := Rect2()
 	for low_id: String in stairs:
 		if stairs[low_id] == str(r.id):
 			hole = shaft(rec.rooms[low_id], r).intersection(rect)
+	if not hole.has_area():
+		hole = Rect2()
 	var covered := DesignStructure.on_deck(rec, int(r.deck) - 1, rect.get_center())
 	# On a deck frame its plates are the floor you see; this is what you stand on.
 	var framed := not (frame_plan.get("decks", []) as Array).is_empty() and not str(r.type) in DesignFrame.LINKS
@@ -234,12 +239,14 @@ func _floor(r: Dictionary, stairs: Dictionary) -> void:
 				z = z1
 			x = x1
 	if not framed:
-		_multi("DeckPlates_" + str(r.id), tiles, plate)
+		_multi("DeckPlates_" + tag, tiles, plate)
 
 
 ## `hole`: the stairwell's opening up through this room's ceiling (none if empty).
-func _ceiling(r: Dictionary, hole: Rect2) -> void:
-	var rect := Rect2(r.x, r.z, r.w, r.d)
+func _ceiling(r: Dictionary, shaft_hole: Rect2, rect: Rect2, tag: String) -> void:
+	var hole := shaft_hole.intersection(rect) if shaft_hole.has_area() else Rect2()
+	if not hole.has_area():
+		hole = Rect2()
 	var top := (int(r.deck) + 1) * rec.deck_height - FLOOR
 	var spec: Array = GIRDERS.get(str(rec.structure.get("frame", "standard")), GIRDERS.standard)
 	var gh: float = spec[1]
@@ -253,11 +260,11 @@ func _ceiling(r: Dictionary, hole: Rect2) -> void:
 			panels.append(Transform3D(Basis.from_scale(Vector3(x1 - x - 0.012, 0.02, piece.size.y - 0.02)),
 					Vector3((x + x1) * 0.5, under - 0.01, piece.get_center().y)))
 			x = x1
-	_multi("Ceiling_" + str(r.id), panels, paint(Color(0.62, 0.64, 0.65), "satin_paint"))
+	_multi("Ceiling_" + tag, panels, paint(Color(0.62, 0.64, 0.65), "satin_paint"))
 	# A roof of hull plate where no room stands over this one.
 	if not DesignStructure.on_deck(rec, int(r.deck) + 1, rect.get_center()):
 		var roof := MeshInstance3D.new()
-		roof.name = "Roof_" + str(r.id)
+		roof.name = "Roof_" + tag
 		roof.mesh = _box_mesh(Vector3(rect.size.x, FLOOR - 0.02, rect.size.y))
 		roof.material_override = paint(Color(0.5, 0.52, 0.55), "brushed_alloy")
 		roof.position = Vector3(rect.get_center().x, top + FLOOR * 0.5, rect.get_center().y)
@@ -382,14 +389,14 @@ func _open_deck(deck: int) -> void:
 func _minus_rooms(poly: PackedVector2Array, deck: int) -> Array[PackedVector2Array]:
 	var out: Array[PackedVector2Array] = [poly]
 	for r in rec.rooms_on(deck):
-		var rr := Rect2(r.x, r.z, r.w, r.d)
-		var sq := PackedVector2Array([rr.position, Vector2(rr.end.x, rr.position.y), rr.end, Vector2(rr.position.x, rr.end.y)])
-		var next: Array[PackedVector2Array] = []
-		for p in out:
-			for q in Geometry2D.clip_polygons(p, sq):
-				if not Geometry2D.is_polygon_clockwise(q) or q.size() < 3:
-					next.append(q)
-		out = next
+		for rr in DesignRecord.room_cells(r):
+			var sq := PackedVector2Array([rr.position, Vector2(rr.end.x, rr.position.y), rr.end, Vector2(rr.position.x, rr.end.y)])
+			var next: Array[PackedVector2Array] = []
+			for p in out:
+				for q in Geometry2D.clip_polygons(p, sq):
+					if not Geometry2D.is_polygon_clockwise(q) or q.size() < 3:
+						next.append(q)
+			out = next
 	return out.filter(func(p): return absf(DesignStructure._area(p)) > 0.0004)
 
 

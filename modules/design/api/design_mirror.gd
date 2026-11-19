@@ -40,6 +40,13 @@ static func twin(rec: DesignRecord, op: Dictionary, axis: int) -> Dictionary:
 				r.x = -(x + float(r.w))
 			else:
 				r.z = -(z + float(r.d))
+			if r.get("outline") is Array:
+				# A shaped room's corners mirrored inside its box.
+				var pts: Array = []
+				for p: Variant in r.outline:
+					pts.append([float(r.w) - float(p[0]), float(p[1])] if axis == ACROSS else [float(p[0]), float(r.d) - float(p[1])])
+				pts.reverse()
+				r.outline = pts
 			var a := Rect2(x, z, float(r.w), float(r.d))
 			if a.intersection(Rect2(float(r.x), float(r.z), float(r.w), float(r.d))).get_area() > 0.01:
 				return {}

@@ -75,16 +75,23 @@ static func measure(d: DesignRecord) -> DesignStructure:
 		var deck := int(r.deck)
 		var hulled := d.hull_outline(deck).size() >= 3
 		if not hulled:
-			s.floor_area += rect.get_area()
-		# The four sides, with the outward normal: start sides (-X, -Z) and end sides (+X, +Z).
-		var sides := [
-			[Vector2(rect.position.x, rect.position.y), Vector2(rect.position.x, rect.end.y), Vector2(-1, 0), false],
-			[Vector2(rect.end.x, rect.position.y), Vector2(rect.end.x, rect.end.y), Vector2(1, 0), true],
-			[Vector2(rect.position.x, rect.position.y), Vector2(rect.end.x, rect.position.y), Vector2(0, -1), false],
-			[Vector2(rect.position.x, rect.end.y), Vector2(rect.end.x, rect.end.y), Vector2(0, 1), true],
-		]
-		for side: Array in sides:
-			s._split_side(d, deck, r.id, side[0], side[1], side[2], side[3])
+			s.floor_area += DesignRecord.room_area(r)
+		# Its sides, each with the outward normal: start sides (-X, -Z) and end sides (+X, +Z),
+		# a shaped room's every edge.
+		var poly := DesignRecord.room_poly(r)
+		for i in poly.size():
+			var a := poly[i]
+			var b := poly[(i + 1) % poly.size()]
+			if a.distance_to(b) < 0.01:
+				continue
+			var dir := (b - a).normalized()
+			var n := Vector2(-dir.y, dir.x)
+			if DesignRecord.room_has(r, (a + b) * 0.5 + n * 0.05):
+				n = -n
+			# Listed from the low end, as the four sides of a box are.
+			var lo := a if (a.x + a.y) <= (b.x + b.y) else b
+			var hi := b if lo == a else a
+			s._split_side(d, deck, r.id, lo, hi, n, n.x > 0.5 or n.y > 0.5)
 		# Floors with no room under them, roofs with none over: outer hull too.
 		if not hulled:
 			s.outer_area += _uncovered(d, rect, deck, deck - 1) + _uncovered(d, rect, deck, deck + 1)
@@ -184,7 +191,9 @@ func _split_side(d: DesignRecord, deck: int, room_id: String, a: Vector2, b: Vec
 			var mid := a + dir * (i + 0.5)
 			var at := mid + normal * 0.05
 			var other := d.room_at(deck, at)
-			if other != "" and other != room_id:
+			if other == room_id:
+				kind = 4  # its own floor round a shaped room's inside corner: no wall
+			elif other != "":
 				kind = 1
 			elif hulled:
 				kind = 2 if on_deck(d, deck, at) else 3

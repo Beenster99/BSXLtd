@@ -207,9 +207,25 @@ func _build_rooms(rec: DesignRecord, parent: Node3D) -> void:
 		var rt := bus.catalog.room(str(r.type))
 		var col := rt.colour if rt else HOLO
 		var lit := lit_rooms.has(r.id)
-		var box := _room_box(rec, r)
 		var inset := Vector3(0.08, 0.08, 0.08)
-		_box(parent, box.get_center(), box.size - inset, _mat(col, 0.12 if lit else 0.035, 1.2 if lit else 0.6))
+		var mat := _mat(col, 0.12 if lit else 0.035, 1.2 if lit else 0.6)
+		if DesignRecord.is_shaped(r):
+			# A shaped room: a block per rectangle of it, its outline drawn round the whole.
+			var y := float(r.deck) * rec.deck_height
+			for c in DesignRecord.room_cells(r):
+				_box(parent, Vector3(c.get_center().x, y + rec.deck_height * 0.5, c.get_center().y),
+						Vector3(c.size.x, rec.deck_height, c.size.y) - inset, mat)
+			var poly := DesignRecord.room_poly(r)
+			var lo := y + 0.04
+			var hi := y + rec.deck_height - 0.04
+			for i in poly.size():
+				var a := poly[i]
+				var b := poly[(i + 1) % poly.size()]
+				edges.append_array([Vector3(a.x, lo, a.y), Vector3(b.x, lo, b.y), Vector3(a.x, hi, a.y), Vector3(b.x, hi, b.y),
+						Vector3(a.x, lo, a.y), Vector3(a.x, hi, a.y)])
+			continue
+		var box := _room_box(rec, r)
+		_box(parent, box.get_center(), box.size - inset, mat)
 		_box_edges(box.position + inset * 0.5, box.end - inset * 0.5, edges)
 	_lines(parent, edges, _mat(HOLO, 0.4))
 	# Doors: a bright frame in the wall.

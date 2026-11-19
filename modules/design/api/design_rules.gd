@@ -118,11 +118,9 @@ static func _room_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Diction
 		var list := d.rooms_on(deck)
 		for i in list.size():
 			var a: Dictionary = list[i]
-			var ra := Rect2(a.x, a.z, a.w, a.d)
 			for j in range(i + 1, list.size()):
 				var b: Dictionary = list[j]
-				var rb := Rect2(b.x, b.z, b.w, b.d)
-				if ra.intersection(rb).get_area() > 0.01:
+				if DesignRecord.rooms_overlap(a, b):
 					out.append(_problem("overlap", ERROR, "%s and %s overlap" % [
 							_label(d, cat, a.id), _label(d, cat, b.id)], [a.id, b.id]))
 	for r: Dictionary in d.rooms.values():
@@ -148,6 +146,26 @@ static func _door_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
 					[door.a, door.b].filter(func(x): return str(x) != ""), [], [door.id]))
 
 
+## An outer door on a shaped room: on one of its edges, with dw of it clear, nothing beyond.
+static func _door_on_outline(d: DesignRecord, door: Dictionary, room: Dictionary, p: Vector2, dw: float) -> bool:
+	var poly := DesignRecord.room_poly(room)
+	for i in poly.size():
+		var a := poly[i]
+		var b := poly[(i + 1) % poly.size()]
+		var length := a.distance_to(b)
+		if length < dw:
+			continue
+		var along := (b - a) / length
+		var t := (p - a).dot(along)
+		if (a + along * t).distance_to(p) > 0.05 or t < dw * 0.5 - 0.01 or t > length - dw * 0.5 + 0.01:
+			continue
+		var n := Vector2(-along.y, along.x)
+		if DesignRecord.room_has(room, p + n * 0.1):
+			n = -n
+		return d.room_at(int(door.deck), p + n * 0.1) == ""
+	return false
+
+
 ## A door sits on the wall the two rooms share (b = "": on an outer wall of a), with room
 ## for MIN_DOOR along it.
 static func _door_fits(d: DesignRecord, door: Dictionary) -> bool:
@@ -155,9 +173,12 @@ static func _door_fits(d: DesignRecord, door: Dictionary) -> bool:
 	# The clear wall a door needs: its opening less the jambs' play (MIN_DOOR for a plain door).
 	var dw := maxf(MIN_DOOR, DesignCatalog.door_w(door) - 0.2)
 	if str(door.b) == "":
-		var r := d.room_rect(str(door.a))
-		if r.size == Vector2.ZERO:
+		var room: Dictionary = d.rooms.get(str(door.a), {})
+		if room.is_empty():
 			return false
+		if DesignRecord.is_shaped(room):
+			return _door_on_outline(d, door, room, p, dw)
+		var r := d.room_rect(str(door.a))
 		var on_x := (absf(p.x - r.position.x) < 0.05 or absf(p.x - r.end.x) < 0.05) \
 				and p.y - dw * 0.5 >= r.position.y - 0.01 and p.y + dw * 0.5 <= r.end.y + 0.01
 		var on_z := (absf(p.y - r.position.y) < 0.05 or absf(p.y - r.end.y) < 0.05) \
@@ -286,10 +307,10 @@ static func _component_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Di
 		if not pt.rooms.is_empty() and not str(r.type) in pt.rooms:
 			out.append(_problem("wrong_room", WARNING, "%s does not belong in %s" % [
 					pt.display_name, _label(d, cat, r.id)], [r.id], [c.id]))
-		if not room.grow(0.01).encloses(f):
+		if not DesignRecord.room_encloses(r, f):
 			out.append(_problem("outside_room", ERROR, "%s sticks out of %s" % [
 					pt.display_name, _label(d, cat, r.id)], [r.id], [c.id]))
-		placed.append({"c": c, "pt": pt, "f": f, "room": room})
+		placed.append({"c": c, "pt": pt, "f": f, "room": room, "r": r})
 	for i in placed.size():
 		var a: Dictionary = placed[i]
 		for j in range(i + 1, placed.size()):
@@ -300,7 +321,7 @@ static func _component_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Di
 	# Room to fit and service each one: clear floor in front, inside the room.
 	for a in placed:
 		var zone := access_zone(a.c, a.pt)
-		var blocked: bool = not (a.room as Rect2).grow(0.01).encloses(zone)
+		var blocked: bool = not DesignRecord.room_encloses(a.r, zone)
 		for b in placed:
 			if b != a and b.c.room == a.c.room and zone.intersection(b.f).get_area() > 0.01:
 				blocked = true

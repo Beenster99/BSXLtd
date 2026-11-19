@@ -11,7 +11,9 @@ extends RefCounted
 ##
 ## Ops (every op is a Dictionary with "op"):
 ##   {op = "add_room", room = {id?, type, deck, x, z, w, d, name?}}
-##   {op = "set_room", id, fields = {x?, z?, w?, d?, deck?, name?, type?}}
+##   {op = "set_room", id, fields = {x?, z?, w?, d?, deck?, name?, type?, outline?}}
+##     outline: a shaped room's corners, [[u, v], ...] m from its x, z corner, inside its w x d
+##     box, square-cornered; absent (or null) for a plain rectangle. A new w or d stretches it.
 ##   {op = "remove_room", id}            # its doors and components go with it
 ##   {op = "add_door", door = {id?, a, b, deck, x, z}}     # b = "" is a door to space
 ##   {op = "remove_door", id}
@@ -112,7 +114,18 @@ func _apply(op: Dictionary) -> Dictionary:
 		"add_room":
 			return _add_room(op.get("room", {}))
 		"set_room":
-			return _set_fields(rooms, str(op.get("id", "")), op.get("fields", {}), "set_room")
+			var rid := str(op.get("id", ""))
+			var f: Dictionary = (op.get("fields", {}) as Dictionary).duplicate(true)
+			var was: Dictionary = rooms.get(rid, {})
+			if not was.is_empty() and was.get("outline") is Array and not f.has("outline") \
+					and (f.has("w") or f.has("d")):
+				var sx := float(f.get("w", was.w)) / maxf(float(was.w), 0.01)
+				var sz := float(f.get("d", was.d)) / maxf(float(was.d), 0.01)
+				var pts: Array = []
+				for p: Array in was.outline:
+					pts.append([snappedf(float(p[0]) * sx, 0.01), snappedf(float(p[1]) * sz, 0.01)])
+				f["outline"] = pts
+			return _set_fields(rooms, rid, f, "set_room")
 		"remove_room":
 			return _remove_room(str(op.get("id", "")))
 		"add_door":
@@ -294,7 +307,7 @@ func _apply(op: Dictionary) -> Dictionary:
 
 
 func _add_room(room: Dictionary) -> Dictionary:
-	var r := room.duplicate()
+	var r := room.duplicate(true)
 	if str(r.get("type", "")) == "":
 		return {}
 	r["deck"] = int(r.get("deck", 0))
@@ -352,10 +365,11 @@ func room_in_hull(room_id: String) -> bool:
 	var outline := hull_outline(int(r.get("deck", 0)))
 	if r.is_empty() or outline.size() < 3:
 		return true
-	var rect := Rect2(r.x, r.z, r.w, r.d).grow(-0.01)
-	for c in [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]:
-		if not Geometry2D.is_point_in_polygon(c, outline):
-			return false
+	for cell in room_cells(r):
+		var rect := cell.grow(-0.01)
+		for c in [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]:
+			if not Geometry2D.is_point_in_polygon(c, outline):
+				return false
 	return true
 
 
@@ -461,6 +475,91 @@ func _bump_next(eid: String) -> void:
 
 # Queries
 
+## A room's floor as a polygon (ship space): its outline if it is shaped, else its box.
+static func room_poly(r: Dictionary) -> PackedVector2Array:
+	var x := float(r.x)
+	var z := float(r.z)
+	var out := PackedVector2Array()
+	if r.get("outline") is Array and (r.outline as Array).size() >= 4:
+		for p: Array in r.outline:
+			out.append(Vector2(x + float(p[0]), z + float(p[1])))
+		return out
+	var w := float(r.w)
+	var d := float(r.d)
+	return PackedVector2Array([Vector2(x, z), Vector2(x + w, z), Vector2(x + w, z + d), Vector2(x, z + d)])
+
+
+static func is_shaped(r: Dictionary) -> bool:
+	return r.get("outline") is Array and (r.outline as Array).size() >= 4
+
+
+## Whether p is on a room's floor (its edges count, as Rect2.has_point's start edges do).
+static func room_has(r: Dictionary, p: Vector2) -> bool:
+	var box := Rect2(r.x, r.z, r.w, r.d)
+	if not box.has_point(p):
+		return false
+	if not is_shaped(r):
+		return true
+	return room_cells(r).any(func(c: Rect2) -> bool: return c.has_point(p))
+
+
+## A room's floor as rectangles that tile it (just its box when it isn't shaped): a shaped
+## room is cut on every corner's line, and the cells inside kept.
+static func room_cells(r: Dictionary) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	if not is_shaped(r):
+		out.append(Rect2(r.x, r.z, r.w, r.d))
+		return out
+	var poly := room_poly(r)
+	var xs: Array[float] = []
+	var zs: Array[float] = []
+	for p in poly:
+		if not xs.any(func(v: float) -> bool: return absf(v - p.x) < 0.001):
+			xs.append(p.x)
+		if not zs.any(func(v: float) -> bool: return absf(v - p.y) < 0.001):
+			zs.append(p.y)
+	xs.sort()
+	zs.sort()
+	for i in xs.size() - 1:
+		for k in zs.size() - 1:
+			var c := Rect2(xs[i], zs[k], xs[i + 1] - xs[i], zs[k + 1] - zs[k])
+			if Geometry2D.is_point_in_polygon(c.get_center(), poly):
+				out.append(c)
+	return out
+
+
+## A room's floor area, m2.
+static func room_area(r: Dictionary) -> float:
+	var a := 0.0
+	for c in room_cells(r):
+		a += c.get_area()
+	return a
+
+
+## Whether two rooms' floors overlap (more than a sliver).
+static func rooms_overlap(a: Dictionary, b: Dictionary) -> bool:
+	if not Rect2(a.x, a.z, a.w, a.d).intersects(Rect2(b.x, b.z, b.w, b.d)):
+		return false
+	for ca in room_cells(a):
+		for cb in room_cells(b):
+			if ca.intersection(cb).get_area() > 0.01:
+				return true
+	return false
+
+
+## Whether a rectangle lies wholly on a room's floor.
+static func room_encloses(r: Dictionary, rect: Rect2) -> bool:
+	var box := Rect2(r.x, r.z, r.w, r.d).grow(0.01)
+	if not box.encloses(rect):
+		return false
+	if not is_shaped(r):
+		return true
+	var covered := 0.0
+	for c in room_cells(r):
+		covered += c.grow(0.01).intersection(rect).get_area()
+	return covered >= rect.get_area() - 0.02
+
+
 func room_rect(room_id: String) -> Rect2:
 	var r: Dictionary = rooms.get(room_id, {})
 	if r.is_empty():
@@ -481,7 +580,7 @@ func rooms_on(deck: int) -> Array[Dictionary]:
 ## The room on `deck` under the point (x, z), or "" for none.
 func room_at(deck: int, p: Vector2) -> String:
 	for r in rooms_on(deck):
-		if Rect2(r.x, r.z, r.w, r.d).has_point(p):
+		if room_has(r, p):
 			return r.id
 	return ""
 
@@ -505,23 +604,32 @@ func shared_wall(a_id: String, b_id: String, min_len: float = 0.0) -> PackedVect
 	var b: Dictionary = rooms.get(b_id, {})
 	if a.is_empty() or b.is_empty() or int(a.deck) != int(b.deck):
 		return PackedVector2Array()
-	var ra := Rect2(a.x, a.z, a.w, a.d)
-	var rb := Rect2(b.x, b.z, b.w, b.d)
 	const EPS := 0.01
-	# Side by side across X.
-	for pair in [[ra.end.x, rb.position.x], [rb.end.x, ra.position.x]]:
-		if absf(pair[0] - pair[1]) < EPS:
-			var z0 := maxf(ra.position.y, rb.position.y)
-			var z1 := minf(ra.end.y, rb.end.y)
-			if z1 - z0 > maxf(min_len, EPS):
-				return PackedVector2Array([Vector2(pair[0], z0), Vector2(pair[0], z1)])
-	for pair in [[ra.end.y, rb.position.y], [rb.end.y, ra.position.y]]:
-		if absf(pair[0] - pair[1]) < EPS:
-			var x0 := maxf(ra.position.x, rb.position.x)
-			var x1 := minf(ra.end.x, rb.end.x)
-			if x1 - x0 > maxf(min_len, EPS):
-				return PackedVector2Array([Vector2(x0, pair[0]), Vector2(x1, pair[0])])
-	return PackedVector2Array()
+	var pa := room_poly(a)
+	var pb := room_poly(b)
+	var best := PackedVector2Array()
+	var best_len := maxf(min_len, EPS)
+	# Square-cornered outlines: edges run along x or along z; two touch where they lie on one
+	# line and overlap.
+	for i in pa.size():
+		var a0 := pa[i]
+		var a1 := pa[(i + 1) % pa.size()]
+		for k in pb.size():
+			var b0 := pb[k]
+			var b1 := pb[(k + 1) % pb.size()]
+			if absf(a0.x - a1.x) < EPS and absf(b0.x - b1.x) < EPS and absf(a0.x - b0.x) < EPS:
+				var z0 := maxf(minf(a0.y, a1.y), minf(b0.y, b1.y))
+				var z1 := minf(maxf(a0.y, a1.y), maxf(b0.y, b1.y))
+				if z1 - z0 > best_len:
+					best_len = z1 - z0
+					best = PackedVector2Array([Vector2(a0.x, z0), Vector2(a0.x, z1)])
+			elif absf(a0.y - a1.y) < EPS and absf(b0.y - b1.y) < EPS and absf(a0.y - b0.y) < EPS:
+				var x0 := maxf(minf(a0.x, a1.x), minf(b0.x, b1.x))
+				var x1 := minf(maxf(a0.x, a1.x), maxf(b0.x, b1.x))
+				if x1 - x0 > best_len:
+					best_len = x1 - x0
+					best = PackedVector2Array([Vector2(x0, a0.y), Vector2(x1, a0.y)])
+	return best
 
 
 ## The design's footprint over every deck, m (x, z, w, d), or an empty rect.
