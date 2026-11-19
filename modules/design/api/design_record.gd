@@ -35,6 +35,9 @@ extends RefCounted
 ##   {op = "add_mount", mount = {id?, type, deck, x, z, angle}}   # a part on the outside of the hull
 ##   {op = "set_mount", id, fields = {...}}
 ##   {op = "remove_mount", id}
+##   {op = "add_pin", pin = {id?, deck, x, z, text}}   # a note pinned to the ship
+##   {op = "set_pin", id, fields = {text?, x?, z?}}
+##   {op = "remove_pin", id}
 ##   {op = "add_layer", layer = {id?, name, visible?, order?}}   # a whiteboard layer
 ##   {op = "set_layer", id, fields = {name?, visible?, order?}}
 ##   {op = "remove_layer", id}           # its strokes go with it
@@ -85,6 +88,8 @@ var frame_edits: Dictionary = {}
 ## angle}, (x, z) on the hull's side and `angle` the way its front faces (radians, from +X
 ## towards +Z: the hull's outward normal where it was fitted).
 var mounts: Dictionary = {}
+## Notes pinned to the ship (plan 3.4): id -> {id, deck, x, z, text}.
+var pins: Dictionary = {}
 ## Inner walls drawn anywhere: wall id -> {id, deck, a: [x, z], b: [x, z]}.
 var walls: Dictionary = {}
 ## Beams placed by hand under a deckhead: beam id -> {id, deck, a: [x, z], b: [x, z]}.
@@ -268,6 +273,19 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _set_fields(mounts, str(op.get("id", "")), op.get("fields", {}), "set_mount")
 		"remove_mount":
 			return _remove_entry(mounts, str(op.get("id", "")), "mount", "add_mount")
+		"add_pin":
+			var nt: Dictionary = op.get("pin", {}).duplicate()
+			if str(nt.get("text", "")).strip_edges() == "":
+				return {}
+			nt["deck"] = int(nt.get("deck", 0))
+			nt["x"] = float(nt.get("x", 0.0))
+			nt["z"] = float(nt.get("z", 0.0))
+			nt["text"] = str(nt.text).strip_edges().left(200)
+			return _add_entry(pins, nt, "n", "pin", "remove_pin")
+		"set_pin":
+			return _set_fields(pins, str(op.get("id", "")), op.get("fields", {}), "set_pin")
+		"remove_pin":
+			return _remove_entry(pins, str(op.get("id", "")), "pin", "add_pin")
 		"add_layer":
 			var layer: Dictionary = op.get("layer", {}).duplicate()
 			layer["name"] = str(layer.get("name", "Layer"))
@@ -730,7 +748,7 @@ func to_dict() -> Dictionary:
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
 		"runs": _sorted(runs), "structure": structure.duplicate(),
 		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
-		"hull": hull.duplicate(true), "frame_edits": frame_edits.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts),
+		"hull": hull.duplicate(true), "frame_edits": frame_edits.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts), "pins": _sorted(pins),
 	}
 
 
@@ -773,6 +791,10 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		var m := mv.duplicate(true)
 		m.deck = int(m.get("deck", 0))
 		d.mounts[str(m.id)] = m
+	for nv: Dictionary in data.get("pins", []):
+		var nt := nv.duplicate(true)
+		nt.deck = int(nt.get("deck", 0))
+		d.pins[str(nt.id)] = nt
 	for l: Dictionary in data.get("sketch_layers", []):
 		var layer := l.duplicate()
 		layer.order = int(layer.get("order", 0))
@@ -785,7 +807,7 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		d.structure[k] = st[k]
 	d.structure.spacing = float(d.structure.spacing)
 	d._next = int(data.get("next", 1))
-	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams, d.mounts]:
+	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams, d.mounts, d.pins]:
 		for eid: String in table:
 			d._bump_next(eid)
 	return d
