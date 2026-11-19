@@ -9,6 +9,8 @@ extends VBoxContainer
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const GRAPHICS := "graphics"
 const KEYS := "keys"
+## The sea yard's time of day slider (old game).
+const SUN_FLAG := "ui.sun_slider"
 
 var tabs: HBoxContainer
 var body: MarginContainer
@@ -126,8 +128,10 @@ func _sound() -> Control:
 func _gameplay() -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 8)
-	col.add_child(_slider("TimeOfDay", "Time of day (moves the sun over the yard)", AlienSky.SECTION, AlienSky.KEY,
-			0.0, 24.0, 0.25, func(h: float) -> String: return AlienSky.clock(h)))
+	# The old yard by the sea's sun (ui.sun_slider: off since the orbital yard, which has Game time).
+	if Flags.is_on(SUN_FLAG):
+		col.add_child(_slider("TimeOfDay", "Time of day (moves the sun over the yard)", AlienSky.SECTION, AlienSky.KEY,
+				0.0, 24.0, 0.25, func(h: float) -> String: return AlienSky.clock(h)))
 	col.add_child(_choice("TerminalText", "Terminal text (screens and the wrist terminal)", T.TEXT_SECTION, T.TEXT_KEY,
 			T.TEXT_SIZES.keys()))
 	return col

@@ -59,6 +59,14 @@ func run_tests() -> void:
 	sun.free()
 	check(get_node_or_null("/root/Graphics") != null, "Graphics autoload is running")
 
+	var sun_was := Flags.is_on("ui.sun_slider")
+	Flags.set_flag("ui.sun_slider", false)
+	var plain: Control = (load(Router.scene_path(UiBus.SETTINGS)) as PackedScene).instantiate()
+	add_child(plain)
+	await frames(2)
+	check(plain.find_child("TimeOfDay", true, false) == null, "the sea yard's sun slider is gone with ui.sun_slider off")
+	plain.queue_free()
+	Flags.set_flag("ui.sun_slider", true)
 	var settings: Control = (load(Router.scene_path(UiBus.SETTINGS)) as PackedScene).instantiate()
 	add_child(settings)
 	await frames(2)
@@ -73,6 +81,7 @@ func run_tests() -> void:
 		check(label != null and label.text.ends_with("06:30"), "the slider shows the clock")
 		tod.value = was
 	settings.queue_free()
+	Flags.set_flag("ui.sun_slider", sun_was)
 
 	await _test_sky()
 	await _test_games()
@@ -475,9 +484,15 @@ func _test_pause() -> void:
 	check(is_equal_approx(AudioServer.get_bus_volume_db(AudioServer.get_bus_index(Sfx.BUS)), linear_to_db(0.5))
 			and Sfx.bus() == Sfx.BUS, "the effects slider sets the Effects bus the game's sounds play on")
 	effects.value = float(was) if was != null else 1.0
+	var sun_before := Flags.is_on(SettingsTabs.SUN_FLAG)
+	Flags.set_flag(SettingsTabs.SUN_FLAG, true)
 	st.open_tab(Menu.GAMEPLAY)
 	check(st.body.find_child("TimeOfDay", true, false) != null and st.body.find_child("Section__mouse", true, false) != null,
-			"Gameplay has the time of day and the sections modules add")
+			"Gameplay has the time of day (sea yard) and the sections modules add")
+	Flags.set_flag(SettingsTabs.SUN_FLAG, false)
+	st.open_tab(Menu.GAMEPLAY)
+	check(st.body.find_child("TimeOfDay", true, false) == null, "without the sea yard there is no sun slider")
+	Flags.set_flag(SettingsTabs.SUN_FLAG, sun_before)
 	check(st.body.find_child("TerminalText", true, false) != null, "Gameplay chooses the terminal text size")
 	Menu.unregister_settings_section(Menu.GAMEPLAY, "_mouse")
 	var debug_was := Flags.is_on("ui.debug_tab")

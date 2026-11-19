@@ -34,22 +34,24 @@ func _ready() -> void:
 	volume.value_changed.connect(func(v): Settings.set_value("audio", "master", v))
 	box.add_child(volume)
 
-	var time_label := BsxTheme.muted("")
-	time_label.name = "TimeOfDayLabel"
-	box.add_child(time_label)
-	var time := HSlider.new()
-	time.name = "TimeOfDay"
-	time.min_value = 0.0
-	time.max_value = 24.0
-	time.step = 0.25
-	time.value = AlienSky.setting_hour()
-	var show_time := func(h: float) -> void:
-		time_label.text = "Time of day   %s" % AlienSky.clock(h)
-	show_time.call(time.value)
-	time.value_changed.connect(func(h: float) -> void:
-		show_time.call(h)
-		Settings.set_value(AlienSky.SECTION, AlienSky.KEY, h))
-	box.add_child(time)
+	# The old yard by the sea's sun (ui.sun_slider: off since the orbital yard).
+	if Flags.is_on("ui.sun_slider"):
+		var time_label := BsxTheme.muted("")
+		time_label.name = "TimeOfDayLabel"
+		box.add_child(time_label)
+		var time := HSlider.new()
+		time.name = "TimeOfDay"
+		time.min_value = 0.0
+		time.max_value = 24.0
+		time.step = 0.25
+		time.value = AlienSky.setting_hour()
+		var show_time := func(h: float) -> void:
+			time_label.text = "Time of day   %s" % AlienSky.clock(h)
+		show_time.call(time.value)
+		time.value_changed.connect(func(h: float) -> void:
+			show_time.call(h)
+			Settings.set_value(AlienSky.SECTION, AlienSky.KEY, h))
+		box.add_child(time)
 	box.add_child(_spacer(12))
 	_pages = VBoxContainer.new()
 	_pages.name = "Pages"
