@@ -124,5 +124,9 @@ func _shop() -> void:
 	check(works.lots_at(RefurbWorks.AT_CRADLE).size() == 1, "the part is on a cradle (%s)" % works.fingerprint())
 	check(String(shop.call("board_text")).contains("REACTOR") or String(shop.call("board_text")).to_upper().contains("REACTOR"), "the board names it")
 	check((shop.get("bots") as Array).size() == works.bots.size(), "every refurbisher is drawn")
+	var gfx := Modules.bus("graphics")
+	if gfx and gfx.has_method("zfight_scan"):
+		var found: Array = gfx.call("zfight_scan", shop)
+		check(found.is_empty(), "no flickering faces in the shop (%d):\n%s" % [found.size(), gfx.call("describe_zfights", found, 40)])
 	holder.queue_free()
 	await frames(2)

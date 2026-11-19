@@ -511,13 +511,13 @@ func _build_deck() -> void:
 	body.name = "Body"
 	add_child(body)
 	_solid(body, Vector3(DECK_HALF.x * 2.0, 0.5, DECK_HALF.y * 2.0), Vector3(0, -0.25, 0), deck)
-	Paint.box(self, Vector3(DECK_HALF.x * 2.0 + 0.3, 0.7, 0.3), Vector3(0, -0.35, DECK_HALF.y + 0.1), trim)
+	Paint.box(self, Vector3(DECK_HALF.x * 2.0 + 0.3, 0.7, 0.3), Vector3(0, -0.36, DECK_HALF.y + 0.1), trim)
 	Paint.box(self, Vector3(DECK_HALF.x * 2.0, 0.012, 0.4), Vector3(0, 0.006, DECK_HALF.y - 0.4), hazard)
 	# The back wall: a frame with dark panels, the board on it, the shop's name over it.
 	var wall_h := 12.5
 	_solid(body, Vector3(DECK_HALF.x * 2.0, wall_h, 0.3), Vector3(0, wall_h * 0.5, BACK_Z), Paint.paint(Color(0.22, 0.23, 0.25), 0.4, 0.6))
 	for x in range(-23, 24, 6):
-		Paint.box(self, Vector3(0.35, wall_h + 0.3, 0.5), Vector3(x, wall_h * 0.5, BACK_Z + 0.1), Paint.paint(Paint.PLATES, 0.15, 0.45))
+		Paint.box(self, Vector3(0.35, wall_h + 0.3, 0.46), Vector3(x, wall_h * 0.5, BACK_Z + 0.12), Paint.paint(Paint.PLATES, 0.15, 0.45))
 	Paint.box(self, Vector3(DECK_HALF.x * 2.0 + 0.4, 0.5, 0.6), Vector3(0, wall_h, BACK_Z + 0.1), Paint.paint(Paint.PLATES, 0.15, 0.45))
 	Paint.label(self, "BSX LTD  ·  REFURB SHOP", Vector3(0, wall_h + 1.4, BACK_Z + 0.2), 0.03, Paint.BEAM_ORANGE, 96)
 	# Under the deck: two trusses back to the berths' framework, and corner beacons.
@@ -558,7 +558,7 @@ func _build_cradle(i: int) -> void:
 	# The arch over it, with the work lamp and the stage lamp.
 	for s: float in [-1.0, 1.0]:
 		Paint.box(self, Vector3(0.3, 5.4, 0.3), Vector3(at.x + s * 2.9, 2.7, -1.6), Paint.paint(Paint.PLATES, 0.15, 0.45))
-	Paint.box(self, Vector3(6.1, 0.35, 0.35), Vector3(at.x, 5.4, -1.6), Paint.paint(Paint.PLATES, 0.15, 0.45))
+	Paint.box(self, Vector3(6.16, 0.35, 0.35), Vector3(at.x, 5.4, -1.6), Paint.paint(Paint.PLATES, 0.15, 0.45))
 	Paint.box(self, Vector3(0.6, 0.25, 1.4), Vector3(at.x, 5.15, -1.0), trim)
 	var lamp := StandardMaterial3D.new()
 	lamp.emission_enabled = true
