@@ -121,10 +121,14 @@ func run_tests() -> void:
 	bus.editor.undo()
 	check(not DesignServices.cut_off(rec, bus.catalog, "fuel").is_empty(), "one undo takes the whole route away")
 	var hull_b := console.find_child("Structure_hull", true, false) as Button
+	# Worked out once per edit and shared by every view (co-op lag, 19 Nov).
+	check(bus.totals() == bus.totals() and bus.frame_plan() == bus.frame_plan(), "totals and the frame are kept between edits")
+	var kept := bus.totals()
 	var cost0 := bus.totals().cost
 	hull_b.pressed.emit()
 	check(rec.structure.hull == "armoured" and bus.totals().cost > cost0 and hull_b.text.contains("ARMOURED"),
 			"the hull button swaps the plating and the cost goes up: %s" % hull_b.text)
+	check(bus.totals() != kept, "and an edit works them out again")
 
 	# Ready-made modules: save the mess with its galley, drop copies on the plan.
 	var mess_id := ""

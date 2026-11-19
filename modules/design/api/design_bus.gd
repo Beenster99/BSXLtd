@@ -55,6 +55,10 @@ func _changed() -> void:
 	_problems_of = null
 	_structure = null
 	_structure_of = null
+	_totals = null
+	_totals_of = null
+	_plan = {}
+	_plan_of = null
 	design_changed.emit()
 
 
@@ -62,6 +66,10 @@ var _problems: Array[Dictionary] = []
 var _problems_of: DesignRecord
 var _structure: DesignStructure
 var _structure_of: DesignRecord
+var _totals: DesignTotals
+var _totals_of: DesignRecord
+var _plan: Dictionary = {}
+var _plan_of: DesignRecord
 
 
 const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
@@ -351,7 +359,23 @@ func drop_carried(deck: int, at: Vector2) -> String:
 
 
 func totals() -> DesignTotals:
-	return DesignTotals.compute(library.current, catalog) if library.current else null
+	if library.current == null:
+		return null
+	if _totals_of != library.current:
+		_totals = DesignTotals.compute(library.current, catalog, structure(), frame_plan())
+		_totals_of = library.current
+	return _totals
+
+
+## The structure proposed for the open design (DesignFrame.propose), kept till the next edit.
+## Read only: it is shared by every view.
+func frame_plan() -> Dictionary:
+	if library.current == null:
+		return {}
+	if _plan_of != library.current:
+		_plan = DesignFrame.propose(library.current)
+		_plan_of = library.current
+	return _plan
 
 
 ## The open design's problems ([] with nothing open).
@@ -359,7 +383,7 @@ func problems() -> Array[Dictionary]:
 	if library.current == null:
 		return []
 	if _problems_of != library.current:
-		_problems = DesignRules.check(library.current, catalog)
+		_problems = DesignRules.check(library.current, catalog, totals())
 		_problems_of = library.current
 	return _problems
 

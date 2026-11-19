@@ -136,6 +136,7 @@ func run_tests() -> void:
 	f.open_walk()
 	await frames(2)
 	var walk: Node3D = f.walk
+	walk.set("rebuild_delay", 0.0)
 	var b: WalkBuild = walk.builder
 	check(b.frame_body != null and b.frame_model.parts.size() > 100, "walk-inside builds the real frame")
 	var cw := walk.find_child("CableInWall", true, false) as Node3D

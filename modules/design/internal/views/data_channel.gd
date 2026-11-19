@@ -116,7 +116,7 @@ func refresh() -> void:
 				T.cell(T.money(int(line.cost)), 120, T.TEXT)], alt))
 		alt = not alt
 	# The structure as the yard will build it: every member, plate and joint.
-	var build := DesignFrame.build_list(DesignFrame.propose(rec))
+	var build := DesignFrame.build_list(bus.frame_plan())
 	if not build.is_empty():
 		_body.add_child(T.label("BUILD LIST", "display_bold", 20, T.TEXT))
 		_body.add_child(T.columns([["Item", 0], ["Qty", 90], ["Fastened", 260]]))
