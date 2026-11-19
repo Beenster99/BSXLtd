@@ -419,3 +419,117 @@ def r_landing_gear_xl(p, s):
 RECIPES["landing_gear_small"] = r_landing_gear_small
 RECIPES["landing_gear_large"] = r_landing_gear_large
 RECIPES["landing_gear_xl"] = r_landing_gear_xl
+
+
+def _picks(p, at_z, r, cy, n, rows, length, spread, material="steel"):
+    """Carbide picks round a drum: `rows` rings of `n` stubby teeth leaning out from radius r."""
+    for j in range(rows):
+        z = at_z + (j - (rows - 1) * 0.5) * spread
+        for i in range(n):
+            t = i * 2 * math.pi / n + j * math.pi / n
+            c, s_ = math.cos(t), math.sin(t)
+            p.rod((c * r * 0.92, cy + s_ * r * 0.92, z), (c * (r + length), cy + s_ * (r + length), z - length * 0.4),
+                  length * 0.18, material, 6)
+
+
+def r_mining_head_small(p, s):
+    # A survey auger: a small gearbox on the plate, a collar and a spiral flighted bit out to a point.
+    w, h, d = s
+    mount_plate(p, s, 0.06)
+    cy = h * 0.5
+    p.box((w * 0.8, h * 0.8, d * 0.25), (0, cy, d * 0.5 - 0.06 - d * 0.125), "hazard", 0.02)
+    p.cyl(w * 0.22, d * 0.08, (0, cy, d * 0.5 - 0.06 - d * 0.29), "z", "gunmetal", 20)
+    shaft = d * 0.55
+    z0 = d * 0.5 - 0.06 - d * 0.33
+    p.cyl(w * 0.07, shaft, (0, cy, z0 - shaft * 0.5), "z", "chrome", 14)
+    turns, steps = 5, 140
+    for i in range(steps):
+        a, b = i / steps, (i + 1) / steps
+        ta, tb = a * turns * 2 * math.pi, b * turns * 2 * math.pi
+        ra, rb = w * 0.3 * (1 - a * 0.5), w * 0.3 * (1 - b * 0.5)
+        p.rod((math.cos(ta) * ra, cy + math.sin(ta) * ra, z0 - a * shaft), (math.cos(tb) * rb, cy + math.sin(tb) * rb, z0 - b * shaft),
+              0.03, "steel", 6)
+    tip = p.cyl(w * 0.12, d * 0.12, (0, cy, -d * 0.5 + d * 0.06), "z", "dark", 12, r2=0.005)
+    tip.rotation_euler[0] += math.pi
+
+
+def r_mining_head_medium(p, s):
+    # A coring head: a motor drum on the plate, a gearbox, and a hollow crown ringed with carbide teeth.
+    w, h, d = s
+    mount_plate(p, s, 0.08)
+    cy = h * 0.5
+    r = min(w, h) * 0.4
+    zb = d * 0.5 - 0.08
+    p.cyl(r * 0.9, d * 0.3, (0, cy, zb - d * 0.15), "z", "hazard", 28)
+    for i in range(6):
+        t = i * math.pi / 3
+        p.box((0.04, 0.04, d * 0.28), (math.cos(t) * r * 0.92, cy + math.sin(t) * r * 0.92, zb - d * 0.15), "gunmetal", 0.005)
+    p.cyl(r * 0.6, d * 0.12, (0, cy, zb - d * 0.36), "z", "gunmetal", 24)
+    p.cyl(r * 0.25, d * 0.18, (0, cy, zb - d * 0.51), "z", "chrome", 16)
+    zc = -d * 0.5 + d * 0.13
+    p.cyl(r, d * 0.22, (0, cy, zc), "z", "steel", 32)
+    p.cyl(r * 0.78, d * 0.23, (0, cy, zc), "z", "dark", 28)
+    for i in range(14):
+        t = i * 2 * math.pi / 14
+        p.box((0.07, 0.06, 0.08), (math.cos(t) * r * 0.9, cy + math.sin(t) * r * 0.9, -d * 0.5 + 0.04), "chrome", 0.01)
+    p.torus(r * 1.0, 0.025, (0, cy, zc + d * 0.08), "z", "hazard", 32, 6)
+
+
+def r_mining_head_large(p, s):
+    # A roadheader cutter: a slewing housing on the plate, a boom with its hydraulic jacks, and a
+    # tapered drum studded with picks on the end.
+    w, h, d = s
+    mount_plate(p, s, 0.1)
+    cy = h * 0.5
+    zb = d * 0.5 - 0.1
+    p.cyl(w * 0.4, d * 0.12, (0, cy, zb - d * 0.06), "z", "dark", 32)
+    p.box((w * 0.62, h * 0.62, d * 0.18), (0, cy, zb - d * 0.21), "hazard", 0.04)
+    p.box((w * 0.32, h * 0.32, d * 0.3), (0, cy, zb - d * 0.45), "hazard", 0.03)
+    for sx in (-1, 1):
+        p.rod((sx * w * 0.28, cy - h * 0.2, zb - d * 0.2), (sx * w * 0.14, cy - h * 0.1, zb - d * 0.55), 0.06, "gunmetal")
+        p.rod((sx * w * 0.14, cy - h * 0.1, zb - d * 0.42), (sx * w * 0.14, cy - h * 0.1, zb - d * 0.56), 0.04, "chrome")
+    p.cyl(w * 0.16, d * 0.08, (0, cy, zb - d * 0.64), "z", "gunmetal", 20)
+    r = min(w, h) * 0.34
+    zd = -d * 0.5 + d * 0.19
+    p.cyl(r, d * 0.34, (0, cy, zd), "z", "steel", 28, r2=r * 0.6)
+    _picks(p, zd, r * 0.8, cy, 10, 5, 0.16, d * 0.06)
+    tip = p.cyl(r * 0.4, d * 0.05, (0, cy, -d * 0.5 + 0.03), "z", "dark", 16, r2=r * 0.15)
+    tip.rotation_euler[0] += math.pi
+
+
+def r_mining_head_xl(p, s):
+    # A capital mining head: a big gear housing on the plate and twin counter-rotating cutter drums
+    # on a cross shaft, picks all round, a spoil hood and a dust curtain behind them.
+    w, h, d = s
+    mount_plate(p, s, 0.14)
+    cy = h * 0.5
+    zb = d * 0.5 - 0.14
+    p.box((w * 0.7, h * 0.7, d * 0.25), (0, cy, zb - d * 0.125), "hazard", 0.05)
+    p.box((w * 0.3, h * 0.36, d * 0.3), (0, cy, zb - d * 0.4), "gunmetal", 0.04)
+    for sy in (-1, 1):
+        p.rod((-w * 0.3, cy + sy * h * 0.3, zb - d * 0.1), (-w * 0.12, cy + sy * h * 0.1, zb - d * 0.5), 0.08, "gunmetal")
+        p.rod((w * 0.3, cy + sy * h * 0.3, zb - d * 0.1), (w * 0.12, cy + sy * h * 0.1, zb - d * 0.5), 0.08, "gunmetal")
+    zd = -d * 0.5 + d * 0.2
+    r = min(h * 0.33, d * 0.17)
+    p.cyl(0.14, w * 0.95, (0, cy, zd), "x", "chrome", 16)
+    for sx in (-1, 1):
+        x = sx * w * 0.28
+        p.cyl(r, w * 0.36, (x, cy, zd), "x", "steel", 32)
+        p.cyl(r * 1.08, 0.06, (x + sx * w * 0.18, cy, zd), "x", "dark", 32)
+        for j in range(4):
+            xx = x + (j - 1.5) * w * 0.085
+            for i in range(10):
+                t = i * 2 * math.pi / 10 + j * 0.3
+                c, s_ = math.cos(t), math.sin(t)
+                p.rod((xx, cy + s_ * r * 0.9, zd + c * r * 0.9), (xx + sx * 0.04, cy + s_ * (r + 0.2), zd + c * (r + 0.2)),
+                      0.04, "chrome", 6)
+    p.box((w * 0.9, 0.08, d * 0.3), (0, cy + r + 0.3, zd + d * 0.06), "hazard", 0.02)
+    p.box((w * 0.88, h * 0.03, 0.02), (0, cy + r + 0.24, zd + d * 0.2), "rubber", 0.0)
+    for sx in (-1, 1):
+        p.lamp(0.05, (sx * w * 0.3, cy + h * 0.32, zb - d * 0.25), "-z", "lamp_amber")
+
+
+RECIPES["mining_head_small"] = r_mining_head_small
+RECIPES["mining_head_medium"] = r_mining_head_medium
+RECIPES["mining_head_large"] = r_mining_head_large
+RECIPES["mining_head_xl"] = r_mining_head_xl
