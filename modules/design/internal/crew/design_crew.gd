@@ -444,7 +444,9 @@ func _draw_on(o: Control, view: Control) -> void:
 			text = "↗ " + text
 		_tag(o, font, s + Vector2(12, -12), text, col, k)
 	for c in crew():
-		var where := _on_screen(view, c.at, int(c.deck))
+		# Walkers stand on their deck: on the elevations they show at chest height.
+		var body_at: Vector3 = c.at + (Vector3(0, 0.9, 0) if int(c.state) == WALKING else Vector3.ZERO)
+		var where := _on_screen(view, body_at, int(c.deck))
 		if int(c.state) == CURSOR and str(view.get("mode")) != "plan":
 			continue
 		var s: Vector2 = where.s
@@ -604,53 +606,53 @@ static func _holo_mark(id: String, col: Color, text: String, is_ping: bool) -> N
 	if is_ping:
 		var column := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.008
-		cyl.bottom_radius = 0.008
-		cyl.height = 0.35
+		cyl.top_radius = 0.012
+		cyl.bottom_radius = 0.012
+		cyl.height = 0.5
 		column.mesh = cyl
-		column.position.y = 0.175
+		column.position.y = 0.25
 		column.material_override = mat
 		n.add_child(column)
 		var gem := MeshInstance3D.new()
 		var sph := SphereMesh.new()
-		sph.radius = 0.035
-		sph.height = 0.07
+		sph.radius = 0.06
+		sph.height = 0.12
 		sph.radial_segments = 6
 		sph.rings = 3
 		gem.mesh = sph
-		gem.position.y = 0.35
+		gem.position.y = 0.5
 		gem.material_override = mat
 		n.add_child(gem)
 		var foot := MeshInstance3D.new()
 		var ring := TorusMesh.new()
-		ring.inner_radius = 0.05
-		ring.outer_radius = 0.065
+		ring.inner_radius = 0.08
+		ring.outer_radius = 0.1
 		foot.mesh = ring
 		foot.material_override = mat
 		n.add_child(foot)
-		top = 0.42
+		top = 0.6
 	else:
 		var body := MeshInstance3D.new()
 		var cap := CapsuleMesh.new()
-		cap.radius = 0.025
-		cap.height = 0.14
+		cap.radius = 0.05
+		cap.height = 0.3
 		body.mesh = cap
-		body.position.y = 0.07
+		body.position.y = 0.15
 		body.material_override = mat
 		n.add_child(body)
 		var nose := MeshInstance3D.new()
 		var box := BoxMesh.new()
-		box.size = Vector3(0.02, 0.02, 0.05)
+		box.size = Vector3(0.04, 0.04, 0.1)
 		nose.mesh = box
-		nose.position = Vector3(0, 0.11, -0.04)
+		nose.position = Vector3(0, 0.24, -0.08)
 		nose.material_override = mat
 		n.add_child(nose)
-		top = 0.2
+		top = 0.36
 	var label := Label3D.new()
 	label.text = text
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
-	label.pixel_size = 0.0012
+	label.pixel_size = 0.0035
 	label.font_size = 36
 	label.outline_size = 10
 	label.modulate = col.lightened(0.3)
