@@ -11,6 +11,7 @@ const ROOMS := {
 	"racking": {"name": "Stores hall", "box": AABB(Vector3(14, 0, -64), Vector3(70, 32.4, 60))},
 	"contracts": {"name": "Contracts desk", "box": AABB(Vector3(-12, 0, 0), Vector3(12, 3.2, 10))},
 	"crew": {"name": "Crew room", "box": AABB(Vector3(0, 0, 0), Vector3(20, 3.2, 12))},
+	"quarters": {"name": "Sleeping quarters", "box": AABB(Vector3(20, 0, 0), Vector3(24, 3.2, 12))},
 	"airlock": {"name": "Airlock", "box": AABB(Vector3(-40, 0, -5), Vector3(6, 3.2, 6))},
 	"design_lock": {"name": "Design room airlock", "box": AABB(Vector3(-11.9, 0, -25), Vector3(1.7, 5, 2.9))},
 }

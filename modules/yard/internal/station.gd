@@ -1,6 +1,6 @@
 extends Node3D
 ## The orbital yard (master plan Wave 1): the station's rooms with gravity (stage 1.1) and,
-## outside, the weightless dock with its berths (stage 1.2, flag "yard.dock"), over a planet.
+## outside, the weightless dock with its berths (stage 1.2, flag "yard.dock"), in deep space.
 ## Simple shapes first: the look comes in stage 1.5. You are in the Void Salvage suit (YardRig, 1.3).
 ## Where everything is: YardLayout (api). Rooms are furnished by other modules through
 ## YardBus (the design room's contents belong to the Design Room module).
@@ -14,6 +14,8 @@ const Airlock := preload("res://modules/yard/internal/airlock.gd")
 const DesignLock := preload("res://modules/yard/internal/design_lock.gd")
 const DesignShell := preload("res://modules/yard/internal/design_shell.gd")
 const Dock := preload("res://modules/yard/internal/dock.gd")
+const Solar := preload("res://modules/yard/internal/solar_array.gd")
+const Quarters := preload("res://modules/yard/internal/quarters.gd")
 const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
 ## Where the practice frame floats: just out of the airlock (station space).
 const PRACTICE_AT := Vector3(-47.5, -0.6, -2.0)
@@ -22,6 +24,12 @@ const PRACTICE_AT := Vector3(-47.5, -0.6, -2.0)
 const VIEWS := {
 	"station_outside": [Vector3(-95, 32, 55), Vector3(4, 1, -12)],
 	"corridor": [Vector3(-31, 1.7, -2.0), Vector3(40, 1.4, -2.0)],
+	"quarters": [Vector3(21.2, 2.3, 6.0), Vector3(40, 0.9, 4.0)],
+	"quarters_cabin": [Vector3(28.6, 1.75, 6.4), Vector3(27.4, 0.9, 10.8)],
+	"dock_floods": [Vector3(-48, 22, -60), Vector3(0, -3, -85)],
+	"dock_solar": [Vector3(70, 10, -30), Vector3(106, -10, -66)],
+	"stores_roof": [Vector3(0, 52, 10), Vector3(48, 32, -36)],
+	"sky_galaxy": [Vector3(0, 1.7, -15), Vector3(-35, 42, -84)],
 	"design_room": [Vector3(9.5, 5.2, -5.5), Vector3(-4, 1.2, -18)],
 	"design_vault": [Vector3(7, 1.7, -20.5), Vector3(-3, 7.5, -8)],
 	"design_mezzanine": [Vector3(-2, 1.7, -17), Vector3(-6, 3.0, -6)],
@@ -485,7 +493,9 @@ func _build_station() -> void:
 		var floor_mat: Material = k.paint(Color(0.34, 0.38, 0.44), 0.0, 0.5, "plastic_textured") if id == "design" else deck
 		k.slab(Vector3(b.position.x, -0.3, b.position.z), Vector3(b.end.x, 0.0, b.end.z), floor_mat)
 		if id != "design":   # the design room's roof is its glass vault (DesignShell)
-			k.span(Vector3(b.position.x - 0.095, b.end.y, b.position.z - 0.095), Vector3(b.end.x + 0.095, b.end.y + 0.3, b.end.z + 0.095), hull)
+			# (the quarters' roof a millimetre up where it meets the crew room's)
+			var lift := 0.001 if id == "quarters" else 0.0
+			k.span(Vector3(b.position.x - 0.095, b.end.y + lift, b.position.z - 0.095), Vector3(b.end.x + 0.095, b.end.y + 0.3 + lift, b.end.z + 0.095), hull)
 			k.slab(Vector3(b.position.x, b.end.y - 0.02, b.position.z), Vector3(b.end.x, b.end.y, b.end.z), ceiling, 6.0, false)
 		var room := Node3D.new()
 		room.name = "Room_%s" % id
@@ -536,7 +546,7 @@ func _build_station() -> void:
 	# Corridor (x -34..46, z -4..0): the rooms' doors open off it.
 	k.wall(true, -4.0, -34.0, -12.1, 0.0, 3.2, wall)
 	k.wall(true, -4.0, 12.1, 14.0, 0.0, 3.2, wall)
-	k.wall(true, 0.0, -34.0, 46.0, 0.0, 3.2, wall, [[-7.0, -5.0, 2.4], [9.0, 11.0, 2.4]])
+	k.wall(true, 0.0, -34.0, 46.0, 0.0, 3.2, wall, [[-7.0, -5.0, 2.4], [9.0, 11.0, 2.4], [31.0, 33.0, 2.4]])
 	k.wall(false, 46.0, -4.0, 0.0, 0.0, 3.2, wall)
 	for x in range(-30, 46, 6):
 		k.ceiling_lamp(Vector3(x, 3.2, -2.0), Vector2(1.6, 0.4), 0.7, 6.0)
@@ -559,10 +569,12 @@ func _build_station() -> void:
 	_door_frame(k, true, -4.0, 28.0, 32.0, 3.0, orange)
 	_door_frame(k, true, 0.0, -7.0, -5.0, 2.4, orange)
 	_door_frame(k, true, 0.0, 9.0, 11.0, 2.4, orange)
+	_door_frame(k, true, 0.0, 31.0, 33.0, 2.4, orange)
 	k.sign("DESIGN ROOM", Vector3(6.25, 2.85, -3.9), Vector3.BACK, 0.006)
 	k.sign("STORES  ·  GOODS IN", Vector3(30.0, 3.05, -3.9), Vector3.BACK, 0.006)
 	k.sign("CONTRACTS", Vector3(-6.0, 2.75, -0.1), Vector3.FORWARD, 0.006)
 	k.sign("CREW", Vector3(10.0, 2.75, -0.1), Vector3.FORWARD, 0.006)
+	k.sign("QUARTERS", Vector3(32.0, 2.75, -0.1), Vector3.FORWARD, 0.006)
 	k.sign("AIRLOCK  ·  DOCK", Vector3(-33.9, 2.75, -2.0), Vector3.RIGHT, 0.006)
 
 	# The stores hall's shell (x 14..84, z -64..-4, 16 m high, open to the yard); its racks
@@ -576,9 +588,14 @@ func _build_station() -> void:
 	_furnish_contracts(k)
 
 	# Crew room (x 0..20, z 0..12).
-	k.wall(false, 20.0, 0.0, 12.0, 0.0, 3.2, wall)
+	k.wall(false, 20.0, 0.0, 12.0, 0.0, 3.2, wall, [[5.2, 6.8, 2.4]])
 	k.wall(true, 12.0, -0.1, 20.1, 0.0, 3.2, wall, [[2.0, 18.0, 2.7, 0.8]], 0.2, pane)
 	_furnish_crew(k)
+
+	# Sleeping quarters (x 20..44, z 0..12): eight cabins off a soft-lit aisle.
+	k.wall(false, 44.0, 0.0, 12.1, 0.0, 3.17, wall)
+	k.wall(true, 12.0, 20.1, 43.9, 0.0, 3.17, wall, [[22.6, 23.6, 2.2, 1.2], [28.6, 29.6, 2.2, 1.2], [34.6, 35.6, 2.2, 1.2], [40.6, 41.6, 2.2, 1.2]], 0.2, pane)
+	Quarters.new().build(k, self)
 
 	# Outside: the hull's colours and a name the dock can read.
 	for x: float in [-30.0, 4.0]:
@@ -587,7 +604,20 @@ func _build_station() -> void:
 	# Solar wings and radiators on the roofs.
 	for side: float in [-1.0, 1.0]:
 		var wing_z := -2.0 + side * 9.0
-		k.box(Vector3(16.0, 0.08, 6.0), Vector3(-24.0, 6.4, wing_z), k.paint(Color(0.12, 0.16, 0.3), 0.6, 0.25), false)
+		Solar.build(self, "SolarWing%d" % int(side), Vector3(-24.0, 6.7, wing_z), Basis(), 9, 2)
+	# The stores' roof: six arrays on low frames, tipped to the sun.
+	if Flags.is_on(YardBus.RACKING):
+		var roof := YardLayout.ROOMS["racking"].box as AABB
+		var tilt := Basis(Vector3.BACK, -0.35)
+		for x: float in [26.0, 46.0, 66.0]:
+			for z: float in [-51.0, -21.0]:
+				var at := Vector3(x, roof.end.y + 1.6, z)
+				Solar.build(self, "StoresSolar_%d_%d" % [int(x), int(-z)], at, tilt, 10, 6)
+				for lx: float in [-6.0, 6.0]:
+					for lz: float in [-8.0, 8.0]:
+						var leg := at + tilt * Vector3(lx, 0, lz)
+						var h := leg.y - roof.end.y - 0.3
+						k.box(Vector3(0.16, h, 0.16), Vector3(leg.x, roof.end.y + 0.3 + h * 0.5, leg.z), dark, false)
 	k.box(Vector3(0.3, 3.2, 0.3), Vector3(-24.0, 4.8, -2.0), dark, false)
 	k.box(Vector3(0.2, 0.2, 24.0), Vector3(-24.0, 6.4, -2.0), dark, false)
 	for i in 4:
@@ -672,7 +702,7 @@ func _furnish_crew(k) -> void:
 		k.box(Vector3(0.1, 0.72, 0.6), Vector3(6.0, 0.36, z), bench)
 		for dz: float in [-0.85, 0.85]:
 			k.box(Vector3(3.0, 0.45, 0.35), Vector3(6.0, 0.225, z + dz), bench)
-	# A sofa facing the window onto the planet.
+	# A sofa facing the window onto the dock and the galaxy beyond.
 	k.box(Vector3(4.0, 0.45, 0.9), Vector3(13.0, 0.225, 8.8), sofa)
 	k.box(Vector3(4.0, 0.5, 0.25), Vector3(13.0, 0.7, 8.3), sofa)
 	# Lockers along the east wall.

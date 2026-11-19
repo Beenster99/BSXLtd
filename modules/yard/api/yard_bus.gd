@@ -2,8 +2,8 @@ class_name YardBus
 extends Node
 ## Orbital yard module bus (Modules.bus("yard")). The place the game happens: a station with
 ## gravity (design room, contracts desk, stores hall, crew room, airlock) and,
-## outside its windows, the weightless dock with one build berth and two holding berths over
-## a planet. Master plan Wave 1, stages 1.1 (station) and 1.2 (dock).
+## outside its windows, the weightless dock with one build berth and two holding berths, in
+## deep space. Master plan Wave 1, stages 1.1 (station) and 1.2 (dock).
 ##
 ## Station space: metres, floor y = 0, -Z towards the dock, +X towards the racking hall.
 ##
