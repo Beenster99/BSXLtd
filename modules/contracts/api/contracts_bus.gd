@@ -84,6 +84,9 @@ const VS_ORDERS_FLAG := "contracts.vs_orders"
 ## off, the board seeds none). With KINDS_FLAG and VS_ORDERS_FLAG off too the board is empty
 ## until Wave 4 posts demands for new ships.
 const FIT_JOBS_FLAG := "contracts.fit_jobs"
+## Orders for new ships with demands on their ratings (ShipOrders): the design office
+## scores a design against one.
+const SHIP_ORDERS_FLAG := "contracts.ship_orders"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -372,6 +375,13 @@ func document(job_id: String, doc_id: String) -> Dictionary:
 ## The contracts board: offered Void Salvage jobs (VOID_SALVAGE; empty while VS_ORDERS_FLAG
 ## is off), offered local yard jobs (LOCAL), or jobs taken on and not yet handed over
 ## (TAKEN). Void Salvage first, then by due day.
+## The ship orders posted this cycle (ShipOrders.for_cycle); none with the flag off.
+func ship_orders() -> Array[Dictionary]:
+	if not Flags.is_on(SHIP_ORDERS_FLAG):
+		return []
+	return ShipOrders.for_cycle(_cycle)
+
+
 func board(tab: String) -> Array[ContractJob]:
 	var out: Array[ContractJob] = []
 	for job: ContractJob in _jobs.values():

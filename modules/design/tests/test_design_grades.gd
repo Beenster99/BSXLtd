@@ -15,6 +15,7 @@ func run_tests() -> void:
 	_variants()
 	_ratings()
 	_doors()
+	_orders()
 	await _palette()
 
 
@@ -150,6 +151,26 @@ func _doors() -> void:
 	check(not errs.is_empty(), "a cargo door does not fit a 2 m wall")
 
 
+## A design answering a client's ship order: the order is kept with the design, and every
+## demand an order can make is one the numbers can score.
+func _orders() -> void:
+	var o: Dictionary = ShipOrders.for_cycle(1)[0]
+	var d := _ship("S")
+	d.apply({"op": "set_meta", "fields": {"order": o}})
+	check(str(d.order.id) == str(o.id), "the design takes the order")
+	var back := DesignRecord.from_dict(JSON.parse_string(JSON.stringify(d.to_dict())))
+	check(str(back.order.get("id", "")) == str(o.id) and (back.order.demands as Dictionary).size() == o.demands.size(),
+			"and keeps it through a save")
+	var t := DesignTotals.compute(d, cat)
+	for c in range(30):
+		for order in ShipOrders.for_cycle(c):
+			var rows := t.fit(order.demands)
+			if rows.size() != (order.demands as Dictionary).size():
+				check(false, "every demand of %s is scored: %s" % [order.id, order.demands.keys()])
+				return
+	check(true, "every demand any order makes is scored by the design's numbers")
+
+
 func _palette() -> void:
 	var bus := Modules.bus("design") as DesignBus
 	bus.library.reset_data()
@@ -211,5 +232,19 @@ func _palette() -> void:
 		check(str(rec.doors.k2.get("kind", "")) == "doorway", "a door becomes an open doorway in place")
 		bus.editor.undo()
 		check(DesignCatalog.door_kind(rec.doors.k2).leaves, "and undo makes it a door again")
+	var orders_b := console.find_child("Orders", true, false) as Button
+	check(orders_b != null and not orders_b.disabled, "the palette offers the ship orders")
+	if orders_b:
+		orders_b.pressed.emit()
+		await frames(2)
+		var first := console.find_child("Order_*", true, false) as Button
+		check(first != null, "the order list opens")
+		if first:
+			first.pressed.emit()
+			await frames(2)
+			check(not rec.order.is_empty(), "picking one makes the design answer it")
+			check(console.data.find_child("*", true, false) != null, "the data channel redraws")
+			bus.editor.undo()
+			check(rec.order.is_empty(), "and undo takes it off again")
 	layer.queue_free()
 	holo.queue_free()

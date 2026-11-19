@@ -87,9 +87,13 @@ func refresh() -> void:
 		f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ratings.add_child(f)
 	_body.add_child(ratings)
-	if not demands.is_empty():
+	# The ship order the design answers sets the demands, unless a view set its own.
+	var want: Dictionary = demands if not demands.is_empty() else rec.order.get("demands", {})
+	if not want.is_empty():
 		_body.add_child(T.label("CONTRACT FIT", "display_bold", 20, T.TEXT))
-		for row in t.fit(demands):
+		if not rec.order.is_empty():
+			_body.add_child(T.label(str(rec.order.get("title", "")), "body_medium", 16, T.ORANGE))
+		for row in t.fit(want):
 			_body.add_child(_fit_row(row))
 	_body.add_child(T.label("WILL IT WORK", "display_bold", 20, T.TEXT))
 	if problems.is_empty():
