@@ -466,13 +466,15 @@ func _wall(e: Dictionary, outer: bool) -> void:
 		var t := (at - a).dot(dir)
 		if t < -0.01 or t > length + 0.01 or (a + dir * t).distance_to(at) > 0.05:
 			continue
-		gaps.append({"id": str(d.id), "t0": maxf(t - DOOR_W * 0.5, 0.0), "t1": minf(t + DOOR_W * 0.5, length)})
+		var dw := DesignCatalog.door_w(d)
+		gaps.append({"id": str(d.id), "t0": maxf(t - dw * 0.5, 0.0), "t1": minf(t + dw * 0.5, length),
+				"h": DesignCatalog.door_h(d), "leaves": bool(DesignCatalog.door_kind(d).leaves)})
 	gaps.sort_custom(func(p, q): return p.t0 < q.t0)
 	var info := {"kind": "wall", "deck": deck, "a": a, "b": b, "outer": outer}
 	var start := 0.0
 	for g in gaps:
 		_wall_piece(info, a, dir, normal, start, g.t0, y0, y1, inside_pos, inside_neg, outer)
-		_wall_piece(info, a, dir, normal, g.t0, g.t1, y0 + DOOR_H, y1, inside_pos, inside_neg, outer)
+		_wall_piece(info, a, dir, normal, g.t0, g.t1, y0 + float(g.h), y1, inside_pos, inside_neg, outer)
 		_door(g, a, dir, normal, y0, outer)
 		start = g.t1
 	_wall_piece(info, a, dir, normal, start, length, y0, y1, inside_pos, inside_neg, outer)
@@ -558,8 +560,9 @@ func _frame() -> void:
 			to.x = r.end.x if int(o.edge) == DesignFrame.STARBOARD else r.position.x
 		else:
 			to.z = float(st[0 if int(o.cap) == 0 else st.size() - 1].z)
-		var size := Vector3(absf(to.x - at.x) + WALL, FLOOR, DOOR_W) if int(o.edge) >= 0 \
-				else Vector3(DOOR_W, FLOOR, absf(to.z - at.z) + WALL)
+		var gw := DesignCatalog.door_w(g)
+		var size := Vector3(absf(to.x - at.x) + WALL, FLOOR, gw) if int(o.edge) >= 0 \
+				else Vector3(gw, FLOOR, absf(to.z - at.z) + WALL)
 		var sill := _body({"kind": "floor", "deck": int(g.deck)})
 		sill.name = "Sill_%s" % str(g.id)
 		sill.position = (at + to) * 0.5 + Vector3(0, -FLOOR * 0.5, 0)
@@ -627,19 +630,20 @@ func _door(g: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, y0: float, 
 	frame.name = "Door_" + str(g.id)
 	frame.transform = Transform3D(basis, Vector3(c2.x, y0, c2.y))
 	var w := t1 - t0
+	var dh := float(g.get("h", DOOR_H))
 	var trim := paint(Color(0.86, 0.62, 0.16), "satin_paint") if not outer else paint(Color(0.72, 0.2, 0.15), "satin_paint")
 	var depth := WALL + LINING * 2.0 + 0.04
 	for side in [-1.0, 1.0]:
 		var jamb := MeshInstance3D.new()
-		jamb.mesh = _box_mesh(Vector3(0.08, DOOR_H, depth))
+		jamb.mesh = _box_mesh(Vector3(0.08, dh, depth))
 		jamb.material_override = trim
-		jamb.position = Vector3(side * (w * 0.5 - 0.04), DOOR_H * 0.5, 0)
+		jamb.position = Vector3(side * (w * 0.5 - 0.04), dh * 0.5, 0)
 		frame.add_child(jamb)
-		_outline_box(frame.transform * Transform3D(Basis.IDENTITY, jamb.position), Vector3(0.08, DOOR_H, depth))
+		_outline_box(frame.transform * Transform3D(Basis.IDENTITY, jamb.position), Vector3(0.08, dh, depth))
 	var head := MeshInstance3D.new()
 	head.mesh = _box_mesh(Vector3(w, 0.1, depth))
 	head.material_override = trim
-	head.position = Vector3(0, DOOR_H - 0.05, 0)
+	head.position = Vector3(0, dh - 0.05, 0)
 	frame.add_child(head)
 	# The sill is flush with the deck plates; a hazard tread strip on it.
 	var sill := MeshInstance3D.new()
@@ -647,15 +651,19 @@ func _door(g: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, y0: float, 
 	sill.material_override = paint(Color(0.9, 0.7, 0.1), "hazard_stripes")
 	sill.position = Vector3(0, 0.002, 0)
 	frame.add_child(sill)
+	_shape_in(frame, Vector3(0.08, dh, depth), Vector3(-(w * 0.5 - 0.04), dh * 0.5, 0))
+	_shape_in(frame, Vector3(0.08, dh, depth), Vector3(w * 0.5 - 0.04, dh * 0.5, 0))
+	if not bool(g.get("leaves", true)):
+		return  # an open doorway: frame and sill, no leaves
 	# Two leaves that slide apart into the wall.
 	var half := (w - 0.16) * 0.5
 	var leaves: Array[Node3D] = []
 	for side in [-1.0, 1.0]:
 		var leaf := MeshInstance3D.new()
 		leaf.name = "Leaf"
-		leaf.mesh = _box_mesh(Vector3(half, DOOR_H - 0.12, 0.05))
+		leaf.mesh = _box_mesh(Vector3(half, dh - 0.12, 0.05))
 		leaf.material_override = paint(Color(0.56, 0.58, 0.6), "brushed_steel")
-		leaf.position = Vector3(side * half * 0.5, (DOOR_H - 0.1) * 0.5, 0)
+		leaf.position = Vector3(side * half * 0.5, (dh - 0.1) * 0.5, 0)
 		var stripe := MeshInstance3D.new()
 		stripe.mesh = _box_mesh(Vector3(half, 0.08, 0.056))
 		stripe.material_override = trim
@@ -663,8 +671,6 @@ func _door(g: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, y0: float, 
 		leaf.add_child(stripe)
 		frame.add_child(leaf)
 		leaves.append(leaf)
-	_shape_in(frame, Vector3(0.08, DOOR_H, depth), Vector3(-(w * 0.5 - 0.04), DOOR_H * 0.5, 0))
-	_shape_in(frame, Vector3(0.08, DOOR_H, depth), Vector3(w * 0.5 - 0.04, DOOR_H * 0.5, 0))
 	doors.append({"id": str(g.id), "centre": Vector3(c2.x, y0 + 1.0, c2.y), "left": leaves[0], "right": leaves[1],
 			"half": half, "open": 0.0})
 
