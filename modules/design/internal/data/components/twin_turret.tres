@@ -25,3 +25,4 @@ max_class = 7
 integrity = 260.0
 attack = 60.0
 signature = 12.0
+shared_part = "TwinTurret"

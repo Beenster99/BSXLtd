@@ -22,3 +22,4 @@ size_class = 2
 min_class = 1
 max_class = 5
 integrity = 100.0
+shared_part = "Conveyor"

@@ -25,3 +25,4 @@ max_class = 6
 integrity = 150.0
 attack = 30.0
 signature = 8.0
+shared_part = "Turret"

@@ -24,3 +24,4 @@ min_class = 1
 max_class = 7
 integrity = 400.0
 defence = 25.0
+shared_part = "ArmourCowl"

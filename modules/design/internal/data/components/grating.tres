@@ -20,3 +20,4 @@ lead_days = 1
 category = "structure"
 graded = false
 integrity = 120.0
+shared_part = "Grating"

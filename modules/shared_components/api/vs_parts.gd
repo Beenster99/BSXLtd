@@ -93,6 +93,24 @@ const ENTRIES: Dictionary = {
 	"GravityGenerator": {"name": "Gravity generator", "category": "electronics", "material": "steel", "kg": 2400.0},
 	"Searchlight": {"name": "Searchlight", "category": "electronics", "material": "alloy", "kg": 60.0},
 	"FlightRecorder": {"name": "Flight recorder", "category": "electronics", "material": "steel", "kg": 25.0},
+	# The rest of the design office's catalogue that Void Salvage has a builder for (2026-11-19):
+	# Void Salvage's own builders, nothing new copied. The catalogue's other parts are BSX's own
+	# models (PartModels).
+	"SeatRow": {"name": "Row of seats", "category": "fittings", "material": "alloy", "kg": 95.0},
+	"BedAlcove": {"name": "Bed alcove", "category": "fittings", "material": "alloy", "kg": 220.0},
+	"BarCounter": {"name": "Bar counter", "category": "fittings", "material": "steel", "kg": 260.0},
+	"MedBed": {"name": "Medical bed", "category": "electronics", "material": "alloy", "kg": 180.0},
+	"Lockbox": {"name": "Strongbox", "category": "cargo", "material": "steel", "kg": 120.0},
+	"DistressBeacon": {"name": "Distress beacon", "category": "electronics", "material": "steel", "kg": 20.0},
+	"OreDetector": {"name": "Ore detector", "category": "electronics", "material": "alloy", "kg": 500.0},
+	"LiftPlatform": {"name": "Lift platform", "category": "machinery", "material": "steel", "kg": 1200.0},
+	"Grating": {"name": "Floor grating", "category": "frame", "material": "steel", "kg": 60.0},
+	"Conveyor": {"name": "Conveyor", "category": "machinery", "material": "steel", "kg": 300.0},
+	"ArmourCowl": {"name": "Armour cowl", "category": "hull", "material": "tungsten", "kg": 2400.0},
+	"Turret": {"name": "Turret", "category": "weapons", "material": "steel", "kg": 900.0},
+	"TwinTurret": {"name": "Twin turret", "category": "weapons", "material": "steel", "kg": 1800.0},
+	"NavalTurret": {"name": "Naval turret", "category": "weapons", "material": "steel", "kg": 6500.0},
+	"MissileLauncher": {"name": "Missile launcher", "category": "weapons", "material": "steel", "kg": 1100.0},
 }
 
 ## The paint a part's body wears, by category (its builder's vertex colours carry the trim,
@@ -103,6 +121,7 @@ const PAINT: Dictionary = {
 	"piping": Color(0.5, 0.52, 0.54), "cargo": Color(0.6, 0.38, 0.2),
 	"fittings": Color(0.66, 0.67, 0.68), "wiring": Color(0.58, 0.6, 0.62),
 	"frame": Color(0.48, 0.5, 0.52), "hull": Color(0.56, 0.58, 0.6),
+	"weapons": Color(0.38, 0.41, 0.39),
 }
 
 static var _shapes: Dictionary = {}
@@ -312,6 +331,21 @@ static func _build(id: String) -> PartShapes.PartShape:
 		"GravityGenerator": return WreckParts.gravity_generator()
 		"Searchlight": return WreckParts.searchlight()
 		"FlightRecorder": return WreckParts.flight_recorder()
+		"SeatRow": return WreckParts.seat_row()
+		"BedAlcove": return WreckParts.bed_alcove()
+		"BarCounter": return WreckParts.bar_counter()
+		"MedBed": return WreckParts.med_bed(2.2, 0.9, 1.0)
+		"Lockbox": return WreckParts.lockbox()
+		"DistressBeacon": return WreckParts.distress_beacon()
+		"OreDetector": return WreckParts.ore_detector()
+		"LiftPlatform": return WreckParts.lift_platform()
+		"Grating": return WreckParts.grating(2.0, 2.0)
+		"Conveyor": return WreckParts.belt_conveyor(0.8, 3.0, 0.4)
+		"ArmourCowl": return WreckParts.armour_cowl()
+		"Turret": return WreckParts.turret(0.6, 1.2)
+		"TwinTurret": return WreckParts.twin_turret()
+		"NavalTurret": return WreckParts.naval_turret(3.0, 2.1)
+		"MissileLauncher": return WreckParts.missile_launcher(1.4, 1.0, 1.8)
 	return null
 
 

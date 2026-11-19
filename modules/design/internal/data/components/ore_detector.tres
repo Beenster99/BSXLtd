@@ -24,3 +24,4 @@ min_class = 1
 max_class = 6
 integrity = 80.0
 sensor = 30.0
+shared_part = "OreDetector"
