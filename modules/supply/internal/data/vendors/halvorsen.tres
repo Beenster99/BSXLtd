@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SupplyVendor" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/supply/api/supply_vendor.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "halvorsen"
+display_name = "Halvorsen Drive Works"
+tagline = "Drives, reactors and jump cores, built to order"
+colour = Color(0.910, 0.475, 0.169, 1)
+categories = PackedStringArray("power", "propulsion", "jump", "machinery")
+grades = PackedStringArray("S", "L", "H", "P")
+price_factor = 1.08
+spread = 0.05
+volatility = 0.03
+reliability = 0.96
+lead_days = 2
+stock = 3
+restock_days = 6
+volume_percent = {
+4: 3,
+10: 6
+}
+deals_per_week = 1
+deal_percent = Vector2i(6, 14)
+standing_start = 15

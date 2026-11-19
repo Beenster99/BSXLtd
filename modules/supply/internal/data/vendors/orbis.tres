@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SupplyVendor" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/supply/api/supply_vendor.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "orbis"
+display_name = "Orbis Fittings Co-op"
+tagline = "Cabins, galleys, doors and everything a crew touches"
+colour = Color(0.498, 0.831, 0.478, 1)
+categories = PackedStringArray("life", "medical", "crew", "galley", "furniture", "storage", "doors", "lighting", "fluids", "fitout", "services")
+grades = PackedStringArray("R", "S", "L", "Q")
+price_factor = 0.95
+spread = 0.06
+volatility = 0.04
+reliability = 0.9
+lead_days = 0
+stock = 12
+restock_days = 2
+volume_percent = {
+10: 4,
+25: 8,
+50: 12
+}
+deals_per_week = 2
+deal_percent = Vector2i(8, 20)
+standing_start = 30

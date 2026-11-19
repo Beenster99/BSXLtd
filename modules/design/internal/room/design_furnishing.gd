@@ -13,8 +13,8 @@ const WalkInside := preload("res://modules/design/internal/walk/walk_inside.gd")
 ## What each wall's panels show at first: wall id -> [[view, share of the width], ...].
 ## Anyone can change a panel with its < and > (WallBoard.views()).
 const WALL_LAYOUT := {
-	"wall_left": [["plan:0", 0.45], ["side", 0.33], ["end", 0.22]],
-	"wall_right": [["fit", 0.64], ["plan:1", 0.36]],
+	"wall_left": [["plan:0", 0.38], ["fit", 0.62]],
+	"wall_right": [["market", 0.62], ["plan:1", 0.38]],
 	"wall_back_low_left": [["whiteboard", 0.65], ["plan:0", 0.35]],
 	"wall_back_low_right": [["data", 1.0]],
 	"wall_back_high": [["side", 0.6], ["plan:1", 0.4]],

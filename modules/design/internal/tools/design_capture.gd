@@ -284,7 +284,7 @@ class Runner:
 		await _save(out, "parts_order")
 
 	## The contract fit assessment against a client's ship order: full screen at the console
-	## and on the right-hand wall (--fit).
+	## and on the left-hand wall (--fit).
 	func _fit_shots(room: Node, out: String) -> void:
 		var contracts := Modules.bus("contracts") as ContractsBus
 		var orders := contracts.ship_orders() if contracts else ([] as Array[Dictionary])
@@ -300,15 +300,15 @@ class Runner:
 		await _frames(30)
 		await _save(out, "fit_console")
 		room.console.toggle_assessment()
-		var wall: Node = room.walls["wall_right"]
+		var wall: Node = room.walls["wall_left"]
 		await _frames(10)
 		var img: Image = wall.viewport.get_texture().get_image()
 		img.save_png(out.path_join("fit_wall.png"))
 		print("DesignCapture: ", out.path_join("fit_wall.png"))
 		room.set_room_view(true)
 		var cam: Camera3D = room.camera
-		cam.position = Vector3(2.0, 2.4, 1.0)
-		cam.look_at(Vector3(12.0, 2.6, -1.0))
+		cam.position = Vector3(-2.0, 2.4, 1.0)
+		cam.look_at(Vector3(-12.0, 2.6, -1.0))
 		await _frames(30)
 		await _save(out, "fit_room")
 
