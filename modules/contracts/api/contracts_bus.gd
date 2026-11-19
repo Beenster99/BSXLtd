@@ -405,7 +405,11 @@ func ship_orders() -> Array[Dictionary]:
 	if not Flags.is_on(SHIP_ORDERS_FLAG):
 		return []
 	if Flags.is_on(SHIP_VARIETY_FLAG):
-		return ShipOrders.for_cycle(_cycle, ShipOrders.PER_CYCLE, true, level_of)
+		var out := ShipOrders.for_cycle(_cycle, ShipOrders.PER_CYCLE, true, level_of)
+		var have := berth_tier()
+		for o: Dictionary in out:
+			o["berth_short"] = have > 0 and int(o.get("berth", 1)) > have
+		return out
 	return ShipOrders.for_cycle(_cycle, ShipOrders.LEGACY_PER_CYCLE, false)
 
 
@@ -417,6 +421,15 @@ func today() -> int:
 	if business and business.has_method("get_day"):
 		return int(business.call("get_day"))
 	return _cycle
+
+
+## The yard's build berth tier today (YardBus.berth_tier, by name), or 0 with no yard: then
+## berths are not checked.
+func berth_tier() -> int:
+	var yard := Modules.bus("yard")
+	if yard and yard.has_method("berth_tier"):
+		return int(yard.call("berth_tier"))
+	return 0
 
 
 ## The contract signed for `order_id`, or {}.
@@ -447,6 +460,9 @@ func ship_sign_problem(order: Dictionary) -> String:
 		return "already signed"
 	if bool(order.get("locked", false)) or level_of(str(order.get("client", ""))) < int(order.get("needs_level", 0)):
 		return "the client does not know BSX well enough for an order this size"
+	var have := berth_tier()
+	if have > 0 and int(order.get("berth", 1)) > have:
+		return "she needs the %s: the yard's berths are too small" % ShipOrders.berth_name(int(order.berth)).to_lower()
 	return ""
 
 

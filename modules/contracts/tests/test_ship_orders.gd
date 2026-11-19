@@ -12,6 +12,7 @@ func run_tests() -> void:
 	_achievability()
 	_masses()
 	_legacy_and_locks()
+	_berths()
 
 
 func _board() -> void:
@@ -132,10 +133,29 @@ func _legacy_and_locks() -> void:
 		for o in ShipOrders.for_cycle(c, ShipOrders.PER_CYCLE, true, none):
 			if o.locked:
 				any_locked = true
-				check(int(o.needs_level) > 0 and o.size in ["large", "capital", "mega"], "only big ships need standing: %s" % o.size)
+				check(int(o.needs_level) > 0 and o.size in ["large", "capital", "mega", "giga"], "only big ships need standing: %s" % o.size)
 			else:
 				any_open = true
 	check(any_locked and any_open, "a new yard can bid for small and medium ships; bigger ones need standing first")
 	var all_in := func(_id: String) -> int: return 3
 	for o in ShipOrders.for_cycle(7, ShipOrders.PER_CYCLE, true, all_in):
 		check(not o.locked, "a preferred yard can bid for anything")
+
+
+## Each order says how long the ship comes out and the build berth it needs: small ships fit
+## the starter berth, a giga project the giga berth; top standing reaches every size.
+func _berths() -> void:
+	var by_size := {}
+	var levels := func(_id: String) -> int: return 3
+	for cycle in range(1, 120):
+		for o: Dictionary in ShipOrders.for_cycle(cycle, ShipOrders.PER_CYCLE, true, levels):
+			check(not o.locked, "top standing with every client opens every order")
+			var tiers: Array = by_size.get(o.size, [])
+			tiers.append(int(o.berth))
+			by_size[o.size] = tiers
+			check(int(o.length_m) > 0 and int(o.berth) == ShipOrders.berth_for(float(o.length_m)) or int(o.berth) == ShipOrders.berth_for(float(o.length_m) + 1.0),
+					"an order's berth fits its length")
+	check(by_size.has("giga"), "giga projects turn up")
+	check((by_size.small as Array).max() == 1 and (by_size.medium as Array).max() == 1, "small and medium ships fit the starter berth")
+	check((by_size.get("giga", [0]) as Array).max() >= 3 and (by_size.get("mega", [0]) as Array).max() >= 3, "the biggest projects need the biggest berths")
+	print("ship orders: berths by size ", by_size.keys().map(func(k): return "%s %s-%s" % [k, (by_size[k] as Array).min(), (by_size[k] as Array).max()]))

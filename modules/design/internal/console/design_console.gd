@@ -438,6 +438,8 @@ func _fill_orders() -> void:
 			text = "%s\nBudget CR %s · %s · %d criteria%s" % [str(o.title), T.money(int(o.budget)),
 					str(o.achievability.label).to_upper(), ShipOrders.criteria_count(o),
 					" · NEEDS %s STANDING" % ContractClients.level_name(int(o.needs_level)).to_upper() if o.get("locked", false) else ""]
+			if o.get("berth_short", false):
+				text += " · NEEDS A LARGER BERTH (%s)" % ShipOrders.berth_name(int(o.berth)).to_upper()
 		if contracts.has_method("ship_contract_for") and not contracts.ship_contract_for(str(o.id)).is_empty():
 			text += " · SIGNED"
 		var b := T.button(text, str(o.id) == str(current.get("id", "")), 13)
@@ -536,8 +538,11 @@ func _on_contract_changed(_id: String) -> void:
 
 ## "Large · Mining · Deepcut Minerals (Businesslike)" for an order.
 static func _order_tag(o: Dictionary) -> String:
-	return "%s · %s · %s (%s)" % [str(ShipOrders.SIZES.get(str(o.size), {}).get("name", o.size)),
+	var tag := "%s · %s · %s (%s)" % [str(ShipOrders.SIZES.get(str(o.size), {}).get("name", o.size)),
 			ShipClients.sector_name(str(o.get("sector", ""))), str(o.client_name), str(o.get("temper", ""))]
+	if o.has("berth"):
+		tag += "\nAbout %d m long: %s" % [int(o.get("length_m", 0)), ShipOrders.berth_name(int(o.berth))]
+	return tag
 
 
 ## How the budget compares with the cheapest build, coloured: green generous, amber tight,

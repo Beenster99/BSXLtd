@@ -26,8 +26,17 @@ const SIZES: Dictionary = {
 	"large": {"name": "Large", "scale": 8.0, "speed": 0.7, "days": [40, 75], "fee": 0.2, "level": 1, "weight": 20},
 	"capital": {"name": "Capital", "scale": 30.0, "speed": 0.55, "days": [60, 120], "fee": 0.16, "level": 2, "weight": 12},
 	"mega": {"name": "Mega project", "scale": 120.0, "speed": 0.45, "days": [100, 200], "fee": 0.12, "level": 3, "weight": 8},
+	"giga": {"name": "Giga project", "scale": 250.0, "speed": 0.4, "days": [150, 300], "fee": 0.1, "level": 3, "weight": 5},
 }
-const SIZE_ORDER: PackedStringArray = ["small", "medium", "large", "capital", "mega"]
+const SIZE_ORDER: PackedStringArray = ["small", "medium", "large", "capital", "mega", "giga"]
+## The yard's build berths (YardLayout.BERTH_TIERS, the orbital yard thread): tier and the
+## longest hull each takes, m (its frame less the bots' 2 m each end). Berths grow with the
+## company's reputation; an order needs the smallest that takes the ship it asks for.
+const BERTHS: Array = [[1, "Starter berth", 56.0], [2, "Long berth", 106.0], [3, "Capital berth", 196.0], [4, "Giga berth", 316.0]]
+## Hull length from floor area (m2): a few decks of rooms, longer than wide. Fitted to the
+## reference builds (DesignReference) and kept a little generous.
+const LENGTH_PER_ROOT_AREA := 2.2
+const LENGTH_BASE := 4.0
 ## Demands that grow with the size of the ship (the rest are ratings: a big ship is no
 ## faster or quieter for being big).
 const SCALED: PackedStringArray = ["crew", "cargo_m3", "attack", "defence", "power", "fuel_m3",
@@ -102,7 +111,7 @@ const ROLES: Dictionary = {
 		"brief": "The workhorse of a fleet: long patrols, fights when she must, a crew who live aboard for months.",
 		"demands": {"attack": [25, 50], "defence": [60, 110], "jump_ly": [8, 14], "speed": [130, 170], "crew": [4, 7]},
 		"clauses": ["medbay", "mess", "point_defence", "hardened_weapons", "docking_port"], "picks": [2, 3]},
-	"dreadnought": {"name": "Dreadnought", "sector": "military", "sizes": ["mega"],
+	"dreadnought": {"name": "Dreadnought", "sector": "military", "sizes": ["mega", "giga"],
 		"brief": "A flagship. Something to end an argument by arriving.",
 		"demands": {"attack": [20, 35], "defence": [45, 70], "jump_ly": [6, 10], "crew": [4, 6], "speed": [120, 160]},
 		"clauses": ["medbay", "mess", "point_defence", "hardened_weapons", "gravity", "holo_table"], "picks": [3, 4]},
@@ -131,7 +140,7 @@ const ROLES: Dictionary = {
 		"brief": "A floating mine: drills on the hull, a refinery inside, and power for both.",
 		"demands": {"cargo_m3": [50, 100], "power": [20, 40], "crew": [3, 5], "defence": [30, 60]},
 		"clauses": ["drills", "refinery", "workshop", "mess", "ore_detector", "ore_bins", "mining_lasers"], "picks": [2, 3]},
-	"mother_rig": {"name": "Mining mother rig", "sector": "mining", "sizes": ["mega"],
+	"mother_rig": {"name": "Mining mother rig", "sector": "mining", "sizes": ["mega", "giga"],
 		"brief": "A whole mining town that moves: it parks on a belt for a decade and eats it.",
 		"demands": {"cargo_m3": [60, 100], "power": [25, 45], "crew": [3, 5], "defence": [30, 50], "jump_ly": [4, 7]},
 		"clauses": ["drills", "refinery", "smelter", "medbay", "gravity", "mess"], "picks": [3, 5]},
@@ -148,7 +157,7 @@ const ROLES: Dictionary = {
 		"brief": "Cheap tonnes over long distances. Every credit spent on her has to come back in freight.",
 		"demands": {"cargo_max": [56000, 88000], "fuel_mass": [8000, 16000], "crew": [2, 3], "jump_ly": [6, 10]},
 		"clauses": ["cargo_ramp", "docking_port", "workshop"], "picks": [1, 2]},
-	"container_ship": {"name": "Container ship", "sector": "trade", "sizes": ["mega"],
+	"container_ship": {"name": "Container ship", "sector": "trade", "sizes": ["mega", "giga"],
 		"brief": "The largest thing that moves freight: a spine of containers with a drive at one end.",
 		"demands": {"cargo_m3": [160, 240], "crew": [1, 2], "jump_ly": [6, 9], "defence": [15, 30]},
 		"clauses": ["cargo_ramp", "docking_port", "point_defence", "mess"], "picks": [2, 3]},
@@ -161,7 +170,7 @@ const ROLES: Dictionary = {
 		"brief": "She cuts a wreck open where it lies and carries the good parts home.",
 		"demands": {"cargo_m3": [60, 120], "power": [20, 50], "crew": [3, 5], "defence": [40, 80]},
 		"clauses": ["scrap_grinder", "tractor", "workshop", "airlock"], "picks": [2, 3]},
-	"breaker": {"name": "Breaker ship", "sector": "salvage", "sizes": ["capital", "mega"],
+	"breaker": {"name": "Breaker ship", "sector": "salvage", "sizes": ["capital", "mega", "giga"],
 		"brief": "A breaker's yard with a drive: swallows a hulk whole and melts it down in transit.",
 		"demands": {"cargo_m3": [80, 140], "power": [25, 45], "crew": [3, 5], "defence": [30, 60]},
 		"clauses": ["smelter", "scrap_grinder", "tractor", "workshop", "medbay"], "picks": [2, 4]},
@@ -204,7 +213,7 @@ const ROLES: Dictionary = {
 		"brief": "A platoon in, under fire, onto rough ground, and out again.",
 		"demands": {"crew": [8, 14], "defence": [60, 110], "attack": [10, 30], "speed": [130, 170]},
 		"clauses": ["rough_landing", "medbay", "point_defence", "hardened_weapons"], "picks": [2, 3]},
-	"colony_ship": {"name": "Colony ship", "sector": "transport", "sizes": ["capital", "mega"],
+	"colony_ship": {"name": "Colony ship", "sector": "transport", "sizes": ["capital", "mega", "giga"],
 		"brief": "A town's worth of people and everything they need to start again, a long way from anywhere.",
 		"demands": {"occupancy_mass": [600, 1000], "cargo_m3": [40, 80], "fuel_mass": [6000, 12000], "jump_ly": [10, 16]},
 		"clauses": ["cryo", "medbay", "gravity", "workshop", "mess", "rough_landing"], "picks": [3, 5]},
@@ -217,7 +226,7 @@ const ROLES: Dictionary = {
 		"brief": "A laboratory that travels: room for the scientists, power for their kit, and sensors to point at the strange.",
 		"demands": {"sensor_km": [80, 150], "crew": [4, 8], "power": [20, 50], "jump_ly": [10, 18]},
 		"clauses": ["planning", "workshop", "survey_array", "medbay", "holo_table"], "picks": [2, 3]},
-	"research_station": {"name": "Research station", "sector": "research", "sizes": ["large", "capital", "mega"],
+	"research_station": {"name": "Research station", "sector": "research", "sizes": ["large", "capital", "mega", "giga"],
 		"brief": "She will be towed out once and never move again: everything aboard has to keep a crew alive and working for years.",
 		"demands": {"crew": [5, 9], "power": [30, 60], "sensor_km": [80, 160], "defence": [20, 50]},
 		"clauses": ["planning", "workshop", "medbay", "gravity", "mess", "recreation", "docking_port", "airlock"], "picks": [3, 5]},
@@ -331,7 +340,8 @@ static func make(client: String, role: String, size: String, rng: RandomNumberGe
 		"story": str(c.get("story", "")), "temper": str(c.get("temper", "")),
 		"demands": demands, "clauses": clauses, "budget": budget, "estimate": int(est),
 		"achievability": achievability(budget, est), "pay": fee, "days": days,
-		"needs_level": int(sz.level), "locked": false}
+		"needs_level": int(sz.level), "locked": false, "length_m": int(length_for(demands, clauses)),
+		"berth": berth_for(length_for(demands, clauses))}
 
 
 ## A clause by id, ready to go on an order of `size` (its count grown with the ship).
@@ -388,6 +398,30 @@ static func equivalent(demands: Dictionary) -> Dictionary:
 static func area_for(demands: Dictionary) -> float:
 	return 20.0 + maxf(float(demands.get("crew", 2.0)), 1.0) * 4.5 + float(demands.get("cargo_m3", 0.0)) / 2.4 \
 			+ float(demands.get("fuel_m3", 0.0)) / 2.5
+
+
+## About how long the ship an order asks for comes out, m.
+static func length_for(raw: Dictionary, clauses: Array = []) -> float:
+	var area := area_for(equivalent(raw))
+	for c: Dictionary in clauses:
+		if str(c.get("kind", "")) == "room":
+			area += float(c.get("min_m2", 0.0))
+	return LENGTH_BASE + LENGTH_PER_ROOT_AREA * sqrt(area)
+
+
+## The smallest berth tier that takes a hull `length` m long (the largest if none does).
+static func berth_for(length: float) -> int:
+	for b: Array in BERTHS:
+		if length <= float(b[2]):
+			return int(b[0])
+	return int(BERTHS[-1][0])
+
+
+static func berth_name(tier: int) -> String:
+	for b: Array in BERTHS:
+		if int(b[0]) == tier:
+			return str(b[1])
+	return "Berth %d" % tier
 
 
 static func estimate(raw: Dictionary, clauses: Array = []) -> float:
