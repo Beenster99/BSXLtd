@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignRoomType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_room_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "hatch"
+display_name = "Hatch and ladder"
+short = "HTC"
+colour = Color(0.85, 0.8, 0.55, 1)
+min_size = Vector2(1.2, 1.2)
+default_size = Vector2(1.5, 1.5)
+cost_per_m2 = 500.0
+mass_per_m2 = 60.0
+hours_per_m2 = 1.8
+power_per_m2 = 0.03
+crew_per_m2 = 0.0
+cargo_share = 0.0
+fuel_share = 0.0
+needs_access = true
+required = false
+is_airlock = false
+links_decks = true

@@ -1,7 +1,8 @@
 extends ModuleTest
 ## Design Room: lifts. A lift room stacked over another is one shaft: in walk-inside a platform
 ## rides it when you stand on it, a gate closes the shaft on every deck it isn't at, its doors
-## open only where it stands, and someone by the door on another deck calls it.
+## open only where it stands, and someone by the door on another deck calls it. A hatch is a
+## metre-square opening with a ladder you climb; an access way is a narrow passage.
 ##   tools/run_tests.sh design
 
 const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
@@ -69,6 +70,58 @@ func run_tests() -> void:
 	for i in 200:
 		b.update_lifts([Vector3(5.0, 0.9, 1)], 1.0 / 60.0)
 	check(int(lift.at) == 0, "and it comes down")
+	f.close_walk()
+	room.queue_free()
+	await frames(2)
+	await _hatch(bus)
+
+
+func _hatch(bus: DesignBus) -> void:
+	bus.library.reset_data()
+	var rec := bus.library.create("Hatch test")
+	for op: Dictionary in [
+		{"op": "add_room", "room": {"id": "r1", "type": "access", "deck": 0, "x": 0, "z": 0, "w": 1.2, "d": 4}},
+		{"op": "add_room", "room": {"id": "r2", "type": "hatch", "deck": 0, "x": 1.2, "z": 0, "w": 2, "d": 2}},
+		{"op": "add_room", "room": {"id": "r3", "type": "hatch", "deck": 1, "x": 1.2, "z": 0, "w": 2, "d": 2}},
+		{"op": "add_room", "room": {"id": "r4", "type": "quarters", "deck": 1, "x": 3.2, "z": 0, "w": 4, "d": 4}},
+		{"op": "add_door", "door": {"a": "r1", "b": "r2", "deck": 0, "x": 1.2, "z": 1}},
+		{"op": "add_door", "door": {"a": "r3", "b": "r4", "deck": 1, "x": 3.2, "z": 1}},
+		{"op": "add_room", "room": {"id": "r5", "type": "airlock", "deck": 0, "x": -1, "z": 4, "w": 3, "d": 2}},
+		{"op": "add_door", "door": {"a": "r1", "b": "r5", "deck": 0, "x": 0.6, "z": 4}},
+		{"op": "add_door", "door": {"a": "r5", "b": "", "deck": 0, "x": 0.5, "z": 6}},
+	]:
+		bus.editor.do(op)
+	var codes := DesignRules.check(rec, bus.catalog).filter(func(p): return "r1" in p.rooms).map(func(p): return str(p.code))
+	check(not "too_small" in codes, "a 1.2 m access way is a proper room: %s" % [codes])
+	var reach := DesignRules.reachable(rec, bus.catalog)
+	check(reach.has("r4"), "the hatch joins the decks: %s %s" % [reach.keys(), DesignRules.check(rec, bus.catalog).map(func(p): return p.text)])
+	var room := Node3D.new()
+	add_child(room)
+	var f := Furnishing.new()
+	room.add_child(f)
+	f.setup(bus, Furnishing.stand_in_walls())
+	f.open_walk()
+	await frames(2)
+	var walk: Node3D = f.walk
+	var b: WalkBuild = walk.builder
+	check(b.ladders.size() == 1 and walk.find_child("Ladder_r2", true, false) != null, "a ladder up the hatch")
+	var hole: Rect2 = b.ladders[0].rect
+	check(is_equal_approx(hole.size.x, WalkBuild.HATCH) and hole.size.x < 2.0, "through a metre-square opening, not the whole room")
+	# Climb it: stand at its foot facing the ladder and hold forward.
+	walk.body.position = Vector3(hole.get_center().x, 0.95, hole.get_center().y)
+	walk.body.rotation.y = 0.0
+	walk.body.velocity = Vector3.ZERO
+	await _physics(15)
+	Input.action_press(Keys.FORWARD)
+	for i in 300:
+		await get_tree().physics_frame
+		if walk.body.position.y - 0.9 > rec.deck_height - 0.1 and b.ladder_at(walk.body.position).is_empty():
+			break
+	Input.action_release(Keys.FORWARD)
+	await _physics(30)
+	var feet := float(walk.body.position.y) - 0.9
+	check(absf(feet - rec.deck_height) < 0.15 and walk.body.is_on_floor(),
+			"forward climbs you up and off onto deck 2: feet %.2f at %s" % [feet, walk.body.position])
 	f.close_walk()
 	room.queue_free()
 	await frames(2)
