@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "tail_ramp"
+display_name = "Tail ramp"
+short = "TRP"
+colour = Color(0.85, 0.8, 0.55, 1)
+size = Vector3(4.0, 3.4, 0.15)
+cost = 26000.0
+mass = 2600.0
+build_hours = 12.0
+power = -2.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.5
+lead_days = 4
+category = "doors"
+size_class = 4
+min_class = 2
+max_class = 8
+integrity = 600.0
+open_size = Vector2(3.8, 3.2)
+load_kg = 12000.0
+move_s = 20.0
+move_kw = 22.0
+move_kind = "hinge_out"
+move_range = 105.0

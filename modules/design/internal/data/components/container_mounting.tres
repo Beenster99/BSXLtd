@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "container_mounting"
+display_name = "Container mounting"
+short = "TWL"
+colour = Color(0.55, 0.57, 0.6, 1)
+size = Vector3(2.6, 0.3, 6.2)
+cost = 3500.0
+mass = 700.0
+build_hours = 5.0
+power = 0.0
+rooms = PackedStringArray("cargo")
+access = 1.0
+lead_days = 2
+category = "cargo"
+size_class = 4
+min_class = 3
+max_class = 6
+integrity = 300.0
+cargo = 0.0

@@ -22,7 +22,11 @@ func run_tests() -> void:
 		for o in ShipOrders.for_cycle(c):
 			for k in o.demands:
 				seen[k] = true
-	for k in ["jump_ly", "speed", "defence", "attack", "stealth"]:
+	for k in ["jump_ly", "speed", "defence", "attack", "stealth", "fuel_mass", "wet_mass", "occupancy_mass", "cargo_max"]:
 		check(seen.has(k), "some orders demand %s" % k)
+	var haul := ShipOrders.make("x", "hauler", RandomNumberGenerator.new(), "t")
+	check(float(haul.demands.fuel_mass) >= 15000.0 and int(haul.demands.fuel_mass) % 1000 == 0, "a long-haul hauler asks for tonnes of fuel")
+	var lines := " ".join(ShipOrders.demand_lines(haul))
+	check(lines.contains("Fuel load at least") and lines.contains(" t"), "masses read in tonnes: %s" % lines)
 	var bus := Modules.bus("contracts") as ContractsBus
 	check(bus.ship_orders().size() == ShipOrders.PER_CYCLE, "the board posts this cycle's ship orders")

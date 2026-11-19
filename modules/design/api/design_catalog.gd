@@ -20,22 +20,24 @@ const CATEGORIES: Array = [["flight", "Flight and control"], ["power", "Power"],
 ## (w by default, min_w to max_w when a door is given its own "w"), whether it has leaves and how
 ## they open (style: split = two leaves slide apart, slide = one leaf slides aside, swing = one
 ## leaf on hinges, roll = a shutter rolls up, "" = an open doorway), whether it seals
-## (airtight), and what one costs to fit at its default width (cost scales with the width).
+## (airtight), what one costs to fit at its default width (cost scales with the width), and
+## for the moving parts test the seconds it takes to open (move_s) and the kW its motor draws
+## while it moves (move_kw; 0 for a hinged door pushed by hand).
 const DOOR_KINDS: Dictionary = {
 	"door": {"name": "Sliding door", "short": "SLIDING", "w": 1.2, "min_w": 0.9, "max_w": 2.0, "h": 2.2,
-			"leaves": true, "style": "split", "airtight": false, "cost": 2400.0, "mass": 180.0, "hours": 3.0},
+			"leaves": true, "style": "split", "airtight": false, "cost": 2400.0, "mass": 180.0, "hours": 3.0, "move_s": 1.5, "move_kw": 0.4},
 	"single": {"name": "Single sliding door", "short": "SINGLE", "w": 0.9, "min_w": 0.7, "max_w": 1.2, "h": 2.1,
-			"leaves": true, "style": "slide", "airtight": false, "cost": 1500.0, "mass": 110.0, "hours": 2.0},
+			"leaves": true, "style": "slide", "airtight": false, "cost": 1500.0, "mass": 110.0, "hours": 2.0, "move_s": 1.2, "move_kw": 0.3},
 	"hinged": {"name": "Hinged door", "short": "HINGED", "w": 0.8, "min_w": 0.6, "max_w": 1.0, "h": 2.0,
-			"leaves": true, "style": "swing", "airtight": false, "cost": 600.0, "mass": 45.0, "hours": 1.5},
+			"leaves": true, "style": "swing", "airtight": false, "cost": 600.0, "mass": 45.0, "hours": 1.5, "move_s": 2.0, "move_kw": 0.0},
 	"pressure": {"name": "Pressure door", "short": "PRESSURE", "w": 1.0, "min_w": 0.8, "max_w": 1.4, "h": 2.0,
-			"leaves": true, "style": "slide", "airtight": true, "cost": 5200.0, "mass": 420.0, "hours": 5.0},
+			"leaves": true, "style": "slide", "airtight": true, "cost": 5200.0, "mass": 420.0, "hours": 5.0, "move_s": 2.5, "move_kw": 0.8},
 	"doorway": {"name": "Open doorway", "short": "DOORWAY", "w": 1.2, "min_w": 0.6, "max_w": 3.0, "h": 2.2,
-			"leaves": false, "style": "", "airtight": false, "cost": 300.0, "mass": 25.0, "hours": 1.0},
+			"leaves": false, "style": "", "airtight": false, "cost": 300.0, "mass": 25.0, "hours": 1.0, "move_s": 0.0, "move_kw": 0.0},
 	"cargo": {"name": "Cargo door", "short": "CARGO DOOR", "w": 2.4, "min_w": 2.0, "max_w": 4.0, "h": 2.4,
-			"leaves": true, "style": "split", "airtight": true, "cost": 7500.0, "mass": 650.0, "hours": 6.0},
+			"leaves": true, "style": "split", "airtight": true, "cost": 7500.0, "mass": 650.0, "hours": 6.0, "move_s": 4.0, "move_kw": 2.0},
 	"shutter": {"name": "Roller shutter", "short": "SHUTTER", "w": 3.0, "min_w": 2.0, "max_w": 5.0, "h": 2.6,
-			"leaves": true, "style": "roll", "airtight": false, "cost": 4200.0, "mass": 380.0, "hours": 4.0},
+			"leaves": true, "style": "roll", "airtight": false, "cost": 4200.0, "mass": 380.0, "hours": 4.0, "move_s": 8.0, "move_kw": 1.5},
 }
 const DOOR_ORDER: PackedStringArray = ["door", "single", "hinged", "pressure", "doorway", "cargo", "shutter"]
 
