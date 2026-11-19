@@ -30,6 +30,9 @@ var _pick_size := 0
 var _pick_grade := DesignGrades.DEFAULT_GRADE
 ## Component groups open on the palette (category -> true).
 var _open_groups: Dictionary = {"flight": true}
+## The components search text, and the list it filters (rebuilt alone as you type).
+var _comp_search := ""
+var _comp_list: VBoxContainer
 ## Door kind buttons under the tools (kind -> Button).
 var _door_buttons: Dictionary = {}
 var _grid_pick: OptionButton
@@ -484,31 +487,135 @@ func _fill_components() -> void:
 	pick.add_child(grade_b)
 	_palette.add_child(pick)
 	_palette.add_child(T.label(str(gr.blurb), "body", 13, T.DIM))
+	var search := LineEdit.new()
+	search.name = "CompSearch"
+	search.placeholder_text = "Search components (name, kind, size, grade)"
+	search.text = _comp_search
+	search.clear_button_enabled = true
+	search.add_theme_font_size_override("font_size", T.px(14))
+	search.text_changed.connect(func(t: String) -> void:
+		_comp_search = t
+		_fill_comp_list())
+	_palette.add_child(search)
+	# The groups as small chips that wrap, instead of a full-width header each.
+	var chips := HFlowContainer.new()
+	chips.name = "CompGroups"
+	chips.add_theme_constant_override("h_separation", 3)
+	chips.add_theme_constant_override("v_separation", 3)
 	for cat: Array in DesignCatalog.CATEGORIES:
 		var list := bus.catalog.parts_in(str(cat[0]))
 		if list.is_empty():
 			continue
 		var open := bool(_open_groups.get(cat[0], false))
-		var head := T.button("%s %s  (%d)" % ["v" if open else ">", str(cat[1]).to_upper(), list.size()], false, 15)
+		var head := T.button("%s %d" % [str(cat[1]).get_slice(" ", 0).trim_suffix(",").to_upper(), list.size()], false, 12, open)
 		head.name = "Group_" + str(cat[0])
-		head.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		head.tooltip_text = str(cat[1])
 		head.pressed.connect(func() -> void:
 			_open_groups[cat[0]] = not bool(_open_groups.get(cat[0], false))
 			_fill_palette())
-		_palette.add_child(head)
-		if not open:
+		chips.add_child(head)
+	_palette.add_child(chips)
+	_comp_list = VBoxContainer.new()
+	_comp_list.name = "CompList"
+	_comp_list.add_theme_constant_override("separation", 1)
+	_palette.add_child(_comp_list)
+	_fill_comp_list()
+
+
+## The component rows under the chips: every match across the groups while there is a search,
+## else the open groups. One slim row each (name and short cost); the full card is its tooltip.
+func _fill_comp_list() -> void:
+	if _comp_list == null:
+		return
+	for c in _comp_list.get_children():
+		_comp_list.remove_child(c)
+		c.queue_free()
+	for id: String in _tool_buttons.keys():
+		if not is_instance_valid(_tool_buttons[id]):
+			_tool_buttons.erase(id)
+	var words := _comp_search.strip_edges().to_lower().split(" ", false)
+	var shown := 0
+	for cat: Array in DesignCatalog.CATEGORIES:
+		var list := bus.catalog.parts_in(str(cat[0]))
+		if list.is_empty():
 			continue
+		var rows: Array = []
 		for base: DesignPartType in list:
 			var pt := bus.catalog.part(picked_id(base))
-			var tag := DesignGrades.label(pt)
-			var b := _swatch_button("   %s%s   CR %s%s" % [base.display_name, ("  " + tag) if tag != "" else "",
-					T.money(int(pt.cost)), "   (hull)" if base.hull_mount else ""], base.colour)
-			b.tooltip_text = part_card(pt)
-			var tool := ("mount:" if base.hull_mount else "part:") + pt.id
-			b.name = ("Mount_" if base.hull_mount else "Part_") + base.id
-			b.pressed.connect(plan.set_tool.bind(tool))
-			_tool_buttons[tool] = b
-			_palette.add_child(b)
+			if words.is_empty():
+				if not bool(_open_groups.get(cat[0], false)):
+					break
+			elif not matches_search(words, base, pt, str(cat[1])):
+				continue
+			rows.append([base, pt])
+		if rows.is_empty():
+			continue
+		_comp_list.add_child(T.label(str(cat[1]).to_upper(), "display_medium", 12, T.DIM))
+		for r: Array in rows:
+			_comp_list.add_child(_comp_row(r[0], r[1]))
+			shown += 1
+	if shown == 0:
+		_comp_list.add_child(T.label("No components match." if not words.is_empty()
+				else "Pick a group above, or search.", "body", 13, T.DIM))
+	_mark_tools()
+
+
+## True when every word of a search is in the part's name, id, group, size or grade.
+static func matches_search(words: PackedStringArray, base: DesignPartType, pt: DesignPartType, group: String) -> bool:
+	var hay := " ".join([base.display_name, base.id, group, DesignGrades.label(pt),
+			"hull" if base.hull_mount else ""]).to_lower()
+	for w in words:
+		if not hay.contains(w):
+			return false
+	return true
+
+
+## One slim component row: colour swatch, name and size/grade tag, its cost short on the right.
+func _comp_row(base: DesignPartType, pt: DesignPartType) -> Button:
+	var tag := DesignGrades.label(pt)
+	var b := _swatch_button("%s%s%s" % [base.display_name, ("  " + tag) if tag != "" else "",
+			"  (hull)" if base.hull_mount else ""], base.colour, 13)
+	b.clip_text = true
+	b.custom_minimum_size.y = 0
+	var cost := T.label(short_money(pt.cost), "display", 12, T.DIM)
+	cost.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	cost.offset_left = -64
+	cost.offset_right = -8
+	cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	cost.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(cost)
+	b.add_theme_constant_override("h_separation", 6)
+	b.set_meta("slim", true)
+	for state: String in ["normal", "hover", "pressed", "disabled", "hover_pressed"]:
+		var sb := b.get_theme_stylebox(state)
+		if sb is StyleBoxFlat:
+			b.add_theme_stylebox_override(state, _slim(sb.duplicate() as StyleBoxFlat))
+	var tool := ("mount:" if base.hull_mount else "part:") + pt.id
+	b.name = ("Mount_" if base.hull_mount else "Part_") + base.id
+	b.pressed.connect(plan.set_tool.bind(tool))
+	_tool_buttons[tool] = b
+	return b
+
+
+## A row's plate made slim: little above and below, room on the right for the cost.
+static func _slim(sb: StyleBoxFlat) -> StyleBoxFlat:
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	sb.content_margin_left = 6
+	sb.content_margin_right = 66
+	return sb
+
+
+## A cost in few characters: 950, 12.4k, 3.1M.
+static func short_money(v: float) -> String:
+	if v >= 1000000.0:
+		return "%.1fM" % (v / 1000000.0)
+	if v >= 10000.0:
+		return "%.0fk" % (v / 1000.0)
+	if v >= 1000.0:
+		return "%.1fk" % (v / 1000.0)
+	return "%d" % int(v)
 
 
 ## The type id a palette button places for `base`: the picked size (kept inside the type's own
@@ -544,8 +651,8 @@ static func part_card(pt: DesignPartType) -> String:
 	return "\n".join(rows)
 
 
-func _swatch_button(text: String, col: Color) -> Button:
-	var b := T.button(text, false, 15)
+func _swatch_button(text: String, col: Color, size := 15) -> Button:
+	var b := T.button(text, false, size)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_constant_override("icon_max_width", 14)
 	var img := Image.create(14, 14, false, Image.FORMAT_RGBA8)
@@ -559,6 +666,8 @@ func _mark_tools() -> void:
 		var b: Button = _tool_buttons[id]
 		var on := id == plan.tool
 		var st := T.box(T.PLATE_HI if on else T.PLATE, T.ORANGE if on else T.EDGE, 2, 8.0)
+		if b.has_meta("slim"):
+			st = _slim(st)
 		b.add_theme_stylebox_override("normal", st)
 	for k: String in _door_buttons:
 		var on := plan.tool == "door" and plan.door_kind == k
