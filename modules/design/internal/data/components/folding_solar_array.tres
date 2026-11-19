@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "folding_solar_array"
+display_name = "Folding solar array"
+short = "FSA"
+colour = Color(0.3, 0.45, 0.8, 1)
+size = Vector3(1.4, 0.5, 3.0)
+cost = 11000.0
+mass = 160.0
+build_hours = 5.0
+power = 18.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 3
+category = "power"
+size_class = 3
+min_class = 1
+max_class = 7
+integrity = 80.0
+move_s = 30.0
+move_kw = 2.0
+move_kind = "hinge_up"
+move_range = 180.0

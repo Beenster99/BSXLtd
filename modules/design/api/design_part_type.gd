@@ -66,6 +66,25 @@ extends Resource
 @export var tank := 0.0
 ## Sensor range, km.
 @export var sensor := 0.0
+## --- Moving parts (doors, ramps, legs, booms, arrays: the moving parts test) ---
+## The opening it gives when open, m: width and height (0, 0 for none).
+@export var open_size := Vector2.ZERO
+## Seconds to open, deploy or swing through its full travel (0 = it does not move).
+@export var move_s := 0.0
+## How it moves: "hinge_out" (ramps, clamshells, airstairs, booms that luff), "hinge_up"
+## (hatches, fold-out arrays), "slide" (doors, collars, lifts, rams, gangways), "spin" (turrets,
+## cranes that slew, masts that turn), "leg" (gear, legs, jacks, skids), "belt" (conveyors);
+## "" for none.
+@export var move_kind := ""
+## How far: degrees for hinge_* and spin, metres for slide and leg (its reach).
+@export var move_range := 0.0
+## kW it draws while moving (on top of `power`).
+@export var move_kw := 0.0
+## The most it is rated to bear, kg: for a foot, leg, skid or jack the load on each one; for a
+## ramp or gangway what may cross it; for a boom, clamp or ram what it may lift, hold or push.
+@export var load_kg := 0.0
+## Ground clearance under the hull with it down, m (feet, legs, skids, jacks).
+@export var clearance := 0.0
 ## Set on a derived size/grade variant (DesignCatalog.part("reactor_small:5H")): its base type's
 ## id, its size class and grade code, and how much bigger its model is drawn than the base's.
 var base_id := ""
