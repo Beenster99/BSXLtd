@@ -132,8 +132,8 @@ static func make(brand: Dictionary, size: String) -> Node3D:
 			n.add_child(light)
 		var hx := FreighterLook.HALF.x
 		_badge(n, brand, s, model, Vector3(-hx - 0.36, 17.6, -4.0), -PI * 0.5, 2.2)
-		_badge(n, brand, s, model, Vector3(-_half_width(String(s.section), hx * 0.92, 17.0 * 0.82, -1.0, float(s.ch)) - 0.36, 7.5, -42.0), -PI * 0.5, 1.0)
-		_badge(n, brand, s, model, Vector3(_half_width(String(s.section), hx * 0.92, 17.0 * 0.82, -1.0, float(s.ch)) + 0.36, 7.5, -42.0), PI * 0.5, 1.0)
+		_badge(n, brand, s, model, Vector3(-_half_width(String(s.section), hx * 0.92, 17.0 * 0.82, -1.0, float(s.ch)) - 0.36, 7.0, -39.0), -PI * 0.5, 0.8)
+		_badge(n, brand, s, model, Vector3(_half_width(String(s.section), hx * 0.92, 17.0 * 0.82, -1.0, float(s.ch)) + 0.36, 7.0, -39.0), PI * 0.5, 0.8)
 	else:
 		var p: Dictionary = SPEC[size]
 		var frames: Array = p.frames
@@ -805,8 +805,8 @@ static func _freighter(m: YardToolMesh, s: Dictionary) -> void:
 	var taper: float = s.taper
 	var sn := _sec(sk, bw * taper, bh * lerpf(1.0, taper, 0.6), float(s.ch))
 	var bz0 := -hz
-	var bz1 := -hz - 12.0
-	var bz2 := -hz - 22.0
+	var bz1 := -hz - 6.5
+	var bz2 := -hz - 12.0
 	_prism(m, k, "plates", Vector3(0, bcy, bz0), Vector3(0, bcy, bz1), sb, sb, u, false, false)
 	_prism(m, k, "plates", Vector3(0, bcy, bz1), Vector3(0, bcy - 1.0, bz2), sb, sn, u, false, true)
 	for z: float in [bz0 - 0.5, bz1]:
@@ -821,12 +821,12 @@ static func _freighter(m: YardToolMesh, s: Dictionary) -> void:
 			m.box(k, "trim", Vector3(side * (gw + 0.1), gy, bz1 + 0.5 + f * 1.5), Vector3(0.2, 1.8, 0.2), 0.04)
 		# Her name boards either side.
 		var zw := _half_width(sk, bw, bh, 0.0, float(s.ch))
-		m.box(k, "plates", Vector3(side * (zw - 0.15), bcy - 1.0, -hz - 6.0), Vector3(0.5, 4.6, 9.0), 0.1)
-		m.box(k, "accent", Vector3(side * (zw + 0.1), bcy - 1.0, -hz - 8.4), Vector3(0.05, 2.6, 2.6), 0.05)
+		m.box(k, "plates", Vector3(side * (zw - 0.15), bcy - 1.0, -hz - 3.3), Vector3(0.5, 4.6, 5.6), 0.1)
+		m.box(k, "accent", Vector3(side * (zw + 0.1), bcy - 1.0, -hz - 4.9), Vector3(0.05, 2.2, 2.2), 0.05)
 		for row in 2:
-			for v in 7:
-				m.box(k, "lamp", Vector3(side * (_half_width(sk, bw, bh, bh * 0.25 + row * 1.6, float(s.ch)) + 0.02), bcy + bh * 0.25 + row * 1.6, -hz - 1.2 - v * 1.5), Vector3(0.06, 0.5, 0.8), 0.02)
-		for v in 10:
+			for v in 3:
+				m.box(k, "lamp", Vector3(side * (_half_width(sk, bw, bh, bh * 0.25 + row * 1.6, float(s.ch)) + 0.02), bcy + bh * 0.25 + row * 1.6, -hz - 1.4 - v * 1.6), Vector3(0.06, 0.5, 0.8), 0.02)
+		for v in 5:
 			m.box(k, "dark", Vector3(side * (_half_width(sk, bw, bh, -bh * 0.6, float(s.ch)) + 0.02), bcy - bh * 0.6, -hz - 1.5 - v * 0.9), Vector3(0.08, 1.6, 0.35), 0.02)
 		_rcs(m, k, Vector3(side * (zw + 0.4), bcy + bh * 0.5, bz1 + 1.0), [Vector3.UP, Vector3(side, 0, 0), Vector3.FORWARD], 2.5)
 		m.rod(k, "red_lamp" if side < 0.0 else "lamp", Vector3(side * (hx - 1.0), top, -hz + 0.5), Vector3(side * (hx - 1.0), top + 0.6, -hz + 0.5), 0.4, -1.0, 12)
@@ -840,11 +840,11 @@ static func _freighter(m: YardToolMesh, s: Dictionary) -> void:
 		m.box(k, "lamp", Vector3(0, bcy - 1.0, cz - 2.0) + d * 3.05, Vector3(0.4, 0.4, 0.3), 0.05)
 	# Sensors on the command module's back: a mast, a dish.
 	var sy := bcy + bh * (0.88 if sk == "round" else 0.97)
-	m.rod(k, "gunmetal", Vector3(4.0, sy, bz0 - 3.0), Vector3(4.0, sy + 5.0, bz0 - 3.0), 0.25, 0.12, 12)
-	m.rod(k, "red_lamp", Vector3(4.0, sy + 5.0, bz0 - 3.0), Vector3(4.0, sy + 5.5, bz0 - 3.0), 0.3, -1.0, 12)
-	m.rod(k, "gunmetal", Vector3(-4.0, sy, bz0 - 4.0), Vector3(-4.0, sy + 2.0, bz0 - 4.0), 0.3, -1.0, 12)
-	m.rod(k, "plates", Vector3(-4.0, sy + 2.0, bz0 - 4.0), Vector3(-4.6, sy + 3.4, bz0 - 4.0), 0.2, 2.6, 40)
-	m.ring(k, "trim", Vector3(-4.6, sy + 3.4, bz0 - 4.0), 2.55, 0.12, Vector3(-0.4, 0.9, 0).normalized(), 40, 6)
+	m.rod(k, "gunmetal", Vector3(4.0, sy, bz0 - 2.5), Vector3(4.0, sy + 5.0, bz0 - 2.5), 0.25, 0.12, 12)
+	m.rod(k, "red_lamp", Vector3(4.0, sy + 5.0, bz0 - 2.5), Vector3(4.0, sy + 5.5, bz0 - 2.5), 0.3, -1.0, 12)
+	m.rod(k, "gunmetal", Vector3(-4.0, sy, bz0 - 3.5), Vector3(-4.0, sy + 2.0, bz0 - 3.5), 0.3, -1.0, 12)
+	m.rod(k, "plates", Vector3(-4.0, sy + 2.0, bz0 - 3.5), Vector3(-4.6, sy + 3.4, bz0 - 3.5), 0.2, 2.6, 40)
+	m.ring(k, "trim", Vector3(-4.6, sy + 3.4, bz0 - 3.5), 2.55, 0.12, Vector3(-0.4, 0.9, 0).normalized(), 40, 6)
 	# The engine module aft: tanks round a truss, the thrust plate, the bells.
 	var ew := hx * 0.7
 	var eh := hh * 0.7

@@ -77,8 +77,8 @@ func _run() -> void:
 		shots.append([li, "courier_" + id, Vector3(-123, 5, z - 16), Vector3(-109, -1, z - 30)])
 		shots.append([li, "hauler_" + id, Vector3(-61, 8, z - 10), Vector3(-39, -1.5, z - 30)])
 		shots.append([li, "hauler_aft_" + id, Vector3(-16, 7, z - 14), Vector3(-37, -1, z - 30)])
-		shots.append([li, "freighter_" + id, Vector3(5, 40, z - 30), Vector3(85, 2, z - 150)])
-		shots.append([li, "freighter_aft_" + id, Vector3(200, 35, z - 85), Vector3(110, 0, z - 150)])
+		shots.append([li, "freighter_" + id, Vector3(28, 22, z - 78), Vector3(88, 2, z - 150)])
+		shots.append([li, "freighter_aft_" + id, Vector3(165, 18, z - 108), Vector3(115, 0, z - 150)])
 		li += 1
 	for i in 6:
 		await get_tree().process_frame
