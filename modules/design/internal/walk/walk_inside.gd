@@ -27,6 +27,9 @@ const LAYER := WalkBuild.LAYER
 const DOOR_H := WalkBuild.DOOR_H
 ## How far you can reach to design, m.
 const REACH := 8.0
+## How far a wheel step pushes her section out, and the most it goes past the proposal, m.
+const HULL_STEP := 0.25
+const HULL_MAX := 4.0
 ## A part's wire or pipe counts as in reach within this of its footprint, m.
 const SERVICE_REACH := 1.5
 
@@ -391,6 +394,77 @@ func push_wall(steps: int) -> bool:
 	return true
 
 
+## The frame part you aim at and where it is in the proposal: {part, bay, station, edge,
+## point}, empty if you aren't aiming at the frame.
+func frame_aimed() -> Dictionary:
+	var a := aim()
+	if a.is_empty() or builder.frame_plan.is_empty():
+		return {}
+	var at: Vector3 = a.point
+	var station := DesignFrame.station_at(builder.frame_plan, at.z)
+	if str(a.info.kind) == "wall" and a.info.get("outer", false):
+		# The outer wall's lining: the hull's side behind it, the way the wall faces out.
+		var n: Vector3 = world.global_basis.inverse() * (a.normal as Vector3)
+		var edge := -1
+		if absf(n.x) > 0.3:
+			edge = DesignFrame.PORT if n.x > 0.0 else DesignFrame.STARBOARD
+		return {"part": null, "bay": DesignFrame.bay_at(builder.frame_plan, at.z), "edge": edge,
+				"point": at, "station": station}
+	if str(a.info.kind) != "frame":
+		return {}
+	var part := builder.frame_part(a.collider, int(a.shape))
+	if part == null:
+		return {}
+	var path := part.path
+	var bay := -1
+	var m := RegEx.create_from_string("bay:f(\\d+)").search(path)
+	if m:
+		bay = int(m.get_string(1))
+	var edge := -1
+	var e := RegEx.create_from_string("/e(\\d+)").search(path)
+	if e:
+		edge = int(e.get_string(1))
+	return {"part": part, "bay": bay, "edge": edge, "point": at, "station": station}
+
+
+## G on a hull panel: glass in it, or metal back.
+func glass_here() -> bool:
+	var f := frame_aimed()
+	if f.is_empty() or int(f.bay) < 0 or int(f.edge) < 0:
+		return false
+	var st: Array = builder.frame_plan.stations
+	var k := int(f.bay)
+	var z := (float(st[k].z) + float(st[k + 1].z)) * 0.5
+	var glazed := (builder.frame_plan.glass as Dictionary).has("%d:%d" % [k, int(f.edge)])
+	bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(z, int(f.edge)), "value": {"glass": not glazed}})
+	return true
+
+
+## The mouse wheel on the frame: her section there pushed out (or back in) on the side you
+## aim at, a quarter metre a step.
+func push_hull(steps: int) -> bool:
+	var f := frame_aimed()
+	if f.is_empty() or f.part == null:
+		return false
+	var st: Dictionary = builder.frame_plan.stations[int(f.station)]
+	var key := DesignFrame.section_key(float(st.z))
+	var p: Vector3 = f.point
+	var sides := DesignFrame.sides_at(st.rect, p.x, p.y)
+	var had: Dictionary = record().frame_edits.get(key, {})
+	var grow: Array = (had.get("grow", [0.0, 0.0, 0.0, 0.0]) as Array).duplicate()
+	var any := false
+	for i in 4:
+		if int(sides[i]) == 1:
+			var v := clampf(float(grow[i]) + HULL_STEP * steps, 0.0, HULL_MAX)
+			any = any or not is_equal_approx(v, float(grow[i]))
+			grow[i] = v
+	if not any:
+		return false
+	var value: Variant = null if grow.max() <= 0.0 else {"grow": grow}
+	bus.editor.do({"op": "set_frame", "key": key, "value": value})
+	return true
+
+
 ## Where the part in your hands would go, and whether it's a good spot.
 func _update_spot() -> void:
 	spot = {}
@@ -488,9 +562,11 @@ func _input(event: InputEvent) -> void:
 			MOUSE_BUTTON_RIGHT:
 				holding = {}
 			MOUSE_BUTTON_WHEEL_UP:
-				push_wall(1)
+				if not push_wall(1):
+					push_hull(1)
 			MOUSE_BUTTON_WHEEL_DOWN:
-				push_wall(-1)
+				if not push_wall(-1):
+					push_hull(-1)
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var handled := true
@@ -510,6 +586,8 @@ func _input(event: InputEvent) -> void:
 				remove_aimed()
 			KEY_F:
 				door_here()
+			KEY_G:
+				handled = glass_here()
 			KEY_Z:
 				if event.ctrl_pressed:
 					bus.editor.redo() if event.shift_pressed else bus.editor.undo()
@@ -615,13 +693,13 @@ func _aim_text() -> String:
 					DesignStructure.option("hull", str(rec.structure.hull)).name,
 					DesignStructure.option("frame", str(rec.structure.frame)).name] if a.info.outer \
 					else "Inner wall: %s" % DesignStructure.option("inner", str(rec.structure.inner)).name
-			return "%s\nF door here   Wheel push or pull this wall" % what
+			return "%s\nF door here   Wheel push or pull this wall%s" % [what, "   G glass or metal" if a.info.outer and not builder.frame_plan.is_empty() else ""]
 		"floor":
 			return "Deck plating\nTab  parts and hull"
 		"frame":
 			var part := builder.frame_part(a.collider, int(a.shape))
 			var joint := builder.frame_joint(a.point)
-			return DesignFrame.describe(part, joint, builder.frame_model)
+			return "%s\nG glass or metal   Wheel push the hull out or in" % DesignFrame.describe(part, joint, builder.frame_model)
 	return ""
 
 

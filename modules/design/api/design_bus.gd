@@ -149,6 +149,12 @@ func describe_op(op: Dictionary) -> String:
 	elif op.has("mount") and op.mount is Dictionary:
 		var pt := catalog.part(str(op.mount.get("type", "")))
 		thing = pt.display_name if pt else "a part on the hull"
+	if kind == "set_frame":
+		var key := str(op.get("key", ""))
+		var v: Variant = op.get("value")
+		if key.begins_with("panel:"):
+			return "put a window in the hull" if v is Dictionary and bool(v.get("glass", false)) else "plated over a hull panel"
+		return "reshaped the hull"
 	var verb := kind.get_slice("_", 0)
 	var noun := kind.substr(verb.length() + 1).replace("_", " ")
 	match verb:
