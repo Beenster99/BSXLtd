@@ -93,6 +93,16 @@ func refresh() -> void:
 				T.cell("%.1f t" % (float(line.mass) / 1000.0), 90),
 				T.cell(T.money(int(line.cost)), 120, T.TEXT)], alt))
 		alt = not alt
+	# The structure as the yard will build it: every member, plate and joint.
+	var build := DesignFrame.build_list(DesignFrame.propose(rec))
+	if not build.is_empty():
+		_body.add_child(T.label("BUILD LIST", "display_bold", 20, T.TEXT))
+		_body.add_child(T.columns([["Item", 0], ["Qty", 90], ["Fastened", 260]]))
+		alt = false
+		for b: Dictionary in build:
+			_body.add_child(T.row([T.cell_text(str(b.name)), T.cell("%s %s" % [T.money(int(b.qty)), str(b.unit)], 90),
+					T.cell(str(b.how), 260)], alt))
+			alt = not alt
 
 
 func _fit_row(row: Dictionary) -> Control:

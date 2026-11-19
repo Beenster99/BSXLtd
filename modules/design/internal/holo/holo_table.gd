@@ -80,10 +80,38 @@ func _process(_delta: float) -> void:
 	if _dirty and bus:
 		_dirty = false
 		rebuild()
+		tag_view_layer()
 	if model:
 		model.rotation.y = align + turn
 		model.scale = Vector3.ONE * scale_fit * zoom
 	_apply_cut()
+
+
+## The render layer only the hologram is on as well, so the console's 3D view can show it alone.
+const VIEW_LAYER := 1 << 14
+
+
+## The hologram's middle and radius in the model's own space (before its scale), for the view
+## to frame it.
+var view_middle := Vector3.ZERO
+var view_radius := 1.0
+
+
+func tag_view_layer() -> void:
+	if model == null:
+		return
+	var box := AABB()
+	var first := true
+	var inv := model.global_transform.affine_inverse()
+	for v in model.find_children("*", "VisualInstance3D", true, false):
+		var vi := v as VisualInstance3D
+		vi.layers |= VIEW_LAYER
+		var b := inv * (vi.global_transform * vi.get_aabb())
+		box = b if first else box.merge(b)
+		first = false
+	if not first:
+		view_middle = box.get_center()
+		view_radius = maxf(box.size.length() * 0.5, 0.1)
 
 
 ## Builds the hologram again from the open design.

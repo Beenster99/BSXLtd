@@ -89,6 +89,10 @@ func run_tests() -> void:
 	var welds: Array = t.lines.filter(func(l): return l.id == "welds")
 	check(welds.size() == 1 and int(welds[0].qty) == int(fc.welds) and float(welds[0].cost) > 0.0,
 			"the welds are on the parts list and priced: %s" % [welds])
+	var bl := DesignFrame.build_list(plan)
+	var bl_names: Array = bl.map(func(r): return r.name)
+	check(["Frame rings", "Stringers", "Hull plates", "Deck plates", "Wall studs", "Wall panels", "Welds", "Rivets", "Bolts"].all(
+			func(n): return n in bl_names), "the build list has every member, plate and joint: %s" % [bl_names])
 	var bolts: Array = t.lines.filter(func(l): return l.id == "bolts")
 	check(bolts.size() == 1 and int(bolts[0].qty) == int(fc.bolts) and int(fc.studs) > 0 and int(fc.deck_plates) > 0,
 			"the walls' bolts, studs and the deck plates counted: %s" % [fc])

@@ -22,6 +22,7 @@ extends RefCounted
 ##   {op = "set_run", id, fields = {...}}
 ##   {op = "remove_run", id}
 ##   {op = "set_hull", deck, points = [[x, z], ...]}   # the hull's outline on a deck ([] clears it)
+##   {op = "shift_decks", by}   # every deck moved up by `by` (1: a new empty deck under the lowest)
 ##   {op = "add_wall", wall = {id?, deck, a = [x, z], b = [x, z]}}   # an inner wall drawn anywhere
 ##   {op = "remove_wall", id}
 ##   {op = "add_beam", beam = {id?, deck, a = [x, z], b = [x, z]}}   # a beam under the deckhead
@@ -163,6 +164,26 @@ func _apply(op: Dictionary) -> Dictionary:
 			else:
 				frame_edits.erase(key)
 			return {"op": "set_frame", "key": key, "value": (was as Dictionary).duplicate(true) if was is Dictionary else null}
+		"shift_decks":
+			# Everything up (or down) a deck: a new empty deck under the lowest.
+			var by := int(op.get("by", 0))
+			if by == 0:
+				return {}
+			for table: Dictionary in [rooms, doors, runs, walls, beams, mounts]:
+				for e: Dictionary in table.values():
+					if int(e.get("deck", 0)) + by < 0:
+						return {}
+			for k in hull:
+				if int(k) + by < 0:
+					return {}
+			for table: Dictionary in [rooms, doors, runs, walls, beams, mounts]:
+				for e: Dictionary in table.values():
+					e["deck"] = int(e.get("deck", 0)) + by
+			var moved := {}
+			for k in hull:
+				moved[str(int(k) + by)] = hull[k]
+			hull = moved
+			return {"op": "shift_decks", "by": -by}
 		"set_hull":
 			var dk := str(int(op.get("deck", 0)))
 			var outline: Array = []

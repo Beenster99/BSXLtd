@@ -327,6 +327,34 @@ static func counts(p: Dictionary) -> Dictionary:
 			"walls": (p.get("walls", []) as Array).size(), "studs": studs, "wall_panels": wall_panels}
 
 
+## The yard's build list for the proposal: every kind of member, plate and joint the crew will
+## make, how many, and how it is fastened: [{name, qty, unit, how}].
+static func build_list(p: Dictionary) -> Array[Dictionary]:
+	var c := counts(p)
+	var out: Array[Dictionary] = []
+	if int(c.stations) == 0:
+		return out
+	for row: Array in [
+		["Frame rings", c.rings, "x", "welded to the node blocks"],
+		["Node blocks", c.nodes, "x", "at every ring corner"],
+		["Stringers", c.stringers, "x", "welded ring to ring"],
+		["Hull plates", int(c.plates) - int(c.glass), "x", "riveted to rings and stringers"],
+		["Glass panels", c.glass, "x", "set in the frame"],
+		["Outer door frames", c.openings, "x", "posts and rails welded in"],
+		["Deck plates", c.deck_plates, "x", "spot welded to beams and girders"],
+		["Wall studs", c.studs, "x", "welded to the sills"],
+		["Wall panels", c.wall_panels, "x", "bolted to the studs"],
+		["Frame members", roundi(float(c.member_m)), "m", "steel section, cut to length"],
+		["Hull skin", roundi(float(c.skin_m2)), "m2", "plate, cut to shape"],
+		["Welds", c.welds, "x", ""],
+		["Rivets", c.rivets, "x", ""],
+		["Bolts", c.bolts, "x", ""],
+	]:
+		if int(row[1]) > 0:
+			out.append({"name": row[0], "qty": int(row[1]), "unit": row[2], "how": row[3]})
+	return out
+
+
 static func _rect_near(st: Array, z: float) -> Rect2:
 	return st[station_at({"stations": st}, z)].rect
 
