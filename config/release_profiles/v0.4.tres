@@ -192,6 +192,7 @@ flags = {
 "ui.debug_tab": true,
 "ui.sun_slider": false,
 "yard": true,
+"yard.charger_racks": true,
 "yard.delivery_ships": true,
 "yard.dock": true,
 "yard.racking": true,

@@ -18,6 +18,8 @@ const HaulerLook := preload("res://modules/yard/internal/yard_hauler_look.gd")
 const FreighterLook := preload("res://modules/yard/internal/yard_freighter_look.gd")
 ## The freight lines' own courier, hauler and freighter (19 Nov, flag yard.delivery_ships).
 const Ships := preload("res://modules/yard/internal/yard_delivery_ships.gd")
+## The bots' charger racks (0.4.4 playtest, flag yard.charger_racks): their homes.
+const Racks := preload("res://modules/yard/internal/charger_racks.gd")
 
 signal delivered(part: String, qty: int)
 signal sent(part: String, qty: int)
@@ -55,6 +57,8 @@ const BERTH_STAGING := Vector3(6.0, -1.5, -73.5)
 const BOT_HANG := 0.9
 
 var store: YardRackStore
+## The charger racks (null with yard.charger_racks off: the bots hover at their old spots).
+var racks: Racks
 ## {node, berth (index), state ("in", "open", "out"), loads: Array[load], t}.
 var haulers: Array[Dictionary] = []
 ## Loads waiting for a hauler (more bought than the berths take at once).
@@ -99,6 +103,10 @@ const ROOM_DOORS := {
 func build(rack_store: YardRackStore) -> void:
 	store = rack_store
 	_lines_ships = Flags.is_on(YardBus.DELIVERY_SHIPS)
+	if Flags.is_on(YardBus.CHARGER_RACKS):
+		racks = Racks.new()
+		add_child(racks)
+		racks.build(store_bots, yard_bots, BotLook.BSX_STORES.accent, BotLook.BSX_YARD.accent)
 	for b in YardRackStore.GOODS_IN_BAYS.size():
 		_bay_spots.append([null, null, null, null, null, null, null, null, null, null, null, null])
 	for b in YardRackStore.DISPATCH_BAYS.size():
@@ -251,6 +259,8 @@ func step(delta: float) -> void:
 		if (b.job as Array).is_empty():
 			_next_job(b)
 		_step_bot(b, delta)
+	if racks:
+		racks.show_charging(bots)
 
 
 # --- Haulers -------------------------------------------------------------------------------
@@ -615,7 +625,8 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 		grip.hold(carrying.node, from, (carrying.node as Node3D).global_position + Vector3(0, _load_height(carrying) * 0.5, 0))
 	else:
 		grip.release()
-	_spin(node, delta, not job.is_empty())
+	if not (racks and Racks.docked(b)):   # on its charger the fans stand still
+		_spin(node, delta, not job.is_empty())
 	if job.is_empty():
 		return
 	var s: Dictionary = job[0]
@@ -996,6 +1007,8 @@ func _load_height(l: Dictionary) -> float:
 
 
 func _home(i: int, yard: bool) -> Vector3:
+	if racks:
+		return Racks.home(i, yard)
 	if yard:
 		return Vector3(18.0 + float(i % 6) * 6.0, 4.0, -70.0)
 	return Vector3(71.0 + float(i % 2) * 6.0, 9.0, -52.0 + float(i / 2) * 9.0)
