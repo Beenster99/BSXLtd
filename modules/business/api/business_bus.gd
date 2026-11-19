@@ -188,7 +188,9 @@ func register_module() -> void:
 		if not Settings.changed.is_connected(_on_setting_changed):
 			Settings.changed.connect(_on_setting_changed)
 		_books.instant_deliveries = bool(Settings.get_value(SETTINGS_SECTION, INSTANT_KEY))
-		Menu.register_settings_section(Menu.DEBUG, TESTING_SECTION, "Company", _testing_section, 20)
+		# First on the Debug tab (beenster, 19 Nov: "a settings > debug menu which allows: max money,
+		# max company reputation").
+		Menu.register_settings_section(Menu.DEBUG, TESTING_SECTION, "Money and reputation", _testing_section, 0)
 	if Flags.is_on("business.economy"):
 		Menu.register_settings_page(COMPANY_PAGE, "Company", func() -> Control: return CompanyPanel.new(self, "company", false), 20)
 		Menu.register_settings_section(Menu.CHARACTER, PAYSLIPS_SECTION, "Payslips", func() -> Control: return CompanyPanel.new(self, "payslips", false), 30)
@@ -1503,6 +1505,11 @@ func _apply_debug(p: Dictionary) -> void:
 				var top: int = ContractClients.LEVEL_POINTS[ContractClients.LEVEL_POINTS.size() - 1]
 				for client: String in ContractClients.TABLE:
 					contracts.add_standing(client, maxi(0, top - contracts.standing_of(client)))
+			# The parts market's vendors, where that module runs (reached by name: it is optional).
+			var supply := Modules.bus("supply")
+			if supply and supply.has_method("set_standing"):
+				for v: Variant in supply.get("vendors"):
+					supply.call("set_standing", str(v.get("id")), 100.0)
 
 
 func _testing_section() -> Control:
@@ -1515,16 +1522,35 @@ func _testing_section() -> Control:
 	t.button_pressed = bool(Settings.get_value(SETTINGS_SECTION, INSTANT_KEY))
 	t.toggled.connect(func(on: bool) -> void: Settings.set_value(SETTINGS_SECTION, INSTANT_KEY, on))
 	col.add_child(t)
-	for b: Array in [["MaxWallet", "Max my money (CR %s)" % TerminalKit.money(DEBUG_WALLET), MAX_WALLET],
-			["MaxCash", "Max garage money (CR %s)" % TerminalKit.money(DEBUG_CASH), MAX_CASH],
-			["MaxReputation", "Max reputation, and standing with every company", MAX_REPUTATION]]:
+	for b: Array in [["MaxMoney", "Max money: company account to CR %s, your wallet to CR %s" % [TerminalKit.money(DEBUG_CASH),
+					TerminalKit.money(DEBUG_WALLET)], [MAX_CASH, MAX_WALLET]],
+			["MaxReputation", "Max company reputation: 100, top standing with every client and parts vendor", [MAX_REPUTATION]],
+			["MaxWallet", "Max my wallet only (CR %s)" % TerminalKit.money(DEBUG_WALLET), [MAX_WALLET]],
+			["MaxCash", "Max company account only (CR %s)" % TerminalKit.money(DEBUG_CASH), [MAX_CASH]]]:
 		var button := Button.new()
 		button.name = b[0]
 		button.text = b[1]
 		button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		var action: String = b[2]
-		button.pressed.connect(func() -> void: request_debug(action))
+		var actions: Array = b[2]
+		button.pressed.connect(func() -> void:
+			for action: String in actions:
+				request_debug(action))
 		col.add_child(button)
+	var shown := Label.new()
+	shown.name = "Now"
+	shown.modulate = Color(1, 1, 1, 0.7)
+	var show_now := func() -> void:
+		if is_instance_valid(shown):
+			shown.text = "Now: company CR %s  ·  reputation %d / 100" % [TerminalKit.money(get_cash()), roundi(get_reputation())]
+	show_now.call()
+	var on_cash := func(_b: int, _d: int, _c: String) -> void: show_now.call()
+	var on_rep := func(_v: float, _d: float, _r: String) -> void: show_now.call()
+	cash_changed.connect(on_cash)
+	reputation_changed.connect(on_rep)
+	col.tree_exiting.connect(func() -> void:
+		cash_changed.disconnect(on_cash)
+		reputation_changed.disconnect(on_rep))
+	col.add_child(shown)
 	return col
 
 

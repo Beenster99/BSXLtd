@@ -24,7 +24,10 @@ func run_tests() -> void:
 	var section := bus.call("_testing_section") as Control
 	var toggle := section.get_node_or_null("InstantDeliveries") as CheckButton
 	check(toggle != null and not toggle.button_pressed, "with an Instant deliveries switch, off")
-	for b in ["MaxWallet", "MaxCash", "MaxReputation"]:
+	var entry: Array = Menu.settings_sections(Menu.DEBUG).filter(func(s: Dictionary) -> bool: return s.id == BusinessBus.TESTING_SECTION)
+	check(not entry.is_empty() and int(entry[0].get("order", 99)) == 0 and str(entry[0].get("label", entry[0].get("title", ""))) == "Money and reputation",
+			"first on the Debug tab, as Money and reputation: %s" % [entry])
+	for b in ["MaxMoney", "MaxWallet", "MaxCash", "MaxReputation"]:
 		check(section.get_node_or_null(b) is Button, "and a %s button" % b)
 
 	# Off: an order waits for its lead time.
@@ -62,6 +65,11 @@ func run_tests() -> void:
 	var top: int = ContractClients.LEVEL_POINTS[ContractClients.LEVEL_POINTS.size() - 1]
 	check(contracts != null and ContractClients.TABLE.keys().all(func(c: String) -> bool: return contracts.standing_of(c) >= top),
 			"and top standing with every company")
+	# Max money fills both at once (beenster, 19 Nov).
+	bus.reset()
+	(section.get_node("MaxMoney") as Button).pressed.emit()
+	check(bus.get_cash() == BusinessBus.DEBUG_CASH and bus.get_wallet(me) == BusinessBus.DEBUG_WALLET, "max money fills the company account and my wallet")
+	check((section.get_node("Now") as Label).text.contains(TerminalKit.money(BusinessBus.DEBUG_CASH)), "and the section shows the new figure")
 	check(bus.call("_validate_debug", 1, {"action": "free_ship"}) is String, "an unknown action is refused")
 	section.free()
 	Settings.set_value(BusinessBus.SETTINGS_SECTION, BusinessBus.INSTANT_KEY, was if was != null else false)
