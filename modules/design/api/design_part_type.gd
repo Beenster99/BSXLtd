@@ -2,7 +2,7 @@ class_name DesignPartType
 extends Resource
 ## A component the designer can place in a room (modules/design/internal/data/components/*.tres).
 ## `shared_part` names the Void Salvage part it is (a VsParts id): walk-inside draws that part
-## and the catalog takes its size from it. Cost, mass and the rest stay BSX's own numbers.
+## and the catalog takes its size and mass from it. Cost and the rest stay BSX's own numbers.
 
 @export var version := 1
 @export var id := ""

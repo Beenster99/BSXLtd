@@ -19,3 +19,4 @@ crew = 0
 rooms = PackedStringArray("airlock")
 access = 0.8
 lead_days = 3
+shared_part = "AirlockDoor"
