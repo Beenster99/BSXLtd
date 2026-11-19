@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "side_tank"
+display_name = "Side tank"
+short = "STK"
+colour = Color(0.4, 0.6, 0.95, 1)
+size = Vector3(1.0, 1.6, 2.0)
+cost = 5000.0
+mass = 700.0
+build_hours = 4.0
+power = 0.0
+rooms = PackedStringArray("fuel", "engineering")
+access = 0.8
+lead_days = 2
+shared_part = "SideTank"
+category = "fluids"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 160.0
+tank = 2.5

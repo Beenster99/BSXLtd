@@ -5,11 +5,21 @@ extends RefCounted
 const ROOMS_DIR := "res://modules/design/internal/data/rooms"
 const PARTS_DIR := "res://modules/design/internal/data/components"
 ## Order rooms appear in on the palette.
-const ROOM_ORDER: PackedStringArray = ["bridge", "airlock", "corridor", "access", "stairs", "lift", "hatch", "quarters",
-		"mess", "medbay", "cargo", "engineering", "reactor", "fuel", "workshop"]
+const ROOM_ORDER: PackedStringArray = ["bridge", "airlock", "corridor", "hall", "access", "stairs", "lift", "hatch",
+		"quarters", "mess", "recreation", "planning", "medbay", "cargo", "engineering", "reactor", "fuel", "workshop"]
+## Component groups on the palette, in order, with their headings.
+const CATEGORIES: Array = [["flight", "Flight and control"], ["power", "Power"], ["propulsion", "Engines and thrusters"],
+		["jump", "Jump drives"], ["sensors", "Sensors and comms"], ["defence", "Armour and shields"],
+		["weapons", "Weapons"], ["life", "Life support and air"], ["fluids", "Fuel, water and pipes"],
+		["machinery", "Machinery"], ["medical", "Medical"], ["crew", "Crew and sleeping"],
+		["galley", "Kitchen and galley"], ["furniture", "Seats, tables and sofas"],
+		["storage", "Cupboards and lockers"], ["cargo", "Cargo"], ["doors", "Doors and hatches"],
+		["lighting", "Lights and screens"], ["structure", "Structure"]]
 
 var rooms: Dictionary = {}  # id -> DesignRoomType
-var parts: Dictionary = {}  # id -> DesignPartType
+var parts: Dictionary = {}  # id -> DesignPartType (base types only)
+## Size/grade variants made so far ("reactor_small:5H" -> DesignPartType), DesignGrades.derive.
+var _variants: Dictionary = {}
 
 
 static func load_default() -> DesignCatalog:
@@ -27,6 +37,8 @@ static func load_default() -> DesignCatalog:
 				p.mass = VsParts.mass(p.shared_part)
 				if p.nozzle_down:
 					p.size = Vector3(p.size.x, p.size.z, p.size.y)
+			if p.graded:
+				p.grade = DesignGrades.DEFAULT_GRADE
 			c.parts[p.id] = p
 	return c
 
@@ -35,8 +47,39 @@ func room(type_id: String) -> DesignRoomType:
 	return rooms.get(type_id)
 
 
+## A component type by id, or one of its size/grade variants ("reactor_small:5H"); null if
+## there is no such type or it doesn't come in that size or grade.
 func part(type_id: String) -> DesignPartType:
-	return parts.get(type_id)
+	var p: DesignPartType = parts.get(type_id)
+	if p != null:
+		return p
+	p = _variants.get(type_id)
+	if p != null or _variants.has(type_id):
+		return p
+	var v := DesignGrades.parse(type_id)
+	var base: DesignPartType = parts.get(str(v.id))
+	if base != null:
+		p = DesignGrades.derive(base, int(v.size), str(v.grade))
+		if p != null and p.id != type_id:
+			# "x:2S" for a size-2 part is the bare "x": hand back the base itself.
+			p = parts.get(p.id) if parts.has(p.id) else part(p.id)
+	_variants[type_id] = p
+	return p
+
+
+## The base type of a component type id ("reactor_small:5H" -> reactor_small).
+func base_of(type_id: String) -> DesignPartType:
+	return parts.get(str(DesignGrades.parse(type_id).id))
+
+
+## Base component types in one palette group, by name.
+func parts_in(category: String) -> Array[DesignPartType]:
+	var out: Array[DesignPartType] = []
+	for p: DesignPartType in parts.values():
+		if p.category == category or (category == "" and p.category == ""):
+			out.append(p)
+	out.sort_custom(func(a, b): return a.display_name < b.display_name)
+	return out
 
 
 ## Room types in palette order.

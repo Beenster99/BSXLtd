@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "lift_platform"
+display_name = "Lift platform"
+short = "LFP"
+colour = Color(0.55, 0.58, 0.62, 1)
+size = Vector3(2.6, 1.0, 1.2)
+cost = 18000.0
+mass = 1200.0
+build_hours = 8.0
+power = -6.0
+rooms = PackedStringArray("cargo", "engineering", "workshop")
+access = 0.6
+lead_days = 4
+category = "structure"
+size_class = 2
+min_class = 1
+max_class = 5
+integrity = 300.0

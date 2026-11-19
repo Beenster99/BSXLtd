@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "heat_sink"
+display_name = "Heat sink"
+short = "HSK"
+colour = Color(1.0, 0.85, 0.3, 1)
+size = Vector3(0.9, 1.0, 0.32)
+cost = 3200.0
+mass = 120.0
+build_hours = 2.0
+power = 0.0
+rooms = PackedStringArray("engineering", "reactor")
+access = 0.8
+lead_days = 1
+shared_part = "HeatSink"
+category = "power"
+size_class = 2
+min_class = 1
+max_class = 5
+integrity = 70.0
+signature = -8.0

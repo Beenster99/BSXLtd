@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "naval_turret"
+display_name = "Naval turret"
+short = "NVL"
+colour = Color(1.0, 0.35, 0.3, 1)
+size = Vector3(3.0, 1.8, 5.0)
+cost = 110000.0
+mass = 6500.0
+build_hours = 24.0
+power = -30.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 9
+category = "weapons"
+size_class = 5
+min_class = 4
+max_class = 8
+integrity = 500.0
+attack = 150.0
+signature = 30.0

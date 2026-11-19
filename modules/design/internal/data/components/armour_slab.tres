@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "armour_slab"
+display_name = "Armour slab"
+short = "ARM"
+colour = Color(0.6, 0.65, 0.75, 1)
+size = Vector3(3.0, 0.18, 4.0)
+cost = 9000.0
+mass = 4000.0
+build_hours = 6.0
+power = 0.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 3
+shared_part = "ArmourSlab"
+category = "defence"
+size_class = 3
+min_class = 1
+max_class = 8
+integrity = 600.0
+defence = 40.0

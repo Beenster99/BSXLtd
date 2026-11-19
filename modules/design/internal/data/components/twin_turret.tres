@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "twin_turret"
+display_name = "Twin turret"
+short = "TWN"
+colour = Color(1.0, 0.35, 0.3, 1)
+size = Vector3(2.0, 1.4, 2.0)
+cost = 42000.0
+mass = 1800.0
+build_hours = 12.0
+power = -18.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 6
+category = "weapons"
+size_class = 3
+min_class = 2
+max_class = 7
+integrity = 260.0
+attack = 60.0
+signature = 12.0

@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "fuel_tank"
+display_name = "Fuel tank"
+short = "FTK"
+colour = Color(0.4, 0.6, 0.95, 1)
+size = Vector3(1.6, 1.6, 2.4)
+cost = 8000.0
+mass = 900.0
+build_hours = 5.0
+power = 0.0
+rooms = PackedStringArray("fuel", "engineering", "cargo")
+access = 1.0
+lead_days = 2
+shared_part = "FuelTank"
+category = "fluids"
+size_class = 3
+min_class = 1
+max_class = 8
+integrity = 200.0
+tank = 5.0

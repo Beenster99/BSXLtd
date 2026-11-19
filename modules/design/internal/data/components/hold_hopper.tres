@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "hold_hopper"
+display_name = "Hold hopper"
+short = "HOP"
+colour = Color(0.75, 0.5, 0.3, 1)
+size = Vector3(2.0, 2.4, 2.0)
+cost = 9000.0
+mass = 1400.0
+build_hours = 6.0
+power = -2.0
+rooms = PackedStringArray("cargo")
+access = 1.0
+lead_days = 3
+category = "cargo"
+size_class = 3
+min_class = 2
+max_class = 6
+integrity = 200.0
+cargo = 6.0

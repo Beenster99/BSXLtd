@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "seat"
+display_name = "Seat"
+short = "SEA"
+colour = Color(0.8, 0.6, 0.5, 1)
+size = Vector3(0.6, 1.2, 0.6)
+cost = 400.0
+mass = 35.0
+build_hours = 0.5
+power = 0.0
+rooms = PackedStringArray("quarters", "mess", "recreation", "planning", "hall", "medbay", "bridge", "workshop", "corridor")
+access = 0.6
+lead_days = 1
+shared_part = "Seat"
+category = "furniture"
+graded = false
+integrity = 30.0

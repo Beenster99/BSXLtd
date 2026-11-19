@@ -22,6 +22,18 @@ var cargo_m3 := 0.0
 var fuel_m3 := 0.0
 ## Longest supplier wait among the parts, days.
 var lead_days := 0
+## The finished ship's fighting and travelling numbers, summed from its graded components
+## (DesignGrades): see jump_range(), speed(), defence_rating(), stealth().
+var jump_rating := 0.0
+var attack := 0.0
+var defence := 0.0
+## Heat and emissions from the parts (dampers and radiators take some away), before the
+## reactors' and engines' own share (signature()).
+var parts_signature := 0.0
+var sensor_km := 0.0
+var integrity := 0.0
+## Mass of the hull lines (frame, skin, inner walls, decks), kg: counts toward defence.
+var hull_mass := 0.0
 ## Parts list: [{kind: "hull"|"room"|"component"|"service", id, name, qty, unit, cost, mass, hours}]
 ## Hull lines come first.
 var lines: Array[Dictionary] = []
@@ -91,6 +103,14 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 		t.thrust += pt.thrust
 		t.crew += pt.crew
 		t.lead_days = maxi(t.lead_days, pt.lead_days)
+		t.cargo_m3 += pt.cargo
+		t.fuel_m3 += pt.tank
+		t.jump_rating += pt.jump
+		t.attack += pt.attack
+		t.defence += pt.defence
+		t.parts_signature += pt.signature
+		t.sensor_km = maxf(t.sensor_km, pt.sensor)
+		t.integrity += pt.integrity
 	keys = part_lines.keys()
 	keys.sort()
 	for k in keys:
@@ -106,6 +126,8 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 			t.lines.append({"kind": "service", "id": kind, "name": k2.name, "qty": m, "unit": "m",
 					"cost": m * float(k2.cost), "mass": m * float(k2.mass), "hours": m * float(k2.hours)})
 	for line in t.lines:
+		if line.kind == "hull":
+			t.hull_mass += float(line.mass)
 		t.cost += line.cost
 		t.mass += line.mass
 		t.build_hours += line.hours
@@ -121,8 +143,47 @@ func acceleration() -> float:
 	return thrust * 1000.0 / mass if mass > 0.0 else 0.0
 
 
+## Light years the ship goes on one jump: the drives' ratings (ly for a 100 t ship) over its
+## mass in hundreds of tonnes; nothing without a drive or with no fuel aboard.
+func jump_range() -> float:
+	if jump_rating <= 0.0 or mass <= 0.0 or fuel_m3 <= 0.0:
+		return 0.0
+	return jump_rating * 100000.0 / mass
+
+
+## Top speed, m/s: grows with the square root of the acceleration (drag-free flight capped by
+## the drive's safe limit), SPEED_CAP at most.
+const SPEED_PER_ROOT_ACCEL := 90.0
+const SPEED_CAP := 600.0
+func speed() -> float:
+	return minf(SPEED_CAP, SPEED_PER_ROOT_ACCEL * sqrt(acceleration()))
+
+
+## Defence points: armour and shields fitted, plus the hull's own plating (DEFENCE_PER_HULL_T
+## a tonne).
+const DEFENCE_PER_HULL_T := 0.5
+func defence_rating() -> float:
+	return defence + hull_mass / 1000.0 * DEFENCE_PER_HULL_T
+
+
+## The ship's signature: the parts' heat and emissions plus a share of the power it makes and
+## the thrust it has, never below zero.
+const SIGNATURE_PER_KW := 0.15
+const SIGNATURE_PER_KN := 0.05
+func signature() -> float:
+	return maxf(0.0, parts_signature + power_made * SIGNATURE_PER_KW + thrust * SIGNATURE_PER_KN)
+
+
+## Stealth, 0 (lit up like a beacon) to 100 (invisible): falls off with the signature.
+const STEALTH_SCALE := 120.0
+func stealth() -> float:
+	return 100.0 * exp(-signature() / STEALTH_SCALE)
+
+
 ## How the design meets a contract's demands. `demands` takes any of:
-##   cargo_m3, crew, budget (most it may cost), max_mass (kg), accel (m/s2), build_days (most)
+##   cargo_m3, crew, budget (most it may cost), max_mass (kg), accel (m/s2), build_days (most),
+##   jump_ly, speed (m/s), defence, attack (damage a second), stealth (0..100), fuel_m3,
+##   power (spare kW), sensor_km
 ## Returns one row per demand: {key, label, need, have, ok, share (0..1, 1 = met)}.
 func fit(demands: Dictionary, crew_hours_per_day: float = 8.0) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -153,6 +214,30 @@ func fit(demands: Dictionary, crew_hours_per_day: float = 8.0) -> Array[Dictiona
 				have = build_hours / maxf(crew_hours_per_day, 1.0)
 				more_is_better = false
 				label = "Build time, days"
+			"jump_ly":
+				have = jump_range()
+				label = "Jump range, ly"
+			"speed":
+				have = speed()
+				label = "Top speed, m/s"
+			"defence":
+				have = defence_rating()
+				label = "Defence"
+			"attack":
+				have = attack
+				label = "Attack, damage/s"
+			"stealth":
+				have = stealth()
+				label = "Stealth"
+			"fuel_m3":
+				have = fuel_m3
+				label = "Fuel, m3"
+			"power":
+				have = power_balance()
+				label = "Spare power, kW"
+			"sensor_km":
+				have = sensor_km
+				label = "Sensor range, km"
 			_:
 				continue
 		var ok := have >= need if more_is_better else have <= need

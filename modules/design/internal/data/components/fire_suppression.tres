@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "fire_suppression"
+display_name = "Fire suppression unit"
+short = "FSU"
+colour = Color(0.45, 0.85, 0.55, 1)
+size = Vector3(0.6, 1.2, 0.5)
+cost = 3200.0
+mass = 120.0
+build_hours = 2.0
+power = -0.3
+rooms = PackedStringArray("engineering", "reactor", "mess", "cargo")
+access = 0.8
+lead_days = 2
+category = "life"
+size_class = 2
+min_class = 1
+max_class = 4
+integrity = 70.0

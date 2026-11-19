@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "ceiling_lamp"
+display_name = "Ceiling lamp"
+short = "LMP"
+colour = Color(1.0, 0.95, 0.7, 1)
+size = Vector3(0.6, 0.15, 0.6)
+cost = 120.0
+mass = 6.0
+build_hours = 0.2
+power = -0.1
+rooms = PackedStringArray()
+access = 0.6
+lead_days = 1
+category = "lighting"
+graded = false
+integrity = 10.0

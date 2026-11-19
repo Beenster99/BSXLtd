@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "antenna"
+display_name = "Antenna mast"
+short = "ANT"
+colour = Color(0.4, 0.95, 0.85, 1)
+size = Vector3(0.6, 1.6, 0.6)
+cost = 4500.0
+mass = 60.0
+build_hours = 2.0
+power = -1.5
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 2
+shared_part = "Antenna"
+category = "sensors"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 40.0
+signature = 2.0
+sensor = 40.0

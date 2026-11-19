@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "autopilot_core"
+display_name = "Autopilot core"
+short = "APC"
+colour = Color(0.55, 0.8, 1.0, 1)
+size = Vector3(0.6, 0.5, 0.6)
+cost = 9500.0
+mass = 40.0
+build_hours = 2.0
+power = -1.0
+rooms = PackedStringArray("bridge", "engineering")
+access = 0.8
+lead_days = 3
+category = "flight"
+size_class = 2
+min_class = 1
+max_class = 4
+integrity = 60.0

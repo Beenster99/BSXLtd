@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "spares_cage"
+display_name = "Spares cage"
+short = "SPC"
+colour = Color(0.7, 0.7, 0.55, 1)
+size = Vector3(1.2, 2.1, 0.9)
+cost = 1600.0
+mass = 200.0
+build_hours = 1.0
+power = 0.0
+rooms = PackedStringArray("engineering", "workshop", "cargo")
+access = 0.6
+lead_days = 1
+category = "storage"
+graded = false
+integrity = 120.0

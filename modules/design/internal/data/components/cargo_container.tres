@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "cargo_container"
+display_name = "Cargo container"
+short = "CTN"
+colour = Color(0.75, 0.5, 0.3, 1)
+size = Vector3(2.4, 2.6, 6.0)
+cost = 6000.0
+mass = 3800.0
+build_hours = 3.0
+power = 0.0
+rooms = PackedStringArray("cargo")
+access = 1.0
+lead_days = 2
+shared_part = "CargoContainer"
+category = "cargo"
+size_class = 4
+min_class = 2
+max_class = 8
+integrity = 300.0
+cargo = 30.0

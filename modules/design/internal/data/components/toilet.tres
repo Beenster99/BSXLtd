@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "toilet"
+display_name = "Toilet"
+short = "WC"
+colour = Color(0.6, 0.75, 1.0, 1)
+size = Vector3(0.6, 0.8, 0.8)
+cost = 900.0
+mass = 60.0
+build_hours = 1.5
+power = -0.1
+rooms = PackedStringArray("quarters", "mess", "hall", "corridor", "medbay")
+access = 0.8
+lead_days = 1
+category = "crew"
+graded = false
+integrity = 50.0

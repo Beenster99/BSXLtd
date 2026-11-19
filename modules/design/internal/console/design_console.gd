@@ -24,6 +24,11 @@ var data: DataChannel
 var _title: Label
 var _deck_label: Label
 var _palette: VBoxContainer
+## Size class and grade new components are picked in (0 = each type's own size).
+var _pick_size := 0
+var _pick_grade := DesignGrades.DEFAULT_GRADE
+## Component groups open on the palette (category -> true).
+var _open_groups: Dictionary = {"flight": true}
 var _selection: VBoxContainer
 var _tool_buttons: Dictionary = {}
 var _view_buttons: Dictionary = {}
@@ -285,25 +290,7 @@ func _fill_palette() -> void:
 					kind: DesignStructure.next_choice(kind, rec.structure.get(kind))}}})
 			b.text = _structure_text(kind))
 		_palette.add_child(b)
-	_palette.add_child(T.label("COMPONENTS  (click in a room, R turns)", "display_medium", 15, T.DIM))
-	var parts: Array = bus.catalog.parts.values()
-	parts.sort_custom(func(a, b): return a.display_name < b.display_name)
-	for pt: DesignPartType in parts:
-		if pt.hull_mount:
-			continue
-		var b := _swatch_button("%s   CR %s" % [pt.display_name, T.money(int(pt.cost))], pt.colour)
-		b.pressed.connect(plan.set_tool.bind("part:" + pt.id))
-		_tool_buttons["part:" + pt.id] = b
-		_palette.add_child(b)
-	_palette.add_child(T.label("ON THE HULL  (click on the hull's side)", "display_medium", 15, T.DIM))
-	for pt: DesignPartType in parts:
-		if not pt.hull_mount:
-			continue
-		var b := _swatch_button("%s   CR %s" % [pt.display_name, T.money(int(pt.cost))], pt.colour)
-		b.name = "Mount_" + pt.id
-		b.pressed.connect(plan.set_tool.bind("mount:" + pt.id))
-		_tool_buttons["mount:" + pt.id] = b
-		_palette.add_child(b)
+	_fill_components()
 	_mark_tools()
 
 
@@ -352,6 +339,90 @@ func _sync_layer_buttons() -> void:
 		if b and b.button_pressed != holo.layers.get(layer, false):
 			b.set_pressed_no_signal(holo.layers.get(layer, false))
 			_restyle_toggle(b, b.button_pressed)
+
+
+## The components, in groups that open and close, with the size and grade they are picked in
+## (DesignGrades): each button places that type at the picked size (within its own range) and
+## grade, and shows what that variant costs.
+func _fill_components() -> void:
+	_palette.add_child(T.label("COMPONENTS  (click in a room, R turns; hull parts click on the hull)",
+			"display_medium", 15, T.DIM))
+	var pick := HBoxContainer.new()
+	var size_b := T.button("SIZE  %s" % ("OWN" if _pick_size == 0 else str(_pick_size)), false, 15)
+	size_b.name = "PickSize"
+	size_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_b.tooltip_text = "Size class 1 to 8 (OWN: each part's usual size). Bigger parts do more, weigh and cost more."
+	size_b.pressed.connect(func() -> void: set_pick((_pick_size + 1) % (DesignGrades.MAX_CLASS + 1), _pick_grade))
+	pick.add_child(size_b)
+	var gr: Dictionary = DesignGrades.GRADES[_pick_grade]
+	var grade_b := T.button("GRADE  %s %s" % [_pick_grade, str(gr.name).to_upper()], false, 15)
+	grade_b.name = "PickGrade"
+	grade_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grade_b.tooltip_text = str(gr.blurb)
+	grade_b.pressed.connect(func() -> void:
+		var i := DesignGrades.GRADE_ORDER.find(_pick_grade)
+		set_pick(_pick_size, DesignGrades.GRADE_ORDER[(i + 1) % DesignGrades.GRADE_ORDER.size()]))
+	pick.add_child(grade_b)
+	_palette.add_child(pick)
+	_palette.add_child(T.label(str(gr.blurb), "body", 13, T.DIM))
+	for cat: Array in DesignCatalog.CATEGORIES:
+		var list := bus.catalog.parts_in(str(cat[0]))
+		if list.is_empty():
+			continue
+		var open := bool(_open_groups.get(cat[0], false))
+		var head := T.button("%s %s  (%d)" % ["v" if open else ">", str(cat[1]).to_upper(), list.size()], false, 15)
+		head.name = "Group_" + str(cat[0])
+		head.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		head.pressed.connect(func() -> void:
+			_open_groups[cat[0]] = not bool(_open_groups.get(cat[0], false))
+			_fill_palette())
+		_palette.add_child(head)
+		if not open:
+			continue
+		for base: DesignPartType in list:
+			var pt := bus.catalog.part(picked_id(base))
+			var tag := DesignGrades.label(pt)
+			var b := _swatch_button("   %s%s   CR %s%s" % [base.display_name, ("  " + tag) if tag != "" else "",
+					T.money(int(pt.cost)), "   (hull)" if base.hull_mount else ""], base.colour)
+			b.tooltip_text = part_card(pt)
+			var tool := ("mount:" if base.hull_mount else "part:") + pt.id
+			b.name = ("Mount_" if base.hull_mount else "Part_") + base.id
+			b.pressed.connect(plan.set_tool.bind(tool))
+			_tool_buttons[tool] = b
+			_palette.add_child(b)
+
+
+## The type id a palette button places for `base`: the picked size (kept inside the type's own
+## range) and grade.
+func picked_id(base: DesignPartType) -> String:
+	return DesignGrades.variant_id(base, _pick_size, _pick_grade)
+
+
+## Picks the size class (0 = each part's own) and grade new components come in.
+func set_pick(size: int, grade: String) -> void:
+	_pick_size = clampi(size, 0, DesignGrades.MAX_CLASS)
+	_pick_grade = grade if DesignGrades.GRADES.has(grade) else DesignGrades.DEFAULT_GRADE
+	_fill_palette()
+
+
+## A component's numbers, one per line, for its button's tooltip.
+static func part_card(pt: DesignPartType) -> String:
+	var rows: PackedStringArray = [pt.display_name]
+	var span := DesignGrades.sizes(pt)
+	if pt.size_class > 0:
+		rows.append("Size %d (comes in %d to %d)" % [pt.size_class, span[0], span[1]])
+	if pt.graded:
+		rows.append("Grade %s, %s" % [pt.grade, DesignGrades.GRADES[pt.grade].name])
+	rows.append("%.1f x %.1f x %.1f m, %d kg, CR %s, %.1f h to fit, %d days to get" % [pt.size.x, pt.size.y,
+			pt.size.z, int(pt.mass), T.money(int(pt.cost)), pt.build_hours, pt.lead_days])
+	for spec: Array in [["power", "Power %+.0f kW"], ["thrust", "Thrust %.0f kN"], ["jump", "Jump %.1f ly per 100 t"],
+			["attack", "Attack %.0f dmg/s"], ["defence", "Defence %.0f"], ["signature", "Signature %+.0f"],
+			["sensor", "Sensors %.0f km"], ["cargo", "Cargo %.1f m3"], ["tank", "Fuel %.1f m3"], ["crew", "Bunks %d"]]:
+		var v: float = float(pt.get(spec[0]))
+		if absf(v) > 0.001:
+			rows.append(str(spec[1]) % (int(v) if spec[0] == "crew" else v))
+	rows.append("Integrity %.0f" % pt.integrity)
+	return "\n".join(rows)
 
 
 func _swatch_button(text: String, col: Color) -> Button:

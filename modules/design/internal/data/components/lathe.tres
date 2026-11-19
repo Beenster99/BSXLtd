@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "lathe"
+display_name = "Lathe"
+short = "LTH"
+colour = Color(0.85, 0.7, 0.4, 1)
+size = Vector3(2.0, 1.4, 0.8)
+cost = 9000.0
+mass = 900.0
+build_hours = 4.0
+power = -5.0
+rooms = PackedStringArray("workshop")
+access = 0.8
+lead_days = 3
+category = "machinery"
+size_class = 2
+min_class = 1
+max_class = 4
+integrity = 150.0

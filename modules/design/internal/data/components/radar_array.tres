@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "radar_array"
+display_name = "Long-range radar"
+short = "RDR"
+colour = Color(0.4, 0.95, 0.85, 1)
+size = Vector3(1.6, 0.6, 1.6)
+cost = 18000.0
+mass = 420.0
+build_hours = 6.0
+power = -6.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 4
+category = "sensors"
+size_class = 3
+min_class = 1
+max_class = 7
+integrity = 90.0
+signature = 8.0
+sensor = 120.0

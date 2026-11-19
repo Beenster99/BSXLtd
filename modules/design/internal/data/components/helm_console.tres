@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "helm_console"
+display_name = "Helm console"
+short = "HLM"
+colour = Color(0.55, 0.8, 1.0, 1)
+size = Vector3(1.6, 1.2, 0.9)
+cost = 11000.0
+mass = 300.0
+build_hours = 6.0
+power = -3.5
+rooms = PackedStringArray("bridge")
+access = 0.8
+lead_days = 3
+category = "flight"
+size_class = 2
+min_class = 1
+max_class = 4
+integrity = 130.0

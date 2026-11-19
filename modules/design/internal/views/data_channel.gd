@@ -69,6 +69,24 @@ func refresh() -> void:
 		f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(f)
 	_body.add_child(grid)
+	# What the finished ship can do, from its graded components (DesignTotals).
+	_body.add_child(T.label("SHIP RATINGS", "display_bold", 20, T.TEXT))
+	var ratings := GridContainer.new()
+	ratings.columns = 2 if compact else 3
+	ratings.add_theme_constant_override("h_separation", 6)
+	ratings.add_theme_constant_override("v_separation", 6)
+	for fig in [
+		["Jump range", "%.1f ly" % t.jump_range(), T.TEXT if t.jump_range() > 0.0 else T.AMBER],
+		["Top speed", "%d m/s" % int(t.speed()), T.TEXT],
+		["Defence", "%d" % int(t.defence_rating()), T.TEXT],
+		["Attack", "%d dmg/s" % int(t.attack), T.TEXT],
+		["Stealth", "%d / 100" % int(t.stealth()), T.TEXT],
+		["Sensors", "%d km" % int(t.sensor_km), T.TEXT],
+	]:
+		var f := T.figure(fig[0], fig[1], fig[2])
+		f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ratings.add_child(f)
+	_body.add_child(ratings)
 	if not demands.is_empty():
 		_body.add_child(T.label("CONTRACT FIT", "display_bold", 20, T.TEXT))
 		for row in t.fit(demands):

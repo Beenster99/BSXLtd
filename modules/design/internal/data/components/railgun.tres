@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "railgun"
+display_name = "Railgun"
+short = "RLG"
+colour = Color(1.0, 0.35, 0.3, 1)
+size = Vector3(1.4, 1.2, 4.0)
+cost = 78000.0
+mass = 3200.0
+build_hours = 18.0
+power = -60.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 8
+category = "weapons"
+size_class = 3
+min_class = 2
+max_class = 8
+integrity = 220.0
+attack = 95.0
+signature = 25.0

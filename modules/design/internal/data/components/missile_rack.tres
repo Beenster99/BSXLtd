@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "missile_rack"
+display_name = "Missile rack"
+short = "MRK"
+colour = Color(1.0, 0.35, 0.3, 1)
+size = Vector3(1.2, 0.8, 2.2)
+cost = 18000.0
+mass = 700.0
+build_hours = 6.0
+power = -1.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 4
+category = "weapons"
+size_class = 2
+min_class = 1
+max_class = 5
+integrity = 110.0
+attack = 25.0
+signature = 3.0

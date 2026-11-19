@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "med_bed"
+display_name = "Medical bed"
+short = "MBD"
+colour = Color(0.95, 0.95, 0.95, 1)
+size = Vector3(0.9, 1.0, 2.2)
+cost = 6000.0
+mass = 180.0
+build_hours = 2.0
+power = -1.0
+rooms = PackedStringArray("medbay")
+access = 0.8
+lead_days = 2
+category = "medical"
+graded = false
+integrity = 80.0

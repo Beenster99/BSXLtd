@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "seat_row"
+display_name = "Row of seats"
+short = "ROW"
+colour = Color(0.8, 0.6, 0.5, 1)
+size = Vector3(1.9, 1.25, 0.7)
+cost = 1100.0
+mass = 95.0
+build_hours = 1.0
+power = 0.0
+rooms = PackedStringArray("quarters", "mess", "recreation", "planning", "hall", "medbay", "bridge", "workshop", "corridor", "cargo")
+access = 0.6
+lead_days = 1
+category = "furniture"
+graded = false
+integrity = 50.0

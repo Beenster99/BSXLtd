@@ -1163,12 +1163,13 @@ func _mount(m: Dictionary) -> void:
 	var vs := VsParts.instance(pt.shared_part) if pt.shared_part != "" else null
 	if vs != null:
 		var bb := VsParts.shape(pt.shared_part).mesh.get_aabb()
+		vs.scale = Vector3.ONE * pt.model_scale
 		if pt.nozzle_down:
 			# Laid over: its nozzle (-Y) to the front (-Z), out from the hull.
 			vs.rotation.x = PI * 0.5
 			vs.position = Vector3(0, pt.size.y * 0.5, 0) - vs.basis * bb.get_center()
 		else:
-			vs.position.y = -bb.position.y
+			vs.position.y = -bb.position.y * pt.model_scale
 		body.add_child(vs)
 	else:
 		_box_in(body, pt.size, paint(pt.colour.darkened(0.25), "metallic_paint"))
@@ -1186,8 +1187,10 @@ static func component_look(parent: Node3D, pt: DesignPartType, size: Vector3, ro
 	if vs != null:
 		# Void Salvage's own part, its front (-Z) turned to FRONTS[rot], standing on the floor.
 		var bb := VsParts.shape(pt.shared_part).mesh.get_aabb()
+		# A bigger or smaller size class than the part as Void Salvage builds it.
+		vs.scale = Vector3.ONE * pt.model_scale
 		vs.rotation.y = rot * PI * 0.5
-		vs.position.y = -bb.position.y
+		vs.position.y = -bb.position.y * pt.model_scale
 		parent.add_child(vs)
 		return
 	var plinth := MeshInstance3D.new()

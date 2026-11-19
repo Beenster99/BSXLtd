@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "cupboard"
+display_name = "Cupboard"
+short = "CPB"
+colour = Color(0.7, 0.7, 0.55, 1)
+size = Vector3(1.0, 2.0, 0.6)
+cost = 500.0
+mass = 70.0
+build_hours = 0.5
+power = 0.0
+rooms = PackedStringArray("quarters", "mess", "recreation", "planning", "hall", "medbay", "bridge", "workshop", "corridor", "engineering", "cargo")
+access = 0.6
+lead_days = 1
+category = "storage"
+graded = false
+integrity = 40.0

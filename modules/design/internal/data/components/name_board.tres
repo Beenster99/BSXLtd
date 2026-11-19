@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "name_board"
+display_name = "Name board"
+short = "NMB"
+colour = Color(1.0, 0.95, 0.7, 1)
+size = Vector3(7.0, 1.6, 0.18)
+cost = 2000.0
+mass = 300.0
+build_hours = 2.0
+power = -0.5
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.6
+lead_days = 2
+category = "lighting"
+graded = false
+integrity = 60.0

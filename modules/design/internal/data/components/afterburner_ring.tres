@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "afterburner_ring"
+display_name = "Afterburner ring"
+short = "AFB"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(1.6, 1.6, 0.6)
+cost = 14000.0
+mass = 500.0
+build_hours = 6.0
+power = -15.0
+fuel = -1
+thrust = 45.0
+rooms = PackedStringArray("engineering")
+access = 1.0
+lead_days = 4
+category = "propulsion"
+size_class = 3
+min_class = 2
+max_class = 6
+integrity = 120.0
+signature = 25.0
