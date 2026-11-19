@@ -399,6 +399,7 @@ func _dock(station: Node3D) -> void:
 	var crew := station.get("workers") as Node3D
 	check(crew != null and crew.call("foreman") != null and int(crew.call("rings_built")) >= 3, "worker bots at a keel frame in the build berth")
 	var kit: String = station.call("call_kit")
+	await frames(3)   # on the shared clock: a tick later
 	check(YardKits.KITS.has(kit) and (station.get("traffic").get("kit_orders") as Array).size() >= 1, "K sends a mover bot with a %s" % kit)
 	check((station.get_node("Hud/KitNote") as Label).visible, "and says so on the HUD")
 	# Sleeping quarters: eight cabins, each with Void Salvage's bunk, off the corridor.

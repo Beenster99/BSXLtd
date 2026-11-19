@@ -29,6 +29,10 @@ signal station_closed
 ##   yard.end_worker_service(bot)    # as new, its errors cleared, back to work
 ## Each bot has metas "tartanco_model" (W-3, R-3, B-3, F-3) and "serial".
 signal workers_need_service(bots: Array)
+## The yard's shared clock: an event was logged for a tick (see yard_sim.gd).
+signal sim_logged(entry: Dictionary)
+## The shared clock started again from another moment (a new session's yard).
+signal sim_reset
 
 const SCENE := "yard.station"
 const SCENE_PATH := "res://modules/yard/internal/station.tscn"
@@ -60,6 +64,18 @@ const DESIGN_CLEAR_RADIUS := 3.0
 var rack_store: YardRackStore
 var _station: Node3D
 
+## The yard's shared clock (co-op sync, 19 Nov): tick 0 on the host's clock (s, the Multiplayer
+## module's server_time), -1 until known, and what players did, stamped with the tick it
+## happens at: [{kind, tick, n, peer, ...}] in order. The station's YardSim runs to it.
+const SIM_EVENT := "yard.sim"
+const SIM_TICK := 1.0 / 60.0
+## How far ahead the host stamps what a player does (ticks: half a second, for the trip out).
+const SIM_LEAD := 30
+var sim_epoch := -1.0
+var sim_log: Array[Dictionary] = []
+var _sim_n := 0
+var _net: Object
+
 
 func register_module() -> void:
 	if not Flags.is_on(STATION):
@@ -67,6 +83,7 @@ func register_module() -> void:
 	Router.register_scene(SCENE, SCENE_PATH)
 	# The new game starts in the orbital yard, ahead of the old yard by the sea (priority 10).
 	Menu.set_start(SCENE, 20)
+	_hook_net.call_deferred()
 	Keys.register("yard.up", "Fly up (in zero g)", KEY_SPACE, "Orbital yard")
 	Keys.register("yard.down", "Fly down (in zero g)", KEY_CTRL, "Orbital yard")
 	Keys.register("yard.brake", "Stop drifting (in zero g)", KEY_X, "Orbital yard")
@@ -101,16 +118,12 @@ func station() -> Node3D:
 ## Buys parts for the stores: [{part, qty}...] (YardRackStore.PARTS ids). Haulers bring them
 ## to goods in and bots put them away. Nothing happens while no station is open.
 func order_parts(items: Array) -> void:
-	var t := _traffic()
-	if t:
-		t.call("order", items)
+	sim_request({"kind": "order", "items": items})
 
 
 ## Asks for parts at the yard side: bots take them off the racks and out to the build berth.
 func send_to_yard(items: Array) -> void:
-	var t := _traffic()
-	if t:
-		t.call("send_to_yard", items)
+	sim_request({"kind": "send", "items": items})
 
 
 func _traffic() -> Node:
@@ -181,6 +194,8 @@ static func berths() -> Array[Dictionary]:
 
 func _station_opened(s: Node3D) -> void:
 	_station = s
+	_hook_net()
+	sim_start()
 	var crew := _workers()
 	if crew and crew.has_signal("service_needed"):
 		crew.connect("service_needed", func(bots: Array) -> void: workers_need_service.emit(bots))
@@ -227,3 +242,129 @@ func _station_closed(s: Node3D) -> void:
 	if _station == s:
 		_station = null
 		station_closed.emit()
+
+
+# --- The shared clock ------------------------------------------------------------------------
+
+func _hook_net() -> void:
+	if _net != null and is_instance_valid(_net):
+		return
+	_net = Modules.bus("multiplayer")
+	if _net == null:
+		return
+	_net.call("register_event", SIM_EVENT, _sim_apply, _sim_validate)
+	_net.call("register_snapshot_provider", "yard", self)
+	if _net.has_signal("session_ended"):
+		_net.connect("session_ended", _on_session_ended)
+
+
+## Plays through this Multiplayer bus (tests run two players in one process).
+func use_net(net: Object) -> void:
+	_net = net
+	_net.call("register_event", SIM_EVENT, _sim_apply, _sim_validate)
+	_net.call("register_snapshot_provider", "yard", self)
+
+
+func _now() -> float:
+	return float(_net.call("server_time")) if _net else Time.get_ticks_usec() / 1_000_000.0
+
+
+## The tick the yard should be at now, or -1 while the clock is not known.
+func sim_target_tick() -> int:
+	if sim_epoch < 0.0:
+		return -1
+	# A guest's clock is the host's only once a ping has come back.
+	if _net and bool(_net.call("is_online")) and not bool(_net.call("is_host")) and float(_net.call("round_trip")) <= 0.0:
+		return -1
+	return maxi(-1, floori((_now() - sim_epoch) / SIM_TICK))
+
+
+## The station opened: start the clock, or ask the host for the one the others are on.
+func sim_start() -> void:
+	if _net == null or not bool(_net.call("is_online")):
+		sim_epoch = _now()
+		sim_log.clear()
+		return
+	if not bool(_net.call("is_host")):
+		sim_epoch = -1.0   # wait for the host's answer
+	sim_request({"kind": "epoch"})
+
+
+## Asks for something to happen in the yard at a tick every player agrees on.
+func sim_request(entry: Dictionary) -> void:
+	if _net:
+		_net.call("request", SIM_EVENT, entry)
+		return
+	var out: Variant = _sim_validate(1, entry)
+	if out is Dictionary:
+		_sim_apply(out)
+
+
+func _sim_validate(sender: int, p: Dictionary) -> Variant:
+	var out := p.duplicate(true)
+	if String(p.get("kind", "")) == "epoch":
+		out.fresh = sim_epoch < 0.0 or not _anyone_in_yard(sender)
+		out.epoch = _now() + 0.1 if out.fresh else sim_epoch
+		return out
+	if sim_epoch < 0.0:
+		return "the yard's clock has not started"
+	_sim_n += 1
+	out.n = _sim_n
+	out.peer = sender
+	var online := _net != null and bool(_net.call("is_online"))
+	out.tick = maxi(0, sim_target_tick()) + (SIM_LEAD if online else 0)
+	return out
+
+
+func _sim_apply(p: Dictionary) -> void:
+	if String(p.get("kind", "")) == "epoch":
+		var changed := not is_equal_approx(float(p.epoch), sim_epoch)
+		if bool(p.get("fresh", false)):
+			sim_log.clear()
+		sim_epoch = float(p.epoch)
+		if changed:
+			sim_reset.emit()
+		return
+	var at := sim_log.size()
+	while at > 0 and int(sim_log[at - 1].tick) > int(p.tick):
+		at -= 1
+	sim_log.insert(at, p)
+	sim_logged.emit(p)
+
+
+## Someone other than `sender` has the yard open (the host's own station, or a player's held
+## state says so).
+func _anyone_in_yard(sender: int) -> bool:
+	var me := int(_net.call("local_peer_id")) if _net else 1
+	if sender != me and station() != null:
+		return true
+	if _net == null or not bool(_net.call("is_online")):
+		return false
+	for peer: int in _net.call("peers"):
+		if peer != sender and peer != me and bool((_net.call("held", peer) as Dictionary).get("yard", false)):
+			return true
+	return false
+
+
+## A guest left the host's session: the clock goes on from where it is on this machine's own.
+func _on_session_ended(_reason: String = "") -> void:
+	if sim_epoch < 0.0 or station() == null:
+		sim_epoch = -1.0
+		return
+	var sim: Node = station().get("sim")
+	var at := int(sim.get("tick")) if sim else 0
+	# The Multiplayer module's clock is this machine's own again now.
+	sim_epoch = _now() - at * SIM_TICK
+
+
+func get_net_snapshot() -> Dictionary:
+	return {"epoch": sim_epoch, "log": sim_log.duplicate(true)}
+
+
+func apply_net_snapshot(data: Dictionary) -> void:
+	var epoch := float(data.get("epoch", -1.0))
+	if is_equal_approx(epoch, sim_epoch):
+		return
+	sim_epoch = epoch
+	sim_log.assign(data.get("log", []))
+	sim_reset.emit()

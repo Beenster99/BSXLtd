@@ -119,6 +119,8 @@ var ring_node: Node3D
 var supply: Node3D
 var _order := -1
 var _time := 0.0
+## This step's length (s): what waiting counts, the same on every machine (the yard's sim clock).
+var _step_dt := 0.0
 var _rivet_mesh: CylinderMesh
 var _rivet_mat: StandardMaterial3D
 var service: Node3D
@@ -324,6 +326,7 @@ func _process(delta: float) -> void:
 
 func step(delta: float) -> void:
 	_time += delta
+	_step_dt = delta
 	if ring_node == null and _fitout.is_empty():
 		if fit_out and rings.size() >= FITOUT_EVERY and rings.size() % FITOUT_EVERY == 0 \
 				and not fitted_out.has(rings.size()) and rings.size() > start_rings:
@@ -612,7 +615,7 @@ func _assign() -> void:
 					continue
 				var l: Dictionary = m.load if m.has("load") and int(m.load.qty) > 0 else _load_with(m.part)
 				if l.is_empty():
-					m.waited = float(m.waited) + get_process_delta_time()
+					m.waited = float(m.waited) + _step_dt
 					if float(m.waited) < spare_after:
 						continue
 				elif not m.has("load"):
