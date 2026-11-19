@@ -64,6 +64,47 @@ func unregister_wall_view(id: String) -> void:
 		wall_views_changed.emit()
 
 
+## Checks other modules add to WILL IT WORK (the motion module's clashes and ground check):
+## id -> Callable(rec: DesignRecord, catalog: DesignCatalog, totals: DesignTotals) ->
+## Array of DesignRules problem dicts. They run with the rules, once per edit (problems()).
+var checks: Dictionary = {}
+## Buttons other modules put on the console's top bar (the motion module's OPERATE):
+## id -> {label, press: Callable(), tip, order}.
+var console_tools: Dictionary = {}
+signal console_tools_changed
+## The holotable built its hologram again: `ship` is its "Ship" node (design space, metres;
+## the table's turn, zoom, cut and section apply to anything put under it).
+signal holo_built(table: Node3D, ship: Node3D)
+## Walk-inside built the design at full size under `root` (design space, metres).
+signal walk_built(root: Node3D, builder: Object)
+
+
+## Adds a check to WILL IT WORK; it runs once per edit with the rules.
+func register_check(id: String, check: Callable) -> void:
+	checks[id] = check
+	_problems_of = null
+	_assessment_of = null
+	design_changed.emit()
+
+
+func unregister_check(id: String) -> void:
+	if checks.erase(id):
+		_problems_of = null
+		_assessment_of = null
+		design_changed.emit()
+
+
+## Puts a button on the console's top bar (lowest order first).
+func register_console_tool(id: String, label: String, press: Callable, tip: String = "", order: int = 50) -> void:
+	console_tools[id] = {"label": label, "press": press, "tip": tip, "order": order}
+	console_tools_changed.emit()
+
+
+func unregister_console_tool(id: String) -> void:
+	if console_tools.erase(id):
+		console_tools_changed.emit()
+
+
 ## Symmetry mode for this player's plans (DesignMirror: OFF, ACROSS or ALONG); not shared.
 var mirror := 0
 signal mirror_changed(axis: int)
@@ -151,6 +192,8 @@ func _changed() -> void:
 	_totals_of = null
 	_plan = {}
 	_plan_of = null
+	_assessment = null
+	_assessment_of = null
 	design_changed.emit()
 
 
@@ -162,16 +205,24 @@ var _totals: DesignTotals
 var _totals_of: DesignRecord
 var _plan: Dictionary = {}
 var _plan_of: DesignRecord
+var _assessment: DesignAssessment
+var _assessment_of: DesignRecord
 
 
 const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
 const Samples := preload("res://modules/design/internal/sample_designs.gd")
 const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
 const CrewMarks := preload("res://modules/design/internal/crew/design_crew.gd")
+const ContractFitView := preload("res://modules/design/internal/views/contract_fit.gd")
+## The contract fit assessment on the wrist screen (F1): its channel id and place (the wrist
+## order: 10 stock, 20 parts market, 30 contract fit, 40 accounts, 50 crew).
+const FIT_CHANNEL := "design.fit"
+const FIT_CHANNEL_ORDER := 30
 
 
 func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, library)
+	HudSlots.register_holo_channel(FIT_CHANNEL, "Contract fit", _fit_channel, FIT_CHANNEL_ORDER)
 	if Modules.ready_done:
 		_hook_net()
 	else:
@@ -468,11 +519,19 @@ func furnish_station(_station: Node3D = null) -> void:
 
 func unregister_module() -> void:
 	_unhook_net()
+	HudSlots.unregister_holo_channel(FIT_CHANNEL)
 	Saves.unregister_section(SAVE_SECTION)
 	Menu.unregister_entry(ROOM_SCENE)
 	Menu.unregister_settings_section(Menu.DEBUG, "design.debug")
 	for k: String in HOLO_KEYS:
 		Keys.unregister(k)
+
+
+## The wrist channel's view: the same contract fit screen as the walls, at wall-sized text.
+func _fit_channel(_glass: bool) -> Control:
+	var v := ContractFitView.new()
+	v.setup(self, 24)
+	return v
 
 
 ## Opens a new design holding the sample skiff (Debug tab, tests, screenshots).
@@ -538,12 +597,29 @@ func frame_plan() -> Dictionary:
 	return _plan
 
 
+## How the open design answers its ship order (DesignAssessment), kept till the next edit
+## (null with nothing open). Every contract fit view reads this one.
+func assessment() -> DesignAssessment:
+	if library.current == null:
+		return null
+	if _assessment_of != library.current:
+		_assessment = DesignAssessment.assess(library.current, catalog, totals(), problems(), library.current.order)
+		_assessment_of = library.current
+	return _assessment
+
+
 ## The open design's problems ([] with nothing open).
 func problems() -> Array[Dictionary]:
 	if library.current == null:
 		return []
 	if _problems_of != library.current:
 		_problems = DesignRules.check(library.current, catalog, totals())
+		for id: String in checks:
+			var more: Variant = (checks[id] as Callable).call(library.current, catalog, totals())
+			if more is Array:
+				for p: Variant in more:
+					if p is Dictionary:
+						_problems.append(p)
 		_problems_of = library.current
 	return _problems
 

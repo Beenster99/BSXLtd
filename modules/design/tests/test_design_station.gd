@@ -53,7 +53,9 @@ func run_tests() -> void:
 	board.call("set_view", 0, "data")
 	check(board.call("content", 0).get_class() == "PanelContainer", "a panel can show the parts and cost channel")
 	board.call("step", 0, 1)
-	check(str(board.get("panels")[0].view) == "modules", "after the parts channel comes the modules list")
+	check(str(board.get("panels")[0].view) == "fit", "after the parts channel comes the contract fit assessment")
+	board.call("step", 0, 1)
+	check(str(board.get("panels")[0].view) == "modules", "then the modules list")
 	board.call("step", 0, 1)
 	check(str(board.get("panels")[0].view) == "whiteboard", "then the whiteboard")
 	# Panels other modules offer (the parts market) come after the room's own.

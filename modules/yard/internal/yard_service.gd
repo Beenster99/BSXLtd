@@ -22,7 +22,10 @@ const EngineerLook := preload("res://modules/yard/internal/tartanco_engineer_loo
 ## her top speed in and out (m/s) and how far out she starts slowing (m), the shutters' time
 ## (s), her engineers (one per bay), how long a tune-up and a bay service take (s), and their
 ## flying speed (m/s).
-const BERTH := Vector3(-4.0, -1.0, -114.0)
+## Beyond the berths at their largest tier (they grow with reputation, YardLayout.BERTH_TIERS),
+## so she never comes in through a bigger frame; fixed, so the shared clock's yard is the same
+## whatever tier each player's dock is drawn at.
+const BERTH := Vector3(-4.0, -1.0, YardLayout.DOCK_FAR_Z - 14.0)
 @export var approach := 420.0
 @export var ship_speed := 30.0
 @export var slow_from := 120.0
@@ -70,9 +73,12 @@ func build(workers: Node) -> void:
 				"sparks": sparks, "light": light, "from": Vector3.ZERO})
 
 
-## Sends for TartanCo. False if she's already on her way or here.
+## Sends for TartanCo. False if she's already on her way or here, or if no bot is in poor
+## condition (she only comes out for a faulted or badly worn bot).
 func call_in() -> bool:
 	if state != "away":
+		return false
+	if crew and crew.has_method("in_poor_condition") and not bool(crew.call("in_poor_condition")):
 		return false
 	state = "in"
 	ship.visible = true

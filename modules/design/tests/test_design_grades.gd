@@ -14,6 +14,8 @@ func run_tests() -> void:
 	_catalogue()
 	_variants()
 	_ratings()
+	_masses()
+	_moving()
 	_doors()
 	_orders()
 	await _palette()
@@ -118,6 +120,66 @@ func _ratings() -> void:
 	check(DesignTotals.compute(dry, cat).jump_range() == 0.0, "no fuel aboard, no jump")
 
 
+## Dry, wet and occupancy mass, and the cargo the holds and racking are rated to carry.
+func _masses() -> void:
+	var d := _ship("S")
+	d.apply({"op": "add_room", "room": {"id": "r4", "type": "quarters", "x": 5, "z": 0, "w": 4, "d": 4}})
+	d.apply({"op": "add_room", "room": {"id": "r5", "type": "cargo", "x": 8, "z": 4, "w": 8, "d": 8}})
+	var t := DesignTotals.compute(d, cat)
+	print("masses: dry %.1f t, fuel %.1f t (%.1f m3), wet %.1f t, occupancy %.1f t (%d aboard), flying %.1f t, cargo max %.1f t (%.0f m3)" % [
+			t.dry_mass() / 1000.0, t.fuel_mass / 1000.0, t.fuel_m3, t.wet_mass() / 1000.0, t.occupancy_mass / 1000.0,
+			t.crew, t.flying_mass() / 1000.0, t.cargo_max / 1000.0, t.cargo_m3])
+	check(t.dry_mass() == t.mass, "dry mass is the built mass")
+	check(is_equal_approx(t.fuel_mass, t.fuel_m3 * DesignTotals.FUEL_KG_PER_M3) and t.fuel_mass > 0.0, "full tanks weigh")
+	check(is_equal_approx(t.wet_mass(), t.mass + t.fuel_mass), "wet mass is dry plus fuel")
+	check(t.crew > 0 and is_equal_approx(t.occupancy_mass, t.crew * DesignTotals.PERSON_KG), "occupancy mass counts the bunks")
+	check(t.flying_mass() > t.wet_mass(), "she flies wet and crewed")
+	check(is_equal_approx(t.cargo_max, t.cargo_m3 * DesignTotals.CARGO_KG_PER_M3) and t.cargo_max > 0.0, "a cargo room sets cargo max")
+	check(is_equal_approx(t.acceleration(), t.thrust * 1000.0 / t.flying_mass()), "the ratings use the flying mass")
+	var racked := _ship("S")
+	racked.apply({"op": "add_room", "room": {"id": "r5", "type": "cargo", "x": 8, "z": 4, "w": 8, "d": 8}})
+	var before := DesignTotals.compute(racked, cat)
+	racked.apply({"op": "add_component", "component": {"id": "k1", "type": "pallet_racking", "room": "r5", "x": 12, "z": 5, "rot": 0}})
+	var after := DesignTotals.compute(racked, cat)
+	check(after.cargo_max > before.cargo_max and after.mass > before.mass, "racking adds cargo max and dry mass, not a load")
+	check(after.fuel_mass == before.fuel_mass and after.occupancy_mass == before.occupancy_mass, "empty racking carries nothing")
+	for id in ["pallet_racking", "longspan_shelving", "mezzanine_racking", "container_mounting", "tie_down_rails"]:
+		var pt := cat.part(id)
+		check(pt != null and pt.category == "cargo" and pt.size.x >= 2.5, "%s: big cargo kit" % id)
+	var fit := {}
+	for f in t.fit({"dry_mass": 1.0, "wet_mass": 1e9, "fuel_mass": 1.0, "occupancy_mass": 1.0, "cargo_max": 1e9}):
+		fit[f.key] = f
+	check(not fit.dry_mass.ok and fit.wet_mass.ok, "dry and wet mass are caps")
+	check(fit.fuel_mass.ok and fit.occupancy_mass.ok and not fit.cargo_max.ok, "fuel, occupancy and cargo max are minimums")
+
+
+## Moving parts carry what the moving parts test reads: opening, travel time, power while
+## moving, rated load and ground clearance, scaled by size and grade like the rest.
+func _moving() -> void:
+	for id in ["landing_foot_pad", "landing_skid", "undercarriage_leg", "undercarriage_doors", "clamshell_doors",
+			"side_hold_door", "belly_hatch", "tail_ramp", "airstair", "stabiliser_jack", "hydraulic_ram", "door_motor",
+			"docking_clamp", "folding_solar_array", "folding_radiator", "antenna_mast", "crane_boom", "gangway_tube"]:
+		var pt := cat.part(id)
+		check(pt != null and pt.category != "" and pt.size_class > 0, "%s is in the catalogue, sized and graded" % id)
+		if pt != null:
+			check(pt.move_s > 0.0 or pt.move_kw > 0.0 or pt.load_kg > 0.0, "%s has moving-part figures" % id)
+	for id in ["cargo_ramp", "landing_gear", "airlock_door", "blast_door", "docking_port", "tow_winch", "turret"]:
+		check(cat.part(id).move_s > 0.0, "%s says how long it takes to move" % id)
+	for pt: DesignPartType in cat.parts.values():
+		if pt.move_s > 0.0:
+			check(pt.move_kind in ["hinge_out", "hinge_up", "slide", "spin", "leg", "belt"] and pt.move_range > 0.0,
+					"%s says how it moves and how far" % pt.id)
+	var leg := cat.part("undercarriage_leg")
+	check(leg.load_kg > 0.0 and leg.clearance > 0.0, "a leg has a load per leg and a ground clearance")
+	check(cat.part("clamshell_doors").open_size.x > float(DesignCatalog.DOOR_KINDS.cargo.max_w), "clamshell doors open wider than the biggest cargo door")
+	var big := cat.part("undercarriage_leg:5H")
+	check(big.load_kg > leg.load_kg * 3.0 and big.clearance > leg.clearance, "a bigger, Hardened leg bears more and stands taller")
+	check(cat.part("tail_ramp:4P").move_s < cat.part("tail_ramp").move_s, "a Precision ramp opens faster")
+	check(cat.part("crane_boom:6S").move_kw > cat.part("crane_boom").move_kw, "a bigger boom draws more while it slews")
+	for k: String in DesignCatalog.DOOR_KINDS:
+		check(DesignCatalog.DOOR_KINDS[k].has("move_s") and DesignCatalog.DOOR_KINDS[k].has("move_kw"), "door kind %s has move figures" % k)
+
+
 ## Door kinds: a plain door, an open doorway and a wide cargo door, priced on the parts list
 ## and checked against the wall they stand in.
 func _doors() -> void:
@@ -193,6 +255,31 @@ func _palette() -> void:
 	if b:
 		b.pressed.emit()
 		check(console.plan.tool == "part:reactor_small:5H", "picking it arms that variant: %s" % console.plan.tool)
+	# The compact list: a search finds parts across every group, closed or not, as you type.
+	var search := console.find_child("CompSearch", true, false) as LineEdit
+	check(search != null and console.find_child("CompGroups", true, false) is HFlowContainer,
+			"the components have a search box and group chips")
+	if search:
+		console._open_groups = {}
+		search.text = "reactor"
+		search.text_changed.emit("reactor")
+		await frames(1)
+		var hits := console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false)
+		var all_reactors := hits.size() > 0
+		for h: Node in hits:
+			all_reactors = all_reactors and "reactor" in (h as Button).text.to_lower()
+		check(all_reactors, "a search shows only matching parts, groups closed: %d" % hits.size())
+		check(console.find_child("CompSearch", true, false) == search, "typing keeps the search box (and its focus)")
+		search.text_changed.emit("zzzz")
+		await frames(1)
+		check(console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false).is_empty(),
+				"a search that matches nothing shows no parts")
+		search.text_changed.emit("")
+		await frames(1)
+		check(console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false).is_empty(),
+				"no search and no open group: no rows")
+	check(DesignConsole.short_money(950.0) == "950" and DesignConsole.short_money(12400.0) == "12k"
+			and DesignConsole.short_money(3100000.0) == "3.1M", "costs are written short on the rows")
 	var cargo_b := console.find_child("DoorKind_cargo", true, false) as Button
 	check(cargo_b != null, "the door kinds are on the palette")
 	if cargo_b:

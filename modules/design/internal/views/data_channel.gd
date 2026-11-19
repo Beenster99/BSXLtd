@@ -6,6 +6,9 @@ extends PanelContainer
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
 
+## The full contract fit assessment was asked for (the console opens it full screen).
+signal assessment_requested
+
 var bus: DesignBus
 ## Contract demands to score against (Wave 4 fills these from the contract).
 var demands: Dictionary = {}
@@ -62,7 +65,7 @@ func refresh() -> void:
 	var balance := t.power_balance()
 	for fig in [
 		["Cost", "CR " + T.money(int(t.cost)), T.TEXT],
-		["Mass", "%.1f t" % (t.mass / 1000.0), T.TEXT],
+		["Dry mass", "%.1f t" % (t.mass / 1000.0), T.TEXT],
 		["Power", "%+.0f kW" % balance, T.GOOD if balance >= 0.0 else T.BAD],
 		["Build", "%d h" % int(ceil(t.build_hours)), T.TEXT],
 		["Crew", "%d" % t.crew, T.TEXT],
@@ -92,6 +95,25 @@ func refresh() -> void:
 		f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ratings.add_child(f)
 	_body.add_child(ratings)
+	# Her masses: as built, tanks full, people aboard; and what her holds may carry.
+	_body.add_child(T.label("MASSES", "display_bold", 20, T.TEXT))
+	var masses := GridContainer.new()
+	masses.name = "Masses"
+	masses.columns = 2 if compact else 3
+	masses.add_theme_constant_override("h_separation", 6)
+	masses.add_theme_constant_override("v_separation", 6)
+	for fig in [
+		["Dry mass", "%.1f t" % (t.dry_mass() / 1000.0), T.TEXT],
+		["Fuel load", "%.1f t" % (t.fuel_mass / 1000.0), T.TEXT if t.fuel_mass > 0.0 else T.AMBER],
+		["Wet mass", "%.1f t" % (t.wet_mass() / 1000.0), T.TEXT],
+		["Occupancy mass", "%.1f t" % (t.occupancy_mass / 1000.0), T.TEXT],
+		["Flying mass", "%.1f t" % (t.flying_mass() / 1000.0), T.TEXT],
+		["Cargo max", "%.1f t" % (t.cargo_max / 1000.0), T.TEXT],
+	]:
+		var f := T.figure(fig[0], fig[1], fig[2])
+		f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		masses.add_child(f)
+	_body.add_child(masses)
 	# The ship order the design answers sets the demands, unless a view set its own.
 	var want: Dictionary = demands if not demands.is_empty() else rec.order.get("demands", {})
 	if not want.is_empty():
@@ -100,6 +122,26 @@ func refresh() -> void:
 			_body.add_child(T.label(str(rec.order.get("title", "")), "body_medium", 16, T.ORANGE))
 		for row in t.fit(want):
 			_body.add_child(_fit_row(row))
+		# The order's special clauses (rooms, parts, grades), scored like the demands.
+		if demands.is_empty():
+			for row in DesignContractCheck.clauses(rec.order, rec, bus.catalog):
+				_body.add_child(_fit_row(row))
+		var a := bus.assessment()
+		if a and not rec.order.is_empty() and demands.is_empty():
+			var col := T.GOOD if a.status == DesignAssessment.READY else (T.BAD if a.status == DesignAssessment.NOT_VIABLE else T.AMBER)
+			var line := HBoxContainer.new()
+			line.add_theme_constant_override("separation", 8)
+			line.add_child(T.tag(a.status, col, 14))
+			var what := T.label("%d%% overall  ·  %d pitfalls  ·  %d cheap wins" % [int(roundf(a.score * 100.0)),
+					a.findings_of(DesignAssessment.PITFALL).size(), a.findings_of(DesignAssessment.WIN).size()], "body_medium", 16, T.TEXT)
+			what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			line.add_child(what)
+			if compact:
+				var open := T.button("FULL ASSESSMENT", true, 14)
+				open.name = "BtnAssessment"
+				open.pressed.connect(func() -> void: assessment_requested.emit())
+				line.add_child(open)
+			_body.add_child(line)
 	_body.add_child(T.label("WILL IT WORK", "display_bold", 20, T.TEXT))
 	if problems.is_empty():
 		_body.add_child(T.label("Nothing flagged", "body", 17, T.GOOD))

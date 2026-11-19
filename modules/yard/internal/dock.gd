@@ -2,7 +2,7 @@ extends Node3D
 ## The weightless dock outside the station's windows (stage 1.2): one build berth in front
 ## of the design room and a holding berth either side, open lattice frames lit by
 ## floodlights, joined by a dock arm that runs back to the station. Ships are built in the
-## berths from Wave 5; for now they stand empty. Where they are: YardLayout.BERTHS.
+## berths from Wave 5; for now they stand empty. Where they are: YardLayout.berths(tier).
 
 const Kit := preload("res://modules/yard/internal/yard_kit.gd")
 const Solar := preload("res://modules/yard/internal/solar_array.gd")
@@ -24,10 +24,21 @@ var floods: Array[Dictionary] = []
 var _time := 0.0
 
 
-func build() -> void:
+## The berths at `tier` (YardLayout.BERTH_TIERS; they grow with reputation).
+var tier := 1
+## How far the berths reach either side (m, x).
+var _reach := 100.0
+## Bigger berths throw their floods further (x the starter berth's).
+var _flood_scale := 1.0
+
+
+func build(berth_tier := 1) -> void:
+	tier = berth_tier
 	kit = Kit.new(self, "DockBody")
-	for b: Dictionary in YardLayout.BERTHS:
+	for b: Dictionary in YardLayout.berths(tier):
 		_berth(b)
+		_reach = maxf(_reach, absf((b.box as AABB).position.x))
+		_reach = maxf(_reach, absf((b.box as AABB).end.x))
 	_dock_arm()
 
 
@@ -82,6 +93,7 @@ func _berth(b: Dictionary) -> void:
 	# Floodlights on all eight corners (0.4.1 playtest: "movable flood lights on all corners not
 	# just top"), each on a pan and tilt yoke, aimed at the berth's middle.
 	var centre := box.get_center()
+	_flood_scale = maxf(1.0, box.size.length() / Vector3(60, 30, 30).length())
 	for x: float in [lo.x, hi.x]:
 		for y: float in [lo.y, hi.y]:
 			for z: float in [lo.z, hi.z]:
@@ -101,19 +113,19 @@ func _dock_arm() -> void:
 	var dark: Material = kit.paint(Kit.DARK, 0.7, 0.45, "galvanised")
 	var z := -66.0
 	var y := -16.0
-	_truss(Vector3(-100, y, z), Vector3(100, y, z), white, dark)
+	_truss(Vector3(-_reach, y, z), Vector3(_reach, y, z), white, dark)
 	_truss(Vector3(-6.0, y, z), Vector3(-6.0, -1.2, -21.0), white, dark)
 	_truss(Vector3(30.0, y, z), Vector3(30.0, -1.2, -29.0), white, dark)
 	# Solar wings off both ends of the arm, up and down, turned to the sun.
 	var sun_h := Vector3(0.55, 0.0, -0.35).normalized()
 	var face := Basis(sun_h.cross(Vector3.UP), sun_h, Vector3.UP)
-	for x: float in [-106.0, 106.0]:
+	for x: float in [-_reach - 6.0, _reach + 6.0]:
 		_truss(Vector3(x - signf(x) * 5.0, y, z), Vector3(x, y, z), white, dark)
 		kit.box(Vector3(0.5, 76.0, 0.5), Vector3(x, y, z), dark, false)
 		for up: float in [-1.0, 1.0]:
 			Solar.build(self, "ArmSolar_%d_%d" % [int(x), int(up)], Vector3(x, y + up * 20.5, z), face, 4, 11)
 	# Walkway lamps along the arm, so you can find your way out in the dark.
-	for i in range(-9, 10):
+	for i in range(-int(_reach / 10.0) + 1, int(_reach / 10.0)):
 		kit.box(Vector3(0.25, 0.25, 0.25), Vector3(i * 10.0, y + 1.3, z), kit.glow(Color(0.4, 0.8, 1.0), 5.0), false)
 
 
@@ -174,7 +186,7 @@ func _flood(berth: Node3D, at: Vector3, target: Vector3, build_berth: bool, dark
 		_piece(tilt, Vector3(1.2, 0.04, 0.3), Vector3(0, fy, 0.58), grey)
 	var spot := SpotLight3D.new()
 	spot.light_energy = flood_energy * 0.7
-	spot.spot_range = flood_range if build_berth else flood_range * 0.8
+	spot.spot_range = (flood_range if build_berth else flood_range * 0.8) * _flood_scale
 	spot.spot_angle = 36.0
 	spot.light_color = Color(1.0, 0.96, 0.88)
 	spot.shadow_enabled = false

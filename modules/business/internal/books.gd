@@ -806,13 +806,30 @@ func accept_contract(contract_id: String, value: int, due_day: int, materials :=
 		goodwill = mini(value * rules.goodwill_percent / 100, value - parts)
 	var deposit := parts + goodwill
 	contracts[contract_id] = {"value": value, "due_day": due_day, "deposit": deposit, "penalties": 0, "state": "open",
-			"materials": parts if materials >= 0 else -1, "goodwill": goodwill}
+			"materials": parts if materials >= 0 else -1, "goodwill": goodwill, "accepted_day": day}
 	if parts > 0:
 		post(parts, LedgerEntry.DEPOSIT, contract_id, "parts" if materials >= 0 else "")
 	if goodwill > 0:
 		post(goodwill, LedgerEntry.GOODWILL, contract_id)
 	_bus.deposit_received.emit(contract_id, deposit)
 	return BusinessResult.success()
+
+
+## A ship contract paid in stages from the start (beenster, 19 Nov: deposit 20% at design
+## sign-off, keel 20%, fit-out 20%, delivery 40% after the trial): no separate deposit or
+## goodwill, the value is the stages' sum, and the first stage is paid now. stages are
+## [{id, name, value, expected_day}] in order (expected_day: the business day it should fall due).
+func accept_staged(contract_id: String, stages: Array, due_day: int) -> BusinessResult:
+	if contracts.has(contract_id):
+		return BusinessResult.fail(ERR_ALREADY_EXISTS, "contract %s already on the books" % contract_id)
+	contracts[contract_id] = {"value": 0, "due_day": due_day, "deposit": 0, "penalties": 0, "state": "open",
+			"materials": -1, "goodwill": 0, "accepted_day": day}
+	var r := plan_stages(contract_id, stages)
+	if not r.is_ok():
+		contracts.erase(contract_id)
+		return r
+	_bus.deposit_received.emit(contract_id, 0)
+	return sign_off_stage(contract_id, str(contracts[contract_id].stages[0].id))
 
 
 ## A large job's stages (plan stage S6): [{id, name, value}] in order. The job is priced as
@@ -832,7 +849,7 @@ func plan_stages(contract_id: String, stages: Array) -> BusinessResult:
 		var value := int(d.get("value", -1))
 		if id == "" or value < 0:
 			return BusinessResult.fail(ERR_INVALID_PARAMETER, "a stage needs an id and a value of 0 or more")
-		plan.append({"id": id, "name": str(d.get("name", id)), "value": value})
+		plan.append({"id": id, "name": str(d.get("name", id)), "value": value, "expected_day": int(d.get("expected_day", -1))})
 		total += value
 	if plan.is_empty():
 		return BusinessResult.fail(ERR_INVALID_PARAMETER, "no stages")
@@ -891,11 +908,27 @@ func hand_over(contract_id: String, quality: float, open_snags: int) -> Business
 	var payment: int = c.value - c.deposit - c.penalties - stages_paid(contract_id)
 	if payment != 0:
 		post(payment, LedgerEntry.PAYMENT, contract_id, "handover")
+	var trial := int(c.get("adjustment", 0))
+	if trial != 0:
+		post(trial, LedgerEntry.TRIAL, contract_id, ", ".join(c.get("adjust_notes", [])))
 	_bus.final_payment_received.emit(contract_id, payment)
 	var late_days := maxi(0, day - int(c.due_day))
 	var delta := (clampf(quality, 0.0, 1.0) - rules.quality_par) * rules.rep_per_quality
 	delta -= late_days * rules.rep_per_late_day + open_snags * rules.rep_per_open_snag
 	change_reputation(delta, "handover %s" % contract_id)
+	return BusinessResult.success()
+
+
+## Adds to (or takes off) what an open contract's handover pays: the trial's bonus or hold-back.
+func adjust_contract(contract_id: String, amount: int, reason: String) -> BusinessResult:
+	var c: Dictionary = contracts.get(contract_id, {})
+	if c.is_empty() or c.state != "open":
+		return BusinessResult.fail(ERR_DOES_NOT_EXIST, "no open contract %s" % contract_id)
+	c["adjustment"] = int(c.get("adjustment", 0)) + amount
+	var notes: Array = c.get("adjust_notes", [])
+	if reason != "":
+		notes.append(reason)
+	c["adjust_notes"] = notes
 	return BusinessResult.success()
 
 
@@ -924,7 +957,7 @@ func contract_balance(contract_id: String) -> Dictionary:
 	var out := c.duplicate(true)
 	out["parts"] = parts
 	out["stages_paid_total"] = stages_paid(contract_id)
-	out["margin"] = c.value - c.penalties - parts
+	out["margin"] = c.value - c.penalties - parts + int(c.get("adjustment", 0))
 	return out
 
 
@@ -1042,8 +1075,15 @@ func load_data(d: Dictionary, from_version: int) -> void:
 			"state": str(c.get("state", "open")),
 			"materials": int(c.get("materials", -1)), "goodwill": int(c.get("goodwill", 0)),
 		}
+		if c.has("accepted_day"):
+			contracts[id]["accepted_day"] = int(c.accepted_day)
+		if c.has("adjustment"):
+			contracts[id]["adjustment"] = int(c.adjustment)
+			contracts[id]["adjust_notes"] = (c.get("adjust_notes", []) as Array).map(func(x: Variant) -> String: return str(x))
 		if c.has("stages"):
-			contracts[id]["stages"] = (c.stages as Array).duplicate(true)
+			contracts[id]["stages"] = (c.stages as Array).map(func(st: Dictionary) -> Dictionary:
+				return {"id": str(st.get("id", "")), "name": str(st.get("name", "")), "value": int(st.get("value", 0)),
+						"expected_day": int(st.get("expected_day", -1))})
 			var paid := {}
 			for stage_id: Variant in c.get("stages_paid", {}):
 				paid[str(stage_id)] = int(c.stages_paid[stage_id])

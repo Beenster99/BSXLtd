@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ModuleManifest" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://modules/core/api/module_manifest.gd" id="1"]
+[ext_resource type="Script" path="res://modules/refurb/api/refurb_bus.gd" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = "refurb"
+display_name = "Refurbishing bots"
+version = "0.1.0"
+depends_on = PackedStringArray("yard", "design", "shared_components")
+flag = "refurb"
+bus = ExtResource("2")
+test_scene = ""

@@ -14,6 +14,8 @@ signal walk_requested
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
 const DataChannel := preload("res://modules/design/internal/views/data_channel.gd")
+const ContractFit := preload("res://modules/design/internal/views/contract_fit.gd")
+const ContractTerms := preload("res://modules/design/internal/views/contract_terms.gd")
 const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
 
 var bus: DesignBus
@@ -29,6 +31,9 @@ var _pick_size := 0
 var _pick_grade := DesignGrades.DEFAULT_GRADE
 ## Component groups open on the palette (category -> true).
 var _open_groups: Dictionary = {"flight": true}
+## The components search text, and the list it filters (rebuilt alone as you type).
+var _comp_search := ""
+var _comp_list: VBoxContainer
 ## Door kind buttons under the tools (kind -> Button).
 var _door_buttons: Dictionary = {}
 var _grid_pick: OptionButton
@@ -66,6 +71,10 @@ func setup(design_bus: DesignBus, table: HoloTable) -> void:
 	_refresh_bar()
 	_fill_palette()
 	plan.frame_all.call_deferred()
+	var contracts := Modules.bus("contracts")
+	if contracts and contracts.has_signal("ship_contract_changed"):
+		contracts.connect("ship_contract_changed", _on_contract_changed)
+		contracts.connect("board_changed", _on_contract_changed.bind(""))
 
 
 func _build() -> void:
@@ -107,6 +116,7 @@ func _build() -> void:
 	data.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	data.lists = false
 	data.setup(bus, true)
+	data.assessment_requested.connect(toggle_assessment)
 	right.add_child(data)
 	_library_panel = _make_library_panel()
 	_library_panel.visible = false
@@ -190,6 +200,13 @@ func _top_bar() -> Control:
 	_grid_pick.item_selected.connect(func(i: int) -> void:
 		bus.editor.do({"op": "set_meta", "fields": {"grid": DesignRecord.GRIDS[i]}}))
 	h.add_child(_grid_pick)
+	# Buttons other modules put here (DesignBus.register_console_tool: the motion module's OPERATE).
+	var tools := HBoxContainer.new()
+	tools.name = "ConsoleTools"
+	tools.add_theme_constant_override("separation", 6)
+	h.add_child(tools)
+	_fill_tools(tools)
+	bus.console_tools_changed.connect(_fill_tools.bind(tools))
 	var walk := T.button("WALK INSIDE", true, 17)
 	walk.name = "BtnWalkInside"
 	walk.pressed.connect(func() -> void: walk_requested.emit())
@@ -198,6 +215,24 @@ func _top_bar() -> Control:
 	leave.pressed.connect(func() -> void: leave_requested.emit())
 	h.add_child(leave)
 	return bar
+
+
+func _fill_tools(box: HBoxContainer) -> void:
+	if not is_instance_valid(box):
+		return
+	for c in box.get_children():
+		box.remove_child(c)
+		c.queue_free()
+	var ids: Array = bus.console_tools.keys()
+	ids.sort_custom(func(a, b) -> bool: return int(bus.console_tools[a].order) < int(bus.console_tools[b].order))
+	for id: String in ids:
+		var t: Dictionary = bus.console_tools[id]
+		var b := T.button(str(t.label), false, 17)
+		b.name = "Tool_" + id.replace(".", "_")
+		b.tooltip_text = str(t.get("tip", ""))
+		var press: Callable = t.press
+		b.pressed.connect(func() -> void: press.call())
+		box.add_child(b)
 
 
 func _left_panel() -> Control:
@@ -395,8 +430,16 @@ func _fill_orders() -> void:
 		var title := T.label(str(current.get("title", "")), "body_medium", 15, T.ORANGE)
 		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_palette.add_child(title)
-		var lines := T.label("\n".join(ShipOrders.demand_lines(current)), "mono_medium", 13, T.DIM)
+		if current.has("size"):
+			var who := T.label(_order_tag(current), "mono_medium", 12, T.DIM)
+			who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_palette.add_child(who)
+			_palette.add_child(_achievability_label(current, 14))
+		var lines := T.label("\n".join(ShipOrders.demand_lines(current) + ShipOrders.clause_lines(current)), "mono_medium", 13, T.DIM)
+		lines.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_palette.add_child(lines)
+		if contracts and Flags.is_on(ContractsBus.SHIP_CONTRACTS_FLAG):
+			_contract_block(contracts, current)
 	var row := HBoxContainer.new()
 	var pick := T.button("%s ORDERS (%d)" % ["HIDE" if _orders_open else "PICK FROM", orders.size()], false, 14)
 	pick.name = "Orders"
@@ -415,13 +458,154 @@ func _fill_orders() -> void:
 	if not _orders_open:
 		return
 	for o: Dictionary in orders:
-		var b := T.button("%s\nCR %s for the yard, %d days" % [str(o.title), T.money(int(o.pay)), int(o.days)],
-				str(o.id) == str(current.get("id", "")), 13)
+		var text := "%s\nCR %s for the yard, %d days" % [str(o.title), T.money(int(o.pay)), int(o.days)]
+		if o.has("achievability"):
+			text = "%s\nBudget CR %s · %s · %d criteria%s" % [str(o.title), T.money(int(o.budget)),
+					str(o.achievability.label).to_upper(), ShipOrders.criteria_count(o),
+					" · NEEDS %s STANDING" % ContractClients.level_name(int(o.needs_level)).to_upper() if o.get("locked", false) else ""]
+			if o.get("berth_short", false):
+				text += " · NEEDS A LARGER BERTH (%s)" % ShipOrders.berth_name(int(o.berth)).to_upper()
+		if contracts.has_method("ship_contract_for") and not contracts.ship_contract_for(str(o.id)).is_empty():
+			text += " · SIGNED"
+		var b := T.button(text, str(o.id) == str(current.get("id", "")), 13)
 		b.name = "Order_" + str(o.id)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.tooltip_text = "%s\n\n%s" % [str(o.brief), "\n".join(ShipOrders.demand_lines(o))]
+		b.add_theme_color_override("font_color", _achievability_colour(o))
+		b.tooltip_text = _order_tooltip(o)
 		b.pressed.connect(set_order.bind(o))
 		_palette.add_child(b)
+
+
+## The contract for the order the design answers (plan 4.3 to 4.6): the quote for this design
+## and SEND QUOTE, or once signed where the payments stand and DELIVER FOR TRIAL; CONTRACT
+## DETAILS opens the payments page.
+func _contract_block(contracts: ContractsBus, order: Dictionary) -> void:
+	var rec := bus.library.current
+	var c := contracts.ship_contract_for(str(order.get("id", "")))
+	var row := HBoxContainer.new()
+	var details := T.button("CONTRACT DETAILS", false, 14)
+	details.name = "ContractDetails"
+	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	details.pressed.connect(toggle_contract_terms)
+	if c.is_empty():
+		var cost := int(bus.totals().cost)
+		var q := ShipOrders.quote(order, cost)
+		var l := T.label("", "mono_medium", 13, T.GOOD)
+		l.name = "QuoteLine"
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_palette.add_child(l)
+		_show_quote(l, q)
+		var send := T.button("SEND QUOTE", true, 14)
+		send.name = "SendQuote"
+		send.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var why := contracts.ship_sign_problem(order)
+		send.disabled = why != ""
+		send.tooltip_text = why.capitalize() if why != "" else "The client signs off this design at CR %s and pays the deposit of CR %s." % [
+				T.money(int(q.price)), T.money(int(ShipOrders.payment_plan(int(q.price), 0, 1)[0].value))]
+		send.pressed.connect(func() -> void:
+			contracts.request_sign_ship(order, rec.id, rec.name, int(bus.totals().cost)))
+		row.add_child(send)
+	else:
+		var paid := 0
+		var next := ""
+		for st: Dictionary in c.stages:
+			if st.paid:
+				paid += int(st.get("paid_value", st.value))
+			elif next == "":
+				next = "%s CR %s, day %d" % [str(st.name), T.money(int(st.value)), int(st.expected_day)]
+		var text := "SIGNED  CR %s  ·  paid CR %s" % [T.money(int(c.price)), T.money(paid)]
+		if c.state == "delivered":
+			text = "DELIVERED  ·  grade %s  ·  paid CR %s" % [str(c.trial.get("grade", "")), T.money(paid)]
+		elif next != "":
+			text += "\nNext: " + next
+		var l := T.label(text, "mono_medium", 13, T.ORANGE)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_palette.add_child(l)
+		if c.state == "building":
+			var deliver := T.button("DELIVER FOR TRIAL", true, 14)
+			deliver.name = "DeliverTrial"
+			deliver.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			deliver.disabled = rec == null or rec.id != str(c.design_id)
+			deliver.tooltip_text = "The surveyors test this design against every demand and clause, and the client pays the delivery." \
+					if not deliver.disabled else "Open the design that was signed (%s) to deliver it." % str(c.design_name)
+			deliver.pressed.connect(deliver_for_trial)
+			row.add_child(deliver)
+	row.add_child(details)
+	_palette.add_child(row)
+
+
+func _show_quote(l: Label, q: Dictionary) -> void:
+	l.text = "QUOTE  CR %s  ·  margin CR %s" % [T.money(int(q.price)), T.money(int(q.margin))]
+	l.add_theme_color_override("font_color", T.BAD if q.over_budget else T.GOOD)
+
+
+## The open design goes through the surveyors' trial as the ship its contract ordered (the
+## build itself comes with Wave 5): every demand and clause scored, the delivery paid.
+func deliver_for_trial() -> void:
+	var rec := bus.library.current
+	var contracts := Modules.bus("contracts") as ContractsBus
+	if rec == null or contracts == null:
+		return
+	var c := contracts.ship_contract_for(str(rec.order.get("id", "")))
+	if c.is_empty() or str(c.design_id) != rec.id:
+		return
+	var rows := DesignContractCheck.all(c.order, rec, bus.catalog, bus.totals())
+	var motion := Modules.bus("motion")
+	if motion and motion.has_method("cycle"):
+		var cyc: Variant = motion.call("cycle", rec)
+		if cyc is Dictionary:
+			rows.append_array(DesignContractCheck.motion_rows(cyc))
+	contracts.request_deliver_ship(str(c.id), rows)
+
+
+func _on_contract_changed(_id: String) -> void:
+	if is_inside_tree():
+		_fill_palette()
+	if _terms_panel and is_instance_valid(_terms_panel):
+		toggle_contract_terms()
+		toggle_contract_terms()
+
+
+## "Large · Mining · Deepcut Minerals (Businesslike)" for an order.
+static func _order_tag(o: Dictionary) -> String:
+	var tag := "%s · %s · %s (%s)" % [str(ShipOrders.SIZES.get(str(o.size), {}).get("name", o.size)),
+			ShipClients.sector_name(str(o.get("sector", ""))), str(o.client_name), str(o.get("temper", ""))]
+	if o.has("berth"):
+		tag += "\nAbout %d m long: %s" % [int(o.get("length_m", 0)), ShipOrders.berth_name(int(o.berth))]
+	return tag
+
+
+## How the budget compares with the cheapest build, coloured: green generous, amber tight,
+## red unrealistic.
+static func _achievability_colour(o: Dictionary) -> Color:
+	match str(o.get("achievability", {}).get("label", "")):
+		"Generous", "Fair":
+			return T.GOOD
+		"Tight":
+			return T.AMBER
+		"Long shot":
+			return T.ORANGE
+		"Unrealistic":
+			return T.BAD
+	return T.TEXT
+
+
+static func _achievability_label(o: Dictionary, size: int) -> Label:
+	var a: Dictionary = o.achievability
+	var l := T.label("%s: budget CR %s against about CR %s for the cheapest build. %s" % [str(a.label).to_upper(),
+			T.money(int(o.budget)), T.money(int(o.estimate)), str(a.line)], "body_medium", size, _achievability_colour(o))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
+
+static func _order_tooltip(o: Dictionary) -> String:
+	if not o.has("achievability"):
+		return "%s\n\n%s" % [str(o.brief), "\n".join(ShipOrders.demand_lines(o))]
+	var a: Dictionary = o.achievability
+	return "%s\n%s\n\n%s\n\n%s\n\nWHAT THEY WANT\n%s\n\n%s: CR %s budget, about CR %s for the cheapest build (x%.2f)." % [
+			str(o.title), _order_tag(o), str(o.story), str(o.brief),
+			"\n".join(ShipOrders.demand_lines(o) + ShipOrders.clause_lines(o)),
+			str(a.label).to_upper(), T.money(int(o.budget)), T.money(int(o.estimate)), float(a.ratio)]
 
 
 ## Makes the open design answer `order` ({} for none), one undo step.
@@ -457,31 +641,135 @@ func _fill_components() -> void:
 	pick.add_child(grade_b)
 	_palette.add_child(pick)
 	_palette.add_child(T.label(str(gr.blurb), "body", 13, T.DIM))
+	var search := LineEdit.new()
+	search.name = "CompSearch"
+	search.placeholder_text = "Search components (name, kind, size, grade)"
+	search.text = _comp_search
+	search.clear_button_enabled = true
+	search.add_theme_font_size_override("font_size", T.px(14))
+	search.text_changed.connect(func(t: String) -> void:
+		_comp_search = t
+		_fill_comp_list())
+	_palette.add_child(search)
+	# The groups as small chips that wrap, instead of a full-width header each.
+	var chips := HFlowContainer.new()
+	chips.name = "CompGroups"
+	chips.add_theme_constant_override("h_separation", 3)
+	chips.add_theme_constant_override("v_separation", 3)
 	for cat: Array in DesignCatalog.CATEGORIES:
 		var list := bus.catalog.parts_in(str(cat[0]))
 		if list.is_empty():
 			continue
 		var open := bool(_open_groups.get(cat[0], false))
-		var head := T.button("%s %s  (%d)" % ["v" if open else ">", str(cat[1]).to_upper(), list.size()], false, 15)
+		var head := T.button("%s %d" % [str(cat[1]).get_slice(" ", 0).trim_suffix(",").to_upper(), list.size()], false, 12, open)
 		head.name = "Group_" + str(cat[0])
-		head.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		head.tooltip_text = str(cat[1])
 		head.pressed.connect(func() -> void:
 			_open_groups[cat[0]] = not bool(_open_groups.get(cat[0], false))
 			_fill_palette())
-		_palette.add_child(head)
-		if not open:
+		chips.add_child(head)
+	_palette.add_child(chips)
+	_comp_list = VBoxContainer.new()
+	_comp_list.name = "CompList"
+	_comp_list.add_theme_constant_override("separation", 1)
+	_palette.add_child(_comp_list)
+	_fill_comp_list()
+
+
+## The component rows under the chips: every match across the groups while there is a search,
+## else the open groups. One slim row each (name and short cost); the full card is its tooltip.
+func _fill_comp_list() -> void:
+	if _comp_list == null:
+		return
+	for c in _comp_list.get_children():
+		_comp_list.remove_child(c)
+		c.queue_free()
+	for id: String in _tool_buttons.keys():
+		if not is_instance_valid(_tool_buttons[id]):
+			_tool_buttons.erase(id)
+	var words := _comp_search.strip_edges().to_lower().split(" ", false)
+	var shown := 0
+	for cat: Array in DesignCatalog.CATEGORIES:
+		var list := bus.catalog.parts_in(str(cat[0]))
+		if list.is_empty():
 			continue
+		var rows: Array = []
 		for base: DesignPartType in list:
 			var pt := bus.catalog.part(picked_id(base))
-			var tag := DesignGrades.label(pt)
-			var b := _swatch_button("   %s%s   CR %s%s" % [base.display_name, ("  " + tag) if tag != "" else "",
-					T.money(int(pt.cost)), "   (hull)" if base.hull_mount else ""], base.colour)
-			b.tooltip_text = part_card(pt)
-			var tool := ("mount:" if base.hull_mount else "part:") + pt.id
-			b.name = ("Mount_" if base.hull_mount else "Part_") + base.id
-			b.pressed.connect(plan.set_tool.bind(tool))
-			_tool_buttons[tool] = b
-			_palette.add_child(b)
+			if words.is_empty():
+				if not bool(_open_groups.get(cat[0], false)):
+					break
+			elif not matches_search(words, base, pt, str(cat[1])):
+				continue
+			rows.append([base, pt])
+		if rows.is_empty():
+			continue
+		_comp_list.add_child(T.label(str(cat[1]).to_upper(), "display_medium", 12, T.DIM))
+		for r: Array in rows:
+			_comp_list.add_child(_comp_row(r[0], r[1]))
+			shown += 1
+	if shown == 0:
+		_comp_list.add_child(T.label("No components match." if not words.is_empty()
+				else "Pick a group above, or search.", "body", 13, T.DIM))
+	_mark_tools()
+
+
+## True when every word of a search is in the part's name, id, group, size or grade.
+static func matches_search(words: PackedStringArray, base: DesignPartType, pt: DesignPartType, group: String) -> bool:
+	var hay := " ".join([base.display_name, base.id, group, DesignGrades.label(pt),
+			"hull" if base.hull_mount else ""]).to_lower()
+	for w in words:
+		if not hay.contains(w):
+			return false
+	return true
+
+
+## One slim component row: colour swatch, name and size/grade tag, its cost short on the right.
+func _comp_row(base: DesignPartType, pt: DesignPartType) -> Button:
+	var tag := DesignGrades.label(pt)
+	var b := _swatch_button("%s%s%s" % [base.display_name, ("  " + tag) if tag != "" else "",
+			"  (hull)" if base.hull_mount else ""], base.colour, 13)
+	b.clip_text = true
+	b.custom_minimum_size.y = 0
+	var cost := T.label(short_money(pt.cost), "display", 12, T.DIM)
+	cost.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+	cost.offset_left = -64
+	cost.offset_right = -8
+	cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	cost.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(cost)
+	b.add_theme_constant_override("h_separation", 6)
+	b.set_meta("slim", true)
+	for state: String in ["normal", "hover", "pressed", "disabled", "hover_pressed"]:
+		var sb := b.get_theme_stylebox(state)
+		if sb is StyleBoxFlat:
+			b.add_theme_stylebox_override(state, _slim(sb.duplicate() as StyleBoxFlat))
+	var tool := ("mount:" if base.hull_mount else "part:") + pt.id
+	b.name = ("Mount_" if base.hull_mount else "Part_") + base.id
+	b.pressed.connect(plan.set_tool.bind(tool))
+	_tool_buttons[tool] = b
+	return b
+
+
+## A row's plate made slim: little above and below, room on the right for the cost.
+static func _slim(sb: StyleBoxFlat) -> StyleBoxFlat:
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	sb.content_margin_left = 6
+	sb.content_margin_right = 66
+	return sb
+
+
+## A cost in few characters: 950, 12.4k, 3.1M.
+static func short_money(v: float) -> String:
+	if v >= 1000000.0:
+		return "%.1fM" % (v / 1000000.0)
+	if v >= 10000.0:
+		return "%.0fk" % (v / 1000.0)
+	if v >= 1000.0:
+		return "%.1fk" % (v / 1000.0)
+	return "%d" % int(v)
 
 
 ## The type id a palette button places for `base`: the picked size (kept inside the type's own
@@ -517,8 +805,8 @@ static func part_card(pt: DesignPartType) -> String:
 	return "\n".join(rows)
 
 
-func _swatch_button(text: String, col: Color) -> Button:
-	var b := T.button(text, false, 15)
+func _swatch_button(text: String, col: Color, size := 15) -> Button:
+	var b := T.button(text, false, size)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_constant_override("icon_max_width", 14)
 	var img := Image.create(14, 14, false, Image.FORMAT_RGBA8)
@@ -532,6 +820,8 @@ func _mark_tools() -> void:
 		var b: Button = _tool_buttons[id]
 		var on := id == plan.tool
 		var st := T.box(T.PLATE_HI if on else T.PLATE, T.ORANGE if on else T.EDGE, 2, 8.0)
+		if b.has_meta("slim"):
+			st = _slim(st)
 		b.add_theme_stylebox_override("normal", st)
 	for k: String in _door_buttons:
 		var on := plan.tool == "door" and plan.door_kind == k
@@ -684,6 +974,9 @@ func _refresh_bar() -> void:
 	_on_selection(plan.selected_kind if plan else "", plan.selected_id if plan else "")
 	if rec and str(rec.order.get("id", "")) != _shown_order:
 		_fill_palette()
+	var quote := find_child("QuoteLine", true, false) as Label
+	if quote and rec and not rec.order.is_empty():
+		_show_quote(quote, ShipOrders.quote(rec.order, bus.totals().cost))
 
 
 # The selection panel: name, size and remove for the room or component picked on the plan.
@@ -913,6 +1206,84 @@ func _on_save_as() -> void:
 	var rec := bus.library.current
 	if rec:
 		bus.library.save_as(rec.name + " Mk2")
+
+
+## The contract fit assessment over the whole console (FULL ASSESSMENT on the data channel).
+var _assessment_panel: Control
+
+
+func toggle_assessment() -> void:
+	if _assessment_panel and is_instance_valid(_assessment_panel):
+		_assessment_panel.queue_free()
+		_assessment_panel = null
+		return
+	var p := PanelContainer.new()
+	p.name = "Assessment"
+	p.add_theme_stylebox_override("panel", T.box(Color(T.KIOSK, 0.98), T.CYAN, 2, 12.0))
+	p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	p.offset_left = 24
+	p.offset_top = 24
+	p.offset_right = -24
+	p.offset_bottom = -24
+	var col := VBoxContainer.new()
+	p.add_child(col)
+	var head := HBoxContainer.new()
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(spacer)
+	var close := T.button("CLOSE", false, 16)
+	close.name = "BtnCloseAssessment"
+	close.pressed.connect(toggle_assessment)
+	head.add_child(close)
+	col.add_child(head)
+	var fit := ContractFit.new()
+	fit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(fit)
+	fit.setup(bus, 17)
+	add_child(p)
+	_assessment_panel = p
+
+
+## The contract details page over the whole console (CONTRACT DETAILS under the ship order).
+var _terms_panel: Control
+
+
+func toggle_contract_terms() -> void:
+	if _terms_panel and is_instance_valid(_terms_panel):
+		_terms_panel.queue_free()
+		_terms_panel = null
+		return
+	var rec := bus.library.current
+	var contracts := Modules.bus("contracts") as ContractsBus
+	if rec == null or rec.order.is_empty() or contracts == null:
+		return
+	var p := PanelContainer.new()
+	p.name = "ContractTermsPanel"
+	p.add_theme_stylebox_override("panel", T.box(Color(T.KIOSK, 0.98), T.ORANGE, 2, 12.0))
+	p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	p.offset_left = 24
+	p.offset_top = 24
+	p.offset_right = -24
+	p.offset_bottom = -24
+	var col := VBoxContainer.new()
+	p.add_child(col)
+	var head := HBoxContainer.new()
+	head.add_child(T.label("CONTRACT DETAILS", "display_bold", 20, T.ORANGE))
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(spacer)
+	var close := T.button("CLOSE", false, 16)
+	close.name = "BtnCloseTerms"
+	close.pressed.connect(toggle_contract_terms)
+	head.add_child(close)
+	col.add_child(head)
+	var c := contracts.ship_contract_for(str(rec.order.get("id", "")))
+	var terms := ContractTerms.new()
+	terms.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(terms)
+	terms.setup(c.order if not c.is_empty() else rec.order, c, int(bus.totals().cost), contracts.today(), 17)
+	add_child(p)
+	_terms_panel = p
 
 
 func _toggle_library() -> void:
