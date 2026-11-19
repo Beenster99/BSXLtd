@@ -1,0 +1,75 @@
+{
+ "power_kw": 20.0,
+ "load_kg": 8000.0,
+ "pieces": [
+  {
+   "name": "turret",
+   "parent": "base",
+   "kind": "spin",
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 270.0,
+   "seconds": 40.0,
+   "order": 1,
+   "pivot": [
+    0.0,
+    0.2217,
+    2.2027
+   ],
+   "unit": "deg",
+   "min": 0.0,
+   "max": 270.0,
+   "rest": 0.0
+  },
+  {
+   "name": "boom",
+   "parent": "turret",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 35.0,
+   "seconds": 20.0,
+   "order": 2,
+   "pivot": [
+    0.0,
+    0.6843,
+    1.5459
+   ],
+   "unit": "deg",
+   "min": 0.0,
+   "max": 35.0,
+   "rest": 0.0
+  },
+  {
+   "name": "hook",
+   "parent": "boom",
+   "kind": "slide",
+   "axis": [
+    0,
+    -1,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.5783,
+   "seconds": 15.0,
+   "order": 3,
+   "pivot": [
+    0.0,
+    0.7807,
+    -2.8769
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 0.5783,
+   "rest": 0.0
+  }
+ ]
+}

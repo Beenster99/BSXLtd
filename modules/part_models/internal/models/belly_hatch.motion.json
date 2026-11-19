@@ -1,0 +1,33 @@
+{
+ "power_kw": 15.0,
+ "load_kg": 8000.0,
+ "opening": [
+  3.16,
+  3.16
+ ],
+ "pieces": [
+  {
+   "name": "hatch",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": -95.0,
+   "seconds": 15.0,
+   "order": 1,
+   "pivot": [
+    0.0,
+    0.1115,
+    1.74
+   ],
+   "unit": "deg",
+   "min": -95.0,
+   "max": 0.0,
+   "rest": 0.0
+  }
+ ]
+}

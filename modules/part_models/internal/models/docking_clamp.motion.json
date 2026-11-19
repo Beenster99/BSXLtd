@@ -1,0 +1,52 @@
+{
+ "power_kw": 6.0,
+ "load_kg": 60000.0,
+ "pieces": [
+  {
+   "name": "jaw_l",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "stowed": 60.0,
+   "deployed": 0.0,
+   "seconds": 6.0,
+   "order": 1,
+   "pivot": [
+    -0.36,
+    0.2004,
+    0.0
+   ],
+   "unit": "deg",
+   "min": 0.0,
+   "max": 60.0,
+   "rest": 0.0
+  },
+  {
+   "name": "jaw_r",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "stowed": -60.0,
+   "deployed": 0.0,
+   "seconds": 6.0,
+   "order": 1,
+   "pivot": [
+    0.36,
+    0.2004,
+    0.0
+   ],
+   "unit": "deg",
+   "min": -60.0,
+   "max": 0.0,
+   "rest": 0.0
+  }
+ ]
+}

@@ -1,0 +1,56 @@
+{
+ "power_kw": 22.0,
+ "load_kg": 12000.0,
+ "opening": [
+  3.8,
+  3.196
+ ],
+ "pieces": [
+  {
+   "name": "ramp",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": -105.0,
+   "seconds": 20.0,
+   "order": 1,
+   "pivot": [
+    0.0,
+    0.0731,
+    0.0036
+   ],
+   "unit": "deg",
+   "min": -105.0,
+   "max": 0.0,
+   "rest": 0.0
+  },
+  {
+   "name": "toe",
+   "parent": "ramp",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": -20.0,
+   "seconds": 3.0,
+   "order": 2,
+   "pivot": [
+    0.0,
+    3.0603,
+    0.0036
+   ],
+   "unit": "deg",
+   "min": -20.0,
+   "max": 0.0,
+   "rest": 0.0
+  }
+ ]
+}

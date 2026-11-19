@@ -1,0 +1,79 @@
+{
+ "power_kw": 12.0,
+ "load_kg": 2000.0,
+ "opening": [
+  1.4,
+  2.2
+ ],
+ "pieces": [
+  {
+   "name": "tube_1",
+   "parent": "base",
+   "kind": "slide",
+   "axis": [
+    0,
+    0,
+    -1
+   ],
+   "stowed": 0.0,
+   "deployed": 1.3069,
+   "seconds": 10.0,
+   "order": 1,
+   "pivot": [
+    0.0,
+    0.0,
+    0.8824
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 1.3069,
+   "rest": 0.0
+  },
+  {
+   "name": "tube_2",
+   "parent": "tube_1",
+   "kind": "slide",
+   "axis": [
+    0,
+    0,
+    -1
+   ],
+   "stowed": 0.0,
+   "deployed": 1.3069,
+   "seconds": 10.0,
+   "order": 2,
+   "pivot": [
+    0.0,
+    0.0,
+    0.8824
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 1.3069,
+   "rest": 0.0
+  },
+  {
+   "name": "tube_3",
+   "parent": "tube_2",
+   "kind": "slide",
+   "axis": [
+    0,
+    0,
+    -1
+   ],
+   "stowed": 0.0,
+   "deployed": 1.3069,
+   "seconds": 10.0,
+   "order": 3,
+   "pivot": [
+    0.0,
+    0.0,
+    0.8824
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 1.3069,
+   "rest": 0.0
+  }
+ ]
+}

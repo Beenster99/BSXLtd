@@ -99,7 +99,7 @@ def pad(p, cx, cz, pw, pd, R, lit=False):
         p.lamp(0.02 * R, (cx, t * 0.7, cz - pd * 0.48), "-z", "lamp_amber")
 
 
-def single_gear(p, s, R, twin=False, light=False):
+def single_gear(p, s, R, twin=False, light=False, wheels=False):
     """A landing leg hanging from a hull bracket: mounting plate, trunnion cheeks and a rotary
     retract actuator (fixed); the strut that folds back on its trunnion; the oleo that slides up
     into it with a torque link; and the articulated foot pad."""
@@ -109,9 +109,12 @@ def single_gear(p, s, R, twin=False, light=False):
     r_out = (0.085 if twin else 0.11) * R
     r_in = r_out * 0.68
     gland = h * 0.42
-    ya = 0.2 * R
+    ya = (0.42 if wheels else 0.2) * R
     # Fixed: the plate in the hull, its bolts, cheeks, the retract actuator, hoses, a lamp.
-    p.box((w * 0.92, 0.07 * R, d * 0.62), (0, h - 0.035 * R, 0), "gunmetal", 0.01)
+    p.box((w * 0.92, 0.07 * R, d * (0.92 if wheels else 0.62)), (0, h - 0.035 * R, 0), "gunmetal", 0.01)
+    if wheels:
+        for sz in (-1, 1):
+            p.box((w * 0.2, 0.14 * R, 0.1 * R), (0, h - 0.14 * R, sz * d * 0.4), "gunmetal", 0.008)
     for sz in (-1, 1):
         bolt_row(p, (-w * 0.4, h - 0.075 * R, sz * d * 0.28), (w * 0.4, h - 0.075 * R, sz * d * 0.28), 6, 0.016 * R)
     trunnion_cheeks(p, w, top, h, d, R)
@@ -168,6 +171,24 @@ def single_gear(p, s, R, twin=False, light=False):
             t0, t1 = a0 * turns * 2 * math.pi, a1 * turns * 2 * math.pi
             p.rod((math.cos(t0) * rr, y_lo + (y_hi - y_lo) * a0, math.sin(t0) * rr),
                   (math.cos(t1) * rr, y_lo + (y_hi - y_lo) * a1, math.sin(t1) * rr), 0.012 * R, "hazard", 6)
+    if wheels:
+        # Twin wheels on a stub axle through the fork: hubs, tyres with tread, brake discs.
+        tr = ya * 0.95
+        p.moving("axle", (0, ya, 0.0), parent="oleo", kind="hinge", axis=(1, 0, 0), stowed=0.0, deployed=0.0,
+                 seconds=0.5, order=2, swing=0.0, contact={"at": (0, -tr, 0), "radius": round(tr, 3)})
+        p.cyl(0.05 * R, w * 0.92, (0, ya, 0), "x", "steel", 14)
+        for sx in (-1, 1):
+            x = sx * w * 0.3
+            p.cyl(tr, w * 0.26, (x, ya, 0), "x", "rubber", 32)
+            for i in range(16):
+                t = i * math.pi / 8
+                p.box((w * 0.27, 0.02 * R, 0.05 * R), (x, ya + math.sin(t) * tr, math.cos(t) * tr), "rubber", 0.0, rot_x=-t)
+            p.cyl(tr * 0.6, w * 0.27, (x, ya, 0), "x", GEAR, 24)
+            p.cyl(tr * 0.25, w * 0.28, (x, ya, 0), "x", "chrome", 16)
+            p.bolts((x + sx * w * 0.14, ya, 0), tr * 0.4, 8, "x", 0.012 * R)
+            p.cyl(tr * 0.5, 0.02 * R, (x - sx * w * 0.15, ya, 0), "x", "dark", 24)
+        p.fixed()
+        return
     # The foot.
     p.moving("foot", (0, ya, 0.0), parent="oleo", kind="hinge", axis=(1, 0, 0), stowed=0.0, deployed=0.0,
              seconds=0.5, order=2, swing=12.0, contact={"at": (0, 0, 0), "radius": round(min(w, d) * 0.45, 3)})

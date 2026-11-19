@@ -1,0 +1,29 @@
+{
+ "power_kw": 1.5,
+ "load_kg": 800.0,
+ "pieces": [
+  {
+   "name": "pinion",
+   "parent": "base",
+   "kind": "spin",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 360.0,
+   "seconds": 1.0,
+   "order": 1,
+   "pivot": [
+    0.168,
+    0.1215,
+    0.0
+   ],
+   "unit": "deg",
+   "min": 0.0,
+   "max": 360.0,
+   "rest": 0.0
+  }
+ ]
+}
