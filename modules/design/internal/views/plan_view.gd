@@ -84,6 +84,7 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	editable = can_edit
 	bus.design_changed.connect(_on_changed)
 	bus.carry_changed.connect(func(_id: String) -> void: queue_redraw())
+	bus.mirror_changed.connect(func(_a: int) -> void: queue_redraw())
 	if bus.crew:
 		bus.crew.call("attach_view", self)
 	_on_changed()
@@ -246,11 +247,27 @@ func _draw() -> void:
 		return
 	if mode == PLAN:
 		_draw_plan(rec)
+		_draw_mirror_line()
 	else:
 		_draw_elevation(rec)
 	_draw_drag_ghost(rec)
 	if show_title:
 		_draw_title(rec)
+
+
+## Symmetry mode's mirror line, across the whole view.
+func _draw_mirror_line() -> void:
+	if bus.mirror == DesignMirror.OFF:
+		return
+	var c := Color(0.95, 0.4, 0.85, 0.8)
+	if bus.mirror == DesignMirror.ACROSS:
+		var x := to_screen(Vector2.ZERO).x
+		draw_dashed_line(Vector2(x, 0), Vector2(x, size.y), c, 2.0, 12.0)
+		_text(Vector2(x + 6, 18), "MIRROR", c, 12)
+	else:
+		var y := to_screen(Vector2.ZERO).y
+		draw_dashed_line(Vector2(0, y), Vector2(size.x, y), c, 2.0, 12.0)
+		_text(Vector2(8, y - 6), "MIRROR", c, 12)
 
 
 func _draw_grid() -> void:
@@ -383,19 +400,31 @@ func _mount_spot(p: Vector2) -> Dictionary:
 
 ## Beams placed by hand: a dashed orange line, the selected one solid.
 func _draw_beams(rec: DesignRecord) -> void:
-	for b: Dictionary in rec.beams.values():
-		if int(b.deck) != deck:
-			continue
-		var a := to_screen(DesignStructure._v(b.a))
-		var e := to_screen(DesignStructure._v(b.b))
-		var sel: bool = selected_kind == "beam" and selected_id == b.id
-		if sel:
-			draw_line(a, e, SELECT, 4.0)
-		else:
-			draw_dashed_line(a, e, Color(1.0, 0.7, 0.35, 0.9), clampf(zoom * 0.1, 2.0, 5.0), 8.0)
-	for w: Dictionary in rec.walls.values():
-		if int(w.deck) == deck and selected_kind == "wall" and selected_id == w.id:
-			draw_line(to_screen(DesignStructure._v(w.a)), to_screen(DesignStructure._v(w.b)), SELECT, 4.0)
+	for kind: String in ["beam", "wall"]:
+		for b: Dictionary in (rec.beams if kind == "beam" else rec.walls).values():
+			if int(b.deck) != deck:
+				continue
+			var ends := _line_ends(kind, b)
+			var a := to_screen(ends[0])
+			var e := to_screen(ends[1])
+			var sel: bool = selected_kind == kind and selected_id == b.id
+			var dragged: bool = _drag.get("kind", "") == "line_end" and str(_drag.id) == str(b.id)
+			if sel or dragged:
+				draw_line(a, e, SELECT, 4.0)
+			elif kind == "beam":
+				draw_dashed_line(a, e, Color(1.0, 0.7, 0.35, 0.9), clampf(zoom * 0.1, 2.0, 5.0), 8.0)
+			# Its ends are nodes to grab.
+			if editable:
+				for at in [a, e]:
+					draw_rect(Rect2(at - Vector2(3.5, 3.5), Vector2(7, 7)), SELECT if sel or dragged else INK, not (sel or dragged), 1.2)
+
+
+## A beam's or wall's two ends, an end being dragged where it is going.
+func _line_ends(kind: String, b: Dictionary) -> Array[Vector2]:
+	var out: Array[Vector2] = [DesignStructure._v(b.a), DesignStructure._v(b.b)]
+	if _drag.get("kind", "") == "line_end" and str(_drag.what) == kind and str(_drag.id) == str(b.id) and _drag.has("pos"):
+		out[0 if str(_drag.end) == "a" else 1] = _drag.pos
+	return out
 
 
 func _draw_run(w: Dictionary) -> void:
@@ -763,8 +792,7 @@ func _finish_run() -> void:
 		var pts: Array = []
 		for p in _run_pts:
 			pts.append([p.x, p.y])
-		bus.editor.do({"op": "add_run", "run": {"kind": tool.trim_prefix("run:"), "deck": deck, "points": pts}})
-		select("run", _newest(_rec().runs))
+		select("run", _add({"op": "add_run", "run": {"kind": tool.trim_prefix("run:"), "deck": deck, "points": pts}}, _rec().runs))
 	_run_pts = []
 	queue_redraw()
 
@@ -849,6 +877,9 @@ func _gui_input(event: InputEvent) -> void:
 		var k := event as InputEventKey
 		if k.keycode == KEY_R:
 			rotate_selected()
+			accept_event()
+		elif k.keycode == KEY_M:
+			bus.cycle_mirror()
 			accept_event()
 		elif k.keycode in [KEY_DELETE, KEY_BACKSPACE]:
 			delete_selected()
@@ -973,9 +1004,21 @@ func pick(s: Vector2) -> Dictionary:
 		for e: Dictionary in (rec.beams if kind == "beam" else rec.walls).values():
 			if int(e.deck) != deck:
 				continue
+			# Its ends are nodes: grab one to move it (beenster, 19 Nov).
+			if editable:
+				for end: String in ["a", "b"]:
+					if to_screen(DesignStructure._v(e[end])).distance_to(s) < 8.0:
+						return {"kind": kind, "id": e.id, "end": end}
 			var q := Geometry2D.get_closest_point_to_segment(p, DesignStructure._v(e.a), DesignStructure._v(e.b))
 			if to_screen(q).distance_to(s) < 6.0:
 				return {"kind": kind, "id": e.id}
+	if editable:
+		# A hull side: grabbing it puts a new corner there to drag.
+		var outline := rec.hull_outline(deck)
+		for i in outline.size():
+			var q := Geometry2D.get_closest_point_to_segment(p, outline[i], outline[(i + 1) % outline.size()])
+			if to_screen(q).distance_to(s) < 6.0:
+				return {"kind": "hull_edge", "id": str(i), "at": q}
 	var list := rec.rooms_on(deck)
 	list.reverse()
 	for r in list:
@@ -1060,8 +1103,7 @@ func _press(s: Vector2) -> void:
 		if not spot.is_empty():
 			spot["type"] = tool.trim_prefix("mount:")
 			spot["deck"] = deck
-			bus.editor.do({"op": "add_mount", "mount": spot})
-			select("mount", _newest(rec.mounts))
+			select("mount", _add({"op": "add_mount", "mount": spot}, rec.mounts))
 	else:
 		var hit := pick(s)
 		select(hit.get("kind", ""), hit.get("id", ""))
@@ -1073,6 +1115,19 @@ func _press(s: Vector2) -> void:
 			_drag = {"kind": "part", "id": hit.id, "start": p, "orig": Vector2(c.x, c.z)}
 		elif hit.get("kind", "") == "hull":
 			_drag = {"kind": "hull_pt", "index": int(hit.id), "orig": rec.hull_outline(deck)[int(hit.id)]}
+		elif hit.get("kind", "") == "hull_edge":
+			# A new corner on that side, where it was grabbed, dragged from there.
+			var at := _snap(hit.at, _grid() * 0.5)
+			var pts: Array = rec.hull.get(str(deck), []).duplicate(true)
+			var i := int(hit.id) + 1
+			pts.insert(i, [at.x, at.y])
+			bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
+			select("hull", str(i))
+			_drag = {"kind": "hull_pt", "index": i, "orig": at}
+		elif hit.get("kind", "") in ["beam", "wall"] and hit.has("end"):
+			var table := rec.beams if hit.kind == "beam" else rec.walls
+			_drag = {"kind": "line_end", "what": hit.kind, "id": hit.id, "end": hit.end,
+					"orig": DesignStructure._v(table[hit.id][hit.end])}
 
 
 func _drag_move(s: Vector2) -> void:
@@ -1113,7 +1168,7 @@ func _drag_move(s: Vector2) -> void:
 			_drag.rect = r
 		"part":
 			_drag.pos = _snap(_drag.orig + (p - _drag.start), rec.grid * 0.5)
-		"hull_pt":
+		"hull_pt", "line_end":
 			_drag.pos = _snap(p, _grid() * 0.5)
 		"line":
 			_drag.b = _snap(p, _grid() * 0.5)
@@ -1139,9 +1194,8 @@ func _release(_s: Vector2) -> void:
 				# A click: the room at its usual size, centred on the click.
 				var sz := rt.default_size if rt else Vector2(4, 4)
 				rect = Rect2(_snap(d.start - sz * 0.5, rec.grid), sz)
-			bus.editor.do({"op": "add_room", "room": {"type": type_id, "deck": deck,
-					"x": rect.position.x, "z": rect.position.y, "w": rect.size.x, "d": rect.size.y}})
-			var newest := _newest(rec.rooms)
+			var newest := _add({"op": "add_room", "room": {"type": type_id, "deck": deck,
+					"x": rect.position.x, "z": rect.position.y, "w": rect.size.x, "d": rect.size.y}}, rec.rooms)
 			set_tool("select")
 			select("room", newest)
 		"room":
@@ -1160,12 +1214,15 @@ func _release(_s: Vector2) -> void:
 				var pts: Array = rec.hull.get(str(deck), []).duplicate(true)
 				pts[int(d.index)] = [d.pos.x, d.pos.y]
 				bus.editor.do({"op": "set_hull", "deck": deck, "points": pts})
+		"line_end":
+			if d.has("pos") and d.pos != d.orig:
+				bus.editor.do({"op": "set_" + str(d.what), "id": d.id, "fields": {str(d.end): [d.pos.x, d.pos.y]}})
 		"line":
 			var a: Vector2 = d.a
 			var b: Vector2 = d.b
 			if a.distance_to(b) >= 0.1:
-				bus.editor.do({"op": "add_" + tool, tool: {"deck": deck, "a": [a.x, a.y], "b": [b.x, b.y]}})
-				select(tool, _newest(rec.walls if tool == "wall" else rec.beams))
+				select(tool, _add({"op": "add_" + tool, tool: {"deck": deck, "a": [a.x, a.y], "b": [b.x, b.y]}},
+						rec.walls if tool == "wall" else rec.beams))
 	queue_redraw()
 
 
@@ -1280,8 +1337,7 @@ func _release_elevation(rec: DesignRecord, d: Dictionary) -> void:
 				room.merge({"z": u0, "d": len, "w": sz.x, "x": snappedf(mid.x - sz.x * 0.5, rec.grid)})
 			else:
 				room.merge({"x": u0, "w": len, "d": sz.y, "z": snappedf(mid.y - sz.y * 0.5, rec.grid)})
-			bus.editor.do({"op": "add_room", "room": room})
-			var newest := _newest(rec.rooms)
+			var newest := _add({"op": "add_room", "room": room}, rec.rooms)
 			set_tool("select")
 			select("room", newest)
 			deck = int(d.deck)
@@ -1348,9 +1404,8 @@ func _place_part(p: Vector2) -> void:
 	var room_id := rec.room_at(deck, at)
 	if room_id == "":
 		return
-	bus.editor.do({"op": "add_component", "component": {"type": tool.trim_prefix("part:"),
-			"room": room_id, "x": at.x, "z": at.y, "rot": place_rot}})
-	select("part", _newest(rec.components))
+	select("part", _add({"op": "add_component", "component": {"type": tool.trim_prefix("part:"),
+			"room": room_id, "x": at.x, "z": at.y, "rot": place_rot}}, rec.components))
 
 
 ## A door on the wall nearest the click: between the two rooms that share it there, or out
@@ -1396,8 +1451,24 @@ func _place_door(p: Vector2) -> void:
 			door.z = clampf(at.y, minf(wall[0].y, wall[1].y) + half, maxf(wall[0].y, wall[1].y) - half)
 		else:
 			door.x = clampf(at.x, minf(wall[0].x, wall[1].x) + half, maxf(wall[0].x, wall[1].x) - half)
-	bus.editor.do({"op": "add_door", "door": door})
-	select("door", _newest(rec.doors))
+	select("door", _add({"op": "add_door", "door": door}, rec.doors))
+
+
+## Does an add op, and with symmetry on (bus.mirror) its mirrored twin in the same undo step.
+## Returns the id the original got.
+func _add(op: Dictionary, table: Dictionary) -> String:
+	var before := table.duplicate()
+	bus.editor.do(DesignMirror.with_twin(_rec(), op, bus.mirror))
+	var best := ""
+	var best_n := 1 << 30
+	for id: String in table:
+		if before.has(id):
+			continue
+		var n := int(id.substr(1)) if id.substr(1).is_valid_int() else 0
+		if n < best_n:
+			best_n = n
+			best = id
+	return best
 
 
 func _newest(table: Dictionary) -> String:

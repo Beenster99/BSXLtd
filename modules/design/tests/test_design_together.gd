@@ -95,6 +95,16 @@ func run_tests() -> void:
 	check(a.rooms.size() == 2 and _same(a, b), "both edits land on both machines, the same: %d rooms" % a.rooms.size())
 	check(a.rooms.keys() == b.rooms.keys(), "the same ids everywhere: %s %s" % [a.rooms.keys(), b.rooms.keys()])
 
+	# Saved modules and designs are shared (beenster, 19 Nov: the other player could not see one).
+	var bridge_id: String = a.rooms.keys()[0]
+	var mid: String = ana.bus.library.save_module("Ana's bridge", bridge_id)
+	hub.pump()
+	check(ben.bus.library.modules().any(func(m): return m.name == "Ana's bridge"), "a module Ana saves shows in Ben's list")
+	check(ana.bus.library.modules().size() == 1, "and Ana keeps one copy, not an echo: %s" % [ana.bus.library.module(mid)])
+	ana.bus.library.save_current()
+	hub.pump()
+	check(ben.bus.library.list().any(func(r): return r.name == "Shared skiff"), "a design Ana saves shows in Ben's designs")
+
 	# Each undoes only their own.
 	ben.bus.editor.undo()
 	hub.pump()

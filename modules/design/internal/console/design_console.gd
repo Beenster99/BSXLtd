@@ -156,6 +156,13 @@ func _top_bar() -> Control:
 		b.pressed.connect(_set_view.bind(v))
 		_view_buttons[v] = b
 		h.add_child(b)
+	# Symmetry mode: what is drawn on one side is drawn on the other (M on the plan too).
+	var mirror := T.button("MIRROR OFF", false, 17)
+	mirror.name = "BtnMirror"
+	mirror.tooltip_text = "Symmetry: draw on one side and it is drawn on the other. X mirrors port and starboard, Y fore and aft."
+	mirror.pressed.connect(bus.cycle_mirror)
+	bus.mirror_changed.connect(func(a: int) -> void: mirror.text = "MIRROR " + DesignMirror.NAMES[a])
+	h.add_child(mirror)
 	h.add_child(_gap(16))
 	var down := T.button("DECK -", false, 17)
 	down.pressed.connect(func() -> void: _change_deck(-1))
@@ -229,7 +236,7 @@ func _fill_palette() -> void:
 		_door_buttons[k] = b
 		kinds.add_child(b)
 	_palette.add_child(kinds)
-	_palette.add_child(T.label("HULL SHAPE  (click its corners, drag them to reshape)", "display_medium", 15, T.DIM))
+	_palette.add_child(T.label("HULL SHAPE  (drag a corner, or a side for a new corner)", "display_medium", 15, T.DIM))
 	var shape := HBoxContainer.new()
 	for spec in [["hull", "DRAW HULL", func() -> void: plan.set_tool("hull")],
 			["hull_rooms", "ROUND THE ROOMS", hull_round_rooms],
@@ -242,7 +249,7 @@ func _fill_palette() -> void:
 			_tool_buttons["hull"] = b
 		shape.add_child(b)
 	_palette.add_child(shape)
-	_palette.add_child(T.label("STRUCTURE  (drag from one end to the other)", "display_medium", 15, T.DIM))
+	_palette.add_child(T.label("STRUCTURE  (drag end to end; drag an end to move it)", "display_medium", 15, T.DIM))
 	var frame := HBoxContainer.new()
 	for spec in [["wall", "INNER WALL"], ["beam", "BEAM"]]:
 		var b := T.button(spec[1], false, 15)
@@ -666,6 +673,11 @@ func _on_selection(kind: String, id: String) -> void:
 					pt.power, pt.lead_days], "mono_medium", 15, T.DIM))
 			_grade_rows(str(c.type), func(t: String) -> void:
 				bus.editor.do({"op": "set_component", "id": id, "fields": {"type": t}}))
+		# Where it stands (beenster, 19 Nov: select a component and edit it to move it); it can
+		# also be dragged on the plan.
+		for axis: String in ["x", "z"]:
+			_selection.add_child(_size_row("across" if axis == "x" else "along", float(c[axis]),
+					func(v: float) -> void: _move_part(id, axis, v), -200.0, 0.1))
 		var turn := T.button("TURN (R)", false, 15)
 		turn.pressed.connect(plan.rotate_selected)
 		_selection.add_child(turn)
@@ -758,21 +770,37 @@ func _grade_rows(type_id: String, on_type: Callable) -> void:
 				"body", 13, T.DIM))
 
 
-func _size_row(what: String, value: float, on_set: Callable) -> Control:
+func _size_row(what: String, value: float, on_set: Callable, lowest := 0.5, step := 0.0) -> Control:
 	var h := HBoxContainer.new()
 	var l := T.label(what.to_upper(), "display_medium", 15, T.DIM)
 	l.custom_minimum_size.x = 70
 	h.add_child(l)
 	var spin := SpinBox.new()
-	spin.min_value = 0.5
+	spin.min_value = lowest
 	spin.max_value = 200.0
-	spin.step = bus.library.current.grid
+	spin.step = step if step > 0.0 else bus.library.current.grid
 	spin.value = value
 	spin.suffix = "m"
 	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spin.value_changed.connect(on_set)
 	h.add_child(spin)
 	return h
+
+
+## A part moved to `v` m along one axis from the selection panel; it changes room if it
+## lands in another one on its deck.
+func _move_part(id: String, axis: String, v: float) -> void:
+	var rec := bus.library.current
+	var c: Dictionary = rec.components.get(id, {}) if rec else {}
+	if c.is_empty() or is_equal_approx(float(c[axis]), v):
+		return
+	var fields := {axis: v}
+	var at := Vector2(v if axis == "x" else float(c.x), v if axis == "z" else float(c.z))
+	var deck := int(rec.rooms.get(str(c.room), {}).get("deck", plan.deck))
+	var room := rec.room_at(deck, at)
+	if room != "" and room != str(c.room):
+		fields["room"] = room
+	bus.editor.do({"op": "set_component", "id": id, "fields": fields})
 
 
 func _remove_button() -> Button:
