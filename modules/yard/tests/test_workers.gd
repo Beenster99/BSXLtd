@@ -125,6 +125,17 @@ func _crew() -> void:
 	check(is_equal_approx(float(c.productivity), 1.0) and (c.errors as Array).is_empty(), "serviced: as new, back to work")
 	if bus:
 		bus.disconnect("workers_need_service", listener)
+	# A finished keel: after a pause it makes way for a new one, and the crew starts again.
+	if crew.ring_node:
+		crew.ring_node.queue_free()
+		crew.ring_node = null
+	crew.members.clear()
+	crew._fitout = {}
+	while crew.rings_built() < Workers.RINGS:
+		crew._whole_ring()
+	for i in int(crew.keel_pause / 0.5) + 2:
+		crew.step(0.5)
+	check(crew.rings_built() == crew.start_rings and crew.ring_node != null, "a finished keel makes way for a new one (%d rings)" % crew.rings_built())
 	crew.queue_free()
 	traffic.queue_free()
 	await frames(1)

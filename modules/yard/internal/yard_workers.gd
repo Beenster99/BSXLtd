@@ -60,6 +60,11 @@ const FITOUT_EVERY := 2
 @export var spare_after := 120.0
 ## Rings standing when the yard opens.
 @export var start_rings := 3
+## Once the keel has all its rings, the crew waits this long (s), then the finished keel makes
+## way for a new one and they start again (0.4.2 playtest: after the last ring they stood idle
+## for good).
+@export var new_keel := true
+@export var keel_pause := 30.0
 ## Wear (0 new, 1 worn out) a job puts on a bot, on average; past `slow_from` it slows (down to
 ## `worn_pace` of its speed when worn out), past `faults_from` it may fault at the end of a job.
 @export var wear_per_job := 0.045
@@ -102,6 +107,7 @@ var _fitout: Dictionary = {}
 var fitted_out: Array[int] = []
 var _asked := false
 var _bolt_mesh: CylinderMesh
+var _keel_done := 0.0
 
 
 func build(stores_traffic: Node) -> void:
@@ -289,6 +295,10 @@ func step(delta: float) -> void:
 			_start_fitout()
 		elif rings.size() < RINGS:
 			_start_ring()
+		elif new_keel:
+			_keel_done += delta
+			if _keel_done >= keel_pause:
+				_new_keel()
 	if not _fitout.is_empty():
 		_step_fitout(delta)
 	else:
@@ -369,6 +379,19 @@ func _whole_ring() -> void:
 			mi.transform = m.t
 			ring.add_child(mi)
 	rings.append(ring)
+
+
+## The finished keel goes (off to Wave 5's real building, one day) and a new one stands at the
+## start with its first rings.
+func _new_keel() -> void:
+	_keel_done = 0.0
+	for r: Node3D in rings:
+		remove_child(r)
+		r.queue_free()
+	rings.clear()
+	fitted_out.clear()
+	for i in start_rings:
+		_whole_ring()
 
 
 func _start_ring() -> void:
