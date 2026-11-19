@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SupplyVendor" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/supply/api/supply_vendor.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "tarrow"
+display_name = "Tarrow Structural"
+tagline = "Girders, plate, fasteners and hold gear by the tonne"
+colour = Color(0.910, 0.761, 0.353, 1)
+categories = PackedStringArray("hull", "structure", "cargo", "fluids", "machinery", "services", "doors")
+grades = PackedStringArray("R", "S", "H")
+price_factor = 0.92
+spread = 0.05
+volatility = 0.06
+reliability = 0.88
+lead_days = 0
+stock = 40
+restock_days = 2
+volume_percent = {
+25: 4,
+100: 8,
+400: 12
+}
+deals_per_week = 2
+deal_percent = Vector2i(6, 16)
+standing_start = 25

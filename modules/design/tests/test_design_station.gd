@@ -56,6 +56,10 @@ func run_tests() -> void:
 	check(str(board.get("panels")[0].view) == "modules", "after the parts channel comes the modules list")
 	board.call("step", 0, 1)
 	check(str(board.get("panels")[0].view) == "whiteboard", "then the whiteboard")
+	# Panels other modules offer (the parts market) come after the room's own.
+	for id: String in bus.wall_views:
+		board.call("step", 0, 1)
+		check(str(board.get("panels")[0].view) == id, "then the %s panel" % id)
 	board.call("step", 0, 1)
 	check(str(board.get("panels")[0].view) == "plan:0", "stepping on from the last view comes round to deck 1")
 	# Pick a module up on one wall panel, drop it on a wall plan.

@@ -93,7 +93,7 @@ func _fill_entries() -> void:
 			head.add_theme_color_override("font_color", Color(BsxTheme.ACCENT, 0.85))
 			entry_box.add_child(head)
 		var args: Dictionary = e.get("args", {})
-		var b := BsxTheme.button(e.label, func(): Router.goto(e.scene, args))
+		var b := BsxTheme.button(e.label, func(): Router.goto_loading(e.scene, args))
 		b.name = e.id
 		b.disabled = not Router.has_scene(e.scene)
 		entry_box.add_child(b)
@@ -102,7 +102,7 @@ func _fill_entries() -> void:
 func _continue(slot: String) -> void:
 	var start := Menu.start()
 	if Saves.continue_game(slot) == OK:
-		Router.goto(start.scene, start.args)
+		Router.goto_loading(start.scene, start.args)
 
 
 ## The games panel over the menu: New Game puts the cursor in the name, Load Game is the same
