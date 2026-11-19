@@ -39,6 +39,7 @@ var last_run_msec := 0
 var last_run_cost_msec := 0.0
 
 var _design: DesignBus
+var _business: Node
 var _opt: SupplyOptimiser
 var _opt_key := ""
 
@@ -78,9 +79,14 @@ func _hook_up() -> void:
 				func(_glass: bool) -> Control: return make_screen(150.0), 20)
 	_design.design_changed.connect(_on_design_changed)
 	# The business day, where the business module runs one (reached by name: it is optional).
-	var business := Modules.bus("business")
-	if business and business.has_signal("day_closed"):
-		business.connect("day_closed", func(_d: int) -> void: advance_day())
+	# Market day = START_DAY + the business day, read rather than counted: a guest gets the
+	# host's books whole (clock_changed, no day_closed), so it catches up the same way.
+	_business = Modules.bus("business")
+	if _business and _business.has_method("get_day"):
+		for sig: String in ["day_closed", "clock_changed"]:
+			if _business.has_signal(sig):
+				_business.connect(sig, func(_v: int) -> void: sync_day())
+		sync_day()
 
 
 func unregister_module() -> void:
@@ -116,6 +122,15 @@ func set_standing(id: String, value: float) -> void:
 	_opt_key = ""
 	last_reason = "standing with %s" % (vendor(id).display_name if vendor(id) else id)
 	standing_changed.emit(id, standing[id])
+
+
+## Follows the business module's day where it runs one.
+func sync_day() -> void:
+	if _business == null or not is_instance_valid(_business):
+		return
+	var want := START_DAY + int(_business.call("get_day"))
+	if want != day:
+		advance_day(want - day)
 
 
 func advance_day(by := 1) -> void:
@@ -180,6 +195,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	standing = (data.get("standing", {}) as Dictionary).duplicate()
 	_opt_key = ""
 	day_changed.emit(day)
+	sync_day()
 
 
 func reset_data() -> void:

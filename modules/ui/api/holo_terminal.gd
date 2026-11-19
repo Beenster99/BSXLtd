@@ -223,7 +223,7 @@ func _build() -> void:
 	var t := T.label(title_text, "display_bold", 28, T.TEXT)
 	t.name = "Title"
 	title.add_child(t)
-	var game := T.label(Saves.current_name.to_upper() if Saves.current_name != "" else "BSX LTD  ·  SHIP FITTING",
+	var game := T.label(Saves.current_name.to_upper() if Saves.current_name != "" else "BSX LTD  ·  SHIPBUILDERS",
 			"display_medium", 15, T.DIM)
 	game.name = "GameName"
 	title.add_child(game)
