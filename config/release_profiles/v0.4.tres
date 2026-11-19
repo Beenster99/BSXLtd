@@ -169,6 +169,7 @@ flags = {
 "ui": true,
 "ui.debug_tab": true,
 "yard": true,
+"yard.delivery_ships": true,
 "yard.dock": true,
 "yard.racking": true,
 "yard.station": true

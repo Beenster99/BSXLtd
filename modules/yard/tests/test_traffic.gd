@@ -6,6 +6,7 @@ extends ModuleTest
 ##   tools/run_tests.sh yard
 
 const Traffic := preload("res://modules/yard/internal/stores_traffic.gd")
+const BotLook := preload("res://modules/yard/internal/yard_bot_look.gd")
 
 
 func run_tests() -> void:
@@ -20,6 +21,7 @@ func run_tests() -> void:
 	_routes(traffic, store)
 	await _freighter()
 	await _kits()
+	await _lines_ships()
 
 	var order := [{"part": "HullPlate", "qty": 60}, {"part": "BoxBeam", "qty": 10}, {"part": "JunctionBox", "qty": 12},
 			{"part": "HydrogenEngine", "qty": 2}, {"part": "Reactor", "qty": 1}, {"part": "Pipe", "qty": 25},
@@ -255,4 +257,53 @@ func _kits() -> void:
 	crew.queue_free()
 	traffic.queue_free()
 	you.queue_free()
+	await frames(1)
+
+
+## The freight lines' own ships (19 Nov, flag yard.delivery_ships): a small order comes by
+## courier, a bigger one by hauler, each in its line's design with its name aboard; the lids
+## over the frames stand up and the loads are drawn straight up out of them, over the command
+## module, to goods in.
+func _lines_ships() -> void:
+	const Ships := preload("res://modules/yard/internal/yard_delivery_ships.gd")
+	Flags.set_flag(YardBus.DELIVERY_SHIPS, true)
+	var store := YardRackStore.new()
+	store.fill_demo(0.2)
+	var traffic := Traffic.new()
+	traffic.set_process(false)
+	add_child(traffic)
+	traffic.build(store)
+	traffic.order([{"part": "Generator", "qty": 2}])
+	check(traffic.haulers.size() == 1 and traffic.haulers[0].size == Ships.SMALL, "two loads come by courier")
+	var courier: Dictionary = traffic.haulers[0]
+	check((courier.crew as Array).size() == 1, "with one bot of her own")
+	traffic.order([{"part": "HullPlate", "qty": 60}])
+	var hauler: Dictionary = traffic.haulers[1]
+	check(hauler.size == Ships.MEDIUM, "five loads come by hauler")
+	check(courier.brand.id != hauler.brand.id, "from different lines")
+	var named := false
+	for c in (hauler.node as Node3D).get_children():
+		named = named or (c is Label3D and (c as Label3D).text == String(hauler.brand.name))
+	check(named, "her line's name is on her side")
+	var seen := {"open": false, "high": false}
+	var t := 0.0
+	while traffic.busy() and t < 600.0:
+		traffic.step(0.1)
+		t += 0.1
+		for h in traffic.haulers:
+			seen.open = seen.open or Ships.open_of(h.node) > 0.95
+		for b in traffic.bots:
+			var l: Dictionary = b.carrying
+			if not l.is_empty() and l.where == "carried" and (b.node as Node3D).global_position.x > 90.0:
+				seen.high = seen.high or (b.node as Node3D).global_position.y > YardRackStore.HAULER_BERTHS[0].y + Ships.clear_y(Ships.MEDIUM)
+	check(not traffic.busy(), "both put away (%.0f s)" % t)
+	check(bool(seen.open), "the frames' lids stood open")
+	check(bool(seen.high), "loads were drawn up clear of the command module")
+	check(store.count("Generator") >= 2, "the stores hold the courier's load")
+	for size: String in Ships.SIZES:
+		for brand: Dictionary in BotLook.BRANDS:
+			var ship := Ships.make(brand, size)
+			check(ship.get_node_or_null("Hull") != null and (ship.get_node("Hull") as MeshInstance3D).mesh.get_surface_count() > 0, "%s's %s is built" % [brand.id, size])
+			ship.free()
+	traffic.queue_free()
 	await frames(1)

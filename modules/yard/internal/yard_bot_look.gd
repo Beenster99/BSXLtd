@@ -12,6 +12,7 @@ const BRANDS := [
 	{"id": "halden", "name": "HALDEN FREIGHT", "plates": Color(0.16, 0.22, 0.36), "trim": Color(0.88, 0.88, 0.86), "accent": Color(1.0, 0.72, 0.15)},
 	{"id": "orbis", "name": "ORBIS LOGISTICS", "plates": Color(0.9, 0.9, 0.92), "trim": Color(0.1, 0.42, 0.3), "accent": Color(0.3, 0.95, 0.55)},
 	{"id": "vantor", "name": "VANTOR CARGO", "plates": Color(0.52, 0.07, 0.09), "trim": Color(0.14, 0.14, 0.16), "accent": Color(1.0, 0.86, 0.78)},
+	{"id": "torvale", "name": "TORVALE HEAVY INDUSTRIES", "plates": Color(0.8, 0.79, 0.75), "trim": Color(0.11, 0.115, 0.125), "accent": Color(1.0, 0.72, 0.06)},
 	{"id": "meridian", "name": "MERIDIAN SUPPLY", "plates": Color(0.86, 0.55, 0.12), "trim": Color(0.12, 0.13, 0.15), "accent": Color(0.3, 0.8, 1.0)},
 ]
 const BSX_STORES := {"id": "bsx", "name": "BSX LTD", "plates": Color(0.9, 0.91, 0.92), "trim": Color(0.2, 0.21, 0.23), "accent": Color(1.0, 0.5, 0.12)}
