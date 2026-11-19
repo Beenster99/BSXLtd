@@ -7,6 +7,9 @@ extends ModuleTest
 ##   tools/run_tests.sh yard
 
 
+const YardWorkersScript := preload("res://modules/yard/internal/yard_workers.gd")
+const YardServiceScript := preload("res://modules/yard/internal/yard_service.gd")
+
 func run_tests() -> void:
 	for f: String in [YardBus.FLAG, YardBus.STATION, YardBus.DOCK, YardBus.RACKING]:
 		Flags.set_flag(f, true)
@@ -31,7 +34,7 @@ func run_tests() -> void:
 	_airlock(station)
 	_design_lock(station)
 	await _racking(station)
-	_dock(station)
+	await _dock(station)
 
 	for id: String in station.get("VIEWS"):
 		station.call("show_view", id)
@@ -307,6 +310,47 @@ func _design_lock(station: Node3D) -> void:
 	check(lock.get("state") == 0, "and back in")
 
 
+## The berths grow with reputation (beenster, 19 Nov): three tiers, each clear of the station,
+## of each other, of the keel the bots build and of TartanCo's berth; the dock rebuilt at each.
+func _berth_tiers(station: Node3D) -> void:
+	check(YardLayout.berth_tier_for(0.0) == 1 and YardLayout.berth_tier_for(40.0) == 2 and YardLayout.berth_tier_for(100.0) == 4,
+			"the tier follows reputation, the largest at the max")
+	var service_ship := AABB(YardServiceScript.BERTH - Vector3(40, 6, 7), Vector3(80, 12, 14))
+	for t: Dictionary in YardBus.berth_tiers():
+		var tier := int(t.tier)
+		var berths := YardBus.berths(tier)
+		var build: AABB = berths[0].box
+		var ok := true
+		for b: Dictionary in berths:
+			var box: AABB = b.box
+			ok = ok and not box.intersects(YardLayout.HULL_BOX) and not box.intersects(service_ship)
+			for other: Dictionary in berths:
+				ok = ok and (other.id == b.id or not box.intersects(other.box))
+			for h: Vector3 in YardRackStore.HAULER_BERTHS:
+				ok = ok and not box.grow(6.0).has_point(h)
+		ok = ok and build.end.z <= YardLayout.BERTH_FACE_Z + 0.01 and build.position.z >= YardLayout.DOCK_FAR_Z - 0.01
+		check(ok, "tier %d: berths clear of the station, each other, TartanCo's ship and the haulers" % tier)
+		check(build.has_point(YardWorkersScript.KEEL_START) and is_equal_approx(build.size.x, (t.size as Vector3).x),
+				"tier %d: the keel is in the %d m build berth" % [tier, int(build.size.x)])
+		check(is_equal_approx((berths[1].box as AABB).size.x, build.size.x), "tier %d: a parked hull fits a holding berth" % tier)
+	check(YardBus.berth_tier_for_hull(Vector3(50, 20, 20)) == 1 and YardBus.berth_tier_for_hull(Vector3(90, 30, 30)) == 2
+			and YardBus.berth_tier_for_hull(Vector3(190, 50, 50)) == 3 and YardBus.berth_tier_for_hull(Vector3(300, 50, 50)) == 4
+			and YardBus.berth_tier_for_hull(Vector3(400, 50, 50)) == 0 and YardBus.berth_for(60.0) == 2,
+			"which tier a hull needs, leaving the bots their room")
+	var bus := Modules.bus("yard") as YardBus
+	var b1: Dictionary = bus.build_berth()
+	check(b1.has_all(["name", "tier", "length", "height", "beam"]) and float(b1.length) >= 60.0, "the build berth for the design room: %s" % str(b1))
+	# The dock built again at the capital tier, and back.
+	station.call("_on_berth_tier", 4)
+	var dock := station.get("dock") as Node3D
+	var spots := dock.find_children("*", "SpotLight3D", true, false).size()
+	check(int(dock.get("tier")) == 4 and spots >= 24, "the dock rebuilt as giga berths, floodlit (%d)" % spots)
+	var drawn := (dock.get("berth_nodes") as Dictionary)
+	check(drawn.size() == 3, "all three berths drawn")
+	station.call("_on_berth_tier", 1)
+	await frames(1)
+
+
 func _racking(station: Node3D) -> void:
 	var hall := station.get("racking") as Node3D
 	check(hall != null, "the stores hall is built")
@@ -419,9 +463,13 @@ func _dock(station: Node3D) -> void:
 	var crew := station.get("workers") as Node3D
 	check(crew != null and crew.call("foreman") != null and int(crew.call("rings_built")) >= 3, "worker bots at a keel frame in the build berth")
 	var kit: String = station.call("call_kit")
-	await frames(3)   # on the shared clock: a tick later
+	var note := station.get_node("Hud/KitNote") as Label
+	for i in 60:   # on the shared clock: a tick or so later
+		if note.visible:
+			break
+		await frames(1)
 	check(YardKits.KITS.has(kit) and (station.get("traffic").get("kit_orders") as Array).size() >= 1, "K sends a mover bot with a %s" % kit)
-	check((station.get_node("Hud/KitNote") as Label).visible, "and says so on the HUD")
+	check(note.visible, "and says so on the HUD (%s, %s)" % [note.text, str(station.get("_note_left"))])
 	# Sleeping quarters: eight cabins, each with Void Salvage's bunk, off the corridor.
 	var bunks := station.find_children("Bunk_*", "Node3D", true, false)
 	check(bunks.size() == 8, "eight cabins with a bunk each in the quarters (%d)" % bunks.size())
@@ -457,3 +505,5 @@ func _dock(station: Node3D) -> void:
 	var q := PhysicsRayQueryParameters3D.create(eye, eye + (berth_mid - eye).normalized() * 30.0)
 	var hit := space.intersect_ray(q)
 	check(not hit.is_empty() and absf((hit.position as Vector3).z - -22.0) < 0.2, "the build berth is in view through the design room's window")
+
+	await _berth_tiers(station)
