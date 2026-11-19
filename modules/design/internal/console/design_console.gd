@@ -161,6 +161,13 @@ func _top_bar() -> Control:
 		b.pressed.connect(_set_view.bind(v))
 		_view_buttons[v] = b
 		h.add_child(b)
+	# Symmetry mode: what is drawn on one side is drawn on the other (M on the plan too).
+	var mirror := T.button("MIRROR OFF", false, 17)
+	mirror.name = "BtnMirror"
+	mirror.tooltip_text = "Symmetry: draw on one side and it is drawn on the other. X mirrors port and starboard, Y fore and aft."
+	mirror.pressed.connect(bus.cycle_mirror)
+	bus.mirror_changed.connect(func(a: int) -> void: mirror.text = "MIRROR " + DesignMirror.NAMES[a])
+	h.add_child(mirror)
 	h.add_child(_gap(16))
 	var down := T.button("DECK -", false, 17)
 	down.pressed.connect(func() -> void: _change_deck(-1))
