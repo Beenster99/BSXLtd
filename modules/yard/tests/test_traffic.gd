@@ -275,6 +275,9 @@ func _kits() -> void:
 		crew.step(0.2)
 		t += 0.2
 	check(worn.fault == "" and is_zero_approx(float(worn.wear)), "TartanCo's engineers put it right (%.0f s)" % t)
+	check(crew.service.bay_services >= 1, "the faulted bot was taken aboard and serviced in a bay")
+	check(not bool(worn.get("held", false)), "and handed back to the crew")
+	check(crew.service.team.all(func(e: Dictionary) -> bool: return (e.node as Node3D).has_node("ShoulderR/Wand")), "TartanCo's engineers are suited people with wands")
 	t = 0.0
 	while crew.service.state != "away" and t < 400.0:
 		traffic.step(0.2)

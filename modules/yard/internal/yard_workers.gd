@@ -370,7 +370,11 @@ func _work(w: Dictionary, delta: float) -> void:
 		(w.light as OmniLight3D).light_energy = 0.0
 	var label := node.get_node("Fault") as Label3D
 	label.visible = w.fault != "" and fmod(_time, 1.0) < 0.7
-	if task.is_empty():
+	if bool(w.get("held", false)):
+		# TartanCo's engineer is flying it (YardService): into their bay and back.
+		busy = false
+		w.vel = Vector3.ZERO
+	elif task.is_empty():
 		busy = false
 		_fly(w, _idle_spot(int(w.index)), delta)
 		if w.fault != "" or bool(w.servicing):
