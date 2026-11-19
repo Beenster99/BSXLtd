@@ -46,6 +46,14 @@ class Runner:
 			await _parts_shots(room, out)
 			get_tree().quit()
 			return
+		if "--orders" in OS.get_cmdline_user_args():
+			await _order_shots(room, out)
+			get_tree().quit()
+			return
+		if "--contract" in OS.get_cmdline_user_args():
+			await _contract_shots(room, out)
+			get_tree().quit()
+			return
 		if "--fit" in OS.get_cmdline_user_args():
 			await _fit_shots(room, out)
 			get_tree().quit()
@@ -283,6 +291,72 @@ class Runner:
 			(data_scroll as ScrollContainer).scroll_vertical += 300
 		await _frames(30)
 		await _save(out, "parts_order")
+
+	## Wave 4: the board of ship orders open on the console (orders_list), then one picked,
+	## with its client, budget against the cheapest build, and its demands and clauses scored
+	## on the data channel (orders_picked).
+	func _order_shots(room: Node, out: String) -> void:
+		var console: Node = room.console
+		var contracts := Modules.bus("contracts") as ContractsBus
+		for i in range(12):
+			contracts.advance_cycle()
+			var o := contracts.ship_orders()
+			if o.any(func(x): return x.achievability.label == "Unrealistic") and o.any(func(x): return x.size in ["capital", "mega"]):
+				break
+		console._orders_open = true
+		console._fill_palette()
+		await _frames(30)
+		await _save(out, "orders_list")
+		var orders := contracts.ship_orders()
+		var pick: Dictionary = orders[0]
+		for o in orders:
+			if (o.clauses as Array).size() >= 2 and o.size in ["small", "medium"]:
+				pick = o
+				break
+		console.set_order(pick)
+		await _frames(10)
+		for n in room.console.data.find_children("*", "Label", true, false):
+			if (n as Label).text == "CONTRACT FIT":
+				var sc: Node = n
+				while sc and not sc is ScrollContainer:
+					sc = sc.get_parent()
+				if sc:
+					await _frames(5)
+					var c := sc as ScrollContainer
+					c.scroll_vertical += int((n as Control).global_position.y - c.global_position.y) - 20
+		await _frames(30)
+		await _save(out, "orders_picked")
+
+	## Wave 4 staged payments (--contract): the quote under a picked order (contract_quote),
+	## the contract details page before signing (contract_terms_quote), signed with the keel
+	## paid (contract_terms_signed), and after the trial (contract_terms_delivered).
+	func _contract_shots(room: Node, out: String) -> void:
+		var console: Node = room.console
+		var contracts := Modules.bus("contracts") as ContractsBus
+		var pick := {}
+		for o: Dictionary in contracts.ship_orders():
+			if contracts.ship_sign_problem(o) == "" and (pick.is_empty() or str(o.achievability.label) in ["Fair", "Generous"]):
+				pick = o
+		console.set_order(pick)
+		await _frames(30)
+		await _save(out, "contract_quote")
+		console.toggle_contract_terms()
+		await _frames(30)
+		await _save(out, "contract_terms_quote")
+		console.toggle_contract_terms()
+		(console.find_child("SendQuote", true, false) as Button).pressed.emit()
+		await _frames(5)
+		var c := contracts.ship_contract_for(str(pick.id))
+		contracts.pay_ship_stage(str(c.id), "keel")
+		console.toggle_contract_terms()
+		await _frames(30)
+		await _save(out, "contract_terms_signed")
+		console.toggle_contract_terms()
+		console.deliver_for_trial()
+		await _frames(5)
+		console.toggle_contract_terms()
+		await _frames(30)
+		await _save(out, "contract_terms_delivered")
 
 	## The contract fit assessment against a client's ship order: full screen at the console
 	## and on the left-hand wall (--fit).
