@@ -1,0 +1,180 @@
+{
+ "power_kw": 40.0,
+ "load_kg": 0.0,
+ "pieces": [
+  {
+   "name": "strut",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": -90.0,
+   "deployed": 0.0,
+   "seconds": 8.0,
+   "order": 1,
+   "pivot": [
+    -0.0,
+    3.7302,
+    0.0034
+   ],
+   "unit": "deg",
+   "min": -90.0,
+   "max": 0.0,
+   "rest": 0.0
+  },
+  {
+   "name": "oleo",
+   "parent": "strut",
+   "kind": "slide",
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "stowed": 0.5026,
+   "deployed": 0.0,
+   "seconds": 2.0,
+   "order": 2,
+   "pivot": [
+    -0.0,
+    2.1596,
+    0.0034
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 0.5026,
+   "rest": 0.0
+  },
+  {
+   "name": "foot_1",
+   "parent": "oleo",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.0,
+   "seconds": 0.5,
+   "order": 2,
+   "swing": 10.0,
+   "contact": {
+    "at": [
+     0.0,
+     -0.2618,
+     0.0
+    ],
+    "radius": 0.54
+   },
+   "pivot": [
+    -0.8617,
+    0.2618,
+    -1.0455
+   ],
+   "unit": "deg",
+   "min": -10.0,
+   "max": 10.0,
+   "rest": 0.0
+  },
+  {
+   "name": "foot_2",
+   "parent": "oleo",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.0,
+   "seconds": 0.5,
+   "order": 2,
+   "swing": 10.0,
+   "contact": {
+    "at": [
+     0.0,
+     -0.2618,
+     0.0
+    ],
+    "radius": 0.54
+   },
+   "pivot": [
+    -0.8617,
+    0.2618,
+    1.0524
+   ],
+   "unit": "deg",
+   "min": -10.0,
+   "max": 10.0,
+   "rest": 0.0
+  },
+  {
+   "name": "foot_3",
+   "parent": "oleo",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.0,
+   "seconds": 0.5,
+   "order": 2,
+   "swing": 10.0,
+   "contact": {
+    "at": [
+     0.0,
+     -0.2618,
+     0.0
+    ],
+    "radius": 0.54
+   },
+   "pivot": [
+    0.8617,
+    0.2618,
+    -1.0455
+   ],
+   "unit": "deg",
+   "min": -10.0,
+   "max": 10.0,
+   "rest": 0.0
+  },
+  {
+   "name": "foot_4",
+   "parent": "oleo",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.0,
+   "seconds": 0.5,
+   "order": 2,
+   "swing": 10.0,
+   "contact": {
+    "at": [
+     0.0,
+     -0.2618,
+     0.0
+    ],
+    "radius": 0.54
+   },
+   "pivot": [
+    0.8617,
+    0.2618,
+    1.0524
+   ],
+   "unit": "deg",
+   "min": -10.0,
+   "max": 10.0,
+   "rest": 0.0
+  }
+ ]
+}

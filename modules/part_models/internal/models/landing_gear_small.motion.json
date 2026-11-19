@@ -1,0 +1,84 @@
+{
+ "power_kw": 1.0,
+ "load_kg": 0.0,
+ "pieces": [
+  {
+   "name": "strut",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": -90.0,
+   "deployed": 0.0,
+   "seconds": 4.0,
+   "order": 1,
+   "pivot": [
+    -0.0076,
+    1.0896,
+    0.0
+   ],
+   "unit": "deg",
+   "min": -90.0,
+   "max": 0.0,
+   "rest": 0.0
+  },
+  {
+   "name": "oleo",
+   "parent": "strut",
+   "kind": "slide",
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "stowed": 0.2159,
+   "deployed": 0.0,
+   "seconds": 1.5,
+   "order": 2,
+   "pivot": [
+    -0.0076,
+    0.5038,
+    0.0
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 0.2159,
+   "rest": 0.0
+  },
+  {
+   "name": "foot",
+   "parent": "oleo",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.0,
+   "seconds": 0.5,
+   "order": 2,
+   "swing": 12.0,
+   "contact": {
+    "at": [
+     0.0,
+     -0.1,
+     0.0
+    ],
+    "radius": 0.225
+   },
+   "pivot": [
+    -0.0076,
+    0.1,
+    0.0
+   ],
+   "unit": "deg",
+   "min": -12.0,
+   "max": 12.0,
+   "rest": 0.0
+  }
+ ]
+}
