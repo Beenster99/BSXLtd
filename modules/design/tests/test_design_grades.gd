@@ -15,7 +15,7 @@ func run_tests() -> void:
 	_variants()
 	_ratings()
 	_doors()
-	_palette()
+	await _palette()
 
 
 func _catalogue() -> void:
@@ -177,5 +177,39 @@ func _palette() -> void:
 	if cargo_b:
 		cargo_b.pressed.emit()
 		check(console.plan.tool == "door" and console.plan.door_kind == "cargo", "CARGO DOOR arms the door tool")
+	# Changing a placed part's size and grade, and a door's kind, in place.
+	var rec := bus.library.current
+	for op in [
+		{"op": "add_room", "room": {"id": "e1", "type": "engineering", "x": 20, "z": 20, "w": 8, "d": 8}},
+		{"op": "add_room", "room": {"id": "e2", "type": "corridor", "x": 18, "z": 20, "w": 2, "d": 8}},
+		{"op": "add_component", "component": {"id": "k1", "type": "reactor_small", "room": "e1", "x": 23, "z": 23, "rot": 0}},
+		{"op": "add_door", "door": {"id": "k2", "a": "e2", "b": "e1", "x": 20, "z": 24}},
+	]:
+		bus.editor.do(op)
+	console.plan.select("part", "k1")
+	await frames(2)
+	var up := console.find_child("SizeUp", true, false) as Button
+	check(up != null and not up.disabled, "a selected part shows its size stepper")
+	if up:
+		up.pressed.emit()
+		await frames(2)
+		check(str(rec.components.k1.type) == "reactor_small:4S", "SIZE + makes it one class bigger: %s" % rec.components.k1.type)
+	var gp := console.find_child("Grade_P", true, false) as Button
+	if gp:
+		gp.pressed.emit()
+		await frames(2)
+	check(str(rec.components.k1.type) == "reactor_small:4P", "a grade button changes its grade: %s" % rec.components.k1.type)
+	bus.editor.undo()
+	check(str(rec.components.k1.type) == "reactor_small:4S", "and undo puts it back")
+	console.plan.select("door", "k2")
+	await frames(2)
+	var dw := console.find_child("SetDoor_doorway", true, false) as Button
+	check(dw != null, "a selected door shows its kinds")
+	if dw:
+		dw.pressed.emit()
+		await frames(2)
+		check(str(rec.doors.k2.get("kind", "")) == "doorway", "a door becomes an open doorway in place")
+		bus.editor.undo()
+		check(DesignCatalog.door_kind(rec.doors.k2).leaves, "and undo makes it a door again")
 	layer.queue_free()
 	holo.queue_free()

@@ -664,6 +664,8 @@ func _on_selection(kind: String, id: String) -> void:
 			_selection.add_child(T.label(pt.display_name.to_upper(), "display_bold", 18, T.ORANGE))
 			_selection.add_child(T.label("CR %s   %.1f t   %+.0f kW   %d days" % [T.money(int(pt.cost)), pt.mass / 1000.0,
 					pt.power, pt.lead_days], "mono_medium", 15, T.DIM))
+			_grade_rows(str(c.type), func(t: String) -> void:
+				bus.editor.do({"op": "set_component", "id": id, "fields": {"type": t}}))
 		# Where it stands (beenster, 19 Nov: select a component and edit it to move it); it can
 		# also be dragged on the plan.
 		for axis: String in ["x", "z"]:
@@ -673,8 +675,22 @@ func _on_selection(kind: String, id: String) -> void:
 		turn.pressed.connect(plan.rotate_selected)
 		_selection.add_child(turn)
 		_selection.add_child(_remove_button())
-	elif kind == "door":
-		_selection.add_child(T.label("DOOR", "display_bold", 18, T.ORANGE))
+	elif kind == "door" and rec.doors.has(id):
+		var door: Dictionary = rec.doors[id]
+		var dk := DesignCatalog.door_kind(door)
+		_selection.add_child(T.label(str(dk.name).to_upper(), "display_bold", 18, T.ORANGE))
+		_selection.add_child(T.label("%s m wide   CR %s" % [PlanView._m(float(dk.w)), T.money(int(dk.cost))],
+				"mono_medium", 15, T.DIM))
+		var kinds := HBoxContainer.new()
+		for k: String in DesignCatalog.DOOR_ORDER:
+			var on: bool = DesignCatalog.door_kind(door) == DesignCatalog.DOOR_KINDS[k]
+			var b := T.button(str(DesignCatalog.DOOR_KINDS[k].short), on, 13)
+			b.name = "SetDoor_" + k
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.pressed.connect(func() -> void:
+				bus.editor.do({"op": "set_door", "id": id, "fields": {"kind": k}}))
+			kinds.add_child(b)
+		_selection.add_child(kinds)
 		_selection.add_child(_remove_button())
 	elif kind == "run" and rec.runs.has(id):
 		var w: Dictionary = rec.runs[id]
@@ -698,6 +714,8 @@ func _on_selection(kind: String, id: String) -> void:
 			_selection.add_child(T.label(pt.display_name.to_upper(), "display_bold", 18, T.ORANGE))
 			_selection.add_child(T.label("ON THE HULL   CR %s   %.1f t   %.0f kN" % [T.money(int(pt.cost)),
 					pt.mass / 1000.0, pt.thrust], "mono_medium", 15, T.DIM))
+			_grade_rows(str(rec.mounts[id].type), func(t: String) -> void:
+				bus.editor.do({"op": "set_mount", "id": id, "fields": {"type": t}}))
 		_selection.add_child(_remove_button())
 	elif kind == "hull":
 		var outline := rec.hull_outline(plan.deck)
@@ -705,6 +723,44 @@ func _on_selection(kind: String, id: String) -> void:
 		_selection.add_child(T.label("%d corners, drag to reshape. Delete takes this one out." % outline.size(),
 				"body", 14, T.DIM))
 		_selection.add_child(_remove_button())
+
+
+## SIZE and GRADE steppers for a placed component of type `type_id`: each step calls `on_type`
+## with the variant's type id (DesignGrades), so the part changes in place, one undo step each.
+func _grade_rows(type_id: String, on_type: Callable) -> void:
+	var base := bus.catalog.base_of(type_id)
+	var pt := bus.catalog.part(type_id)
+	if base == null or pt == null:
+		return
+	var span := DesignGrades.sizes(base)
+	if span[0] > 0 and span[1] > span[0]:
+		var row := HBoxContainer.new()
+		row.add_child(T.label("SIZE", "display_medium", 15, T.DIM))
+		for step in [-1, 1]:
+			var s: int = pt.size_class + int(step)
+			var b := T.button("-" if step < 0 else "+", false, 15)
+			b.name = "Size" + ("Down" if step < 0 else "Up")
+			b.disabled = s < span[0] or s > span[1]
+			b.pressed.connect(func() -> void: on_type.call(DesignGrades.variant_id(base, s, pt.grade)))
+			if step < 0:
+				row.add_child(b)
+				var l := T.label("  %d  (%d to %d)" % [pt.size_class, span[0], span[1]], "mono_medium", 15, T.TEXT)
+				row.add_child(l)
+			else:
+				row.add_child(b)
+		_selection.add_child(row)
+	if base.graded:
+		var grades := HBoxContainer.new()
+		for g: String in DesignGrades.GRADE_ORDER:
+			var b := T.button(g, g == pt.grade, 14)
+			b.name = "Grade_" + g
+			b.tooltip_text = "%s: %s" % [DesignGrades.GRADES[g].name, DesignGrades.GRADES[g].blurb]
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.pressed.connect(func() -> void: on_type.call(DesignGrades.variant_id(base, pt.size_class, g)))
+			grades.add_child(b)
+		_selection.add_child(grades)
+		_selection.add_child(T.label("%s  %s" % [DesignGrades.label(pt), DesignGrades.GRADES[pt.grade].name],
+				"body", 13, T.DIM))
 
 
 func _size_row(what: String, value: float, on_set: Callable, lowest := 0.5, step := 0.0) -> Control:
