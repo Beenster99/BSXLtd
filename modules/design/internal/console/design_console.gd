@@ -195,6 +195,13 @@ func _top_bar() -> Control:
 	_grid_pick.item_selected.connect(func(i: int) -> void:
 		bus.editor.do({"op": "set_meta", "fields": {"grid": DesignRecord.GRIDS[i]}}))
 	h.add_child(_grid_pick)
+	# Buttons other modules put here (DesignBus.register_console_tool: the motion module's OPERATE).
+	var tools := HBoxContainer.new()
+	tools.name = "ConsoleTools"
+	tools.add_theme_constant_override("separation", 6)
+	h.add_child(tools)
+	_fill_tools(tools)
+	bus.console_tools_changed.connect(_fill_tools.bind(tools))
 	var walk := T.button("WALK INSIDE", true, 17)
 	walk.name = "BtnWalkInside"
 	walk.pressed.connect(func() -> void: walk_requested.emit())
@@ -203,6 +210,24 @@ func _top_bar() -> Control:
 	leave.pressed.connect(func() -> void: leave_requested.emit())
 	h.add_child(leave)
 	return bar
+
+
+func _fill_tools(box: HBoxContainer) -> void:
+	if not is_instance_valid(box):
+		return
+	for c in box.get_children():
+		box.remove_child(c)
+		c.queue_free()
+	var ids: Array = bus.console_tools.keys()
+	ids.sort_custom(func(a, b) -> bool: return int(bus.console_tools[a].order) < int(bus.console_tools[b].order))
+	for id: String in ids:
+		var t: Dictionary = bus.console_tools[id]
+		var b := T.button(str(t.label), false, 17)
+		b.name = "Tool_" + id.replace(".", "_")
+		b.tooltip_text = str(t.get("tip", ""))
+		var press: Callable = t.press
+		b.pressed.connect(func() -> void: press.call())
+		box.add_child(b)
 
 
 func _left_panel() -> Control:

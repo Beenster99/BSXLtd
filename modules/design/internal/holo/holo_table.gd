@@ -157,6 +157,7 @@ func rebuild() -> void:
 	_build_runs(rec, _layer_nodes.wiring, "wiring")
 	_build_runs(rec, _layer_nodes.pipes, "pipes")
 	_build_power(rec, _layer_nodes.power)
+	bus.holo_built.emit(self, inner)
 
 
 func _mat(col: Color, alpha: float, rim := 1.0) -> ShaderMaterial:
@@ -168,6 +169,12 @@ func _mat(col: Color, alpha: float, rim := 1.0) -> ShaderMaterial:
 	m.set_shader_parameter("section_plane", _section)
 	_materials.append(m)
 	return m
+
+
+## A hologram material that the table's cut and section apply to (for other modules' pieces
+## put under the "Ship" node from DesignBus.holo_built).
+func holo_mat(col: Color, alpha: float, rim := 1.0) -> ShaderMaterial:
+	return _mat(col, alpha, rim)
 
 
 func _box(parent: Node3D, centre: Vector3, sz: Vector3, mat: Material) -> MeshInstance3D:

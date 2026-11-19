@@ -96,6 +96,7 @@ func setup(design_bus: DesignBus, origin: Transform3D) -> void:
 	_built.name = "Design"
 	world.add_child(_built)
 	builder.build(record(), _built, bus.frame_plan(), bus.structure())
+	bus.walk_built.emit(_built, builder)
 	_add_player()
 	_add_hud()
 	bus.design_changed.connect(_on_changed)
@@ -703,6 +704,7 @@ func _process(delta: float) -> void:
 	if _dirty and Time.get_ticks_msec() - _dirty_at >= int(rebuild_delay * 1000.0):
 		_dirty = false
 		builder.build(record(), _built, bus.frame_plan(), bus.structure())
+		bus.walk_built.emit(_built, builder)
 	var near: Array[Vector3] = [body.position]
 	for fig: Node3D in crew.values():
 		near.append(fig.position)
