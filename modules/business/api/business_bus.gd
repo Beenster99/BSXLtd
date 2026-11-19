@@ -598,13 +598,25 @@ func make_screen(interactive: bool, channel := "orders") -> Control:
 
 
 func _process(delta: float) -> void:
-	if _yard == null or not is_instance_valid(_yard) or not _yard.is_inside_tree() or not _is_authority():
+	if not _is_authority() or not _clock_running():
 		return
 	_clock_carry += delta * _books.rules.game_minutes_per_second
 	if _clock_carry >= 1.0:
 		var whole := int(_clock_carry)
 		_clock_carry -= whole
 		_books.advance_minutes(whole)
+
+
+## The business clock runs while a yard is open: the old shipyard, or the orbital yard's
+## station (YardBus.station(), reached by name).
+func _clock_running() -> bool:
+	if _yard != null and is_instance_valid(_yard) and _yard.is_inside_tree():
+		return true
+	var yard := Modules.bus("yard")
+	if yard and yard.has_method("station"):
+		var station: Variant = yard.call("station")
+		return station is Node and is_instance_valid(station) and (station as Node).is_inside_tree()
+	return false
 
 
 # --- Reads (any peer) ---
@@ -650,7 +662,7 @@ func get_ledger(since_day := 0) -> Array[LedgerEntry]:
 
 ## Ledger categories grouped the way the Accounts page shows them, in its order.
 const ACCOUNT_GROUPS := {
-	"contracts": ["deposit", "goodwill", "payment", "penalty"],
+	"contracts": ["deposit", "goodwill", "payment", "trial", "penalty"],
 	"sales": ["scrap", "salvage", "resale"],
 	"parts": ["parts", "refund"],
 	"wages": ["wages", "bonus"],
@@ -696,7 +708,7 @@ func accounts_summary(days: int) -> Dictionary:
 
 ## Ledger categories' names for the detailed accounts (ACCOUNTS wall screen).
 const CATEGORY_NAMES := {"deposit": "Deposits", "goodwill": "Goodwill", "payment": "Contract payments",
-		"penalty": "Late penalties", "scrap": "Scrap sales", "salvage": "Salvage sales",
+		"trial": "Trial bonus or hold-back", "penalty": "Late penalties", "scrap": "Scrap sales", "salvage": "Salvage sales",
 		"resale": "Parts resold", "parts": "Parts bought", "refund": "Refunds", "wages": "Wages", "bonus": "Bonuses",
 		"rent": "Bay rent", "loan": "Loans drawn", "repayment": "Loan repayments", "upgrade": "Upgrades",
 		"debug": "Testing"}
@@ -817,7 +829,11 @@ func accounts_report(days: int) -> Dictionary:
 	for l in loans:
 		monthly += int(l.monthly)
 	var loans_per_day := ceili(float(monthly) / maxi(1, rules.days_per_month))
-	var per_day_cost := rules.bay_rent_per_day + wages + loans_per_day
+	var running := 0
+	for id: String in _running_costs:
+		var f: Callable = _running_costs[id].per_day
+		running += int(f.call()) if f.is_valid() else 0
+	var per_day_cost := rules.bay_rent_per_day + wages + loans_per_day + running
 	var owed := _books.company.owed()
 	var cash := _books.cash
 	var assets := {"cash": maxi(0, cash), "stock": stock_value, "on_order": int(on_order.value)}
@@ -836,11 +852,257 @@ func accounts_report(days: int) -> Dictionary:
 			"has_prev": first > 0, "lines": lines, "balance": balance, "contracts": contracts,
 			"loans": loans, "owed": owed, "loan_room": loan_room(),
 			"stock": {"value": stock_value, "lines": stock_lines, "top": top.slice(0, 8)}, "on_order": on_order,
-			"crew": crew, "burn": {"rent": rules.bay_rent_per_day, "wages": wages, "loans": loans_per_day, "per_day": per_day_cost},
+			"crew": crew, "burn": {"rent": rules.bay_rent_per_day, "wages": wages, "loans": loans_per_day, "running": running, "per_day": per_day_cost},
+			"forecast": cash_forecast(FORECAST_DAYS),
 			"runway": (cash / per_day_cost if cash > 0 else 0) if per_day_cost > 0 else -1,
 			"sheet": {"assets": assets, "liabilities": liabilities,
 					"worth": assets.cash + assets.stock + assets.on_order - owed - liabilities.overdraft},
 			"recent": recent, "owner": company_owner()}
+
+
+# --- Staged ship contracts and the cash forecast (beenster, 19 Nov) ---
+
+## How a ship contract pays (beenster, 19 Nov): id -> [name, share of the price, when in the
+## build it falls due (0 = sign-off, 1 = delivery)]. The delivery payment comes after the trial,
+## which can add a bonus or hold some back.
+const PAYMENT_PROFILE := [
+	["deposit", "Deposit", 0.2, 0.0],
+	["keel", "Keel laid", 0.2, 0.3],
+	["fit_out", "Fit-out", 0.2, 0.7],
+	["delivery", "Delivery", 0.4, 1.0],
+]
+## When a contract doesn't say: the trial's best bonus and worst hold-back, as shares of delivery.
+const TRIAL_BONUS := 0.1
+const TRIAL_HOLDBACK := 0.25
+const FORECAST_DAYS := 30
+
+## Running costs other modules add (TartanCo bots' upkeep...): id -> {label, per_day: Callable() -> int}.
+var _running_costs: Dictionary = {}
+
+
+## A price split into PAYMENT_PROFILE's stages with the business day each falls due, for a
+## build from start_day to due_day: [{id, name, value, expected_day}]. The stages add up to `value`.
+static func payment_plan(value: int, start_day: int, due_day: int) -> Array:
+	var out: Array = []
+	var left := value
+	for i in PAYMENT_PROFILE.size():
+		var p: Array = PAYMENT_PROFILE[i]
+		var amount := left if i == PAYMENT_PROFILE.size() - 1 else roundi(value * float(p[2]))
+		left -= amount
+		out.append({"id": p[0], "name": p[1], "value": amount,
+				"expected_day": start_day + roundi(maxi(0, due_day - start_day) * float(p[3]))})
+	return out
+
+
+## Contracts accepts a ship order paid in stages (payment_plan, or its own [{id, name, value,
+## expected_day}]): the first stage (the deposit) is paid now; sign the others off with
+## on_stage_signed_off, and on_contract_handed_over pays the last.
+func on_contract_accepted_staged(contract_id: String, stages: Array, due_day: int) -> BusinessResult:
+	if not _is_authority():
+		return _not_host()
+	return _books.accept_staged(contract_id, stages, due_day)
+
+
+## The trial's result for a staged contract, from Contracts just before the handover: amount
+## (CR) on top of the delivery payment (+ a bonus for beating a demand, - held back for a miss
+## or lateness). Several add up; the handover posts them as one "trial" line.
+func on_contract_adjusted(contract_id: String, amount: int, reason: String) -> BusinessResult:
+	if not _is_authority():
+		return _not_host()
+	return _books.adjust_contract(contract_id, amount, reason)
+
+
+## Another module's daily running cost for the forecast and the accounts ("TartanCo bots",
+## CR a day, asked each time it is drawn).
+func register_running_cost(id: String, label: String, per_day: Callable) -> void:
+	_running_costs[id] = {"label": label, "per_day": per_day}
+
+
+func unregister_running_cost(id: String) -> void:
+	_running_costs.erase(id)
+
+
+## Each open contract's payments: Contracts' payment_profiles() for the contracts it lists,
+## the books' own for the rest. [{contract_id, title, value, due_day, stages: [{id, name, amount, expected_day,
+## paid, paid_day}], trial: {bonus, holdback}, parts_to_buy}]. Unpaid stages without a day are
+## spread evenly between today and the due day; a contract without stages pays what is left at
+## its due day.
+func payment_profiles() -> Array:
+	var out: Array = []
+	var theirs := {}
+	var contracts := Modules.bus("contracts")
+	if contracts and contracts.has_method("payment_profiles"):
+		var given: Variant = contracts.call("payment_profiles")
+		if given is Array:
+			for p: Variant in given:
+				if p is Dictionary:
+					out.append(p)
+					theirs[str((p as Dictionary).get("contract_id", ""))] = true
+	var today := get_day()
+	for id: String in _books.contracts:
+		var c: Dictionary = _books.contracts[id]
+		# Contracts' own profile wins for the contracts it lists; the books fill in the rest.
+		if c.state != "open" or theirs.has(id):
+			continue
+		var stages: Array = []
+		var plan: Array = c.get("stages", [])
+		var paid: Dictionary = c.get("stages_paid", {})
+		var unpaid_total := 0
+		var unpaid_n := 0
+		for st: Dictionary in plan:
+			if not paid.has(st.id):
+				unpaid_n += 1
+		var k := 0
+		for i in plan.size():
+			var st: Dictionary = plan[i]
+			var is_paid := paid.has(st.id)
+			var amount := int(paid[st.id]) if is_paid else _books.stage_payment(id, st.id)
+			var day := int(st.get("expected_day", -1))
+			if not is_paid:
+				# The last stage is the handover: it pays whatever is still owed.
+				if i == plan.size() - 1:
+					amount = maxi(0, int(c.value) - int(c.deposit) - int(c.penalties) - _books.stages_paid(id) - unpaid_total
+							+ int(c.get("adjustment", 0)))
+				unpaid_total += amount
+				k += 1
+				if day < 0:
+					day = today + roundi(maxi(0, int(c.due_day) - today) * float(k) / unpaid_n)
+			stages.append({"id": st.id, "name": str(st.get("name", st.id)), "amount": amount, "expected_day": day,
+					"paid": is_paid, "paid_day": _paid_day(id, "stage %s" % st.id) if is_paid else -1})
+		if plan.is_empty():
+			var owed := maxi(0, int(c.value) - int(c.deposit) - int(c.penalties))
+			stages.append({"id": "handover", "name": "Handover", "amount": owed, "expected_day": int(c.due_day),
+					"paid": false, "paid_day": -1})
+		var last: Dictionary = stages.back()
+		var trial := {"bonus": 0, "holdback": 0}
+		if not last.paid and str(last.id) == "delivery":
+			trial = {"bonus": roundi(int(last.amount) * TRIAL_BONUS), "holdback": roundi(int(last.amount) * TRIAL_HOLDBACK)}
+		var parts_left := 0
+		if int(c.get("materials", -1)) > 0:
+			parts_left = maxi(0, int(c.materials) - int(_books.contract_balance(id).get("parts", 0)))
+		out.append({"contract_id": id, "title": id, "value": int(c.value), "due_day": int(c.due_day), "stages": stages,
+				"trial": trial, "parts_to_buy": parts_left})
+	return out
+
+
+func _paid_day(contract_id: String, note: String) -> int:
+	for e: LedgerEntry in _books.ledger:
+		if e.ref == contract_id and e.note == note:
+			return e.day
+	return -1
+
+
+## What money should come in and go out over the next `days` business days, from today:
+##   days: [{day, in, out, cash, best, worst}]  cash at the end of each day (expected, and with the
+##     trials going best and worst); today's balance is the start
+##   coming_in: [{day, contract_id, title, stage, name, amount, best, worst, late}] in day order
+##     (late: it was expected before today and hasn't been paid)
+##   going_out: [{label, amount, per_day}] wages, rent, running costs, loan repayments, parts to buy
+##   totals: {in, in_best, in_worst, out}
+##   short_day, short_day_worst: the first day cash goes below zero (expected, worst case), -1 if never
+##   low, low_worst: the lowest cash in the period
+func cash_forecast(days := FORECAST_DAYS) -> Dictionary:
+	var today := get_day()
+	var horizon := today + maxi(1, days) - 1
+	var rows: Array = []
+	for d in range(today, horizon + 1):
+		rows.append({"day": d, "in": 0, "in_best": 0, "in_worst": 0, "out": 0})
+	var coming: Array = []
+	var parts_total := 0
+	for prof: Dictionary in payment_profiles():
+		var stages: Array = prof.get("stages", [])
+		for i in stages.size():
+			var st: Dictionary = stages[i]
+			if bool(st.get("paid", false)):
+				continue
+			var due := int(st.get("expected_day", today))
+			var day := maxi(today, due)
+			if day > horizon:
+				continue
+			var amount := int(st.get("amount", 0))
+			var best := amount
+			var worst := amount
+			if i == stages.size() - 1:
+				var trial: Dictionary = prof.get("trial", {})
+				best += int(trial.get("bonus", 0))
+				worst -= int(trial.get("holdback", 0))
+			var row: Dictionary = rows[day - today]
+			row["in"] += amount
+			row.in_best += best
+			row.in_worst += worst
+			coming.append({"day": day, "contract_id": str(prof.get("contract_id", "")), "title": str(prof.get("title", prof.get("contract_id", ""))),
+					"stage": str(st.get("id", "")), "name": str(st.get("name", "")), "amount": amount, "best": best, "worst": worst,
+					"late": due < today})
+		# Parts still to buy, spread over the days to the contract's next payment.
+		var parts := int(prof.get("parts_to_buy", 0))
+		if parts > 0:
+			var next := horizon
+			for st: Dictionary in stages:
+				if not bool(st.get("paid", false)):
+					next = clampi(int(st.get("expected_day", horizon)), today, horizon)
+					break
+			var n := next - today + 1
+			for d in n:
+				rows[d].out += parts / n + (1 if d < parts % n else 0)
+			parts_total += parts
+	coming.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.day) < int(b.day))
+	# The day-to-day costs.
+	var rules := get_rules()
+	var wages := 0
+	var levels := crew_levels()
+	for who: String in levels:
+		wages += wage_for(int(levels[who]))
+	var going: Array = []
+	going.append({"label": "Bay rent", "per_day": rules.bay_rent_per_day})
+	going.append({"label": "Crew wages", "per_day": wages})
+	for id: String in _running_costs:
+		var rc: Dictionary = _running_costs[id]
+		var f: Callable = rc.per_day
+		going.append({"label": str(rc.label), "per_day": int(f.call()) if f.is_valid() else 0})
+	for g: Dictionary in going:
+		g["amount"] = int(g.per_day) * rows.size()
+		for row: Dictionary in rows:
+			row.out += int(g.per_day)
+	# Loan repayments on the days they fall (the end of each loan month).
+	var repay := 0
+	for l: Dictionary in get_loans():
+		var left := int(l.balance)
+		for row: Dictionary in rows:
+			var age := int(row.day) + 1 - int(l.taken_day)
+			if left > 0 and age > 0 and age % rules.days_per_month == 0:
+				var due := mini(int(l.monthly), left)
+				row.out += due
+				left -= due
+				repay += due
+	going.append({"label": "Loan repayments", "per_day": 0, "amount": repay})
+	going.append({"label": "Parts still to buy for contracts", "per_day": 0, "amount": parts_total})
+	var cash := get_cash()
+	var best := cash
+	var worst := cash
+	var totals := {"in": 0, "in_best": 0, "in_worst": 0, "out": 0}
+	var short := -1
+	var short_worst := -1
+	var low := cash
+	var low_worst := cash
+	for row: Dictionary in rows:
+		cash += int(row["in"]) - int(row.out)
+		best += int(row.in_best) - int(row.out)
+		worst += int(row.in_worst) - int(row.out)
+		row["cash"] = cash
+		row["best"] = best
+		row["worst"] = worst
+		totals["in"] += int(row["in"])
+		totals.in_best += int(row.in_best)
+		totals.in_worst += int(row.in_worst)
+		totals.out += int(row.out)
+		low = mini(low, cash)
+		low_worst = mini(low_worst, worst)
+		if short < 0 and cash < 0:
+			short = int(row.day)
+		if short_worst < 0 and worst < 0:
+			short_worst = int(row.day)
+	return {"days": rows, "coming_in": coming, "going_out": going, "totals": totals, "start": get_cash(),
+			"short_day": short, "short_day_worst": short_worst, "low": low, "low_worst": low_worst}
 
 
 ## 0 to 100.
@@ -1503,7 +1765,16 @@ func _apply_debug(p: Dictionary) -> void:
 			var contracts := Modules.bus("contracts") as ContractsBus
 			if contracts:
 				var top: int = ContractClients.LEVEL_POINTS[ContractClients.LEVEL_POINTS.size() - 1]
-				for client: String in ContractClients.TABLE:
+				var clients: Array = ContractClients.TABLE.keys()
+				# The ship-order clients too (Wave 4's ShipClients), loaded by path while it may not be there yet.
+				var ship_clients := "res://modules/contracts/api/ship_clients.gd"
+				if ResourceLoader.exists(ship_clients):
+					var table: Variant = (load(ship_clients) as Script).get_script_constant_map().get("TABLE", {})
+					if table is Dictionary:
+						for id: Variant in table:
+							if not str(id) in clients:
+								clients.append(str(id))
+				for client: String in clients:
 					contracts.add_standing(client, maxi(0, top - contracts.standing_of(client)))
 			# The parts market's vendors, where that module runs (reached by name: it is optional).
 			var supply := Modules.bus("supply")
@@ -1878,6 +2149,8 @@ func _listen_to_contracts() -> void:
 		"contract_cancelled": on_contract_cancelled,
 		"contract_staged": on_contract_staged,
 		"stage_signed_off": on_stage_signed_off,
+		"contract_accepted_staged": on_contract_accepted_staged,
+		"contract_adjusted": on_contract_adjusted,
 	}
 	for sig in hooks:
 		if contracts.has_signal(sig) and not contracts.is_connected(sig, hooks[sig]):

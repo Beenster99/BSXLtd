@@ -46,6 +46,9 @@ var _band_text: Label
 var _pnl: VBoxContainer
 var _chart: CashChart
 var _cards: GridContainer
+var _forecast: VBoxContainer
+var _fc_chart: ForecastChart
+var _fc_lists: GridContainer
 var _queued := false
 
 
@@ -103,6 +106,19 @@ func setup(business_bus: BusinessBus, density: float) -> void:
 	_chart.custom_minimum_size.y = fs * 14
 	_chart.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	(chart_card.get_child(0) as VBoxContainer).add_child(_chart)
+	# The cash forecast: the payments coming in and the costs going out over the next days.
+	var fc_card := _card("CASH FORECAST, NEXT %d DAYS" % BusinessBus.FORECAST_DAYS)
+	fc_card.name = "Card_forecast"
+	col.add_child(fc_card)
+	_forecast = fc_card.get_child(0) as VBoxContainer
+	_fc_chart = ForecastChart.new()
+	_fc_chart.name = "ForecastChart"
+	_fc_chart.font_size = fs - 2
+	_fc_chart.custom_minimum_size.y = fs * 13
+	_fc_lists = GridContainer.new()
+	_fc_lists.name = "ForecastLists"
+	_fc_lists.add_theme_constant_override("h_separation", int(fs * 0.5))
+	_fc_lists.add_theme_constant_override("v_separation", int(fs * 0.3))
 	# The detail cards.
 	_cards = GridContainer.new()
 	_cards.name = "Cards"
@@ -152,6 +168,7 @@ func refresh() -> void:
 	_fill_pnl()
 	_chart.days = report.balance
 	_chart.queue_redraw()
+	_fill_forecast()
 	_fill_cards()
 	_fit_columns()
 
@@ -210,6 +227,11 @@ func _fill_band() -> void:
 		text = "OVERDRAWN for %d day(s): %d left to get back over zero before the company is insolvent." % [
 				int(r.days_in_debt), maxi(0, int(r.grace_days) - int(r.days_in_debt))]
 		colour = T.BAD
+	elif int(r.forecast.short_day) >= 0:
+		text = "CASH SHORTFALL AHEAD: the forecast goes below zero on day %d. Get a stage signed off sooner, cut costs or take a loan." % (int(r.forecast.short_day) + 1)
+		colour = T.BAD
+	elif int(r.forecast.short_day_worst) >= 0:
+		text = "WATCH CASH: if a trial goes badly, cash goes below zero on day %d." % (int(r.forecast.short_day_worst) + 1)
 	elif int(r.runway) >= 0 and int(r.runway) < RUNWAY_WARN:
 		text = "LOW CASH: at today's costs the account runs dry in %d day(s). Close a contract or take a loan." % int(r.runway)
 	_band.visible = text != ""
@@ -264,6 +286,93 @@ func _subtotal(group: String, got_in: int, got_out: int) -> PanelContainer:
 	return row
 
 
+func _fill_forecast() -> void:
+	var f: Dictionary = report.forecast
+	for keep: Control in [_fc_chart, _fc_lists]:
+		if keep.get_parent():
+			keep.get_parent().remove_child(keep)
+	_clear(_forecast, 1)
+	var t: Dictionary = f.totals
+	var summary := ""
+	var colour := T.GOOD
+	if int(f.short_day) >= 0:
+		summary = "Cash goes below zero on day %d. Lowest point %s CR." % [int(f.short_day) + 1, _signed(int(f.low))]
+		colour = T.BAD
+	elif int(f.short_day_worst) >= 0:
+		summary = "Cash stays above zero, but goes below on day %d if a trial goes badly." % (int(f.short_day_worst) + 1)
+		colour = T.AMBER
+	else:
+		summary = "Cash stays above zero all the way, even if every trial goes badly. Lowest point %s CR." % T.money(int(f.low_worst))
+	var line := _label(summary, "body_medium", fs, colour)
+	line.name = "ForecastSummary"
+	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_forecast.add_child(line)
+	var sums := HBoxContainer.new()
+	sums.add_theme_constant_override("separation", int(fs))
+	for pair: Array in [["EXPECTED IN", "+" + T.money(int(t["in"])), T.GOOD],
+			["RANGE", "%s to %s" % [T.money(int(t.in_worst)), T.money(int(t.in_best))], T.DIM],
+			["GOING OUT", "−" + T.money(int(t.out)), T.BAD],
+			["CASH ON DAY %d" % (int((f.days as Array).back().day) + 1), "CR " + T.money(int((f.days as Array).back().cash)), T.CYAN]]:
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", -2)
+		v.add_child(_label(pair[0], "display_medium", fs - 4, T.DIM))
+		v.add_child(_label(pair[1], "mono_bold", fs + 2, pair[2]))
+		sums.add_child(v)
+	_forecast.add_child(sums)
+	_forecast.add_child(_fc_chart)
+	_forecast.add_child(_fc_lists)
+	_fc_chart.days = f.days
+	_fc_chart.start = int(f.start)
+	_fc_chart.today = bus.get_day()
+	_fc_chart.queue_redraw()
+	_clear(_fc_lists)
+	# Payments coming in.
+	var ins := VBoxContainer.new()
+	ins.name = "ComingIn"
+	ins.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ins.add_theme_constant_override("separation", 1)
+	ins.add_child(_label("PAYMENTS COMING IN", "display_bold", fs - 2, T.GOOD))
+	var coming: Array = f.coming_in
+	if coming.is_empty():
+		ins.add_child(_label("No contract payments due in the next %d days." % BusinessBus.FORECAST_DAYS, "body", fs - 1, T.DIM))
+	var n := 0
+	for c: Dictionary in coming:
+		var names := VBoxContainer.new()
+		names.add_theme_constant_override("separation", -2)
+		names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var title := _label("%s  ·  %s" % [str(c.name), str(c.title)], "body_medium", fs - 1, T.TEXT)
+		title.clip_text = true
+		names.add_child(title)
+		var sub := "LATE: WAS DUE BEFORE TODAY" if c.late else ("TODAY" if int(c.day) == bus.get_day() else "IN %d DAYS" % (int(c.day) - bus.get_day()))
+		if int(c.best) != int(c.worst):
+			sub += "  ·  AFTER THE TRIAL %s TO %s" % [T.money(int(c.worst)), T.money(int(c.best))]
+		names.add_child(_label(sub, "display_medium", fs - 4, T.AMBER if c.late else T.DIM))
+		var row := _row([_cell("D%d" % (int(c.day) + 1), 3, T.DIM), names, _money_cell(int(c.amount), 1, "mono_bold", 6)], ROW_ALT if n % 2 else ROW)
+		row.name = "In_%s_%s" % [str(c.contract_id).validate_node_name(), str(c.stage)]
+		ins.add_child(row)
+		n += 1
+	_fc_lists.add_child(ins)
+	# Money going out.
+	var outs := VBoxContainer.new()
+	outs.name = "GoingOut"
+	outs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outs.add_theme_constant_override("separation", 1)
+	outs.add_child(_label("MONEY GOING OUT", "display_bold", fs - 2, T.BAD))
+	n = 0
+	for g: Dictionary in f.going_out:
+		if int(g.amount) == 0:
+			continue
+		var what := g.label as String
+		if int(g.per_day) > 0:
+			what += "  (%s a day)" % T.money(int(g.per_day))
+		var l := _label(what, "body", fs - 1, T.TEXT)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.clip_text = true
+		outs.add_child(_row([l, _money_cell(int(g.amount), -1, "mono_medium", 7)], ROW_ALT if n % 2 else ROW))
+		n += 1
+	_fc_lists.add_child(outs)
+
+
 func _fill_cards() -> void:
 	_clear(_cards)
 	_cards.add_child(_sheet_card())
@@ -302,6 +411,8 @@ func _costs_card() -> PanelContainer:
 	body.add_child(_pair("Bay rent", -int(b.rent)))
 	body.add_child(_pair("Crew wages (%d on shift)" % (report.crew as Array).filter(func(p: Dictionary) -> bool: return int(p.wage) > 0).size(), -int(b.wages)))
 	body.add_child(_pair("Loan repayments (a day's share)", -int(b.loans)))
+	if int(b.get("running", 0)) > 0:
+		body.add_child(_pair("Bots and other running costs", -int(b.running)))
 	body.add_child(_pair("EVERY DAY", -int(b.per_day), true))
 	body.add_child(_pair("Every %d-day month" % bus.get_rules().days_per_month, -int(b.per_day) * bus.get_rules().days_per_month))
 	var now: Dictionary = report.now
@@ -443,6 +554,9 @@ func _fit_columns() -> void:
 		return
 	var wide := size.x >= fs * 52
 	_cards.columns = 2 if wide else 1
+	_fc_lists.columns = 2 if wide else 1
+	for c in _fc_lists.get_children():
+		(c as Control).size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_figures.columns = 4 if size.x >= fs * 44 else 2
 	for c in _cards.get_children():
 		(c as Control).size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -657,3 +771,89 @@ class CashChart extends Control:
 		else:
 			s = str(roundi(a))
 		return ("−" if v < 0.0 else "") + s
+
+
+## The next days' cash: the expected line, a band from the worst to the best trial results,
+## zero marked, and money in (green, up) and out (red, down) each day; below zero is shaded red.
+class ForecastChart extends Control:
+	var days: Array = []
+	var start := 0
+	var today := 0
+	var font_size := 13
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var font := T.font("mono_medium")
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.07, 0.11))
+		if days.is_empty():
+			return
+		var pad_l := font_size * 4.5
+		var pad_r := font_size * 0.6
+		var pad_t := font_size * 1.4
+		var pad_b := font_size * 1.6
+		var plot := Rect2(pad_l, pad_t, size.x - pad_l - pad_r, size.y - pad_t - pad_b)
+		if plot.size.x <= 4.0 or plot.size.y <= 4.0:
+			return
+		var lo := minf(0.0, float(start))
+		var hi := maxf(1.0, float(start))
+		var flow := 1.0
+		for d: Dictionary in days:
+			lo = minf(lo, float(d.worst))
+			hi = maxf(hi, float(d.best))
+			flow = maxf(flow, maxf(float(d.in_best), float(d.out)))
+		var span := maxf(1.0, hi - lo)
+		var y_of := func(v: float) -> float: return plot.end.y - (v - lo) / span * plot.size.y
+		var zero: float = y_of.call(0.0)
+		if lo < 0.0:
+			draw_rect(Rect2(plot.position.x, zero, plot.size.x, plot.end.y - zero), Color(T.BAD, 0.08))
+		for v in [hi, (hi + lo) * 0.5, lo]:
+			var y: float = y_of.call(v)
+			draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), Color(0.3, 0.5, 0.7, 0.2), 1.0)
+			draw_string(font, Vector2(0, y + font_size * 0.35), CashChart._short(v), HORIZONTAL_ALIGNMENT_RIGHT, pad_l - 6.0, font_size, T.DIM)
+		draw_line(Vector2(plot.position.x, zero), Vector2(plot.end.x, zero), Color(T.BAD, 0.7), 1.5)
+		var w := plot.size.x / (days.size() + 1)
+		var band := plot.size.y * 0.22
+		var x_of := func(i: int) -> float: return plot.position.x + (i + 1) * w
+		# Money in and out each day, against the zero line.
+		for i in days.size():
+			var d: Dictionary = days[i]
+			var x: float = x_of.call(i)
+			var bw := maxf(2.0, w * 0.5)
+			var up := band * float(d["in"]) / flow
+			var dn := band * float(d.out) / flow
+			if up > 0.0:
+				draw_rect(Rect2(x - bw * 0.5, zero - up, bw, up), Color(T.GOOD, 0.55))
+			if dn > 0.0:
+				draw_rect(Rect2(x - bw * 0.5, zero, bw, dn), Color(T.BAD, 0.4))
+		# The best-to-worst band and the expected line, from today's balance.
+		var top := PackedVector2Array([Vector2(plot.position.x, y_of.call(float(start)))])
+		var bottom := PackedVector2Array([Vector2(plot.position.x, y_of.call(float(start)))])
+		var line := PackedVector2Array([Vector2(plot.position.x, y_of.call(float(start)))])
+		for i in days.size():
+			var d: Dictionary = days[i]
+			var x: float = x_of.call(i)
+			top.append(Vector2(x, y_of.call(float(d.best))))
+			bottom.append(Vector2(x, y_of.call(float(d.worst))))
+			line.append(Vector2(x, y_of.call(float(d.cash))))
+		var poly := top.duplicate()
+		for i in range(bottom.size() - 1, -1, -1):
+			poly.append(bottom[i])
+		if Geometry2D.triangulate_polygon(poly).size() > 0:
+			draw_colored_polygon(poly, Color(T.CYAN, 0.12))
+		draw_polyline(top, Color(T.GOOD, 0.6), 1.0, true)
+		draw_polyline(bottom, Color(T.AMBER, 0.7), 1.0, true)
+		draw_polyline(line, T.CYAN, 2.5, true)
+		for i in days.size():
+			var d: Dictionary = days[i]
+			var p := line[i + 1]
+			if int(d.cash) < 0:
+				draw_circle(p, 3.5, T.BAD)
+			if days.size() <= 10 or i % maxi(1, days.size() / 8) == 0 or i == days.size() - 1:
+				draw_string(font, Vector2(p.x - w * 0.5 - font_size, size.y - 4.0), "D%d" % (int(d.day) + 1),
+						HORIZONTAL_ALIGNMENT_CENTER, w + font_size * 2.0, font_size, T.DIM)
+		draw_string(font, Vector2(plot.position.x, font_size), "EXPECTED", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, T.CYAN)
+		draw_string(font, Vector2(plot.position.x + font_size * 6.5, font_size), "BEST", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, T.GOOD)
+		draw_string(font, Vector2(plot.position.x + font_size * 10.0, font_size), "WORST", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, T.AMBER)
+		draw_string(font, Vector2(plot.position.x, font_size), "▮ IN  ▮ OUT", HORIZONTAL_ALIGNMENT_RIGHT, plot.size.x, font_size, T.DIM)

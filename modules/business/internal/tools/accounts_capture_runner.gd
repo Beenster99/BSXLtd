@@ -30,7 +30,11 @@ func _run() -> void:
 	await _frames(10)
 	var scroll := screen.get_child(0) as ScrollContainer
 	await _save(out, "accounts_month")
-	scroll.scroll_vertical = 2000
+	var fc := screen.find_child("Card_forecast", true, false) as Control
+	scroll.scroll_vertical = int(fc.position.y)
+	await _frames(10)
+	await _save(out, "accounts_forecast")
+	scroll.scroll_vertical = 4000
 	await _frames(10)
 	await _save(out, "accounts_detail")
 	screen.queue_free()
@@ -88,14 +92,12 @@ static func sample_books(bus: BusinessBus) -> void:
 	books.call("advance_day")
 	books.get("company").take_loan(25000, 24, bus.get_day())
 	books.call("advance_day")
-	books.call("accept_contract", "SO-1047 Manta cargo hall", 126000, 14, 38000)
-	books.call("plan_stages", "SO-1047 Manta cargo hall", [{"id": "frame", "name": "Frame", "value": 42000},
-			{"id": "skin", "name": "Skin", "value": 46000}, {"id": "fit", "name": "Fit out", "value": 38000}])
-	buy.call(8, "SO-1047 Manta cargo hall")
+	bus.on_contract_accepted_staged("Freight hauler for Ardent Lines", BusinessBus.payment_plan(840000, bus.get_day(), bus.get_day() + 26), bus.get_day() + 26)
+	buy.call(8, "")
 	for d in 3:
 		books.call("advance_day")
 	books.call("hand_over", "SO-1042 Kestrel refit", 0.82, 0)
-	books.call("sign_off_stage", "SO-1047 Manta cargo hall", "frame")
+	bus.register_running_cost("bots", "TartanCo bots (6)", func() -> int: return 900)
 	books.call("advance_day")
 	buy.call(4, "")
 	bus.add_stock(listings[3].part, 4, "used", "recovered")
@@ -104,11 +106,12 @@ static func sample_books(bus: BusinessBus) -> void:
 	var offers := bus.get_offers(listings[3].part, "used")
 	if not offers.is_empty():
 		bus.sell_stock(str(offers[0].supplier_id), listings[3].part, "used", 2)
-	books.call("accept_contract", "SO-1051 Gannet thrusters", 31000, 16, 9000)
-	buy.call(3, "SO-1051 Gannet thrusters")
+	bus.on_contract_accepted_staged("Survey explorer for Halden Survey", BusinessBus.payment_plan(1120000, bus.get_day(), bus.get_day() + 34), bus.get_day() + 34)
+	buy.call(3, "")
 	for d in 4:
 		books.call("advance_day")
-	books.call("sign_off_stage", "SO-1047 Manta cargo hall", "skin")
+	bus.on_stage_signed_off("Freight hauler for Ardent Lines", "keel")
+	books.get("company").take_loan(120000, 24, bus.get_day())
 	books.get("company").award_bonus("Ann", 600, "Kestrel handover", "Ann", bus.get_day())
 	books.call("advance_day")
 	books.call("advance_minutes", 14 * 60 + 20)
