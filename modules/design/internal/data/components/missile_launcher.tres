@@ -25,3 +25,4 @@ max_class = 6
 integrity = 160.0
 attack = 45.0
 signature = 6.0
+shared_part = "MissileLauncher"

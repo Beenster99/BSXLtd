@@ -37,6 +37,28 @@ const BERTHS: Array = [[1, "Starter berth", 56.0], [2, "Long berth", 106.0], [3,
 ## reference builds (DesignReference) and kept a little generous.
 const LENGTH_PER_ROOT_AREA := 2.2
 const LENGTH_BASE := 4.0
+## Where a sector's ships work (an order's "region": DesignPower.SUN, how much sunlight solar
+## gets there), and how often its orders ask for endurance (days without refuelling at full
+## working load) or no reactor aboard ("reactors": 0, for passengers and nervous owners).
+const SECTOR_WORK: Dictionary = {
+	"military": {"regions": ["inner", "mid", "outer"], "endurance": 0.25, "no_reactor": 0.03},
+	"mining": {"regions": ["mid", "outer", "outer", "deep"], "endurance": 0.4, "no_reactor": 0.05},
+	"trade": {"regions": ["inner", "inner", "mid"], "endurance": 0.2, "no_reactor": 0.08},
+	"salvage": {"regions": ["inner", "mid", "outer"], "endurance": 0.3, "no_reactor": 0.05},
+	"courier": {"regions": ["inner", "mid"], "endurance": 0.1, "no_reactor": 0.1},
+	"yacht": {"regions": ["inner", "inner", "mid"], "endurance": 0.15, "no_reactor": 0.35},
+	"transport": {"regions": ["inner", "mid", "outer", "deep"], "endurance": 0.3, "no_reactor": 0.3},
+	"research": {"regions": ["mid", "outer", "deep", "deep"], "endurance": 0.5, "no_reactor": 0.15},
+}
+## Days without refuelling asked, by region: further out, longer between ports.
+const ENDURANCE_DAYS: Dictionary = {"inner": [7, 20], "mid": [14, 40], "outer": [30, 90], "deep": [60, 180]}
+const REGION_NAMES: Dictionary = {"inner": "Inner system", "mid": "Mid system", "outer": "Outer system", "deep": "Deep space"}
+## Fuel a working load burns, m3 a kWh (a generator's: DesignPower.DEFAULT_BURN), and the
+## working load the estimate assumes, kW, fitted to the reference builds' power drawn: a base,
+## per crew, per point of attack and defence, per m2, and the drives per tonne moved.
+const BURN_PER_KWH := 0.0004
+const LOAD: Dictionary = {"base": 34.66, "per_crew": 0.81, "per_attack": 0.2824, "per_defence": 0.0211,
+	"per_jump_t": 0.0491, "per_thrust_t": 0.0903, "per_m2": 0.0438}
 ## Demands that grow with the size of the ship (the rest are ratings: a big ship is no
 ## faster or quieter for being big).
 const SCALED: PackedStringArray = ["crew", "cargo_m3", "attack", "defence", "power", "fuel_m3",
@@ -320,12 +342,25 @@ static func make(client: String, role: String, size: String, rng: RandomNumberGe
 		elif key == "speed":
 			v *= float(sz.speed)
 		demands[key] = round_figure(key, v)
+	var region := "inner"
+	if with_clauses:
+		var work: Dictionary = SECTOR_WORK.get(str(r.sector), {})
+		var regions: Array = work.get("regions", ["inner"])
+		region = str(regions[rng.randi_range(0, regions.size() - 1)])
+		if rng.randf() < float(work.get("endurance", 0.0)):
+			var span: Array = ENDURANCE_DAYS[region]
+			demands["endurance_days"] = rng.randi_range(int(span[0]), int(span[1]))
+		if rng.randf() < float(work.get("no_reactor", 0.0)):
+			demands["reactors"] = 0
 	var clauses: Array = []
 	if with_clauses:
 		var pool: Array = (r.clauses as Array).duplicate()
 		var n := rng.randi_range(int(r.picks[0]), int(r.picks[1]))
 		while clauses.size() < n and not pool.is_empty():
 			var cid: String = pool.pop_at(rng.randi_range(0, pool.size() - 1))
+			# Graded weapons only on a ship asked to carry weapons.
+			if str(CLAUSES[cid].get("category", "")) == "weapons" and not demands.has("attack"):
+				continue
 			clauses.append(clause(cid, size))
 	var est := estimate(demands, clauses)
 	var purse: Array = c.get("purse", [0.9, 1.5])
@@ -340,7 +375,7 @@ static func make(client: String, role: String, size: String, rng: RandomNumberGe
 		"story": str(c.get("story", "")), "temper": str(c.get("temper", "")),
 		"demands": demands, "clauses": clauses, "budget": budget, "estimate": int(est),
 		"achievability": achievability(budget, est), "pay": fee, "days": days,
-		"needs_level": int(sz.level), "locked": false, "length_m": int(length_for(demands, clauses)),
+		"needs_level": int(sz.level), "locked": false, "region": region, "length_m": int(length_for(demands, clauses)),
 		"berth": berth_for(length_for(demands, clauses))}
 
 
@@ -391,7 +426,28 @@ static func equivalent(demands: Dictionary) -> Dictionary:
 		d.crew = maxf(float(d.get("crew", 0.0)), ceilf(float(d.occupancy_mass) / PERSON_KG))
 	if d.has("cargo_max"):
 		d.cargo_m3 = maxf(float(d.get("cargo_m3", 0.0)), float(d.cargo_max) / CARGO_KG_PER_M3)
+	if d.has("endurance_days"):
+		d.fuel_m3 = maxf(float(d.get("fuel_m3", 0.0)), float(d.endurance_days) * 24.0 * working_load(d) * BURN_PER_KWH)
 	return d
+
+
+## The working load the estimate assumes for these (equivalent) demands, kW.
+static func working_load(d: Dictionary) -> float:
+	var g := func(k: String) -> float: return float(d.get(k, 0.0))
+	var t := tonnes_for(d)
+	var thrust := pow(g.call("speed") / 90.0, 2.0)
+	return LOAD.base + LOAD.per_crew * maxf(g.call("crew"), 1.0) + LOAD.per_attack * g.call("attack") \
+			+ LOAD.per_defence * g.call("defence") + LOAD.per_jump_t * g.call("jump_ly") * t \
+			+ LOAD.per_thrust_t * thrust * t + LOAD.per_m2 * area_for(d)
+
+
+## About what the ship weighs, t (the estimate's mass model), for equivalent demands.
+static func tonnes_for(demands: Dictionary, clause_cost := 0.0) -> float:
+	var g := func(k: String) -> float: return float(demands.get(k, 0.0))
+	var a75 := pow(area_for(demands), 0.75)
+	var thrust := pow(g.call("speed") / 90.0, 2.0)
+	return MASS.base + MASS.per_area * a75 + MASS.per_attack * g.call("attack") + MASS.per_defence * g.call("defence") \
+			+ MASS.per_jump_area * g.call("jump_ly") * a75 + MASS.per_thrust_area * thrust * a75 + MASS.per_clause_k * clause_cost / 1000.0
 
 
 ## Floor area a ship of these demands needs, m2: bridge and engineering, quarters, hold.
@@ -428,13 +484,11 @@ static func estimate(raw: Dictionary, clauses: Array = []) -> float:
 	var demands := equivalent(raw)
 	var g := func(k: String) -> float: return float(demands.get(k, 0.0))
 	var area := area_for(demands)
-	var a75 := pow(area, 0.75)
 	var thrust := pow(g.call("speed") / 90.0, 2.0)
 	var clause_cost := 0.0
 	for c: Dictionary in clauses:
 		clause_cost += float(c.get("cost", 0.0))
-	var tonnes: float = MASS.base + MASS.per_area * a75 + MASS.per_attack * g.call("attack") + MASS.per_defence * g.call("defence") \
-			+ MASS.per_jump_area * g.call("jump_ly") * a75 + MASS.per_thrust_area * thrust * a75 + MASS.per_clause_k * clause_cost / 1000.0
+	var tonnes := tonnes_for(demands, clause_cost)
 	var st: float = g.call("stealth")
 	var cost: float = COST.base + COST.per_m2 * area + COST.per_attack * g.call("attack") + COST.per_defence * g.call("defence") \
 			+ COST.per_power * g.call("power") + COST.per_sensor * g.call("sensor_km") \
@@ -462,10 +516,13 @@ static func demand_lines(order: Dictionary) -> PackedStringArray:
 		"budget": ["Cost", "CR", false], "max_mass": ["Dry mass", "t", false], "dry_mass": ["Dry mass", "t", false],
 		"wet_mass": ["Wet mass", "t", false], "fuel_mass": ["Fuel load", "t", true],
 		"occupancy_mass": ["Occupancy mass", "t", true], "cargo_max": ["Cargo max", "t", true],
-		"build_days": ["Build time", "days", false]}
+		"build_days": ["Build time", "days", false], "endurance_days": ["Days without refuelling", "", true]}
 	var out: PackedStringArray = []
 	var demands: Dictionary = order.get("demands", {})
 	for key: String in demands:
+		if key == "reactors":
+			out.append("No reactor aboard" if int(demands[key]) == 0 else "Reactors at most %d" % int(demands[key]))
+			continue
 		var n: Array = names.get(key, [key, "", true])
 		var v := float(demands[key])
 		out.append("%s %s %s %s" % [n[0], "at least" if n[2] else "at most", _thousands(int(v / 1000.0) if MASS_KEYS.has(key) else int(v)), n[1]])
@@ -479,6 +536,15 @@ static func _thousands(n: int) -> String:
 		out = "," + s.substr(s.length() - 3) + out
 		s = s.substr(0, s.length() - 3)
 	return ("-" if n < 0 else "") + s + out
+
+
+## "Works in the outer system: solar gets a quarter of full sun." for an order with a region.
+static func region_line(order: Dictionary) -> String:
+	var region := str(order.get("region", ""))
+	if region == "":
+		return ""
+	var sun := {"inner": "full sun", "mid": "60% sun", "outer": "a quarter of full sun", "deep": "almost no sun"}
+	return "Works in the %s: solar gets %s." % [str(REGION_NAMES.get(region, region)).to_lower(), sun.get(region, "")]
 
 
 ## The special clauses as lines a player reads.

@@ -1,0 +1,33 @@
+{
+ "power_kw": 6.0,
+ "load_kg": 8000.0,
+ "opening": [
+  2.944,
+  2.592
+ ],
+ "pieces": [
+  {
+   "name": "ramp",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": -100.0,
+   "seconds": 6.0,
+   "order": 1,
+   "pivot": [
+    -0.0,
+    0.0583,
+    0.0063
+   ],
+   "unit": "deg",
+   "min": -100.0,
+   "max": 0.0,
+   "rest": 0.0
+  }
+ ]
+}

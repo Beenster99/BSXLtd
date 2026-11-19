@@ -1,0 +1,38 @@
+{
+ "power_kw": 0.0,
+ "load_kg": 20000.0,
+ "pieces": [
+  {
+   "name": "foot",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    1,
+    0,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 0.0,
+   "seconds": 0.5,
+   "order": 1,
+   "swing": 15.0,
+   "contact": {
+    "at": [
+     0.0,
+     -0.1471,
+     0.0
+    ],
+    "radius": 0.54
+   },
+   "pivot": [
+    0.0,
+    0.1471,
+    0.0032
+   ],
+   "unit": "deg",
+   "min": -15.0,
+   "max": 15.0,
+   "rest": 0.0
+  }
+ ]
+}

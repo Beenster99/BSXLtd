@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "mining_head_large"
+display_name = "Mining head (large roadheader)"
+short = "MH3"
+colour = Color(0.85, 0.7, 0.4, 1)
+size = Vector3(2.0, 2.0, 3.6)
+cost = 48000.0
+mass = 4200.0
+build_hours = 14.0
+power = -55.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 5
+category = "machinery"
+size_class = 5
+min_class = 4
+max_class = 6
+integrity = 320.0
+signature = 14.0

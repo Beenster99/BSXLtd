@@ -20,3 +20,4 @@ lead_days = 2
 category = "medical"
 graded = false
 integrity = 80.0
+shared_part = "MedBed"

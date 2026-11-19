@@ -1,0 +1,37 @@
+{
+ "power_kw": 6.0,
+ "load_kg": 30000.0,
+ "pieces": [
+  {
+   "name": "skid",
+   "parent": "base",
+   "kind": "slide",
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "stowed": 0.4,
+   "deployed": 0.0,
+   "seconds": 8.0,
+   "order": 1,
+   "contact": {
+    "at": [
+     0.0,
+     -0.6,
+     0.0
+    ],
+    "radius": 0.3
+   },
+   "pivot": [
+    0.0,
+    0.6,
+    0.0
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 0.4,
+   "rest": 0.0
+  }
+ ]
+}

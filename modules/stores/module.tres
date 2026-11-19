@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ModuleManifest" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://modules/core/api/module_manifest.gd" id="1"]
+[ext_resource type="Script" path="res://modules/stores/api/stores_bus.gd" id="2"]
+
+[resource]
+script = ExtResource("1")
+id = "stores"
+display_name = "Warehouse stock"
+version = "0.1.0"
+depends_on = PackedStringArray("yard", "design")
+flag = "stores"
+bus = ExtResource("2")
+test_scene = ""

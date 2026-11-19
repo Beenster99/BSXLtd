@@ -1,0 +1,29 @@
+{
+ "power_kw": 3.0,
+ "load_kg": 15000.0,
+ "pieces": [
+  {
+   "name": "rod",
+   "parent": "base",
+   "kind": "slide",
+   "axis": [
+    0,
+    0,
+    -1
+   ],
+   "stowed": 0.0,
+   "deployed": 0.7867,
+   "seconds": 4.0,
+   "order": 1,
+   "pivot": [
+    0.0,
+    0.117,
+    -0.1864
+   ],
+   "unit": "m",
+   "min": 0.0,
+   "max": 0.7867,
+   "rest": 0.0
+  }
+ ]
+}

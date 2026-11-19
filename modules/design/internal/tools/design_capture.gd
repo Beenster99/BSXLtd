@@ -6,7 +6,8 @@ extends Node
 ## room furnished inside the orbital yard's station instead.
 ## Saves console.png (the design console), room.png (the room with its walls and table),
 ## holo_cut.png (the holotable cut through deck 1), wall_left.png, wall_right.png (what two walls show)
-## and walk_*.png (walk-inside mode). With --fit: fit_console.png, fit_wall.png and fit_room.png
+## and walk_*.png (walk-inside mode). --parts shoots the palette, --models walk-inside fitted out in
+## the parts' detailed models (models_*.png). With --fit: fit_console.png, fit_wall.png and fit_room.png
 ## (the contract fit assessment).
 
 const SIZE := Vector2i(1920, 1080)
@@ -44,6 +45,10 @@ class Runner:
 		var room: Node = get_tree().current_scene
 		if "--parts" in OS.get_cmdline_user_args():
 			await _parts_shots(room, out)
+			get_tree().quit()
+			return
+		if "--models" in OS.get_cmdline_user_args():
+			await _model_shots(room, out)
 			get_tree().quit()
 			return
 		if "--orders" in OS.get_cmdline_user_args():
@@ -292,6 +297,43 @@ class Runner:
 		await _frames(30)
 		await _save(out, "parts_order")
 
+	## Walk-inside with the rooms fitted out in the parts' detailed models, Void Salvage's and
+	## BSX's own (PartModels), and weapons and lights on the hull (--models).
+	func _model_shots(room: Node, out: String) -> void:
+		var bus: DesignBus = room.bus
+		var n := 0
+		for c in [["cooker", "r9", 3.5, -3.6, 2], ["fridge", "r9", -0.5, -3.6, 2], ["kitchen_sink", "r9", 2.6, -3.6, 2],
+				["food_printer", "r9", -0.5, -0.4, 0], ["drinks_dispenser", "r9", 0.3, -0.4, 0], ["sofa", "r9", 2.6, -0.5, 0],
+				["games_table", "r9", 1.6, -2.0, 0],
+				["jump_drive", "r5", 5.4, -0.6, 0], ["coolant_pump", "r5", 6.4, 1.0, 3], ["power_distributor", "r5", 3.4, -1.6, 2],
+				["breaker_panel", "r5", 4.4, -1.85, 2], ["fire_suppression", "r5", 1.4, 0.8, 1], ["oxygen_generator", "r5", 1.6, 3.4, 0],
+				["helm_console", "r1", 0.5, -7.2, 2], ["captains_chair", "r1", 0.5, -8.2, 2], ["flight_computer", "r1", 2.5, -9.6, 2],
+				["comms_suite", "r1", -1.5, -7.0, 1],
+				["tech_container", "r4", -5.5, -1.2, 0], ["pallet_lifter", "r4", -3.0, -1.5, 0], ["spares_cage", "r4", -1.6, -5.5, 2],
+				["tool_rack", "r4", -4.0, -5.7, 2], ["weapons_locker", "r4", -6.6, -1.0, 1],
+				["captains_cabin", "r3", 2.2, -4.9, 2], ["wardrobe", "r3", 1.5, -2.4, 0], ["desk", "r3", 3.6, -2.4, 0]]:
+			n += 1
+			bus.editor.do({"op": "add_component", "component": {"id": "m%d" % n, "type": c[0], "room": c[1],
+					"x": c[2], "z": c[3], "rot": c[4]}})
+		for m in [["point_defence", -7.0, -3.0, PI], ["missile_rack", -7.0, -5.0, PI], ["radar_array", -7.0, -1.0, PI],
+				["nav_lights", -2.0, -8.0, PI], ["twin_turret", 7.0, 0.5, 0.0]]:
+			n += 1
+			bus.editor.do({"op": "add_mount", "mount": {"id": "m%d" % n, "type": m[0], "deck": 0, "x": m[1], "z": m[2], "angle": m[3]}})
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		for shot in [["models_mess", Vector3(1.6, 4.0, -1.0), PI * 0.08, -0.35],
+				["models_engineering", Vector3(1.8, 1.4, 1.0), -0.93, -0.25],
+				["models_bridge", Vector3(0.6, 1.0, -6.6), 0.0, -0.3],
+				["models_hold", Vector3(-2.0, 1.0, -0.6), PI * 0.25, -0.25],
+				["models_quarters", Vector3(4.4, 1.0, -2.6), PI * 0.35, -0.3]]:
+			walk.body.position = shot[1]
+			walk.body.rotation.y = shot[2]
+			walk.set("_pitch", shot[3])
+			walk.camera.rotation.x = shot[3]
+			await _frames(30)
+			await _save(out, shot[0])
+		room.furnishing.close_walk()
+
 	## Wave 4: the board of ship orders open on the console (orders_list), then one picked,
 	## with its client, budget against the cheapest build, and its demands and clauses scored
 	## on the data channel (orders_picked).
@@ -337,6 +379,14 @@ class Runner:
 		for o: Dictionary in contracts.ship_orders():
 			if contracts.ship_sign_problem(o) == "" and (pick.is_empty() or str(o.achievability.label) in ["Fair", "Generous"]):
 				pick = o
+		# Show one that works away from the sun and asks for endurance, where there is one.
+		for i in range(10):
+			var far := contracts.ship_orders().filter(func(o: Dictionary) -> bool:
+				return contracts.ship_sign_problem(o) == "" and o.demands.has("endurance_days") and str(o.get("region", "")) != "inner")
+			if not far.is_empty():
+				pick = far[0]
+				break
+			contracts.advance_cycle()
 		console.set_order(pick)
 		await _frames(30)
 		await _save(out, "contract_quote")

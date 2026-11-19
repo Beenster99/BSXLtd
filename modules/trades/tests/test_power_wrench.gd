@@ -25,6 +25,8 @@ func run_tests() -> void:
 		Flags.set_flag(flag, true)
 	# The wrench as 0.3.7 had it: set to the bolt's torque as you aim (test_playtest_0316 has
 	# the player's own setting).
+	var had_specs := not HudSlots.holo_channel(TradesBus.SPECS_CHANNEL).is_empty()
+	bus.offer_specs_channel()
 	saved["trades.torque_kept"] = Flags.is_on("trades.torque_kept")
 	Flags.set_flag("trades.torque_kept", false)
 	ship_bus.load_ship("vs_kestrel")
@@ -141,6 +143,8 @@ func run_tests() -> void:
 	await frames(1)
 	for flag: String in saved:
 		Flags.set_flag(flag, saved[flag])
+	if not had_specs:
+		HudSlots.unregister_holo_channel(TradesBus.SPECS_CHANNEL)
 
 
 func _run(station: TradesShipJoints, seconds: float) -> void:

@@ -1,0 +1,56 @@
+{
+ "power_kw": 30.0,
+ "load_kg": 0.0,
+ "opening": [
+  5.46,
+  3.7
+ ],
+ "pieces": [
+  {
+   "name": "leaf_l",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": 110.0,
+   "seconds": 25.0,
+   "order": 1,
+   "pivot": [
+    -2.78,
+    0.09,
+    -0.0409
+   ],
+   "unit": "deg",
+   "min": 0.0,
+   "max": 110.0,
+   "rest": 0.0
+  },
+  {
+   "name": "leaf_r",
+   "parent": "base",
+   "kind": "hinge",
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "stowed": 0.0,
+   "deployed": -110.0,
+   "seconds": 25.0,
+   "order": 1,
+   "pivot": [
+    2.78,
+    0.09,
+    -0.0409
+   ],
+   "unit": "deg",
+   "min": -110.0,
+   "max": 0.0,
+   "rest": 0.0
+  }
+ ]
+}

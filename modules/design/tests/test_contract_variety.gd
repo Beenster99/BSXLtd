@@ -20,6 +20,10 @@ func _reference() -> void:
 	check(float(r.cost) > 150000.0 and float(r.cost) < 1500000.0, "at a believable price: CR %d" % int(r.cost))
 	var quiet := DesignReference.build({"crew": 4, "attack": 60, "defence": 150, "speed": 150, "jump_ly": 8, "stealth": 60}, [], cat)
 	check(quiet.met and float(quiet.cost) > float(r.cost), "a quiet one costs more: CR %d" % int(quiet.cost))
+	var far := DesignReference.build({"crew": 4, "attack": 60, "defence": 150, "speed": 150, "jump_ly": 8, "endurance_days": 90, "reactors": 0}, [], cat)
+	check(far.met, "the reference build carries the tanks for 90 days without a reactor: misses %s" % [far.misses])
+	check((far.totals as DesignTotals).reactors == 0 and (far.totals as DesignTotals).endurance_days() >= 90.0,
+			"no reactor, %.0f days" % (far.totals as DesignTotals).endurance_days())
 
 
 ## The estimate against the reference build for one order of every kind of ship, small and

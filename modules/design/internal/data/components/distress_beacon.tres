@@ -20,3 +20,4 @@ lead_days = 1
 category = "sensors"
 graded = false
 integrity = 40.0
+shared_part = "DistressBeacon"

@@ -99,7 +99,14 @@ func run_tests() -> void:
 	var saved := bus.save_data()
 	bus.reset_data()
 	bus.load_data(saved, SupplyBus.SAVE_VERSION)
-	check(bus.day == SupplyBus.START_DAY + 1 and is_equal_approx(bus.standing_of("meridian"), 80.0), "the day and standing save")
+	check(is_equal_approx(bus.standing_of("meridian"), 80.0), "standing saves")
+	var business := Modules.bus("business")
+	if business and business.has_method("get_day"):
+		bus.sync_day()
+		check(bus.day == SupplyBus.START_DAY + int(business.call("get_day")),
+				"the market day follows the business day (on guests too): %d" % bus.day)
+	else:
+		check(bus.day == SupplyBus.START_DAY + 1, "the day saves without the business module")
 
 	# The wall panel: offered to the design room's walls, and it works.
 	check(design.wall_views.has(SupplyBus.WALL_VIEW), "the market is offered to the walls")

@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "mining_head_small"
+display_name = "Mining head (small auger)"
+short = "MH1"
+colour = Color(0.85, 0.7, 0.4, 1)
+size = Vector3(0.6, 0.6, 1.4)
+cost = 6500.0
+mass = 240.0
+build_hours = 4.0
+power = -6.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 2
+category = "machinery"
+size_class = 1
+min_class = 1
+max_class = 2
+integrity = 90.0
+signature = 4.0

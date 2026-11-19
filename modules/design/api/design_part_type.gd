@@ -66,6 +66,8 @@ extends Resource
 @export var tank := 0.0
 ## Sensor range, km.
 @export var sensor := 0.0
+## Tow rating: tonnes it can tow (tow hooks; contracts that want a tug read it).
+@export var tow_t := 0.0
 ## --- Moving parts (doors, ramps, legs, booms, arrays: the moving parts test) ---
 ## The opening it gives when open, m: width and height (0, 0 for none).
 @export var open_size := Vector2.ZERO

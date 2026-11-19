@@ -20,3 +20,4 @@ lead_days = 1
 category = "furniture"
 graded = false
 integrity = 50.0
+shared_part = "SeatRow"
