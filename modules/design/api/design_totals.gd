@@ -51,9 +51,15 @@ static func compute(d: DesignRecord, cat: DesignCatalog) -> DesignTotals:
 	if t.floor_area > 0.0:
 		var st := DesignStructure.measure(d)
 		var spec := d.structure
-		for row: Array in [["frame", DesignStructure.option("frame", str(spec.frame)), st.frame_m, "m"],
-				["hull", DesignStructure.option("hull", str(spec.hull)), st.outer_area, "m2"],
-				["inner", DesignStructure.option("inner", str(spec.inner)), st.inner_area, "m2"],
+		# The structure proposed round the rooms (DesignFrame): its members, its skin and the
+		# joints that hold them; the rooms' outer walls stand inside it as linings.
+		var fc := DesignFrame.counts(DesignFrame.propose(d))
+		var framed := int(fc.stations) > 0
+		for row: Array in [["frame", DesignStructure.option("frame", str(spec.frame)), fc.member_m if framed else st.frame_m, "m"],
+				["hull", DesignStructure.option("hull", str(spec.hull)), fc.skin_m2 if framed else st.outer_area, "m2"],
+				["welds", DesignFrame.WELD, float(fc.welds), "x"],
+				["rivets", DesignFrame.RIVET, float(fc.rivets), "x"],
+				["inner", DesignStructure.option("inner", str(spec.inner)), st.inner_area + (st.outer_area if framed else 0.0), "m2"],
 				["deck", DesignStructure.DECK, st.floor_area, "m2"]]:
 			var o: Dictionary = row[1]
 			var qty: float = row[2]

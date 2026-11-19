@@ -56,6 +56,12 @@ var lifts: Array[Dictionary] = []
 var ladders: Array[Dictionary] = []
 var lamps := 0
 var ribs := 0
+## The structure proposed for the design (DesignFrame.propose) and the frame built from it:
+## its body (a frozen RigidBody3D on the walk layer), parts and joints.
+var frame_plan: Dictionary = {}
+var frame: FrameHull
+var frame_body: RigidBody3D
+var frame_model: PartModel
 var _paints: Dictionary = {}
 var _outline: Array[Vector3] = []
 
@@ -79,8 +85,13 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	_outline.clear()
 	lamps = 0
 	ribs = 0
+	frame = null
+	frame_body = null
+	frame_model = null
+	frame_plan = {}
 	if rec == null:
 		return
+	frame_plan = DesignFrame.propose(rec)
 	var stairs := stairwells(rec, catalog)
 	for r: Dictionary in rec.rooms.values():
 		_floor(r, stairs)
@@ -101,6 +112,7 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 		_stairs(rec.rooms[low_id], rec.rooms[stairs[low_id]])
 	_lifts(stairs)
 	_ladders(stairs)
+	_frame()
 	_components()
 	_services()
 	_draw_outline()
@@ -455,7 +467,7 @@ func _wall(e: Dictionary, outer: bool) -> void:
 		_door(g, a, dir, normal, y0, outer)
 		start = g.t1
 	_wall_piece(info, a, dir, normal, start, length, y0, y1, inside_pos, inside_neg, outer)
-	if outer:
+	if outer and frame_plan.is_empty():
 		_ribs(a, dir, normal if inside_pos else -normal, length, gaps, y0, y1)
 
 
@@ -475,7 +487,8 @@ func _wall_piece(info: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, t0
 	wall_pieces.append({"deck": int(info.deck), "a": p0, "b": p1, "y0": y0, "y1": y1, "outer": outer})
 	# Each face: lining panels inside a room, hull plating where it faces space.
 	for side in [1.0, -1.0]:
-		var inside := inside_pos if side > 0.0 else inside_neg
+		# Inside the frame an outer wall is the hull's lining: its back faces the frame, not space.
+		var inside := (inside_pos if side > 0.0 else inside_neg) or not frame_plan.is_empty()
 		var w := PANEL if inside else HULL_PANEL
 		var mat := paint(Color(0.52, 0.54, 0.54), "satin_paint") if inside else paint(Color(0.5, 0.52, 0.55), "brushed_alloy")
 		var panels: Array[Transform3D] = []
@@ -493,6 +506,73 @@ func _wall_piece(info: Dictionary, a: Vector2, dir: Vector2, normal: Vector2, t0
 			kick.material_override = paint(Color(0.3, 0.32, 0.34), "satin_paint")
 			kick.position = Vector3(0, -(y1 - y0) * 0.5 + 0.07, side * (WALL * 0.5 + LINING + 0.006))
 			body.add_child(kick)
+
+
+## The structure: the proposed frame built as parts and joints with the shared frame kit (rings,
+## node blocks, stringers, welded; the skin riveted on; glass; the outer doors cut and framed),
+## and a sill across the gap at each outer door from the room's wall to the skin.
+func _frame() -> void:
+	if frame_plan.is_empty():
+		return
+	frame_body = RigidBody3D.new()
+	frame_body.name = "Frame"
+	frame_body.freeze = true
+	frame_body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+	frame_body.collision_layer = LAYER
+	frame_body.collision_mask = 0
+	frame_body.set_meta("walk", {"kind": "frame", "deck": 0})
+	root.add_child(frame_body)
+	var kit := ShipKit.new(frame_body)
+	frame_model = PartModel.new(frame_body, true)
+	kit.model = frame_model
+	frame = DesignFrame.build(frame_plan, kit, {"shell": paint(Color(0.5, 0.52, 0.55), "brushed_alloy"),
+			"frame": paint(Color(0.34, 0.36, 0.38), "gunmetal")})
+	for v in frame_body.find_children("*", "VisualInstance3D", true, false):
+		(v as VisualInstance3D).layers = 1 | EXTERIOR
+	var st: Array = frame_plan.stations
+	for o: Dictionary in frame_plan.openings:
+		var g: Dictionary = rec.doors.get(str(o.name).trim_prefix("door_"), {})
+		if g.is_empty():
+			continue
+		var at := Vector3(float(g.x), int(g.deck) * rec.deck_height, float(g.z))
+		var to := at
+		if int(o.edge) >= 0:
+			var r := _station_rect(at.z)
+			to.x = r.end.x if int(o.edge) == DesignFrame.STARBOARD else r.position.x
+		else:
+			to.z = float(st[0 if int(o.cap) == 0 else st.size() - 1].z)
+		var size := Vector3(absf(to.x - at.x) + WALL, FLOOR, DOOR_W) if int(o.edge) >= 0 \
+				else Vector3(DOOR_W, FLOOR, absf(to.z - at.z) + WALL)
+		var sill := _body({"kind": "floor", "deck": int(g.deck)})
+		sill.name = "Sill_%s" % str(g.id)
+		sill.position = (at + to) * 0.5 + Vector3(0, -FLOOR * 0.5, 0)
+		_box_in(sill, size, paint(Color(0.3, 0.32, 0.34), "gunmetal"))
+		_shape_in(sill, size, Vector3.ZERO)
+
+
+## The frame station nearest `z`'s section (x across, y up).
+func _station_rect(z: float) -> Rect2:
+	var best: Dictionary = frame_plan.stations[0]
+	for s: Dictionary in frame_plan.stations:
+		if absf(float(s.z) - z) < absf(float(best.z) - z):
+			best = s
+	return best.rect
+
+
+## The frame part a ray hit (its collider and shape index), null if not the frame's.
+func frame_part(collider: Object, shape: int) -> PartData:
+	if frame_model == null or collider != frame_body:
+		return null
+	var owner := frame_body.shape_find_owner(shape)
+	var cs := frame_body.shape_owner_get_owner(owner) as CollisionShape3D
+	return frame_model.part_for_collider(cs) if cs else null
+
+
+## The frame's joint nearest a point (walk space), null if none within `reach` m.
+func frame_joint(at: Vector3, reach: float = 0.35) -> ConnectionData:
+	if frame_model == null:
+		return null
+	return frame_model.find_connection_near(at, reach)
 
 
 ## Frame ribs up the inside of an outer wall, on the design's frame grid.

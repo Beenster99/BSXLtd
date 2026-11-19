@@ -197,22 +197,22 @@ func _build_rooms(rec: DesignRecord, parent: Node3D) -> void:
 	_lines(parent, door_edges, _mat(Color(0.6, 1.0, 0.95), 0.95))
 
 
-## The frame the hull is built on (DesignStructure): posts up the outer walls and beams
-## round the top and bottom of them, every `spacing` m.
+## The frame the hull is built on (DesignFrame.propose): a ring round every station, joined
+## corner to corner by stringers.
 func _build_frame(rec: DesignRecord, parent: Node3D) -> void:
-	var st := DesignStructure.measure(rec)
-	var spacing := maxf(float(rec.structure.get("spacing", 2.0)), 0.5)
+	var plan := DesignFrame.propose(rec)
 	var h := rec.deck_height
 	var segs := PackedVector3Array()
-	for e: Dictionary in st.outer_edges:
-		var y0 := float(e.deck) * h
-		var a := Vector3(e.a.x, y0, e.a.y)
-		var b := Vector3(e.b.x, y0, e.b.y)
-		segs.append_array([a, b, a + Vector3.UP * h, b + Vector3.UP * h])
-		var n := int(floor(a.distance_to(b) / spacing + 0.001))
-		for i in n + 1:
-			var p := a + (b - a).normalized() * spacing * i
-			segs.append_array([p, p + Vector3.UP * h])
+	var st: Array = plan.get("stations", [])
+	for i in st.size():
+		var a: PackedVector2Array = st[i].profile
+		var z := float(st[i].z)
+		for k in a.size():
+			var q := a[(k + 1) % a.size()]
+			segs.append_array([Vector3(a[k].x, a[k].y, z), Vector3(q.x, q.y, z)])
+			if i > 0:
+				var pa: PackedVector2Array = st[i - 1].profile
+				segs.append_array([Vector3(pa[k].x, pa[k].y, float(st[i - 1].z)), Vector3(a[k].x, a[k].y, z)])
 	# Beams placed by hand, under the deckhead.
 	for bm: Dictionary in rec.beams.values():
 		var y := (float(bm.deck) + 1.0) * h - 0.08
@@ -228,7 +228,12 @@ func _build_plates(rec: DesignRecord, parent: Node3D) -> void:
 	var h := rec.deck_height
 	var outer := _mat(Color(0.7, 0.8, 0.9), 0.14, 0.6)
 	var inner := _mat(Color(0.6, 0.75, 0.9), 0.07, 0.4)
-	for list: Array in [[st.outer_edges, outer, 0.06], [st.inner_edges, inner, 0.04]]:
+	var plan := DesignFrame.propose(rec)
+	_build_skin(plan, parent, outer, _mat(Color(0.45, 0.75, 1.0), 0.3, 0.9))
+	var edges: Array = [[st.inner_edges, inner, 0.04]]
+	if plan.is_empty():
+		edges.append([st.outer_edges, outer, 0.06])
+	for list: Array in edges:
 		for e: Dictionary in list[0]:
 			var a: Vector2 = e.a
 			var b: Vector2 = e.b
@@ -263,6 +268,49 @@ func _build_plates(rec: DesignRecord, parent: Node3D) -> void:
 		var box := _room_box(rec, r)
 		_box(parent, Vector3(box.get_center().x, box.position.y + 0.03, box.get_center().z),
 				Vector3(box.size.x, 0.06, box.size.z), outer)
+
+
+## The skin over the frame: a see-through panel over each face from ring to ring (glass ones
+## bluer), and the end plates.
+func _build_skin(plan: Dictionary, parent: Node3D, metal: Material, glass: Material) -> void:
+	if plan.is_empty():
+		return
+	var st: Array = plan.stations
+	var panes: Dictionary = plan.glass
+	for which in 2:
+		var tris := PackedVector3Array()
+		for i in range(1, st.size()):
+			var a: PackedVector2Array = st[i - 1].profile
+			var b: PackedVector2Array = st[i].profile
+			var za := float(st[i - 1].z)
+			var zb := float(st[i].z)
+			for k in a.size():
+				if panes.has("%d:%d" % [i - 1, k]) != (which == 1):
+					continue
+				var k1 := (k + 1) % a.size()
+				var p0 := Vector3(a[k].x, a[k].y, za)
+				var p1 := Vector3(a[k1].x, a[k1].y, za)
+				var p2 := Vector3(b[k1].x, b[k1].y, zb)
+				var p3 := Vector3(b[k].x, b[k].y, zb)
+				tris.append_array([p0, p1, p2, p0, p2, p3])
+		if which == 0:
+			for end in 2:
+				var o: PackedVector2Array = st[0 if end == 0 else st.size() - 1].profile
+				var z := float(st[0 if end == 0 else st.size() - 1].z)
+				for k in range(1, o.size() - 1):
+					tris.append_array([Vector3(o[0].x, o[0].y, z), Vector3(o[k].x, o[k].y, z), Vector3(o[k + 1].x, o[k + 1].y, z)])
+		if tris.is_empty():
+			continue
+		var stool := SurfaceTool.new()
+		stool.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for v in tris:
+			stool.add_vertex(v)
+		var mi := MeshInstance3D.new()
+		mi.name = "Skin" if which == 0 else "SkinGlass"
+		mi.mesh = stool.commit()
+		mi.material_override = metal if which == 0 else glass
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(mi)
 
 
 func _build_components(rec: DesignRecord, parent: Node3D) -> void:
