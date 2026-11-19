@@ -250,6 +250,33 @@ class Runner:
 			(scroll as ScrollContainer).scroll_vertical = int(head.position.y) - 40
 		await _frames(30)
 		await _save(out, "parts_palette")
+		# A client's ship order picked, the data channel scoring against it, and a selected
+		# part's size and grade steppers.
+		var contracts := Modules.bus("contracts") as ContractsBus
+		var orders := contracts.ship_orders() if contracts else ([] as Array[Dictionary])
+		if not orders.is_empty():
+			console.set_order(orders[0])
+		console._orders_open = true
+		console._fill_palette()
+		room.console.plan.select("part", "c2")
+		await _frames(10)
+		if scroll:
+			(scroll as ScrollContainer).scroll_vertical = 0
+		var data_scroll: Node = room.console.data
+		while data_scroll and not data_scroll is ScrollContainer:
+			data_scroll = data_scroll.get_parent()
+		if data_scroll == null:
+			data_scroll = room.console.data.find_child("*Scroll*", true, false)
+		var fit_label: Node = room.console.data.find_child("*", true, false)
+		for n in room.console.data.find_children("*", "Label", true, false):
+			if (n as Label).text == "CONTRACT FIT":
+				fit_label = n
+		if data_scroll is ScrollContainer and fit_label is Control:
+			await _frames(5)
+			(data_scroll as ScrollContainer).ensure_control_visible(fit_label)
+			(data_scroll as ScrollContainer).scroll_vertical += 300
+		await _frames(30)
+		await _save(out, "parts_order")
 
 	func _frames(n: int) -> void:
 		for i in n:

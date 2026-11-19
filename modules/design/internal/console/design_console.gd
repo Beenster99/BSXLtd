@@ -31,6 +31,10 @@ var _pick_grade := DesignGrades.DEFAULT_GRADE
 var _open_groups: Dictionary = {"flight": true}
 ## Door kind buttons under the tools (kind -> Button).
 var _door_buttons: Dictionary = {}
+## The ship order list is open on the palette.
+var _orders_open := false
+## The order id the palette shows, to refill it when an undo or a crewmate changes it.
+var _shown_order := ""
 var _selection: VBoxContainer
 var _tool_buttons: Dictionary = {}
 var _view_buttons: Dictionary = {}
@@ -51,6 +55,7 @@ func setup(design_bus: DesignBus, table: HoloTable) -> void:
 	_build()
 	bus.design_changed.connect(_refresh_bar)
 	bus.library.modules_changed.connect(_fill_palette)
+	bus.library.opened.connect(func(_r: DesignRecord) -> void: _fill_palette())
 	if bus.library.current == null:
 		var list := bus.library.list()
 		if list.is_empty():
@@ -214,6 +219,7 @@ func _fill_palette() -> void:
 		c.queue_free()
 	_tool_buttons = {}
 	_door_buttons = {}
+	_fill_orders()
 	_palette.add_child(T.label("TOOLS", "display_bold", 20, T.TEXT))
 	var tools := HBoxContainer.new()
 	for spec in [["select", "SELECT"], ["door", "DOOR"]]:
@@ -362,6 +368,60 @@ func _sync_layer_buttons() -> void:
 		if b and b.button_pressed != holo.layers.get(layer, false):
 			b.set_pressed_no_signal(holo.layers.get(layer, false))
 			_restyle_toggle(b, b.button_pressed)
+
+
+## The ship order this design answers (ShipOrders, posted by clients on the contracts board):
+## its title and demands, and a list to pick another or none. The data channel scores the
+## design against the order's demands.
+func _fill_orders() -> void:
+	var rec := bus.library.current
+	var contracts := Modules.bus("contracts") as ContractsBus
+	var orders: Array[Dictionary] = contracts.ship_orders() if contracts else ([] as Array[Dictionary])
+	_palette.add_child(T.label("SHIP ORDER", "display_bold", 20, T.TEXT))
+	var current: Dictionary = rec.order if rec else {}
+	_shown_order = str(current.get("id", ""))
+	if current.is_empty():
+		_palette.add_child(T.label("None: designing freely.", "body", 14, T.DIM))
+	else:
+		var title := T.label(str(current.get("title", "")), "body_medium", 15, T.ORANGE)
+		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_palette.add_child(title)
+		var lines := T.label("\n".join(ShipOrders.demand_lines(current)), "mono_medium", 13, T.DIM)
+		_palette.add_child(lines)
+	var row := HBoxContainer.new()
+	var pick := T.button("%s ORDERS (%d)" % ["HIDE" if _orders_open else "PICK FROM", orders.size()], false, 14)
+	pick.name = "Orders"
+	pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pick.disabled = orders.is_empty()
+	pick.pressed.connect(func() -> void:
+		_orders_open = not _orders_open
+		_fill_palette())
+	row.add_child(pick)
+	if not current.is_empty():
+		var clear := T.button("NONE", false, 14)
+		clear.name = "OrderNone"
+		clear.pressed.connect(set_order.bind({}))
+		row.add_child(clear)
+	_palette.add_child(row)
+	if not _orders_open:
+		return
+	for o: Dictionary in orders:
+		var b := T.button("%s\nCR %s for the yard, %d days" % [str(o.title), T.money(int(o.pay)), int(o.days)],
+				str(o.id) == str(current.get("id", "")), 13)
+		b.name = "Order_" + str(o.id)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.tooltip_text = "%s\n\n%s" % [str(o.brief), "\n".join(ShipOrders.demand_lines(o))]
+		b.pressed.connect(set_order.bind(o))
+		_palette.add_child(b)
+
+
+## Makes the open design answer `order` ({} for none), one undo step.
+func set_order(order: Dictionary) -> void:
+	if bus.library.current == null:
+		return
+	_orders_open = false
+	bus.editor.do({"op": "set_meta", "fields": {"order": order}})
+	_fill_palette()
 
 
 ## The components, in groups that open and close, with the size and grade they are picked in
@@ -609,6 +669,8 @@ func _refresh_bar() -> void:
 		if b:
 			b.text = _structure_text(kind)
 	_on_selection(plan.selected_kind if plan else "", plan.selected_id if plan else "")
+	if rec and str(rec.order.get("id", "")) != _shown_order:
+		_fill_palette()
 
 
 # The selection panel: name, size and remove for the room or component picked on the plan.
