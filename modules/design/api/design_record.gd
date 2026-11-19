@@ -48,7 +48,7 @@ signal changed(op: Dictionary)
 
 const FORMAT := 1
 ## Grid steps the designer can pick, m.
-const GRIDS: PackedFloat32Array = [0.5, 1.0, 2.0]
+const GRIDS: PackedFloat32Array = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0]
 
 var id := ""
 var name := "New design"

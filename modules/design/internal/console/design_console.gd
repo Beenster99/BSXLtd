@@ -31,6 +31,7 @@ var _pick_grade := DesignGrades.DEFAULT_GRADE
 var _open_groups: Dictionary = {"flight": true}
 ## Door kind buttons under the tools (kind -> Button).
 var _door_buttons: Dictionary = {}
+var _grid_pick: OptionButton
 ## The ship order list is open on the palette.
 var _orders_open := false
 ## The order id the palette shows, to refill it when an undo or a crewmate changes it.
@@ -104,6 +105,7 @@ func _build() -> void:
 	data = DataChannel.new()
 	data.name = "Data"
 	data.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	data.lists = false
 	data.setup(bus, true)
 	right.add_child(data)
 	_library_panel = _make_library_panel()
@@ -179,10 +181,15 @@ func _top_bar() -> Control:
 	h.add_child(up)
 	h.add_child(_gap(16))
 	h.add_child(T.label("GRID", "display_medium", 16, T.DIM))
+	# Snapping from 5 cm to 2 m (beenster, 19 Nov: "grid as low as 0.05").
+	_grid_pick = OptionButton.new()
+	_grid_pick.name = "GridPick"
+	_grid_pick.add_theme_font_size_override("font_size", 16)
 	for g in DesignRecord.GRIDS:
-		var b := T.button(PlanView._m(g) + " m", false, 16)
-		b.pressed.connect(func() -> void: bus.editor.do({"op": "set_meta", "fields": {"grid": g}}))
-		h.add_child(b)
+		_grid_pick.add_item(PlanView._m(g) + " m")
+	_grid_pick.item_selected.connect(func(i: int) -> void:
+		bus.editor.do({"op": "set_meta", "fields": {"grid": DesignRecord.GRIDS[i]}}))
+	h.add_child(_grid_pick)
 	var walk := T.button("WALK INSIDE", true, 17)
 	walk.name = "BtnWalkInside"
 	walk.pressed.connect(func() -> void: walk_requested.emit())
@@ -229,13 +236,15 @@ func _fill_palette() -> void:
 		_tool_buttons[spec[0]] = b
 		tools.add_child(b)
 	_palette.add_child(tools)
-	var kinds := HBoxContainer.new()
+	var kinds := GridContainer.new()
+	kinds.columns = 4
 	for k: String in DesignCatalog.DOOR_ORDER:
 		var dk: Dictionary = DesignCatalog.DOOR_KINDS[k]
 		var b := T.button(str(dk.short), false, 13)
 		b.name = "DoorKind_" + k
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.tooltip_text = "%s: %.1f m wide, CR %s" % [dk.name, float(dk.w), T.money(int(dk.cost))]
+		b.tooltip_text = "%s: %s m wide (%s to %s), CR %s%s" % [dk.name, PlanView._m(float(dk.w)), PlanView._m(float(dk.min_w)),
+				PlanView._m(float(dk.max_w)), T.money(int(dk.cost)), ", airtight" if bool(dk.airtight) else ""]
 		b.pressed.connect(func() -> void:
 			plan.door_kind = k
 			plan.set_tool("door"))
@@ -668,6 +677,10 @@ func _refresh_bar() -> void:
 		var b := find_child("Structure_" + kind, true, false) as Button
 		if b:
 			b.text = _structure_text(kind)
+	if _grid_pick and rec:
+		for i in DesignRecord.GRIDS.size():
+			if is_equal_approx(DesignRecord.GRIDS[i], rec.grid):
+				_grid_pick.select(i)
 	_on_selection(plan.selected_kind if plan else "", plan.selected_id if plan else "")
 	if rec and str(rec.order.get("id", "")) != _shown_order:
 		_fill_palette()
@@ -709,7 +722,7 @@ func _on_selection(kind: String, id: String) -> void:
 			bus.editor.do({"op": "set_room", "id": id, "fields": {"w": v}})))
 		_selection.add_child(_size_row("Depth", float(r.d), func(v: float) -> void:
 			bus.editor.do({"op": "set_room", "id": id, "fields": {"d": v}})))
-		var area := float(r.w) * float(r.d)
+		var area := DesignRecord.room_area(r)
 		_selection.add_child(T.label("%s m2 floor, %s m3" % [PlanView._m(area), PlanView._m(area * rec.deck_height)],
 				"mono_medium", 15, T.DIM))
 		var mod_row := HBoxContainer.new()
@@ -747,17 +760,30 @@ func _on_selection(kind: String, id: String) -> void:
 	elif kind == "door" and rec.doors.has(id):
 		var door: Dictionary = rec.doors[id]
 		var dk := DesignCatalog.door_kind(door)
+		var fit := DesignCatalog.door_cost(door)
 		_selection.add_child(T.label(str(dk.name).to_upper(), "display_bold", 18, T.ORANGE))
-		_selection.add_child(T.label("%s m wide   CR %s" % [PlanView._m(float(dk.w)), T.money(int(dk.cost))],
-				"mono_medium", 15, T.DIM))
-		var kinds := HBoxContainer.new()
+		_selection.add_child(T.label("%s x %s m   CR %s   %d kg   %.1f h%s" % [PlanView._m(DesignCatalog.door_w(door)),
+				PlanView._m(DesignCatalog.door_h(door)), T.money(int(fit.cost)), int(fit.mass), float(fit.hours),
+				"   AIRTIGHT" if bool(dk.get("airtight", false)) else ""], "mono_medium", 15, T.DIM))
+		# Its own width, within what its kind comes in (beenster, 19 Nov: doors of different widths).
+		var lo := float(dk.min_w)
+		var hi := float(dk.max_w)
+		_selection.add_child(_size_row("Width", DesignCatalog.door_w(door), func(v: float) -> void:
+			bus.editor.do({"op": "set_door", "id": id, "fields": {"w": clampf(v, lo, hi)}}), lo, 0.05))
+		_selection.add_child(T.label("%s comes %s to %s m wide" % [str(dk.name), PlanView._m(lo), PlanView._m(hi)],
+				"body", 14, T.DIM))
+		var kinds := GridContainer.new()
+		kinds.columns = 4
 		for k: String in DesignCatalog.DOOR_ORDER:
 			var on: bool = DesignCatalog.door_kind(door) == DesignCatalog.DOOR_KINDS[k]
 			var b := T.button(str(DesignCatalog.DOOR_KINDS[k].short), on, 13)
 			b.name = "SetDoor_" + k
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.tooltip_text = "%s: %s to %s m wide" % [DesignCatalog.DOOR_KINDS[k].name,
+					PlanView._m(float(DesignCatalog.DOOR_KINDS[k].min_w)), PlanView._m(float(DesignCatalog.DOOR_KINDS[k].max_w))]
+			# A new kind takes its own default width.
 			b.pressed.connect(func() -> void:
-				bus.editor.do({"op": "set_door", "id": id, "fields": {"kind": k}}))
+				bus.editor.do({"op": "set_door", "id": id, "fields": {"kind": k, "w": null}}))
 			kinds.add_child(b)
 		_selection.add_child(kinds)
 		_selection.add_child(_remove_button())

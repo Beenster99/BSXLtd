@@ -123,13 +123,19 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		var k := str(g.get("kind", "door"))
 		if not DesignCatalog.DOOR_KINDS.has(k):
 			k = "door"
-		door_n[k] = int(door_n.get(k, 0)) + 1
+		var sum: Dictionary = door_n.get(k, {"qty": 0.0, "cost": 0.0, "mass": 0.0, "hours": 0.0})
+		var c := DesignCatalog.door_cost(g)
+		sum.qty += 1.0
+		sum.cost += c.cost
+		sum.mass += c.mass
+		sum.hours += c.hours
+		door_n[k] = sum
 	for k: String in DesignCatalog.DOOR_ORDER:
 		if door_n.has(k):
 			var dk: Dictionary = DesignCatalog.DOOR_KINDS[k]
-			var n := float(door_n[k])
-			t.lines.append({"kind": "door", "id": k, "name": dk.name, "qty": n, "unit": "x",
-					"cost": n * float(dk.cost), "mass": n * float(dk.mass), "hours": n * float(dk.hours)})
+			var sum: Dictionary = door_n[k]
+			t.lines.append({"kind": "door", "id": k, "name": dk.name, "qty": sum.qty, "unit": "x",
+					"cost": sum.cost, "mass": sum.mass, "hours": sum.hours})
 	var run_m := {}
 	for w: Dictionary in d.runs.values():
 		if DesignServices.KINDS.has(str(w.kind)):

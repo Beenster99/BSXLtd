@@ -280,18 +280,18 @@ func _draw_grid() -> void:
 		step *= 2.0
 	var a := to_ship(Vector2.ZERO)
 	var b := to_ship(size)
-	var x := floorf(a.x / step) * step
-	while x <= b.x:
-		var major := is_zero_approx(fmod(absf(x), 5.0)) or is_equal_approx(fmod(absf(x), 5.0), 5.0)
-		draw_line(Vector2(to_screen(Vector2(x, 0)).x, 0), Vector2(to_screen(Vector2(x, 0)).x, size.y),
-				GRID_MAJOR if major else GRID)
-		x += step
-	var y := floorf(a.y / step) * step
-	while y <= b.y:
-		var major := is_zero_approx(fmod(absf(y), 5.0)) or is_equal_approx(fmod(absf(y), 5.0), 5.0)
-		draw_line(Vector2(0, to_screen(Vector2(0, y)).y), Vector2(size.x, to_screen(Vector2(0, y)).y),
-				GRID_MAJOR if major else GRID)
-		y += step
+	# Counted in whole steps, so the 5 m lines stay major however fine the grid.
+	var per5 := maxi(int(round(5.0 / step)), 1)
+	var i := int(floorf(a.x / step))
+	while i * step <= b.x:
+		var sx := to_screen(Vector2(i * step, 0)).x
+		draw_line(Vector2(sx, 0), Vector2(sx, size.y), GRID_MAJOR if i % per5 == 0 else GRID)
+		i += 1
+	var k := int(floorf(a.y / step))
+	while k * step <= b.y:
+		var sy := to_screen(Vector2(0, k * step)).y
+		draw_line(Vector2(0, sy), Vector2(size.x, sy), GRID_MAJOR if k % per5 == 0 else GRID)
+		k += 1
 
 
 func _draw_plan(rec: DesignRecord) -> void:
@@ -604,7 +604,7 @@ func _draw_door(rec: DesignRecord, door: Dictionary) -> void:
 	# Which way the wall runs: the room's side the door sits on (at any angle).
 	var along := DesignRecord.side_at(rec.rooms.get(str(door.a), {"x": 0, "z": 0, "w": 0, "d": 0}), p)
 	var kind := DesignCatalog.door_kind(door)
-	var half := maxf(DesignRules.MIN_DOOR, float(kind.w) - 0.2) * 0.5
+	var half := maxf(DesignRules.MIN_DOOR, DesignCatalog.door_w(door) - 0.2) * 0.5
 	var a := p - along * half
 	var b := p + along * half
 	var sa := to_screen(a)
@@ -863,7 +863,9 @@ func _text(pos: Vector2, s: String, col: Color, fs: int, width: float = -1.0) ->
 
 
 static func _m(v: float) -> String:
-	return ("%d" % int(v)) if is_equal_approx(v, roundf(v)) else ("%.1f" % v)
+	if is_equal_approx(v, roundf(v)):
+		return "%d" % int(v)
+	return ("%.1f" % v) if is_equal_approx(v * 10.0, roundf(v * 10.0)) else ("%.2f" % v)
 
 
 # Input
