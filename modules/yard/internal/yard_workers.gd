@@ -38,6 +38,7 @@ extends Node3D
 const WorkerLook := preload("res://modules/yard/internal/yard_worker_look.gd")
 const Look := preload("res://modules/yard/internal/yard_stock_look.gd")
 const Service := preload("res://modules/yard/internal/yard_service.gd")
+const Upgrades := preload("res://modules/yard/internal/tartanco_upgrades.gd")
 
 ## The keel's first ring, the way it grows (m), the rings' pitch and how many it has room for.
 const KEEL_START := Vector3(-16.0, -3.0, -85.0)
@@ -178,7 +179,8 @@ func build(stores_traffic: Node) -> void:
 		add_child(bot)
 		var w := {"node": bot, "role": role, "index": i, "task": {}, "vel": Vector3.ZERO, "wear": 0.05 * i,
 				"fault": "", "servicing": false, "charge": 1.0 - 0.13 * i, "charging": true, "low": false, "route": [],
-				"speed": 1.0, "began": 0.0}
+				"speed": 1.0, "began": 0.0, "mark": Upgrades.FIRST_MARK, "modules": [],
+				"fx": Upgrades.effects(Upgrades.FIRST_MARK, [])}
 		if role != "F":
 			w.sparks = make_sparks(role)
 			add_child(w.sparks)
@@ -248,7 +250,59 @@ func serviced(w: Dictionary) -> void:
 ## How fast a bot works for its wear (1 new).
 func pace(w: Dictionary) -> float:
 	var over := clampf((float(w.wear) - slow_from) / (1.0 - slow_from), 0.0, 1.0)
-	return lerpf(1.0, worn_pace, over)
+	return lerpf(1.0, worn_pace, over) * float(_fx(w).pace)
+
+
+## A bot's upgrade effects (its mark and modules, TartanCoUpgrades.effects).
+func _fx(w: Dictionary) -> Dictionary:
+	return w.get("fx", Upgrades.effects(Upgrades.FIRST_MARK, []))
+
+
+# --- Upgrades ---------------------------------------------------------------------------------
+# beenster's pick, 19 Nov: marks with module slots (tartanco_upgrades.gd). Whoever sells them
+# (TartanCo's engineers on a visit) calls these, on the yard's shared clock like everything else.
+
+## Makes a bot `mark` (3 to 5). Modules past the new mark's slots come out. False if it isn't one.
+func set_mark(bot: Node3D, mark: int) -> bool:
+	var w := worker_of(bot)
+	if w.is_empty() or not Upgrades.MARKS.has(mark):
+		return false
+	w.mark = mark
+	(w.modules as Array).resize(mini((w.modules as Array).size(), Upgrades.slots(mark)))
+	_refit(w)
+	return true
+
+
+## Fits module `id` in a free slot. False if it isn't a module, the bot has it or has no slot free.
+func fit_module(bot: Node3D, id: String) -> bool:
+	var w := worker_of(bot)
+	var mods: Array = w.get("modules", [])
+	if w.is_empty() or not Upgrades.MODULES.has(id) or mods.has(id) or mods.size() >= Upgrades.slots(int(w.mark)):
+		return false
+	mods.append(id)
+	_refit(w)
+	return true
+
+
+## Takes module `id` out. False if it wasn't fitted.
+func remove_module(bot: Node3D, id: String) -> bool:
+	var w := worker_of(bot)
+	if w.is_empty() or not (w.modules as Array).has(id):
+		return false
+	(w.modules as Array).erase(id)
+	_refit(w)
+	return true
+
+
+## Its effects worked out again, and its chest code and model shown as its mark (W-3 -> W-5).
+func _refit(w: Dictionary) -> void:
+	w.fx = Upgrades.effects(int(w.mark), w.modules)
+	var node: Node3D = w.node
+	var code := "%s-%d" % [w.role, int(w.mark)]
+	node.set_meta("tartanco_model", code)
+	var label := node.get_node_or_null("Code") as Label3D
+	if label:
+		label.text = code
 
 
 ## The crew's bots (their nodes), for the maintenance ship.
@@ -281,7 +335,9 @@ func condition(bot: Node3D) -> Dictionary:
 			"charge": float(w.charge), "charging": _docked(w) and float(w.charge) < 1.0,
 			"model": bot.get_meta("tartanco_model", ""), "serial": bot.get_meta("serial", ""),
 			"role": String(w.role), "speed": float(w.speed), "state": _state(w), "job": job_line(w),
-			"job_kind": String((w.task as Dictionary).get("kind", ""))}
+			"job_kind": String((w.task as Dictionary).get("kind", "")),
+			"mark": int(w.mark), "mark_name": Upgrades.mark_name(int(w.mark)), "slots": Upgrades.slots(int(w.mark)),
+			"upgrades": Upgrades.fitted(w.modules)}
 
 
 func _state(w: Dictionary) -> String:
@@ -372,9 +428,10 @@ func _drop_task(w: Dictionary) -> void:
 ## A job done: wear on the bot, and a worn bot may fault.
 func _job_done(w: Dictionary) -> void:
 	w.task = {}
-	w.charge = maxf(0.0, float(w.charge) - charge_per_job * _rng.randf_range(0.7, 1.3))
-	w.wear = minf(1.0, float(w.wear) + wear_per_job * _rng.randf_range(0.6, 1.4))
-	if float(w.wear) > faults_from and _rng.randf() < (float(w.wear) - faults_from) * 1.6:
+	var fx := _fx(w)
+	w.charge = maxf(0.0, float(w.charge) - charge_per_job * float(fx.drain) * _rng.randf_range(0.7, 1.3))
+	w.wear = minf(1.0, float(w.wear) + wear_per_job * float(fx.wear) * _rng.randf_range(0.6, 1.4))
+	if float(w.wear) > faults_from and _rng.randf() < (float(w.wear) - faults_from) * 1.6 * float(fx.faults):
 		w.fault = FAULTS[_rng.randi() % FAULTS.size()]
 		var label := w.node.get_node("Fault") as Label3D
 		label.text = "%s\n%s" % ["ERROR", w.fault]
@@ -899,7 +956,7 @@ func _charge(w: Dictionary, delta: float) -> void:
 	w.vel = Vector3.ZERO
 	_face(node, node.global_position + Vector3.FORWARD, delta)
 	WorkerLook.hang(node)
-	w.charge = minf(1.0, float(w.charge) + delta / maxf(charge_seconds, 0.1))
+	w.charge = minf(1.0, float(w.charge) + delta * float(_fx(w).charge) / maxf(charge_seconds, 0.1))
 	if float(w.charge) >= 1.0:
 		w.low = false
 
@@ -908,7 +965,8 @@ func _charge(w: Dictionary, delta: float) -> void:
 func _fly(w: Dictionary, to: Vector3, delta: float) -> bool:
 	var node: Node3D = w.node
 	var gap := to - node.position
-	var want := gap.limit_length(minf(fly_speed * float(w.get("speed", 1.0)), gap.length() * 1.6 + 0.1))
+	var fly := float(_fx(w).fly) / float(_fx(w).pace)   # its pace already sped the step up
+	var want := gap.limit_length(minf(fly_speed * float(w.get("speed", 1.0)) * fly, gap.length() * 1.6 + 0.1))
 	w.vel = (w.vel as Vector3).lerp(want, minf(1.0, delta * 3.0))
 	node.position += (w.vel as Vector3) * delta
 	if gap.length() < 0.08:

@@ -15,6 +15,7 @@ const WorkerLook := preload("res://modules/yard/internal/yard_worker_look.gd")
 func run_tests() -> void:
 	_look()
 	await _crew()
+	_upgrades()
 
 
 ## Every trade's android has its arms, legs, tools and markings; IK puts a tool tip and a foot
@@ -239,3 +240,40 @@ func _shows(n: Node, part: String) -> bool:
 		if c is MeshInstance3D and (c as MeshInstance3D).mesh == body:
 			return true
 	return false
+
+
+## The upgrade path (beenster's pick, 19 Nov: marks with module slots): Mk3 one slot to Mk5
+## three, each mark quicker and wearing slower, modules each with one effect, shown in condition().
+func _upgrades() -> void:
+	var Upgrades := preload("res://modules/yard/internal/tartanco_upgrades.gd")
+	check(Upgrades.slots(3) == 1 and Upgrades.slots(4) == 2 and Upgrades.slots(5) == 3, "Mk3 has one slot, Mk4 two, Mk5 three")
+	check(Upgrades.module_ids().size() >= 6, "six modules to fit")
+	var store := YardRackStore.new()
+	var traffic := Traffic.new()
+	traffic.set_process(false)
+	add_child(traffic)
+	traffic.build(store)
+	var crew: Node3D = Workers.new()
+	crew.set_process(false)
+	add_child(crew)
+	crew.build(traffic)
+	var w: Dictionary = crew.workers[2]
+	var bot: Node3D = w.node
+	var base: float = crew.pace(w)
+	check(crew.fit_module(bot, "servo_set"), "a Mk3 takes a module")
+	check(not crew.fit_module(bot, "hardened_joints"), "but only one")
+	check(crew.pace(w) > base * 1.1, "uprated servos speed its work")
+	check(crew.set_mark(bot, 5) and crew.fit_module(bot, "hardened_joints") and crew.fit_module(bot, "battery_pack"),
+			"a Mk5 takes three")
+	check(not crew.fit_module(bot, "sensor_suite"), "and no more")
+	check(String(bot.get_meta("tartanco_model")) == "W-5" and (bot.get_node("Code") as Label3D).text == "W-5",
+			"its chest code shows its mark")
+	var fx: Dictionary = w.fx
+	check(float(fx.wear) < 0.5 and float(fx.drain) < 1.0 and float(fx.pace) > 1.4, "its effects stack: %s" % str(fx))
+	var c: Dictionary = crew.condition(bot)
+	check(int(c.mark) == 5 and c.mark_name == "Mk5" and int(c.slots) == 3 and (c.upgrades as Array).size() == 3
+			and String((c.upgrades as Array)[0].name) == "Uprated servos", "its condition lists its mark and modules")
+	check(crew.set_mark(bot, 3) and (w.modules as Array).size() == 1, "taken back to Mk3, the modules past its slot come out")
+	check(crew.remove_module(bot, "servo_set") and is_equal_approx(crew.pace(w), base), "and a module taken out undoes its effect")
+	crew.queue_free()
+	traffic.queue_free()
