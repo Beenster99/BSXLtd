@@ -95,10 +95,16 @@ const ROOM_PATH := "res://modules/design/internal/room/design_room.tscn"
 const Samples := preload("res://modules/design/internal/sample_designs.gd")
 const Furnishing := preload("res://modules/design/internal/room/design_furnishing.gd")
 const CrewMarks := preload("res://modules/design/internal/crew/design_crew.gd")
+const ContractFitView := preload("res://modules/design/internal/views/contract_fit.gd")
+## The contract fit assessment on the wrist screen (F1): its channel id and place (the wrist
+## order: 10 stock, 20 parts market, 30 contract fit, 40 accounts, 50 crew).
+const FIT_CHANNEL := "design.fit"
+const FIT_CHANNEL_ORDER := 30
 
 
 func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, library)
+	HudSlots.register_holo_channel(FIT_CHANNEL, "Contract fit", _fit_channel, FIT_CHANNEL_ORDER)
 	if Modules.ready_done:
 		_hook_net()
 	else:
@@ -390,11 +396,19 @@ func furnish_station(_station: Node3D = null) -> void:
 
 func unregister_module() -> void:
 	_unhook_net()
+	HudSlots.unregister_holo_channel(FIT_CHANNEL)
 	Saves.unregister_section(SAVE_SECTION)
 	Menu.unregister_entry(ROOM_SCENE)
 	Menu.unregister_settings_section(Menu.DEBUG, "design.debug")
 	for k: String in HOLO_KEYS:
 		Keys.unregister(k)
+
+
+## The wrist channel's view: the same contract fit screen as the walls, at wall-sized text.
+func _fit_channel(_glass: bool) -> Control:
+	var v := ContractFitView.new()
+	v.setup(self, 24)
+	return v
 
 
 ## Opens a new design holding the sample skiff (Debug tab, tests, screenshots).

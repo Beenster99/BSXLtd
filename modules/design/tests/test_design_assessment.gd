@@ -161,6 +161,13 @@ func _screen() -> void:
 	status = view.find_child("Status", true, false) as Label
 	check(status != null and status.text == DesignAssessment.NO_BRIEF, "clearing the order refreshes the screen")
 	view.queue_free()
+	# The wrist screen has it as a channel, built from the same view.
+	var found := HudSlots.holo_channel(DesignBus.FIT_CHANNEL)
+	check(not found.is_empty() and int(found.order) == DesignBus.FIT_CHANNEL_ORDER, "the wrist screen lists a contract fit channel, third")
+	if not found.is_empty():
+		var w: Control = (found.factory as Callable).call(false)
+		check(w != null and w.name == "ContractFit", "the wrist channel shows the contract fit screen")
+		w.free()
 	# A wall panel can show it.
 	var board := WallBoard.new()
 	add_child(board)
