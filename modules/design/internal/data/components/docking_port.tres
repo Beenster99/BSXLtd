@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "docking_port"
+display_name = "Docking port"
+short = "DCK"
+colour = Color(0.85, 0.8, 0.55, 1)
+size = Vector3(1.6, 1.6, 0.6)
+cost = 14000.0
+mass = 900.0
+build_hours = 8.0
+power = -1.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 4
+category = "doors"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 300.0

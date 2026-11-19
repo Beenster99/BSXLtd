@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "engine_pod"
+display_name = "Engine pod"
+short = "POD"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(2.0, 2.0, 4.0)
+cost = 52000.0
+mass = 5200.0
+build_hours = 20.0
+power = -40.0
+fuel = -1
+thrust = 260.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 6
+category = "propulsion"
+size_class = 4
+min_class = 3
+max_class = 8
+integrity = 500.0
+signature = 55.0

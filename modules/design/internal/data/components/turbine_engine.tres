@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "turbine_engine"
+display_name = "Turbine engine"
+short = "TRB"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(2.2, 2.2, 1.6)
+cost = 22000.0
+mass = 1800.0
+build_hours = 10.0
+power = -30.0
+fuel = -1
+thrust = 95.0
+rooms = PackedStringArray("engineering")
+access = 1.0
+lead_days = 4
+shared_part = "TurbineEngine"
+category = "propulsion"
+size_class = 3
+min_class = 2
+max_class = 6
+integrity = 260.0
+signature = 30.0

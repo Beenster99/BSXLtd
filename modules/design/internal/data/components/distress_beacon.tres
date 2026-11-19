@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "distress_beacon"
+display_name = "Distress beacon"
+short = "BCN"
+colour = Color(0.4, 0.95, 0.85, 1)
+size = Vector3(0.4, 0.6, 0.4)
+cost = 2200.0
+mass = 20.0
+build_hours = 1.0
+power = -0.2
+rooms = PackedStringArray("bridge", "engineering", "corridor")
+access = 0.8
+lead_days = 1
+category = "sensors"
+graded = false
+integrity = 40.0

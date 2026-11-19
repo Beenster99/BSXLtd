@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "sleep_pod"
+display_name = "Sleep pod"
+short = "SLP"
+colour = Color(0.6, 0.75, 1.0, 1)
+size = Vector3(0.95, 1.05, 2.2)
+cost = 3500.0
+mass = 150.0
+build_hours = 2.0
+power = -0.5
+crew = 1
+rooms = PackedStringArray("quarters")
+access = 0.8
+lead_days = 2
+category = "crew"
+graded = false
+integrity = 70.0

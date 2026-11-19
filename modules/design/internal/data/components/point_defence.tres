@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "point_defence"
+display_name = "Point defence turret"
+short = "PDT"
+colour = Color(0.6, 0.65, 0.75, 1)
+size = Vector3(0.8, 0.9, 0.8)
+cost = 14000.0
+mass = 300.0
+build_hours = 5.0
+power = -4.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 4
+category = "defence"
+size_class = 1
+min_class = 1
+max_class = 4
+integrity = 80.0
+attack = 5.0
+defence = 15.0
+signature = 4.0

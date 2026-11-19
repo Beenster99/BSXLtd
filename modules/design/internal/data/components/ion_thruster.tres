@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "ion_thruster"
+display_name = "Ion thruster"
+short = "ION"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(0.8, 0.8, 1.4)
+cost = 15000.0
+mass = 400.0
+build_hours = 6.0
+power = -35.0
+thrust = 18.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 4
+shared_part = "IonThruster"
+category = "propulsion"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 120.0
+signature = 6.0

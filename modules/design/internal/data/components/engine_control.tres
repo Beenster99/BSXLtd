@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "engine_control"
+display_name = "Engine control station"
+short = "ECS"
+colour = Color(0.55, 0.8, 1.0, 1)
+size = Vector3(1.2, 1.4, 0.7)
+cost = 8000.0
+mass = 260.0
+build_hours = 4.0
+power = -2.0
+rooms = PackedStringArray("engineering", "bridge")
+access = 0.8
+lead_days = 2
+category = "flight"
+size_class = 2
+min_class = 1
+max_class = 4
+integrity = 110.0

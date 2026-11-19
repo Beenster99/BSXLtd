@@ -36,3 +36,38 @@ extends Resource
 @export var lead_days := 1
 ## The Void Salvage part it is, a VsParts id ("" for none yet: drawn as a fitted box).
 @export var shared_part := ""
+
+## --- Sizes and grades (DesignGrades) ---
+## Palette group: "power", "propulsion", "jump", "flight", "sensors", "defence", "weapons",
+## "life", "medical", "crew", "galley", "furniture", "storage", "cargo", "fluids", "machinery",
+## "doors", "lighting", "structure".
+@export var category := ""
+## Size class of the numbers above, 1 (smallest) to 8; 0 = one size only (furniture).
+@export var size_class := 0
+## Smallest and largest size class it comes in (both 0 = only `size_class`).
+@export var min_class := 0
+@export var max_class := 0
+## Comes in grades (DesignGrades.GRADES); furniture and plain fittings don't.
+@export var graded := true
+## Hit points before it fails.
+@export var integrity := 100.0
+## Jump drive rating: light years it carries a 100 t ship on one jump.
+@export var jump := 0.0
+## Weapons: damage per second at its rated range.
+@export var attack := 0.0
+## Armour and shields: defence points added to the ship.
+@export var defence := 0.0
+## Heat and emissions it gives off (the ship's signature); negative hides some (heat sinks,
+## dampers, baffles).
+@export var signature := 0.0
+## Cargo it holds, m3 (racks, containers).
+@export var cargo := 0.0
+## Fuel it holds, m3 (tanks).
+@export var tank := 0.0
+## Sensor range, km.
+@export var sensor := 0.0
+## Set on a derived size/grade variant (DesignCatalog.part("reactor_small:5H")): its base type's
+## id, its size class and grade code, and how much bigger its model is drawn than the base's.
+var base_id := ""
+var grade := ""
+var model_scale := 1.0

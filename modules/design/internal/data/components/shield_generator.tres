@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "shield_generator"
+display_name = "Shield generator"
+short = "SHD"
+colour = Color(0.6, 0.65, 0.75, 1)
+size = Vector3(1.4, 1.8, 1.2)
+cost = 48000.0
+mass = 1500.0
+build_hours = 12.0
+power = -70.0
+rooms = PackedStringArray("engineering", "reactor")
+access = 1.0
+lead_days = 7
+category = "defence"
+size_class = 3
+min_class = 1
+max_class = 8
+integrity = 180.0
+defence = 90.0
+signature = 20.0

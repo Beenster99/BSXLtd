@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "box_beam"
+display_name = "Box beam"
+short = "BBM"
+colour = Color(0.55, 0.58, 0.62, 1)
+size = Vector3(0.5, 0.5, 4.0)
+cost = 2000.0
+mass = 1100.0
+build_hours = 3.0
+power = 0.0
+rooms = PackedStringArray("engineering", "cargo", "reactor")
+access = 0.6
+lead_days = 1
+shared_part = "BoxBeam"
+category = "structure"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 600.0

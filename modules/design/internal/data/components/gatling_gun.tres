@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "gatling_gun"
+display_name = "Gatling gun"
+short = "GAT"
+colour = Color(1.0, 0.35, 0.3, 1)
+size = Vector3(0.4, 0.4, 1.2)
+cost = 12000.0
+mass = 260.0
+build_hours = 4.0
+power = -4.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 3
+category = "weapons"
+size_class = 1
+min_class = 1
+max_class = 4
+integrity = 70.0
+attack = 18.0
+signature = 5.0

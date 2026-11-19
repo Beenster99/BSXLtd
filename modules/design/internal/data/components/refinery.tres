@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "refinery"
+display_name = "Refinery"
+short = "REF"
+colour = Color(0.85, 0.7, 0.4, 1)
+size = Vector3(2.4, 2.6, 2.4)
+cost = 48000.0
+mass = 5200.0
+build_hours = 18.0
+power = -40.0
+rooms = PackedStringArray("workshop", "cargo", "engineering")
+access = 1.0
+lead_days = 7
+category = "machinery"
+size_class = 4
+min_class = 3
+max_class = 7
+integrity = 300.0
+signature = 20.0

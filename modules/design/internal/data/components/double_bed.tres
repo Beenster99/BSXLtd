@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "double_bed"
+display_name = "Double bed"
+short = "DBL"
+colour = Color(0.6, 0.75, 1.0, 1)
+size = Vector3(1.6, 0.95, 2.1)
+cost = 1800.0
+mass = 160.0
+build_hours = 2.0
+power = -0.2
+crew = 2
+rooms = PackedStringArray("quarters")
+access = 0.8
+lead_days = 1
+category = "crew"
+graded = false
+integrity = 60.0

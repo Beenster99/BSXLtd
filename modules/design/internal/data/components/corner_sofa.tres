@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "corner_sofa"
+display_name = "Corner sofa"
+short = "CSF"
+colour = Color(0.8, 0.6, 0.5, 1)
+size = Vector3(3.0, 0.95, 2.0)
+cost = 2400.0
+mass = 150.0
+build_hours = 1.5
+power = 0.0
+rooms = PackedStringArray("recreation", "hall", "quarters")
+access = 0.6
+lead_days = 1
+category = "furniture"
+graded = false
+integrity = 50.0

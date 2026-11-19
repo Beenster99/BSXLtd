@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "drive_stabiliser"
+display_name = "Drive stabiliser"
+short = "DST"
+colour = Color(0.75, 0.5, 1.0, 1)
+size = Vector3(1.0, 1.6, 0.8)
+cost = 18000.0
+mass = 600.0
+build_hours = 6.0
+power = -12.0
+rooms = PackedStringArray("engineering", "reactor")
+access = 0.8
+lead_days = 6
+category = "jump"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 120.0
+jump = 2.0

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "jump_tank"
+display_name = "Jump fuel tank"
+short = "JFT"
+colour = Color(0.75, 0.5, 1.0, 1)
+size = Vector3(1.2, 1.6, 1.2)
+cost = 9000.0
+mass = 700.0
+build_hours = 5.0
+power = 0.0
+rooms = PackedStringArray("engineering", "fuel")
+access = 1.0
+lead_days = 3
+category = "jump"
+size_class = 3
+min_class = 1
+max_class = 7
+integrity = 150.0
+tank = 3.0

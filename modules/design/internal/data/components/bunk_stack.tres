@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "bunk_stack"
+display_name = "Triple bunk stack"
+short = "BN3"
+colour = Color(0.6, 0.75, 1.0, 1)
+size = Vector3(0.9, 2.1, 2.0)
+cost = 2200.0
+mass = 260.0
+build_hours = 3.0
+power = -0.6
+crew = 3
+rooms = PackedStringArray("quarters")
+access = 0.8
+lead_days = 1
+category = "crew"
+graded = false
+integrity = 90.0

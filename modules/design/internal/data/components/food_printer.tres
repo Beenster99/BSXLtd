@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "food_printer"
+display_name = "Food printer"
+short = "FPR"
+colour = Color(0.95, 0.75, 0.4, 1)
+size = Vector3(0.9, 1.6, 0.6)
+cost = 7500.0
+mass = 160.0
+build_hours = 2.0
+power = -3.0
+rooms = PackedStringArray("mess")
+access = 0.8
+lead_days = 3
+category = "galley"
+size_class = 1
+min_class = 1
+max_class = 3
+integrity = 60.0

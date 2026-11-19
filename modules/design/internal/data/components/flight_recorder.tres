@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "flight_recorder"
+display_name = "Flight recorder"
+short = "FDR"
+colour = Color(0.4, 0.95, 0.85, 1)
+size = Vector3(0.5, 0.4, 0.6)
+cost = 3000.0
+mass = 25.0
+build_hours = 1.0
+power = -0.1
+rooms = PackedStringArray("bridge", "engineering")
+access = 0.8
+lead_days = 2
+category = "sensors"
+graded = false
+integrity = 200.0

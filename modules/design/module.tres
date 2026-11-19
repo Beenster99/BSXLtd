@@ -7,7 +7,7 @@
 script = ExtResource("1")
 id = "design"
 display_name = "Design Room"
-version = "0.5.0"
+version = "0.6.0"
 depends_on = PackedStringArray("shared_components", "multiplayer")
 flag = "design"
 bus = ExtResource("2")

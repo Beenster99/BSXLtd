@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "decon_shower"
+display_name = "Decontamination shower"
+short = "DCN"
+colour = Color(0.95, 0.95, 0.95, 1)
+size = Vector3(1.0, 2.2, 1.0)
+cost = 7000.0
+mass = 250.0
+build_hours = 4.0
+power = -3.0
+rooms = PackedStringArray("medbay", "airlock")
+access = 0.8
+lead_days = 3
+category = "medical"
+graded = false
+integrity = 80.0

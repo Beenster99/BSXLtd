@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "reactor_core"
+display_name = "Reactor core"
+short = "CORE"
+colour = Color(1.0, 0.85, 0.3, 1)
+size = Vector3(2.0, 2.4, 1.4)
+cost = 68000.0
+mass = 7500.0
+build_hours = 20.0
+power = 260.0
+fuel = -1
+rooms = PackedStringArray("reactor")
+access = 1.0
+lead_days = 8
+shared_part = "ReactorCore"
+category = "power"
+size_class = 5
+min_class = 4
+max_class = 8
+integrity = 600.0
+signature = 55.0

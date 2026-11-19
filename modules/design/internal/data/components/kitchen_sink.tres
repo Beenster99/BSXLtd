@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "kitchen_sink"
+display_name = "Kitchen sink unit"
+short = "SNK"
+colour = Color(0.95, 0.75, 0.4, 1)
+size = Vector3(1.2, 0.95, 0.7)
+cost = 1100.0
+mass = 90.0
+build_hours = 1.5
+power = -0.1
+rooms = PackedStringArray("mess")
+access = 0.8
+lead_days = 1
+category = "galley"
+graded = false
+integrity = 50.0

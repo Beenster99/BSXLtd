@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "jump_drive"
+display_name = "Jump drive"
+short = "JMP"
+colour = Color(0.75, 0.5, 1.0, 1)
+size = Vector3(1.8, 1.8, 2.4)
+cost = 85000.0
+mass = 3600.0
+build_hours = 24.0
+power = -90.0
+fuel = -1
+rooms = PackedStringArray("engineering", "reactor")
+access = 1.0
+lead_days = 10
+category = "jump"
+size_class = 3
+min_class = 2
+max_class = 8
+integrity = 300.0
+jump = 14.0
+signature = 20.0

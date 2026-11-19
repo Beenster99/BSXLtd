@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "cryo_pod"
+display_name = "Cryo pod"
+short = "CRY"
+colour = Color(0.95, 0.95, 0.95, 1)
+size = Vector3(1.0, 1.2, 2.2)
+cost = 24000.0
+mass = 500.0
+build_hours = 6.0
+power = -6.0
+crew = 1
+rooms = PackedStringArray("medbay", "quarters")
+access = 0.8
+lead_days = 5
+category = "medical"
+size_class = 2
+min_class = 1
+max_class = 3
+integrity = 110.0

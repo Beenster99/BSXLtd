@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "wall_screen"
+display_name = "Wall screen"
+short = "SCN"
+colour = Color(1.0, 0.95, 0.7, 1)
+size = Vector3(1.4, 0.9, 0.1)
+cost = 1500.0
+mass = 20.0
+build_hours = 0.5
+power = -0.3
+rooms = PackedStringArray("quarters", "mess", "recreation", "planning", "hall", "medbay", "bridge", "workshop", "corridor", "engineering", "cargo")
+access = 0.6
+lead_days = 1
+category = "lighting"
+graded = false
+integrity = 20.0

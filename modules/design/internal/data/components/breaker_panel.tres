@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "breaker_panel"
+display_name = "Breaker panel"
+short = "BRK"
+colour = Color(1.0, 0.85, 0.3, 1)
+size = Vector3(0.6, 0.9, 0.2)
+cost = 900.0
+mass = 40.0
+build_hours = 1.0
+power = 0.0
+rooms = PackedStringArray("quarters", "mess", "recreation", "planning", "hall", "medbay", "bridge", "workshop", "corridor", "engineering", "reactor", "cargo")
+access = 0.8
+lead_days = 1
+category = "power"
+graded = false
+integrity = 40.0

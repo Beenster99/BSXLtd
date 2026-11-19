@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "shield_booster"
+display_name = "Shield booster"
+short = "SBO"
+colour = Color(0.6, 0.65, 0.75, 1)
+size = Vector3(0.8, 1.2, 0.8)
+cost = 16000.0
+mass = 350.0
+build_hours = 5.0
+power = -15.0
+rooms = PackedStringArray("engineering", "reactor")
+access = 0.8
+lead_days = 5
+category = "defence"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 80.0
+defence = 25.0
+signature = 5.0

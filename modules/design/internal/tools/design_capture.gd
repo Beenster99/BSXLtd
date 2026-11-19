@@ -41,6 +41,10 @@ class Runner:
 		Router.goto("design.room")
 		await _frames(20)
 		var room: Node = get_tree().current_scene
+		if "--parts" in OS.get_cmdline_user_args():
+			await _parts_shots(room, out)
+			get_tree().quit()
+			return
 		if "--frame" in OS.get_cmdline_user_args():
 			await _frame_shots(room, out)
 			get_tree().quit()
@@ -219,6 +223,33 @@ class Runner:
 		await _frames(20)
 		await _save(out, "station_console")
 		get_tree().quit()
+
+	## The component palette in its groups at a picked size and grade, and the ship ratings
+	## (--parts).
+	func _parts_shots(room: Node, out: String) -> void:
+		var bus: DesignBus = room.bus
+		for op in [
+			{"op": "add_component", "component": {"type": "cooker", "room": "r9", "x": 3.2, "z": -3.6, "rot": 2}},
+			{"op": "add_component", "component": {"type": "fridge", "room": "r9", "x": 0.0, "z": -3.6, "rot": 2}},
+			{"op": "add_component", "component": {"type": "mess_table", "room": "r9", "x": 1.5, "z": -1.6, "rot": 0}},
+			{"op": "add_component", "component": {"type": "sofa", "room": "r9", "x": 2.5, "z": -0.55, "rot": 0}},
+			{"op": "add_component", "component": {"type": "battery_bank:4P", "room": "r5", "x": 6.4, "z": -1.4, "rot": 3}},
+			{"op": "add_component", "component": {"type": "jump_drive:3Q", "room": "r4", "x": -4.5, "z": -1.6, "rot": 0}},
+		]:
+			bus.editor.do(op)
+		var console: Node = room.console
+		console._open_groups = {"power": true, "galley": true}
+		console.set_pick(5, "H")
+		await _frames(10)
+		var head := console.find_child("Group_power", true, false) as Control
+		var scroll: Node = head.get_parent()
+		while scroll and not scroll is ScrollContainer:
+			scroll = scroll.get_parent()
+		await _frames(5)
+		if scroll:
+			(scroll as ScrollContainer).scroll_vertical = int(head.position.y) - 40
+		await _frames(30)
+		await _save(out, "parts_palette")
 
 	func _frames(n: int) -> void:
 		for i in n:

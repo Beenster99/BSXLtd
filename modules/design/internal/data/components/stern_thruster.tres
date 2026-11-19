@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "stern_thruster"
+display_name = "Stern thruster"
+short = "STN"
+colour = Color(1.0, 0.6, 0.2, 1)
+size = Vector3(1.2, 1.2, 1.4)
+cost = 12000.0
+mass = 900.0
+build_hours = 6.0
+power = -10.0
+fuel = -1
+thrust = 60.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 3
+category = "propulsion"
+size_class = 3
+min_class = 1
+max_class = 6
+integrity = 200.0
+signature = 18.0

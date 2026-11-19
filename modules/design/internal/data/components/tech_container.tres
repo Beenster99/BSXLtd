@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "tech_container"
+display_name = "Tech container"
+short = "TCH"
+colour = Color(0.75, 0.5, 0.3, 1)
+size = Vector3(1.2, 1.0, 1.6)
+cost = 4000.0
+mass = 300.0
+build_hours = 1.0
+power = -0.3
+rooms = PackedStringArray("cargo")
+access = 0.8
+lead_days = 2
+category = "cargo"
+size_class = 2
+min_class = 1
+max_class = 4
+integrity = 120.0
+cargo = 1.6

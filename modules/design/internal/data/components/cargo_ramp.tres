@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "cargo_ramp"
+display_name = "Cargo ramp"
+short = "RMP"
+colour = Color(0.85, 0.8, 0.55, 1)
+size = Vector3(3.2, 2.7, 0.12)
+cost = 16000.0
+mass = 1800.0
+build_hours = 10.0
+power = -4.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 4
+category = "doors"
+size_class = 3
+min_class = 2
+max_class = 7
+integrity = 400.0
