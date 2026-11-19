@@ -25,3 +25,5 @@ integrity = 80.0
 load_kg = 800.0
 move_s = 0.0
 move_kw = 1.5
+move_kind = "spin"
+move_range = 360.0

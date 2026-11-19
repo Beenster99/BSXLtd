@@ -25,3 +25,5 @@ max_class = 7
 integrity = 80.0
 move_s = 30.0
 move_kw = 2.0
+move_kind = "hinge_up"
+move_range = 180.0

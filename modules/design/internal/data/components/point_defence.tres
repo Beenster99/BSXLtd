@@ -28,3 +28,5 @@ defence = 15.0
 signature = 4.0
 move_s = 1.5
 move_kw = 3.0
+move_kind = "spin"
+move_range = 360.0

@@ -27,3 +27,5 @@ open_size = Vector2(1.4, 2.2)
 load_kg = 2000.0
 move_s = 30.0
 move_kw = 12.0
+move_kind = "slide"
+move_range = 4.0

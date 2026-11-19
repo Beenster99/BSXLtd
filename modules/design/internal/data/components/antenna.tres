@@ -28,3 +28,5 @@ signature = 2.0
 sensor = 40.0
 move_s = 8.0
 move_kw = 1.0
+move_kind = "spin"
+move_range = 360.0

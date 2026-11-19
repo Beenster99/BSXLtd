@@ -26,3 +26,5 @@ defence = 5.0
 open_size = Vector2(1.6, 2.2)
 move_s = 6.0
 move_kw = 4.0
+move_kind = "slide"
+move_range = 1.6

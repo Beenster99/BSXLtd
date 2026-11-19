@@ -26,3 +26,5 @@ max_class = 6
 integrity = 40.0
 move_s = 20.0
 move_kw = 1.0
+move_kind = "spin"
+move_range = 180.0

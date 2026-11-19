@@ -26,3 +26,5 @@ integrity = 220.0
 load_kg = 20000.0
 move_s = 0.0
 move_kw = 0.0
+move_kind = "hinge_up"
+move_range = 30.0

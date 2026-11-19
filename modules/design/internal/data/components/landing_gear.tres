@@ -27,3 +27,5 @@ move_s = 10.0
 move_kw = 6.0
 load_kg = 30000.0
 clearance = 1.4
+move_kind = "leg"
+move_range = 1.2

@@ -165,6 +165,10 @@ func _moving() -> void:
 			check(pt.move_s > 0.0 or pt.move_kw > 0.0 or pt.load_kg > 0.0, "%s has moving-part figures" % id)
 	for id in ["cargo_ramp", "landing_gear", "airlock_door", "blast_door", "docking_port", "tow_winch", "turret"]:
 		check(cat.part(id).move_s > 0.0, "%s says how long it takes to move" % id)
+	for pt: DesignPartType in cat.parts.values():
+		if pt.move_s > 0.0:
+			check(pt.move_kind in ["hinge_out", "hinge_up", "slide", "spin", "leg", "belt"] and pt.move_range > 0.0,
+					"%s says how it moves and how far" % pt.id)
 	var leg := cat.part("undercarriage_leg")
 	check(leg.load_kg > 0.0 and leg.clearance > 0.0, "a leg has a load per leg and a ground clearance")
 	check(cat.part("clamshell_doors").open_size.x > float(DesignCatalog.DOOR_KINDS.cargo.max_w), "clamshell doors open wider than the biggest cargo door")

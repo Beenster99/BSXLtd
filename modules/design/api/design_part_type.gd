@@ -71,6 +71,13 @@ extends Resource
 @export var open_size := Vector2.ZERO
 ## Seconds to open, deploy or swing through its full travel (0 = it does not move).
 @export var move_s := 0.0
+## How it moves: "hinge_out" (ramps, clamshells, airstairs, booms that luff), "hinge_up"
+## (hatches, fold-out arrays), "slide" (doors, collars, lifts, rams, gangways), "spin" (turrets,
+## cranes that slew, masts that turn), "leg" (gear, legs, jacks, skids), "belt" (conveyors);
+## "" for none.
+@export var move_kind := ""
+## How far: degrees for hinge_* and spin, metres for slide and leg (its reach).
+@export var move_range := 0.0
 ## kW it draws while moving (on top of `power`).
 @export var move_kw := 0.0
 ## The most it is rated to bear, kg: for a foot, leg, skid or jack the load on each one; for a

@@ -27,3 +27,5 @@ attack = 60.0
 signature = 12.0
 move_s = 5.0
 move_kw = 10.0
+move_kind = "spin"
+move_range = 360.0

@@ -26,3 +26,5 @@ integrity = 300.0
 open_size = Vector2(1.0, 2.0)
 move_s = 3.0
 move_kw = 1.0
+move_kind = "slide"
+move_range = 1.0

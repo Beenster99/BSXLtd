@@ -26,3 +26,5 @@ integrity = 160.0
 open_size = Vector2(1.4, 2.2)
 move_s = 4.0
 move_kw = 2.0
+move_kind = "hinge_out"
+move_range = 90.0

@@ -27,3 +27,5 @@ open_size = Vector2(3.8, 3.2)
 load_kg = 12000.0
 move_s = 20.0
 move_kw = 22.0
+move_kind = "hinge_out"
+move_range = 105.0

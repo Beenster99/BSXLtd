@@ -23,3 +23,5 @@ integrity = 120.0
 move_s = 8.0
 move_kw = 3.0
 load_kg = 2000.0
+move_kind = "slide"
+move_range = 1.2

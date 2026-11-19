@@ -123,6 +123,8 @@ static func derive(base: DesignPartType, size: int, grade: String) -> DesignPart
 	p.access = base.access * sqrt(p.model_scale)
 	p.open_size = base.open_size * p.model_scale
 	p.clearance = base.clearance * p.model_scale
+	if base.move_kind == "slide" or base.move_kind == "leg":
+		p.move_range = base.move_range * p.model_scale
 	p.load_kg = base.load_kg * k.call("load") * float(gr.integrity)
 	p.move_kw = base.move_kw * k.call("power") * float(gr.draw)
 	# Better drives move faster; a bigger one takes a little longer to swing its size.
