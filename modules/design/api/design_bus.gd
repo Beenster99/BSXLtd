@@ -43,6 +43,10 @@ const Furnishing := preload("res://modules/design/internal/room/design_furnishin
 
 func register_module() -> void:
 	Saves.register_section(SAVE_SECTION, library)
+	if Modules.ready_done:
+		_hook_net()
+	else:
+		Modules.modules_ready.connect(_hook_net, CONNECT_ONE_SHOT)
 	if Flags.is_on(ROOM_FLAG):
 		Router.register_scene(ROOM_SCENE, ROOM_PATH)
 		Menu.register_entry(ROOM_SCENE, "Design room", ROOM_SCENE, 30)
@@ -56,6 +60,92 @@ func register_module() -> void:
 			_hook_yard()
 		else:
 			Modules.modules_ready.connect(_hook_yard, CONNECT_ONE_SHOT)
+
+
+# Designing together (Wave 3): one design open for the whole session. Every edit goes
+# through the multiplayer module's host, which orders them and applies them on every
+# machine; opening a design opens it for everyone; a player who joins gets the open design.
+
+const NET_SECTION := "design"
+var _net: Object
+var _opening_from_net := false
+
+
+func _hook_net() -> void:
+	hook_net(Modules.bus("multiplayer"))
+
+
+## Shares the design through `net` (the multiplayer bus, or a test's stand-in with the same
+## register_event / request / register_snapshot_provider / local_peer_id / is_online).
+func hook_net(net: Object) -> void:
+	if net == null or not net.has_method("register_event"):
+		return
+	_unhook_net()
+	_net = net
+	_net.call("register_event", "design.op", func(p: Dictionary) -> void: editor.apply_op(p.op, str(p.author)), _stamp)
+	_net.call("register_event", "design.undo", func(p: Dictionary) -> void: editor.apply_undo(str(p.author)), _stamp)
+	_net.call("register_event", "design.redo", func(p: Dictionary) -> void: editor.apply_redo(str(p.author)), _stamp)
+	_net.call("register_event", "design.open", _apply_open, _stamp)
+	_net.call("register_snapshot_provider", NET_SECTION, self)
+	editor.send = func(kind: String, payload: Dictionary) -> void: _net.call("request", "design." + kind, payload)
+	editor.me = func() -> String: return "p%d" % int(_net.call("local_peer_id"))
+	if not library.opened.is_connected(_share_open):
+		library.opened.connect(_share_open)
+
+
+func _unhook_net() -> void:
+	if _net == null:
+		return
+	for e in ["design.op", "design.undo", "design.redo", "design.open"]:
+		_net.call("unregister_event", e)
+	_net.call("unregister_snapshot_provider", NET_SECTION)
+	editor.send = Callable()
+	editor.me = Callable()
+	if library.opened.is_connected(_share_open):
+		library.opened.disconnect(_share_open)
+	_net = null
+
+
+## The host stamps who sent an edit, so each player's undo stays their own.
+func _stamp(sender: int, payload: Dictionary) -> Variant:
+	if payload.has("op") and not payload.op is Dictionary:
+		return "not an edit"
+	var out := payload.duplicate()
+	out["author"] = "p%d" % sender
+	return out
+
+
+## A design opened here is opened for everyone in the session.
+func _share_open(rec: DesignRecord) -> void:
+	if _opening_from_net or _net == null or not bool(_net.call("is_online")) or rec == null:
+		return
+	_net.call("request", "design.open", {"record": rec.to_dict()})
+
+
+func _apply_open(p: Dictionary) -> void:
+	var data: Dictionary = p.get("record", {})
+	if data.is_empty() or library.current and _same(library.current.to_dict(), data):
+		return
+	_opening_from_net = true
+	library.adopt(data)
+	_opening_from_net = false
+
+
+static func _same(a: Dictionary, b: Dictionary) -> bool:
+	var x := a.duplicate()
+	var y := b.duplicate()
+	x.erase("id")
+	y.erase("id")
+	return x == y
+
+
+## The open design, for a player joining the session.
+func get_net_snapshot() -> Dictionary:
+	return {"record": library.current.to_dict()} if library.current else {}
+
+
+func apply_net_snapshot(data: Dictionary) -> void:
+	_apply_open(data)
 
 
 func _hook_yard() -> void:
@@ -88,6 +178,7 @@ func furnish_station(_station: Node3D = null) -> void:
 
 
 func unregister_module() -> void:
+	_unhook_net()
 	Saves.unregister_section(SAVE_SECTION)
 	Menu.unregister_entry(ROOM_SCENE)
 	Menu.unregister_settings_section(Menu.DEBUG, "design.debug")
@@ -98,6 +189,8 @@ func open_sample() -> DesignRecord:
 	var rec := library.create("Sample skiff")
 	Samples.skiff(rec, catalog)
 	library.save_current()
+	# Built straight into the record, so share it as it now stands.
+	_share_open(rec)
 	return rec
 
 
