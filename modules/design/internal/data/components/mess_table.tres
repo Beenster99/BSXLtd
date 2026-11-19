@@ -10,6 +10,7 @@ display_name = "Mess table"
 short = "MTB"
 colour = Color(0.8, 0.6, 0.5, 1)
 size = Vector3(1.8, 0.8, 0.9)
+shared_part = "MessTable"
 cost = 900.0
 mass = 80.0
 build_hours = 1.0

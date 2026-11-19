@@ -10,6 +10,7 @@ display_name = "Hydroponics bed"
 short = "HYD"
 colour = Color(0.95, 0.75, 0.4, 1)
 size = Vector3(2.0, 1.7, 0.8)
+shared_part = "Planter"
 cost = 5500.0
 mass = 300.0
 build_hours = 3.0
