@@ -3,10 +3,10 @@ extends RefCounted
 ## should be more functional, android style ... heavy bots with arms which articulate to help
 ## them do their work, holding objects and welding, riveting or bolting objects in place"):
 ## TartanCo's heavy work android, one core in four trades, after beenster's reference sheets.
-## A deep chest of rounded plates over a ribbed waist, big rounded ochre pauldrons, a domed
-## visored head with stereo work lamps, a backpack with RCS pods at its corners and the trade's
+## A deep chest of rounded plates over a ribbed waist, rounded ochre shoulder caps, a thin
+## long head on a slender neck with two round eyes, a backpack with RCS pods at its corners and the trade's
 ## own kit, two arms (shoulder, upper arm, elbow, forearm, a tool on a
-## quick-change wrist) and two legs (hip, thigh, knee, shin, a magnetic clamp foot):
+## quick-change wrist) and two legs (hip, thigh, knee, shin, a clawed magnetic clamp):
 ##   W-3 the welder:   a gimballed torch on an umbilical from two consumable tanks
 ##   R-3 the riveter:  a force-controlled rivet gun fed by a belt from the drum on its back
 ##   B-3 the bolter:   a nut runner, a socket carousel on its back
@@ -46,7 +46,7 @@ const ANKLE := 0.17
 const HOSE_PORT := Vector3(0.4, 0.94, 0.5)
 const HOSE_LINKS := 8
 ## Where the fitter's alignment laser sits on its head (head space).
-const LASER := Vector3(-0.1, 0.33, -0.16)
+const LASER := Vector3(-0.085, 0.42, -0.1)
 
 static var _meshes: Dictionary = {}
 static var _liveries: Dictionary = {}
@@ -91,7 +91,8 @@ static func make(role: String, number: String) -> Node3D:
 	_mesh(n, "Pack", m[spec.pack], mat)
 	var head := Node3D.new()
 	head.name = "Head"
-	head.position = Vector3(0, 1.08, -0.04)
+	head.position = Vector3(0, 1.06, -0.04)
+	head.scale = Vector3.ONE * 1.3
 	n.add_child(head)
 	_mesh(head, "HeadMesh", m.head_F if role == "F" else m.head, mat)
 	var thrust := _mesh(n, "Thrust", m.thrust, mat)
@@ -113,8 +114,8 @@ static func make(role: String, number: String) -> Node3D:
 	for t: Array in [[spec.code, Vector3(0, 0.75, -0.392), PI, 0.0024, lit],
 			[number, Vector3(0, 0.62, -0.392), PI, 0.0015, (spec.livery.accent as Color).lightened(0.2)],
 			[MAKER, Vector3(0, 0.36, 0.597), 0.0, 0.0016, Color(0.92, 0.92, 0.9)],
-			[MAKER, Vector3(SHOULDER.x + 0.295, SHOULDER.y + 0.1, SHOULDER.z), PI * 0.5, 0.0009, ink],
-			[MAKER, Vector3(-SHOULDER.x - 0.295, SHOULDER.y + 0.1, SHOULDER.z), -PI * 0.5, 0.0009, ink]]:
+			[MAKER, Vector3(SHOULDER.x + 0.215, SHOULDER.y + 0.05, SHOULDER.z), PI * 0.5, 0.0007, ink],
+			[MAKER, Vector3(-SHOULDER.x - 0.215, SHOULDER.y + 0.05, SHOULDER.z), -PI * 0.5, 0.0007, ink]]:
 		var tag := Label3D.new()
 		tag.name = "Code" if t[0] == spec.code else ("Number" if t[0] == number else "Maker")
 		tag.text = t[0]
@@ -443,43 +444,46 @@ static func _body(m: YardToolMesh) -> void:
 		m.bolt("body", Vector3(sx * 0.24, 0.48, -0.36), Vector3.FORWARD, 0.014)
 	m.rod("body", "dark", Vector3(-0.2, 1.0, -0.3), Vector3(0.2, 1.0, -0.3), 0.03, -1.0, 12)
 	# Collar and neck.
-	m.rod("body", "dark", Vector3(0, 0.98, -0.04), Vector3(0, 1.12, -0.04), 0.14, 0.11, 20)
+	m.rod("body", "dark", Vector3(0, 0.98, -0.04), Vector3(0, 1.1, -0.04), 0.1, 0.06, 20)
 	m.ring("body", "gunmetal", Vector3(0, 1.02, -0.04), 0.22, 0.035, Vector3.UP, 24, 6)
 	for sx: float in [1.0, -1.0]:
 		m.rod("body", "steel", Vector3(sx * 0.16, 0.98, 0.04), Vector3(sx * 0.07, 1.12, -0.02), 0.022, -1.0, 8)
-	# The pauldrons: a heavy rounded ochre shell in layers over the shoulder's joint housing.
+	# The shoulder caps: a rounded ochre shell over the shoulder's joint housing.
 	for sx: float in [1.0, -1.0]:
 		var s := Vector3(SHOULDER.x * sx, SHOULDER.y, SHOULDER.z)
-		m.rod("body", "dark", s - Vector3(sx * 0.2, 0, 0), s + Vector3(sx * 0.04, 0, 0), 0.17, -1.0, 24)
-		_shell(m, "body", "accent", s + Vector3(sx * 0.05, 0.1, 0), Vector3(0.46, 0.38, 0.58), Vector2(0.7, 0.65), Basis(), 24, 14)
-		_shell(m, "body", "plates", s + Vector3(sx * 0.03, 0.27, 0), Vector3(0.38, 0.12, 0.48), Vector2(0.6, 0.6))
-		_shell(m, "body", "accent", s + Vector3(sx * 0.15, -0.08, 0), Vector3(0.18, 0.2, 0.5), Vector2(0.7, 0.6))
-		m.ring("body", "dark", s + Vector3(sx * 0.05, 0.1, 0), 0.24, 0.012, Vector3.RIGHT, 28, 5)
+		m.rod("body", "dark", s - Vector3(sx * 0.2, 0, 0), s + Vector3(sx * 0.04, 0, 0), 0.15, -1.0, 24)
+		_shell(m, "body", "accent", s + Vector3(sx * 0.05, 0.05, 0), Vector3(0.3, 0.27, 0.36), Vector2(0.75, 0.7), Basis(), 22, 12)
+		_shell(m, "body", "plates", s + Vector3(sx * 0.03, 0.17, 0), Vector3(0.22, 0.07, 0.28), Vector2(0.6, 0.6))
+		m.ring("body", "dark", s + Vector3(sx * 0.05, 0.05, 0), 0.16, 0.01, Vector3.RIGHT, 24, 5)
 
-
-## The head: a domed helmet, a visor band with two stereo lamps, sensor pods each side, an
-## antenna; the fitter's ("head_F") also has its alignment laser over its brow.
+## The head: thin and long on a slender neck of rods, the crown swept back, two round eyes and a
+## vented faceplate; the fitter's ("head_F") also has its alignment laser on its brow.
 static func _head(m: YardToolMesh, key: String) -> void:
-	_shell(m, key, "plates", Vector3(0, 0.16, 0.02), Vector3(0.4, 0.36, 0.42), Vector2(0.7, 0.6), Basis(), 22, 14)
-	_shell(m, key, "accent", Vector3(0, 0.3, 0.02), Vector3(0.12, 0.1, 0.4), Vector2(0.7, 0.7))
-	_shell(m, key, "dark", Vector3(0, 0.13, -0.17), Vector3(0.34, 0.15, 0.1), Vector2(0.55, 0.6))
-	_shell(m, key, "glass", Vector3(0, 0.13, -0.2), Vector3(0.3, 0.09, 0.05), Vector2(0.5, 0.5))
-	m.box(key, "cyan", Vector3(0, 0.085, -0.222), Vector3(0.22, 0.008, 0.004), 0.002)
+	# The neck: a dark spine between two steel struts.
+	m.rod(key, "dark", Vector3(0, -0.02, 0.02), Vector3(0, 0.24, 0.0), 0.035, 0.03, 12)
 	for sx: float in [1.0, -1.0]:
-		m.rod(key, "dark", Vector3(sx * 0.09, 0.14, -0.2), Vector3(sx * 0.09, 0.14, -0.235), 0.04, -1.0, 16)
-		m.rod(key, "lamp", Vector3(sx * 0.09, 0.14, -0.235), Vector3(sx * 0.09, 0.14, -0.242), 0.03, -1.0, 16)
-		_shell(m, key, "trim", Vector3(sx * 0.2, 0.14, 0.02), Vector3(0.08, 0.22, 0.3), Vector2(0.6, 0.6))
-		m.rod(key, "gunmetal", Vector3(sx * 0.23, 0.14, -0.04), Vector3(sx * 0.29, 0.14, -0.04), 0.06, 0.05, 16)
-		m.rod(key, "cyan", Vector3(sx * 0.29, 0.14, -0.04), Vector3(sx * 0.295, 0.14, -0.04), 0.03, -1.0, 12)
-	_shell(m, key, "dark", Vector3(0, 0.02, -0.12), Vector3(0.24, 0.07, 0.14), Vector2(0.6, 0.6))
-	m.rod(key, "dark", Vector3(0.13, 0.28, 0.16), Vector3(0.13, 0.54, 0.18), 0.008, 0.004, 8)
-	m.rod(key, "red_lamp", Vector3(0.13, 0.54, 0.18), Vector3(0.13, 0.56, 0.18), 0.014, -1.0, 8)
+		m.rod(key, "steel", Vector3(sx * 0.05, -0.02, 0.0), Vector3(sx * 0.035, 0.22, -0.03), 0.013, -1.0, 8)
+	m.ring(key, "gunmetal", Vector3(0, 0.1, 0.01), 0.04, 0.008, Vector3.UP, 14, 4)
+	# The skull, long and narrow, its crown swept up and back.
+	var tilt := Basis(Vector3.RIGHT, 0.32)
+	_shell(m, key, "plates", Vector3(0, 0.39, 0.03), Vector3(0.19, 0.42, 0.27), Vector2(0.85, 0.8), tilt, 22, 14)
+	_shell(m, key, "trim", Vector3(0, 0.34, 0.07), Vector3(0.2, 0.18, 0.2), Vector2(0.8, 0.8))
+	_shell(m, key, "accent", Vector3(0, 0.47, 0.06), Vector3(0.05, 0.3, 0.26), Vector2(0.8, 0.8), tilt)
+	# The faceplate: a narrow jaw with a vent grille.
+	_shell(m, key, "trim", Vector3(0, 0.25, -0.06), Vector3(0.12, 0.14, 0.1), Vector2(0.7, 0.7))
+	for k in 4:
+		m.rod(key, "dark", Vector3(-0.035, 0.21 + k * 0.022, -0.11), Vector3(0.035, 0.21 + k * 0.022, -0.11), 0.006, -1.0, 6)
+	# The eyes: round, deep set, glowing.
+	for sx: float in [1.0, -1.0]:
+		var eye := Vector3(sx * 0.048, 0.36, -0.1)
+		m.rod(key, "dark", eye + Vector3(0, 0, 0.03), eye + Vector3(0, 0, -0.01), 0.04, 0.036, 16)
+		m.rod(key, "glass", eye + Vector3(0, 0, -0.01), eye + Vector3(0, 0, -0.014), 0.03, -1.0, 16)
+		m.ring(key, "cyan", eye + Vector3(0, 0, -0.016), 0.021, 0.006, Vector3.BACK, 18, 5)
+		m.rod(key, "cyan", eye + Vector3(0, 0, -0.014), eye + Vector3(0, 0, -0.018), 0.006, -1.0, 8)
 	if key == "head_F":
-		_shell(m, key, "trim", LASER + Vector3(0, -0.01, 0.06), Vector3(0.12, 0.08, 0.18), Vector2(0.6, 0.6))
-		m.rod(key, "steel", LASER + Vector3(0, 0, 0.0), LASER + Vector3(0, 0, -0.04), 0.03, -1.0, 12)
-		m.rod(key, "red_lamp", LASER + Vector3(0, 0, -0.04), LASER + Vector3(0, 0, -0.045), 0.016, -1.0, 10)
-		m.rod(key, "glass", LASER + Vector3(0.06, 0, 0.0), LASER + Vector3(0.06, 0, -0.03), 0.022, -1.0, 12)
-
+		_shell(m, key, "trim", LASER + Vector3(0, 0, 0.05), Vector3(0.05, 0.05, 0.12), Vector2(0.6, 0.6))
+		m.rod(key, "steel", LASER, LASER + Vector3(0, 0, -0.03), 0.02, -1.0, 10)
+		m.rod(key, "red_lamp", LASER + Vector3(0, 0, -0.03), LASER + Vector3(0, 0, -0.035), 0.012, -1.0, 10)
 
 ## One arm's two bones, each hanging along -Y from its joint (mirrors as it is): an actuator
 ## core with rounded plates over it, pistons, a big elbow, a forearm in ochre armour, umbilicals.
@@ -523,18 +527,23 @@ static func _leg(m: YardToolMesh) -> void:
 	for sx: float in [1.0, -1.0]:
 		m.rod("shin", "steel", Vector3(sx * 0.15, -0.12, 0.04), Vector3(sx * 0.15, -0.48, 0.04), 0.018, -1.0, 8)
 	m.rod("shin", "dark", Vector3(-0.11, -SHIN, 0), Vector3(0.11, -SHIN, 0), 0.09, -1.0, 18)
-	# The foot (origin at the ankle, sole ANKLE below): a rounded heavy sole, a clamp jaw at the
-	# toe and heel, three magnetic pads.
-	_shell(m, "foot", "dark", Vector3(0, -0.04, 0), Vector3(0.18, 0.14, 0.18), Vector2(0.7, 0.7))
-	_shell(m, "foot", "trim", Vector3(0, -0.11, -0.06), Vector3(0.3, 0.11, 0.5), Vector2(0.45, 0.55))
-	_shell(m, "foot", "accent", Vector3(0, -0.07, -0.24), Vector3(0.26, 0.09, 0.1), Vector2(0.6, 0.6))
-	_shell(m, "foot", "plates", Vector3(0, -0.05, -0.12), Vector3(0.2, 0.07, 0.2), Vector2(0.6, 0.6))
-	for k in 3:
-		_shell(m, "foot", "gunmetal", Vector3((k - 1) * 0.09, -0.15, -0.3), Vector3(0.06, 0.06, 0.08), Vector2(0.6, 0.6), Basis(), 10, 6)
-	_shell(m, "foot", "gunmetal", Vector3(0, -0.15, 0.2), Vector3(0.16, 0.05, 0.07), Vector2(0.6, 0.6), Basis(), 12, 6)
-	for p: Vector3 in [Vector3(-0.08, -0.16, -0.14), Vector3(0.08, -0.16, -0.14), Vector3(0, -0.16, 0.08)]:
-		m.rod("foot", "steel", p, p - Vector3(0, ANKLE - 0.16 + 0.012, 0), 0.055, 0.06, 16)
-
+	# The foot (origin at the ankle, sole ANKLE below): no human foot but a magnetic clamp, a
+	# round magnet under an ankle housing and three jointed claws ahead, one behind, their tips on
+	# the sole.
+	_shell(m, "foot", "dark", Vector3(0, -0.04, 0), Vector3(0.16, 0.13, 0.16), Vector2(0.7, 0.7))
+	m.rod("foot", "gunmetal", Vector3(0, -0.08, 0), Vector3(0, -0.13, 0), 0.1, 0.11, 22)
+	m.ring("foot", "accent", Vector3(0, -0.11, 0), 0.105, 0.012, Vector3.UP, 22, 5)
+	m.rod("foot", "steel", Vector3(0, -0.13, 0), Vector3(0, -ANKLE + 0.004, 0), 0.1, 0.095, 22)
+	m.ring("foot", "accent_light", Vector3(0, -ANKLE + 0.004, 0), 0.07, 0.006, Vector3.UP, 20, 4)
+	for c: Array in [[-0.55, 0.36], [0.0, 0.39], [0.55, 0.36], [PI, 0.27]]:
+		var d := Vector3(sin(float(c[0])), 0, -cos(float(c[0])))
+		var reach: float = c[1]
+		var root := d * 0.08 + Vector3(0, -0.09, 0)
+		var knuckle := d * (reach * 0.62) + Vector3(0, -0.06, 0)
+		var tip := d * reach + Vector3(0, -ANKLE + 0.01, 0)
+		m.rod("foot", "gunmetal", root, knuckle, 0.042, 0.034, 12)
+		_shell(m, "foot", "accent", knuckle, Vector3(0.075, 0.07, 0.075), Vector2(0.9, 0.9), Basis(), 12, 8)
+		m.rod("foot", "dark", knuckle, tip, 0.032, 0.01, 12)
 
 ## Each trade's backpack, on the frame they share: four rounded RCS pods, status lamps, then the
 ## trade's kit (the welder's tanks, the riveter's drum, the bolter's socket carousel, the
