@@ -28,6 +28,7 @@ func run_tests() -> void:
 	btn.pressed.emit()
 	await frames(2)
 	var walk: WalkInside = f.walk
+	walk.set("rebuild_delay", 0.0)
 	check(f.is_walking() and walk != null and not f.is_console_open(), "it leaves the console for the walk")
 	check(walk.camera.current and HudSlots.pointer_claimed(), "you see through the walker's eyes, the yard's walker held still")
 	check(walk.viewport.own_world_3d and walk.world.get_world_3d() != f.get_world_3d(), "built in a world of its own")

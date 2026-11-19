@@ -16,13 +16,14 @@ const FRONTS: Array[Vector2] = [Vector2(0, -1), Vector2(-1, 0), Vector2(0, 1), V
 const MIN_DOOR := 1.0
 
 
-static func check(d: DesignRecord, cat: DesignCatalog) -> Array[Dictionary]:
+## `totals`: the design's DesignTotals when already worked out (the bus passes its own).
+static func check(d: DesignRecord, cat: DesignCatalog, totals: DesignTotals = null) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	_room_checks(d, cat, out)
 	_door_checks(d, out)
 	_route_checks(d, cat, out)
 	_component_checks(d, cat, out)
-	_ship_checks(d, cat, out)
+	_ship_checks(d, cat, out, totals)
 	_service_checks(d, cat, out)
 	_mount_checks(d, cat, out)
 	return out
@@ -308,7 +309,7 @@ static func _component_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Di
 					a.pt.display_name], [a.c.room], [a.c.id]))
 
 
-static func _ship_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictionary]) -> void:
+static func _ship_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictionary], totals: DesignTotals = null) -> void:
 	if d.rooms.is_empty():
 		out.append(_problem("empty", WARNING, "Place a room to start"))
 		return
@@ -320,7 +321,7 @@ static func _ship_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Diction
 			found = found or str(r.type) == rt.id
 		if not found:
 			out.append(_problem("missing_" + rt.id, ERROR, "The ship needs a %s" % rt.display_name.to_lower()))
-	var t := DesignTotals.compute(d, cat)
+	var t := totals if totals else DesignTotals.compute(d, cat)
 	if t.power_balance() < 0.0:
 		out.append(_problem("power", ERROR, "Not enough power: %.0f kW made, %.0f kW used" % [
 				t.power_made, t.power_used]))

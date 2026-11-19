@@ -38,6 +38,7 @@ func run_tests() -> void:
 	f.open_walk()
 	await frames(2)
 	var walk: Node3D = f.walk
+	walk.set("rebuild_delay", 0.0)
 	var b: WalkBuild = walk.builder
 	check(b.lifts.size() == 1 and (b.lifts[0].decks as Array) == [0, 1], "a platform for the shaft: %s" % [b.lifts.size()])
 	var lift: Dictionary = b.lifts[0]
@@ -103,6 +104,7 @@ func _hatch(bus: DesignBus) -> void:
 	f.open_walk()
 	await frames(2)
 	var walk: Node3D = f.walk
+	walk.set("rebuild_delay", 0.0)
 	var b: WalkBuild = walk.builder
 	check(b.ladders.size() == 1 and walk.find_child("Ladder_r2", true, false) != null, "a ladder up the hatch")
 	var hole: Rect2 = b.ladders[0].rect

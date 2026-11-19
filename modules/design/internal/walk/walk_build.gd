@@ -74,8 +74,9 @@ func _init(design_catalog: DesignCatalog) -> void:
 	catalog = design_catalog
 
 
-## Builds `record` under `parent` (cleared first).
-func build(record: DesignRecord, parent: Node3D) -> void:
+## Builds `record` under `parent` (cleared first). `plan` and `structure`: its proposed frame
+## and measured structure when already worked out (the bus keeps both per edit).
+func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structure: DesignStructure = null) -> void:
 	rec = record
 	root = parent
 	for c in root.get_children():
@@ -95,7 +96,7 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	frame_plan = {}
 	if rec == null:
 		return
-	frame_plan = DesignFrame.propose(rec)
+	frame_plan = plan.duplicate(true) if not plan.is_empty() else DesignFrame.propose(rec)
 	var stairs := stairwells(rec, catalog)
 	for r: Dictionary in rec.rooms.values():
 		_floor(r, stairs)
@@ -103,7 +104,7 @@ func build(record: DesignRecord, parent: Node3D) -> void:
 	for deck in rec.decks():
 		if rec.hull_outline(deck).size() >= 3:
 			_open_deck(deck)
-	var st := DesignStructure.measure(rec)
+	var st := structure if structure else DesignStructure.measure(rec)
 	for b: Dictionary in rec.beams.values():
 		_beam(b)
 	for e in st.outer_edges:
