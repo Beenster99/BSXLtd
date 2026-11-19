@@ -48,7 +48,7 @@ signal changed(op: Dictionary)
 
 const FORMAT := 1
 ## Grid steps the designer can pick, m.
-const GRIDS: PackedFloat32Array = [0.5, 1.0, 2.0]
+const GRIDS: PackedFloat32Array = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0]
 
 var id := ""
 var name := "New design"
@@ -485,6 +485,14 @@ func _bump_next(eid: String) -> void:
 
 
 # Queries
+
+## The ID shown for a placed object (beenster, 19 Nov: "every object placed in the ship to have
+## a unique ID"): its record id upper-cased (R4 a room, C12 a component, H3 a hull mount, D7 a
+## door, W2 a service run, I5 an inner wall, B1 a beam). Every kind draws from one counter, so
+## no two objects in a design share one.
+static func tag(eid: String) -> String:
+	return eid.to_upper()
+
 
 ## A room's floor as a polygon (ship space): its outline if it is shaped, else its box.
 static func room_poly(r: Dictionary) -> PackedVector2Array:
