@@ -22,6 +22,8 @@ const SAVE_SECTION := "supply"
 const SAVE_VERSION := 1
 const WALL_FLAG := "supply.wall"
 const WALL_VIEW := "market"
+## The wrist screen's channel (HudSlots) showing the same panel.
+const HOLO_CHANNEL := "supply.market"
 const VENDORS_DIR := "res://modules/supply/internal/data/vendors"
 const MarketScreen := preload("res://modules/supply/internal/market_screen.gd")
 ## A new game's first market day (history reaches back from it, so it starts past it).
@@ -71,6 +73,9 @@ func _hook_up() -> void:
 		return
 	if Flags.is_on(WALL_FLAG):
 		_design.register_wall_view(WALL_VIEW, "PARTS MARKET", make_screen)
+		# The same screen on the wrist (F1), after the warehouse stock.
+		HudSlots.register_holo_channel(HOLO_CHANNEL, "Parts market",
+				func(_glass: bool) -> Control: return make_screen(150.0), 20)
 	_design.design_changed.connect(_on_design_changed)
 	# The business day, where the business module runs one (reached by name: it is optional).
 	var business := Modules.bus("business")
@@ -80,6 +85,7 @@ func _hook_up() -> void:
 
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
+	HudSlots.unregister_holo_channel(HOLO_CHANNEL)
 	if _design:
 		_design.unregister_wall_view(WALL_VIEW)
 		if _design.design_changed.is_connected(_on_design_changed):

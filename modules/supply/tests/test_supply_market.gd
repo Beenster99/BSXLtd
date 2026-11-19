@@ -103,6 +103,8 @@ func run_tests() -> void:
 
 	# The wall panel: offered to the design room's walls, and it works.
 	check(design.wall_views.has(SupplyBus.WALL_VIEW), "the market is offered to the walls")
+	var wrist: Dictionary = HudSlots.holo_channel(SupplyBus.HOLO_CHANNEL)
+	check(not wrist.is_empty() and (wrist.factory as Callable).call(false) is MarketScreen, "the market is a wrist channel too")
 	var board := (design.wall_views[SupplyBus.WALL_VIEW].make as Callable).call(150.0) as Control
 	add_child(board)
 	board.size = Vector2(1100, 800)
