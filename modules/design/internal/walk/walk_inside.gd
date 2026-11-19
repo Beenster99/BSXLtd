@@ -534,15 +534,15 @@ func _update_spot() -> void:
 		return
 	var c := {"x": at.x, "z": at.y, "rot": int(holding.rot), "room": room}
 	var foot := DesignRules.footprint(c, pt)
-	var rr := rec.room_rect(room)
+	var rr: Dictionary = rec.rooms[room]
 	var rt := bus.catalog.room(str(rec.rooms[room].type))
 	if not pt.rooms.is_empty() and not str(rec.rooms[room].type) in pt.rooms:
 		spot.why = "Belongs in %s" % ", ".join(pt.rooms)
-	elif not rr.encloses(foot.grow(-0.01)):
+	elif not DesignRecord.room_encloses(rr, foot.grow(-0.01)):
 		spot.why = "Doesn't fit against the walls"
 	elif _overlaps(foot, room):
 		spot.why = "Something's in the way"
-	elif not rr.encloses(DesignRules.access_zone(c, pt).grow(-0.01)) or _overlaps(DesignRules.access_zone(c, pt), room):
+	elif not DesignRecord.room_encloses(rr, DesignRules.access_zone(c, pt).grow(-0.01)) or _overlaps(DesignRules.access_zone(c, pt), room):
 		spot.why = "No room to get at its front (R to turn it)"
 	else:
 		var missing: Array[String] = []

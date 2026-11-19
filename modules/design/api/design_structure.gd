@@ -91,7 +91,8 @@ static func measure(d: DesignRecord) -> DesignStructure:
 			# Listed from the low end, as the four sides of a box are.
 			var lo := a if (a.x + a.y) <= (b.x + b.y) else b
 			var hi := b if lo == a else a
-			s._split_side(d, deck, r.id, lo, hi, n, n.x > 0.5 or n.y > 0.5)
+			# A wall two rooms share is listed once, by the room on its far (+X, else +Z) side.
+			s._split_side(d, deck, r.id, lo, hi, n, n.x > 0.001 or absf(n.x) <= 0.001 and n.y > 0.0)
 		# Floors with no room under them, roofs with none over: outer hull too.
 		if not hulled:
 			s.outer_area += _uncovered(d, rect, deck, deck - 1) + _uncovered(d, rect, deck, deck + 1)

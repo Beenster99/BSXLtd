@@ -63,6 +63,9 @@ var _hull_pts: Array[Vector2] = []
 var _structure: DesignStructure
 var _stale := true
 var _frame_queued := false
+## Shift held: a room's corner drag keeps its sides square (its neighbours follow), and a
+## side's handle puts a square step in it; otherwise corners move freely, sides at any angle.
+var keep_square := false
 var _drag := {}  # what the left button is doing: {kind, id, start, edge, rect, ...}
 var _pan_from := Vector2.INF
 var _mouse := Vector2.ZERO
@@ -596,22 +599,19 @@ func _draw_room_label(r: Dictionary) -> void:
 
 func _draw_door(rec: DesignRecord, door: Dictionary) -> void:
 	var p := Vector2(door.x, door.z)
-	# Which way the wall runs: along x if the door sits on a room's top or bottom edge.
-	var along_x := false
-	var ra := rec.room_rect(str(door.a))
-	if absf(p.y - ra.position.y) < 0.05 or absf(p.y - ra.end.y) < 0.05:
-		along_x = true
+	# Which way the wall runs: the room's side the door sits on (at any angle).
+	var along := DesignRecord.side_at(rec.rooms.get(str(door.a), {"x": 0, "z": 0, "w": 0, "d": 0}), p)
 	var kind := DesignCatalog.door_kind(door)
 	var half := maxf(DesignRules.MIN_DOOR, float(kind.w) - 0.2) * 0.5
-	var a := p - (Vector2(half, 0) if along_x else Vector2(0, half))
-	var b := p + (Vector2(half, 0) if along_x else Vector2(0, half))
+	var a := p - along * half
+	var b := p + along * half
 	var sa := to_screen(a)
 	var sb := to_screen(b)
 	draw_line(sa, sb, BG, 6.0)
 	var col := DOOR if str(door.b) != "" else Color("6fc8e8")
 	if selected_kind == "door" and selected_id == door.id:
 		col = SELECT
-	var n := (Vector2(0, 1) if along_x else Vector2(1, 0)) * 4.0
+	var n := Vector2(-along.y, along.x) * 4.0
 	if bool(kind.leaves):
 		draw_line(sa, sb, col, 4.0 if str(door.get("kind", "")) == "cargo" else 2.0)
 	else:
@@ -869,6 +869,8 @@ static func _m(v: float) -> String:
 func _gui_input(event: InputEvent) -> void:
 	if bus == null:
 		return
+	if event is InputEventWithModifiers:
+		keep_square = (event as InputEventWithModifiers).shift_pressed
 	if event is InputEventMouseMotion:
 		_mouse = event.position
 		if _pan_from != Vector2.INF:
@@ -1236,7 +1238,7 @@ func _drag_move(s: Vector2) -> void:
 			_drag.pos = _snap(p, _grid() * 0.5)
 		"room_poly":
 			var delta := _snap(p - _drag.start, rec.grid)
-			_drag.poly = RoomShape.reshape(_drag.orig, str(_drag.how), int(_drag.index), delta)
+			_drag.poly = RoomShape.reshape(_drag.orig, str(_drag.how), int(_drag.index), delta, keep_square)
 		"line":
 			_drag.b = _snap(p, _grid() * 0.5)
 	queue_redraw()

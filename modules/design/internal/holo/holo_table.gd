@@ -175,6 +175,29 @@ func _box(parent: Node3D, centre: Vector3, sz: Vector3, mat: Material) -> MeshIn
 	return mi
 
 
+## A flat outline stood up from y0 to y1 as one see-through block.
+func _prism(parent: Node3D, poly: PackedVector2Array, y0: float, y1: float, mat: Material) -> void:
+	var tris := Geometry2D.triangulate_polygon(poly)
+	if tris.is_empty():
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for y: float in [y0, y1]:
+		for i in tris:
+			st.add_vertex(Vector3(poly[i].x, y, poly[i].y))
+	for i in poly.size():
+		var a := poly[i]
+		var b := poly[(i + 1) % poly.size()]
+		for v: Vector3 in [Vector3(a.x, y0, a.y), Vector3(b.x, y0, b.y), Vector3(b.x, y1, b.y),
+				Vector3(a.x, y0, a.y), Vector3(b.x, y1, b.y), Vector3(a.x, y1, a.y)]:
+			st.add_vertex(v)
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	parent.add_child(mi)
+
+
 func _lines(parent: Node3D, segments: PackedVector3Array, mat: Material) -> void:
 	if segments.is_empty():
 		return
@@ -210,12 +233,10 @@ func _build_rooms(rec: DesignRecord, parent: Node3D) -> void:
 		var inset := Vector3(0.08, 0.08, 0.08)
 		var mat := _mat(col, 0.12 if lit else 0.035, 1.2 if lit else 0.6)
 		if DesignRecord.is_shaped(r):
-			# A shaped room: a block per rectangle of it, its outline drawn round the whole.
+			# A shaped room: its outline stood up as a block, the outline drawn round it.
 			var y := float(r.deck) * rec.deck_height
-			for c in DesignRecord.room_cells(r):
-				_box(parent, Vector3(c.get_center().x, y + rec.deck_height * 0.5, c.get_center().y),
-						Vector3(c.size.x, rec.deck_height, c.size.y) - inset, mat)
 			var poly := DesignRecord.room_poly(r)
+			_prism(parent, poly, y + 0.04, y + rec.deck_height - 0.04, mat)
 			var lo := y + 0.04
 			var hi := y + rec.deck_height - 0.04
 			for i in poly.size():
@@ -232,10 +253,9 @@ func _build_rooms(rec: DesignRecord, parent: Node3D) -> void:
 	var door_edges := PackedVector3Array()
 	for door: Dictionary in rec.doors.values():
 		var y := float(door.deck) * rec.deck_height
-		var ra := rec.room_rect(str(door.a))
 		var p := Vector3(door.x, y, door.z)
-		var along_x := absf(p.z - ra.position.y) < 0.05 or absf(p.z - ra.end.y) < 0.05
-		var half := Vector3(0.5, 0, 0) if along_x else Vector3(0, 0, 0.5)
+		var along := DesignRecord.side_at(rec.rooms.get(str(door.a), {"x": 0, "z": 0, "w": 0, "d": 0}), Vector2(p.x, p.z))
+		var half := Vector3(along.x, 0, along.y) * 0.5
 		var top := Vector3(0, 2.1, 0)
 		door_edges.append_array([p - half, p - half + top, p - half + top, p + half + top, p + half + top, p + half])
 	_lines(parent, door_edges, _mat(Color(0.6, 1.0, 0.95), 0.95))

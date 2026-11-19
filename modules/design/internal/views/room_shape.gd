@@ -1,9 +1,12 @@
 extends RefCounted
 ## Reshaping a room on the plan (beenster, 19 Nov: "edit the vertices of a room to create non
-## rectangular rooms"). A room's outline stays square-cornered: every side runs along x or z.
-##   reshape(poly, "room_vertex", i, delta): corner i moved; the two sides at it move with it.
-##   reshape(poly, "room_step", i, delta): side i stepped: from its middle on it moves out (or in)
-##     by delta across it, so a box becomes an L, an L a U or T.
+## rectangular rooms"; sides at any angle, his pick that day).
+##   reshape(poly, "room_vertex", i, delta): corner i moved on its own, its two sides turning
+##     with it; `square`: the two sides at it move with it and stay along x or z.
+##   reshape(poly, "room_step", i, delta): a new corner put in the middle of side i and moved;
+##     `square`: side i stepped: from its middle on it moves out (or in) by delta across it, so
+##     a box becomes an L, an L a U or T.
+##   A corner dragged onto its neighbour is taken out (clean).
 ##   fields(poly): the set_room fields for an outline ({} if it isn't a usable room shape).
 
 const EPS := 0.01
@@ -11,10 +14,17 @@ const EPS := 0.01
 const MIN_SIZE := 0.5
 
 
-static func reshape(orig: PackedVector2Array, how: String, i: int, delta: Vector2) -> PackedVector2Array:
+static func reshape(orig: PackedVector2Array, how: String, i: int, delta: Vector2,
+		square := true) -> PackedVector2Array:
 	var poly := orig.duplicate()
 	var n := poly.size()
-	if n < 4 or delta == Vector2.ZERO:
+	if n < 3 or delta == Vector2.ZERO:
+		return poly
+	if not square:
+		if how == "room_vertex":
+			poly[i] += delta
+		else:
+			poly.insert(i + 1, (poly[i] + poly[(i + 1) % n]) * 0.5 + delta)
 		return poly
 	if how == "room_vertex":
 		var v := poly[i]
@@ -51,6 +61,13 @@ static func reshape(orig: PackedVector2Array, how: String, i: int, delta: Vector
 
 
 ## The outline cleaned (repeated corners and corners on a straight side taken out).
+static func _area(poly: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in poly.size():
+		a += poly[i].cross(poly[(i + 1) % poly.size()])
+	return a * 0.5
+
+
 static func clean(poly: PackedVector2Array) -> PackedVector2Array:
 	var pts := poly.duplicate()
 	var changed := true
@@ -60,8 +77,8 @@ static func clean(poly: PackedVector2Array) -> PackedVector2Array:
 			var prev := pts[(k + pts.size() - 1) % pts.size()]
 			var p := pts[k]
 			var next := pts[(k + 1) % pts.size()]
-			var straight := (absf(prev.x - p.x) < EPS and absf(p.x - next.x) < EPS) \
-					or (absf(prev.y - p.y) < EPS and absf(p.y - next.y) < EPS)
+			var straight := absf((p - prev).cross(next - p)) < EPS * maxf(prev.distance_to(next), 1.0) \
+					and (p - prev).dot(next - p) > 0.0
 			if p.distance_to(next) < EPS or straight:
 				pts.remove_at(k)
 				changed = true
@@ -85,20 +102,21 @@ static func is_simple(poly: PackedVector2Array) -> bool:
 ## or outline null where it is just a box again. {} when it can't be a room.
 static func fields(poly: PackedVector2Array) -> Dictionary:
 	var pts := clean(poly)
-	if pts.size() < 4 or not is_simple(pts):
+	if pts.size() < 3 or not is_simple(pts) or absf(_area(pts)) < MIN_SIZE * MIN_SIZE:
 		return {}
+	var square := true
 	for k in pts.size():
 		var a := pts[k]
 		var b := pts[(k + 1) % pts.size()]
 		if absf(a.x - b.x) > EPS and absf(a.y - b.y) > EPS:
-			return {}  # a slanted side
+			square = false  # a slanted side
 	var box := Rect2(pts[0], Vector2.ZERO)
 	for p in pts:
 		box = box.expand(p)
 	if box.size.x < MIN_SIZE or box.size.y < MIN_SIZE:
 		return {}
 	var out := {"x": box.position.x, "z": box.position.y, "w": box.size.x, "d": box.size.y}
-	if pts.size() == 4:
+	if pts.size() == 4 and square:
 		out["outline"] = null
 		return out
 	var rel: Array = []

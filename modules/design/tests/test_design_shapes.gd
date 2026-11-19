@@ -23,8 +23,14 @@ func _shapes() -> void:
 	check(f.get("outline") is Array and (f.outline as Array).size() == 6, "a step in a side makes an L: %s" % [f])
 	check(RoomShape.fields(RoomShape.reshape(box, "room_vertex", 2, Vector2(1, 1))).get("outline") == null,
 			"a box's corner dragged stays a box (stretched)")
-	check(RoomShape.fields(PackedVector2Array([Vector2(0, 0), Vector2(4, 0), Vector2(3, 4), Vector2(0, 4)])).is_empty(),
-			"a slanted side isn't a room shape")
+	var slant := RoomShape.fields(RoomShape.reshape(box, "room_vertex", 2, Vector2(-1, 0), false))
+	check(slant.get("outline") is Array and (slant.outline as Array).size() == 4, "a corner moved freely slants its sides: %s" % [slant])
+	var bend := RoomShape.reshape(box, "room_step", 0, Vector2(0, -1), false)
+	check(bend.size() == 5 and bend[1].is_equal_approx(Vector2(2, -1)), "a side's handle dragged freely puts a corner in it: %s" % [bend])
+	check(RoomShape.fields(RoomShape.reshape(box, "room_vertex", 2, Vector2(-4, 0), false)).get("outline") is Array,
+			"a corner dragged onto its neighbour is taken out: a three-cornered room")
+	check(RoomShape.fields(PackedVector2Array([Vector2(0, 0), Vector2(4, 4), Vector2(4, 0), Vector2(0, 4)])).is_empty(),
+			"a crossed outline isn't a room")
 
 
 func _plan(bus: DesignBus) -> void:
@@ -42,6 +48,7 @@ func _plan(bus: DesignBus) -> void:
 	plan.frame_all()
 	plan.set_tool("select")
 	plan.select("room", rid)
+	plan.keep_square = true  # Shift held
 
 	# The right side's step handle, dragged in by 2 m: an L with its notch at x 2..4, z 2..4.
 	var hit := plan.pick(plan.to_screen(Vector2(4, 2)))
@@ -112,4 +119,32 @@ func _plan(bus: DesignBus) -> void:
 	bus.editor.undo()
 	check(not DesignRecord.is_shaped(rec.rooms[rid]) and is_equal_approx(DesignRecord.room_area(rec.rooms[rid]), 16.0),
 			"undo puts the box back")
+
+	# Any angle (no Shift): the box's far corner dragged in makes a slanted side.
+	plan.keep_square = false
+	plan.select("room", rid)
+	plan._press(plan.to_screen(Vector2(4, 4)))
+	plan._drag_move(plan.to_screen(Vector2(2, 4)))
+	plan._release(plan.to_screen(Vector2(2, 4)))
+	r = rec.rooms[rid]
+	check(DesignRecord.is_shaped(r) and not DesignRecord.is_square(r) and is_equal_approx(DesignRecord.room_area(r), 12.0),
+			"a corner dragged freely: a slanted side, 12 m2: %s" % [r.get("outline")])
+	check(rec.room_at(0, Vector2(3.8, 3.5)) == "" and rec.room_at(0, Vector2(3.5, 1)) == rid, "the cut-off corner is off its floor")
+	s = DesignStructure.measure(rec)
+	check(is_equal_approx(s.outer_len, 4 + 4 + 2 + sqrt(4.0 + 16.0)), "its walls follow the slant: %.2f m" % s.outer_len)
+	# A room against the slant shares that wall.
+	bus.editor.do({"op": "add_room", "room": {"type": "cargo", "deck": 0, "x": 2, "z": 0, "w": 4, "d": 4,
+			"outline": [[2, 0], [4, 0], [4, 4], [0, 4]]}})
+	var wedge := rec.room_at(0, Vector2(3.8, 3.5))
+	check(wedge != "" and wedge != rid, "a wedge room fills the cut-off corner")
+	check(DesignRules.check(rec, cat).filter(func(p): return p.code == "overlap").is_empty(), "the wedge doesn't overlap")
+	var wall := rec.shared_wall(rid, wedge)
+	check(wall.size() == 2 and is_equal_approx(wall[0].distance_to(wall[1]), sqrt(20.0)), "they share the slanted wall: %s" % [wall])
+	var s3 := DesignStructure.measure(rec)
+	check(is_equal_approx(s3.inner_len, sqrt(20.0)), "the shared slant is one inner wall: %.2f" % s3.inner_len)
+	var holder2 := Node3D.new()
+	add_child(holder2)
+	walk.build(rec, holder2)
+	check(holder2.find_child("Floor_" + rid, true, false) != null, "walk-inside builds the slanted room's floor to its outline")
+	holder2.queue_free()
 	layer.queue_free()

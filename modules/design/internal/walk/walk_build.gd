@@ -113,6 +113,9 @@ func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structur
 	frame_plan = next_plan
 	var stairs := stairwells(rec, catalog)
 	for r: Dictionary in rec.rooms.values():
+		if not DesignRecord.is_square(r):
+			_slanted_room(r)  # a side at an angle: floor and ceiling cut to its outline
+			continue
 		# A shaped room is built a rectangle of floor and ceiling at a time.
 		var cells := DesignRecord.room_cells(r)
 		for i in cells.size():
@@ -305,6 +308,73 @@ func _ceiling(r: Dictionary, shaft_hole: Rect2, rect: Rect2, tag: String) -> voi
 	lamps += 1
 
 
+## A room with a side at an angle: its floor (what you stand on, plated), its ceiling, a roof of
+## hull plate where no room is over it, and a lamp, each cut to its outline.
+func _slanted_room(r: Dictionary) -> void:
+	var poly := DesignRecord.room_poly(r)
+	if Geometry2D.triangulate_polygon(poly).is_empty():
+		return
+	var deck := int(r.deck)
+	var y := deck * rec.deck_height
+	var mid := _centroid(poly)
+	var covered := DesignStructure.on_deck(rec, deck - 1, mid)
+	var framed := not (frame_plan.get("decks", []) as Array).is_empty()
+	var body := _body({"kind": "floor", "room": str(r.id), "deck": deck})
+	body.name = "Floor_" + str(r.id)
+	var top := PackedVector3Array()
+	_fan(poly, y + (0.015 if framed else 0.01), top, false)
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(top)
+	shape.backface_collision = true
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	var under := PackedVector3Array()
+	_fan(poly, y - FLOOR, under, true)
+	body.add_child(_tri_mesh(under, paint(Color(0.2, 0.21, 0.23), "gunmetal") if covered
+			else paint(Color(0.5, 0.52, 0.55), "brushed_alloy"), 1 if covered else 1 | EXTERIOR))
+	if not framed:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		_plate(st, poly, y)
+		st.generate_normals()
+		var pm := MeshInstance3D.new()
+		pm.name = "DeckPlates_" + str(r.id)
+		pm.mesh = st.commit()
+		pm.material_override = paint(Color(0.46, 0.48, 0.5), "bare_steel")
+		root.add_child(pm)
+	var roof_y := (deck + 1) * rec.deck_height - FLOOR
+	var spec: Array = GIRDERS.get(str(rec.structure.get("frame", "standard")), GIRDERS.standard)
+	var low := roof_y - float(spec[1])
+	var ceiling := PackedVector3Array()
+	_fan(poly, low - 0.01, ceiling, true)
+	var cm := _tri_mesh(ceiling, paint(Color(0.62, 0.64, 0.65), "satin_paint"), 1)
+	cm.name = "Ceiling_" + str(r.id)
+	root.add_child(cm)
+	if not DesignStructure.on_deck(rec, deck + 1, mid):
+		var roof := PackedVector3Array()
+		_fan(poly, roof_y + FLOOR, roof, false)
+		var rm := _tri_mesh(roof, paint(Color(0.5, 0.52, 0.55), "brushed_alloy"), EXTERIOR)
+		rm.name = "Roof_" + str(r.id)
+		root.add_child(rm)
+	var at := mid if Geometry2D.is_point_in_polygon(mid, poly) else (poly[0] + poly[1] + poly[2]) / 3.0
+	var lp := MeshInstance3D.new()
+	lp.mesh = _box_mesh(Vector3(1.2, 0.03, 0.3))
+	lp.material_override = _glow(Color(1.0, 0.96, 0.88))
+	lp.position = Vector3(at.x, low - 0.035, at.y)
+	root.add_child(lp)
+	var lamp := OmniLight3D.new()
+	lamp.name = "Lamp_" + str(r.id)
+	lamp.position = Vector3(at.x, low - 0.3, at.y)
+	var size := Vector2(float(r.w), float(r.d))
+	lamp.omni_range = maxf(size.length() * 0.75, 3.5) + 1.5
+	lamp.light_energy = clampf(DesignRecord.room_area(r) / 24.0, 0.35, 0.9)
+	lamp.light_color = Color(1.0, 0.95, 0.88)
+	lamp.shadow_enabled = false
+	root.add_child(lamp)
+	lamps += 1
+
+
 ## The deck inside a drawn hull that no room covers: plated out to the hull's sides, one
 ## plate a metre square (cut to the hull where it angles), lit, and roofed where nothing is over it.
 func _open_deck(deck: int) -> void:
@@ -389,8 +459,7 @@ func _open_deck(deck: int) -> void:
 func _minus_rooms(poly: PackedVector2Array, deck: int) -> Array[PackedVector2Array]:
 	var out: Array[PackedVector2Array] = [poly]
 	for r in rec.rooms_on(deck):
-		for rr in DesignRecord.room_cells(r):
-			var sq := PackedVector2Array([rr.position, Vector2(rr.end.x, rr.position.y), rr.end, Vector2(rr.position.x, rr.end.y)])
+		for sq: PackedVector2Array in [DesignRecord.room_poly(r)]:
 			var next: Array[PackedVector2Array] = []
 			for p in out:
 				for q in Geometry2D.clip_polygons(p, sq):
