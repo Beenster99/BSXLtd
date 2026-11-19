@@ -62,7 +62,7 @@ func refresh() -> void:
 	var balance := t.power_balance()
 	for fig in [
 		["Cost", "CR " + T.money(int(t.cost)), T.TEXT],
-		["Mass", "%.1f t" % (t.mass / 1000.0), T.TEXT],
+		["Dry mass", "%.1f t" % (t.mass / 1000.0), T.TEXT],
 		["Power", "%+.0f kW" % balance, T.GOOD if balance >= 0.0 else T.BAD],
 		["Build", "%d h" % int(ceil(t.build_hours)), T.TEXT],
 		["Crew", "%d" % t.crew, T.TEXT],
@@ -92,6 +92,25 @@ func refresh() -> void:
 		f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ratings.add_child(f)
 	_body.add_child(ratings)
+	# Her masses: as built, tanks full, people aboard; and what her holds may carry.
+	_body.add_child(T.label("MASSES", "display_bold", 20, T.TEXT))
+	var masses := GridContainer.new()
+	masses.name = "Masses"
+	masses.columns = 2 if compact else 3
+	masses.add_theme_constant_override("h_separation", 6)
+	masses.add_theme_constant_override("v_separation", 6)
+	for fig in [
+		["Dry mass", "%.1f t" % (t.dry_mass() / 1000.0), T.TEXT],
+		["Fuel load", "%.1f t" % (t.fuel_mass / 1000.0), T.TEXT if t.fuel_mass > 0.0 else T.AMBER],
+		["Wet mass", "%.1f t" % (t.wet_mass() / 1000.0), T.TEXT],
+		["Occupancy mass", "%.1f t" % (t.occupancy_mass / 1000.0), T.TEXT],
+		["Flying mass", "%.1f t" % (t.flying_mass() / 1000.0), T.TEXT],
+		["Cargo max", "%.1f t" % (t.cargo_max / 1000.0), T.TEXT],
+	]:
+		var f := T.figure(fig[0], fig[1], fig[2])
+		f.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		masses.add_child(f)
+	_body.add_child(masses)
 	# The ship order the design answers sets the demands, unless a view set its own.
 	var want: Dictionary = demands if not demands.is_empty() else rec.order.get("demands", {})
 	if not want.is_empty():
