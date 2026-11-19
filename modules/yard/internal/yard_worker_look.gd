@@ -103,6 +103,8 @@ static func make(role: String, number: String) -> Node3D:
 		var tool: String = spec.right if side == "R" else spec.left
 		var hand := _mesh(n, "Hand" + side, m[tool], mat)
 		hand.set_meta("tool", tool)
+		if tool == "nut_runner":
+			_mesh(hand, "Spin", m.nut_socket, mat)
 		_mesh(n, "Thigh" + side, m.thigh, mat)
 		_mesh(n, "Shin" + side, m.shin, mat)
 		_mesh(n, "Foot" + side, m.foot, mat)
@@ -295,6 +297,14 @@ static func _mesh(parent: Node3D, name: String, mesh: Mesh, mat: Material) -> Me
 	mi.material_override = mat
 	parent.add_child(mi)
 	return mi
+
+
+## Turns the nut runner's drive and socket to `angle` (rad) about the tool's axis; the runner's
+## body and the hand stay still.
+static func spin_socket(w: Node3D, angle: float) -> void:
+	var spin := w.get_node_or_null("HandR/Spin") as Node3D
+	if spin:
+		spin.transform = Transform3D(Basis(Vector3.UP, angle), Vector3.ZERO)
 
 
 static func tool_of(w: Node3D, side: String) -> String:
@@ -726,7 +736,8 @@ static func _rivet_gun(m: YardToolMesh) -> void:
 	m.rod("rivet_gun", "red_lamp", Vector3(-0.1, -0.3, -0.05), Vector3(-0.1, -0.3, -0.06), 0.012, -1.0, 8)
 
 
-## B-3's nut runner: a motor body, a reaction arm, a long socket on the drive.
+## B-3's nut runner: a motor body, a reaction arm, a long socket on the drive (that part turns:
+## spin_socket).
 static func _nut_runner(m: YardToolMesh) -> void:
 	var tl: float = TOOL_LEN.nut_runner
 	m.box("nut_runner", "trim", Vector3(0, -0.05, 0), Vector3(0.18, 0.1, 0.18), 0.02)
@@ -734,8 +745,9 @@ static func _nut_runner(m: YardToolMesh) -> void:
 	for k in 4:
 		m.ring("nut_runner", "dark", Vector3(0, -0.13 - k * 0.04, 0), 0.087, 0.008, Vector3.UP, 20, 4)
 	m.rod("nut_runner", "dark", Vector3(0, -0.28, 0), Vector3(0, -0.34, 0), 0.065, 0.05, 18)
-	m.rod("nut_runner", "steel", Vector3(0, -0.34, 0), Vector3(0, -tl + 0.04, 0), 0.03, -1.0, 12)
-	m.rod("nut_runner", "gunmetal", Vector3(0, -tl + 0.06, 0), Vector3(0, -tl, 0), 0.045, -1.0, 6)
+	# The drive and socket are their own mesh ("Spin" on the hand): only they turn as a bolt runs home.
+	m.rod("nut_socket", "steel", Vector3(0, -0.34, 0), Vector3(0, -tl + 0.04, 0), 0.03, -1.0, 12)
+	m.rod("nut_socket", "gunmetal", Vector3(0, -tl + 0.06, 0), Vector3(0, -tl, 0), 0.045, -1.0, 6)
 	m.box("nut_runner", "dark", Vector3(0.12, -0.3, 0), Vector3(0.05, 0.14, 0.06), 0.012)
 	m.box("nut_runner", "rubber", Vector3(0.12, -0.38, 0), Vector3(0.07, 0.03, 0.08), 0.008)
 	m.rod("nut_runner", "red_lamp", Vector3(-0.085, -0.2, 0), Vector3(-0.095, -0.2, 0), 0.012, -1.0, 8)

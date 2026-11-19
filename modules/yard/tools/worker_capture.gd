@@ -115,10 +115,10 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 	cam.environment = env
 	cam.fov = 50
 	root.add_child(cam)
-	var want := {"weld": "arc", "rivet": "press", "bolt": "run", "fit": "fit", "fitout": "fit"}
+	var want := {"weld": "arc", "seam": "arc", "rivet": "press", "bolt": "run", "pipe": "run", "fit": "fit", "fitout": "fit"}
 	var got := {}
 	var t := 0.0
-	while got.size() < want.size() and t < 1500.0:
+	while got.size() < want.size() and t < 3000.0:
 		traffic.step(0.1)
 		crew.step(0.1)
 		t += 0.1
@@ -129,6 +129,11 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 			var key: String = task.kind
 			if key == "fit" and (task.member as Dictionary).has("load"):
 				key = "fitout"
+			# TartanCo's joining rule at work: a hull plate's short seam, a pipe's clamp bolts.
+			if key == "weld" and task.member.part == "HullPlate":
+				key = "seam"
+			if key == "bolt" and task.member.part == "Pipe":
+				key = "pipe"
 			if got.has(key) or task.phase != want[key]:
 				continue
 			if key in ["weld", "bolt"] and float(task.t) < 0.5:
@@ -143,8 +148,20 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 			var far := 4.5 if key.begins_with("fit") else 3.2
 			cam.global_position = node.global_position + b.x * far * 0.75 - b.z * far * 0.75 + b.y * 0.9
 			cam.look_at(node.global_position - b.z * 0.7 - b.y * 0.3, b.y)
-			# Let the frame catch up: draw the scene as it stands now.
-			for k in 3:
+			if key in ["rivet", "weld", "seam"]:
+				# Close on the tool's tip, from beside the bot, so the spray fills the frame.
+				var tip := WorkerLook.tip_of(node, "R")
+				cam.global_position = tip + b.x * 1.6 + b.y * 0.6 - b.z * 0.6
+				cam.look_at(tip, b.y)
+				if key == "rivet" and not (task.spots as Array).is_empty():
+					# Off the plate's face, past the bot's shoulder, onto the rivet as it goes home.
+					var spot: Dictionary = task.spots[0]
+					var o: Vector3 = spot.out
+					cam.global_position = (spot.face as Vector3) + o * 1.3 + (spot.along as Vector3) * 0.9 - b.x * 0.4
+					cam.look_at(spot.face, o.cross(spot.along).normalized())
+			# Let the frame catch up, the crew working on for a moment so the spray is flying.
+			for k in 14:
+				crew.step(1.0 / 60.0)
 				await get_tree().process_frame
 			await RenderingServer.frame_post_draw
 			get_tree().root.get_texture().get_image().save_png(out.path_join("berth_%s.png" % key))
@@ -156,6 +173,16 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_tree().root.get_texture().get_image().save_png(out.path_join("berth_keel.png"))
+	# A corner of a finished ring up close: the box girders mitred into each other, the stringers
+	# butted onto them (no knuckles).
+	var ring: Node3D = crew.rings[1]
+	var corner := ring.global_position + Vector3(0, 0, -crew.RING * 0.5)
+	cam.global_position = corner + Vector3(1.6, -1.2, -1.8)
+	cam.look_at(corner + Vector3(-0.6, 0.3, 0.2))
+	for k in 3:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	get_tree().root.get_texture().get_image().save_png(out.path_join("berth_corner.png"))
 	# The charging docks in the berth's frame: four bots back on their docks, charging slowly so
 	# they are all still there for the shot.
 	crew.charge_seconds = 10000.0
