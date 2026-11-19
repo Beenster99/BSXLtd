@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "clamshell_doors"
+display_name = "Clamshell hold doors"
+short = "CLM"
+colour = Color(0.85, 0.8, 0.55, 1)
+size = Vector3(6.0, 4.0, 0.3)
+cost = 38000.0
+mass = 3200.0
+build_hours = 16.0
+power = -2.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.5
+lead_days = 5
+category = "doors"
+size_class = 4
+min_class = 3
+max_class = 8
+integrity = 700.0
+open_size = Vector2(5.6, 3.8)
+move_s = 25.0
+move_kw = 30.0

@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "door_motor"
+display_name = "Door motor"
+short = "MOT"
+colour = Color(0.85, 0.7, 0.4, 1)
+size = Vector3(0.4, 0.3, 0.3)
+cost = 900.0
+mass = 25.0
+build_hours = 1.0
+power = -0.2
+rooms = PackedStringArray()
+access = 0.3
+lead_days = 1
+category = "machinery"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 80.0
+load_kg = 800.0
+move_s = 0.0
+move_kw = 1.5

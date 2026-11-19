@@ -20,3 +20,6 @@ lead_days = 2
 category = "cargo"
 graded = false
 integrity = 120.0
+move_s = 8.0
+move_kw = 3.0
+load_kg = 2000.0

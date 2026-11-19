@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "undercarriage_leg"
+display_name = "Wheeled undercarriage leg"
+short = "UCL"
+colour = Color(0.95, 0.7, 0.2, 1)
+size = Vector3(1.0, 2.8, 1.8)
+cost = 9000.0
+mass = 900.0
+build_hours = 6.0
+power = -1.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 3
+category = "propulsion"
+size_class = 3
+min_class = 1
+max_class = 7
+integrity = 320.0
+load_kg = 40000.0
+clearance = 1.6
+move_s = 10.0
+move_kw = 8.0

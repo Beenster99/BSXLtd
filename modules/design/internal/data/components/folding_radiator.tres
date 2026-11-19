@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "folding_radiator"
+display_name = "Folding radiator"
+short = "FRD"
+colour = Color(0.7, 0.75, 0.8, 1)
+size = Vector3(1.2, 0.4, 3.0)
+cost = 9000.0
+mass = 300.0
+build_hours = 5.0
+power = 0.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 0.8
+lead_days = 3
+category = "power"
+size_class = 3
+min_class = 1
+max_class = 7
+integrity = 120.0
+signature = -24.0
+move_s = 25.0
+move_kw = 2.0

@@ -24,3 +24,5 @@ size_class = 2
 min_class = 1
 max_class = 6
 integrity = 40.0
+move_s = 20.0
+move_kw = 1.0

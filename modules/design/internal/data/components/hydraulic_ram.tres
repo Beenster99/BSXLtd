@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "hydraulic_ram"
+display_name = "Hydraulic ram"
+short = "RAM"
+colour = Color(0.85, 0.7, 0.4, 1)
+size = Vector3(0.25, 0.25, 1.6)
+cost = 1800.0
+mass = 70.0
+build_hours = 1.0
+power = 0.0
+rooms = PackedStringArray("cargo", "engineering", "workshop")
+access = 0.4
+lead_days = 1
+category = "machinery"
+size_class = 3
+min_class = 1
+max_class = 7
+integrity = 140.0
+load_kg = 15000.0
+move_s = 4.0
+move_kw = 3.0

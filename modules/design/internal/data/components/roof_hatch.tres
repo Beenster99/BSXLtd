@@ -22,3 +22,6 @@ lead_days = 2
 category = "doors"
 graded = false
 integrity = 200.0
+open_size = Vector2(0.8, 0.8)
+move_s = 3.0
+move_kw = 0.5

@@ -36,7 +36,7 @@ const MAX_CLASS := 8
 const PER_CLASS: Dictionary = {
 	"dims": 1.26, "mass": 1.9, "cost": 2.2, "hours": 1.5, "power": 2.0, "thrust": 2.0,
 	"jump": 1.6, "attack": 2.0, "defence": 2.0, "integrity": 1.8, "signature": 1.8,
-	"cargo": 2.0, "tank": 2.0, "sensor": 1.4,
+	"cargo": 2.0, "tank": 2.0, "sensor": 1.4, "load": 1.9,
 }
 
 
@@ -121,6 +121,12 @@ static func derive(base: DesignPartType, size: int, grade: String) -> DesignPart
 	p.tank = base.tank * k.call("tank")
 	p.sensor = base.sensor * k.call("sensor") * float(gr.perf)
 	p.access = base.access * sqrt(p.model_scale)
+	p.open_size = base.open_size * p.model_scale
+	p.clearance = base.clearance * p.model_scale
+	p.load_kg = base.load_kg * k.call("load") * float(gr.integrity)
+	p.move_kw = base.move_kw * k.call("power") * float(gr.draw)
+	# Better drives move faster; a bigger one takes a little longer to swing its size.
+	p.move_s = base.move_s * sqrt(p.model_scale) / float(gr.perf)
 	p.lead_days = maxi(1, base.lead_days + int(gr.lead) + maxi(0, d) / 2)
 	if p.id != base.id:
 		p.display_name = "%s %s" % [base.display_name, label(p)]

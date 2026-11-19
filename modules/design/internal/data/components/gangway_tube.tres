@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "gangway_tube"
+display_name = "Extending gangway tube"
+short = "GWY"
+colour = Color(0.85, 0.8, 0.55, 1)
+size = Vector3(2.4, 2.6, 2.0)
+cost = 30000.0
+mass = 2100.0
+build_hours = 14.0
+power = -1.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.2
+lead_days = 4
+category = "doors"
+size_class = 3
+min_class = 2
+max_class = 6
+integrity = 420.0
+open_size = Vector2(1.4, 2.2)
+load_kg = 2000.0
+move_s = 30.0
+move_kw = 12.0

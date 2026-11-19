@@ -25,3 +25,5 @@ max_class = 8
 integrity = 500.0
 attack = 150.0
 signature = 30.0
+move_s = 8.0
+move_kw = 24.0
