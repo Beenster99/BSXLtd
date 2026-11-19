@@ -574,6 +574,26 @@ func _apply_sim(e: Dictionary) -> void:
 		"send":
 			if traffic:
 				traffic.call("send_to_yard", e.get("items", []))
+		"fleet":
+			var state: Array = e.get("state", [])
+			if workers and not state.is_empty():
+				workers.call("restore_fleet", state)
+		"bot_add":
+			if workers:
+				workers.call("add_bot", String(e.get("role", "")))
+		"bot_mark", "bot_fit", "bot_unfit":
+			var i := int(e.get("index", -1))
+			var crew: Array = workers.get("workers") if workers else []
+			if i < 0 or i >= crew.size():
+				return
+			var bot: Node3D = crew[i].node
+			match String(e.kind):
+				"bot_mark":
+					workers.call("set_mark", bot, int(e.get("mark", 0)))
+				"bot_fit":
+					workers.call("fit_module", bot, String(e.get("id", "")))
+				"bot_unfit":
+					workers.call("remove_module", bot, String(e.get("id", "")))
 		"lock":
 			var lock: Node = design_lock if String(e.get("lock", "")) == "design_lock" else airlock
 			lock.call("operate", String(e.get("mode", "toggle")))

@@ -68,10 +68,19 @@ var _station: Node3D
 ## module's server_time), -1 until known, and what players did, stamped with the tick it
 ## happens at: [{kind, tick, n, peer, ...}] in order. The station's YardSim runs to it.
 const SIM_EVENT := "yard.sim"
+const SAVE_SECTION := "yard"
+const Upgrades := preload("res://modules/yard/internal/tartanco_upgrades.gd")
+const Workers := preload("res://modules/yard/internal/yard_workers.gd")
+## Sim events that change the worker crew.
+const FLEET_KINDS := ["fleet", "bot_add", "bot_mark", "bot_fit", "bot_unfit"]
 const SIM_TICK := 1.0 / 60.0
 ## How far ahead the host stamps what a player does (ticks: half a second, for the trip out).
 const SIM_LEAD := 30
 var sim_epoch := -1.0
+## The worker crew as it stood at tick 0 (every machine builds it so, then replays the log).
+var sim_fleet: Array = []
+## This company's worker crew, saved ({role, mark, modules} a bot; [] is TartanCo's first six).
+var worker_fleet: Array = []
 var sim_log: Array[Dictionary] = []
 var _sim_n := 0
 var _net: Object
@@ -85,6 +94,7 @@ func register_module() -> void:
 	# The new game starts in the orbital yard, ahead of the old yard by the sea (priority 10).
 	Menu.set_start(SCENE, 20)
 	_hook_net.call_deferred()
+	Saves.register_section(SAVE_SECTION, self)
 	Keys.register("yard.up", "Fly up (in zero g)", KEY_SPACE, "Orbital yard")
 	Keys.register("yard.down", "Fly down (in zero g)", KEY_CTRL, "Orbital yard")
 	Keys.register("yard.brake", "Stop drifting (in zero g)", KEY_X, "Orbital yard")
@@ -108,6 +118,7 @@ func register_module() -> void:
 
 
 func unregister_module() -> void:
+	Saves.unregister_section(SAVE_SECTION)
 	Menu.clear_start(SCENE)
 
 
@@ -285,6 +296,7 @@ func sim_start() -> void:
 	if _net == null or not bool(_net.call("is_online")):
 		sim_epoch = _now()
 		sim_log.clear()
+		sim_fleet = worker_fleet.duplicate(true)
 		return
 	if not bool(_net.call("is_host")):
 		sim_epoch = -1.0   # wait for the host's answer
@@ -306,8 +318,9 @@ func _sim_validate(sender: int, p: Dictionary) -> Variant:
 	if String(p.get("kind", "")) == "epoch":
 		out.fresh = sim_epoch < 0.0 or not _anyone_in_yard(sender)
 		out.epoch = _now() + 0.1 if out.fresh else sim_epoch
+		out.fleet = worker_fleet.duplicate(true) if out.fresh else sim_fleet.duplicate(true)
 		return out
-	if sim_epoch < 0.0:
+	if sim_epoch < 0.0 and not String(p.get("kind", "")) in FLEET_KINDS:
 		return "the yard's clock has not started"
 	_sim_n += 1
 	out.n = _sim_n
@@ -322,6 +335,7 @@ func _sim_apply(p: Dictionary) -> void:
 		var changed := not is_equal_approx(float(p.epoch), sim_epoch)
 		if bool(p.get("fresh", false)):
 			sim_log.clear()
+			sim_fleet = (p.get("fleet", []) as Array).duplicate(true)
 		sim_epoch = float(p.epoch)
 		if changed:
 			sim_reset.emit()
@@ -330,6 +344,8 @@ func _sim_apply(p: Dictionary) -> void:
 	while at > 0 and int(sim_log[at - 1].tick) > int(p.tick):
 		at -= 1
 	sim_log.insert(at, p)
+	if String(p.get("kind", "")) in FLEET_KINDS and _keeps_fleet():
+		worker_fleet = fleet_after(worker_fleet, p)
 	sim_logged.emit(p)
 
 
@@ -359,7 +375,7 @@ func _on_session_ended(_reason: String = "") -> void:
 
 
 func get_net_snapshot() -> Dictionary:
-	return {"epoch": sim_epoch, "log": sim_log.duplicate(true)}
+	return {"epoch": sim_epoch, "log": sim_log.duplicate(true), "fleet": sim_fleet.duplicate(true)}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
@@ -368,4 +384,149 @@ func apply_net_snapshot(data: Dictionary) -> void:
 		return
 	sim_epoch = epoch
 	sim_log.assign(data.get("log", []))
+	sim_fleet = (data.get("fleet", []) as Array).duplicate(true)
 	sim_reset.emit()
+
+
+# --- The worker crew: buying and upgrading TartanCo bots ---------------------------------------
+# For whoever sells them (the money is theirs to take first). Each change goes on the yard's
+# shared clock, so every player's yard adds the bot or fits the module on the same tick. Bots are
+# only ever added, so a bot's index (its place in worker_fleet_state()) never changes.
+
+## Buys in a new Mk1 bot of trade `role` (F fitter, W welder, R riveter, B bolter). False when
+## the trade is unknown or every dock is taken (TartanCo's MAX_BOTS).
+func add_worker_bot(role: String) -> bool:
+	if not Upgrades.BOT_PRICES.has(role) or _planned().size() >= Workers.MAX_BOTS:
+		return false
+	sim_request({"kind": "bot_add", "role": role})
+	return true
+
+
+## Makes bot `index` a Mk`mark` (1 to 5); modules past its slots come out.
+func set_worker_mark(index: int, mark: int) -> bool:
+	if not _is_bot(index) or not Upgrades.MARKS.has(mark):
+		return false
+	sim_request({"kind": "bot_mark", "index": index, "mark": mark})
+	return true
+
+
+## Fits module `id` (TartanCoUpgrades.MODULES) in a free slot of bot `index`.
+func fit_worker_module(index: int, id: String) -> bool:
+	if not _is_bot(index) or not Upgrades.MODULES.has(id):
+		return false
+	var b: Dictionary = _planned()[index]
+	if (b.modules as Array).has(id) or (b.modules as Array).size() >= Upgrades.slots(int(b.mark)):
+		return false
+	sim_request({"kind": "bot_fit", "index": index, "id": id})
+	return true
+
+
+func remove_worker_module(index: int, id: String) -> bool:
+	if not _is_bot(index) or not (_planned()[index].modules as Array).has(id):
+		return false
+	sim_request({"kind": "bot_unfit", "index": index, "id": id})
+	return true
+
+
+## The crew as it stands: one {role, mark, modules} a bot, in order (the yard's live crew while
+## it is open, else the company's saved one).
+func worker_fleet_state() -> Array:
+	var crew := _workers()
+	if crew:
+		return crew.call("fleet_state")
+	return fleet_after(worker_fleet, {})
+
+
+## Puts a crew back (as worker_fleet_state gave it).
+func restore_worker_fleet(state: Array) -> void:
+	sim_request({"kind": "fleet", "state": state.duplicate(true)})
+
+
+## Prices (credits): a new bot of a trade, a mark, a module. -1 for one that isn't.
+static func worker_bot_price(role: String) -> int:
+	return int(Upgrades.BOT_PRICES.get(role, -1))
+
+
+static func worker_mark_price(mark: int) -> int:
+	return int(Upgrades.MARKS[mark].price) if Upgrades.MARKS.has(mark) else -1
+
+
+static func worker_module_price(id: String) -> int:
+	return int(Upgrades.MODULES[id].price) if Upgrades.MODULES.has(id) else -1
+
+
+## Everything TartanCo sells: {bots: {role: {name, price}}, marks: {mark: {name, slots, price}},
+## modules: {id: {name, line, price}}}.
+static func tartanco_catalogue() -> Dictionary:
+	var bots := {}
+	for r: String in Upgrades.BOT_PRICES:
+		bots[r] = {"name": Upgrades.BOT_NAMES.get(r, r), "price": int(Upgrades.BOT_PRICES[r])}
+	var marks := {}
+	for m: int in Upgrades.MARKS:
+		marks[m] = {"name": Upgrades.MARKS[m].name, "slots": int(Upgrades.MARKS[m].slots), "price": int(Upgrades.MARKS[m].price)}
+	var modules := {}
+	for id: String in Upgrades.MODULES:
+		modules[id] = {"name": Upgrades.MODULES[id].name, "line": Upgrades.MODULES[id].line, "price": int(Upgrades.MODULES[id].price)}
+	return {"bots": bots, "marks": marks, "modules": modules}
+
+
+func _is_bot(index: int) -> bool:
+	return index >= 0 and index < _planned().size()
+
+
+## The crew with every change asked so far (the host's, a solo player's), else as it stands.
+func _planned() -> Array:
+	return fleet_after(worker_fleet, {}) if _keeps_fleet() else worker_fleet_state()
+
+
+## The saved crew is the host's (or a solo player's): a friend's own save keeps their company's.
+func _keeps_fleet() -> bool:
+	return _net == null or not bool(_net.call("is_online")) or bool(_net.call("is_host"))
+
+
+## `fleet` (saved form, [] TartanCo's first six) after the crew event `e`, by the rules
+## YardWorkers keeps ({} for none).
+static func fleet_after(fleet: Array, e: Dictionary) -> Array:
+	var out: Array = fleet.duplicate(true)
+	if out.is_empty():
+		for r: String in Workers.CREW:
+			out.append({"role": r, "mark": Upgrades.FIRST_MARK, "modules": []})
+	var i := int(e.get("index", -1))
+	var b: Dictionary = out[i] if i >= 0 and i < out.size() else {}
+	match String(e.get("kind", "")):
+		"fleet":
+			var state: Array = e.get("state", [])
+			if not state.is_empty():
+				out = state.duplicate(true)
+		"bot_add":
+			if Upgrades.BOT_PRICES.has(String(e.get("role", ""))) and out.size() < Workers.MAX_BOTS:
+				out.append({"role": String(e.role), "mark": Upgrades.FIRST_MARK, "modules": []})
+		"bot_mark":
+			if not b.is_empty() and Upgrades.MARKS.has(int(e.get("mark", 0))):
+				b.mark = int(e.mark)
+				(b.modules as Array).resize(mini((b.modules as Array).size(), Upgrades.slots(int(b.mark))))
+		"bot_fit":
+			var id := String(e.get("id", ""))
+			if not b.is_empty() and Upgrades.MODULES.has(id) and not (b.modules as Array).has(id) \
+					and (b.modules as Array).size() < Upgrades.slots(int(b.mark)):
+				(b.modules as Array).append(id)
+		"bot_unfit":
+			if not b.is_empty():
+				(b.modules as Array).erase(String(e.get("id", "")))
+	return out
+
+
+func save_version() -> int:
+	return 1
+
+
+func save_data() -> Dictionary:
+	return {"fleet": worker_fleet.duplicate(true)}
+
+
+func load_data(data: Dictionary, _from_version: int) -> void:
+	worker_fleet = (data.get("fleet", []) as Array).duplicate(true)
+
+
+func reset_data() -> void:
+	worker_fleet = []
