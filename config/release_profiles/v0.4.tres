@@ -24,6 +24,7 @@ flags = {
 "contracts.ship_orders": true,
 "core": true,
 "core.fresh_saves": true,
+"core.loading_screen": true,
 "design": true,
 "design.room": true,
 "graphics": true,

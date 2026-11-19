@@ -216,7 +216,7 @@ static func _addresses() -> String:
 
 func _go_play() -> void:
 	var start := Menu.start()
-	Router.goto(start.scene, start.args)
+	Router.goto_loading(start.scene, start.args)
 
 
 func _back() -> void:
