@@ -52,6 +52,20 @@ const SECTOR_WORK: Dictionary = {
 }
 ## Days without refuelling asked, by region: further out, longer between ports.
 const ENDURANCE_DAYS: Dictionary = {"inner": [7, 20], "mid": [14, 40], "outer": [30, 90], "deep": [60, 180]}
+## How long a ship can be asked to go without refuelling when she must also jump far or run
+## fast. Her tanks weigh, the weight wants a bigger jump drive and engines, they burn more, and
+## past a point the tanks never catch up (DesignReference: a small explorer asked 26 ly and 100
+## days came to 8,700 t and CR 19 million and still fell short). Days x jump (ly) up to
+## JUMP_DAYS, or days x (speed / 90)^2 up to THRUST_DAYS, together at most one; measured on the
+## the reference build: at one the tanks run away. Orders ask at most ENDURANCE_LIMIT of it (an
+## order asking more has its days cut to fit), and the estimate adds ENDURANCE_PREMIUM x that
+## share cubed (the reference build at three quarters costs about a third over the plain fit).
+const ENDURANCE_JUMP_DAYS := 1600.0
+const ENDURANCE_THRUST_DAYS := 500.0
+const ENDURANCE_LIMIT := 0.75
+const ENDURANCE_PREMIUM := 0.9
+## Shortest endurance demand worth writing down; below it the order asks none.
+const ENDURANCE_MIN := 7
 const REGION_NAMES: Dictionary = {"inner": "Inner system", "mid": "Mid system", "outer": "Outer system", "deep": "Deep space"}
 ## Fuel a working load burns, m3 a kWh (a generator's: DesignPower.DEFAULT_BURN), and the
 ## working load the estimate assumes, kW, fitted to the reference builds' power drawn: a base,
@@ -388,7 +402,9 @@ static func make(client: String, role: String, size: String, rng: RandomNumberGe
 		region = str(regions[rng.randi_range(0, regions.size() - 1)])
 		if rng.randf() < float(work.get("endurance", 0.0)):
 			var span: Array = ENDURANCE_DAYS[region]
-			demands["endurance_days"] = rng.randi_range(int(span[0]), int(span[1]))
+			var days := mini(rng.randi_range(int(span[0]), int(span[1])), endurance_cap(demands))
+			if days >= ENDURANCE_MIN:
+				demands["endurance_days"] = days
 		if rng.randf() < float(work.get("no_reactor", 0.0)):
 			demands["reactors"] = 0
 	var clauses: Array = []
@@ -401,6 +417,7 @@ static func make(client: String, role: String, size: String, rng: RandomNumberGe
 			if str(CLAUSES[cid].get("category", "")) == "weapons" and not demands.has("attack"):
 				continue
 			clauses.append(clause(cid, size))
+	_fit_berth(demands, clauses)
 	var est := estimate(demands, clauses)
 	var purse: Array = c.get("purse", [0.9, 1.5])
 	var budget := round_figure("budget", est * rng.randf_range(float(purse[0]), float(purse[1])))
@@ -416,6 +433,34 @@ static func make(client: String, role: String, size: String, rng: RandomNumberGe
 		"achievability": achievability(budget, est), "pay": fee, "days": days,
 		"needs_level": int(sz.level), "locked": false, "region": region, "length_m": int(length_for(demands, clauses)),
 		"berth": berth_for(length_for(demands, clauses))}
+
+
+## The most days without refuelling a ship of these demands can be asked for (ENDURANCE_JUMP_DAYS).
+static func endurance_cap(demands: Dictionary) -> int:
+	var per_day := _endurance_per_day(demands)
+	return 100000 if per_day <= 0.0 else int(floorf(ENDURANCE_LIMIT / per_day))
+
+
+## How far an order's endurance goes towards the tanks running away (1 = they do).
+static func endurance_share(demands: Dictionary) -> float:
+	return float(demands.get("endurance_days", 0.0)) * _endurance_per_day(demands)
+
+
+static func _endurance_per_day(demands: Dictionary) -> float:
+	return float(demands.get("jump_ly", 0.0)) / ENDURANCE_JUMP_DAYS \
+			+ pow(float(demands.get("speed", 0.0)) / 90.0, 2.0) / ENDURANCE_THRUST_DAYS
+
+
+## Scales down what makes a ship big (crew, hold, tanks...) until she fits the largest berth:
+## no client asks for a ship no yard can build.
+static func _fit_berth(demands: Dictionary, clauses: Array) -> void:
+	var longest := float(BERTHS[-1][2])
+	for _i in 40:
+		if length_for(demands, clauses) <= longest:
+			return
+		for key: String in SCALED:
+			if demands.has(key):
+				demands[key] = round_figure(key, float(demands[key]) * 0.93)
 
 
 ## A clause by id, ready to go on an order of `size` (its count grown with the ship).
@@ -534,6 +579,7 @@ static func estimate(raw: Dictionary, clauses: Array = []) -> float:
 			+ COST.per_jump_t * g.call("jump_ly") * tonnes + COST.per_thrust_t * thrust * tonnes \
 			+ maxf(0.0, COST.per_stealth * st + COST.stealth_attack * st * g.call("attack") / 100.0 + COST.stealth_speed * st * thrust) \
 			+ COST.per_clause * clause_cost
+	cost *= 1.0 + ENDURANCE_PREMIUM * pow(endurance_share(raw), 3.0)
 	return maxf(cost, COST.base)
 
 

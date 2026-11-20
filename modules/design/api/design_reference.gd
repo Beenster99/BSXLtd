@@ -60,13 +60,31 @@ static func build(raw: Dictionary, clauses: Array, cat: DesignCatalog) -> Dictio
 		t = DesignTotals.compute(rec, cat)
 		var next := _needs(demands, t, plan)
 		if next == plan:
-			break
+			# Settled within a few per cent: if that leaves a rating just short, buy a little more.
+			var short := _short_of(raw, t)
+			if short.is_empty():
+				break
+			for k: String in short:
+				next[k] = float(next[k]) * 1.08
 		plan = next
 	var misses: PackedStringArray = []
 	for row in t.fit(_rated(raw)):
 		if not row.ok:
 			misses.append(str(row.key))
 	return {"record": rec, "totals": t, "cost": t.cost, "met": misses.is_empty(), "misses": misses}
+
+
+## Which purchases (plan keys) the ship `t` is short of for `raw`'s demands.
+const PLAN_FOR: Dictionary = {"speed": ["thrust"], "jump_ly": ["jump"], "attack": ["attack"], "defence": ["defence"],
+	"power": ["power"], "sensor_km": ["sensor"], "stealth": ["cooling"], "endurance_days": ["fuel", "power"]}
+static func _short_of(raw: Dictionary, t: DesignTotals) -> PackedStringArray:
+	var out: PackedStringArray = []
+	for row in t.fit(_rated(raw)):
+		if not row.ok:
+			for k: String in PLAN_FOR.get(str(row.key), []):
+				if not out.has(k):
+					out.append(k)
+	return out
 
 
 ## The demands the build is held to (cost, mass and time are what it is judged by, not aimed at).
@@ -101,6 +119,11 @@ static func _needs(demands: Dictionary, t: DesignTotals, plan: Dictionary) -> Di
 		var over := t.signature() - target
 		if over > 0.0:
 			next.cooling = float(plan.cooling) + over * MARGIN
+	# Never buy less than last round: what a rating costs in mass and power shows up a round
+	# late, so taking it back flips between two ships that each fall short (a fast long-range
+	# ship short of power, then of speed).
+	for k: String in next:
+		next[k] = maxf(float(next[k]), float(plan[k]))
 	# Settle: stop when nothing moved more than a few per cent.
 	var same := true
 	for k: String in next:
