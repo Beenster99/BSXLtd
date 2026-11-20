@@ -20,6 +20,7 @@ const MIN_DOOR := 1.0
 static func check(d: DesignRecord, cat: DesignCatalog, totals: DesignTotals = null) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	_room_checks(d, cat, out)
+	_stair_checks(d, out)
 	_door_checks(d, out)
 	_route_checks(d, cat, out)
 	_component_checks(d, cat, out)
@@ -161,6 +162,37 @@ static func _room_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Diction
 		if not fits:
 			out.append(_problem("too_small", WARNING, "%s is smaller than %d x %d m" % [
 					_label(d, cat, r.id), rt.min_size.x, rt.min_size.y], [r.id]))
+
+
+## A stairwell with another over it needs room for its flight and a landing at each end
+## (DesignStairs), and the room above must have the landing at its head.
+static func _stair_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
+	var h := d.deck_height
+	for r: Dictionary in d.rooms.values():
+		if str(r.type) != "stairs":
+			continue
+		var upper: Dictionary = {}
+		for u: Dictionary in d.rooms_on(int(r.deck) + 1):
+			if str(u.type) == "stairs" and Rect2(r.x, r.z, r.w, r.d).intersection(Rect2(u.x, u.z, u.w, u.d)).get_area() >= 1.0:
+				upper = u
+				break
+		if upper.is_empty():
+			continue
+		var f := DesignStairs.flight(r, h)
+		var long_side := maxf(float(r.w), float(r.d))
+		if not bool(f.fits):
+			out.append(_problem("stairs_short", ERROR,
+					"Stairwell %s is too short for its stairs: %s m between decks needs %s m (a %s m flight and %s m to step on and off at each end), it is %s m"
+					% [DesignRecord.tag(str(r.id)), _m(h), _m(DesignStairs.needs(h)), _m(DesignStairs.run_for(h)),
+					_m(DesignStairs.LANDING), _m(long_side)], [r.id]))
+		elif not Rect2(upper.x, upper.z, upper.w, upper.d).grow(0.01).encloses(f.head):
+			out.append(_problem("stairs_no_head", ERROR,
+					"The stairs in %s come up outside the stairwell above: no landing at the top (move or flip the stairs)"
+					% DesignRecord.tag(str(r.id)), [r.id, upper.id]))
+
+
+static func _m(v: float) -> String:
+	return ("%d" % int(v)) if is_equal_approx(v, roundf(v)) else ("%.1f" % v)
 
 
 static func _door_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
@@ -330,8 +362,14 @@ static func _component_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Di
 		var room := Rect2(r.x, r.z, r.w, r.d)
 		var f := footprint(c, pt)
 		if not pt.rooms.is_empty() and not str(r.type) in pt.rooms:
-			out.append(_problem("wrong_room", WARNING, "%s does not belong in %s" % [
-					pt.display_name, _label(d, cat, r.id)], [r.id], [c.id]))
+			# Say where it does go (beenster, 20 Nov: told where it can't, never where it can).
+			var goes: Array = []
+			for k: String in pt.rooms:
+				var kt := cat.room(k)
+				goes.append(kt.display_name if kt else k.capitalize())
+			var where: String = str(goes[0]) if goes.size() == 1 else ", ".join(goes.slice(0, goes.size() - 1)) + " or " + str(goes[-1])
+			out.append(_problem("wrong_room", WARNING, "%s does not belong in %s: it goes in %s" % [
+					pt.display_name, _label(d, cat, r.id), where], [r.id], [c.id]))
 		if not DesignRecord.room_encloses(r, f):
 			out.append(_problem("outside_room", ERROR, "%s sticks out of %s" % [
 					pt.display_name, _label(d, cat, r.id)], [r.id], [c.id]))
