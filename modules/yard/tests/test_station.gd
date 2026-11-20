@@ -35,6 +35,7 @@ func run_tests() -> void:
 	_airlock(station)
 	_design_lock(station)
 	_room_detail(station)
+	_furniture(station)
 	await _racking(station)
 	await _dock(station)
 
@@ -362,6 +363,48 @@ func _room_detail(station: Node3D) -> void:
 				covered.append(area.name)
 				break
 	check(covered.is_empty(), "no fitting covers a button %s" % [covered])
+
+
+## The crew room and the contracts desk in Void Salvage's own furniture: every piece inside its
+## room, none in another's place, the mugs on the tables, the desk still taking contracts.
+func _furniture(station: Node3D) -> void:
+	var f: RefCounted = station.get("furniture")
+	check(f != null, "the crew room and contracts desk are furnished")
+	if f == null:
+		return
+	var placed: Array[Node3D] = f.get("placed")
+	var boxes: Array[AABB] = []
+	var outside := []
+	for n: Node3D in placed:
+		var b := _world_box(n)
+		boxes.append(b)
+		var room := YardLayout.room_at(b.get_center())
+		var rb: AABB = YardLayout.ROOMS[room].box if room != "" else AABB()
+		var inside := room != "" and b.position.x > rb.position.x + 0.09 and b.end.x < rb.end.x - 0.09 \
+				and b.position.z > rb.position.z + 0.09 and b.end.z < rb.end.z - 0.09
+		if not inside:
+			outside.append("%s %s" % [n.name, b])
+	check(placed.size() >= 25 and outside.is_empty(), "%d pieces, each inside its room %s" % [placed.size(), outside])
+	var clash := []
+	for i in boxes.size():
+		for j in range(i + 1, boxes.size()):
+			if boxes[i].grow(-0.02).intersects(boxes[j].grow(-0.02)):
+				clash.append("%s/%s" % [placed[i].name, placed[j].name])
+	check(clash.is_empty(), "no two pieces stand in one place %s" % [clash])
+	check(station.get_node_or_null("Use_contract") != null, "the desk still takes contracts")
+
+
+func _world_box(n: Node3D) -> AABB:
+	var out := AABB()
+	var first := true
+	for mi: Node in n.find_children("*", "MeshInstance3D", true, false) + ([n] if n is MeshInstance3D else []):
+		var m := mi as MeshInstance3D
+		if m.mesh == null:
+			continue
+		var b := m.global_transform * m.mesh.get_aabb()
+		out = b if first else out.merge(b)
+		first = false
+	return out
 
 
 ## The berths grow with reputation (beenster, 19 Nov): three tiers, each clear of the station,

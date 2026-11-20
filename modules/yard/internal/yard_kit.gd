@@ -102,6 +102,17 @@ func box(size: Vector3, centre: Vector3, mat: Material, solid := true, parent: N
 	return mi
 
 
+## Collision alone (no mesh): a box `size` centred at `centre` (station space), for a solid
+## whose look is drawn some other way.
+func solid(size: Vector3, centre: Vector3) -> void:
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	cs.shape = shape
+	body.add_child(cs)
+	cs.transform = _to_body(null, centre)
+
+
 ## A solid slab from corner `a` to corner `b` drawn as tiles at most `tile` m across (a long
 ## floor drawn whole takes only the first eight lamps over it on the compatibility renderer).
 func slab(a: Vector3, b: Vector3, mat: Material, tile := 6.0, solid := true) -> void:

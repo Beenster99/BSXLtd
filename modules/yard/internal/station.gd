@@ -21,6 +21,7 @@ const Quarters := preload("res://modules/yard/internal/quarters.gd")
 const YardWorkers := preload("res://modules/yard/internal/yard_workers.gd")
 const LivedIn := preload("res://modules/yard/internal/lived_in.gd")
 const RoomDetail := preload("res://modules/yard/internal/room_detail.gd")
+const RoomFurniture := preload("res://modules/yard/internal/room_furniture.gd")
 const YardSim := preload("res://modules/yard/internal/yard_sim.gd")
 const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
 ## Where the practice frame floats: just out of the airlock (station space).
@@ -123,6 +124,7 @@ const START := Vector3(4.0, 0.0, -1.5)
 
 var kit: RefCounted
 var room_detail: RefCounted   # RoomDetail, while yard.room_detail is on
+var furniture: RefCounted     # RoomFurniture, while yard.room_detail is on
 var sky: Node3D
 ## You: the Void Salvage suit and jet-rig (YardRig). Named "Mover" as the stand-in was.
 var mover: YardRig
@@ -814,12 +816,20 @@ func _build_station() -> void:
 	k.wall(false, -12.0, 0.0, 10.0, 0.0, 3.2, wall)
 	k.wall(false, 0.0, 0.0, 12.0, 0.0, 3.2, wall)
 	k.wall(true, 10.0, -12.1, 0.0, 0.0, 3.2, wall, [[-10.0, -2.0, 2.6, 0.9]], 0.2, pane)
-	_furnish_contracts(k)
+	if Flags.is_on(YardBus.ROOM_DETAIL):
+		_contracts_desk_use(k)
+	else:
+		_furnish_contracts(k)
 
 	# Crew room (x 0..20, z 0..12).
 	k.wall(false, 20.0, 0.0, 12.0, 0.0, 3.2, wall, [[5.2, 6.8, 2.4]])
 	k.wall(true, 12.0, -0.1, 20.1, 0.0, 3.2, wall, [[2.0, 18.0, 2.7, 0.8]], 0.2, pane)
-	_furnish_crew(k)
+	if Flags.is_on(YardBus.ROOM_DETAIL):
+		# Void Salvage's own furniture in the crew room and at the contracts desk.
+		furniture = RoomFurniture.new()
+		furniture.build(k, self)
+	else:
+		_furnish_crew(k)
 
 	# Sleeping quarters (x 20..44, z 0..12): eight cabins off a soft-lit aisle.
 	k.wall(false, 44.0, 0.0, 12.1, 0.0, 3.17, wall)
@@ -894,7 +904,6 @@ func _door_frame(k, along_x: bool, at: float, a: float, b: float, h: float, mat:
 
 func _furnish_contracts(k) -> void:
 	var desk: Material = k.paint(Color(0.85, 0.86, 0.88), 0.1, 0.5)
-	var dark: Material = k.paint(Kit.DARK, 0.3, 0.5)
 	var seat: Material = k.paint(Color(0.2, 0.3, 0.45), 0.0, 0.8)
 	# The desk: a long counter facing the door, a screen on it, two chairs behind.
 	k.span(Vector3(-10.0, 0.0, 5.0), Vector3(-4.0, 1.05, 5.8), desk)
@@ -903,6 +912,16 @@ func _furnish_contracts(k) -> void:
 		k.box(Vector3(0.9, 0.55, 0.05), Vector3(x, 1.45, 5.55), k.glow(Color(0.2, 0.55, 0.9), 1.5), false)
 		k.box(Vector3(0.6, 0.5, 0.6), Vector3(x, 0.25, 7.0), seat)
 		k.box(Vector3(0.6, 0.7, 0.1), Vector3(x, 0.85, 7.35), seat)
+	_contracts_desk_use(k)
+	for x: float in [-8.0, -6.0]:
+		k.box(Vector3(0.6, 0.45, 0.6), Vector3(x, 0.225, 3.4), seat)
+	k.ceiling_lamp(Vector3(-6.0, 3.2, 3.0), Vector2(2.0, 0.6), 0.9, 8.0)
+	k.ceiling_lamp(Vector3(-6.0, 3.2, 7.5), Vector2(2.0, 0.6), 0.9, 8.0)
+
+
+## The contracts desk's use area and the board on the wall by the door (whichever furniture).
+func _contracts_desk_use(k) -> void:
+	var dark: Material = k.paint(Kit.DARK, 0.3, 0.5)
 	# F at the desk starts a demo contract: its parts are bought and delivered to goods in.
 	var area := Area3D.new()
 	area.name = "Use_contract"
@@ -921,10 +940,6 @@ func _furnish_contracts(k) -> void:
 	k.box(Vector3(0.06, 1.6, 3.2), Vector3(-11.85, 1.7, 3.0), dark, false)
 	k.box(Vector3(0.02, 1.4, 3.0), Vector3(-11.8, 1.7, 3.0), k.glow(Color(0.15, 0.35, 0.6), 1.2), false)
 	k.sign("CONTRACTS", Vector3(-11.79, 2.2, 3.0), Vector3.RIGHT, 0.006, Color.WHITE)
-	for x: float in [-8.0, -6.0]:
-		k.box(Vector3(0.6, 0.45, 0.6), Vector3(x, 0.225, 3.4), seat)
-	k.ceiling_lamp(Vector3(-6.0, 3.2, 3.0), Vector2(2.0, 0.6), 0.9, 8.0)
-	k.ceiling_lamp(Vector3(-6.0, 3.2, 7.5), Vector2(2.0, 0.6), 0.9, 8.0)
 
 
 func _furnish_crew(k) -> void:
