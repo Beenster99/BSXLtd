@@ -51,6 +51,9 @@ const RACKING := "yard.racking"
 const DELIVERY_SHIPS := "yard.delivery_ships"
 ## The stores' and yard's bots go home to charger racks (0.4.4 playtest).
 const CHARGER_RACKS := "yard.charger_racks"
+## The station's rooms dressed to Void Salvage's standard: panelled walls, ribs, cased
+## openings, beamed ceilings, plated floors (beenster, 20 Nov).
+const ROOM_DETAIL := "yard.room_detail"
 ## The controls screen's group for the yard's keys (Help lists it third, by this name).
 const KEY_GROUP := "Deep space yard"
 

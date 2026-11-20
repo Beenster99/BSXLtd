@@ -20,6 +20,7 @@ const STORES_SOLAR_CLEAR := 0.8
 const Quarters := preload("res://modules/yard/internal/quarters.gd")
 const YardWorkers := preload("res://modules/yard/internal/yard_workers.gd")
 const LivedIn := preload("res://modules/yard/internal/lived_in.gd")
+const RoomDetail := preload("res://modules/yard/internal/room_detail.gd")
 const YardSim := preload("res://modules/yard/internal/yard_sim.gd")
 const PracticeFrame := preload("res://modules/yard/internal/tools/yard_practice_frame.gd")
 ## Where the practice frame floats: just out of the airlock (station space).
@@ -121,6 +122,7 @@ const SIM_HOLD := "yard.sim"
 const START := Vector3(4.0, 0.0, -1.5)
 
 var kit: RefCounted
+var room_detail: RefCounted   # RoomDetail, while yard.room_detail is on
 var sky: Node3D
 ## You: the Void Salvage suit and jet-rig (YardRig). Named "Mover" as the stand-in was.
 var mover: YardRig
@@ -178,6 +180,9 @@ func _ready() -> void:
 	design_lock.name = "DesignLock"
 	add_child(design_lock)
 	design_lock.call("build", kit)
+	if Flags.is_on(YardBus.ROOM_DETAIL):
+		room_detail = RoomDetail.new()
+		room_detail.build(kit, self)
 	if Flags.is_on(YardBus.DOCK):
 		_build_dock()
 		practice = PracticeFrame.new()

@@ -34,6 +34,7 @@ func run_tests() -> void:
 	await _gravity_and_walking(station)
 	_airlock(station)
 	_design_lock(station)
+	_room_detail(station)
 	await _racking(station)
 	await _dock(station)
 
@@ -321,6 +322,46 @@ func _design_lock(station: Node3D) -> void:
 				clear = false
 		clear = clear and YardLayout.room_at(call.global_position + call.global_basis.x * 0.3) == "design"
 	check(clear, "the lock's call button is in the design room, off its wall screens")
+
+
+## The rooms dressed to Void Salvage's standard (beenster, 20 Nov): a few merged meshes with no
+## collision, nothing in a doorway, nothing over a button.
+func _room_detail(station: Node3D) -> void:
+	var rd: RefCounted = station.get("room_detail")
+	var node := station.get_node_or_null("RoomDetail")
+	check(rd != null and node != null, "the rooms get their detail pass")
+	if rd == null or node == null:
+		return
+	var dm: RefCounted = rd.get("dm")
+	var boxes: Array[AABB] = dm.get("boxes")
+	check(boxes.size() > 2000 and node.get_child_count() < 300 and node.find_children("*", "CollisionShape3D").is_empty(),
+			"thousands of fittings in a few hundred meshes, none solid (%d in %d)" % [boxes.size(), node.get_child_count()])
+	var blocked := []
+	for w: Dictionary in (station.get("kit") as RefCounted).get("walls"):
+		for g: Array in w.gaps:
+			if g.size() > 3 and float(g[3]) > 0.0:
+				continue   # a window
+			var t := float(w.thick) * 0.5 + 0.4
+			var a := float(g[0]) + 0.02
+			var b := float(g[1]) - 0.02
+			var y1 := float(w.y0) + float(g[2]) - 0.02
+			var door := AABB(Vector3(a, float(w.y0) + 0.01, float(w.at) - t), Vector3(b - a, y1 - float(w.y0), t * 2.0)) if w.along_x \
+					else AABB(Vector3(float(w.at) - t, float(w.y0) + 0.01, a), Vector3(t * 2.0, y1 - float(w.y0), b - a))
+			for box: AABB in boxes:
+				if box.intersects(door):
+					blocked.append([door, box])
+					break
+	check(blocked.is_empty(), "no fitting stands in a doorway %s" % [blocked])
+	var covered := []
+	for area: Node in station.get_tree().get_nodes_in_group("gfx_interactable"):
+		if not (area is Area3D) or not station.is_ancestor_of(area):
+			continue
+		var at := (area as Node3D).global_position
+		for box: AABB in boxes:
+			if box.grow(0.03).has_point(at):
+				covered.append(area.name)
+				break
+	check(covered.is_empty(), "no fitting covers a button %s" % [covered])
 
 
 ## The berths grow with reputation (beenster, 19 Nov): three tiers, each clear of the station,
