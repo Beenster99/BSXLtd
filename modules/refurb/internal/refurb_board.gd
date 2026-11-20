@@ -4,7 +4,7 @@ extends PanelContainer
 ## tasking"): the design room's wall board look (a dark blue wall, panels side by side, each
 ## under a header bar with its title, big tiles and rows in the terminal kit's style), here
 ## three panels: TASKING (each cradle and the heavy stand: the part, its grade now and when
-## certified, the stage, a progress bar, its condition and the drones on it, then what is
+## certified and the drones on it, the stage, a progress bar and its condition, then what is
 ## coming in), DRONES (each drone, what it is doing and its charge) and THE WORKS (the figures:
 ## goods in, on the rollers, certified, scrapped, spent, the crane and cart, and what is ready
 ## to take). Built once; `refresh()` only changes texts, colours and bars.
@@ -12,7 +12,9 @@ extends PanelContainer
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 
 ## The panels: [title, share of the wall's width].
-const PANELS := [["TASKING", 1.55], ["DRONES", 1.0], ["THE WORKS", 0.95]]
+const PANELS := [["TASKING", 1.95], ["DRONES", 1.3], ["THE WORKS", 0.85]]
+## Text is drawn this much bigger than the sizes below (read from the floor, ten metres off).
+const TEXT_SCALE := 2.0
 const STAGE_COLOURS: Array[Color] = [Color(0.3, 0.75, 1.0), Color(1.0, 0.6, 0.15), Color(0.85, 0.8, 0.6),
 		Color(1.0, 0.45, 0.1), Color(0.3, 1.0, 0.45), Color(1.0, 0.25, 0.15)]
 
@@ -61,13 +63,13 @@ func _px(m: float) -> int:
 
 
 func _font(m: float) -> int:
-	return maxi(10, int(px_per_m * m))
+	return maxi(10, int(px_per_m * m * TEXT_SCALE))
 
 
 func _header(title: String) -> Control:
 	var head := PanelContainer.new()
 	head.add_theme_stylebox_override("panel", T.box(Color(0.06, 0.13, 0.2), Color.TRANSPARENT, 0, px_per_m * 0.07))
-	var t := T.label(title, "display_bold", _font(0.3), T.TEXT)
+	var t := T.label(title, "display_bold", _font(0.2), T.TEXT)
 	t.name = "Title"
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	head.add_child(t)
@@ -77,7 +79,7 @@ func _header(title: String) -> Control:
 func _heading(text: String) -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", _px(0.02))
-	col.add_child(T.label(text, "display_bold", _font(0.2), T.TEXT))
+	col.add_child(T.label(text, "display_bold", _font(0.14), T.TEXT))
 	var rule := T.HazardRule.new(float(_px(0.06)))
 	col.add_child(rule)
 	return col
@@ -107,8 +109,8 @@ func _cell(text: String, width: float, colour := T.DIM, face := "mono_medium", s
 func _tasking(body: VBoxContainer) -> void:
 	body.add_child(_heading("ON THE STANDS"))
 	var head := HBoxContainer.new()
-	for c: Array in [["BAY", 0.75], ["PART", 0.0], ["STAGE", 1.15], ["PROGRESS", 1.5], ["COND", 0.6], ["DRONES", 0.95]]:
-		var l := _cell(str(c[0]), _px(float(c[1])), T.DIM, "display_medium", 0.14)
+	for c: Array in [["BAY", 0.95], ["PART", 0.0], ["STAGE", 1.55], ["PROGRESS", 1.75], ["COND", 0.8]]:
+		var l := _cell(str(c[0]), _px(float(c[1])), T.DIM, "display_medium", 0.1)
 		if float(c[1]) == 0.0:
 			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		head.add_child(l)
@@ -116,33 +118,33 @@ func _tasking(body: VBoxContainer) -> void:
 	for i in works.cradles.size():
 		var heavy := i == works.heavy_index()
 		var cells := HBoxContainer.new()
+		cells.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cells.add_theme_constant_override("separation", _px(0.04))
-		var bay := _cell("HEAVY" if heavy else "R%d" % (i + 1), _px(0.75), T.ORANGE, "display_bold", 0.22)
+		var bay := _cell("HEAVY" if heavy else "R%d" % (i + 1), _px(0.95), T.ORANGE, "display_bold", 0.18)
 		var part := VBoxContainer.new()
 		part.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		part.add_theme_constant_override("separation", -_px(0.02))
-		var name_l := _cell("", 0, T.TEXT, "body_medium", 0.2)
-		var grade_l := _cell("", 0, T.DIM, "mono_medium", 0.14)
+		var name_l := _cell("", 0, T.TEXT, "body_medium", 0.15)
+		var grade_l := _cell("", 0, T.DIM, "mono_medium", 0.095)
 		part.add_child(name_l)
 		part.add_child(grade_l)
-		var stage := T.tag("", T.DIM, _font(0.15))
-		stage.custom_minimum_size.x = _px(1.15)
+		var stage := T.tag("", T.DIM, _font(0.12))
+		stage.custom_minimum_size.x = _px(1.55)
 		var bar_box := HBoxContainer.new()
-		bar_box.custom_minimum_size.x = _px(1.5)
+		bar_box.custom_minimum_size.x = _px(1.75)
 		bar_box.add_theme_constant_override("separation", _px(0.05))
-		var bar := _bar(_px(0.95), _px(0.16))
+		var bar := _bar(_px(0.8), _px(0.2))
 		bar_box.add_child(bar[0])
-		var pct := _cell("", _px(0.5), T.TEXT, "mono_bold", 0.18)
+		var pct := _cell("", _px(0.7), T.TEXT, "mono_bold", 0.15)
 		bar_box.add_child(pct)
-		var cond := _cell("", _px(0.6), T.TEXT, "mono_medium", 0.18)
-		var team := _cell("", _px(0.95), T.DIM, "mono_medium", 0.14)
-		for c: Control in [bay, part, stage, bar_box, cond, team]:
+		var cond := _cell("", _px(0.8), T.TEXT, "mono_medium", 0.15)
+		for c: Control in [bay, part, stage, bar_box, cond]:
 			cells.add_child(c)
 		var wrap := T.row([cells], i % 2 == 1)
 		body.add_child(wrap)
-		_rows.append({"name": name_l, "grade": grade_l, "stage": stage, "fill": bar[1], "bar": bar[0], "pct": pct, "cond": cond, "team": team})
+		_rows.append({"name": name_l, "grade": grade_l, "stage": stage, "fill": bar[1], "bar": bar[0], "pct": pct, "cond": cond})
 	body.add_child(_heading("COMING IN"))
-	_coming = T.label("", "body", _font(0.17), T.TEXT)
+	_coming = T.label("", "body", _font(0.13), T.TEXT)
 	_coming.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(_coming)
 
@@ -152,12 +154,13 @@ func _drones(body: VBoxContainer) -> void:
 	for i in works.bots.size():
 		var b: Dictionary = works.bots[i]
 		var cells := HBoxContainer.new()
+		cells.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cells.add_theme_constant_override("separation", _px(0.05))
-		var serial := _cell(String(b.serial), _px(1.25), T.ORANGE, "mono_bold", 0.18)
-		var doing := _cell("", 0, T.TEXT, "body_medium", 0.18)
+		var serial := _cell(String(b.serial), _px(1.3), T.ORANGE, "mono_bold", 0.12)
+		var doing := _cell("", 0, T.TEXT, "body_medium", 0.12)
 		doing.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var bar := _bar(_px(0.7), _px(0.15))
-		var pct := _cell("", _px(0.55), T.TEXT, "mono_medium", 0.16)
+		var bar := _bar(_px(0.5), _px(0.18))
+		var pct := _cell("", _px(0.65), T.TEXT, "mono_medium", 0.12)
 		for c: Control in [serial, doing, bar[0], pct]:
 			cells.add_child(c)
 		body.add_child(T.row([cells], i % 2 == 1))
@@ -177,8 +180,8 @@ func _works(body: VBoxContainer) -> void:
 		p.add_theme_stylebox_override("panel", T.plate(_px(0.06)))
 		var v := VBoxContainer.new()
 		v.add_theme_constant_override("separation", -2)
-		v.add_child(T.label(str(f[1]).to_upper(), "display_medium", _font(0.13), T.DIM))
-		var val := T.label("", "mono_bold", _font(0.28), T.TEXT)
+		v.add_child(T.label(str(f[1]).to_upper(), "display_medium", _font(0.09), T.DIM))
+		var val := T.label("", "mono_bold", _font(0.17), T.TEXT)
 		v.add_child(val)
 		p.add_child(v)
 		grid.add_child(p)
@@ -187,14 +190,14 @@ func _works(body: VBoxContainer) -> void:
 	var spent := PanelContainer.new()
 	spent.add_theme_stylebox_override("panel", T.plate(_px(0.06)))
 	var sv := VBoxContainer.new()
-	sv.add_child(T.label("SPENT ON REFURBISHING", "display_medium", _font(0.13), T.DIM))
-	var sval := T.label("", "mono_bold", _font(0.28), T.AMBER)
+	sv.add_child(T.label("SPENT ON REFURBISHING", "display_medium", _font(0.09), T.DIM))
+	var sval := T.label("", "mono_bold", _font(0.17), T.AMBER)
 	sv.add_child(sval)
 	spent.add_child(sv)
 	body.add_child(spent)
 	_figures["spent"] = sval
 	body.add_child(_heading("READY TO TAKE"))
-	_ready = T.label("", "body", _font(0.17), T.TEXT)
+	_ready = T.label("", "body", _font(0.12), T.TEXT)
 	_ready.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(_ready)
 
@@ -250,13 +253,12 @@ func _fill_row(i: int) -> void:
 		fill.size.x = 0.0
 		(r.pct as Label).text = ""
 		(r.cond as Label).text = ""
-		(r.team as Label).text = ""
 		return
 	name_l.modulate = Color.WHITE
 	name_l.text = String(lot.name)
 	var p := works.catalog.part(String(lot.type))
 	var to := works.catalog.part(works.certified_type(String(lot.type)))
-	grade_l.text = "%s  >  %s" % [DesignGrades.label(p) if p else "?", DesignGrades.label(to) if to else "?"]
+	var grades := "%s  >  %s" % [DesignGrades.label(p) if p else "?", DesignGrades.label(to) if to else "?"]
 	var stage := int(lot.stage)
 	var progress := float(lot.progress)
 	if String(lot.where) != RefurbWorks.AT_CRADLE:
@@ -285,7 +287,7 @@ func _fill_row(i: int) -> void:
 				team.append(b)
 	for b: Dictionary in team:
 		names.append(String(b.serial).get_slice("/", 1) + ("H" if String(b.role) == "heavy" else ""))
-	(r.team as Label).text = " ".join(names) if not names.is_empty() else "-"
+	grade_l.text = grades + ("   ·   " + " ".join(names) if not names.is_empty() else "")
 
 
 func _stage(l: Label, box: PanelContainer, text: String, colour: Color) -> void:

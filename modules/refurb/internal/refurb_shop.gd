@@ -494,6 +494,7 @@ func _make_fx(look: Node3D) -> Dictionary:
 	# The pressure washer's spray (the CLEAN stage).
 	var spray: Node3D = Spray.new()
 	add_child(spray)
+	spray.name = "Spray%d" % _fx.size()
 	var fan := MeshInstance3D.new()
 	var fm := PrismMesh.new()
 	fm.size = Vector3(0.9, 1.0, 0.01)
