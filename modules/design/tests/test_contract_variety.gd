@@ -14,6 +14,7 @@ func run_tests() -> void:
 	_calibration()
 	_clauses()
 	_tutorial()
+	_board_buildable()
 
 
 func _reference() -> void:
@@ -115,3 +116,23 @@ func _tutorial() -> void:
 		check(str(o.achievability.label) == "Generous" and int(o.needs_level) == 0 and int(o.berth) == 1, "and it is generous, open from the start, starter berth")
 		var q := ShipOrders.quote(o, t.cost)
 		check(int(q.margin) > 0, "the sample skiff makes a profit on it: CR %d" % int(q.margin))
+
+
+## Every order on a sample of boards can be built: the reference build meets every demand
+## and clause of each small, medium and large order on four cycles (the big sizes take
+## seconds each; a sweep of 40 cycles, every size, met all 240 on 20 Nov 2026).
+func _board_buildable() -> void:
+	var missed: Array = []
+	var n := 0
+	for cycle in [0, 7, 20, 29]:
+		for o: Dictionary in ShipOrders.for_cycle(cycle):
+			if not str(o.size) in ["small", "medium", "large"]:
+				continue
+			n += 1
+			var dem: Dictionary = o.demands.duplicate()
+			dem.erase("budget")
+			var r := DesignReference.build(dem, o.clauses, cat)
+			var rows := DesignContractCheck.clauses(o, r.record, cat).filter(func(x): return not x.ok)
+			if not r.met or not rows.is_empty():
+				missed.append("%s %s %s: %s %s" % [o.id, o.size, o.role, r.misses, rows.map(func(x): return x.label)])
+	check(n >= 10 and missed.is_empty(), "the cheapest build meets every order on the board (%d tried): %s" % [n, missed])

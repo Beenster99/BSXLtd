@@ -14,6 +14,7 @@ func run_tests() -> void:
 	_legacy_and_locks()
 	_berths()
 	_work()
+	_within_reach()
 
 
 func _board() -> void:
@@ -188,3 +189,23 @@ func _work() -> void:
 	check(ShipOrders.length_for(long) > ShipOrders.length_for(base), "and her tanks make her longer")
 	for o: Dictionary in ShipOrders.for_cycle(3, ShipOrders.LEGACY_PER_CYCLE, false):
 		check(not o.demands.has("endurance_days") and not o.demands.has("reactors"), "legacy orders ask for neither")
+
+
+## No order asks for what no yard can build: every hull fits the largest berth, and no order
+## asks so many days without refuelling on top of a long jump or a fast run that her tanks
+## would run away (the design module's test_contract_variety builds a sample of the board).
+func _within_reach() -> void:
+	var longest := float(ShipOrders.BERTHS[-1][2])
+	var too_long: Array = []
+	var too_far: Array = []
+	for cycle in 200:
+		for o: Dictionary in ShipOrders.for_cycle(cycle):
+			if float(o.length_m) > longest:
+				too_long.append("%s %d m" % [o.id, int(o.length_m)])
+			if ShipOrders.endurance_share(o.demands) > ShipOrders.ENDURANCE_LIMIT + 0.01:
+				too_far.append("%s %d days" % [o.id, int(o.demands.endurance_days)])
+	check(too_long.is_empty(), "every ship ordered fits the largest berth: %s" % [too_long])
+	check(too_far.is_empty(), "no order asks more endurance than her tanks can keep up with: %s" % [too_far])
+	var d := {"jump_ly": 26.0, "crew": 3.0, "endurance_days": 50}
+	check(ShipOrders.endurance_cap(d) < 50 and ShipOrders.estimate(d) > ShipOrders.estimate({"jump_ly": 26.0, "crew": 3.0}) * 1.2,
+			"a long jump caps the days asked, and long endurance near the cap costs more in the estimate")
