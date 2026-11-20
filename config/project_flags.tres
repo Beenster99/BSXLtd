@@ -35,6 +35,8 @@ flags = {
 "fleet": true,
 "fleet.screen": true,
 "graphics": true,
+"help": true,
+"help.wrist": true,
 "graphics.gi": true,
 "graphics.hover": true,
 "graphics.lamps": true,
