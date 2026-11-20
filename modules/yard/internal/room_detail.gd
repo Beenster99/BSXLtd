@@ -8,15 +8,20 @@ extends RefCounted
 ##   - door and window openings cased in a steel frame;
 ##   - ceilings hung on beams across the room (kept clear of the lamps), panelled between;
 ##   - floors laid as plates with seams.
+## The stores hall gets the same on a bigger scale (2.4 m panels, columns every 7.2 m) and no
+## ceiling of its own (its trusses are StoresShell's).
 ## The corridor keeps its own skirting and cove light; the design room's screen walls get
-## seams only (nothing may stand out through the screens). The stores hall and the refurb
-## annex are left for their own passes. Presentation only: no collision, a few merged meshes.
+## seams only (nothing may stand out through the screens). The refurb annex is the refurb
+## module's. Presentation only: no collision, a few merged meshes.
 
 const Kit := preload("res://modules/yard/internal/yard_kit.gd")
 const DetailMesh := preload("res://modules/yard/internal/detail_mesh.gd")
 
 ## The rooms this pass dresses.
-const ROOMS := ["corridor", "contracts", "crew", "quarters", "airlock", "design", "design_lock"]
+const ROOMS := ["corridor", "contracts", "crew", "quarters", "airlock", "design", "design_lock", "racking"]
+## The stores hall's walls are 32 m high and 60 to 70 m long: bigger panels, rows and ribs.
+const HALL_PITCH := 2.4
+const HALL_RIB := Vector2(0.4, 0.12)
 ## Panel width and the rib every RIB_EVERY panels (m).
 const PITCH := 1.2
 const RIB_EVERY := 3
@@ -37,6 +42,8 @@ var _beam: Material
 var _floor_seam: Material
 var _ceiling_seam: Material
 var _lamps: Array[Dictionary] = []
+var _pitch := PITCH
+var _rib_size := Vector2(0.22, RIB_OUT)
 
 
 ## Dresses every room of ROOMS from what `kit` built; the meshes go under `parent`.
@@ -56,7 +63,7 @@ func build(kit, parent: Node3D) -> Node3D:
 			_wall_face(w, side)
 	for id: String in ROOMS:
 		_floor(id)
-		if id != "design":   # its roof is the glass vault
+		if id != "design" and id != "racking":   # the vault; the hall's trusses
 			_ceiling(id)
 	var node := Node3D.new()
 	node.name = "RoomDetail"
@@ -99,7 +106,7 @@ func _wall_face(w: Dictionary, side: float) -> void:
 		var r := room_beside(w, side, a)
 		if r != "":
 			rooms[r] = true
-		a += PITCH
+		a += 1.2
 	if rooms.is_empty():
 		return
 	var gaps: Array = (w.gaps as Array).duplicate()
@@ -111,15 +118,18 @@ func _wall_face(w: Dictionary, side: float) -> void:
 		top = minf(top, (YardLayout.ROOMS[r].box as AABB).end.y)
 	var corridor := rooms.has("corridor")
 	var screens := rooms.has("design")
+	var hall := rooms.has("racking")
+	_pitch = HALL_PITCH if hall else PITCH
+	_rib_size = HALL_RIB if hall else Vector2(0.22, RIB_OUT)
 	# Horizontal seams: a dado at 1.2 m and one under the cornice (more on a tall wall).
 	# (Walls along z sit 3 mm off the walls along x, so where two meet in a corner their
 	# seams, plates and cornices don't share a plane.)
 	var lift := 0.0 if w.along_x else 0.003
 	var rows: Array[float] = []
-	var hy := 1.213 + lift
+	var hy := (1.25 if hall else 1.213) + lift   # (the hall's rows clear its deck's underside)
 	while hy < top - 0.5:
 		rows.append(hy)
-		hy += 1.2
+		hy += _pitch
 	rows.append(top - 0.317 + lift)
 	# Stretch by stretch between the openings.
 	var solid: Array = []   # [a, b]
@@ -138,12 +148,12 @@ func _wall_face(w: Dictionary, side: float) -> void:
 			continue
 		for yr: float in rows:
 			_on_face(w, side, _seam, (sa + sb) * 0.5, yr, sb - sa, 0.025, SEAM_OUT - 0.0015, 0.0, 0.0006)
-		var x := sa + PITCH
+		var x := sa + _pitch
 		while x < sb - 0.3:
 			n += 1
 			if room_beside(w, side, x) != "":
 				_seam_at(w, side, x, y0, top, rows, n % RIB_EVERY == 0 and not screens and x > sa + 0.5 and x < sb - 0.5, corridor, sb)
-			x += PITCH
+			x += _pitch
 		if not corridor:
 			# A kick plate along the floor, a cornice under the ceiling.
 			_on_face(w, side, _dark, (sa + sb) * 0.5, y0 + 0.071 + lift, sb - sa, 0.14, 0.014, 0.0, 0.0024)
@@ -174,16 +184,16 @@ func _seam_at(w: Dictionary, side: float, x: float, y0: float, top: float, rows:
 	if not rib:
 		return
 	# The rib: a flat pilaster up the wall with a bolted strap at each row.
-	_on_face(w, side, _rib, x, (y0 + top - UNDER) * 0.5, 0.22, top - UNDER - y0, RIB_OUT, 0.0, 0.0018)
+	_on_face(w, side, _rib, x, (y0 + top - UNDER - 0.004) * 0.5, _rib_size.x, top - UNDER - 0.004 - y0, _rib_size.y, 0.0, 0.0018)
 	var straps: Array[float] = rows.duplicate()
 	straps.append(y0 + 0.4)
 	for yr: float in straps:
-		_on_face(w, side, _dark, x, yr, 0.26, 0.06, 0.02, RIB_OUT)
+		_on_face(w, side, _dark, x, yr, _rib_size.x + 0.04, 0.06, 0.02, _rib_size.y)
 		for dx: float in [-0.08, 0.08]:
-			_on_face(w, side, _bolt, x + dx, yr, 0.03, 0.03, 0.014, RIB_OUT + 0.02)
+			_on_face(w, side, _bolt, x + dx * _rib_size.x / 0.22, yr, 0.03, 0.03, 0.014, _rib_size.y + 0.02)
 	# A vent grille in the bay after every other rib, under the cornice.
-	if int(roundf(x / PITCH)) % (RIB_EVERY * 2) == 0:
-		var vx := x + PITCH * 1.5
+	if int(roundf(x / _pitch)) % (RIB_EVERY * 2) == 0:
+		var vx := x + _pitch * 1.5
 		if room_beside(w, side, vx) == "" or vx > stretch_end - 0.45:
 			return
 		var vy := top - 0.65
@@ -245,12 +255,12 @@ func _hits_lamp(c: Vector3, size: Vector3) -> bool:
 func _floor(id: String) -> void:
 	var b: AABB = YardLayout.ROOMS[id].box
 	var mid := b.get_center()
-	var step := PITCH * 2.0
+	var step := PITCH * (4.0 if id == "racking" else 2.0)
 	var x := b.position.x + step
 	while x < b.end.x - 0.2:
-		dm.box(_floor_seam, Vector3(0.012, 0.0079, b.size.z - 0.006), Vector3(x, 0.00095, mid.z))
+		dm.box(_floor_seam, Vector3(0.012, 0.0102, b.size.z - 0.006), Vector3(x, 0.0021, mid.z))
 		x += step
 	var z := b.position.z + step
 	while z < b.end.z - 0.2:
-		dm.box(_floor_seam, Vector3(b.size.x - 0.006, 0.0092, 0.012), Vector3(mid.x, 0.0016, z))
+		dm.box(_floor_seam, Vector3(b.size.x - 0.006, 0.0112, 0.012), Vector3(mid.x, 0.0026, z))
 		z += step
