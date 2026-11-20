@@ -20,6 +20,7 @@ const BotLook := preload("res://modules/refurb/internal/refurb_bot_look.gd")
 const Sounds := preload("res://modules/refurb/internal/refurb_sounds.gd")
 const Board := preload("res://modules/refurb/internal/refurb_board.gd")
 const Spray := preload("res://modules/refurb/internal/refurb_spray.gd")
+const Scan := preload("res://modules/refurb/internal/refurb_scan.gd")
 
 const TICK := 1.0 / 60.0
 const FRAME_BUDGET_MS := 6.0
@@ -37,6 +38,10 @@ const TROLLEY_Y := 14.35
 const HULL_WHITE := Color(0.86, 0.87, 0.88)
 ## The scrap skip shows its newest this many lots.
 const SKIP_SHOWS := 8
+## A bot works a part only once it is this close to it (m from the part's surface); flying in to
+## a spot it holds its tool still (0.4.7 playtest: a drone joining the heavy stand from across the
+## annex sprayed the whole way over).
+const WORK_REACH := 2.6
 
 var works: RefurbWorks
 ## Ticks run since the yard's epoch.
@@ -69,6 +74,8 @@ var _cart_beep: AudioStreamPlayer3D
 var _jingle: AudioStreamPlayer3D
 var _clang: AudioStreamPlayer3D
 var _clock := 0.0
+## Lots being scanned this frame (id: true): their line shows.
+var _scanning: Dictionary = {}
 
 
 ## `bus`: the RefurbBus (signals go out through it); `yard`: the YardBus whose clock and log the
@@ -227,6 +234,7 @@ func _play(p: AudioStreamPlayer3D, sound: String, at: Vector3) -> void:
 
 func draw(delta: float) -> void:
 	_clock += delta
+	_scanning.clear()
 	for i in bots.size():
 		_draw_bot(i, delta)
 	_draw_lots()
@@ -261,14 +269,27 @@ func _draw_bot(i: int, delta: float) -> void:
 	var face: Vector3 = to_global(b.target)
 	var work := Vector3.INF
 	var centre := Vector3.INF
+	var scanning := false
 	if working:
-		# It faces the part and its tool reaches for the part's surface nearest it.
 		var box := _lot_box(lot)
 		var p: Vector3 = b.pos
 		var near := Vector3(clampf(p.x, box.position.x, box.end.x), clampf(p.y, box.position.y, box.end.y), clampf(p.z, box.position.z, box.end.z))
-		centre = to_global(box.get_center())
-		face = to_global(near)
-		work = to_global(near) + Vector3(sin(_clock * 2.3 + i), cos(_clock * 1.9 + i * 2.0), sin(_clock * 1.3 + i)) * 0.07
+		if p.distance_to(near) > WORK_REACH * (1.5 if String(b.role) == "heavy" else 1.0):
+			# Still flying in: it faces where it is going, its tool still.
+			working = false
+		elif String(b.tool) == "scanner":
+			# Inspecting: it hovers off the part and its eye looks at the middle of it, beams
+			# sweeping across.
+			centre = to_global(box.get_center())
+			face = centre
+			work = centre
+			scanning = true
+			_scanning[int(lot.id)] = true
+		else:
+			# It faces the part and its tool reaches for the part's surface nearest it.
+			centre = to_global(box.get_center())
+			face = to_global(near)
+			work = to_global(near) + Vector3(sin(_clock * 2.3 + i), cos(_clock * 1.9 + i * 2.0), sin(_clock * 1.3 + i)) * 0.07
 	elif state in [RefurbWorks.BOT_DOCK, RefurbWorks.BOT_RETURN] and (b.pos as Vector3).distance_to(works.dock_point(i)) < 1.5:
 		face = to_global((b.pos as Vector3) + Vector3(0, 0, -5.0))
 	var hold := Vector3.INF
@@ -281,9 +302,24 @@ func _draw_bot(i: int, delta: float) -> void:
 	var reach := work
 	if working and String(b.tool) == "blaster" and work.is_finite():
 		reach = work + (look.global_position - work).normalized() * 0.6
+	elif scanning:
+		# The scanner arm points at the part, held in near the body.
+		reach = look.global_position + (work - look.global_position).normalized() * 0.55
+	look.set("aim_point", work if working and String(b.tool) == "blaster" else Vector3.INF)
 	look.call("pose", to_global(b.pos), face, reach, hold, float(b.charge), bool(b.charging), String(b.tool), delta, docked)
 	look.call("thrust", clampf(moving / 3.0, 0.0, 1.0))
 	_draw_fx(i, working, String(b.tool), centre, work)
+	var scan: Node3D = _fx[i].scan
+	if scanning:
+		var box := _lot_box(lot)
+		var sw := Scan.sweep(box, _clock, float(int(lot.id)) * 1.3)
+		var eye: Vector3 = look.get("eye")
+		var pts: PackedVector3Array = Scan.edge(box, sw, to_local(eye))
+		for k in pts.size():
+			pts[k] = to_global(pts[k])
+		scan.call("draw_fan", eye, pts, 1.0)
+	else:
+		scan.call("stop")
 
 
 func _draw_lots() -> void:
@@ -312,6 +348,7 @@ func _draw_lots() -> void:
 		var scorched := 0.6 if int(lot.stage) == RefurbWorks.Stage.CUT or where == RefurbWorks.AT_SCRAP else 0.0
 		mat.set_shader_parameter("albedo", clean.lerp(Vector3(0.09, 0.06, 0.035), g * 0.65))
 		mat.set_shader_parameter("condition", Vector4(clampf(wear * 1.1, 0.0, 1.0), clampf(float(lot.grime) * 0.9, 0.0, 1.0), 3.0 + scorched, float(id % 17) * 0.13))
+		_draw_scan_line(lot, n, mat)
 		var glow: Node3D = n.get_meta("glow") if n.has_meta("glow") else null
 		if glow:
 			glow.visible = int(lot.stage) == RefurbWorks.Stage.TEST or where == RefurbWorks.AT_OUT
@@ -319,6 +356,21 @@ func _draw_lots() -> void:
 		if not seen.has(id):
 			(_lot_nodes[id] as Node3D).queue_free()
 			_lot_nodes.erase(id)
+
+
+## The inspection's line of light on a part while a bot scans it: a pass over its own surface.
+func _draw_scan_line(lot: Dictionary, n: Node3D, mat: ShaderMaterial) -> void:
+	if not _scanning.has(int(lot.id)):
+		mat.next_pass = null
+		return
+	var line: ShaderMaterial = n.get_meta("scan_line") if n.has_meta("scan_line") else null
+	if line == null:
+		line = Scan.line_material()
+		n.set_meta("scan_line", line)
+	mat.next_pass = line
+	var sw := Scan.sweep(_lot_box(lot), _clock, float(int(lot.id)) * 1.3)
+	var normal := (global_basis * (sw.axis as Vector3)).normalized()
+	Scan.aim_line(line, normal, to_global(sw.at).dot(normal), float(sw.dir), 1.0)
 
 
 func _lot_tag(lot: Dictionary) -> String:
@@ -495,14 +547,10 @@ func _make_fx(look: Node3D) -> Dictionary:
 	var spray: Node3D = Spray.new()
 	add_child(spray)
 	spray.name = "Spray%d" % _fx.size()
-	var fan := MeshInstance3D.new()
-	var fm := PrismMesh.new()
-	fm.size = Vector3(0.9, 1.0, 0.01)
-	fan.mesh = fm
-	fan.material_override = Paint.haze(Color(0.25, 0.75, 1.0, 0.35))
-	fan.visible = false
-	fan.set_meta("gfx_coplanar_ok", true)
-	add_child(fan)
+	# The inspection's scan beams (the INSPECT stage).
+	var scan: Node3D = Scan.new()
+	add_child(scan)
+	scan.name = "Scan%d" % _fx.size()
 	var flare := OmniLight3D.new()
 	flare.light_color = Color(0.75, 0.85, 1.0)
 	flare.omni_range = 3.5
@@ -515,7 +563,7 @@ func _make_fx(look: Node3D) -> Dictionary:
 	hum.max_distance = 60.0
 	hum.volume_db = -8.0
 	add_child(hum)
-	return {"sparks": sparks, "spray": spray, "fan": fan, "flare": flare, "hum": hum, "sound": ""}
+	return {"sparks": sparks, "spray": spray, "scan": scan, "flare": flare, "hum": hum, "sound": ""}
 
 
 func _draw_fx(i: int, working: bool, tool_name: String, centre: Vector3, work: Vector3) -> void:
@@ -524,7 +572,6 @@ func _draw_fx(i: int, working: bool, tool_name: String, centre: Vector3, work: V
 	var tip: Vector3 = look.get("tip")
 	var aim := (work - tip).normalized() if working and work.is_finite() and work.distance_to(tip) > 0.01 else Vector3.DOWN
 	var sparks: CPUParticles3D = fx.sparks
-	var fan: MeshInstance3D = fx.fan
 	var flare: OmniLight3D = fx.flare
 	var sparking := working and tool_name in ["welder", "nut_runner", "cutter"]
 	sparks.emitting = sparking
@@ -541,16 +588,10 @@ func _draw_fx(i: int, working: bool, tool_name: String, centre: Vector3, work: V
 	if arc:
 		flare.global_position = tip
 	var spray: Node3D = fx.spray
-	spray.set("on", working and tool_name == "blaster" and work.is_finite())
+	# The jet only runs with the lance at the part (never a beam across the annex).
+	spray.set("on", working and tool_name == "blaster" and work.is_finite() and tip.distance_to(work) < 1.6)
 	if spray.get("on"):
 		spray.call("aim", tip, work)
-	fan.visible = working and tool_name == "scanner" and centre.is_finite()
-	if fan.visible:
-		var d := maxf(tip.distance_to(centre), 0.3)
-		var to_c := (centre - tip).normalized()
-		fan.global_transform = Transform3D(Basis.looking_at(to_c, Vector3.UP if absf(to_c.y) < 0.95 else Vector3.RIGHT) * Basis(Vector3.RIGHT, -PI * 0.5), tip + to_c * d * 0.5)
-		fan.scale = Vector3(0.6 + 0.3 * sin(_clock * 3.0 + i), d, 1.0)
-		fan.rotate_object_local(Vector3.UP, sin(_clock * 1.7 + i) * 0.6)
 	# The tool's sound, while it works.
 	var want := tool_name if working else ""
 	var hum: AudioStreamPlayer3D = fx.hum

@@ -166,6 +166,7 @@ func run_tests() -> void:
 	check(ms < 0.2, "a tick is cheap enough to replay for a late joiner (%.4f ms)" % ms)
 
 	await _shop()
+	await _shop_moves()
 
 
 ## The works drawn on a local clock: the requests go through its log, its bots draw, the board
@@ -224,5 +225,68 @@ func _shop() -> void:
 	if gfx and gfx.has_method("zfight_scan"):
 		var found: Array = gfx.call("zfight_scan", shop)
 		check(found.is_empty(), "no flickering faces in the shop (%d):\n%s" % [found.size(), gfx.call("describe_zfights", found, 40)])
+	holder.queue_free()
+	await frames(2)
+
+
+## How the drones work a part (0.4.7 playtest): inspecting, a drone hovers off the part and
+## scans across it with beams from its eye, a line of light moving over the part; the pressure
+## washer only runs with the lance at the part, never from across the annex.
+func _shop_moves() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	var shop: Node3D = RefurbBus.Shop.new()
+	holder.add_child(shop)
+	var works := RefurbWorks.new()
+	works.standin_dealer = false
+	shop.call("setup", null, null, works)
+	shop.call("request", {"kind": "refurb.in", "type": TYPE, "condition": 0.6})
+	var lot: Dictionary = {}
+	var bot: Dictionary = {}
+	for k in 60 * 240:
+		shop.call("run_ticks", 1)
+		var on := works.lots_at(RefurbWorks.AT_CRADLE)
+		if on.size() == 1 and int(on[0].stage) == RefurbWorks.Stage.INSPECT and int(on[0].bot) >= 0:
+			var b: Dictionary = works.bots[int(on[0].bot)]
+			if String(b.state) == RefurbWorks.BOT_WORK and (b.pos as Vector3).distance_to(b.target) < 0.05:
+				lot = on[0]
+				bot = b
+				break
+	check(not lot.is_empty(), "a drone gets to inspecting a part (%s)" % works.fingerprint())
+	if lot.is_empty():
+		holder.queue_free()
+		return
+	var i := int(bot.id)
+	var top := (lot.pos as Vector3).y + float(lot.h)
+	check((bot.pos as Vector3).y > top, "inspecting, it hovers above the part (%.2f over %.2f)" % [(bot.pos as Vector3).y, top])
+	for f in 3:
+		shop.call("draw", 0.016)
+	var scan: Node3D = shop.find_child("Scan%d" % i, true, false)
+	var beams: MeshInstance3D = scan.find_child("Beams", false, false) if scan else null
+	check(beams != null and (beams.mesh as ImmediateMesh).get_surface_count() == 2, "it scans the part with a fan of beams")
+	var n: Node3D = shop.get("_lot_nodes").get(int(lot.id))
+	var mat: ShaderMaterial = n.get_meta("mat") if n else null
+	check(mat != null and mat.next_pass is ShaderMaterial, "a line of light moves over the part it scans")
+	var other := shop.find_child("Scan%d" % ((i + 1) % works.bots.size()), true, false)
+	check(other != null and (other.find_child("Beams", false, false).mesh as ImmediateMesh).get_surface_count() == 0, "an idle drone draws no beams")
+	# Cleaning: the washer runs at the part, not while the drone is still flying in.
+	lot.stage = RefurbWorks.Stage.CLEAN
+	bot.tool = "blaster"
+	var spray: Node3D = shop.find_child("Spray%d" % i, true, false)
+	var at: Vector3 = bot.pos
+	bot.pos = at + Vector3(0, 0, 8.0)
+	for f in 3:
+		shop.call("draw", 0.016)
+	check(not bool(spray.get("on")), "no spray from a drone still flying in")
+	check((beams.mesh as ImmediateMesh).get_surface_count() == 0, "no beams once it stops scanning")
+	bot.pos = at
+	for f in 3:
+		shop.call("draw", 0.016)
+	check(bool(spray.get("on")), "the washer runs with the lance at the part")
+	var look: Node3D = shop.get("bots")[i]
+	var tip: Vector3 = look.get("tip")
+	var to_part := (n.global_position - tip) if n else Vector3.ZERO
+	check(tip.distance_to(n.global_position) < 3.0, "the lance is at the part (%.2f m)" % tip.distance_to(n.global_position))
+	check((look.get("tip_dir") as Vector3).dot(to_part.normalized()) > 0.3, "the lance points at the part")
 	holder.queue_free()
 	await frames(2)
