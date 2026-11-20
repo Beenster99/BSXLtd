@@ -32,4 +32,21 @@ func _run() -> void:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(out.path_join("help_%s.png" % id))
+	# The matrix: the reactors, then a small reactor as the supply over the engines.
+	screen.call("show_topic", HelpBus.MATRIX_TOPIC)
+	await _shot(out, "help_matrix")
+	var m := screen.find_child("Matrix", true, false)
+	var cat := (Modules.bus("design") as DesignBus).catalog
+	var reactor := cat.part("reactor_small")
+	m.call("pick", DesignGrades.variant_id(reactor, 2, "S"))
+	await _shot(out, "help_matrix_supply")
+	m.call("set_category", "propulsion")
+	await _shot(out, "help_matrix_engines")
 	get_tree().quit()
+
+
+func _shot(out: String, file: String) -> void:
+	for i in 8:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(out.path_join(file + ".png"))
