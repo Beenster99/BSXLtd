@@ -17,6 +17,9 @@ const DataChannel := preload("res://modules/design/internal/views/data_channel.g
 const ContractFit := preload("res://modules/design/internal/views/contract_fit.gd")
 const ContractTerms := preload("res://modules/design/internal/views/contract_terms.gd")
 const HoloTable := preload("res://modules/design/internal/holo/holo_table.gd")
+const DockPanel := preload("res://modules/design/internal/console/dock_panel.gd")
+const ScaledBox := preload("res://modules/design/internal/console/scaled_box.gd")
+const ConsoleLayout := preload("res://modules/design/internal/console/console_layout.gd")
 
 var bus: DesignBus
 var holo: HoloTable
@@ -24,8 +27,24 @@ var plan: PlanView
 var data: DataChannel
 
 var _title: Label
+## The layout as this player left it (ConsoleLayout), and the docked panels by id.
+var layout: Dictionary = {}
+var panels: Dictionary = {}
+var _docks: Dictionary = {}
+var _dock_boxes: Dictionary = {}
+var _outer: HSplitContainer
+var _inner: HSplitContainer
+var _top_box: Control
+var _window: MenuButton
 var _deck_label: Label
+## The palette section being filled: one of `_sections`, each the body of its own panel.
 var _palette: VBoxContainer
+var _sections: Dictionary = {}
+## The palette's sections, each its own panel (beenster, 20 Nov: "Modules, Contract, Rooms,
+## Components, Hull Design, Views").
+const SECTIONS: PackedStringArray = ["contract", "tools", "rooms", "modules", "hull", "components"]
+## The side or end elevation beside the plan (the "views" panel).
+var side_view: PlanView
 ## Size class and grade new components are picked in (0 = each type's own size).
 var _pick_size := 0
 var _pick_grade := DesignGrades.DEFAULT_GRADE
@@ -92,13 +111,33 @@ func _build() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 0)
 	add_child(root)
-	root.add_child(_top_bar())
+	layout = ConsoleLayout.load_layout()
+	_top_box = ScaledBox.new(float(layout.text))
+	_top_box.add_child(_top_bar())
+	root.add_child(_top_box)
 	root.add_child(T.HazardRule.new(6.0))
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 0)
-	root.add_child(body)
-	body.add_child(_left_panel())
+	# The panels dock either side of the plan, after Photoshop's (beenster, 20 Nov): drag the
+	# dividers for width, a panel's foot for height; its title bar moves, folds and hides it.
+	_outer = HSplitContainer.new()
+	_outer.name = "Body"
+	_outer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(_outer)
+	for side: String in ["left", "right"]:
+		var dock := VBoxContainer.new()
+		dock.name = "Dock" + side.capitalize()
+		dock.add_theme_constant_override("separation", 3)
+		dock.custom_minimum_size.x = 240
+		var box := ScaledBox.new(float(layout.text))
+		box.name = "Scaled" + side.capitalize()
+		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		box.add_child(dock)
+		_docks[side] = dock
+		_dock_boxes[side] = box
+	_outer.add_child(_dock_boxes.left)
+	_inner = HSplitContainer.new()
+	_inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_inner.size_flags_stretch_ratio = 3.2
+	_outer.add_child(_inner)
 	plan = PlanView.new()
 	plan.name = "Plan"
 	plan.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -106,7 +145,16 @@ func _build() -> void:
 	plan.setup(bus, PlanView.PLAN, true)
 	plan.selection_changed.connect(_on_selection)
 	plan.tool_changed.connect(func(_t: String) -> void: _mark_tools())
-	body.add_child(plan)
+	_inner.add_child(plan)
+	_inner.add_child(_dock_boxes.right)
+	_outer.split_offset = int(layout.left)
+	_inner.split_offset = int(layout.right)
+	_outer.dragged.connect(func(o: int) -> void:
+		layout.left = o
+		_save_layout())
+	_inner.dragged.connect(func(o: int) -> void:
+		layout.right = o
+		_save_layout())
 	_crew_feed = T.label("", "body_medium", 17, T.TEXT)
 	_crew_feed.name = "CrewFeed"
 	_crew_feed.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
@@ -115,20 +163,35 @@ func _build() -> void:
 	_crew_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	plan.add_child(_crew_feed)
 	bus.crew_edited.connect(_on_crew_edited)
-	var right := VBoxContainer.new()
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.size_flags_stretch_ratio = 1.0  # a little narrower (beenster, 20 Nov; was 1.3)
-	right.add_theme_constant_override("separation", 0)
-	body.add_child(right)
-	right.add_child(_holo_panel())
+	_selection = VBoxContainer.new()
+	_selection.add_theme_constant_override("separation", 4)
+	for sec: String in SECTIONS:
+		var box := VBoxContainer.new()
+		box.name = "Section_" + sec
+		box.add_theme_constant_override("separation", 4)
+		_sections[sec] = box
+	_palette = _sections.tools
 	data = DataChannel.new()
 	data.name = "Data"
-	data.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	data.lists = false
 	data.setup(bus, true)
 	data.assessment_requested.connect(toggle_assessment)
 	data.problem_picked.connect(go_to_problem)
-	right.add_child(data)
+	var bodies := {"selection": _scrolled(_selection), "holo": _holo_panel(), "data": data, "views": _side_panel()}
+	for sec: String in SECTIONS:
+		bodies[sec] = _scrolled(_sections[sec])
+	for id: String in ConsoleLayout.PANELS:
+		var dp := DockPanel.new()
+		dp.setup(id, str(ConsoleLayout.PANELS[id].title), bodies[id])
+		dp.move_requested.connect(move_panel)
+		dp.swap_requested.connect(swap_panel)
+		dp.hide_requested.connect(func(pid: String) -> void: show_panel(pid, false))
+		dp.collapse_changed.connect(func(pid: String, on: bool) -> void:
+			layout.panels[pid].collapsed = on
+			_save_layout())
+		dp.height_dragged.connect(_resize_panel)
+		panels[id] = dp
+	_arrange()
 	_library_panel = _make_library_panel()
 	_library_panel.visible = false
 	add_child(_library_panel)
@@ -218,6 +281,7 @@ func _top_bar() -> Control:
 	h.add_child(tools)
 	_fill_tools(tools)
 	bus.console_tools_changed.connect(_fill_tools.bind(tools))
+	h.add_child(_window_menu())
 	var walk := T.button("WALK INSIDE", true, 17)
 	walk.name = "BtnWalkInside"
 	walk.pressed.connect(func() -> void: walk_requested.emit())
@@ -246,34 +310,194 @@ func _fill_tools(box: HBoxContainer) -> void:
 		box.add_child(b)
 
 
-func _left_panel() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = 290
-	panel.add_theme_stylebox_override("panel", T.box(T.KIOSK, T.EDGE, 2, 10.0))
+## The side and end elevations beside the plan (beenster, 20 Nov: "plan, side and 3D views in
+## the same interface"): a drawing that follows the design, SIDE or END at the top.
+func _side_panel() -> Control:
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	var row := HBoxContainer.new()
+	col.add_child(row)
+	side_view = PlanView.new()
+	side_view.name = "SideView"
+	side_view.setup(bus, PlanView.SIDE, false)
+	side_view.auto_frame = true
+	side_view.show_title = false
+	side_view.custom_minimum_size.y = 120
+	side_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for v: String in [PlanView.SIDE, PlanView.END]:
+		var b := T.button(v.to_upper(), false, 13)
+		b.name = "SideMode_" + v
+		b.pressed.connect(func() -> void:
+			side_view.mode = v
+			side_view.frame_all())
+		row.add_child(b)
+	col.add_child(side_view)
+	return col
+
+
+## A panel's contents in a scroll that only scrolls up and down.
+static func _scrolled(c: Control) -> ScrollContainer:
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
-	var col := VBoxContainer.new()
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.add_theme_constant_override("separation", 6)
-	scroll.add_child(col)
-	_selection = VBoxContainer.new()
-	_selection.add_theme_constant_override("separation", 4)
-	col.add_child(_selection)
-	_palette = VBoxContainer.new()
-	_palette.add_theme_constant_override("separation", 4)
-	col.add_child(_palette)
-	return panel
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(c)
+	return scroll
+
+
+## Puts every panel in its dock, in order, folded or hidden as the layout says; a dock with
+## nothing showing gives its room to the plan.
+func _arrange() -> void:
+	for id: String in panels:
+		var dp: Control = panels[id]
+		if dp.get_parent():
+			dp.get_parent().remove_child(dp)
+	for side: String in ["left", "right"]:
+		var ids: Array = panels.keys().filter(func(i): return str(layout.panels[i].dock) == side)
+		ids.sort_custom(func(a, b) -> bool: return int(layout.panels[a].order) < int(layout.panels[b].order))
+		var showing := 0
+		for i in ids.size():
+			var id: String = ids[i]
+			layout.panels[id].order = i
+			var dp: DockPanel = panels[id]
+			dp.ratio = float(layout.panels[id].ratio)
+			dp.set_collapsed(bool(layout.panels[id].collapsed))
+			dp.visible = not bool(layout.panels[id].hidden)
+			if dp.visible:
+				showing += 1
+			(_docks[side] as Control).add_child(dp)
+		(_dock_boxes[side] as Control).visible = showing > 0
+	_mark_window_menu()
+
+
+## Moves a panel up (-1) or down (+1) its dock.
+func move_panel(id: String, by: int) -> void:
+	var side := str(layout.panels[id].dock)
+	var ids: Array = panels.keys().filter(func(i): return str(layout.panels[i].dock) == side)
+	ids.sort_custom(func(a, b) -> bool: return int(layout.panels[a].order) < int(layout.panels[b].order))
+	var at := ids.find(id)
+	var to := clampi(at + by, 0, ids.size() - 1)
+	ids.remove_at(at)
+	ids.insert(to, id)
+	for i in ids.size():
+		layout.panels[ids[i]].order = i
+	_arrange()
+	_save_layout()
+
+
+## Moves a panel to the bottom of the other dock.
+func swap_panel(id: String) -> void:
+	var to := "right" if str(layout.panels[id].dock) == "left" else "left"
+	layout.panels[id].dock = to
+	layout.panels[id].order = 99
+	layout.panels[id].hidden = false
+	_arrange()
+	_save_layout()
+
+
+## Shows or hides a panel (WINDOW menu; a panel's X hides it).
+func show_panel(id: String, on: bool) -> void:
+	layout.panels[id].hidden = not on
+	_arrange()
+	_save_layout()
+
+
+## A panel's foot dragged `dy` px: it takes height from the panel below it (or gives it).
+func _resize_panel(id: String, dy: float) -> void:
+	var dp: DockPanel = panels[id]
+	var dock := dp.get_parent() as Control
+	if dock == null or dock.size.y < 1.0:
+		return
+	var total := 0.0
+	for c in dock.get_children():
+		if c is DockPanel and (c as DockPanel).visible and not (c as DockPanel).collapsed:
+			total += (c as DockPanel).ratio
+	var step := dy / dock.size.y * total
+	dp.ratio += step
+	layout.panels[id].ratio = dp.ratio
+	var below: DockPanel = null
+	for c in dock.get_children().slice(dp.get_index() + 1):
+		if c is DockPanel and (c as DockPanel).visible and not (c as DockPanel).collapsed:
+			below = c
+			break
+	if below:
+		below.ratio -= step
+		layout.panels[below.id].ratio = below.ratio
+	_save_layout.call_deferred()
+
+
+## Sets the console's text size (WINDOW menu): 1 normal, down to ConsoleLayout's smallest.
+func set_text_size(f: float) -> void:
+	layout.text = f
+	_top_box.factor = f
+	for side: String in _dock_boxes:
+		(_dock_boxes[side] as ScaledBox).factor = f
+	_mark_window_menu()
+	_save_layout()
+
+
+## Back to the layout the console comes with.
+func reset_layout() -> void:
+	layout = ConsoleLayout.defaults()
+	_outer.split_offset = 0
+	_inner.split_offset = 0
+	set_text_size(1.0)
+	_arrange()
+	_save_layout()
+
+
+func _save_layout() -> void:
+	ConsoleLayout.save_layout(layout)
+
+
+## The WINDOW menu, as in Photoshop: tick a panel to show it, the text sizes, reset.
+func _window_menu() -> MenuButton:
+	var b := _menu_button("WINDOW", 17)
+	b.name = "WindowMenu"
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	b.clip_text = false
+	b.tooltip_text = "Show or hide panels, text size, reset the layout"
+	var pop := b.get_popup()
+	pop.hide_on_checkable_item_selection = false
+	var ids: Array = ConsoleLayout.PANELS.keys()
+	for i in ids.size():
+		pop.add_check_item(str(ConsoleLayout.PANELS[ids[i]].title).capitalize(), i)
+	pop.add_separator("Text size")
+	for j in ConsoleLayout.TEXT_SIZES.size():
+		pop.add_radio_check_item(str(ConsoleLayout.TEXT_SIZES[j][0]), 100 + j)
+	pop.add_separator()
+	pop.add_item("Reset layout", 200)
+	pop.id_pressed.connect(func(id: int) -> void:
+		if id < 100:
+			show_panel(ids[id], bool(layout.panels[ids[id]].hidden))
+		elif id < 200:
+			set_text_size(float(ConsoleLayout.TEXT_SIZES[id - 100][1]))
+		else:
+			reset_layout.call_deferred())
+	_window = b
+	return b
+
+
+func _mark_window_menu() -> void:
+	if _window == null or not is_instance_valid(_window):
+		return
+	var pop := _window.get_popup()
+	var ids: Array = ConsoleLayout.PANELS.keys()
+	for i in ids.size():
+		pop.set_item_checked(pop.get_item_index(i), not bool(layout.panels[ids[i]].hidden))
+	for j in ConsoleLayout.TEXT_SIZES.size():
+		pop.set_item_checked(pop.get_item_index(100 + j), is_equal_approx(float(layout.text), float(ConsoleLayout.TEXT_SIZES[j][1])))
 
 
 func _fill_palette() -> void:
-	for c in _palette.get_children():
-		_palette.remove_child(c)
-		c.queue_free()
+	for sec: String in _sections:
+		for c in (_sections[sec] as Control).get_children():
+			(_sections[sec] as Control).remove_child(c)
+			c.queue_free()
 	_tool_buttons = {}
 	_door_buttons = {}
+	_palette = _sections.contract
 	_fill_orders()
-	_palette.add_child(T.label("TOOLS", "display_bold", 20, T.TEXT))
+	_palette = _sections.tools
 	var tools := HBoxContainer.new()
 	for spec in [["select", "SELECT"], ["door", "DOOR"]]:
 		var b := T.button(spec[1], false, 16)
@@ -297,6 +521,7 @@ func _fill_palette() -> void:
 		_door_buttons[k] = b
 		kinds.add_child(b)
 	_palette.add_child(kinds)
+	_palette = _sections.hull
 	_palette.add_child(T.label("HULL SHAPE  (drag a corner, or a side for a new corner)", "display_medium", 15, T.DIM))
 	var shape := HBoxContainer.new()
 	for spec in [["hull", "DRAW HULL", func() -> void: plan.set_tool("hull")],
@@ -310,6 +535,7 @@ func _fill_palette() -> void:
 			_tool_buttons["hull"] = b
 		shape.add_child(b)
 	_palette.add_child(shape)
+	_palette = _sections.tools
 	_palette.add_child(T.label("STRUCTURE  (drag end to end; drag an end to move it)", "display_medium", 15, T.DIM))
 	var frame := HBoxContainer.new()
 	for spec in [["wall", "INNER WALL"], ["beam", "BEAM"]]:
@@ -320,8 +546,10 @@ func _fill_palette() -> void:
 		_tool_buttons[spec[0]] = b
 		frame.add_child(b)
 	_palette.add_child(frame)
+	_palette = _sections.rooms
 	_palette.add_child(T.label("ROOMS  (pick one, then drag out on the grid or click)", "display_medium", 15, T.DIM))
 	_palette.add_child(_room_dropdown())
+	_palette = _sections.modules
 	_palette.add_child(T.label("MODULES  (pick up, click on a plan to drop)", "display_medium", 15, T.DIM))
 	var mods := bus.library.modules()
 	if mods.is_empty():
@@ -342,6 +570,7 @@ func _fill_palette() -> void:
 		del_b.pressed.connect(bus.library.remove_module.bind(str(m.id)))
 		row.add_child(del_b)
 		_palette.add_child(row)
+	_palette = _sections.tools
 	_palette.add_child(T.label("WIRES AND PIPES  (click points, double-click ends)", "display_medium", 15, T.DIM))
 	for kind: String in DesignServices.KINDS:
 		var spec: Dictionary = DesignServices.KINDS[kind]
@@ -357,6 +586,7 @@ func _fill_palette() -> void:
 		auto_b.pressed.connect(route_all.bind(kind))
 		row.add_child(auto_b)
 		_palette.add_child(row)
+	_palette = _sections.hull
 	_palette.add_child(T.label("BUILD SPEC  (click to swap, cost updates)", "display_medium", 15, T.DIM))
 	for kind: String in ["frame", "spacing", "hull", "inner"]:
 		var b := T.button(_structure_text(kind), false, 15)
@@ -370,6 +600,7 @@ func _fill_palette() -> void:
 					kind: DesignStructure.next_choice(kind, rec.structure.get(kind))}}})
 			b.text = _structure_text(kind))
 		_palette.add_child(b)
+	_palette = _sections.components
 	_fill_components()
 	_mark_tools()
 
@@ -991,7 +1222,7 @@ func _mark_tools() -> void:
 func _holo_panel() -> Control:
 	var wrap := PanelContainer.new()
 	wrap.add_theme_stylebox_override("panel", T.box(Color(0.01, 0.03, 0.05), T.EDGE, 2, 4.0))
-	wrap.custom_minimum_size.y = 380
+	wrap.custom_minimum_size.y = 120
 	var col := VBoxContainer.new()
 	wrap.add_child(col)
 	var svc := SubViewportContainer.new()

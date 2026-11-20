@@ -26,6 +26,9 @@ const WALL_REACH := 12.0
 
 ## The mouse claim while the console is open (HudSlots).
 const POINTER := "design.console"
+const FULL_POINTER := "design.fullscreen"
+## Pixels per metre a panel is drawn at full screen (its text a little bigger than on the wall).
+const FULL_PX_PER_M := 140.0
 ## The mouse claim while walking inside the design.
 const WALK_POINTER := "design.walk"
 
@@ -64,6 +67,9 @@ var _camera_before: Camera3D
 ## Where N is in LAYER_VIEWS, and the layers as they were before the first press.
 var layer_view := 0
 var _layers_as_set: Dictionary = {}
+## A wall panel shown full screen (F at a wall), or null; and which wall and panel it is.
+var fullscreen: Control
+var full_from := {}
 
 
 func setup(design_bus: DesignBus, wall_planes: Array[Dictionary]) -> void:
@@ -174,6 +180,7 @@ func close_walk() -> void:
 
 func _exit_tree() -> void:
 	HudSlots.release_pointer(POINTER)
+	HudSlots.release_pointer(FULL_POINTER)
 	HudSlots.release_pointer(WALK_POINTER)
 
 
@@ -277,7 +284,99 @@ func layer_view_name() -> String:
 	return view.capitalize()
 
 
+## The wall the view (or free mouse) is on, "" for none.
+func aimed_wall() -> String:
+	var cur := TouchScreen.current()
+	for id: String in walls:
+		if walls[id] == cur:
+			return id
+	return ""
+
+
+## F at a wall (beenster, 20 Nov: "press F ... go full screen, like at the holotable"): the
+## panel under the pointer fills the screen, with the free mouse, its < and > working, and
+## anything it changes shared as on the wall. F or Esc puts it back.
+func open_fullscreen(wall_id: String, panel := -1) -> bool:
+	if fullscreen or walk or is_console_open() or not boards.has(wall_id):
+		return false
+	var board: WallBoard = boards[wall_id]
+	var i := panel
+	if i < 0:
+		i = board.panel_at((walls[wall_id] as TouchScreen).pointer_px)
+	if i < 0:
+		i = 0
+		for k in board.panels.size():
+			if float(board.panels[k].share) > float(board.panels[i].share):
+				i = k
+	var page := PanelContainer.new()
+	page.name = "WallFullScreen"
+	page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	page.add_theme_stylebox_override("panel", WallBoard.T.box(Color(0.02, 0.05, 0.09, 0.97), WallBoard.T.EDGE, 0, 0.0))
+	var col := VBoxContainer.new()
+	page.add_child(col)
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 8)
+	col.add_child(bar)
+	bar.add_child(WallBoard.T.label("WALL SCREEN, FULL", "display_bold", 18, WallBoard.T.ORANGE))
+	var tip := WallBoard.T.label("%s or Esc to go back" % Keys.prompt(Keys.INTERACT), "body", 15, WallBoard.T.DIM)
+	tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(tip)
+	var back := WallBoard.T.button("BACK", false, 16)
+	back.name = "Back"
+	back.pressed.connect(close_fullscreen)
+	bar.add_child(back)
+	var full := WallBoard.new()
+	full.local = true
+	full.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	full.setup(bus, wall_id + "_full", [[str(board.panels[i].view), 1.0]], FULL_PX_PER_M)
+	col.add_child(full)
+	var layer := CanvasLayer.new()
+	layer.name = "FullScreenLayer"
+	layer.layer = 6
+	layer.add_child(page)
+	add_child(layer)
+	fullscreen = page
+	full_from = {"wall": wall_id, "panel": i, "board": full}
+	HudSlots.claim_pointer(FULL_POINTER)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	return true
+
+
+## Back from full screen to the room; the wall panel takes the view it was left on.
+func close_fullscreen() -> void:
+	if fullscreen == null:
+		return
+	var full: WallBoard = full_from.get("board")
+	if full and boards.has(str(full_from.wall)):
+		var view := str(full.panels[0].view)
+		var board: WallBoard = boards[str(full_from.wall)]
+		var i := int(full_from.panel)
+		if i < board.panels.size() and str(board.panels[i].view) != view:
+			board.set_view(i, view)
+	var layer := fullscreen.get_parent()
+	layer.queue_free()
+	fullscreen = null
+	full_from = {}
+	HudSlots.release_pointer(FULL_POINTER)
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func is_fullscreen() -> bool:
+	return fullscreen != null
+
+
 func _input(event: InputEvent) -> void:
+	if fullscreen and event.is_pressed() and not event.is_echo() and (event.is_action_pressed(Keys.INTERACT)
+			or (event is InputEventKey and (event as InputEventKey).physical_keycode == KEY_ESCAPE)):
+		close_fullscreen()
+		get_viewport().set_input_as_handled()
+		return
+	if not fullscreen and not walk and not is_console_open() and event.is_action_pressed(Keys.INTERACT) \
+			and not event.is_echo() and aimed_wall() != "":
+		if open_fullscreen(aimed_wall()):
+			get_viewport().set_input_as_handled()
+			return
 	if walk and event is InputEventKey and event.pressed and not event.echo \
 			and event.physical_keycode == KEY_ESCAPE:
 		close_walk()
@@ -329,7 +428,8 @@ func _add_wall(w: Dictionary) -> void:
 	var screen := TouchScreen.new(board, px, sz)
 	screen.name = "Wall_" + str(w.id)
 	screen.reach = WALL_REACH
-	screen.hint = {"title": "Design wall", "keys": [["LMB", "Press < or > to change a panel"]]}
+	screen.hint = {"title": "Design wall", "keys": [["LMB", "Press < or > to change a panel"],
+			[Keys.prompt(Keys.INTERACT), "Full screen"]]}
 	screen.transform = (w.transform as Transform3D) * Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0, -0.08))
 	add_child(screen)
 	walls[w.id] = screen

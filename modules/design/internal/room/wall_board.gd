@@ -25,6 +25,8 @@ var wall_id := ""
 var px_per_m := 150.0
 ## One entry per panel: {view, share (of the wall's width)}.
 var panels: Array[Dictionary] = []
+## A board of its own (the full-screen view of one panel): its views are not shared.
+var local := false
 var _row: HBoxContainer
 var _slots: Array[Control] = []
 
@@ -42,7 +44,7 @@ func setup(design_bus: DesignBus, id: String, layout: Array, density: float) -> 
 	for p in layout:
 		# A panel another module offers starts on the parts list while that module is off.
 		var view := str(p[0])
-		var shared: Variant = bus.screens.get(_key(panels.size()))
+		var shared: Variant = null if local else bus.screens.get(_key(panels.size()))
 		if shared is String and offered.has(str(shared)):
 			view = str(shared)
 		panels.append({"view": view if offered.has(view) else "data", "share": float(p[1])})
@@ -65,6 +67,8 @@ func _key(i: int) -> String:
 
 ## A crewmate (or this player) changed a panel: show it here too.
 func _on_screen_changed(key: String, value: Variant) -> void:
+	if local:
+		return
 	if not key.begins_with("wall:%s:" % wall_id):
 		return
 	var i := int(key.get_slice(":", 2))
@@ -115,7 +119,8 @@ func step(i: int, by: int) -> void:
 
 ## Shows `view` on panel `i`, for everyone in the room.
 func set_view(i: int, view: String) -> void:
-	bus.set_screen(_key(i), view)
+	if not local:
+		bus.set_screen(_key(i), view)
 	if str(panels[i].view) != view:
 		panels[i].view = view
 		_fill(i)
@@ -224,6 +229,14 @@ func _modules_list(font: int) -> Control:
 
 static func _m(v: float) -> String:
 	return ("%d" % int(v)) if is_equal_approx(v, roundf(v)) else ("%.1f" % v)
+
+
+## The panel under a point on the board (its pixels), or -1.
+func panel_at(px: Vector2) -> int:
+	for i in _slots.size():
+		if _slots[i].get_global_rect().has_point(px):
+			return i
+	return -1
 
 
 func _refresh_titles() -> void:
