@@ -79,6 +79,13 @@ const DOCKS: Array[Vector3] = [Vector3(-20, -13.5, -70.3), Vector3(20, -13.5, -7
 		Vector3(0, -13.5, -70.3), Vector3(0, 7.5, -70.3), Vector3(-20, 7.5, -70.3), Vector3(20, 7.5, -70.3)]
 ## The most bots the berth has docks for.
 const MAX_BOTS := 10
+## DOCKS under this height (m) are the low row.
+const BERTH_DOCK_SPLIT := -3.0
+
+## The docks where they stand now: DOCKS moved onto the build berth's ribs at its tier
+## (`set_berth_tier`; 20 Nov playtest: "these recharge bays should be mounted to the frame of
+## the berth": a bigger berth's ribs fall elsewhere, and C5 hung in space).
+var docks: Array[Vector3] = DOCKS.duplicate()
 
 ## Seconds a fitter takes to ease a part into place, a weld per joint, a rivet (pressure, then
 ## the punch).
@@ -287,7 +294,7 @@ func _make_worker(role: String) -> Dictionary:
 
 func _add_dock(i: int) -> void:
 	var dock := WorkerLook.charge_dock(i + 1)
-	dock.position = DOCKS[i]
+	dock.position = docks[i]
 	charge_docks.add_child(dock)
 
 
@@ -1077,7 +1084,44 @@ func _work(w: Dictionary, delta: float) -> void:
 
 ## Where bot `i` hangs on its dock (station space).
 func dock_spot(i: int) -> Vector3:
-	return DOCKS[i] + Vector3(0, 0, -WorkerLook.DOCK_OUT)
+	return docks[i] + Vector3(0, 0, -WorkerLook.DOCK_OUT)
+
+
+## The docks for a build berth of `tier` (YardLayout): each of DOCKS on the rib that stands where
+## its column does (the five ribs nearest the berth's middle, west to east, for DOCKS' five
+## columns), the low row 4.5 m over the frame's bottom and the high row 4.5 m under its top, on
+## the rib's face. Tier 1 is DOCKS itself.
+static func docks_for(tier: int) -> Array[Vector3]:
+	var box: AABB = YardLayout.berths(tier)[0].box
+	var ribs := int(box.size.x / 10.0)
+	var xs: Array[float] = []
+	for i in range(1, ribs):
+		xs.append(box.position.x + box.size.x * float(i) / float(ribs))
+	var mid := box.get_center().x
+	xs.sort_custom(func(a: float, b: float) -> bool:
+		return absf(a - mid) < absf(b - mid) - 0.01 or (absf(absf(a - mid) - absf(b - mid)) <= 0.01 and a < b))
+	var cols: Array[float] = xs.slice(0, 5)
+	cols.sort()
+	var low := box.position.y + 4.5
+	var high := box.end.y - 4.5
+	var out: Array[Vector3] = []
+	for d: Vector3 in DOCKS:
+		var col := clampi(int(roundf((d.x + 20.0) / 10.0)), 0, cols.size() - 1)
+		out.append(Vector3(cols[col], low if d.y < BERTH_DOCK_SPLIT else high, box.end.z - 0.3))
+	return out
+
+
+## The berth grew or shrank a tier: the docks move to its ribs, and a bot charging on one goes
+## with it.
+func set_berth_tier(tier: int) -> void:
+	docks = docks_for(tier)
+	if charge_docks == null:
+		return
+	for i in charge_docks.get_child_count():
+		(charge_docks.get_child(i) as Node3D).position = docks[i]
+	for w: Dictionary in workers:
+		if _docked(w):
+			(w.node as Node3D).position = dock_spot(int(w.index))
 
 
 ## A bot with its job done and nothing else on it goes back to its dock to top up; one run low

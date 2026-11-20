@@ -8,6 +8,13 @@ const Look := preload("res://modules/yard/internal/yard_stock_look.gd")
 const PANEL := "SolarPanel"
 
 
+## Half an array's width across its `cols` (m, from its middle to the outer panel's edge), with
+## `gap` between panels as in build().
+static func half_width(cols: int, gap := 0.12) -> float:
+	var size := VsParts.size(PANEL)
+	return (cols - 1) * 0.5 * (size.x + gap) + size.x * 0.5
+
+
 ## Lays `cols` x `rows` panels under `parent`: the array's middle at `at`, turned by `basis`
 ## (its panels flat in its x-z plane, cells up +Y), the panels' long side along z, `gap` (m)
 ## between them. Returns the array's node.
