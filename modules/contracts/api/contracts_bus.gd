@@ -136,6 +136,12 @@ var _cycle := 0
 var _ships: Dictionary = {}
 ## Extra trial rows from other modules (the build's workmanship): id -> Callable(contract_id) -> Array.
 var _trial_rows: Dictionary = {}
+## Other modules' say on ship orders (Wave 8, the company module): extra orders on the board
+## (repeat customers), why one can't be signed (the yard's rank), and the price it is signed at
+## (matching a rival yard's bid). id -> Callable.
+var _order_sources: Dictionary = {}
+var _sign_checks: Dictionary = {}
+var _price_rules: Dictionary = {}
 var _generator := Generator.new()
 
 
@@ -436,6 +442,11 @@ func ship_orders() -> Array[Dictionary]:
 				if str(ship_contract_for(str(o.id)).get("state", "")) != "delivered":
 					out.append(o)
 		out.append_array(ShipOrders.for_cycle(_cycle, ShipOrders.PER_CYCLE, true, level_of))
+		for source: Callable in _order_sources.values():
+			if source.is_valid():
+				for o: Variant in source.call():
+					if o is Dictionary and str(ship_contract_for(str(o.get("id", ""))).get("state", "")) == "":
+						out.append(o)
 		var have := berth_tier()
 		for o: Dictionary in out:
 			o["berth_short"] = have > 0 and int(o.get("berth", 1)) > have
@@ -493,6 +504,11 @@ func ship_sign_problem(order: Dictionary) -> String:
 	var have := berth_tier()
 	if have > 0 and int(order.get("berth", 1)) > have:
 		return "she needs the %s: the yard's berths are too small" % ShipOrders.berth_name(int(order.berth)).to_lower()
+	for check: Callable in _sign_checks.values():
+		if check.is_valid():
+			var why := str(check.call(order))
+			if why != "":
+				return why
 	return ""
 
 
@@ -531,6 +547,7 @@ func sign_ship(order: Dictionary, design_id: String, design_name: String, cost: 
 	if ship_sign_problem(order) != "":
 		return ""
 	var q := ShipOrders.quote(order, cost)
+	q.price = sign_price(order, cost)
 	var start := today()
 	var due := start + maxi(1, int(order.get("days", 30)))
 	var id := SHIP_PREFIX + str(order.id)
@@ -589,6 +606,30 @@ func is_build_tracked(contract_id: String) -> bool:
 ## share, clause) to every ship delivered: provider(contract_id) -> Array. Called on the host.
 func register_trial_rows(id: String, provider: Callable) -> void:
 	_trial_rows[id] = provider
+
+
+## `source() -> Array` of ship orders put on the board beside the cycle's own (repeat customers).
+func register_order_source(id: String, source: Callable) -> void:
+	_order_sources[id] = source
+
+
+## `check(order) -> String`: why `order` can't be signed ("" if it can).
+func register_sign_check(id: String, check: Callable) -> void:
+	_sign_checks[id] = check
+
+
+## `rule(order, price) -> int`: the price BSX signs `order` at, given ShipOrders.quote's.
+func register_price_rule(id: String, rule: Callable) -> void:
+	_price_rules[id] = rule
+
+
+## The price `order` would be signed at for parts costing `cost` (ShipOrders.quote, then the rules).
+func sign_price(order: Dictionary, cost: int) -> int:
+	var price := int(ShipOrders.quote(order, cost).price)
+	for rule: Callable in _price_rules.values():
+		if rule.is_valid():
+			price = int(rule.call(order, price))
+	return price
 
 
 ## The stand-in for the build: stages (not the delivery) come in on their expected day.
