@@ -259,7 +259,7 @@ class Runner:
 		console._open_groups = {"power": true, "galley": true}
 		console.set_pick(5, "H")
 		await _frames(10)
-		var head := console.find_child("Group_power", true, false) as Control
+		var head := console.find_child("CompGroups", true, false) as Control
 		var scroll: Node = head.get_parent()
 		while scroll and not scroll is ScrollContainer:
 			scroll = scroll.get_parent()
