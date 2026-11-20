@@ -12,6 +12,8 @@ extends Node
 ## `text` is plain lines: "# A heading", "- a bullet", "> a tip", anything else a paragraph;
 ## {key:<action>} is replaced by the key it is on now ("[F]"). Orders: the built-in pages are
 ## 10, 20 ... 100; pick one between to sit beside the page it belongs with.
+## A page can be a control of its own instead (add_page: make(px_per_m) -> Control), as the
+## size x class matrix of every component is ("matrix", read from the design catalogue).
 ##
 ## Features (Flags): "help" (the module), "help.wrist" (the wrist tab).
 
@@ -29,14 +31,22 @@ const WRIST_PX := 150.0
 const KEYS_TOPIC := "keys"
 const HelpScreen := preload("res://modules/help/internal/help_screen.gd")
 const Guide := preload("res://modules/help/internal/guide.gd")
+const CapabilityMatrix := preload("res://modules/help/internal/capability_matrix.gd")
+## The size x class matrix page.
+const MATRIX_TOPIC := "matrix"
+const MATRIX_TEXT := """Every component that comes in sizes, at sizes 1 to 8 and grades R S L H Q P: power made, thrust, jump, damage, defence, range, cargo and the power each one uses. Click a reactor, generator or battery to see everything it can power."""
 
-## id -> {id, title, text, order}
+## id -> {id, title, text, order[, make]}
 var _topics: Dictionary = {}
 
 
 func register_module() -> void:
 	for t: Dictionary in Guide.TOPICS:
 		add_topic(str(t.id), str(t.title), str(t.text), int(t.order))
+	var design := Modules.bus("design") as DesignBus
+	if design:
+		add_page(MATRIX_TOPIC, "Sizes and classes", MATRIX_TEXT,
+				func(px: float) -> Control: return make_matrix(design.catalog, px), 45)
 	if Flags.is_on(WRIST_FLAG):
 		HudSlots.register_holo_channel(HOLO_CHANNEL, HOLO_LABEL,
 				func(_glass: bool) -> Control: return make_screen(WRIST_PX), HOLO_ORDER)
@@ -50,6 +60,19 @@ func unregister_module() -> void:
 func add_topic(id: String, title: String, text: String, order: int = 50) -> void:
 	_topics[id] = {"id": id, "title": title, "text": text, "order": order}
 	topics_changed.emit()
+
+
+## Adds a page that is a control of its own: `make(px_per_m) -> Control` builds it each time
+## it is shown; `text` is what search reads and what shows above it.
+func add_page(id: String, title: String, text: String, make: Callable, order: int = 50) -> void:
+	_topics[id] = {"id": id, "title": title, "text": text, "order": order, "make": make}
+	topics_changed.emit()
+
+
+func make_matrix(catalog: DesignCatalog, px_per_m: float) -> Control:
+	var m := CapabilityMatrix.new()
+	m.setup(catalog, px_per_m)
+	return m
 
 
 func remove_topic(id: String) -> void:

@@ -42,4 +42,72 @@ func run_tests() -> void:
 	await frames(1)
 	check(list.get_child_count() == 1 and str(screen.get("current")) == "yard", "searching narrows the list and shows the match")
 	bus.remove_topic("_test.page")
+	screen.call("set_query", "")
+	await _test_matrix(bus, screen)
 	screen.queue_free()
+
+
+## The size x class matrix: a page of its own; every graded type in every size; a reactor
+## clicked becomes the supply and lights what it can run (and only that).
+func _test_matrix(bus: HelpBus, screen: Control) -> void:
+	check(not bus.topic(HelpBus.MATRIX_TOPIC).is_empty(), "the size and class matrix is a help page")
+	check(bus.search("reactor generator").any(func(t: Dictionary) -> bool: return t.id == HelpBus.MATRIX_TOPIC), "search finds the matrix")
+	screen.call("show_topic", HelpBus.MATRIX_TOPIC)
+	await frames(2)
+	var m := screen.find_child("Matrix", true, false) as Control
+	check(m != null, "the matrix page shows its matrix")
+	if m == null:
+		return
+	var cat := (Modules.bus("design") as DesignBus).catalog
+	var reactor := cat.part("reactor_small")
+	check(reactor != null and reactor.power > 0.0, "the small reactor makes power")
+	if reactor == null:
+		return
+	var span := DesignGrades.sizes(reactor)
+	var cells := 0
+	for s in range(span[0], span[1] + 1):
+		if m.call("cell", DesignGrades.variant_id(reactor, s, "S")) != null:
+			cells += 1
+	check(cells == span[1] - span[0] + 1, "the reactor has a cell for every size it comes in: %d" % cells)
+	var small_id := DesignGrades.variant_id(reactor, span[0], "S")
+	(m.call("cell", small_id) as Button).pressed.emit()
+	await frames(1)
+	check(str(m.get("supply_id")) == small_id, "clicking a reactor makes it the supply")
+	check((m.find_child("Supply", true, false) as Label).text.contains("runs"), "the supply bar says what it runs")
+	# Every consumer in another group is green when the reactor makes its draw, red when not.
+	m.call("set_category", "life")
+	await frames(1)
+	var supply := cat.part(small_id)
+	var right := 0
+	var wrong := 0
+	var green := 0
+	for base: DesignPartType in m.get("data").call("types_in", "life"):
+		for s in range(1, 9):
+			var v: DesignPartType = m.get("data").call("variant", base, s, "S")
+			if v == null or v.power >= 0.0:
+				continue
+			var want := "run" if -v.power <= supply.power else "no"
+			if want == "run":
+				green += 1
+			if str(m.call("cell_state", v)) == want and m.call("cell", v.id) != null:
+				right += 1
+			else:
+				wrong += 1
+	check(wrong == 0 and right > 0, "every power user is lit green or red by the supply: %d right, %d wrong" % [right, wrong])
+	check(green > 0, "the small reactor runs some life support")
+	var group := m.find_child("Group_life", true, false) as Button
+	check(group != null and group.text.contains("/"), "each group counts what the supply runs")
+	m.call("set_category", "power")
+	m.call("set_grade", "P")
+	await frames(1)
+	check(m.call("cell", DesignGrades.variant_id(reactor, span[0], "P")) != null, "another grade shows that grade's cells")
+	var data: RefCounted = m.get("data")
+	var base_p := cat.part(DesignGrades.variant_id(reactor, span[0], "S"))
+	var prec := cat.part(DesignGrades.variant_id(reactor, span[0], "P"))
+	check(prec.power > base_p.power, "a Precision reactor makes more than a Standard one of its size")
+	var cov_s: Dictionary = data.call("coverage", base_p)
+	var cov_p: Dictionary = data.call("coverage", prec)
+	check(int(cov_p.ok) >= int(cov_s.ok) and int(cov_s.total) > 0, "a stronger supply runs at least as much: %d vs %d of %d" % [cov_p.ok, cov_s.ok, cov_s.total])
+	(m.find_child("ClearSupply", true, false) as Button).pressed.emit()
+	await frames(1)
+	check(str(m.get("supply_id")) == "", "the supply can be cleared")

@@ -21,6 +21,10 @@ var _list: VBoxContainer
 var _page: VBoxContainer
 var _scroll: ScrollContainer
 var _search: LineEdit
+## A page that is a control of its own, kept while it is the page shown (so a search typed
+## meanwhile doesn't reset it).
+var _custom: Control
+var _custom_id := ""
 
 
 func setup(help_bus: HelpBus, density: float) -> void:
@@ -120,11 +124,23 @@ func _fill_list(shown: Array[Dictionary]) -> void:
 func _fill_page() -> void:
 	for c in _page.get_children():
 		_page.remove_child(c)
-		c.queue_free()
+		if c != _custom:
+			c.queue_free()
 	var t := bus.topic(current)
+	if _custom and (_custom_id != current or t.is_empty()):
+		_custom.queue_free()
+		_custom = null
+		_custom_id = ""
 	if t.is_empty():
 		return
 	_page.add_child(_label(str(t.title).to_upper(), "display_bold", fs + 12, T.TEXT, true))
+	if t.has("make"):
+		if _custom == null:
+			_custom = (t.make as Callable).call(px_per_m) as Control
+			_custom_id = current
+		if _custom:
+			_page.add_child(_custom)
+		return
 	for line in bus.page_text(current).split("\n"):
 		var s := line.strip_edges()
 		if s == "":

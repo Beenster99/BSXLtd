@@ -40,6 +40,7 @@ const TOPICS := [
 - J puts what the hologram shows up on the wall you are facing.
 - Every wall is a set of screens. Step a panel with its < and > (plans, elevations, parts list, market, stock, accounts...).
 - WALK INSIDE takes you through the design at full size. OPERATE plays every door, ramp and leg; SET HER DOWN stands her on a pad.
+- Help's Sizes and classes page compares every component at every size and grade, and shows what each reactor can power.
 > Everyone in the room sees the same design and each other's edits."""},
 	{"id": "contracts", "order": 50, "title": "Contracts: order to payment", "text": """Clients post ship orders: a kind of ship, a size, demands (crew, cargo, range, speed, defence...) and clauses (rooms or parts she must have).
 # Picking an order
