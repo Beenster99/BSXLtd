@@ -108,7 +108,7 @@ func register_module() -> void:
 	if not Flags.is_on(STATION):
 		return
 	Router.register_scene(SCENE, SCENE_PATH)
-	Router.set_loading_title(SCENE, "Orbital yard")
+	Router.set_loading_title(SCENE, "Deep space yard")
 	# The new game starts in the orbital yard, ahead of the old yard by the sea (priority 10).
 	Menu.set_start(SCENE, 20)
 	_hook_net.call_deferred()

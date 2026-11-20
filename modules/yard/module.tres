@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1")
 id = "yard"
-display_name = "Orbital yard"
+display_name = "Deep space yard"
 version = "0.1.0"
 depends_on = PackedStringArray("shared_components")
 flag = "yard"

@@ -96,7 +96,7 @@ func build(kit, hull: Material, wall: Material, dark: Material, orange: Material
 	# Outside: the hull under the hall, the name over the open face, haulers' berths at goods in.
 	k.box(Vector3(X1 - X0, 0.4, Z_BACK - Z_YARD), Vector3((X0 + X1) * 0.5, -0.5, (Z_YARD + Z_BACK) * 0.5), dark, false)
 	k.sign("BSX LTD", Vector3(40.0, HEIGHT - 1.2, Z_YARD - 0.07), Vector3.FORWARD, 0.03, Kit.ORANGE, 96)
-	k.sign("ORBITAL YARD  ·  STORES", Vector3(68.0, HEIGHT - 1.2, Z_YARD - 0.07), Vector3.FORWARD, 0.014, Kit.HULL, 96)
+	k.sign("DEEP SPACE YARD  ·  STORES", Vector3(68.0, HEIGHT - 1.2, Z_YARD - 0.07), Vector3.FORWARD, 0.014, Kit.HULL, 96)
 	k.sign("LEVEL 1", Vector3(22.0, DECK_Y - 1.2, Z_YARD - 0.07), Vector3.FORWARD, 0.012, Kit.HULL, 96)
 	k.sign("LEVEL 2", Vector3(22.0, HEIGHT - 1.2, Z_YARD - 0.07), Vector3.FORWARD, 0.012, Kit.HULL, 96)
 	for p: Vector3 in YardRackStore.HAULER_BERTHS:
