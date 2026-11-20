@@ -3,7 +3,7 @@ extends Node
 ## The refurbishing bots' module bus (Modules.bus("refurb")), beenster 19 Nov: "refurbishing
 ## bots, as some of our goods suppliers will provide second hand parts". The refurb works, an
 ## annex of the stores hall (0.4.4 playtest: "move refurbishing unit to an annex of the main
-## hall"; YardLayout.ROOMS.refurb), where TartanCo RF-2 refurbishers take a second-hand part
+## hall"; YardLayout.ROOMS.refurb), where BSX's own RF-2 refurbishers take a second-hand part
 ## through inspect, strip, clean, rebuild and test, and certify it at Standard grade, the same
 ## size. Big parts (up to RefurbTuning.heavy_max) go under the annex's crane onto the heavy
 ## stand, worked by a team. Its state is a RefurbWorks stepped on the yard's shared clock.

@@ -1,6 +1,6 @@
 extends ModuleTest
 ## Refurbishing bots (beenster, 19 Nov; 0.4.4 playtest): second-hand parts come in at Reclaimed
-## grade at goods in, the works' cart brings them into the annex, a TartanCo RF-2 takes a small
+## grade at goods in, the works' cart brings them into the annex, a BSX RF-2 takes a small
 ## one through inspect, strip, clean, rebuild and test on its cradle, and a big one goes under the
 ## crane onto the heavy stand where a team works it. A part that passes leaves certified at
 ## Standard, the same size, for a cost; a cracked one is scrapped (a big one cut up first). Idle
@@ -194,6 +194,32 @@ func _shop() -> void:
 	check(works.lots_at(RefurbWorks.AT_CRADLE).size() == 1, "the part is on a cradle (%s)" % works.fingerprint())
 	check(String(shop.call("board_text")).contains("REACTOR") or String(shop.call("board_text")).to_upper().contains("REACTOR"), "the board names it")
 	check((shop.get("bots") as Array).size() == works.bots.size(), "every refurbisher is drawn")
+	# The wall screen (the design room's layout) shows the part on its stand.
+	var board := shop.find_child("RefurbBoard", true, false)
+	check(board != null, "the works has its wall screen")
+	if board:
+		var said := ""
+		for l in board.find_children("*", "Label", true, false):
+			said += (l as Label).text + "\n"
+		check(said.to_upper().contains("REACTOR") and said.contains("R1") and said.contains("HEAVY"), "the wall screen lists each stand and the part on it")
+	# No signs or floor labels in the annex (0.4.5 playtest): only the drones' own stencils.
+	var signs := 0
+	for l in shop.find_children("*", "Label3D", true, false):
+		var on_bot := false
+		for b: Node in shop.get("bots"):
+			if b.is_ancestor_of(l):
+				on_bot = true
+		if not on_bot:
+			signs += 1
+	check(signs == 0, "no labels in the annex (%d)" % signs)
+	# BSX's drones, not TartanCo's.
+	var named := ""
+	for l in shop.find_children("*", "Label3D", true, false):
+		named += (l as Label3D).text
+	check(named.contains("BSX") and not named.to_upper().contains("TARTAN"), "the drones carry BSX's name")
+	# The pressure washer runs while a drone cleans.
+	var sprays := shop.find_children("Spray*", "", true, false)
+	check(sprays.size() == works.bots.size(), "each drone has its pressure washer")
 	var gfx := Modules.bus("graphics")
 	if gfx and gfx.has_method("zfight_scan"):
 		var found: Array = gfx.call("zfight_scan", shop)

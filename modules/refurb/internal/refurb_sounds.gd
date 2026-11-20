@@ -1,6 +1,6 @@
 extends RefCounted
 ## The refurb shop's sounds, all made here in code (never recordings): a loop per tool (the
-## scanner's soft warble, the nut runner's whirr, the grit blaster's hiss, the welder's crackle,
+## scanner's soft warble, the nut runner's whirr, the pressure washer's hiss, the welder's crackle,
 ## the test probe's hum, the plasma cutter's roar), the crane's motor, the cart's reversing beep,
 ## the pass chime, the fail buzz, the scrap clang and the thunk of a part set down. Built once; the
 ## noise comes from its own seeded generator (presentation only, never the shop's RNG).

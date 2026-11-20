@@ -4,7 +4,7 @@ extends RefCounted
 
 const SURFACE := preload("res://shared/void_salvage/shaders/salvage_surface.gdshader")
 
-## TartanCo's livery (the androids' maker builds the refurbishers too).
+## The works' paints (the drones carry BSX's own livery: RefurbBotLook).
 const PLATES := Color(0.8, 0.8, 0.78)
 const TRIM := Color(0.1, 0.1, 0.11)
 const OCHRE := Color(0.85, 0.6, 0.1)

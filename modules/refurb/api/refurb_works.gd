@@ -27,7 +27,7 @@ const STAGE_NAMES: PackedStringArray = ["INSPECT", "STRIP", "CLEAN", "REBUILD", 
 ## What each stage does, for the board and tips.
 const STAGE_BLURBS: PackedStringArray = [
 	"scanning for cracks and worn parts", "covers off, worn seals and bearings out",
-	"grit blasting the grime and corrosion off", "new seals, bearings and wiring, repairs welded",
+	"pressure washing the grime and corrosion off", "new seals, bearings and wiring, repairs welded",
 	"bench test under power", "cracked: cutting it up for the skip"]
 const STAGE_TOOLS: PackedStringArray = ["scanner", "nut_runner", "blaster", "welder", "probe", "cutter"]
 
