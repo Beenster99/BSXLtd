@@ -11,6 +11,10 @@ extends Node3D
 ## requests. Ship space is the blueprint's, centred on the berth.
 
 const GHOST_SHADER := preload("res://modules/build/internal/ghost.gdshader")
+const MARK_SHADER := preload("res://modules/build/internal/seam_mark.gdshader")
+## Longest hand weld (m): short enough that aiming anywhere on the chalk starts the arc (the
+## welder starts from the nearer end, within 7 cm of the aim).
+const MAX_WELD := 0.13
 ## How long the pieces take to float in (s), and how far out they come from (m, from the
 ## station side of the berth).
 const FLOAT_SECONDS := 2.4
@@ -44,6 +48,20 @@ var _to_plan: Dictionary = {}
 var _plan_wait := 0
 ## Joints made at landing that are not drawn yet, by job: they show when the job is done.
 var _unwelded: Dictionary = {}
+## The ghost's parts still to come, as [work-space box, to the part's own space, its own box]:
+## a seam they will stand over is not chalked (beenster, 0.4.7: "another weld inside the beam").
+var _blockers: Array = []
+var _blockers_for := ""
+## The stage being chalked: only its own parts still to come count as in the way (the frame is
+## welded before the skin goes over it).
+var _stage := ""
+## The bright outline round each fastening still to make: plan key -> node on the work.
+var _marks: Dictionary = {}
+var _mark_mat: ShaderMaterial
+## The holo of the stages after the one in hand, drawn fainter so it doesn't wash over the work
+## (beenster, 0.4.7: the welds got lost in the blue).
+var _faint_mat: ShaderMaterial
+var _faint_from := -1
 ## How far from a joint's own spot its chalk mark may be (m).
 const SPOT_REACH := 0.45
 
@@ -58,6 +76,10 @@ func setup(build_bus: Object, contract_id: String) -> void:
 	_next_mat = ShaderMaterial.new()
 	_next_mat.shader = GHOST_SHADER
 	_next_mat.set_shader_parameter("next", 1.0)
+	_faint_mat = ShaderMaterial.new()
+	_faint_mat.shader = GHOST_SHADER
+	_faint_mat.set_shader_parameter("strength", 0.012)
+	_faint_mat.set_shader_parameter("rim", 0.05)
 	ship = Node3D.new()
 	ship.name = "Ship"
 	add_child(ship)
@@ -98,6 +120,25 @@ func _exit_tree() -> void:
 	if ghost and is_instance_valid(ghost) and ghost.get_parent() == ship:
 		ship.remove_child(ghost)
 	HudSlots.clear_info(CARD)
+
+
+## The holo for ghost part `id`: faint when its stage comes after the one in hand.
+func _holo_mat(id: int) -> Material:
+	var st := BuildPlan.STAGE_ORDER.find(str(plan.jobs[int(plan.job_of.get(id, 0))].stage))
+	return _faint_mat if _faint_from >= 0 and st > _faint_from else _ghost_mat
+
+
+## Draws the stages after the one in hand faint, once each time the stage changes.
+func _fade_later() -> void:
+	var p: Dictionary = bus.call("progress", contract)
+	var now := BuildPlan.STAGE_ORDER.find(str(p.get("stage", ""))) if not p.is_empty() else -1
+	if now == _faint_from:
+		return
+	_faint_from = now
+	var model: PartModel = bp.get("model")
+	for id: int in model.parts:
+		if not real.has(id) and not _glowing.has(id):
+			_dress(id, _holo_mat(id))
 
 
 ## The ghost part `id` drawn in `mat`, its fitting's look too.
@@ -180,6 +221,7 @@ func _plan_waiting() -> void:
 			continue
 		if not real.has(c.part_a) or not real.has(c.part_b):
 			continue
+		_stage = str(plan.jobs[int(key.get_slice(":", 0))].stage)
 		var kind := BuildPlan.hand_kind(c.kind)
 		var weld := kind == ConnectionData.Kind.WELD
 		var spot := spot_for(c)
@@ -210,6 +252,72 @@ func _plan_waiting() -> void:
 		var n: Vector3 = spot[1]
 		plans[key] = work.call("plan", kind, real[c.part_a], real[c.part_b], at, n,
 				line[0] if weld else Vector3.ZERO, line[1] if weld else Vector2.ZERO)
+	_sync_marks()
+
+
+## A bright pulsing outline round every fastening still to make (beenster, 0.4.7: "the welds
+## don't really highlight"): a frame round a weld's seam, a ring round a rivet or bolt, drawn
+## over the holo so the blue never washes it out. The chalk, guide and bead show inside it.
+func _sync_marks() -> void:
+	for key: String in _marks.keys():
+		if not plans.has(key) or not is_instance_valid(_marks[key]):
+			if is_instance_valid(_marks[key]):
+				(_marks[key] as Node).queue_free()
+			_marks.erase(key)
+	if work == null:
+		return
+	if _mark_mat == null:
+		_mark_mat = ShaderMaterial.new()
+		_mark_mat.shader = MARK_SHADER
+		_mark_mat.render_priority = 10
+	for key: String in plans:
+		if _marks.has(key):
+			continue
+		var p: Dictionary = plans[key]
+		var n: Vector3 = p.normal
+		var up: Vector3 = p.seam_up
+		if up.is_zero_approx():
+			up = Vector3.UP if absf(n.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
+		var side := up.cross(n).normalized()
+		up = n.cross(side).normalized()
+		var mark := Node3D.new()
+		mark.name = "Mark_%s" % key.replace(":", "_")
+		mark.transform = Transform3D(Basis(side, up, n), (p.at as Vector3) + n * 0.003)
+		var length := (p.seam_size as Vector2).x
+		if length > 0.0:
+			var w := 0.09
+			var h := length + 0.06
+			var bar := 0.014
+			for bx: Array in [[Vector3(0, h * 0.5, 0), Vector3(w, bar, 0.002)], [Vector3(0, -h * 0.5, 0), Vector3(w, bar, 0.002)],
+					[Vector3(w * 0.5, 0, 0), Vector3(bar, h, 0.002)], [Vector3(-w * 0.5, 0, 0), Vector3(bar, h, 0.002)]]:
+				var mi := MeshInstance3D.new()
+				var bm := BoxMesh.new()
+				bm.size = bx[1]
+				mi.mesh = bm
+				mi.position = bx[0]
+				mi.material_override = _mark_mat
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				mark.add_child(mi)
+		else:
+			var mi := MeshInstance3D.new()
+			var tm := TorusMesh.new()
+			tm.inner_radius = 0.032
+			tm.outer_radius = 0.046
+			tm.rings = 24
+			tm.ring_segments = 6
+			mi.mesh = tm
+			mi.rotation = Vector3(PI * 0.5, 0, 0)
+			mi.scale = Vector3(1, 0.25, 1)
+			mi.material_override = _mark_mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mark.add_child(mi)
+		work.add_child(mark)
+		_marks[key] = mark
+
+
+## How many fastenings are outlined now (tests).
+func marks_shown() -> int:
+	return _marks.values().filter(func(m: Variant) -> bool: return is_instance_valid(m)).size()
 
 
 ## [seam_up, seam_size] (body space) for a hand weld at `at` facing `n`: a stretch of joint `c`'s
@@ -225,7 +333,7 @@ func _weld_line(at: Vector3, n: Vector3, c: ConnectionData, strict := 2) -> Arra
 		ups.append(n.cross(along).normalized())
 	ups.append(n.cross(Vector3.UP if absf(n.y) < 0.9 else Vector3.RIGHT).normalized())
 	ups.append(n.cross(ups.back()).normalized())
-	var most := clampf(c.seam_size.x if c.seam_size.x > 0.05 else 0.2, 0.08, 0.4)
+	var most := clampf(c.seam_size.x if c.seam_size.x > 0.05 else 0.2, 0.08, MAX_WELD)
 	var thick := c.seam_size.y if c.seam_size.y > 0.004 else 0.012
 	for f: float in [1.0, 0.6, 0.35, 0.2]:
 		for up in ups:
@@ -304,8 +412,46 @@ func _meets(p: Vector3, d0: Vector3) -> bool:
 		if hit.collider != work:
 			skip.append((hit.collider as CollisionObject3D).get_rid())
 			continue
-		return (hit.position as Vector3).distance_to(at) < 0.04
+		return (hit.position as Vector3).distance_to(at) < 0.04 and not _ghost_over(p, d0)
 	return false
+
+
+## True when one of the ghost's parts still to come stands in front of `p` (body space) looking
+## along -`d`: the seam would end up inside or behind it.
+func _ghost_over(p: Vector3, d: Vector3) -> bool:
+	_find_blockers()
+	var a := p + d.normalized() * 0.004
+	var b := p + d.normalized() * 1.5
+	for bl: Array in _blockers:
+		if not (bl[0] as AABB).intersects_segment(a, b):
+			continue
+		var inv: Transform3D = bl[1]
+		if (bl[2] as AABB).intersects_segment(inv * a, inv * b):
+			return true
+	return false
+
+
+func _find_blockers() -> void:
+	var tag := "%d %s" % [real.size(), _stage]
+	if _blockers_for == tag:
+		return
+	_blockers_for = tag
+	_blockers.clear()
+	var model: PartModel = bp.get("model")
+	var to_work := work.global_transform.affine_inverse() if work.is_inside_tree() else Transform3D.IDENTITY
+	for id: int in model.parts:
+		if real.has(id) or str(plan.jobs[int(plan.job_of.get(id, 0))].stage) != _stage:
+			continue
+		var cols: Array = [model.part_collider(id)]
+		cols.append_array(model.extra_colliders(id))
+		for col: CollisionShape3D in cols:
+			if col == null or col.shape == null or not col.is_inside_tree():
+				continue
+			var box := col.shape.get_debug_mesh().get_aabb().grow(-0.005)
+			if box.size.x <= 0.0 or box.size.y <= 0.0 or box.size.z <= 0.0:
+				continue
+			var xf := to_work * col.global_transform
+			_blockers.append([xf * box, xf.affine_inverse(), box])
 
 
 ## [spot, normal] (body space) to chalk joint `c` at: where a look at its spot from in front
@@ -480,6 +626,7 @@ func fastened(j: int, k: int, q: float) -> void:
 	if p.is_empty():
 		return
 	plans.erase(key)
+	_sync_marks()
 	var wm: PartModel = work.get("model")
 	if (work.get("planned") as Array).has(p):
 		work.call("work_planned", p, 1.0)
@@ -545,9 +692,10 @@ func pending(j: int) -> Array:
 # --- The next pieces glow --------------------------------------------------------------------
 
 func _glow_next() -> void:
+	_fade_later()
 	for id: int in _glowing:
 		if not real.has(id):
-			_dress(id, _ghost_mat)
+			_dress(id, _holo_mat(id))
 	_glowing.clear()
 	if use_area:
 		use_area.queue_free()
