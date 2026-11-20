@@ -309,6 +309,18 @@ func _design_lock(station: Node3D) -> void:
 		lock.call("advance", 0.05)
 		steps += 1
 	check(lock.get("state") == 0, "and back in")
+	# Its call button is off the wall screens (0.4.6 playtest: "the button is on the screen").
+	var call := lock.get_node_or_null("Panel_corridor") as Node3D
+	var clear := call != null
+	if call != null:
+		var at := call.global_position - YardBus.DESIGN_ROOM_CENTRE
+		for w: Dictionary in YardBus.design_room_walls():
+			var local: Vector3 = (w.transform as Transform3D).affine_inverse() * at
+			var size: Vector2 = w.size
+			if absf(local.z) < 0.4 and absf(local.x) < size.x * 0.5 + 0.15 and absf(local.y) < size.y * 0.5 + 0.15:
+				clear = false
+		clear = clear and YardLayout.room_at(call.global_position + call.global_basis.x * 0.3) == "design"
+	check(clear, "the lock's call button is in the design room, off its wall screens")
 
 
 ## The berths grow with reputation (beenster, 19 Nov): three tiers, each clear of the station,
