@@ -70,10 +70,12 @@ func build(kit, root: Node3D) -> Node3D:
 	# Crew room: steam off the coffee machine, mugs and a plant on the tables, jackets on the
 	# lockers, a rug by the sofa.
 	_steam(ticker, Vector3(3.8, 1.6, 0.6))
+	# (On Void Salvage's mess tables, with the room detail pass, a little higher.)
+	var mug_y := 0.8605 if Flags.is_on(YardBus.ROOM_DETAIL) else 0.83
 	for z: float in [3.5, 7.0]:
 		for m in 3:
 			var mc: Color = [Color(0.85, 0.85, 0.82), Color(0.2, 0.4, 0.7), Color(0.75, 0.25, 0.2)][m]
-			k.box(Vector3(0.08, 0.1, 0.08), Vector3(5.0 + m * 0.9, 0.83, z + (m - 1) * 0.25), k.paint(mc, 0.0, 0.4), false)
+			k.box(Vector3(0.08, 0.1, 0.08), Vector3(5.0 + m * 0.9, mug_y, z + (m - 1) * 0.25), k.paint(mc, 0.0, 0.4), false)
 	_plant(k, Vector3(8.2, 0.0, 10.9))
 	_plant(k, Vector3(19.0, 0.0, 10.9))
 	for i in 3:
