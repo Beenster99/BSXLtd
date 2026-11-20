@@ -108,8 +108,10 @@ func run_tests() -> void:
 	var used_key: String = lots[0]
 	var u := orders.trade_used_quote(used_key, TradeBook.LOT_SIZE)
 	var n := orders.trade_buy_quote(used_key, TradeBook.LOT_SIZE)
-	check(float(u.parts) < float(n.unit) and float(u.refurb) > 0.0 and is_equal_approx(float(u.unit), float(u.parts) + float(u.refurb)),
-			"a lot's parts come cheaper than new, the refurb bill apart (%.0f + %.0f refurb against %.0f new)" % [float(u.parts), float(u.refurb), float(n.unit)])
+	check(float(u.parts) < float(n.unit) and float(u.refurb) > 0.0 and is_equal_approx(float(u.unit), float(u.parts))
+			and float(u.refurb_lo) < float(u.refurb) and float(u.refurb) < float(u.refurb_hi),
+			"a lot's parts come cheaper than new, the refurb bill an estimate apart (%.0f + %.0f to %.0f refurb against %.0f new)" % [
+				float(u.parts), float(u.refurb_lo), float(u.refurb_hi), float(n.unit)])
 	orders.trade_buy(used_key, TradeBook.LOT_SIZE, true)
 	check(orders.orders.size() == 1 and str(orders.orders[0].cid) == OrdersBus.STOCK, "bought a lot for stock: an order")
 	check(not orders.trade_lots().has(used_key), "and that lot is gone for today")
@@ -121,14 +123,26 @@ func run_tests() -> void:
 	o.due = orders.now_minute()
 	orders.deliver_due()
 	check(int(orders.holdings.get(used_key, 0)) == 0, "in the works, not held yet")
+	var spent_before := int(o.total)
+	var cash_before := int(biz.call("get_cash")) if biz else 0
 	for i in TradeBook.LOT_SIZE:
 		orders._on_certified(str(o.lines[0].type), {})
 	check(int(orders.holdings.get(used_key, 0)) == TradeBook.LOT_SIZE, "certified, the yard holds them to sell")
+	var bills := float(o.lines[0].refurb_paid)
+	check(bills >= float(u.refurb_lo) * TradeBook.LOT_SIZE - 1.0 and bills <= float(u.refurb_hi) * TradeBook.LOT_SIZE + 1.0
+			and int(o.total) == spent_before + int(bills), "the real refurb bills fall in the estimate (CR %.0f for %d)" % [bills, TradeBook.LOT_SIZE])
+	if biz:
+		check(int(biz.call("get_cash")) < cash_before, "and are paid as each comes out of the works")
+	var same := TradeBook.refurb_bill(1000.0, 7, 1) == TradeBook.refurb_bill(1000.0, 7, 1)
+	var varies := false
+	for i in range(2, 8):
+		varies = varies or TradeBook.refurb_bill(1000.0, 7, i) != TradeBook.refurb_bill(1000.0, 7, 1)
+	check(same and varies, "each part's condition differs, the same on every machine")
 	var best := orders.trade_offers(used_key, 2)
 	var high := 0.0
 	for v in orders.trade_trend(used_key, 14):
 		high = maxf(high, v)
-	check(not best.is_empty() and high > float(u.unit), "a buyer for them, paying more than they cost on a good day (today CR %.0f, best of 14 days CR %.0f, against CR %.0f)" % [float(best[0].each) if not best.is_empty() else 0.0, high, float(u.unit)])
+	check(not best.is_empty() and high > float(u.unit) + float(u.refurb), "a buyer for them, paying more than they cost on a good day (today CR %.0f, best of 14 days CR %.0f, against CR %.0f)" % [float(best[0].each) if not best.is_empty() else 0.0, high, float(u.unit)])
 	cash = int(biz.call("get_cash")) if biz else 0
 	orders.trade_sell(used_key, 2)
 	check(int(orders.holdings.get(used_key, 0)) == 3 and orders.sales.size() == 1, "sold 2 to the best buyer")

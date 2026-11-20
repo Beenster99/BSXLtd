@@ -75,7 +75,7 @@ func refresh() -> void:
 	hv.add_child(_label("HOW THIS WORKS", "display_bold", fs, T.ORANGE))
 	for line: String in [
 			"1. Each part's price rises and falls over weeks and months. Buy when it is LOW, sell when it is HIGH. The chart and TRENDS show where it has been.",
-			"2. Buy NEW 5 at today's new price, or one of today's SECOND-HAND LOTS of %d: cheaper parts, but the refurb works charge to fix them up first." % LOT,
+			"2. Buy NEW 5 at today's new price, or one of today's SECOND-HAND LOTS of %d: cheaper parts, but they need the refurb works first. Their condition is unknown, so the refurb bill is an estimate; you pay the real bill as each is finished." % LOT,
 			"3. When they are in (YOU HOLD), sell to the supplier paying most. On any one day suppliers pay a bit under the new price, so the profit is in the timing."]:
 		var l := _label(line, "body_medium", fs - 2, T.TEXT)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -158,7 +158,8 @@ func _row(head: bool, l: Dictionary, have: int, coming: int, lot: bool) -> Contr
 		_cell(row, _lines([["none today", "mono_medium", fs - 2, T.DIM]]), 3)
 	else:
 		_cell(row, _lines([["CR %s each" % T.money(int(used.parts)), "mono_medium", fs - 2, T.TEXT],
-				["+ CR %s each to refurb" % T.money(int(used.refurb)), "mono_medium", fs - 4, T.AMBER]]), 3)
+				["+ refurb, estimated", "mono_medium", fs - 4, T.AMBER],
+				["CR %s to %s each" % [T.money(int(used.refurb_lo)), T.money(int(used.refurb_hi))], "mono_medium", fs - 4, T.AMBER]]), 3)
 	_cell(row, _lines([["CR %s" % T.money(int(best)) if not offers.is_empty() else "nobody", "mono_medium", fs - 2, T.GOOD],
 			[str(offers[0].name) if not offers.is_empty() else "", "mono_medium", fs - 4, T.DIM]]), 4)
 	var spark := Control.new()
@@ -187,8 +188,8 @@ func _row(head: bool, l: Dictionary, have: int, coming: int, lot: bool) -> Contr
 	var u := T.button("BUY LOT", false, fs - 3)
 	u.disabled = used.is_empty()
 	if not used.is_empty():
-		u.tooltip_text = "Buy this second-hand lot of %d: CR %s for the parts and CR %s to refurb them, CR %s in all. Ready to sell in about %d days." % [
-				LOT, T.money(int(float(used.parts) * LOT)), T.money(int(float(used.refurb) * LOT)), T.money(int(used.total)), int(used.lead)]
+		u.tooltip_text = "Buy this second-hand lot of %d for CR %s now. Nobody knows their condition until the refurb works see them: each one's refurb bill should be CR %s to %s, paid as it is finished. Ready to sell in about %d days." % [
+				LOT, T.money(int(used.total)), T.money(int(used.refurb_lo)), T.money(int(used.refurb_hi)), int(used.lead)]
 	u.pressed.connect(func() -> void: bus.call("trade_buy", key, LOT, true))
 	_button(row, u)
 	var s1 := T.button("SELL 1", true, fs - 3)

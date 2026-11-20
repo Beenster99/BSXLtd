@@ -30,6 +30,10 @@ const BULK_USED_SHARE := 0.24
 ## Second-hand lots on offer each day (different parts each day), each of LOT_SIZE parts.
 const LOTS_A_DAY := 3
 const LOT_SIZE := 5
+## A second-hand part's refurb bill is only known once the works have seen it: the estimate is
+## a window of these shares of the works' usual bill, and each part's real bill falls in it.
+const REFURB_LOW := 0.6
+const REFURB_HIGH := 1.6
 ## The trading market's swings: the slow one (months), the quicker one (weeks), the daily wobble,
 ## each a share of the price either way; the slow and quick ones' lengths in days, from..to.
 const SWING_LONG := 0.16
@@ -83,6 +87,14 @@ static func market(line: Dictionary, day: int) -> float:
 	var w := RandomNumberGenerator.new()
 	w.seed = hash("bsx_wobble_%s_%d" % [str(line.key), day])
 	return f + w.randf_range(-WOBBLE, WOBBLE)
+
+
+## The real refurb bill of the `n`th part of stock order `order_id`, against the works' usual bill
+## `usual`: somewhere in the estimate's window (the part's condition), the same on every machine.
+static func refurb_bill(usual: float, order_id: int, n: int) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("bsx_refurb_%d_%d" % [order_id, n])
+	return roundf(usual * rng.randf_range(REFURB_LOW, REFURB_HIGH))
 
 
 ## The keys of the lines whose second-hand lots are on offer on `day` (LOTS_A_DAY of them, the

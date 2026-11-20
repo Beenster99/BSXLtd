@@ -600,8 +600,23 @@ func _on_certified(type_id: String, _lot: Dictionary) -> void:
 				if str(o.cid) == STOCK:
 					holdings[str(l.key)] = int(holdings.get(str(l.key), 0)) + 1
 					_stock_loads(str(l.key), 1, true, "refurbished")
+					_refurb_bill(o, l)
 				_changed()
 				return
+
+
+## A stock lot's part out of the refurb works: its real bill (somewhere in the estimate) is paid.
+func _refurb_bill(o: Dictionary, l: Dictionary) -> void:
+	var usual := float(l.get("refurb_usual", 0.0))
+	if usual <= 0.0:
+		return
+	var n := roundi(float(l.qty)) - int(l.refurbing)
+	var bill := TradeBook.refurb_bill(usual, int(o.id), n)
+	l["refurb_paid"] = float(l.get("refurb_paid", 0.0)) + bill
+	o.total = int(o.total) + int(bill)
+	if _business and _business.has_method("charge"):
+		_business.call("charge", int(bill), TRADING, "Refurb bill: %s (estimate CR %d to %d)" % [str(l.name),
+				int(usual * TradeBook.REFURB_LOW), int(usual * TradeBook.REFURB_HIGH)])
 
 
 ## Once a stage of the build in the berth has its parts in, they go out to the berth: the
@@ -711,8 +726,9 @@ func trade_buy_quote(key: String, qty: int) -> Dictionary:
 	return q
 
 
-## A second-hand lot of `qty` of `key`, refurbished here before it can be sold: {unit (each, all
-## in), total, parts (each, before the works), refurb (the works' bill each), lead} ({} where the works can't take it).
+## A second-hand lot of `qty` of `key`, refurbished here before it can be sold: {unit and parts
+## (each, paid when bought), total, refurb (the works' usual bill each), refurb_lo..refurb_hi (the
+## estimate: each part's real bill, paid as the works finish it, falls in it), lead} ({} where the works can't take it).
 func trade_used_quote(key: String, qty: int) -> Dictionary:
 	var l := trade_line(key)
 	if l.is_empty() or qty < 1 or not Flags.is_on(USED_FLAG):
@@ -724,8 +740,8 @@ func trade_used_quote(key: String, qty: int) -> Dictionary:
 	var mid: Dictionary = news[floori((news.size() - 1) / 2.0)]
 	var parts := TradeBook.used_each(qty, float(mid.unit)) * TradeBook.market(l, market_day())
 	var refurb := float(est.get("cost", 0.0))
-	var each := parts + refurb
-	return {"vendor": USED, "name": "Second-hand lot", "unit": each, "total": each * qty, "parts": parts, "refurb": refurb,
+	return {"vendor": USED, "name": "Second-hand lot", "unit": parts, "total": parts * qty, "parts": parts, "refurb": refurb,
+			"refurb_lo": roundf(refurb * TradeBook.REFURB_LOW), "refurb_hi": roundf(refurb * TradeBook.REFURB_HIGH),
 			"lead": maxi(1, int(l.get("lead", 2))) + OrderBook.USED_EXTRA_DAYS}
 
 
@@ -838,7 +854,8 @@ func _trade_buy(p: Dictionary) -> void:
 	orders.append({"id": id, "cid": STOCK, "vendor": str(q.vendor), "name": str(q.get("name", q.vendor)), "minute": now,
 			"due": now + int(q.lead) * 1440, "late": 0, "express": false, "total": int(p.cost), "arrived": false,
 			"lines": [{"key": key, "name": str(l.name), "qty": float(qty), "unit": float(q.unit), "used": used,
-				"type": OrderBook.used_type(l) if used else ""}]})
+				"type": OrderBook.used_type(l) if used else "", "refurb_usual": float(q.get("refurb", 0.0)) if used else 0.0,
+				"refurb_paid": 0.0}]})
 
 
 func _trade_sell(p: Dictionary) -> void:
