@@ -4,6 +4,10 @@ extends Node3D
 ## planets"): stars, the home galaxy's band, a great spiral galaxy, nebulae, a ringed gas
 ## giant and a small blue world far off (all in the sky shader), and the sun. A faint cool
 ## fill from the spiral's side stands in for the galaxy's light.
+##
+## Drawn in high definition per pixel (see the shader). How fine its detail goes follows the
+## player's Model detail setting: Low gives the standard sky, Medium high, High and Ultra the
+## full one (SKY_DETAIL).
 
 const SkyShader := preload("res://modules/yard/internal/shaders/space_sky.gdshader")
 
@@ -11,18 +15,26 @@ const SkyShader := preload("res://modules/yard/internal/shaders/space_sky.gdshad
 @export var sun_direction := Vector3(0.55, 0.45, -0.35)
 @export var sun_energy := 1.6
 
+## The sky's detail (0 standard, 1 high, 2 ultra) for each Model detail choice (Low .. Ultra).
+const SKY_DETAIL: Array[int] = [0, 1, 2, 2]
+
 var environment: Environment
 var sun: DirectionalLight3D
+var sky_material: ShaderMaterial
 
 
 func _ready() -> void:
 	name = "SpaceSky"
 	add_to_group("gfx_world")
-	var sky_mat := ShaderMaterial.new()
-	sky_mat.shader = SkyShader
-	sky_mat.set_shader_parameter("sun_way", sun_direction.normalized())
+	sky_material = ShaderMaterial.new()
+	sky_material.shader = SkyShader
+	sky_material.set_shader_parameter("sun_way", sun_direction.normalized())
+	apply_detail()
+	var graphics := get_node_or_null("/root/Graphics")
+	if graphics != null and graphics.has_signal("changed"):
+		graphics.connect("changed", apply_detail)
 	var sky := Sky.new()
-	sky.sky_material = sky_mat
+	sky.sky_material = sky_material
 	environment = Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
@@ -63,3 +75,12 @@ func _ready() -> void:
 	fill.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	add_child(fill)
 	fill.look_at_from_position(Vector3.ZERO, Vector3(0.35, -0.42, 0.84), Vector3.UP)   # travels away from it
+
+
+## The sky's detail level for the player's Model detail setting (0..2).
+static func detail_level() -> int:
+	return SKY_DETAIL[clampi(int(GraphicsOptions.get_value("detail")), 0, SKY_DETAIL.size() - 1)]
+
+
+func apply_detail() -> void:
+	sky_material.set_shader_parameter("detail", detail_level())

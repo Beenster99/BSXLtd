@@ -29,6 +29,8 @@ var _palette: VBoxContainer
 ## Size class and grade new components are picked in (0 = each type's own size).
 var _pick_size := 0
 var _pick_grade := DesignGrades.DEFAULT_GRADE
+## The class (grade) filter: "" = any (placed as Standard).
+var _class_filter := ""
 ## Component groups open on the palette (category -> true).
 var _open_groups: Dictionary = {"flight": true}
 ## The components search text, and the list it filters (rebuilt alone as you type).
@@ -632,24 +634,15 @@ func set_order(order: Dictionary) -> void:
 func _fill_components() -> void:
 	_palette.add_child(T.label("COMPONENTS  (click in a room, R turns; hull parts click on the hull)",
 			"display_medium", 15, T.DIM))
+	# Size and class (grade) as drop-downs that both filter the list and set what is placed
+	# (beenster, 20 Nov: "more filtering on Size and Class").
 	var pick := HBoxContainer.new()
-	var size_b := T.button("SIZE  %s" % ("OWN" if _pick_size == 0 else str(_pick_size)), false, 15)
-	size_b.name = "PickSize"
-	size_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	size_b.tooltip_text = "Size class 1 to 8 (OWN: each part's usual size). Bigger parts do more, weigh and cost more."
-	size_b.pressed.connect(func() -> void: set_pick((_pick_size + 1) % (DesignGrades.MAX_CLASS + 1), _pick_grade))
-	pick.add_child(size_b)
-	var gr: Dictionary = DesignGrades.GRADES[_pick_grade]
-	var grade_b := T.button("GRADE  %s %s" % [_pick_grade, str(gr.name).to_upper()], false, 15)
-	grade_b.name = "PickGrade"
-	grade_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grade_b.tooltip_text = str(gr.blurb)
-	grade_b.pressed.connect(func() -> void:
-		var i := DesignGrades.GRADE_ORDER.find(_pick_grade)
-		set_pick(_pick_size, DesignGrades.GRADE_ORDER[(i + 1) % DesignGrades.GRADE_ORDER.size()]))
-	pick.add_child(grade_b)
+	pick.add_child(_size_dropdown())
+	pick.add_child(_class_dropdown())
 	_palette.add_child(pick)
-	_palette.add_child(T.label(str(gr.blurb), "body", 13, T.DIM))
+	var gr: Dictionary = DesignGrades.GRADES[_pick_grade]
+	_palette.add_child(T.label(("Any class: placed as Standard. " if _class_filter == "" else "%s: " % str(gr.name))
+			+ str(gr.blurb), "body", 13, T.DIM))
 	var search := LineEdit.new()
 	search.name = "CompSearch"
 	search.placeholder_text = "Search components (name, kind, size, grade)"
@@ -688,6 +681,8 @@ func _fill_comp_list() -> void:
 			continue
 		var rows: Array = []
 		for base: DesignPartType in list:
+			if not passes_filters(base):
+				continue
 			var pt := bus.catalog.part(picked_id(base))
 			if words.is_empty():
 				if not bool(_open_groups.get(cat[0], false)):
@@ -702,8 +697,12 @@ func _fill_comp_list() -> void:
 			_comp_list.add_child(_comp_row(r[0], r[1]))
 			shown += 1
 	if shown == 0:
-		_comp_list.add_child(T.label("No components match." if not words.is_empty()
-				else "Pick a group above, or search.", "body", 13, T.DIM))
+		var why := "Pick a section above, or search."
+		if not words.is_empty():
+			why = "No components match."
+		elif _pick_size > 0 or _class_filter != "":
+			why = "Nothing in the open sections comes in that size and class."
+		_comp_list.add_child(T.label(why, "body", 13, T.DIM))
 	_mark_tools()
 
 
@@ -774,8 +773,56 @@ func picked_id(base: DesignPartType) -> String:
 ## Picks the size class (0 = each part's own) and grade new components come in.
 func set_pick(size: int, grade: String) -> void:
 	_pick_size = clampi(size, 0, DesignGrades.MAX_CLASS)
+	_class_filter = grade if DesignGrades.GRADES.has(grade) else ""
 	_pick_grade = grade if DesignGrades.GRADES.has(grade) else DesignGrades.DEFAULT_GRADE
 	_fill_palette()
+
+
+## The size drop-down: ANY (each part at its own size) or 1 to 8 (only parts that come in it).
+func _size_dropdown() -> MenuButton:
+	var b := _menu_button("SIZE", 14)
+	b.name = "PickSize"
+	b.text = "SIZE: %s  v" % ("ANY" if _pick_size == 0 else str(_pick_size))
+	b.tooltip_text = "Show only parts that come in this size class, and place them at it. Bigger is not always better: check the numbers."
+	var pop := b.get_popup()
+	pop.add_radio_check_item("Any size (each part's own)", 0)
+	pop.set_item_checked(0, _pick_size == 0)
+	for n in range(DesignGrades.MIN_CLASS, DesignGrades.MAX_CLASS + 1):
+		pop.add_radio_check_item("Size %d" % n, n)
+		pop.set_item_checked(pop.get_item_index(n), _pick_size == n)
+	pop.id_pressed.connect(func(id: int) -> void: set_pick.call_deferred(id, _class_filter))
+	return b
+
+
+## The class drop-down: ANY or one grade (only graded parts, placed in that grade).
+func _class_dropdown() -> MenuButton:
+	var b := _menu_button("CLASS", 14)
+	b.name = "PickGrade"
+	b.text = "CLASS: %s  v" % ("ANY" if _class_filter == "" else "%s %s" % [_class_filter,
+			str(DesignGrades.GRADES[_class_filter].name).to_upper()])
+	b.tooltip_text = "Show only parts that come in this class (grade), and place them in it."
+	var pop := b.get_popup()
+	pop.add_radio_check_item("Any class", 0)
+	pop.set_item_checked(0, _class_filter == "")
+	for i in DesignGrades.GRADE_ORDER.size():
+		var g: String = DesignGrades.GRADE_ORDER[i]
+		pop.add_radio_check_item("%s  %s" % [g, DesignGrades.GRADES[g].name], i + 1)
+		pop.set_item_checked(i + 1, _class_filter == g)
+		pop.set_item_tooltip(i + 1, str(DesignGrades.GRADES[g].blurb))
+	pop.id_pressed.connect(func(id: int) -> void:
+		set_pick.call_deferred(_pick_size, "" if id == 0 else DesignGrades.GRADE_ORDER[id - 1]))
+	return b
+
+
+## True when `base` comes in the picked size and class (the filters; 0 and "" pass anything).
+func passes_filters(base: DesignPartType) -> bool:
+	if _pick_size > 0:
+		var span := DesignGrades.sizes(base)
+		if span[0] <= 0 or _pick_size < span[0] or _pick_size > span[1]:
+			return false
+	if _class_filter != "" and not base.graded:
+		return false
+	return true
 
 
 ## A component's numbers, one per line, for its button's tooltip.
@@ -1190,9 +1237,7 @@ func _on_selection(kind: String, id: String) -> void:
 			bus.editor.do({"op": "set_room", "id": id, "fields": {"w": v}})))
 		_selection.add_child(_size_row("Depth", float(r.d), func(v: float) -> void:
 			bus.editor.do({"op": "set_room", "id": id, "fields": {"d": v}})))
-		var area := DesignRecord.room_area(r)
-		_selection.add_child(T.label("%s m2 floor, %s m3" % [PlanView._m(area), PlanView._m(area * rec.deck_height)],
-				"mono_medium", 15, T.DIM))
+		_selection.add_child(_info_panel(kind, id))
 		var mod_row := HBoxContainer.new()
 		var mod_name := LineEdit.new()
 		mod_name.name = "ModuleName"
@@ -1212,8 +1257,7 @@ func _on_selection(kind: String, id: String) -> void:
 		var pt := bus.catalog.part(str(c.type))
 		if pt:
 			_selection.add_child(T.label("%s   %s" % [pt.display_name.to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
-			_selection.add_child(T.label("CR %s   %.1f t   %+.0f kW   %d days" % [T.money(int(pt.cost)), pt.mass / 1000.0,
-					pt.power, pt.lead_days], "mono_medium", 15, T.DIM))
+			_selection.add_child(_info_panel(kind, id))
 			_grade_rows(str(c.type), func(t: String) -> void:
 				bus.editor.do({"op": "set_component", "id": id, "fields": {"type": t}}))
 		# Where it stands (beenster, 19 Nov: select a component and edit it to move it); it can
@@ -1230,9 +1274,7 @@ func _on_selection(kind: String, id: String) -> void:
 		var dk := DesignCatalog.door_kind(door)
 		var fit := DesignCatalog.door_cost(door)
 		_selection.add_child(T.label("%s   %s" % [str(dk.name).to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
-		_selection.add_child(T.label("%s x %s m   CR %s   %d kg   %.1f h%s" % [PlanView._m(DesignCatalog.door_w(door)),
-				PlanView._m(DesignCatalog.door_h(door)), T.money(int(fit.cost)), int(fit.mass), float(fit.hours),
-				"   AIRTIGHT" if bool(dk.get("airtight", false)) else ""], "mono_medium", 15, T.DIM))
+		_selection.add_child(_info_panel(kind, id))
 		# Its own width, within what its kind comes in (beenster, 19 Nov: doors of different widths).
 		var lo := float(dk.min_w)
 		var hi := float(dk.max_w)
@@ -1275,8 +1317,7 @@ func _on_selection(kind: String, id: String) -> void:
 		var pt := bus.catalog.part(str(rec.mounts[id].type))
 		if pt:
 			_selection.add_child(T.label("%s   %s" % [pt.display_name.to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
-			_selection.add_child(T.label("ON THE HULL   CR %s   %.1f t   %.0f kN" % [T.money(int(pt.cost)),
-					pt.mass / 1000.0, pt.thrust], "mono_medium", 15, T.DIM))
+			_selection.add_child(_info_panel(kind, id))
 			_grade_rows(str(rec.mounts[id].type), func(t: String) -> void:
 				bus.editor.do({"op": "set_mount", "id": id, "fields": {"type": t}}))
 		_selection.add_child(_remove_button())
@@ -1290,6 +1331,136 @@ func _on_selection(kind: String, id: String) -> void:
 
 ## SIZE and GRADE steppers for a placed component of type `type_id`: each step calls `on_type`
 ## with the variant's type id (DesignGrades), so the part changes in place, one undo step each.
+## The INFO panel (beenster, 20 Nov: "when we have an item selected the info panel should
+## populate with the important data about that object"): a box of label / value rows, then
+## any WILL IT WORK problem naming the item.
+func _info_panel(kind: String, id: String) -> Control:
+	var box := PanelContainer.new()
+	box.name = "InfoPanel"
+	box.add_theme_stylebox_override("panel", T.box(T.PLATE, T.CYAN, 1, 6.0))
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	box.add_child(col)
+	col.add_child(T.label("INFO", "display_bold", 14, T.CYAN))
+	var grid := GridContainer.new()
+	grid.name = "InfoRows"
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 1)
+	col.add_child(grid)
+	for row: Array in info_rows(kind, id):
+		grid.add_child(T.label(str(row[0]).to_upper(), "display_medium", 12, T.DIM))
+		var v := T.label(str(row[1]), "mono_medium", 14, row[2] if row.size() > 2 else T.TEXT)
+		v.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(v)
+	for p: Dictionary in bus.problems():
+		var key: String = {"room": "rooms", "part": "components", "mount": "components", "door": "doors"}.get(kind, "")
+		if key != "" and str(id) in (p.get(key, []) as Array).map(func(x): return str(x)):
+			var l := T.label(("! " if p.severity == DesignRules.ERROR else "? ") + str(p.text), "body", 13,
+					T.BAD if p.severity == DesignRules.ERROR else T.AMBER)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			col.add_child(l)
+	return box
+
+
+## The selected item's important numbers as [label, value (, colour)] rows: what it is, its size
+## and class, what it weighs, costs and takes to fit, what it does, and where it is.
+func info_rows(kind: String, id: String) -> Array:
+	var rec := bus.library.current
+	var out: Array = []
+	if rec == null:
+		return out
+	if kind == "room" and rec.rooms.has(id):
+		var r: Dictionary = rec.rooms[id]
+		var rt := bus.catalog.room(str(r.type))
+		var area := DesignRecord.room_area(r)
+		var parts: Array = rec.components.values().filter(func(c): return str(c.room) == id)
+		var made := 0.0
+		var used := 0.0
+		var mass := 0.0
+		var cost := 0.0
+		var bunks := 0
+		for c: Dictionary in parts:
+			var pt := bus.catalog.part(str(c.type))
+			if pt:
+				made += maxf(pt.power, 0.0)
+				used += maxf(-pt.power, 0.0)
+				mass += pt.mass
+				cost += pt.cost
+				bunks += pt.crew
+		var doors: Array = rec.doors.values().filter(func(d): return str(d.a) == id or str(d.b) == id)
+		out.append(["Type", rt.display_name if rt else str(r.type)])
+		out.append(["Deck", str(int(r.deck) + 1)])
+		out.append(["Size", "%s x %s m" % [PlanView._m(float(r.w)), PlanView._m(float(r.d))]])
+		out.append(["Floor", "%s m2, %s m3" % [PlanView._m(area), PlanView._m(area * rec.deck_height)]])
+		out.append(["Parts", "%d, %.1f t, CR %s" % [parts.size(), mass / 1000.0, T.money(int(cost))]])
+		if made > 0.0 or used > 0.0:
+			out.append(["Power", "%+.0f kW (makes %.0f, uses %.0f)" % [made - used, made, used], T.GOOD if made >= used else T.AMBER])
+		if bunks > 0:
+			out.append(["Bunks", str(bunks)])
+		out.append(["Doors", str(doors.size())])
+	elif (kind == "part" and rec.components.has(id)) or (kind == "mount" and rec.mounts.has(id)):
+		var c: Dictionary = rec.components[id] if kind == "part" else rec.mounts[id]
+		var pt := bus.catalog.part(str(c.type))
+		if pt == null:
+			return [["Type", str(c.type), T.BAD]]
+		var span := DesignGrades.sizes(pt)
+		var group := pt.category
+		for cat: Array in DesignCatalog.CATEGORIES:
+			if str(cat[0]) == pt.category:
+				group = str(cat[1])
+		out.append(["Kind", group])
+		if pt.size_class > 0:
+			out.append(["Size", "%d (comes %d to %d)" % [pt.size_class, span[0], span[1]]])
+		if pt.graded:
+			out.append(["Class", "%s %s" % [pt.grade, DesignGrades.GRADES[pt.grade].name]])
+		out.append(["Box", "%.1f x %.1f x %.1f m" % [pt.size.x, pt.size.y, pt.size.z]])
+		out.append(["Mass", "%s kg" % T.money(int(pt.mass))])
+		out.append(["Cost", "CR %s" % T.money(int(pt.cost))])
+		out.append(["Fit", "%.1f h, %d days to get" % [pt.build_hours, pt.lead_days]])
+		for spec: Array in [["power", "Power", "%+.0f kW"], ["thrust", "Thrust", "%.0f kN"], ["jump", "Jump", "%.1f ly per 100 t"],
+				["attack", "Attack", "%.0f dmg/s"], ["defence", "Defence", "%.0f"], ["signature", "Signature", "%+.0f"],
+				["sensor", "Sensors", "%.0f km"], ["cargo", "Cargo", "%.1f m3"], ["tank", "Fuel", "%.1f m3"],
+				["tow_t", "Tow", "%.0f t"], ["crew", "Bunks", "%d"]]:
+			var v: float = float(pt.get(spec[0]))
+			if absf(v) > 0.001:
+				out.append([spec[1], str(spec[2]) % (int(v) if spec[0] == "crew" else v)])
+		out.append(["Integrity", "%.0f" % pt.integrity])
+		# Moving parts: what it opens, how fast, and (where the catalogue gives them) its motor,
+		# load and the room it needs to swing.
+		if pt.open_size != Vector2.ZERO:
+			out.append(["Opens", "%s x %s m" % [PlanView._m(pt.open_size.x), PlanView._m(pt.open_size.y)]])
+		if pt.move_s > 0.0:
+			out.append(["Moves", "%s, %.1f s" % [pt.move_kind.replace("_", " "), pt.move_s]])
+		for spec: Array in [["move_kw", "Motor", "%.1f kW"], ["load_kg", "Load", "%.0f kg"], ["clearance", "Clearance", "%.1f m"]]:
+			var mv: Variant = pt.get(spec[0])
+			if (mv is float or mv is int) and absf(float(mv)) > 0.001:
+				out.append([spec[1], str(spec[2]) % float(mv)])
+		if kind == "part":
+			var room: Dictionary = rec.rooms.get(str(c.get("room", "")), {})
+			if not room.is_empty():
+				out.append(["In", "%s, deck %d" % [DesignRules._label(rec, bus.catalog, str(room.id)), int(room.deck) + 1]])
+			if pt.power < 0.0:
+				var live: bool = DesignServices.connected(rec, bus.catalog, "wire").components.has(id)
+				out.append(["Wired", "yes, to power" if live else "no power reaches it", T.GOOD if live else T.AMBER])
+		else:
+			out.append(["On", "the hull"])
+	elif kind == "door" and rec.doors.has(id):
+		var door: Dictionary = rec.doors[id]
+		var dk := DesignCatalog.door_kind(door)
+		var fit := DesignCatalog.door_cost(door)
+		out.append(["Kind", str(dk.name)])
+		out.append(["Opening", "%s x %s m" % [PlanView._m(DesignCatalog.door_w(door)), PlanView._m(DesignCatalog.door_h(door))]])
+		out.append(["Mass", "%d kg" % int(fit.mass)])
+		out.append(["Cost", "CR %s, %.1f h to fit" % [T.money(int(fit.cost)), float(fit.hours)]])
+		out.append(["Airtight", "yes" if bool(dk.get("airtight", false)) else "no"])
+		out.append(["Joins", "%s and %s" % [DesignRules._label(rec, bus.catalog, str(door.a)),
+				"outside" if str(door.b) == "" else DesignRules._label(rec, bus.catalog, str(door.b))]])
+		out.append(["Deck", str(int(door.get("deck", 0)) + 1)])
+	return out
+
+
 func _grade_rows(type_id: String, on_type: Callable) -> void:
 	var base := bus.catalog.base_of(type_id)
 	var pt := bus.catalog.part(type_id)

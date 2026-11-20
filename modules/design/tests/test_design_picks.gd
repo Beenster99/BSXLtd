@@ -67,6 +67,53 @@ func run_tests() -> void:
 		await frames(1)
 		check(groups.text.begins_with("SECTIONS: ALL"), "ALL ticks every section")
 
+	# Size and class filters (beenster, 20 Nov): only parts that come in them, placed in them.
+	console.set_groups(DesignCatalog.CATEGORIES.map(func(c): return c[0]))
+	await frames(1)
+	var all_rows := _rows(console)
+	console.set_pick(8, "")
+	await frames(1)
+	var big := _rows(console)
+	var ok8 := big > 0 and big < all_rows
+	for b: Node in console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false):
+		var base: DesignPartType = bus.catalog.part(str(b.name).trim_prefix("Part_"))
+		ok8 = ok8 and base != null and DesignGrades.sizes(base)[1] >= 8
+	check(ok8, "size 8 lists only parts that come that big: %d of %d" % [big, all_rows])
+	check(str((console.find_child("PickSize", true, false) as MenuButton).text).begins_with("SIZE: 8"), "the size drop-down says 8")
+	console.set_pick(0, "Q")
+	await frames(1)
+	var quiet := console.find_child("CompList", true, false).find_children("Part_*", "Button", true, false)
+	check(quiet.size() > 0 and quiet.all(func(b): return bus.catalog.part(str(b.name).trim_prefix("Part_")).graded),
+			"class Q lists only graded parts")
+	check("Q" in str((quiet[0] as Button).text) if quiet.size() > 0 else false, "shown and placed in that class: %s" % [(quiet[0] as Button).text if quiet.size() > 0 else ""])
+	var pg := console.find_child("PickGrade", true, false) as MenuButton
+	pg.get_popup().id_pressed.emit(0)
+	await frames(2)
+	check(console._class_filter == "" and _rows(console) == all_rows, "ANY class shows everything again")
+
+	# The INFO panel fills with the selected item's numbers.
+	var info_rec := bus.library.current
+	bus.editor.do({"op": "add_room", "room": {"type": "engineering", "deck": 0, "x": -20, "z": -20, "w": 6, "d": 6}})
+	var a_room: String = info_rec.rooms.keys()[info_rec.rooms.size() - 1]
+	bus.editor.do({"op": "add_component", "component": {"type": "battery_bank", "room": a_room, "x": -17, "z": -17, "rot": 0}})
+	var some_part: String = info_rec.components.keys()[info_rec.components.size() - 1] if not info_rec.components.is_empty() else ""
+	check(some_part != "", "there is a part to pick")
+	if some_part != "":
+		plan.select("part", some_part)
+		await frames(1)
+		var panel := console.find_child("InfoPanel", true, false)
+		check(panel != null, "picking a part shows the INFO panel")
+		var labels: Array = console.info_rows("part", some_part).map(func(r): return str(r[0]))
+		check(["Mass", "Cost", "Integrity", "In"].all(func(k): return k in labels), "with its mass, cost, integrity and room: %s" % [labels])
+	plan.select("room", a_room)
+	await frames(1)
+	var rlabels: Array = console.info_rows("room", a_room).map(func(r): return str(r[0]))
+	check(console.find_child("InfoPanel", true, false) != null and ["Type", "Deck", "Floor", "Parts", "Doors"].all(func(k): return k in rlabels),
+			"a room's INFO: %s" % [rlabels])
+	if not info_rec.doors.is_empty():
+		var dl: Array = console.info_rows("door", str(info_rec.doors.keys()[0])).map(func(r): return str(r[0]))
+		check("Joins" in dl and "Airtight" in dl, "a door's INFO: %s" % [dl])
+
 	# WILL IT WORK: a click goes to the problem.
 	var rec := bus.library.current
 	bus.editor.do({"op": "add_room", "room": {"type": "cargo", "deck": 2, "x": 10, "z": 20, "w": 1, "d": 1}})

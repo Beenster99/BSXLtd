@@ -36,6 +36,9 @@ func _board() -> void:
 	var bus := Modules.bus("contracts") as ContractsBus
 	if bus and Flags.is_on(ContractsBus.SHIP_ORDERS_FLAG):
 		var want := ShipOrders.PER_CYCLE if Flags.is_on(ContractsBus.SHIP_VARIETY_FLAG) else ShipOrders.LEGACY_PER_CYCLE
+		if Flags.is_on(ContractsBus.SHIP_VARIETY_FLAG) and Flags.is_on(ContractsBus.TUTORIAL_FLAG):
+			want += ShipOrders.TUTORIAL.size()
+			check(bus.ship_orders()[0].get("tutorial", false), "the starter orders come first")
 		check(bus.ship_orders().size() == want, "the board posts this cycle's ship orders")
 
 

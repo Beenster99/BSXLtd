@@ -269,6 +269,45 @@ const ACHIEVABILITY: Array = [
 ]
 
 
+## Starter orders (beenster, 20 Nov: "a couple of really easy, almost tutorial level contracts
+## so that we can learn how it works"): small, plainly met, a generous budget and plenty of
+## time, open to a new yard. Always on the board until delivered. The sample skiff in the
+## design library meets both as it stands, so the whole round (quote, deposit, stages, trial,
+## delivery) can be tried in a few minutes.
+const TUTORIAL: Array = [
+	{"id": "tut_1", "client": "hesper_line", "role": "crew_shuttle", "title": "Starter job: a crew shuttle for Hesper Line",
+		"brief": "Our first order with you, so we've kept it simple: a small shuttle for four with some room for luggage. Take your time.",
+		"demands": {"crew": 4, "cargo_m3": 40}, "clauses": [], "region": "inner", "days": 40, "budget": 950000, "fee": 120000},
+	{"id": "tut_2", "client": "veil_relay", "role": "science_vessel", "title": "Starter job: a survey skiff for the Veil Relay Institute",
+		"brief": "A little runabout for our survey teams: reasonably quick, a decent radar, and an airlock for work outside.",
+		"demands": {"speed": 80, "sensor_km": 15}, "clauses": ["airlock"], "region": "inner", "days": 40, "budget": 950000, "fee": 120000},
+]
+
+
+## The starter orders, priced like any other.
+static func tutorial_orders() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for t: Dictionary in TUTORIAL:
+		var clauses: Array = []
+		for cid: String in t.clauses:
+			clauses.append(clause(cid, "small"))
+		var demands: Dictionary = (t.demands as Dictionary).duplicate()
+		var est := estimate(demands, clauses)
+		# A fixed, generous budget: enough for the sample skiff with room to spare.
+		var budget := int(t.budget)
+		demands["budget"] = budget
+		var c: Dictionary = ShipClients.TABLE.get(str(t.client), {})
+		var r: Dictionary = ROLES[t.role]
+		out.append({"id": t.id, "client": t.client, "client_name": ShipClients.display_name(str(t.client)), "role": t.role,
+			"sector": str(r.sector), "size": "small", "title": t.title, "brief": t.brief,
+			"story": str(c.get("story", "")), "temper": str(c.get("temper", "")), "tutorial": true,
+			"demands": demands, "clauses": clauses, "budget": budget, "estimate": int(est),
+			"achievability": achievability(budget, est), "pay": int(t.fee),
+			"days": int(t.days), "needs_level": 0, "locked": false, "region": t.region,
+			"length_m": int(length_for(demands, clauses)), "berth": berth_for(length_for(demands, clauses))})
+	return out
+
+
 ## The ship orders on the board in `cycle`, most valuable first. `variety` posts every kind
 ## and size (contracts.ship_variety); off, the four legacy orders. `level_of` (Callable(client
 ## id) -> int, standing level) marks orders the yard's standing does not yet reach as locked.
