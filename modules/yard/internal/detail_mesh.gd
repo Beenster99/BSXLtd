@@ -7,6 +7,9 @@ extends RefCounted
 
 const CELL := 8.0
 
+## The cell this mesher gathers by (m): CELL indoors; the dock's open frames take bigger.
+var cell := CELL
+
 var _parts: Dictionary = {}   # "mat_id/cx/cz" -> {mat, st}
 var _mats: Dictionary = {}    # material -> id
 var count := 0                # shapes added
@@ -75,7 +78,7 @@ func commit(parent: Node3D, prefix: String) -> int:
 func _st(mat: Material, at: Vector3) -> SurfaceTool:
 	if not _mats.has(mat):
 		_mats[mat] = _mats.size()
-	var key := "%d/%d/%d" % [_mats[mat], floori(at.x / CELL), floori(at.z / CELL)]
+	var key := "%d/%d/%d" % [_mats[mat], floori(at.x / cell), floori(at.z / cell)]
 	if not _parts.has(key):
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)

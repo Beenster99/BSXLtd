@@ -594,6 +594,20 @@ func _dock(station: Node3D) -> void:
 				check(not box.intersects(other.box), "berths %s and %s do not overlap" % [b.name, other.name])
 	var lights := dock.find_children("*", "SpotLight3D", true, false)
 	check(lights.size() >= 12, "the berths are floodlit")
+	# Void Salvage's standard (yard.room_detail): fittings on every frame, none in a hull's way.
+	var detail = dock.get("detail")
+	if Flags.is_on(YardBus.ROOM_DETAIL):
+		check(detail != null and int(detail.dm.count) > 3000, "the berths and arm carry their fittings (%d)" % (int(detail.dm.count) if detail != null else 0))
+		var meshes := dock.find_children("Detail*", "MeshInstance3D", false, false).size()
+		check(meshes > 0 and meshes < 200, "gathered into a few meshes (%d)" % meshes)
+		var in_way := 0
+		for b: Dictionary in berths:
+			var keep := Vector3(1.0, 1.0, 3.6)
+			var inner := AABB((b.box as AABB).position + keep, (b.box as AABB).size - keep * 2.0)
+			for d: AABB in detail.dm.boxes:
+				if d.intersects(inner):
+					in_way += 1
+		check(in_way == 0, "nothing reaches further into a berth than its clamp pads (%d)" % in_way)
 	# The dock's two arms land on mount plates flush under the station (20 Nov: "please join the
 	# design office properly to the berth").
 	var feet := 0

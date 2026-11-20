@@ -6,6 +6,7 @@ extends Node3D
 
 const Kit := preload("res://modules/yard/internal/yard_kit.gd")
 const Solar := preload("res://modules/yard/internal/solar_array.gd")
+const DockDetail := preload("res://modules/yard/internal/dock_detail.gd")
 
 ## Floodlight brightness and reach.
 @export var flood_energy := 6.0
@@ -14,6 +15,8 @@ const Solar := preload("res://modules/yard/internal/solar_array.gd")
 @export var blink_period := 1.6
 
 var kit
+## The frames' fittings (DockDetail), while yard.room_detail is on.
+var detail: RefCounted
 var berth_nodes: Dictionary = {}
 var _blinkers: Array[MeshInstance3D] = []
 ## Every floodlight: {berth, pan (Node3D, turns about y), tilt (Node3D, turns about its x),
@@ -43,11 +46,15 @@ const HARD_POINT := 1.5
 func build(berth_tier := 1) -> void:
 	tier = berth_tier
 	kit = Kit.new(self, "DockBody")
+	if Flags.is_on(YardBus.ROOM_DETAIL):
+		detail = DockDetail.new(kit)
 	for b: Dictionary in YardLayout.berths(tier):
 		_berth(b)
 		_reach = maxf(_reach, absf((b.box as AABB).position.x))
 		_reach = maxf(_reach, absf((b.box as AABB).end.x))
 	_dock_arm()
+	if detail != null:
+		detail.call("commit", self)
 
 
 func _process(delta: float) -> void:
@@ -83,8 +90,10 @@ func _berth(b: Dictionary) -> void:
 			kit.span(Vector3(x - beam * 0.5, lo.y, z - beam * 0.5), Vector3(x + beam * 0.5, hi.y, z + beam * 0.5), orange)
 	# Ribs along the berth, with clamp arms reaching in to hold a hull.
 	var ribs := int(box.size.x / 10.0)
+	var rib_x: Array[float] = []
 	for i in range(1, ribs):
 		var x := lo.x + box.size.x * float(i) / float(ribs)
+		rib_x.append(x)
 		for z: float in [lo.z, hi.z]:
 			kit.span(Vector3(x - 0.3, lo.y, z - 0.3), Vector3(x + 0.3, hi.y, z + 0.3), dark)
 			var inward := 1.0 if z == lo.z else -1.0
@@ -93,6 +102,8 @@ func _berth(b: Dictionary) -> void:
 				kit.box(Vector3(1.0, 1.0, 0.3), Vector3(x, y, z + inward * 3.3), dark)
 		for y: float in [lo.y, hi.y]:
 			kit.span(Vector3(x - 0.3, y - 0.3, lo.z), Vector3(x + 0.3, y + 0.3, hi.z), dark)
+	if detail != null:
+		detail.call("berth", box, beam, rib_x)
 	# The berth's name, big, on its station-side face and over its top.
 	var name_at := Vector3(box.get_center().x, hi.y + 2.6, hi.z)
 	var label: Label3D = kit.sign(str(b.name), name_at, Vector3.BACK, 0.08 if build_berth else 0.06, Kit.ORANGE, 128)
@@ -159,6 +170,8 @@ func _hard_point(foot: Vector3, white: Material, dark: Material) -> void:
 
 ## A square truss of four chords from `a` to `b` with rungs every 3 m.
 func _truss(a: Vector3, b: Vector3, chord_mat: Material, rung_mat: Material) -> void:
+	if detail != null:
+		detail.call("truss", a, b, 0.7)
 	var holder := Node3D.new()
 	add_child(holder)
 	var length := a.distance_to(b)
