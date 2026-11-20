@@ -13,10 +13,14 @@ const T := preload("res://modules/ui/api/terminal_kit.gd")
 const BG := Color(0.02, 0.05, 0.09)
 const CARD := Color(0.05, 0.1, 0.16)
 const LOT := TradeBook.LOT_SIZE
+## The yard's trade advisor (the INSIDER TIPS page).
+const ADVISOR := "Ines Okafor-Reyes"
 
 var bus: Object
 var fs := 15
 var only_held := false
+## "MARKET" or "TIPS" (the trade advisor's page).
+var page := "MARKET"
 var _body: VBoxContainer
 var _status: Label
 var _queued := false
@@ -68,14 +72,27 @@ func refresh() -> void:
 	if not Flags.is_on(OrdersBus.SELL_FLAG):
 		_body.add_child(_label("Parts trading is off.", "body_medium", fs, T.DIM))
 		return
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", int(fs * 0.4))
+	for p: Array in [["MARKET", "MARKET"], ["TIPS", "INSIDER TIPS"]]:
+		var tb := T.button(str(p[1]), page == str(p[0]), fs - 2)
+		var id := str(p[0])
+		tb.pressed.connect(func() -> void:
+			page = id
+			refresh())
+		tabs.add_child(tb)
+	_body.add_child(tabs)
+	if page == "TIPS":
+		_tips()
+		return
 	var how := PanelContainer.new()
 	how.add_theme_stylebox_override("panel", T.box(CARD, Color.TRANSPARENT, 0, fs * 0.3))
 	var hv := VBoxContainer.new()
 	how.add_child(hv)
 	hv.add_child(_label("HOW THIS WORKS", "display_bold", fs, T.ORANGE))
 	for line: String in [
-			"1. Each part's price rises and falls over weeks and months. Buy when it is LOW, sell when it is HIGH. The chart and TRENDS show where it has been.",
-			"2. Buy NEW 5 at today's new price, or one of today's SECOND-HAND LOTS of %d: cheaper parts, but they need the refurb works first. Their condition is unknown, so the refurb bill is an estimate; you pay the real bill as each is finished." % LOT,
+			"1. Each part's price rises and falls over weeks and months. Buy when it is LOW, sell when it is HIGH. The chart and TRENDS show where it has been; INSIDER TIPS, where it may be going.",
+			"2. Buy NEW (5 parts, or 50 sheets, lengths or packs of hull stock) at today's new price, or one of today's SECOND-HAND LOTS of %d: cheaper parts, but they need the refurb works first. Their condition is unknown, so the refurb bill is an estimate; you pay the real bill as each is finished." % LOT,
 			"3. When they are in (YOU HOLD), sell to the supplier paying most. On any one day suppliers pay a bit under the new price, so the profit is in the timing."]:
 		var l := _label(line, "body_medium", fs - 2, T.TEXT)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -141,13 +158,17 @@ func _row(head: bool, l: Dictionary, have: int, coming: int, lot: bool) -> Contr
 		row.add_child(bs)
 		return card
 	var key := str(l.key)
-	var buy: Dictionary = bus.call("trade_buy_quote", key, LOT)
+	var buy: Dictionary = bus.call("trade_buy_quote", key, TradeBook.buy_qty(l))
 	var used: Dictionary = bus.call("trade_used_quote", key, LOT) if lot else {}
 	var offers: Array = bus.call("trade_offers", key, 1)
 	var best := float(offers[0].each) if not offers.is_empty() else 0.0
 	var trend: PackedFloat32Array = bus.call("trade_trend", key, DAYS)
 	var st := _stats(trend)
-	_cell(row, _lines([[str(l.name), "body_medium", fs - 1, T.TEXT]]), 0)
+	var nl := [[str(l.name), "body_medium", fs - 1, T.TEXT]]
+	if str(l.get("pack", "")) != "":
+		nl.append(["in " + str(l.pack), "mono_medium", fs - 4, T.DIM])
+	_cell(row, _lines(nl), 0)
+	var n := TradeBook.buy_qty(l)
 	var hold := [["%d" % have, "mono_medium", fs - 2, T.TEXT if have > 0 else T.DIM]]
 	if coming > 0:
 		hold.append(["+%d coming" % coming, "mono_medium", fs - 4, T.DIM])
@@ -179,11 +200,11 @@ func _row(head: bool, l: Dictionary, have: int, coming: int, lot: bool) -> Contr
 	_cell(row, _lines([[_change("week", float(st.week)), "mono_medium", fs - 4, T.TEXT],
 			[_change("month", float(st.month)), "mono_medium", fs - 4, T.TEXT],
 			["90-day range: " + where, "mono_bold", fs - 4, wc]]), 6)
-	var b := T.button("NEW %d" % LOT, false, fs - 3)
+	var b := T.button("NEW %d" % n, false, fs - 3)
 	b.disabled = buy.is_empty()
 	if not buy.is_empty():
-		b.tooltip_text = "Buy %d new from %s for CR %s; they arrive in %d days." % [LOT, str(buy.get("name", "")), T.money(int(buy.total)), int(buy.get("lead", 0))]
-	b.pressed.connect(func() -> void: bus.call("trade_buy", key, LOT, false))
+		b.tooltip_text = "Buy %d new from %s for CR %s; they arrive in %d days." % [n, str(buy.get("name", "")), T.money(int(buy.total)), int(buy.get("lead", 0))]
+	b.pressed.connect(func() -> void: bus.call("trade_buy", key, n, false))
 	_button(row, b)
 	var u := T.button("BUY LOT", false, fs - 3)
 	u.disabled = used.is_empty()
@@ -202,6 +223,45 @@ func _row(head: bool, l: Dictionary, have: int, coming: int, lot: bool) -> Contr
 	sa.pressed.connect(func() -> void: bus.call("trade_sell", key, have, ""))
 	_button(row, sa)
 	return card
+
+
+## INSIDER TIPS: the yard's trade advisor on where prices are heading, and on the builds in hand.
+func _tips() -> void:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", T.box(CARD, Color.TRANSPARENT, 0, fs * 0.4))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", int(fs * 0.3))
+	card.add_child(v)
+	v.add_child(_label("FROM THE DESK OF %s, TRADE ADVISOR" % ADVISOR.to_upper(), "display_bold", fs, T.ORANGE))
+	var intro := _label("Word from my contacts at the suppliers, for the week ahead. They are usually right about which way a price goes, less often about how far: trade at your own risk.", "body_medium", fs - 2, T.DIM)
+	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(intro)
+	_body.add_child(card)
+	var tips: Array = bus.call("trade_tips")
+	if tips.is_empty():
+		_body.add_child(_label("Nothing worth a tip today: the market is quiet.", "body_medium", fs - 1, T.DIM))
+		return
+	var heads := {"build": "FOR THE BUILDS IN HAND", "held": "FOR THE BUILDS IN HAND", "rise": "ON THE MARKET", "fall": "ON THE MARKET"}
+	var last := ""
+	for t: Dictionary in tips:
+		var h := str(heads.get(str(t.kind), ""))
+		if h != last:
+			_body.add_child(_label(h, "mono_bold", fs - 3, T.DIM))
+			last = h
+		var row := PanelContainer.new()
+		row.add_theme_stylebox_override("panel", T.box(CARD, Color.TRANSPARENT, 0, fs * 0.3))
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", int(fs * 0.6))
+		row.add_child(hb)
+		var mark := {"rise": ["▲", T.GOOD], "fall": ["▼", T.AMBER], "build": ["◆", T.CYAN], "held": ["●", T.GOOD]}.get(str(t.kind), ["·", T.DIM]) as Array
+		var m := _label(str(mark[0]), "mono_bold", fs + 2, mark[1])
+		m.custom_minimum_size.x = fs * 1.4
+		hb.add_child(m)
+		var tl := _label(str(t.text), "body_medium", fs - 1, T.TEXT)
+		tl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hb.add_child(tl)
+		_body.add_child(row)
 
 
 ## The trend's figures: lo, hi, avg, pos (today in the range, 0 low to 1 high), week and month

@@ -824,6 +824,67 @@ func trade_trend(key: String, days := 14) -> PackedFloat32Array:
 	return _trends[k]
 
 
+## The trade advisor's tips for today, best first: [{key, name, kind ("rise", "fall", "build",
+## "held"), text, change}]. Market tips for any part; build tips for the parts the builds in
+## hand still have to order (buy now before a rise, or wait out a fall) or could take from stock.
+func trade_tips() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var day := market_day()
+	var cat := catalog()
+	var looks := {}
+	for l in trade_lines():
+		var o := TradeBook.outlook(l, _vendors(), day, cat)
+		if not o.is_empty():
+			looks[str(l.key)] = o
+	# The builds in hand first: what is still to order (the biggest moves, and parts held).
+	var for_builds: Array[Dictionary] = []
+	if _build:
+		for cid: String in (_build.get("builds") as Dictionary):
+			var bname := str((_build.get("builds")[cid] as Dictionary).get("design_name", cid))
+			for l in lines(cid):
+				var left := float(l.need) - float(l.ordered)
+				if left <= 0.001 or trade_line(str(l.key)).is_empty():
+					continue
+				var packs := ceili(left / maxf(0.0001, float(l.need) / maxf(1.0, float(l.units))) - 0.001)
+				var what := "%d × %s" % [packs, str(l.name)] + (" (%s)" % str(l.pack) if str(l.pack) != "" else "")
+				var can := stock_can_cover(cid, str(l.key))
+				if can > 0:
+					for_builds.append({"key": l.key, "name": l.name, "kind": "held", "change": 9.0,
+							"text": "%s still needs %s. You hold %d from trading: use them from stock and they cost nothing more." % [bname, what, can]})
+				var o: Dictionary = looks.get(str(l.key), {})
+				if o.is_empty():
+					continue
+				var pct := roundi(absf(float(o.change)) * 100.0)
+				if float(o.change) > 0.0:
+					for_builds.append({"key": l.key, "name": l.name, "kind": "build", "change": absf(float(o.change)),
+							"text": "%s still needs %s. My sources say the price climbs about %d%% within %d days: order now." % [bname, what, pct, int(o.ahead)]})
+				else:
+					for_builds.append({"key": l.key, "name": l.name, "kind": "build", "change": absf(float(o.change)),
+							"text": "%s still needs %s. It looks set to fall about %d%% within %d days: if the build can wait, so can the order." % [bname, what, pct, int(o.ahead)]})
+	for_builds.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.change) > float(b.change))
+	out.append_array(for_builds.slice(0, 5))
+	var market: Array[Dictionary] = []
+	for l in trade_lines():
+		var o: Dictionary = looks.get(str(l.key), {})
+		if o.is_empty():
+			continue
+		var pct := roundi(absf(float(o.change)) * 100.0)
+		var held := int(holdings.get(str(l.key), 0))
+		var text := ""
+		if float(o.change) > 0.0:
+			text = "%s: expect suppliers to pay about %d%% more within %d days. A good time to buy, and worth having in stock ahead of a contract that needs it." % [str(l.name), pct, int(o.ahead)]
+			if held > 0:
+				text += " Hold on to the %d you have." % held
+		else:
+			text = "%s: expect it to slide about %d%% within %d days." % [str(l.name), pct, int(o.ahead)]
+			text += (" Sell the %d you hold now." % held) if held > 0 else " Wait to buy."
+		market.append({"key": l.key, "name": l.name, "kind": "rise" if float(o.change) > 0.0 else "fall",
+				"change": absf(float(o.change)), "text": text})
+	market.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.change) > float(b.change))
+	out.append_array(market.slice(0, 6))
+	return out
+
+
 ## The refurbished lots on offer today and not yet bought: trade line keys.
 func trade_lots() -> Array[String]:
 	var day := market_day()

@@ -37,7 +37,7 @@ const REFURB_HIGH := 1.6
 ## The trading market's swings: the slow one (months), the quicker one (weeks), the daily wobble,
 ## each a share of the price either way; the slow and quick ones' lengths in days, from..to.
 const SWING_LONG := 0.16
-const SWING_MID := 0.08
+const SWING_MID := 0.05
 const WOBBLE := 0.015
 const LONG_DAYS := Vector2(70.0, 120.0)
 const MID_DAYS := Vector2(14.0, 30.0)
@@ -47,7 +47,28 @@ const BEST_STANDING := 100.0
 const BEST_UNITS := 9999
 
 
-## Components in the sample designs' parts lists, one each: the lines the yard trades in.
+## The kinds of parts-list line the yard trades in: components, and the hull's plates, beams
+## and fixings (beenster, 20 Nov), one pack each (a sheet, a 6 m length, a pack of 50).
+const KINDS := ["component", "hull"]
+## Parts-list lines that are work, not stock (no one sells a weld).
+const SKIP := ["hull:welds"]
+## How many a buy takes: components five at a time, hull stock fifty (sheets, lengths, packs).
+const BUY_COMPONENTS := 5
+const BUY_STOCK := 50
+## The trade advisor's tips: how far ahead the advisor looks (days), the least change worth a tip,
+## and how far the advisor's figure can be out (a share of the change, either way).
+const TIP_AHEAD := [7, 14]
+const TIP_MIN := 0.07
+const TIP_ERROR := 0.25
+
+
+## How many one buy of `line` takes.
+static func buy_qty(line: Dictionary) -> int:
+	return BUY_COMPONENTS if str(line.get("kind", "")) == "component" else BUY_STOCK
+
+
+## Components and hull stock in the sample designs' parts lists, one each: the lines the yard
+## trades in.
 static func lines(cat: DesignCatalog) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if cat == null:
@@ -61,7 +82,7 @@ static func lines(cat: DesignCatalog) -> Array[Dictionary]:
 			DesignBus.Samples.skiff(rec, cat)
 		var totals := DesignTotals.compute(rec, cat, DesignStructure.measure(rec), DesignFrame.propose(rec))
 		for l: Dictionary in SupplyMarket.buy_lines(totals, cat):
-			if str(l.kind) != "component" or seen.has(str(l.key)):
+			if not KINDS.has(str(l.kind)) or SKIP.has(str(l.key)) or seen.has(str(l.key)):
 				continue
 			seen[str(l.key)] = true
 			var one := l.duplicate(true)
@@ -89,6 +110,29 @@ static func market(line: Dictionary, day: int) -> float:
 	return f + w.randf_range(-WOBBLE, WOBBLE)
 
 
+## The trade advisor's word on `line` on `day`: {ahead (days), change (the best buy-back then
+## against today, as the advisor reckons it: the real move give or take TIP_ERROR of it)}, or {}
+## when nothing is worth a tip. The same on every machine.
+static func outlook(line: Dictionary, vendors: Array, day: int, cat: DesignCatalog) -> Dictionary:
+	var now := offers(line, 1, vendors, day, cat)
+	if now.is_empty() or float(now[0].each) <= 0.0:
+		return {}
+	var best := {}
+	for ahead: int in TIP_AHEAD:
+		var then := offers(line, 1, vendors, day + ahead, cat)
+		if then.is_empty():
+			continue
+		var change := float(then[0].each) / float(now[0].each) - 1.0
+		if best.is_empty() or absf(change) > absf(float(best.change)):
+			best = {"ahead": ahead, "change": change}
+	if best.is_empty():
+		return {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("bsx_tip_%s_%d" % [str(line.key), day])
+	best.change = float(best.change) * (1.0 + rng.randf_range(-TIP_ERROR, TIP_ERROR))
+	return best if absf(float(best.change)) >= TIP_MIN else {}
+
+
 ## The real refurb bill of the `n`th part of stock order `order_id`, against the works' usual bill
 ## `usual`: somewhere in the estimate's window (the part's condition), the same on every machine.
 static func refurb_bill(usual: float, order_id: int, n: int) -> float:
@@ -102,7 +146,8 @@ static func refurb_bill(usual: float, order_id: int, n: int) -> float:
 static func lots(all: Array[Dictionary], day: int) -> Array[String]:
 	var keys: Array[String] = []
 	for l in all:
-		keys.append(str(l.key))
+		if str(l.kind) == "component":
+			keys.append(str(l.key))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash("bsx_lots_%d" % day)
 	var out: Array[String] = []

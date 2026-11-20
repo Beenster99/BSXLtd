@@ -85,6 +85,9 @@ func _run() -> void:
 	ts.position = Vector2(40, 40)
 	back.add_child(ts)
 	await _save(out, "trading")
+	ts.set("page", "TIPS")
+	ts.call("refresh")
+	await _save(out, "trading_tips")
 	get_tree().quit()
 
 

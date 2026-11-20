@@ -21,6 +21,10 @@ func run_tests() -> void:
 		biz.call("credit", 50000000, "test", "test cash")
 	var lines := orders.trade_lines()
 	check(lines.size() >= 5, "the yard trades in parts (%d)" % lines.size())
+	var hull_lines := lines.filter(func(l: Dictionary) -> bool: return str(l.kind) == "hull")
+	check(hull_lines.size() >= 3 and lines.all(func(l: Dictionary) -> bool: return not TradeBook.SKIP.has(str(l.key))),
+			"plates, beams and fixings trade too, welds do not (%d hull lines)" % hull_lines.size())
+	check(TradeBook.buy_qty(hull_lines[0]) == TradeBook.BUY_STOCK if not hull_lines.is_empty() else false, "hull stock is bought fifty at a time")
 	if lines.is_empty():
 		return
 	var cat := orders.catalog()
@@ -153,6 +157,22 @@ func run_tests() -> void:
 	check(int(t.spent) > 0 and int(t.earned) > 0, "trading's money in and out (%s)" % str(t))
 	key = used_key
 
+	# The trade advisor: tips that say which way a price goes, mostly right.
+	var tips := orders.trade_tips()
+	check(not tips.is_empty() and tips.all(func(t: Dictionary) -> bool: return str(t.text) != ""), "the trade advisor has tips (%d)" % tips.size())
+	var right := 0
+	var told := 0
+	for l: Dictionary in lines:
+		for d in range(day0, day0 + 60, 5):
+			var look := TradeBook.outlook(l, vendors, d, cat)
+			if look.is_empty():
+				continue
+			var now := TradeBook.offers(l, 1, vendors, d, cat)
+			var then := TradeBook.offers(l, 1, vendors, d + int(look.ahead), cat)
+			told += 1
+			if (float(then[0].each) > float(now[0].each)) == (float(look.change) > 0.0):
+				right += 1
+	check(told > 10 and right == told, "the advisor is right about which way prices go (%d of %d)" % [right, told])
 	var held_key := int(orders.holdings.get(key, 0))
 	var saved := orders.save_data()
 	orders.reset_data()
