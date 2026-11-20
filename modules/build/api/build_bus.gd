@@ -74,7 +74,7 @@ func register_module() -> void:
 	Menu.register_settings_section(Menu.DEBUG, "build.debug", "Building by hand", _debug_panel, 35)
 	if Flags.is_on(YardBus.DOCK):
 		for view: String in ["ghost", "frame", "weld", "hull"]:
-			Shots.register("build_" + view, YardBus.SCENE_PATH, _shot.bind(view), 40)
+			Shots.register("build_" + view, YardBus.SCENE, _shot.bind(view), 40)
 	if Modules.ready_done:
 		_hook_up()
 	else:
