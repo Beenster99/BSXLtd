@@ -310,6 +310,46 @@ func _fill_tools(box: HBoxContainer) -> void:
 		box.add_child(b)
 
 
+## A stairwell's flight (beenster, 20 Nov: "no space to get on the stairs or get off them"):
+## which way it climbs and which wall it stands against, and whether there is room for it.
+func _stair_row(rec: DesignRecord, r: Dictionary) -> Control:
+	var col := VBoxContainer.new()
+	col.name = "StairRow"
+	var id := str(r.id)
+	var has_upper := false
+	for u: Dictionary in rec.rooms_on(int(r.deck) + 1):
+		if str(u.type) == "stairs" and Rect2(r.x, r.z, r.w, r.d).intersection(Rect2(u.x, u.z, u.w, u.d)).get_area() >= 1.0:
+			has_upper = true
+	if not has_upper:
+		var l := T.label("The stairs up to this deck are set in the stairwell below.", "body", 13, T.DIM)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		col.add_child(l)
+		return col
+	var f := DesignStairs.flight(r, rec.deck_height)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var flip := T.button("CLIMB OTHER WAY", false, 13)
+	flip.name = "StairFlip"
+	flip.tooltip_text = "Turn the flight round: its foot goes to the other end"
+	flip.pressed.connect(func() -> void:
+		bus.editor.do({"op": "set_room", "id": id, "fields": {"stair_flip": not bool(r.get("stair_flip", false))}}))
+	row.add_child(flip)
+	var side := T.button("OTHER WALL", false, 13)
+	side.name = "StairSide"
+	side.tooltip_text = "Move the flight against the other long wall"
+	side.pressed.connect(func() -> void:
+		bus.editor.do({"op": "set_room", "id": id, "fields": {"stair_side": not bool(r.get("stair_side", false))}}))
+	row.add_child(side)
+	col.add_child(row)
+	var h := rec.deck_height
+	var text := "Flight %.1f m, landings %.1f m each end: needs %.1f m, room is %.1f m" % [
+			DesignStairs.run_for(h), DesignStairs.LANDING, DesignStairs.needs(h), maxf(float(r.w), float(r.d))]
+	var note := T.label(text, "body", 12, T.GOOD if bool(f.fits) else T.BAD)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(note)
+	return col
+
+
 ## The side and end elevations beside the plan (beenster, 20 Nov: "plan, side and 3D views in
 ## the same interface"): a drawing that follows the design, SIDE or END at the top.
 func _side_panel() -> Control:
@@ -1468,6 +1508,8 @@ func _on_selection(kind: String, id: String) -> void:
 			bus.editor.do({"op": "set_room", "id": id, "fields": {"w": v}})))
 		_selection.add_child(_size_row("Depth", float(r.d), func(v: float) -> void:
 			bus.editor.do({"op": "set_room", "id": id, "fields": {"d": v}})))
+		if str(r.type) == "stairs":
+			_selection.add_child(_stair_row(rec, r))
 		_selection.add_child(_info_panel(kind, id))
 		var mod_row := HBoxContainer.new()
 		var mod_name := LineEdit.new()

@@ -303,6 +303,7 @@ func _build_labels() -> void:
 		l.font_size = 28
 		l.outline_size = 6
 		l.modulate = Color(1, 1, 1, 0.95)
+		l.double_sided = false   # read from the aisle only, never mirrored through the rack (20 Nov)
 		var y := p.y - 0.07 if int(rack.kind) != YardRackStore.LONG else p.y - 0.2
 		if int(rack.kind) == YardRackStore.HEAVY:
 			y = float(rack.base) + float(rack.first) + 0.02

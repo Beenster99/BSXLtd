@@ -40,10 +40,11 @@ func run_tests() -> void:
 	check(page.get_child_count() > 5, "the page has its headings and lines")
 	screen.call("set_query", "airlock")
 	await frames(1)
-	check(list.get_child_count() == 1 and str(screen.get("current")) == "yard", "searching narrows the list and shows the match")
+	check(list.get_child_count() < bus.topics().size() and str(screen.get("current")) == "yard", "searching narrows the list and shows the first match: %d" % list.get_child_count())
 	bus.remove_topic("_test.page")
 	screen.call("set_query", "")
 	await _test_matrix(bus, screen)
+	await _test_parts(bus, screen)
 	screen.queue_free()
 
 
@@ -111,3 +112,62 @@ func _test_matrix(bus: HelpBus, screen: Control) -> void:
 	(m.find_child("ClearSupply", true, false) as Button).pressed.emit()
 	await frames(1)
 	check(str(m.get("supply_id")) == "", "the supply can be cleared")
+
+
+
+## Every part: each catalogue component, room, door kind and frame piece has an entry with its
+## numbers, rooms say what goes in them, parts say where they go, every size and grade has a
+## row, and Help's search finds a part and narrows the list to it.
+func _test_parts(bus: HelpBus, screen: Control) -> void:
+	var cat := (Modules.bus("design") as DesignBus).catalog
+	var data := HelpBus.PartsData.new(cat)
+	var all := data.entries()
+	var comps := all.filter(func(e: Dictionary) -> bool: return cat.parts.has(str(e.id)))
+	check(comps.size() == cat.parts.size(), "every component has an entry: %d of %d" % [comps.size(), cat.parts.size()])
+	check(all.filter(func(e: Dictionary) -> bool: return str(e.id).begins_with("room.")).size() == cat.rooms.size(), "every room has an entry")
+	check(all.filter(func(e: Dictionary) -> bool: return str(e.id).begins_with("door.")).size() == DesignCatalog.DOOR_KINDS.size(), "every door kind has an entry")
+	for k in ["frame.HullPlate", "frame.WindowPane", "frame.FrameRing", "frame.Stringer", "frame.DeckPlate", "structure.hull.armoured", "joint.rivets"]:
+		check(not data.entry(k).is_empty(), "the frame kit lists %s" % k)
+	var reactor := data.entry("reactor_small")
+	var span := DesignGrades.sizes(cat.part("reactor_small"))
+	check((reactor.rows as Array).size() == (span[1] - span[0] + 1) * DesignGrades.GRADE_ORDER.size(), "a graded part has a row for every size and grade: %d" % (reactor.rows as Array).size())
+	var attr := func(e: Dictionary, label: String) -> String:
+		for a: Array in e.attrs:
+			if str(a[0]) == label:
+				return str(a[1])
+		return ""
+	# beenster: "life support does not belong in a medical bay but I could not find where it should go".
+	var placed := cat.parts.values().filter(func(p: DesignPartType) -> bool: return not p.rooms.is_empty() and not p.hull_mount)
+	check(not placed.is_empty(), "some parts only go in some rooms")
+	var p: DesignPartType = placed[0]
+	var goes: String = attr.call(data.entry(p.id), "Goes in")
+	check(goes.contains(cat.room(p.rooms[0]).display_name), "a part says which rooms it goes in: %s -> %s" % [p.display_name, goes])
+	var room_text: String = attr.call(data.entry("room." + p.rooms[0]), "Parts made for it")
+	check(room_text.contains(p.display_name), "its room lists it among the parts made for it")
+	check(data.find(p.display_name.to_lower()).size() >= 1, "search over parts finds it by name")
+
+	check(bus.search("rivets").any(func(t: Dictionary) -> bool: return t.id == HelpBus.PARTS_TOPIC), "Help's search reaches into the parts list")
+	screen.call("set_query", "")
+	screen.call("show_topic", HelpBus.PARTS_TOPIC)
+	await frames(2)
+	var page := screen.find_child("Parts", true, false) as Control
+	check(page != null, "the Every part page shows the parts list")
+	if page == null:
+		return
+	check((page.call("shown") as Array).size() == all.size(), "with no search every part is listed")
+	screen.call("set_query", "glass panel")
+	await frames(1)
+	page = screen.find_child("Parts", true, false) as Control
+	check(page != null and str(screen.get("current")) != "", "searching keeps a page shown")
+	if str(screen.get("current")) == HelpBus.PARTS_TOPIC and page:
+		var hits: Array = page.call("shown")
+		check(not hits.is_empty() and hits.all(func(e: Dictionary) -> bool: return str(e.search).contains("glass")), "the search narrows the parts list: %d" % hits.size())
+		check(str(page.get("picked")) == str(hits[0].id), "and picks the first match")
+	else:
+		var titles := bus.search("glass panel").map(func(t: Dictionary) -> String: return str(t.id))
+		check(HelpBus.PARTS_TOPIC in titles, "the parts list is among the search hits: %s" % [titles])
+		screen.call("show_topic", HelpBus.PARTS_TOPIC)
+		await frames(1)
+		page = screen.find_child("Parts", true, false) as Control
+		check(page != null and (page.call("shown") as Array).size() < all.size(), "opening it while searching narrows the list")
+	screen.call("set_query", "")

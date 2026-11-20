@@ -7,6 +7,7 @@ extends ModuleTest
 ##   tools/run_tests.sh yard
 
 
+const DockScript := preload("res://modules/yard/internal/dock.gd")
 const YardWorkersScript := preload("res://modules/yard/internal/yard_workers.gd")
 const YardServiceScript := preload("res://modules/yard/internal/yard_service.gd")
 
@@ -308,6 +309,18 @@ func _design_lock(station: Node3D) -> void:
 		lock.call("advance", 0.05)
 		steps += 1
 	check(lock.get("state") == 0, "and back in")
+	# Its call button is off the wall screens (0.4.6 playtest: "the button is on the screen").
+	var call := lock.get_node_or_null("Panel_corridor") as Node3D
+	var clear := call != null
+	if call != null:
+		var at := call.global_position - YardBus.DESIGN_ROOM_CENTRE
+		for w: Dictionary in YardBus.design_room_walls():
+			var local: Vector3 = (w.transform as Transform3D).affine_inverse() * at
+			var size: Vector2 = w.size
+			if absf(local.z) < 0.4 and absf(local.x) < size.x * 0.5 + 0.15 and absf(local.y) < size.y * 0.5 + 0.15:
+				clear = false
+		clear = clear and YardLayout.room_at(call.global_position + call.global_basis.x * 0.3) == "design"
+	check(clear, "the lock's call button is in the design room, off its wall screens")
 
 
 ## The berths grow with reputation (beenster, 19 Nov): three tiers, each clear of the station,
@@ -333,6 +346,22 @@ func _berth_tiers(station: Node3D) -> void:
 		check(build.has_point(YardWorkersScript.KEEL_START) and is_equal_approx(build.size.x, (t.size as Vector3).x),
 				"tier %d: the keel is in the %d m build berth" % [tier, int(build.size.x)])
 		check(is_equal_approx((berths[1].box as AABB).size.x, build.size.x), "tier %d: a parked hull fits a holding berth" % tier)
+		# The worker bots' charge docks sit on the build berth's ribs (20 Nov: "these recharge bays
+		# should be mounted to the frame of the berth"), clear of each other and of the clamps.
+		var docks := YardWorkersScript.docks_for(tier)
+		var ribs := int(build.size.x / 10.0)
+		var mounted := docks.size() == YardWorkersScript.MAX_BOTS
+		var seen := {}
+		for d: Vector3 in docks:
+			var on_rib := false
+			for i in range(1, ribs):
+				on_rib = on_rib or absf(d.x - (build.position.x + build.size.x * float(i) / float(ribs))) < 0.01
+			var clamps := [build.position.y + build.size.y * 0.3, build.position.y + build.size.y * 0.7]
+			var clear := absf(d.y - float(clamps[0])) > 3.0 and absf(d.y - float(clamps[1])) > 3.0
+			mounted = mounted and on_rib and clear and d.y > build.position.y + 2.5 and d.y < build.end.y - 2.5 \
+					and absf(d.z - (build.end.z - 0.3)) < 0.01 and not seen.has(str(d))
+			seen[str(d)] = true
+		check(mounted, "tier %d: every charge dock on a rib of the build berth, clear of the clamps" % tier)
 	check(YardBus.berth_tier_for_hull(Vector3(50, 20, 20)) == 1 and YardBus.berth_tier_for_hull(Vector3(90, 30, 30)) == 2
 			and YardBus.berth_tier_for_hull(Vector3(190, 50, 50)) == 3 and YardBus.berth_tier_for_hull(Vector3(300, 50, 50)) == 4
 			and YardBus.berth_tier_for_hull(Vector3(400, 50, 50)) == 0 and YardBus.berth_for(60.0) == 2,
@@ -347,6 +376,9 @@ func _berth_tiers(station: Node3D) -> void:
 	check(int(dock.get("tier")) == 4 and spots >= 24, "the dock rebuilt as giga berths, floodlit (%d)" % spots)
 	var drawn := (dock.get("berth_nodes") as Dictionary)
 	check(drawn.size() == 3, "all three berths drawn")
+	var crew := station.get("workers") as Node
+	check(crew.get("docks") == YardWorkersScript.docks_for(4) and (crew.get("charge_docks") as Node3D).get_child(0).position == YardWorkersScript.docks_for(4)[0],
+			"the crew's docks moved to the giga berth's ribs")
 	station.call("_on_berth_tier", 1)
 	await frames(1)
 
@@ -357,6 +389,32 @@ func _racking(station: Node3D) -> void:
 	var store := hall.get("store") as YardRackStore
 	var bus := Modules.bus("yard") as YardBus
 	check(bus.rack_store == store, "the bus holds the hall's store")
+	# The roof's solar arrays stand clear of it (20 Nov: "some of the solar panels poke through
+	# the roof of the warehouse").
+	var roof_y := (YardLayout.ROOMS["racking"].box as AABB).end.y
+	var arrays := 0
+	var lowest := INF
+	for n in station.get_children():
+		if not str(n.name).begins_with("StoresSolar_"):
+			continue
+		arrays += 1
+		for m in (n as Node3D).find_children("*", "MultiMeshInstance3D", true, false):
+			var mmi := m as MultiMeshInstance3D
+			var box := mmi.global_transform * mmi.multimesh.get_aabb()
+			lowest = minf(lowest, box.position.y)
+	# Nothing of the station's own stands in the upper deck's aisles (20 Nov: "some of the
+	# corridors in the warehouse are blocked by these objects": old roof fins at 16 m).
+	var in_aisle := 0
+	for n in station.get_children():
+		var mi := n as MeshInstance3D
+		if mi == null or not mi.visible:
+			continue
+		var b := mi.global_transform * mi.get_aabb()
+		if b.position.y < YardRackStore.UPPER_FLOOR_Y + 2.5 and b.end.y > YardRackStore.UPPER_FLOOR_Y + 0.3 \
+				and b.position.x > 22.7 and b.end.x < 26.8 and b.position.z > -52.0 and b.end.z < -10.0:
+			in_aisle += 1
+	check(in_aisle == 0, "the upper deck's aisles are clear (%d in the way)" % in_aisle)
+	check(arrays == 6 and lowest > roof_y + 0.3, "the roof's six solar arrays clear the roof (lowest %.2f m, roof %.2f m)" % [lowest, roof_y])
 	# Real parts, not crates: every filled place drawn as its part, all of it inside its place.
 	var expected := 0
 	var fits := true
@@ -452,6 +510,16 @@ func _dock(station: Node3D) -> void:
 				check(not box.intersects(other.box), "berths %s and %s do not overlap" % [b.name, other.name])
 	var lights := dock.find_children("*", "SpotLight3D", true, false)
 	check(lights.size() >= 12, "the berths are floodlit")
+	# The dock's two arms land on mount plates flush under the station (20 Nov: "please join the
+	# design office properly to the berth").
+	var feet := 0
+	for foot: Vector3 in DockScript.ARM_FEET:
+		for m in dock.find_children("*", "MeshInstance3D", true, false):
+			var b := (m as MeshInstance3D).global_transform * (m as MeshInstance3D).get_aabb()
+			if absf(b.end.y - YardLayout.HULL_BOX.position.y) < 0.02 and b.size.x >= 4.0 and b.has_point(Vector3(foot.x, b.get_center().y, foot.z)):
+				feet += 1
+				break
+	check(feet == DockScript.ARM_FEET.size(), "both dock arms bolted flat under the station (%d)" % feet)
 	# Lived in: steam off the coffee, dust in the stores, a fan turning, a lamp that stutters.
 	var lived := station.get_node_or_null("LivedIn")
 	check(lived != null and lived.get_node_or_null("Steam") is CPUParticles3D and lived.get_node_or_null("Dust") is CPUParticles3D, "steam off the coffee machine and dust in the stores")

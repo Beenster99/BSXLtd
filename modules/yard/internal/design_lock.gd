@@ -28,7 +28,10 @@ func build(kit) -> void:
 	k.ceiling_lamp(Vector3(box.get_center().x, top, (zi + zo) * 0.5), Vector2(0.8, 0.8), 0.8, 7.0)
 	inner_door = _door(zi, "InnerDoor")
 	outer_door = _door(zo, "OuterDoor")
-	_panel(Vector3(box.position.x + 0.02, 1.3, zi + 0.6), Vector3.RIGHT, "corridor")
+	# The room's call button: on the strip of window wall right of the inner door, facing the
+	# room (the side wall beside the door is all wall screen: 0.4.6 playtest, "the button is on
+	# the screen").
+	_panel(Vector3(x1 + 0.15, 1.3, zi + 0.14), Vector3.BACK, "corridor")
 	_panel(Vector3(box.end.x - 0.02, 1.3, (zi + zo) * 0.5), Vector3.LEFT, "inside")
 	_panel(Vector3(box.end.x + 0.1, 1.3, zo - 0.12), Vector3.FORWARD, "outside")
 	# State lamps over each door, both faces.
@@ -74,7 +77,12 @@ func _door(x: float, node_name: String) -> AnimatableBody3D:
 	return d
 
 
+## The base's panels face along x; these turn to lie flat on whichever wall they are on.
 func _panel(at: Vector3, facing: Vector3, where: String) -> void:
 	super._panel(at, facing, where)
-	var area := get_child(get_child_count() - 1)
+	var area := get_child(get_child_count() - 1) as Node3D
 	area.set_meta("gfx_id", "design_lock:" + where)
+	area.basis = Basis(Vector3.UP, atan2(-facing.z, facing.x))
+	for c in area.get_children():
+		if c is MeshInstance3D:
+			(c as MeshInstance3D).position = Vector3(0.02, 0.0, 0.0)

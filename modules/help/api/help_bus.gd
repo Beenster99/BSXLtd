@@ -32,6 +32,11 @@ const KEYS_TOPIC := "keys"
 const HelpScreen := preload("res://modules/help/internal/help_screen.gd")
 const Guide := preload("res://modules/help/internal/guide.gd")
 const CapabilityMatrix := preload("res://modules/help/internal/capability_matrix.gd")
+const PartsPage := preload("res://modules/help/internal/parts_page.gd")
+const PartsData := preload("res://modules/help/internal/parts_data.gd")
+## The list of every building part.
+const PARTS_TOPIC := "parts_list"
+const PARTS_TEXT := """Every part you can build with, from the design catalogue: components, rooms, doors, the hull's frame, plates and glass, wires and pipes. Each with all its numbers, where it goes, and every size and grade."""
 ## The size x class matrix page.
 const MATRIX_TOPIC := "matrix"
 const MATRIX_TEXT := """Every component that comes in sizes, at sizes 1 to 8 and grades R S L H Q P: power made, thrust, jump, damage, defence, range, cargo and the power each one uses. Click a reactor, generator or battery to see everything it can power."""
@@ -45,8 +50,13 @@ func register_module() -> void:
 		add_topic(str(t.id), str(t.title), str(t.text), int(t.order))
 	var design := Modules.bus("design") as DesignBus
 	if design:
+		var cat := design.catalog
 		add_page(MATRIX_TOPIC, "Sizes and classes", MATRIX_TEXT,
-				func(px: float) -> Control: return make_matrix(design.catalog, px), 45)
+				func(px: float) -> Control: return make_matrix(cat, px), 45,
+				func() -> String: return _matrix_words(cat))
+		add_page(PARTS_TOPIC, "Every part", PARTS_TEXT,
+				func(px: float) -> Control: return make_parts(cat, px), 46,
+				func() -> String: return PartsData.new(cat).search_text())
 	if Flags.is_on(WRIST_FLAG):
 		HudSlots.register_holo_channel(HOLO_CHANNEL, HOLO_LABEL,
 				func(_glass: bool) -> Control: return make_screen(WRIST_PX), HOLO_ORDER)
@@ -63,10 +73,39 @@ func add_topic(id: String, title: String, text: String, order: int = 50) -> void
 
 
 ## Adds a page that is a control of its own: `make(px_per_m) -> Control` builds it each time
-## it is shown; `text` is what search reads and what shows above it.
-func add_page(id: String, title: String, text: String, make: Callable, order: int = 50) -> void:
-	_topics[id] = {"id": id, "title": title, "text": text, "order": order, "make": make}
+## it is shown. Search reads `text`, and what `words() -> String` returns when given (read once
+## and kept). A control with set_query(q) is told the words typed in Help's search box.
+func add_page(id: String, title: String, text: String, make: Callable, order: int = 50,
+		words: Callable = Callable()) -> void:
+	_topics[id] = {"id": id, "title": title, "text": text, "order": order, "make": make, "words": words}
 	topics_changed.emit()
+
+
+## Everything search reads on a page, lower case.
+func search_text(id: String) -> String:
+	var t := topic(id)
+	if t.is_empty():
+		return ""
+	var w: Callable = t.get("words", Callable())
+	if not w.is_valid():
+		return (str(t.title) + " " + page_text(id)).to_lower()
+	if not t.has("_hay"):
+		t["_hay"] = (str(t.title) + " " + page_text(id) + " " + str(w.call())).to_lower()
+	return str(t._hay)
+
+
+func make_parts(catalog: DesignCatalog, px_per_m: float) -> Control:
+	var p := PartsPage.new()
+	p.setup(catalog, px_per_m)
+	return p
+
+
+static func _matrix_words(catalog: DesignCatalog) -> String:
+	var words: PackedStringArray = []
+	for p: DesignPartType in catalog.parts.values():
+		if p.size_class > 0:
+			words.append(p.display_name)
+	return " ".join(words)
 
 
 func make_matrix(catalog: DesignCatalog, px_per_m: float) -> Control:
@@ -143,7 +182,7 @@ func search(query: String) -> Array[Dictionary]:
 	var words := query.to_lower().split(" ", false)
 	var out: Array[Dictionary] = []
 	for t in topics():
-		var hay := (str(t.title) + " " + page_text(str(t.id))).to_lower()
+		var hay := search_text(str(t.id))
 		if Array(words).all(func(w: String) -> bool: return hay.contains(w)):
 			out.append(t)
 	return out
