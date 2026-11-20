@@ -107,6 +107,8 @@ const SHIP_CONTRACTS_FLAG := "contracts.ship_contracts"
 const STAGE_STANDIN_FLAG := "contracts.stage_standin"
 ## Ship contract ids: SHIP_PREFIX + the order's id.
 const SHIP_PREFIX := "sc_"
+## Two easy starter orders always on the board until delivered (ShipOrders.TUTORIAL).
+const TUTORIAL_FLAG := "contracts.tutorial_orders"
 ## Open generated offers a client keeps on the board at once.
 const OFFERS_PER_CLIENT := 2
 ## The contracts board's tabs (board()).
@@ -151,7 +153,27 @@ func register_module() -> void:
 		Menu.register_settings_section(Menu.DEBUG, DEBUG_SECTION, "Contracts", _debug_section, 30)
 	if not Modules.modules_ready.is_connected(_hook_net):
 		Modules.modules_ready.connect(_hook_net)
+	if Flags.is_on(TUTORIAL_FLAG) and not Modules.modules_ready.is_connected(_add_help):
+		Modules.modules_ready.connect(_add_help)
 	set_process(true)
+
+
+## A page on the wrist's Help tab for the starter orders (the help module, by name, when it is
+## there).
+func _add_help() -> void:
+	var help := Modules.bus("help")
+	if help == null or not help.has_method("add_topic"):
+		return
+	help.call("add_topic", "contracts.starter", "Your first contract", "\n".join([
+		"# Your first contract",
+		"Two starter jobs are always first on the ship order list until you deliver them: a crew shuttle for Hesper Line and a survey skiff for the Veil Relay Institute. Small, generous, plenty of time.",
+		"- At the holotable ({key:interact}), PICK FROM ORDERS and click a starter job. Design a small ship, or open the sample skiff (Esc > Settings > Debug > Open the sample skiff): it already meets both.",
+		"- The data channel shows every demand met. The QUOTE line under the order shows your price and margin.",
+		"- SEND QUOTE: the client signs and pays the 20% deposit.",
+		"- CONTRACT DETAILS: every payment, what sets it off and when it is due.",
+		"- The keel and fit-out payments come in on their days (skip time to see them).",
+		"- DELIVER FOR TRIAL: the surveyors test her and the delivery is paid. Your standing with the client goes up.",
+		"> Beat a demand by a quarter for a bonus; miss one and part of the delivery is held back."]), 55)
 
 
 func unregister_module() -> void:
@@ -405,7 +427,13 @@ func ship_orders() -> Array[Dictionary]:
 	if not Flags.is_on(SHIP_ORDERS_FLAG):
 		return []
 	if Flags.is_on(SHIP_VARIETY_FLAG):
-		var out := ShipOrders.for_cycle(_cycle, ShipOrders.PER_CYCLE, true, level_of)
+		var out: Array[Dictionary] = []
+		# The starter orders first, until each is delivered.
+		if Flags.is_on(TUTORIAL_FLAG):
+			for o: Dictionary in ShipOrders.tutorial_orders():
+				if str(ship_contract_for(str(o.id)).get("state", "")) != "delivered":
+					out.append(o)
+		out.append_array(ShipOrders.for_cycle(_cycle, ShipOrders.PER_CYCLE, true, level_of))
 		var have := berth_tier()
 		for o: Dictionary in out:
 			o["berth_short"] = have > 0 and int(o.get("berth", 1)) > have
