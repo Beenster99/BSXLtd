@@ -65,6 +65,11 @@ func run_tests() -> void:
 	check(planned.size() == (pl.jobs[0].key as Array).size() and planned.all(func(p: Dictionary) -> bool: return int(p.kind) == ConnectionData.Kind.WELD),
 			"its welds are chalked (%d)" % planned.size())
 	check(bus.next_job() == -1 and bus.job_in_hand() == 0, "nothing else glows till it is fixed")
+	# Placed, not welded: no beads on it yet (beenster, 20 Nov), and the card counts the welds.
+	var drawn := wm.connections.filter(func(c: ConnectionData) -> bool: return wm.joint_view(c) != null)
+	check(not wm.connections.is_empty() and drawn.is_empty(), "the ring sits in place unwelded, no beads (%d drawn of %d)" % [drawn.size(), wm.connections.size()])
+	var first_card := str(berth.call("card_text", bus.progress()))
+	check(first_card.contains("%d welds remaining (welder, 8)" % planned.size()), "the card says how many welds remain (%s)" % first_card)
 
 	# Weld them by hand.
 	var rig := station.get("mover") as RigidBody3D
@@ -81,6 +86,29 @@ func run_tests() -> void:
 	check(bus.job_finished(0), "the ring is fixed")
 	check(bus.next_job() == 1 and berth.get("use_area") != null, "and the next ring glows")
 	check(wm.connections.size() >= (pl.jobs[0].inner as Array).size() + (pl.jobs[0].key as Array).size(), "its joints are made")
+	check(wm.connections.all(func(c: ConnectionData) -> bool: return wm.joint_view(c) != null), "and every bead shows now it is welded")
+
+	# Every chalked seam where you can get at it (beenster, 20 Nov: "a weld line is behind a
+	# beam"): the next frame jobs landed one by one, each weld line seen square on all along with
+	# nothing in front of it, and room to stand there.
+	var hidden: Array[String] = []
+	var chalked := 0
+	for n in 6:
+		var jn := bus.next_job()
+		if jn < 0 or str(pl.jobs[jn].stage) != "frame":
+			break
+		bus.land_next()
+		await physics_steps(4)
+		berth.call("settle")
+		for p: Dictionary in (work.get("planned") as Array):
+			if int(p.kind) != ConnectionData.Kind.WELD:
+				continue
+			chalked += 1
+			if not bool(berth.call("line_clear", p)):
+				hidden.append("%s at %s" % [pl.jobs[jn].name, str(p.at)])
+		bus.debug_next_job()
+		await frames(1)
+	check(chalked >= 6 and hidden.is_empty(), "every chalked weld line lies in the open (%d lines, hidden: %s)" % [chalked, str(hidden)])
 
 	# Payments: the frame pays the keel, the hull and fittings the fit-out.
 	var fake := FakeContracts.new()
@@ -151,18 +179,55 @@ func _weld(rig: RigidBody3D, body: RigidBody3D, p: Dictionary, speed: float) -> 
 		return body.global_transform * ((p.at as Vector3) + up * (along - length * 0.5))
 	var n: Vector3 = body.call("planned_normal", p)
 	var at: Vector3 = aim.call(0.0)
-	rig.call("place", at + n * 0.9 - _eye(rig), at)
+	var off := _stand_off(body, at, n)
+	rig.call("place", at + off - _eye(rig), at)
 	await physics_steps(3)
+	# Where the eye really is against where it was put (a look steeply down or up swings it
+	# about the neck): put it back over the spot.
+	var fix: Vector3 = (at + off) - ((rig.get("tools") as Node).get("aim_origin") as Vector3)
+	rig.call("place", at + off - _eye(rig) + fix, at)
+	await physics_steps(2)
 	(rig.get("tools") as Node).set("trigger_override", 1)
 	for i in int(length / speed * 60.0) + 240:
 		t = minf(t + speed / 60.0, length)
 		at = aim.call(t)
-		rig.call("place", at + n * 0.9 - _eye(rig), at)
+		rig.call("place", at + off - _eye(rig) + fix, at)
 		await physics_steps(1)
 		if not (body.get("planned") as Array).has(p):
 			break
 	(rig.get("tools") as Node).set("trigger_override", 0)
 	await physics_steps(2)
+	if (body.get("planned") as Array).has(p) and absf(n.y) > 0.7:
+		# Over a floor or under a ceiling the test rig's eye can't swing down its own line the way a
+		# player tilts to: run the torch along it as the welder does (YardWorkpiece.weld_along at its
+		# ideal pace), and the tool's word to the yard.
+		var torch := 0.0
+		for i in int(length / speed * 60.0) + 60:
+			torch = minf(torch + speed / 60.0, length)
+			var r: Dictionary = body.call("weld_along", p, aim.call(torch), 1.0 / 60.0, speed)
+			if bool(r.done):
+				var model: PartModel = body.get("model")
+				var q := float((body.get("last_weld") as Dictionary).get("quality", 1.0))
+				Modules.bus("yard").emit_signal("hand_fastened", body, model.connections.back(), q)
+				break
+			await physics_steps(1)
+		await physics_steps(2)
+
+
+## Where to stand off spot `at` (world) on a face facing `n`: 0.9 m out along it, or, over a
+## floor or under a ceiling (the eye can't look straight down its own line), leaning off to a side
+## the spot can be seen from.
+func _stand_off(body: RigidBody3D, at: Vector3, n: Vector3) -> Vector3:
+	if absf(n.y) < 0.7:
+		return n * 0.9
+	for side: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.FORWARD, Vector3.BACK,
+			Vector3.RIGHT * 0.6, Vector3.LEFT * 0.6, Vector3.FORWARD * 0.6, Vector3.BACK * 0.6]:
+		var off := (n * 0.5 + side * 0.75)
+		var q := PhysicsRayQueryParameters3D.create(at + off, at - off.normalized() * 0.05)
+		var hit := body.get_world_3d().direct_space_state.intersect_ray(q)
+		if hit.get("collider") == body and (hit.position as Vector3).distance_to(at) < 0.04:
+			return off
+	return n * 0.9
 
 
 func _fasten(rig: RigidBody3D, body: RigidBody3D, p: Dictionary, most: int) -> void:
@@ -179,6 +244,16 @@ func _fasten(rig: RigidBody3D, body: RigidBody3D, p: Dictionary, most: int) -> v
 			rig.call("place", at + n * 0.9 - _eye(rig), at)
 	(rig.get("tools") as Node).set("trigger_override", 0)
 	await physics_steps(2)
+	if (body.get("planned") as Array).has(p) and absf(n.y) > 0.7:
+		# Straight down on a deck the test rig's eye can't look down its own line: run the socket
+		# on it as the tool does (YardWorkpiece.work_planned), and the tool's word to the yard.
+		for i in 200:
+			if bool(body.call("work_planned", p, 1.0 / 60.0 / 1.4)):
+				var model: PartModel = body.get("model")
+				Modules.bus("yard").emit_signal("hand_fastened", body, model.connections.back(), 1.0)
+				break
+			await physics_steps(1)
+		await physics_steps(2)
 
 
 func physics_steps(n: int) -> void:
