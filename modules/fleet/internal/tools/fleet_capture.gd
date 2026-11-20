@@ -27,6 +27,10 @@ func _run() -> void:
 	var bus := Modules.bus("fleet") as FleetBus
 	var design := Modules.bus("design") as DesignBus
 	design.open_sample()
+	if "--editor" in OS.get_cmdline_user_args():
+		await _editor_shot(bus, out)
+		get_tree().quit()
+		return
 	var station := (load(YardBus.SCENE_PATH) as PackedScene).instantiate() as Node3D
 	add_child(station)
 	var sim: Node = station.get("sim")
@@ -77,6 +81,40 @@ func _run() -> void:
 	await _frames(20)
 	await _save(out, "fleet_wrist")
 	get_tree().quit()
+
+
+## The group editor (name the group, pick its bots, SAVE GROUP) over a stand-in crew: no yard.
+func _editor_shot(bus: FleetBus, out: String) -> void:
+	var crew := [["F", "F-3", "TC-F3-01", 0.31, 0.83, "Fitting keel ring 6, stringer 3/8"],
+			["F", "F-3", "TC-F3-02", 0.34, 0.85, "Fitting keel ring 6, stringer 4/8"],
+			["W", "W-3", "TC-W3-01", 0.2, 1.0, "Welding keel ring 6, joint 2/2"],
+			["W", "W-3", "TC-W3-02", 0.12, 0.95, "Welding keel ring 5, joint 1/2"],
+			["R", "R-3", "TC-R3-01", 0.33, 0.91, "Riveting keel ring 5 hull plate, rivet 3/4"],
+			["B", "B-3", "TC-B3-01", 0.31, 1.0, "Bolting keel ring 4 power kit, bolt 2/4"]]
+	bus.source = func() -> Array[Dictionary]:
+		var rows: Array[Dictionary] = []
+		for i in crew.size():
+			var c: Array = crew[i]
+			rows.append(FleetBus.row_for("Worker%d" % (i + 1), {"role": c[0], "model": c[1], "serial": c[2], "wear": c[3],
+					"charge": c[4], "state": "working", "job": c[5], "mark_name": "Mk1", "slots": 1}, Vector3(0, -5, -85), {}))
+		return rows
+	bus.command({"op": "group_save", "group": "", "name": "Frame crew", "bots": ["TC-W3-01", "TC-W3-02"]})
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	var screen := bus.make_screen(150.0)
+	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(screen)
+	screen.call("edit_group", "")
+	var draft: Dictionary = screen.get("draft")
+	draft.name = "Hull crew"
+	draft.bots = {"TC-R3-01": true, "TC-B3-01": true}
+	screen.set("_rebuild_editor", true)
+	screen.call("refresh", true)
+	await _frames(10)
+	await _save(out, "fleet_group_editor")
+	screen.call("save_group")
+	await _frames(10)
+	await _save(out, "fleet_group_saved")
 
 
 func _frames(n: int) -> void:
