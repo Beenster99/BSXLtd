@@ -31,6 +31,9 @@ signal said(line: String)
 const FLAG := "bots"
 const BOARD_FLAG := "bots.board"
 const CAMS_FLAG := "bots.cams"
+## The crew are TartanCo's androids (their look and trades, YardBus.worker_look), not BSX's own
+## flying bots (beenster, 20 Nov). Off, the flying bots come back.
+const TARTANCO_FLAG := "bots.tartanco"
 const SAVE_SECTION := "bots"
 const SAVE_VERSION := 1
 const STATE_EVENT := "bots.state"

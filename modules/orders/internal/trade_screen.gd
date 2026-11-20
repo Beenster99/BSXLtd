@@ -1,10 +1,11 @@
 extends PanelContainer
 ## PARTS TRADING (master plan 7.6, a sideline): on any wall of the design room and on the wrist.
-## Every part the yard deals in, one row each: what the cheapest vendor sells it for today, what
-## the best buyer pays for it (always less), the buy-back's trend over two weeks (time a sale:
-## sell when it is high), how many the yard holds and how many are on their way. BUY 5 new or a
-## second-hand LOT of 5 (cheaper, through the refurb works first), SELL 1 or SELL ALL to the best
-## buyer. Trading's money shows as its own line in the accounts.
+## A "how this works" box, then a table with plain headings, one row a part: PART, YOU HOLD (and
+## how many are coming), BUY NEW (the cheapest supplier, today), USED LOT (each, refurb included),
+## SUPPLIERS PAY YOU (the best buyer today, always under new), PRICE TODAY (a fortnight's graph of
+## what buyers paid, and whether today is HIGH, LOW or MIDDLING), then NEW 5, USED 5, SELL 1 and
+## SELL ALL. Trading's money shows as its own line in the accounts (beenster, 20 Nov: the first
+## version was hard to read).
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 
@@ -61,23 +62,32 @@ func refresh() -> void:
 		_body.remove_child(c)
 		c.queue_free()
 	var t: Dictionary = bus.call("trade_totals")
-	_status.text = "PARTS TRADING  ·  DAY %d  ·  BOUGHT CR %s  ·  SOLD CR %s  ·  NET CR %s" % [int(bus.call("market_day")),
-			T.money(int(t.spent)), T.money(int(t.earned)), T.money(int(t.net))]
+	_status.text = "PARTS TRADING  ·  DAY %d  ·  SPENT ON STOCK CR %s  ·  PAID BY BUYERS CR %s  ·  NET SO FAR CR %s (unsold stock counts as spent)" % [
+			int(bus.call("market_day")), T.money(int(t.spent)), T.money(int(t.earned)), T.money(int(t.net))]
 	if not Flags.is_on(OrdersBus.SELL_FLAG):
 		_body.add_child(_label("Parts trading is off.", "body_medium", fs, T.DIM))
 		return
-	var head := HBoxContainer.new()
-	var intro := _label("Vendors buy parts back, always for less than they sell them that day. Buy when the market is low and sell when it is high, or buy second-hand lots cheap, refurbish them and sell them on.",
-			"body_medium", fs - 2, T.DIM)
-	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	intro.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(intro)
-	var held := T.button("HELD ONLY" if not only_held else "ALL PARTS", only_held, fs - 3)
+	# How it works, in three steps.
+	var how := PanelContainer.new()
+	how.add_theme_stylebox_override("panel", T.box(CARD, Color.TRANSPARENT, 0, fs * 0.3))
+	var hv := VBoxContainer.new()
+	how.add_child(hv)
+	hv.add_child(_label("HOW THIS WORKS", "display_bold", fs, T.ORANGE))
+	for line: String in [
+			"1. Buy parts for stock: BUY NEW, or a cheaper USED LOT that the refurb works fix up before you can sell it.",
+			"2. Wait for them to arrive (YOU HOLD goes up).",
+			"3. Sell to the supplier paying most. Suppliers always pay a bit less than new, so profit comes from used lots, or from selling on a day the price is HIGH."]:
+		var l := _label(line, "body_medium", fs - 2, T.TEXT)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hv.add_child(l)
+	var held := T.button("SHOW ONLY WHAT I HOLD" if not only_held else "SHOW EVERY PART", only_held, fs - 3)
 	held.pressed.connect(func() -> void:
 		only_held = not only_held
 		refresh())
-	head.add_child(held)
-	_body.add_child(head)
+	held.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	hv.add_child(held)
+	_body.add_child(how)
+	_body.add_child(_columns(true, {}, 0, 0))
 	var holdings: Dictionary = bus.get("holdings")
 	var coming := _coming()
 	for l: Dictionary in bus.call("trade_lines"):
@@ -85,13 +95,13 @@ func refresh() -> void:
 		var have := int(holdings.get(key, 0))
 		if only_held and have <= 0 and int(coming.get(key, 0)) <= 0:
 			continue
-		_row(l, have, int(coming.get(key, 0)))
+		_body.add_child(_columns(false, l, have, int(coming.get(key, 0))))
 	var sales: Array = bus.get("sales")
 	if not sales.is_empty():
-		_body.add_child(_label("SALES", "display_bold", fs + 2, T.ORANGE))
+		_body.add_child(_label("RECENT SALES", "display_bold", fs + 2, T.ORANGE))
 		for i in range(sales.size() - 1, maxi(-1, sales.size() - 9), -1):
 			var e: Dictionary = sales[i]
-			_body.add_child(_label("%d x %s to %s at CR %s each: CR %s" % [int(e.qty), str(e.name), str(e.vendor_name),
+			_body.add_child(_label("Sold %d %s to %s at CR %s each: CR %s" % [int(e.qty), str(e.name), str(e.vendor_name),
 					T.money(int(e.each)), T.money(int(e.total))], "mono_medium", fs - 3, T.TEXT))
 
 
@@ -108,67 +118,95 @@ func _coming() -> Dictionary:
 	return out
 
 
-func _row(l: Dictionary, have: int, coming: int) -> void:
-	var key := str(l.key)
+## Column widths (in font sizes): part, you hold, buy new, used lot, suppliers pay, price today.
+const COLS := [10.0, 5.5, 6.5, 6.5, 13.0, 10.0]
+
+
+## One row of the table: the headings when `head`, else part `l`.
+func _columns(head: bool, l: Dictionary, have: int, coming: int) -> Control:
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", T.box(CARD, Color.TRANSPARENT, 0, fs * 0.3))
+	card.add_theme_stylebox_override("panel", T.box(CARD if not head else Color.TRANSPARENT, Color.TRANSPARENT, 0, fs * 0.3))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", int(fs * 0.6))
 	card.add_child(row)
-	var left := VBoxContainer.new()
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(left)
-	var name_l := _label(str(l.name), "body_medium", fs, T.TEXT)
-	name_l.clip_text = true
-	left.add_child(name_l)
+	if head:
+		for i in 6:
+			var h := _label(["PART", "YOU HOLD", "BUY NEW", "USED LOT", "SUPPLIERS PAY YOU", "PRICE TODAY"][i], "mono_bold", fs - 4, T.DIM)
+			_cell(row, h, i)
+		row.add_child(_label("BUY  ·  SELL", "mono_bold", fs - 4, T.DIM))
+		return card
+	var key := str(l.key)
 	var buy: Dictionary = bus.call("trade_buy_quote", key, LOT)
 	var used: Dictionary = bus.call("trade_used_quote", key, LOT)
 	var offers: Array = bus.call("trade_offers", key, 1)
 	var best := float(offers[0].each) if not offers.is_empty() else 0.0
 	var trend: PackedFloat32Array = bus.call("trade_trend", key, 14)
-	var lo := 0.0
-	var hi := 0.0
-	if not trend.is_empty():
-		lo = trend[0]
-		hi = trend[0]
-		for v in trend:
-			lo = minf(lo, v)
-			hi = maxf(hi, v)
-	var where := "high" if hi > lo and best >= lo + (hi - lo) * 0.75 else ("low" if hi > lo and best <= lo + (hi - lo) * 0.25 else "middling")
-	var facts := "Buy new CR %s" % T.money(int(buy.get("unit", 0.0)))
-	if not used.is_empty():
-		facts += "  ·  used lot CR %s each (refurbished)" % T.money(int(used.unit))
-	facts += "  ·  buyers pay CR %s (%s)" % [T.money(int(best)), str(offers[0].name) if not offers.is_empty() else "nobody"]
-	left.add_child(_label(facts, "mono_medium", fs - 3, T.DIM))
-	left.add_child(_label("Held %d%s  ·  buy-back this fortnight CR %s to %s, %s today" % [have, ("  ·  %d coming" % coming) if coming > 0 else "",
-			T.money(int(lo)), T.money(int(hi)), where], "mono_medium", fs - 3, T.GOOD if where == "high" else (T.AMBER if where == "middling" else T.DIM)))
+	var lo := best
+	var hi := best
+	for v in trend:
+		lo = minf(lo, v)
+		hi = maxf(hi, v)
+	var where := "MIDDLING"
+	if hi > lo and best >= lo + (hi - lo) * 0.75:
+		where = "HIGH: good day to sell"
+	elif hi > lo and best <= lo + (hi - lo) * 0.25:
+		where = "LOW: hold, or buy"
+	var name_l := _label(str(l.name), "body_medium", fs - 1, T.TEXT)
+	name_l.clip_text = true
+	_cell(row, name_l, 0)
+	_cell(row, _label(("%d" % have) + (("\n+%d coming" % coming) if coming > 0 else ""), "mono_medium", fs - 2, T.TEXT if have > 0 else T.DIM), 1)
+	_cell(row, _label("CR %s" % T.money(int(buy.get("unit", 0.0))) if not buy.is_empty() else "-", "mono_medium", fs - 2, T.TEXT), 2)
+	_cell(row, _label(("CR %s\nrefurbished" % T.money(int(used.unit))) if not used.is_empty() else "-", "mono_medium", fs - 2, T.TEXT), 3)
+	_cell(row, _label(("CR %s\n%s" % [T.money(int(best)), str(offers[0].name)]) if not offers.is_empty() else "nobody", "mono_medium", fs - 2, T.GOOD), 4)
+	var today := VBoxContainer.new()
 	var spark := Control.new()
-	spark.custom_minimum_size = Vector2(fs * 7, fs * 2.2)
+	spark.custom_minimum_size = Vector2(fs * float(COLS[5]), fs * 1.6)
 	spark.draw.connect(_draw_trend.bind(spark, trend))
-	row.add_child(spark)
-	var b := T.button("BUY %d" % LOT, false, fs - 3)
+	spark.tooltip_text = "What suppliers paid for one over the last 14 days (CR %s to %s); the orange dot is today." % [T.money(int(lo)), T.money(int(hi))]
+	today.add_child(spark)
+	var wl := _label(where, "mono_bold", fs - 4, T.GOOD if where.begins_with("HIGH") else (T.AMBER if where.begins_with("LOW") else T.DIM))
+	wl.clip_text = true
+	wl.custom_minimum_size.x = fs * float(COLS[5])
+	today.add_child(wl)
+	_cell(row, today, 5)
+	var b := T.button("NEW %d" % LOT, false, fs - 3)
 	b.disabled = buy.is_empty()
-	b.tooltip_text = "%d new from %s for CR %s, in %d days." % [LOT, str(buy.get("name", "")), T.money(int(buy.get("total", 0.0))), int(buy.get("lead", 0))]
+	b.tooltip_text = "Buy %d new from %s for CR %s; they arrive in %d days." % [LOT, str(buy.get("name", "")), T.money(int(buy.get("total", 0.0))), int(buy.get("lead", 0))]
 	b.pressed.connect(func() -> void: bus.call("trade_buy", key, LOT, false))
+	b.custom_minimum_size.x = fs * 4.6
+	b.clip_text = true
 	row.add_child(b)
-	var u := T.button("LOT %d" % LOT, false, fs - 3)
+	var u := T.button("USED %d" % LOT, false, fs - 3)
 	u.disabled = used.is_empty()
-	u.tooltip_text = "A second-hand lot of %d for CR %s, refurbished in the works before it can be sold." % [LOT, T.money(int(used.get("total", 0.0)))]
+	u.tooltip_text = "Buy a second-hand lot of %d for CR %s; the refurb works fix them up before you can sell them." % [LOT, T.money(int(used.get("total", 0.0)))]
 	u.pressed.connect(func() -> void: bus.call("trade_buy", key, LOT, true))
+	u.custom_minimum_size.x = fs * 4.6
+	u.clip_text = true
 	row.add_child(u)
 	var s1 := T.button("SELL 1", true, fs - 3)
 	s1.disabled = have < 1
 	s1.pressed.connect(func() -> void: bus.call("trade_sell", key, 1, ""))
+	s1.custom_minimum_size.x = fs * 4.6
+	s1.clip_text = true
 	row.add_child(s1)
 	var sa := T.button("SELL ALL", true, fs - 3)
 	sa.disabled = have < 1
-	if have > 1:
-		var all_offers: Array = bus.call("trade_offers", key, have)
-		if not all_offers.is_empty():
-			sa.tooltip_text = "%d to %s at CR %s each (more at once fetches less each)." % [have, str(all_offers[0].name), T.money(int(all_offers[0].each))]
+	sa.tooltip_text = "Sell every one you hold to the supplier paying most (selling many at once fetches a little less each)."
 	sa.pressed.connect(func() -> void: bus.call("trade_sell", key, have, ""))
+	sa.custom_minimum_size.x = fs * 4.6
+	sa.clip_text = true
 	row.add_child(sa)
-	_body.add_child(card)
+	return card
+
+
+func _cell(row: HBoxContainer, c: Control, i: int) -> void:
+	c.custom_minimum_size.x = fs * float(COLS[i])
+	if c is Label:
+		(c as Label).clip_text = true
+		(c as Label).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	if i == 0:
+		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(c)
 
 
 func _draw_trend(c: Control, trend: PackedFloat32Array) -> void:
