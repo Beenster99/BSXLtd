@@ -134,6 +134,8 @@ var _cycle := 0
 ## due_day, stages: [{id, name, share, value, trigger, expected_day, paid, paid_day}],
 ## state ("building", "delivered"), trial ({} until delivered)}.
 var _ships: Dictionary = {}
+## Extra trial rows from other modules (the build's workmanship): id -> Callable(contract_id) -> Array.
+var _trial_rows: Dictionary = {}
 var _generator := Generator.new()
 
 
@@ -569,11 +571,33 @@ func pay_ship_stage(contract_id: String, stage_id: String) -> bool:
 	return false
 
 
+## Host: the build (Wave 5) pays keel and fit-out for this contract itself, so the stand-in
+## leaves it alone. Kept on the contract (saved and synced as "build_tracked").
+func track_build(contract_id: String) -> void:
+	var c: Dictionary = _ships.get(contract_id, {})
+	if c.is_empty() or bool(c.get("build_tracked", false)):
+		return
+	c["build_tracked"] = true
+	ship_contract_changed.emit(contract_id)
+
+
+func is_build_tracked(contract_id: String) -> bool:
+	return bool(_ships.get(contract_id, {}).get("build_tracked", false))
+
+
+## Another module adds trial rows (DesignContractCheck shape: key, label, need, have, ok,
+## share, clause) to every ship delivered: provider(contract_id) -> Array. Called on the host.
+func register_trial_rows(id: String, provider: Callable) -> void:
+	_trial_rows[id] = provider
+
+
 ## The stand-in for the build: stages (not the delivery) come in on their expected day.
 func _pay_due_stages(day: int) -> void:
 	if not Flags.is_on(STAGE_STANDIN_FLAG) or (multiplayer.has_multiplayer_peer() and not multiplayer.is_server()):
 		return
 	for c: Dictionary in _ships.values():
+		if bool(c.get("build_tracked", false)):
+			continue
 		for st: Dictionary in c.stages:
 			if c.state == "building" and not st.paid and str(st.id) != "delivery" and int(st.expected_day) <= day:
 				pay_ship_stage(str(c.id), str(st.id))
@@ -592,6 +616,12 @@ func deliver_ship(contract_id: String, rows: Array) -> Dictionary:
 			pay_ship_stage(contract_id, str(st.id))
 	var day := today()
 	var late := maxi(0, day - int(c.due_day))
+	rows = rows.duplicate()
+	for provider: Callable in _trial_rows.values():
+		if provider.is_valid():
+			var extra: Variant = provider.call(contract_id)
+			if extra is Array:
+				rows.append_array(extra)
 	var t := ShipOrders.trial(rows, int(c.price), late)
 	t["day"] = day
 	t["days_late"] = late
