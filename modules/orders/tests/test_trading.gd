@@ -1,8 +1,8 @@
 extends ModuleTest
 ## Master plan 7.6, selling parts: the lines the yard trades in, buy-back always under the day's
 ## cheapest price (no buy-then-sell on one day pays, at any standing or volume), a glut fetches
-## less each, trading in refurbished lots only (a few a day, each bought once, through the refurb
-## works; buying new to trade is refused), selling to the best buyer, trading in the accounts; it
+## less each, a market that swings over months (buy at a low, sell at a later high), buying new or
+## one of the day's second-hand lots (the refurb works' bill apart), selling to the best buyer, trading in the accounts; it
 ## saves and loads.
 ##   tools/run_tests.sh orders
 
@@ -56,8 +56,33 @@ func run_tests() -> void:
 	for v in trend:
 		moves = moves or absf(v - trend[0]) > 0.5
 	check(trend.size() == 14 and moves, "the buy-back moves from day to day (time a sale)")
+	# A market: prices swing over months; buying new at a low and selling at a later high pays.
+	var swings := 0
+	var timing := 0
+	for l: Dictionary in lines:
+		var lo := INF
+		var hi := -INF
+		var low_buy := INF
+		var paid := false
+		for d in range(day0, day0 + 180, 2):
+			var m := TradeBook.market(l, d)
+			lo = minf(lo, m)
+			hi = maxf(hi, m)
+			var b := TradeBook.buy_quote(l, 5, vendors, best_standing, d, cat)
+			var o := TradeBook.offers(l, 5, vendors, d, cat)
+			if not b.is_empty():
+				low_buy = minf(low_buy, float(b.unit))
+			if not o.is_empty() and float(o[0].each) > low_buy:
+				paid = true
+		if hi / lo > 1.3:
+			swings += 1
+		if paid:
+			timing += 1
+	check(swings == lines.size(), "every part's market swings by more than 30%% over half a year (%d of %d)" % [swings, lines.size()])
+	check(timing * 2 > lines.size(), "buying new at a low and selling at a later high pays for most parts (%d of %d)" % [timing, lines.size()])
+	check(TradeBook.market(l0, day0) == TradeBook.market(l0, day0), "the market is the same on every machine")
 
-	# Trading is in refurbished lots only: a few a day, each bought once.
+	# Second-hand lots: a few a day, each bought once; new can always be bought.
 	var lots := orders.trade_lots()
 	check(lots.size() == TradeBook.LOTS_A_DAY or not Flags.is_on(OrdersBus.USED_FLAG), "%d refurbished lots on offer today (%s)" % [lots.size(), str(lots)])
 	check(TradeBook.lots(lines, day0) == TradeBook.lots(lines, day0), "the same lots on every machine")
@@ -67,7 +92,10 @@ func run_tests() -> void:
 	check(other, "different parts on other days")
 	var cash := int(biz.call("get_cash")) if biz else 0
 	orders.trade_buy(key, 5)
-	check(orders.orders.is_empty(), "buying new to trade is refused (new parts are for builds)")
+	check(orders.orders.size() == 1 and str(orders.orders[0].cid) == OrdersBus.STOCK, "bought 5 new for stock: an order")
+	if biz:
+		check(int(biz.call("get_cash")) < cash, "paid for")
+	orders.orders.clear()
 	var off := ""
 	for l: Dictionary in lines:
 		if not lots.has(str(l.key)):
@@ -80,11 +108,10 @@ func run_tests() -> void:
 	var used_key: String = lots[0]
 	var u := orders.trade_used_quote(used_key, TradeBook.LOT_SIZE)
 	var n := orders.trade_buy_quote(used_key, TradeBook.LOT_SIZE)
-	check(float(u.unit) < float(n.unit), "a lot comes cheaper than new, refurb and all (%.0f against %.0f)" % [float(u.unit), float(n.unit)])
+	check(float(u.parts) < float(n.unit) and float(u.refurb) > 0.0 and is_equal_approx(float(u.unit), float(u.parts) + float(u.refurb)),
+			"a lot's parts come cheaper than new, the refurb bill apart (%.0f + %.0f refurb against %.0f new)" % [float(u.parts), float(u.refurb), float(n.unit)])
 	orders.trade_buy(used_key, TradeBook.LOT_SIZE, true)
 	check(orders.orders.size() == 1 and str(orders.orders[0].cid) == OrdersBus.STOCK, "bought a lot for stock: an order")
-	if biz:
-		check(int(biz.call("get_cash")) < cash, "paid for")
 	check(not orders.trade_lots().has(used_key), "and that lot is gone for today")
 	orders.trade_buy(used_key, TradeBook.LOT_SIZE, true)
 	check(orders.orders.size() == 1, "it cannot be bought twice")

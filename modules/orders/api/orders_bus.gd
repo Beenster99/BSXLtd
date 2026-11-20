@@ -68,6 +68,7 @@ var sales: Array = []
 ## Market day -> trade line keys whose lot the yard bought that day (only today's is kept).
 var lots_taken: Dictionary = {}
 var _trade_lines: Array[Dictionary] = []
+var _trends: Dictionary = {}
 
 var _net: Object
 var _build: Object
@@ -710,8 +711,8 @@ func trade_buy_quote(key: String, qty: int) -> Dictionary:
 	return q
 
 
-## A second-hand lot of `qty` of `key`, refurbished here before it can be sold: {unit, total,
-## lead, refurb} ({} where the works can't take it).
+## A second-hand lot of `qty` of `key`, refurbished here before it can be sold: {unit (each, all
+## in), total, parts (each, before the works), refurb (the works' bill each), lead} ({} where the works can't take it).
 func trade_used_quote(key: String, qty: int) -> Dictionary:
 	var l := trade_line(key)
 	if l.is_empty() or qty < 1 or not Flags.is_on(USED_FLAG):
@@ -721,8 +722,10 @@ func trade_used_quote(key: String, qty: int) -> Dictionary:
 	if est.is_empty() or news.is_empty():
 		return {}
 	var mid: Dictionary = news[floori((news.size() - 1) / 2.0)]
-	var each := TradeBook.used_each(qty, float(mid.unit), float(est.get("cost", 0.0)))
-	return {"vendor": USED, "name": "Second-hand lot", "unit": each, "total": each * qty, "refurb": float(est.get("cost", 0.0)),
+	var parts := TradeBook.used_each(qty, float(mid.unit)) * TradeBook.market(l, market_day())
+	var refurb := float(est.get("cost", 0.0))
+	var each := parts + refurb
+	return {"vendor": USED, "name": "Second-hand lot", "unit": each, "total": each * qty, "parts": parts, "refurb": refurb,
 			"lead": maxi(1, int(l.get("lead", 2))) + OrderBook.USED_EXTRA_DAYS}
 
 
@@ -734,10 +737,18 @@ func trade_offers(key: String, qty: int) -> Array[Dictionary]:
 	return TradeBook.offers(l, qty, _vendors(), market_day(), catalog())
 
 
-## The best buy-back for one of `key` over the `days` up to today.
+## The best buy-back for one of `key` over the `days` up to today (kept for the day: the screen
+## asks for 90 days of every part).
 func trade_trend(key: String, days := 14) -> PackedFloat32Array:
 	var l := trade_line(key)
-	return TradeBook.trend(l, _vendors(), market_day(), days, catalog()) if not l.is_empty() else PackedFloat32Array()
+	if l.is_empty():
+		return PackedFloat32Array()
+	var k := "%s|%d|%d" % [key, market_day(), days]
+	if not _trends.has(k):
+		if _trends.size() > 200:
+			_trends.clear()
+		_trends[k] = TradeBook.trend(l, _vendors(), market_day(), days, catalog())
+	return _trends[k]
 
 
 ## The refurbished lots on offer today and not yet bought: trade line keys.
@@ -781,11 +792,10 @@ func _validate_trade(p: Dictionary) -> Variant:
 	if trade_line(key).is_empty() or qty < 1 or qty > 999:
 		return "no such part"
 	if str(p.what) == "trade_buy":
-		if not bool(p.get("used", false)):
-			return "trading buys refurbished lots only; new parts are for builds"
-		if not trade_lots().has(key) or qty != TradeBook.LOT_SIZE:
+		var used := bool(p.get("used", false))
+		if used and (not trade_lots().has(key) or qty != TradeBook.LOT_SIZE):
 			return "no lot of that on offer today"
-		var q := trade_used_quote(key, qty)
+		var q := trade_used_quote(key, qty) if used else trade_buy_quote(key, qty)
 		if q.is_empty():
 			return "nobody sells that"
 		var cost := roundi(float(q.total))
@@ -818,9 +828,10 @@ func _trade_buy(p: Dictionary) -> void:
 		if r and r.has_method("is_ok") and not bool(r.call("is_ok")):
 			return
 	var used := bool(p.get("used", false))
-	var day := str(market_day())
-	var taken: Array = lots_taken.get(day, [])
-	lots_taken = {day: taken + [key]}
+	if used:
+		var day := str(market_day())
+		var taken: Array = lots_taken.get(day, [])
+		lots_taken = {day: taken + [key]}
 	var id := next_id
 	next_id += 1
 	var now := now_minute()
