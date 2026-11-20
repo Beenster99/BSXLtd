@@ -174,7 +174,7 @@ func _build() -> void:
 	data = DataChannel.new()
 	data.name = "Data"
 	data.lists = false
-	data.setup(bus, true)
+	data.setup(bus, true, true)
 	data.assessment_requested.connect(toggle_assessment)
 	data.problem_picked.connect(go_to_problem)
 	var bodies := {"selection": _scrolled(_selection), "holo": _holo_panel(), "data": data, "views": _side_panel()}
