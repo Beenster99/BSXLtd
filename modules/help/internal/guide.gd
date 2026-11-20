@@ -13,7 +13,7 @@ const TOPICS := [
 - Deliver for the surveyors' trial. The last payment goes up or down with how well she meets the order.
 # Where to begin
 - Walk to the design room and use the holotable with {key:interact}.
-- Pick a small order with a generous budget first (green on the order list).
+- Start with one of the two Starter jobs at the top of the order list (PICK FROM ORDERS on the console). See Your first contract.
 > {key:holo} opens this wrist screen anywhere. {key:cancel} or {key:holo} puts it away."""},
 	{"id": "keys", "order": 20, "title": "Keys", "text": ""},
 	{"id": "yard", "order": 30, "title": "The station and the dock", "text": """The station has gravity: walk with {key:move_forward} {key:move_left} {key:move_back} {key:move_right}, run with {key:run}, jump with {key:jump}.
@@ -43,7 +43,7 @@ const TOPICS := [
 > Everyone in the room sees the same design and each other's edits."""},
 	{"id": "contracts", "order": 50, "title": "Contracts: order to payment", "text": """Clients post ship orders: a kind of ship, a size, demands (crew, cargo, range, speed, defence...) and clauses (rooms or parts she must have).
 # Picking an order
-- In the design console, open the order list and pick one for your design to answer.
+- In the design console, PICK FROM ORDERS and choose one for your design to answer. The two Starter jobs sit at the top until you deliver them.
 - Each order shows its budget against the cheapest honest build: green is generous, amber tight, red unrealistic.
 - Bigger orders open as your standing with a client grows.
 # Quote and sign
