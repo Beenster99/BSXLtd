@@ -202,6 +202,15 @@ func _line_row(l: Dictionary) -> void:
 	if left <= 0.001:
 		_body.add_child(card)
 		return
+	# Parts the yard holds from trading cover the line at no new cost.
+	var can := int(bus.call("stock_can_cover", cid, str(l.key)))
+	if can > 0:
+		var use := T.button("USE %d FROM STOCK (no new cost)" % can, true, fs - 3)
+		use.tooltip_text = "Take %d of the parts the yard holds (bought on PARTS TRADING) for this build: in at once, nothing more to pay." % can
+		var key := str(l.key)
+		use.pressed.connect(func() -> void: bus.call("use_held", cid, key, can))
+		use.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		v.add_child(use)
 	# The split so far.
 	var sp: Array = (bus.get("splits") as Dictionary).get(cid, {}).get(str(l.key), [])
 	if not sp.is_empty():

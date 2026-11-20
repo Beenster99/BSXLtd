@@ -67,6 +67,9 @@ var holdings: Dictionary = {}
 var sales: Array = []
 ## Market day -> trade line keys whose lot the yard bought that day (only today's is kept).
 var lots_taken: Dictionary = {}
+## Build cid -> {trade line key: parts taken from the trading stock for it} (held parts used on
+## a contract build: no new cost).
+var from_stock: Dictionary = {}
 var _trade_lines: Array[Dictionary] = []
 var _trends: Dictionary = {}
 
@@ -294,7 +297,7 @@ func _standing() -> Dictionary:
 
 
 func _ordered(cid: String) -> Dictionary:
-	var out := {}
+	var out := _stock_qty(cid)
 	for o: Dictionary in orders:
 		if str(o.cid) == cid:
 			for l: Dictionary in o.lines:
@@ -304,7 +307,7 @@ func _ordered(cid: String) -> Dictionary:
 
 ## What has come in, line by line: a second-hand line counts once the works has certified it.
 func _arrived(cid: String) -> Dictionary:
-	var out := {}
+	var out := _stock_qty(cid)
 	for o: Dictionary in orders:
 		if str(o.cid) != cid or not bool(o.arrived):
 			continue
@@ -314,6 +317,39 @@ func _arrived(cid: String) -> Dictionary:
 				q = maxf(0.0, q - float(l.get("refurbing", 0)))
 			out[str(l.key)] = float(out.get(str(l.key), 0.0)) + q
 	return out
+
+
+## Build `cid`'s lines covered from held stock, in the lines' own quantities: {key: qty}.
+func _stock_qty(cid: String) -> Dictionary:
+	var out := {}
+	var taken: Dictionary = from_stock.get(cid, {})
+	if taken.is_empty():
+		return out
+	if not _lines.has(cid):
+		lines(cid)
+	for l: Dictionary in _lines.get(cid, []):
+		var n := int(taken.get(str(l.key), 0))
+		if n > 0:
+			out[str(l.key)] = float(l.qty) * float(n) / maxf(1.0, float(l.units))
+	return out
+
+
+## How many of build `cid`'s line `key` could still come from the trading stock: the parts held,
+## up to what the line still needs (in parts).
+func stock_can_cover(cid: String, key: String) -> int:
+	var l := line(cid, key)
+	var held := int(holdings.get(key, 0))
+	if l.is_empty() or held <= 0 or not Flags.is_on(SELL_FLAG):
+		return 0
+	var per := float(l.need) / maxf(1.0, float(l.units))
+	var left := float(l.need) - float(l.ordered) - float(l.split)
+	return mini(held, floori(left / maxf(per, 0.0001) + 0.001))
+
+
+## Covers up to `count` of build `cid`'s line `key` from the parts the yard holds (bought for
+## trading): no new cost, in at once. Through the host.
+func use_held(cid: String, key: String, count: int) -> void:
+	_ask({"what": "use_held", "cid": cid, "key": key, "count": count})
 
 
 # --- What a build waits for ----------------------------------------------------------------------
@@ -431,6 +467,11 @@ func _validate_ask(_sender: int, p: Dictionary) -> Variant:
 				return "not enough cash"
 			# The host fixes the price it charges.
 			p["cost"] = cost
+		"use_held":
+			var n := mini(int(p.get("count", 0)), stock_can_cover(cid, str(p.get("key", ""))))
+			if n < 1:
+				return "none held to use"
+			p["count"] = n
 		"plan", "clear":
 			pass
 		_:
@@ -469,6 +510,14 @@ func _apply_ask(p: Dictionary) -> void:
 			splits.erase(cid)
 		"place":
 			_place(cid, bool(p.get("express", false)), int(p.get("cost", 0)))
+		"use_held":
+			var key := str(p.key)
+			var n := int(p.count)
+			var taken: Dictionary = from_stock.get_or_add(cid, {})
+			taken[key] = int(taken.get(key, 0)) + n
+			holdings[key] = int(holdings.get(key, 0)) - n
+			if int(holdings[key]) <= 0:
+				holdings.erase(key)
 		"trade_buy":
 			_trade_buy(p)
 		"trade_sell":
@@ -634,8 +683,16 @@ func _send_ready() -> void:
 		return
 	done.append(stage)
 	if _business and _business.has_method("get_stock") and _business.has_method("use_stock"):
-		var stock: Dictionary = _business.call("get_stock")
+		var stock: Dictionary = (_business.call("get_stock") as Dictionary).duplicate()
 		var cat := catalog()
+		# The trading stock's rack parts stay put (only what this build took from it goes).
+		for key: String in holdings:
+			var tl := trade_line(key)
+			if tl.is_empty():
+				continue
+			var loads := OrderBook.rack_loads(tl, float(holdings[key]), cat)
+			for part: String in loads:
+				stock[part] = int(stock.get(part, 0)) - int(loads[part])
 		for l in lines(cid):
 			if str(l.stage) != stage:
 				continue
@@ -902,7 +959,7 @@ func save_version() -> int:
 func save_data() -> Dictionary:
 	return {"splits": splits.duplicate(true), "orders": orders.duplicate(true), "tracked": tracked.duplicate(),
 			"sent": sent.duplicate(true), "next": next_id, "holdings": holdings.duplicate(), "sales": sales.duplicate(true),
-			"lots_taken": lots_taken.duplicate(true)}
+			"lots_taken": lots_taken.duplicate(true), "from_stock": from_stock.duplicate(true)}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -914,6 +971,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	holdings = (data.get("holdings", {}) as Dictionary).duplicate()
 	sales = (data.get("sales", []) as Array).duplicate(true)
 	lots_taken = (data.get("lots_taken", {}) as Dictionary).duplicate(true)
+	from_stock = (data.get("from_stock", {}) as Dictionary).duplicate(true)
 	_lines.clear()
 	changed.emit()
 

@@ -36,6 +36,38 @@ func run_tests() -> void:
 	# 7.1: the parts list and its quotes.
 	var lines := orders.lines("order_test")
 	check(lines.size() >= 6, "her parts list has lines (%d)" % lines.size())
+	# Parts held from trading cover a line at no new cost.
+	Flags.set_flag(OrdersBus.SELL_FLAG, true)
+	var held_line := {}
+	for l: Dictionary in lines:
+		if str(l.kind) == "component" and not orders.trade_line(str(l.key)).is_empty() and int(l.units) >= 2:
+			held_line = l
+			break
+	if held_line.is_empty():
+		for l: Dictionary in lines:
+			if str(l.kind) == "component" and not orders.trade_line(str(l.key)).is_empty():
+				held_line = l
+				break
+	check(not held_line.is_empty(), "a line the yard can hold from trading")
+	if not held_line.is_empty():
+		var hk := str(held_line.key)
+		orders.holdings[hk] = 1
+		check(orders.stock_can_cover("order_test", hk) == 1, "one held part can go into the build")
+		var cash := int(biz.call("get_cash")) if biz else 0
+		orders.use_held("order_test", hk, 5)
+		var after := orders.line("order_test", hk)
+		var per := float(held_line.need) / maxf(1.0, float(held_line.units))
+		check(int(orders.holdings.get(hk, 0)) == 0 and is_equal_approx(float(after.ordered), per) and is_equal_approx(float(after.arrived), per),
+				"used from stock: no longer held, counted in and ordered (%.1f of %.1f)" % [float(after.arrived), float(held_line.need)])
+		if biz:
+			check(int(biz.call("get_cash")) == cash, "at no new cost")
+		orders.use_held("order_test", hk, 1)
+		check(is_equal_approx(float(orders.line("order_test", hk).ordered), per), "nothing more held, nothing more used")
+		var saved := orders.save_data()
+		orders.load_data(saved, OrdersBus.SAVE_VERSION)
+		check(is_equal_approx(float(orders.line("order_test", hk).arrived), per), "and it keeps across a save")
+	Flags.set_flag(OrdersBus.SELL_FLAG, false)
+	lines = orders.lines("order_test")
 	var stages := {}
 	for l: Dictionary in lines:
 		stages[str(l.stage)] = true
