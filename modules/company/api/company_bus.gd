@@ -125,6 +125,8 @@ func _hook_up() -> void:
 			_contracts.call("register_order_source", "company", repeat_orders)
 		if _contracts.has_signal("contract_handed_over"):
 			_contracts.connect("contract_handed_over", _on_handed_over)
+		if _contracts.has_signal("ship_contract_changed"):
+			_contracts.connect("ship_contract_changed", func(_id: String) -> void: changed.emit())
 	var design := Modules.bus("design")
 	if design:
 		design.call("register_wall_view", WALL_VIEW, "THE COMPANY", make_screen)
@@ -474,6 +476,10 @@ func _add_help() -> void:
 			"Only the ship in the build berth (B1) is worked. On the Build plan page, TUG TO H1 or H2 takes a part-built ship to a holding berth to free the build berth for another contract; tug her back when you are ready. Holding berths open as the company grows.", 32)
 	help.call("add_topic", "company", "The company",
 			"THE COMPANY page shows the yard's rank: deliver ships and earn reputation to rise from Workshop to Yard, Shipworks and Consortium. Each rank opens holding berths, more bots, specialist bots and bigger ship classes. Rival yards bid for the same orders: you sign at the lowest rival bid unless the client knows you well. Pleased clients come back with repeat orders. Take a crew role (foreman, buyer, welder, launch master), name your ship before her trial, and every ship you deliver goes on the trophy shelf, signed by the crew.", 33)
+	help.call("add_topic", "papers", "Contract papers",
+			"A ship contract runs on signed papers. Sign the finished design as you send its quote (the design room's SIGN AND SEND QUOTE). When the build reaches a stage gate (keel laid, fit-out) the client pays only once a player signs it: SIGN STAGE GATE on the Build plan, the design room or THE COMPANY's PAPERS page. The delivery note is signed at the trial. Every paper is kept with its contract on the PAPERS page.", 34)
+	help.call("add_topic", "trading", "Selling parts",
+			"A sideline to building ships: PARTS TRADING (a wall in the design room, or the wrist) lists every part the yard deals in. Vendors buy parts back from your stock, always for less than anyone sells them that day, and selling many at once fetches less each. Buy when the market is low (the fortnight's trend shows where it stands) and sell when it is high, or buy a second-hand LOT cheap, let the refurb works certify it and sell it on. Trading shows as its own line in the accounts.", 35)
 
 
 # --- Saving -----------------------------------------------------------------------------------------

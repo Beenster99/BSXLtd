@@ -6,10 +6,12 @@ extends PanelContainer
 ##   LAUNCH   the ships on the go: name each one before her trial
 ##   SHELF    the trophy shelf: a miniature of every ship the yard has built, her plaque signed
 ##            by the crew who built her
+##   PAPERS   every contract's signed papers (design sign-offs, stage gates, delivery notes), and
+##            the gates waiting for a signature
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 
-const PAGES: PackedStringArray = ["RANK", "CLIENTS", "CREW", "LAUNCH", "SHELF"]
+const PAGES: PackedStringArray = ["RANK", "CLIENTS", "CREW", "LAUNCH", "SHELF", "PAPERS"]
 const BG := Color(0.02, 0.05, 0.09)
 const CARD := Color(0.05, 0.1, 0.16)
 
@@ -88,6 +90,8 @@ func refresh() -> void:
 			_launch()
 		"SHELF":
 			_shelf()
+		"PAPERS":
+			_papers()
 
 
 func _rank(r: Dictionary) -> void:
@@ -243,6 +247,47 @@ func _shelf() -> void:
 		v.add_child(_label("Signed: " + ", ".join(e.get("crew", [])), "body_medium", fs - 3, T.CYAN))
 		grid.add_child(card)
 	_body.add_child(grid)
+
+
+func _papers() -> void:
+	var contracts := Modules.bus("contracts") as ContractsBus
+	if contracts == null:
+		return
+	if not Flags.is_on(ContractsBus.SIGNATURES_FLAG):
+		_body.add_child(_label("Contract papers are off.", "body_medium", fs, T.DIM))
+		return
+	_body.add_child(_label("Each design is signed before its quote goes out, each stage gate before it is paid, and the delivery note at the trial. Signing as %s." % contracts.signer(),
+			"body_medium", fs - 2, T.DIM))
+	for c: Dictionary in contracts.ship_contracts():
+		var gates: Array = contracts.gates_to_sign(str(c.id))
+		for g: String in gates:
+			var name := g
+			for st: Dictionary in c.stages:
+				if str(st.id) == g:
+					name = "%s, CR %s" % [str(st.name), T.money(int(st.value))]
+			var row := HBoxContainer.new()
+			var l := _label("TO SIGN  %s: %s" % [str(c.design_name), name], "mono_medium", fs - 1, T.AMBER)
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(l)
+			var b := T.button("SIGN", true, fs - 2)
+			b.disabled = g != str(gates[0])
+			var cid := str(c.id)
+			b.pressed.connect(func() -> void: contracts.request_sign_gate(cid, g, contracts.signer()))
+			row.add_child(b)
+			_body.add_child(row)
+	var all := contracts.all_papers()
+	if all.is_empty():
+		_body.add_child(_label("No papers yet. Sign a design's quote in the design room to start one.", "body_medium", fs, T.DIM))
+	for pp: Dictionary in all:
+		var card := _card()
+		var v := VBoxContainer.new()
+		card.add_child(v)
+		v.add_child(_label(str(pp.title).to_upper(), "display_bold", fs, T.ORANGE_HI))
+		v.add_child(_label("%s  ·  day %d" % [str(pp.contract_title), int(pp.day)], "mono_medium", fs - 3, T.DIM))
+		for t: Variant in pp.get("terms", []):
+			v.add_child(_label(str(t), "mono_medium", fs - 3, T.TEXT))
+		v.add_child(_label("Signed for BSX Ltd: %s" % str(pp.by), "body_medium", fs - 2, T.CYAN))
+		_body.add_child(card)
 
 
 ## Her miniature on the shelf: the side view of her parts, in brass.

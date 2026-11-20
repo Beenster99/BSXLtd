@@ -113,6 +113,24 @@ func _launch(co: CompanyBus, contracts: ContractsBus) -> void:
 	if not lowest.is_empty():
 		check(int(c.price) <= int(lowest[0].price) or bool(order.get("repeat", false)) or co._client_level(str(order.client)) >= CompanyBus.LOYAL_LEVEL,
 				"signed at no more than the rivals bid (%d against %d)" % [int(c.price), int(lowest[0].price)])
+	# Contract papers: the design signed with the quote, a stage gate signed before it is paid.
+	Flags.set_flag(ContractsBus.SIGNATURES_FLAG, true)
+	var papers := contracts.papers(str(c.id))
+	check(papers.size() == 1 and str(papers[0].kind) == "design" and str(papers[0].by) != "", "the design sign-off is on the contract (%s)" % str(papers))
+	contracts.request_ship_stage(str(c.id), "keel")
+	var keel: Dictionary = contracts.ship_contract(str(c.id)).stages[1]
+	check(not bool(keel.paid) and contracts.gates_to_sign(str(c.id)) == ["keel"], "the build reaching the keel makes its gate ready, unpaid")
+	contracts.request_sign_gate(str(c.id), "fit_out", "Tester")
+	check(not bool(contracts.ship_contract(str(c.id)).stages[1].paid), "a gate not ready cannot be signed")
+	contracts.request_sign_gate(str(c.id), "keel", "Tester")
+	keel = contracts.ship_contract(str(c.id)).stages[1]
+	check(bool(keel.paid) and contracts.gates_to_sign(str(c.id)).is_empty(), "signed, the keel is paid")
+	papers = contracts.papers(str(c.id))
+	check(papers.size() == 2 and str(papers[1].kind) == "gate" and str(papers[1].by) == "Tester", "and the signed gate is kept with the contract")
+	var shot := co.make_screen(150.0, "PAPERS")
+	add_child(shot)
+	await frames(1)
+	shot.queue_free()
 	co.name_ship(str(c.id), "Brave Tern")
 	var seen: Array = []
 	var on_launch := func(e: Dictionary) -> void: seen.append(e)
@@ -120,6 +138,9 @@ func _launch(co: CompanyBus, contracts: ContractsBus) -> void:
 	contracts.request_deliver_ship(str(c.id), [{"key": "speed", "label": "Speed", "need": 10.0, "have": 20.0, "ok": true, "share": 1.0}])
 	co.launched.disconnect(on_launch)
 	check(co.record.size() == 1 and str(co.record[0].name) == "Brave Tern", "the handover goes in the record under her name")
+	papers = contracts.papers(str(c.id))
+	check(papers.size() >= 4 and str(papers.back().kind) == "delivery", "the fit-out signed at delivery and the delivery note kept (%d papers)" % papers.size())
+	check(contracts.all_papers().any(func(pp: Dictionary) -> bool: return str(pp.contract) == str(c.id)), "every contract's papers in one list")
 	check(seen.size() == 1 and float(seen[0].quality) > 0.0 and seen[0].has("side") and seen[0].has("crew"), "with her quality, crew and miniature")
 	Flags.set_flag(CompanyBus.GROWTH_FLAG, true)
 	# The send-off itself, on its own (no station in a headless test): the launch node's timeline.

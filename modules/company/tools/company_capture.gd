@@ -51,13 +51,26 @@ func _run() -> void:
 	co.record.append({"cid": "b", "name": "Brave Tern", "design": "Hesper freighter", "client": "Corvane Freight", "day": 11,
 			"quality": 0.91, "price": 7_800_000, "crew": [me, "Dan"], "jobs": pl.jobs.size(), "workmanship": 0.9, "side": side})
 	co.names["shot_ship"] = "Lady of the Dock"
+	# Contract papers: a design signed with its quote, the keel's gate signed, the fit-out's waiting.
+	var contracts := Modules.bus("contracts") as ContractsBus
+	Flags.set_flag(ContractsBus.SIGNATURES_FLAG, true)
+	Flags.set_flag(CompanyBus.GROWTH_FLAG, false)
+	for o: Dictionary in contracts.ship_orders():
+		if contracts.ship_sign_problem(o) == "":
+			contracts.request_sign_ship(o, "d1", "Hesper freighter", int(float(o.budget) * 0.6), me)
+			var c := contracts.ship_contract_for(str(o.id))
+			contracts.request_ship_stage(str(c.id), "keel")
+			contracts.request_sign_gate(str(c.id), "keel", "Dan")
+			contracts.request_ship_stage(str(c.id), "fit_out")
+			break
+	Flags.set_flag(CompanyBus.GROWTH_FLAG, true)
 	co.set_role(me, "foreman")
 	co.changed.emit()
 	var back := ColorRect.new()
 	back.color = Color(0.03, 0.04, 0.06)
 	back.size = Vector2(size)
 	add_child(back)
-	for p: String in ["RANK", "CLIENTS", "CREW", "LAUNCH", "SHELF"]:
+	for p: String in ["RANK", "CLIENTS", "CREW", "LAUNCH", "SHELF", "PAPERS"]:
 		var screen: Control = co.make_screen(150.0, p)
 		screen.size = Vector2(size) - Vector2(80, 80)
 		screen.position = Vector2(40, 40)

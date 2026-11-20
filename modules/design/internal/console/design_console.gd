@@ -777,7 +777,8 @@ func _contract_block(contracts: ContractsBus, order: Dictionary) -> void:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_palette.add_child(l)
 		_show_quote(l, q)
-		var send := T.button("SEND QUOTE", true, 14)
+		var signing := Flags.is_on(ContractsBus.SIGNATURES_FLAG)
+		var send := T.button("SIGN AS %s AND SEND QUOTE" % contracts.signer().to_upper() if signing else "SEND QUOTE", true, 14)
 		send.name = "SendQuote"
 		send.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var why := contracts.ship_sign_problem(order)
@@ -785,7 +786,7 @@ func _contract_block(contracts: ContractsBus, order: Dictionary) -> void:
 		send.tooltip_text = why.capitalize() if why != "" else "The client signs off this design at CR %s and pays the deposit of CR %s." % [
 				T.money(int(q.price)), T.money(int(ShipOrders.payment_plan(int(q.price), 0, 1)[0].value))]
 		send.pressed.connect(func() -> void:
-			contracts.request_sign_ship(order, rec.id, rec.name, int(bus.totals().cost)))
+			contracts.request_sign_ship(order, rec.id, rec.name, int(bus.totals().cost), contracts.signer()))
 		row.add_child(send)
 	else:
 		var paid := 0
@@ -803,6 +804,23 @@ func _contract_block(contracts: ContractsBus, order: Dictionary) -> void:
 		var l := T.label(text, "mono_medium", 13, T.ORANGE)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_palette.add_child(l)
+		for g: String in contracts.gates_to_sign(str(c.id)):
+			var stage_name := g
+			for st: Dictionary in c.stages:
+				if str(st.id) == g:
+					stage_name = str(st.name)
+			var sign := T.button("SIGN STAGE GATE: %s" % stage_name.to_upper(), true, 14)
+			sign.name = "SignGate_" + g
+			sign.disabled = g != str(contracts.gates_to_sign(str(c.id))[0])
+			sign.tooltip_text = "The build has reached this gate. Sign it as %s and the client pays the stage." % contracts.signer()
+			sign.pressed.connect(func() -> void: contracts.request_sign_gate(str(c.id), g, contracts.signer()))
+			_palette.add_child(sign)
+		var papers := contracts.papers(str(c.id))
+		if not papers.is_empty():
+			var pl := T.label("PAPERS: " + "  ·  ".join(papers.map(func(pp: Dictionary) -> String:
+					return "%s, signed %s day %d" % [str(pp.title), str(pp.by), int(pp.day)])), "mono_medium", 12, T.DIM)
+			pl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_palette.add_child(pl)
 		if c.state == "building":
 			var deliver := T.button("DELIVER FOR TRIAL", true, 14)
 			deliver.name = "DeliverTrial"
@@ -837,7 +855,7 @@ func deliver_for_trial() -> void:
 		var cyc: Variant = motion.call("cycle", rec)
 		if cyc is Dictionary:
 			rows.append_array(DesignContractCheck.motion_rows(cyc))
-	contracts.request_deliver_ship(str(c.id), rows)
+	contracts.request_deliver_ship(str(c.id), rows, contracts.signer())
 
 
 func _on_contract_changed(_id: String) -> void:

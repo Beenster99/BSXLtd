@@ -20,9 +20,15 @@ func setup(build_bus: Object, on_glass := false) -> Control:
 	_body.add_theme_constant_override("separation", 10)
 	add_child(_body)
 	bus.connect("build_changed", _fill)
+	var contracts := Modules.bus("contracts")
+	var on_contract := func(_id: String) -> void: _fill()
+	if contracts:
+		contracts.connect("ship_contract_changed", on_contract)
 	tree_exiting.connect(func() -> void:
 		if bus.is_connected("build_changed", _fill):
-			bus.disconnect("build_changed", _fill))
+			bus.disconnect("build_changed", _fill)
+		if contracts and contracts.is_connected("ship_contract_changed", on_contract):
+			contracts.disconnect("ship_contract_changed", on_contract))
 	_fill()
 	return self
 
@@ -97,7 +103,27 @@ func _fill() -> void:
 			var cid := str(p.contract)
 			go.pressed.connect(func() -> void: orders.call("order_cheapest", cid))
 			_body.add_child(go)
+	_gates(str(p.contract))
 	_berths()
+
+
+## Contract papers: the stage gates this build has reached, waiting for a player's signature.
+func _gates(cid: String) -> void:
+	var contracts := Modules.bus("contracts") as ContractsBus
+	if contracts == null or not Flags.is_on(ContractsBus.SIGNATURES_FLAG):
+		return
+	var gates := contracts.gates_to_sign(cid)
+	if gates.is_empty():
+		return
+	var c := contracts.ship_contract(cid)
+	var g := str(gates[0])
+	var stage_name := g
+	for st: Dictionary in c.get("stages", []):
+		if str(st.id) == g:
+			stage_name = "%s (CR %s)" % [str(st.name), T.money(int(st.value))]
+	var go := T.button("SIGN STAGE GATE: %s  as %s" % [stage_name.to_upper(), contracts.signer()], true, 18, false, glass)
+	go.pressed.connect(func() -> void: contracts.request_sign_gate(cid, g, contracts.signer()))
+	_body.add_child(go)
 
 
 ## Master plan 7.4: every ship on the go, the berth she is in, and the tug to move her.
