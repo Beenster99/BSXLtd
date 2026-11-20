@@ -7,6 +7,7 @@ extends ModuleTest
 ##   tools/run_tests.sh yard
 
 
+const DockScript := preload("res://modules/yard/internal/dock.gd")
 const YardWorkersScript := preload("res://modules/yard/internal/yard_workers.gd")
 const YardServiceScript := preload("res://modules/yard/internal/yard_service.gd")
 
@@ -497,6 +498,16 @@ func _dock(station: Node3D) -> void:
 				check(not box.intersects(other.box), "berths %s and %s do not overlap" % [b.name, other.name])
 	var lights := dock.find_children("*", "SpotLight3D", true, false)
 	check(lights.size() >= 12, "the berths are floodlit")
+	# The dock's two arms land on mount plates flush under the station (20 Nov: "please join the
+	# design office properly to the berth").
+	var feet := 0
+	for foot: Vector3 in DockScript.ARM_FEET:
+		for m in dock.find_children("*", "MeshInstance3D", true, false):
+			var b := (m as MeshInstance3D).global_transform * (m as MeshInstance3D).get_aabb()
+			if absf(b.end.y - YardLayout.HULL_BOX.position.y) < 0.02 and b.size.x >= 4.0 and b.has_point(Vector3(foot.x, b.get_center().y, foot.z)):
+				feet += 1
+				break
+	check(feet == DockScript.ARM_FEET.size(), "both dock arms bolted flat under the station (%d)" % feet)
 	# Lived in: steam off the coffee, dust in the stores, a fan turning, a lamp that stutters.
 	var lived := station.get_node_or_null("LivedIn")
 	check(lived != null and lived.get_node_or_null("Steam") is CPUParticles3D and lived.get_node_or_null("Dust") is CPUParticles3D, "steam off the coffee machine and dust in the stores")
