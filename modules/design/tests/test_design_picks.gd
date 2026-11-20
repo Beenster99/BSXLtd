@@ -105,6 +105,9 @@ func run_tests() -> void:
 		check(panel != null, "picking a part shows the INFO panel")
 		var labels: Array = console.info_rows("part", some_part).map(func(r): return str(r[0]))
 		check(["Mass", "Cost", "Integrity", "In"].all(func(k): return k in labels), "with its mass, cost, integrity and room: %s" % [labels])
+		var bat: DesignPartType = bus.catalog.part(str(info_rec.components[some_part].type))
+		if DesignMatrix.group_of(bat) != "":
+			check("Packs" in labels, "and how much it packs per m3 and per tonne")
 	plan.select("room", a_room)
 	await frames(1)
 	var rlabels: Array = console.info_rows("room", a_room).map(func(r): return str(r[0]))
