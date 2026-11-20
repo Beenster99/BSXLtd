@@ -380,13 +380,16 @@ func fastened(j: int, k: int, q: float) -> void:
 	var wm: PartModel = work.get("model")
 	if (work.get("planned") as Array).has(p):
 		work.call("work_planned", p, 1.0)
-	# The joint it made: the newest between its two parts at its spot.
+	# The joint the hand made (the newest between its two parts at its chalk mark) gives way to
+	# the design's own, as Void Salvage draws it (beenster, 20 Nov: welds, joins and plates the
+	# way VS does them): a weld's bead right round the seam where the members meet, a rivet or
+	# bolt where the design sets it. Its strength is the hand's.
 	for i in range(wm.connections.size() - 1, -1, -1):
 		var c := wm.connections[i]
 		if c.part_a == int(p.a) and c.part_b == int(p.b) and c.local_position.is_equal_approx(p.at):
-			c.max_health = ConnectionData.MAX_HEALTH.get(c.kind, c.max_health) * lerpf(0.35, 1.0, q)
-			c.health = c.max_health
+			wm.drop_connection(c)
 			break
+	_join(int((plan.jobs[j].key as Array)[k]), q)
 
 
 ## Job `j` is done: the jigs tack the rest of its fixing joints, at its quality.
