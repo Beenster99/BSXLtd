@@ -293,6 +293,7 @@ func _draw() -> void:
 	else:
 		_draw_elevation(rec)
 	_draw_drag_ghost(rec)
+	_draw_guides()
 	marks.draw(rec)
 	if show_title:
 		_draw_title(rec)
@@ -974,7 +975,19 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 	elif event is InputEventKey and event.pressed and not event.echo and editable:
 		var k := event as InputEventKey
-		if k.keycode == KEY_R:
+		if k.ctrl_pressed and k.keycode == KEY_C:
+			copy_selected()
+			accept_event()
+		elif k.ctrl_pressed and k.keycode == KEY_V:
+			paste(to_ship(_mouse) if Rect2(Vector2.ZERO, size).has_point(_mouse) else Vector2.INF)
+			accept_event()
+		elif k.ctrl_pressed and k.keycode == KEY_D:
+			var kept := clipboard
+			if copy_selected():
+				paste(Vector2.INF)
+			clipboard = kept
+			accept_event()
+		elif k.keycode == KEY_R:
 			rotate_selected()
 			accept_event()
 		elif k.keycode == KEY_M:
@@ -1290,6 +1303,9 @@ func _drag_move(s: Vector2) -> void:
 			var r := orig
 			if e == Vector2i.ZERO:
 				r.position += delta
+				var al := align(r, "room", str(_drag.id))
+				r.position += al.offset
+				_drag.guides = al.guides
 			else:
 				var x0 := orig.position.x
 				var x1 := orig.end.x
@@ -1307,6 +1323,15 @@ func _drag_move(s: Vector2) -> void:
 			_drag.rect = r
 		"part":
 			_drag.pos = _snap(_drag.orig + (p - _drag.start), rec.grid * 0.5)
+			var c: Dictionary = rec.components.get(str(_drag.id), {})
+			var pt := bus.catalog.part(str(c.get("type", "")))
+			if pt:
+				var moved := c.duplicate()
+				moved.x = _drag.pos.x
+				moved.z = _drag.pos.y
+				var al := align(DesignRules.footprint(moved, pt), "part", str(_drag.id))
+				_drag.pos += al.offset
+				_drag.guides = al.guides
 		"hull_pt", "line_end":
 			_drag.pos = _snap(p, _grid() * 0.5)
 		"room_poly":
@@ -1612,6 +1637,163 @@ func _place_door(p: Vector2) -> void:
 		else:
 			door.x = clampf(at.x, minf(wall[0].x, wall[1].x) + half, maxf(wall[0].x, wall[1].x) - half)
 	select("door", _add({"op": "add_door", "door": door}, rec.doors))
+
+
+## What Ctrl+C took: {kind: "part"|"mount"|"room", item, parts (a room's, as offsets)}, shared
+## by every plan (copy at the console, paste on a wall's).
+static var clipboard := {}
+## Smart guides (beenster, 20 Nov: "like you get in PowerPoint"): how near, in screen pixels, an
+## edge or middle has to come to another's to snap to it. Alt held turns it off.
+const GUIDE_SNAP_PX := 8.0
+const GUIDE_COLOUR := Color(1.0, 0.3, 0.85)
+
+
+## Ctrl+C: the selected component, hull part or room (with what is in it). False if nothing.
+func copy_selected() -> bool:
+	var rec := _rec()
+	if rec == null:
+		return false
+	match selected_kind:
+		"part":
+			if rec.components.has(selected_id):
+				clipboard = {"kind": "part", "item": (rec.components[selected_id] as Dictionary).duplicate(true)}
+				return true
+		"mount":
+			if rec.mounts.has(selected_id):
+				clipboard = {"kind": "mount", "item": (rec.mounts[selected_id] as Dictionary).duplicate(true)}
+				return true
+		"room":
+			if rec.rooms.has(selected_id):
+				var r: Dictionary = (rec.rooms[selected_id] as Dictionary).duplicate(true)
+				var parts: Array = []
+				for c: Dictionary in rec.components.values():
+					if str(c.room) == selected_id:
+						var cc := c.duplicate(true)
+						cc.dx = float(c.x) - float(r.x)
+						cc.dz = float(c.z) - float(r.z)
+						parts.append(cc)
+				clipboard = {"kind": "room", "item": r, "parts": parts}
+				return true
+	return false
+
+
+## Ctrl+V: a copy of what was copied, at `at` (ship metres, the pointer) on this deck, or next
+## to the original when `at` is INF. Returns the new id ("" if nothing could go there).
+func paste(at: Vector2 = Vector2.INF) -> String:
+	var rec := _rec()
+	if rec == null or clipboard.is_empty() or not editable:
+		return ""
+	var item: Dictionary = (clipboard.item as Dictionary).duplicate(true)
+	item.erase("id")
+	match str(clipboard.kind):
+		"part":
+			var pos := Vector2(float(item.x), float(item.z)) + Vector2(1.0, 1.0) * maxf(rec.grid, 0.5) \
+					if at == Vector2.INF else _snap(at, rec.grid * 0.5)
+			var room_id := rec.room_at(deck, pos)
+			if room_id == "":
+				return ""
+			item.x = pos.x
+			item.z = pos.y
+			item.room = room_id
+			var id := _add({"op": "add_component", "component": item}, rec.components)
+			select("part", id)
+			return id
+		"mount":
+			var spot := _mount_spot(at if at != Vector2.INF else Vector2(float(item.get("x", 0.0)), float(item.get("z", 0.0))) + Vector2(0, 1.0))
+			if spot.is_empty():
+				return ""
+			spot["type"] = item.type
+			spot["deck"] = deck
+			var id := _add({"op": "add_mount", "mount": spot}, rec.mounts)
+			select("mount", id)
+			return id
+		"room":
+			var pos := Vector2(float(item.x) + float(item.w) + rec.grid, float(item.z)) if at == Vector2.INF \
+					else _snap(at - Vector2(float(item.w), float(item.d)) * 0.5, rec.grid)
+			item.x = pos.x
+			item.z = pos.y
+			item.deck = deck
+			var rid := _add({"op": "add_room", "room": item}, rec.rooms)
+			if rid == "":
+				return ""
+			var ops: Array = []
+			for c: Dictionary in clipboard.get("parts", []):
+				var cc := c.duplicate(true)
+				cc.erase("id")
+				cc.x = pos.x + float(cc.dx)
+				cc.z = pos.y + float(cc.dz)
+				cc.erase("dx")
+				cc.erase("dz")
+				cc.room = rid
+				ops.append({"op": "add_component", "component": cc})
+			if not ops.is_empty():
+				bus.editor.do({"op": "batch", "ops": ops})
+			select("room", rid)
+			return rid
+	return ""
+
+
+## Smart guides for a box being moved on this deck: where its edges or middle come within
+## GUIDE_SNAP_PX of another room's or part's, the shift that lines them up and the lines to
+## draw ({offset, guides: [[from, to]...]}, ship metres). Alt held: none.
+func align(box: Rect2, kind: String, id: String) -> Dictionary:
+	var out := {"offset": Vector2.ZERO, "guides": []}
+	var rec := _rec()
+	if rec == null or Input.is_key_pressed(KEY_ALT):
+		return out
+	var others: Array[Rect2] = []
+	for r: Dictionary in rec.rooms.values():
+		if int(r.deck) == deck and not (kind == "room" and str(r.id) == id):
+			others.append(rec.room_rect(str(r.id)))
+	for c: Dictionary in rec.components.values():
+		if kind == "part" and str(c.id) == id:
+			continue
+		if kind == "room" and str(c.room) == id:
+			continue
+		var r: Dictionary = rec.rooms.get(str(c.room), {})
+		var pt := bus.catalog.part(str(c.type))
+		if pt and not r.is_empty() and int(r.deck) == deck:
+			others.append(DesignRules.footprint(c, pt))
+	var tol := GUIDE_SNAP_PX / maxf(zoom, 0.001)
+	var best := [INF, INF]
+	var hit := [[], []]
+	for axis in 2:
+		var mine := [box.position[axis], box.get_center()[axis], box.end[axis]]
+		for o in others:
+			var theirs := [o.position[axis], o.get_center()[axis], o.end[axis]]
+			for m: float in mine:
+				for t: float in theirs:
+					var d := t - m
+					if absf(d) <= tol and absf(d) <= absf(best[axis]) + 0.0001:
+						if absf(d) < absf(best[axis]) - 0.0001:
+							hit[axis] = []
+						best[axis] = d
+						hit[axis].append([t, o])
+	var off := Vector2(best[0] if best[0] != INF else 0.0, best[1] if best[1] != INF else 0.0)
+	var moved := Rect2(box.position + off, box.size)
+	for axis in 2:
+		for h: Array in hit[axis]:
+			var o: Rect2 = h[1]
+			var t: float = h[0]
+			var lo := minf(moved.position[1 - axis], o.position[1 - axis])
+			var hi := maxf(moved.end[1 - axis], o.end[1 - axis])
+			if axis == 0:
+				out.guides.append([Vector2(t, lo), Vector2(t, hi)])
+			else:
+				out.guides.append([Vector2(lo, t), Vector2(hi, t)])
+	out.offset = off
+	return out
+
+
+func _draw_guides() -> void:
+	if _drag.is_empty() or not _drag.has("guides"):
+		return
+	for g: Array in _drag.guides:
+		var a := to_screen(g[0])
+		var b := to_screen(g[1])
+		draw_dashed_line(a, b, GUIDE_COLOUR, 1.5, 6.0)
+		draw_circle(a, 2.5, GUIDE_COLOUR)
+		draw_circle(b, 2.5, GUIDE_COLOUR)
 
 
 ## Does an add op, and with symmetry on (bus.mirror) its mirrored twin in the same undo step.
