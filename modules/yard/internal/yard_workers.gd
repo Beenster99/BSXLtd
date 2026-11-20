@@ -98,9 +98,9 @@ var docks: Array[Vector3] = DOCKS.duplicate()
 ## The welder's sparks a second (the grinder's spray: YardSparkSpray), and what a rivet slamming
 ## home throws: swarf and flakes, sparks and puffs of steam.
 @export var weld_spark_rate := 420.0
-## The bots' weld beads: the player's neat ripples scaled up this much (their joints are big),
-## and how many ripples a ring's beads hold.
-@export var bead_scale := 1.4
+## The bots' weld beads: Void Salvage's bead (JointView: stacked ripples 12 mm apart, 24 mm wide,
+## 8 mm proud, dark weld metal) at this scale, and how many ripples a ring's beads hold.
+@export var bead_scale := 1.0
 @export var bead_room := 4096
 @export var rivet_chips := 26
 @export var rivet_sparks := 14
@@ -109,11 +109,19 @@ var docks: Array[Vector3] = DOCKS.duplicate()
 ## ring, depth along the keel) and the stringers between rings.
 @export var ring_member := Vector2(0.24, 0.2)
 @export var stringer := Vector2(0.16, 0.16)
-## The skin: how far its plates stand off the frame's centre lines (m), how far in from a plate's
-## edges its corner rivets go (m), and the hull plates' short seam (m).
+## The skin, laid the way Void Salvage skins a frame (beenster, 20 Nov: "follow the same style"):
+## each side's bay tiled edge to edge, flush on the ring's faces (hull plates on the outer face,
+## linings on the inner), riveted in rows onto the rings. How far the linings' pipes stand in from
+## the frame's centre lines (m), how far in from a lining's edges its corner rivets go (m), the
+## hull plates' short seam where two plates meet (m), the plates' thickness and the gap between
+## them (m), and the rivets' pitch along a row (m).
 @export var skin_gap := 0.2
 @export var corner_inset := 0.12
 @export var seam_length := 0.5
+@export var hull_thickness := 0.03
+@export var lining_thickness := 0.02
+@export var plate_gap := 0.01
+@export var rivet_pitch := 0.2
 ## How far a trade leans into the work it's clamped to (rad), and its pelvis over the surface (m).
 @export var brace_lean := 0.62
 @export var brace_height := 0.8
@@ -645,36 +653,59 @@ func _member_list(with_girders: bool) -> Array[Dictionary]:
 		# Width across the ring, pointing in: the mitre makes the outer edge the longer one.
 		var z := (centre - mid).normalized()
 		var basis := Basis(x, z.cross(x), z)
-		out.append({"part": "BoxBeam", "t": Transform3D(basis, mid),
-				"shape": _girder(a.distance_to(b), ring_member, 45.0)})
+		out.append({"part": "BoxBeam", "t": Transform3D(basis, mid), "length": a.distance_to(b),
+				"section": ring_member, "mitre": 45.0, "shape": _girder(a.distance_to(b), ring_member, 45.0)})
 	if with_girders:
 		var length := KEEL_STEP - ring_member.y
 		for c: Vector3 in corners:
 			# Along the keel, from the last ring's face to this one's.
 			var z := Vector3(0, centre.y - c.y, centre.z - c.z).normalized()
 			out.append({"part": "Girder", "t": Transform3D(Basis(Vector3.RIGHT, z.cross(Vector3.RIGHT), z), c - Vector3(KEEL_STEP * 0.5, 0, 0)),
-					"shape": _girder(length, stringer, 0.0)})
+					"length": length, "section": stringer, "mitre": 0.0, "shape": _girder(length, stringer, 0.0)})
 		out.append_array(_skin_list())
 	return out
 
 
-## The bay's skin (ring space), once its frame stands: on each side three hull plates outside the
-## frame and two inner wall linings inside it (a plating kit's worth), long sides along the keel.
-## Each turned so its face (the part's +y) points out of the side it covers: the hull away from
-## the keel, the linings in towards it.
+## The bay's skin (ring space), once its frame stands: each side's 6 m by 3.2 m bay tiled the way
+## Void Salvage skins a frame (FrameHull: plates edge to edge between the members, flush on their
+## faces, riveted onto them): three hull plates across the side outside, each 2 m by the bay's
+## length less a plate gap, lying on the rings' outer faces; two inner linings inside on the rings'
+## inner faces. Long sides along the keel. Each turned so its face (the part's +y) points out of the
+## side it covers: the hull away from the keel, the linings in towards it; the part's origin is on
+## that face.
 func _skin_list() -> Array[Dictionary]:
 	var h := RING * 0.5
 	var bay := -KEEL_STEP * 0.5
+	var length := KEEL_STEP - plate_gap
+	var depth := ring_member.x * 0.5
 	var out: Array[Dictionary] = []
 	for side: float in [-1.0, 1.0]:
 		var face := Vector3(0, 0, side)
-		for y: float in [h - 1.6, h, h + 1.6]:
-			out.append({"part": "HullPlate", "skin": true, "out": face,
-					"t": Transform3D(Basis(Vector3.UP, face, Vector3.UP.cross(face)), Vector3(bay, y, side * (h + skin_gap)))})
-		for y: float in [h - 0.65, h + 0.65]:
-			out.append({"part": "DeckPlate", "skin": true, "out": -face,
-					"t": Transform3D(Basis(Vector3.UP, -face, Vector3.UP.cross(-face)), Vector3(bay, y, side * (h - skin_gap)))})
+		for i in 3:
+			var span := RING / 3.0
+			out.append({"part": "HullPlate", "skin": true, "out": face, "size": Vector2(span - plate_gap, length),
+					"shape": _plate(Vector2(span - plate_gap, length), hull_thickness),
+					"t": Transform3D(Basis(Vector3.UP, face, Vector3.UP.cross(face)), Vector3(bay, span * (float(i) + 0.5), side * (h + depth + hull_thickness)))})
+		for i in 2:
+			var span := RING / 2.0
+			out.append({"part": "DeckPlate", "skin": true, "out": -face, "size": Vector2(span - plate_gap, length),
+					"shape": _plate(Vector2(span - plate_gap, length), lining_thickness),
+					"t": Transform3D(Basis(Vector3.UP, -face, Vector3.UP.cross(-face)), Vector3(bay, span * (float(i) + 0.5), side * (h - depth - lining_thickness)))})
 	return out
+
+
+static var _plates: Dictionary = {}
+
+
+## A skin plate `size` (across, along) `thickness` thick, bevelled at its edges (FrameParts.plate,
+## Void Salvage's): its face at y = 0, its back below; built once a size.
+func _plate(size: Vector2, thickness: float) -> PartShapes.PartShape:
+	var key := "%.3f_%.3f_%.3f" % [size.x, size.y, thickness]
+	if not _plates.has(key):
+		var a := size.x * 0.5
+		var b := size.y * 0.5
+		_plates[key] = FrameParts.plate(PackedVector2Array([Vector2(-a, -b), Vector2(a, -b), Vector2(a, b), Vector2(-a, b)]), thickness)
+	return _plates[key]
 
 
 static var _girders: Dictionary = {}
@@ -741,13 +772,27 @@ func _whole_ring() -> void:
 	ring.name = "Ring%d" % rings.size()
 	ring.position = _front()
 	add_child(ring)
-	for m: Dictionary in _member_list(rings.size() > 0):
+	var list := _member_list(rings.size() > 0)
+	for m: Dictionary in list:
 		for l: Dictionary in _layers_of(m):
 			var mi := MeshInstance3D.new()
 			mi.mesh = l.mesh
 			mi.material_override = l.material
 			mi.transform = m.t
 			ring.add_child(mi)
+	# Its joints as the crew left them: every bead run, every rivet set.
+	var working := ring_node
+	ring_node = ring
+	for m: Dictionary in list:
+		for step: String in JOINING.get(m.part, []):
+			if step == "weld":
+				for j: Dictionary in _weld_joints(m):
+					_lay_path(j.path, j.outs, 0, 1.0)
+			elif step == "rivet":
+				for spot: Dictionary in _rivet_spots(m):
+					for at: Vector3 in spot.row:
+						_rivet_head(at, spot.out)
+	ring_node = working
 	rings.append(ring)
 
 
@@ -1313,7 +1358,6 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 	var inward: Vector3 = j.inward
 	var face: Vector3 = j.face
 	var across: Vector3 = j.across
-	var half := float(j.half)
 	var there := _brace(w, face, out, -inward, delta)
 	WorkerLook.reach(node, "L", face + inward * 0.45 - node.global_basis.x * 0.3 + out * 0.04, -out)
 	match String(task.phase):
@@ -1325,10 +1369,10 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 		"arc":
 			task.t = float(task.t) + delta
 			var k := clampf(float(task.t) / weld_seconds, 0.0, 1.0)
-			var tip := face + across * lerpf(-half, half, k)
+			var tip := _along_path(j.path, k)
 			WorkerLook.reach(node, "R", tip, (-out + inward * 0.3).normalized())
-			# The bead grows behind the torch, ripple by ripple, as the player's does.
-			task.laid = _lay_bead(face - across * half, face + across * half, out, int(task.get("laid", 0)), k)
+			# The bead grows behind the torch round the seam, ripple by ripple.
+			task.laid = _lay_path(j.path, j.outs, int(task.get("laid", 0)), k)
 			var arc_at := WorkerLook.tip_of(node, "R")
 			_weld_shower(w, arc_at, out, across * (1.0 if k < 1.0 else -1.0), delta)
 			var flick := 0.5 + 0.5 * sin(_time * 47.0) * sin(_time * 31.0 + float(w.index))
@@ -1336,7 +1380,7 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 			light.global_position = arc_at + out * 0.3
 			light.light_energy = 1.4 + flick * 2.2
 			if float(task.t) >= weld_seconds:
-				_lay_bead(face - across * half, face + across * half, out, int(task.get("laid", 0)), 1.0)
+				_lay_path(j.path, j.outs, int(task.get("laid", 0)), 1.0)
 				task.laid = 0
 				_count_bead()
 				joints.pop_front()
@@ -1379,7 +1423,8 @@ func _rivet(w: Dictionary, task: Dictionary, delta: float) -> void:
 				kick = 0.14 * (1.0 - k) * (1.0 - k)
 				if not task.has("fired"):
 					task.fired = true
-					_rivet_head(face, out)
+					for at: Vector3 in spot.row:
+						_rivet_head(at, out)
 					_spray(w, face + out * 0.03, out)
 					_rivet_burst(face, out, along)
 				light.global_position = face + out * 0.3
@@ -1408,42 +1453,74 @@ func _bolt_joints(m: Dictionary) -> Array:
 	return out
 
 
-## Where a welder runs a bead (each {face, out, inward (into the part), across (the bead's line),
-## half (its half length)}, global): a beam or girder across each end where it meets the frame; a
-## hull plate a short seam along one long edge.
+## Where a welder runs a bead (each {face, out, inward (into the part), across, half, path (the
+## bead's line, global points), outs (each stretch's way out)}), as Void Salvage welds a frame
+## (FrameHull, JointView: the bead right round the seam where a member's end meets the next, hugging
+## both): a ring beam's far end where its mitre meets the next beam, in two runs (the outer face
+## and one side, then the inner face and the other), so each mitre is welded once; a stringer's
+## two ends right round where they butt onto the rings; a hull plate a short seam along the joint
+## with the plate beside it.
 func _weld_joints(m: Dictionary) -> Array:
 	var out: Array = []
+	var g: Transform3D = ring_node.global_transform * (m.t as Transform3D)
 	if m.part == "HullPlate":
-		var g: Transform3D = ring_node.global_transform * (m.t as Transform3D)
-		var box := _box(m.part)
+		var size: Vector2 = m.size
 		var o := g.basis.y.normalized()
-		var inward := -g.basis.x.normalized()
-		var edge := g * Vector3(box.end.x, box.end.y, box.get_center().z)
-		out.append({"face": edge + o * 0.02 + inward * 0.06, "out": o, "inward": inward,
-				"across": g.basis.z.normalized(), "half": seam_length * 0.5})
+		var edge := size.x * 0.5 + plate_gap * 0.5
+		var a := g * Vector3(edge, 0.0, -seam_length * 0.5)
+		var b := g * Vector3(edge, 0.0, seam_length * 0.5)
+		out.append({"face": (a + b) * 0.5 - g.basis.x.normalized() * 0.06, "out": o, "inward": -g.basis.x.normalized(),
+				"across": (b - a).normalized(), "half": seam_length * 0.5, "path": [a, b], "outs": [o]})
 		return out
-	var s := _span(m)
-	for end: Vector3 in [s.a, s.b]:
-		var o: Vector3 = s.out
-		var inward := ((s.mid as Vector3) - end).normalized()
-		out.append({"face": end + o * (float(s.skin) + 0.02) + inward * 0.06, "out": o, "inward": inward,
-				"across": o.cross(inward).normalized(), "half": 0.16})
+	var length := float(m.length)
+	var sec: Vector2 = m.section
+	var hw := sec.x * 0.5
+	var hh := sec.y * 0.5
+	var t := tan(deg_to_rad(float(m.mitre)))
+	# The end's outline (local): at height y and across z the end stands at x = ±(L/2 - z t).
+	var ends: Array = [1.0] if m.part == "BoxBeam" else [-1.0, 1.0]
+	for e: float in ends:
+		var corner := func(y: float, z: float) -> Vector3:
+			return g * Vector3(e * (length * 0.5 - z * t), y, z)
+		# Round the end: the outer face (-z), one side (+y), the inner face (+z), the other side (-y).
+		var pts: Array = [corner.call(hh, -hw), corner.call(-hh, -hw), corner.call(-hh, hw), corner.call(hh, hw)]
+		var faces: Array = [-g.basis.z, -g.basis.y, g.basis.z, g.basis.y]
+		var inward := -(g.basis.x * e).normalized()
+		var runs: Array = [[0, 1, 2, 3, 0]] if m.part == "Girder" else [[0, 1, 2], [2, 3, 0]]
+		for r: Array in runs:
+			var path: Array = []
+			var outs: Array = []
+			for i in r.size():
+				path.append(pts[int(r[i])])
+				if i < r.size() - 1:
+					outs.append((faces[int(r[i])] as Vector3).normalized())
+			var o: Vector3 = outs[0]
+			var first := ((path[0] as Vector3) + (path[1] as Vector3)) * 0.5
+			out.append({"face": first + inward * 0.06, "out": o, "inward": inward,
+					"across": ((path[1] as Vector3) - (path[0] as Vector3)).normalized(), "half": 0.16, "path": path, "outs": outs})
 	return out
 
 
-## Where a riveter sets rivets (each {face, out, along}, global): a plate's four corners, set in
-## from its edges.
+## Where a riveter sets rivets (each {face, out, along, row (the rivets one punch sets, global)}):
+## a hull plate in rows across its two ends where they lie on the rings, half a row a punch, at
+## `rivet_pitch`, as Void Salvage rivets its skin onto the frame; a lining at its four corners.
 func _rivet_spots(m: Dictionary) -> Array:
 	var out: Array = []
 	var g: Transform3D = ring_node.global_transform * (m.t as Transform3D)
-	var box := _box(m.part)
+	var size: Vector2 = m.size if m.has("size") else Vector2(_box(m.part).size.x, _box(m.part).size.z)
 	var o := g.basis.y.normalized()
-	var c := box.get_center()
-	var hx := box.size.x * 0.5 - corner_inset
-	var hz := box.size.z * 0.5 - corner_inset
+	var along := g.basis.z.normalized()
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5 - ring_member.y * 0.25
 	for corner: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
-		var p := g * Vector3(c.x + corner.x * hx, box.end.y, c.z + corner.y * hz)
-		out.append({"face": p + o * 0.01, "out": o, "along": g.basis.z.normalized()})
+		var row: Array = []
+		if m.part == "HullPlate":
+			var n := maxi(int((hx - 0.08) / rivet_pitch) + 1, 1)
+			for i in n:
+				row.append(g * Vector3(corner.x * (hx - 0.08 - float(i) * rivet_pitch), 0.0, corner.y * hz))
+		else:
+			row.append(g * Vector3(corner.x * (hx - corner_inset), 0.0, corner.y * hz))
+		out.append({"face": (row[0] as Vector3) + o * 0.01, "out": o, "along": along, "row": row})
 	return out
 
 
@@ -1549,44 +1626,67 @@ func _bolt_head(at: Vector3, out: Vector3) -> void:
 	head.global_transform = Transform3D(Basis(x, y, x.cross(y)), at + y * 0.024)
 
 
-## A weld bead left across the joint: a dark, slightly glossy ridge.
-## Lays a weld bead from `a` to `b` (global) on the face whose way out is `out`, the way the
-## player's welder lays one when it's done well (beenster, 20 Nov: "the welds that tartanco bot
-## leave should look like mine (nice ripples)"): stacked ripples every YardWorkpiece.RIPPLE_STEP,
-## each a flattened bead leaning back towards where the run came from, bright clean metal on a
-## heat-tinted band. Ripples `from` up to fraction `k` of the run are laid now; returns how many
-## are laid so far. All of a ring's beads share two multimeshes (the ripples, the band).
-func _lay_bead(a: Vector3, b: Vector3, out: Vector3, from: int, k: float) -> int:
-	var step := YardWorkpiece.RIPPLE_STEP * bead_scale
-	var count := maxi(int(a.distance_to(b) / step), 1)
+## Lays a weld bead along `path` (global points; stretch i lies on the face whose way out is
+## `outs[i]`) the way Void Salvage draws one (JointView.bead_mesh: stacked ripples every
+## BEAD_STEP, BEAD_SPREAD each side of the line, BEAD_PROUD high, dark weld metal on a heat-tinted
+## band), so the bots' welds read like the ship's own. Ripples `from` up to fraction `k` of the run
+## are laid now; returns how many are laid so far. All of a ring's beads share two multimeshes.
+func _lay_path(path: Array, outs: Array, from: int, k: float) -> int:
+	var step := JointView.BEAD_STEP * bead_scale
+	var total := 0.0
+	for i in path.size() - 1:
+		total += (path[i] as Vector3).distance_to(path[i + 1])
+	var count := maxi(int(total / step), 1)
 	var upto := clampi(int(ceil(count * k)), 0, count)
 	if upto <= from or ring_node == null:
 		return maxi(from, upto)
 	var beads := _ring_beads()
 	var mm: MultiMesh = beads[0].multimesh
 	var hm: MultiMesh = beads[1].multimesh
-	var y := (b - a).normalized()
-	var z := out.normalized()
-	var x := y.cross(z).normalized()
-	var w := 0.016 * bead_scale
-	var h := w * 0.42
+	var w := JointView.BEAD_SPREAD * 2.0 * bead_scale
+	var h := JointView.BEAD_PROUD * bead_scale
 	var lean := Basis(Vector3.RIGHT, -0.55)
 	var to_ring := ring_node.global_transform.affine_inverse()
 	for i in range(from, upto):
 		if mm.visible_instance_count >= mm.instance_count:
 			break
-		var at := a + y * (float(i) + 0.5) * step
+		# Where ripple i falls along the path, and the stretch it lies on.
+		var s := (float(i) + 0.5) * total / float(count)
+		var seg := 0
+		while seg < path.size() - 2 and s > (path[seg] as Vector3).distance_to(path[seg + 1]):
+			s -= (path[seg] as Vector3).distance_to(path[seg + 1])
+			seg += 1
+		var a: Vector3 = path[seg]
+		var b: Vector3 = path[seg + 1]
+		var y := (b - a).normalized()
+		var z: Vector3 = (outs[mini(seg, outs.size() - 1)] as Vector3).normalized()
+		var x := y.cross(z).normalized()
+		var at := a + y * minf(s, a.distance_to(b))
 		var frame := Basis(x, y, z)
 		var g := Transform3D(frame * lean * Basis.from_scale(Vector3(w, step * 2.8, h)), at + z * (0.0015 + h * 0.22))
 		mm.set_instance_transform(mm.visible_instance_count, to_ring * g)
-		mm.set_instance_color(mm.visible_instance_count, Color(0.84, 0.86, 0.88))
+		mm.set_instance_color(mm.visible_instance_count, Color(0.27, 0.26, 0.27))
 		mm.visible_instance_count += 1
 		if hm.visible_instance_count < hm.instance_count:
 			var band := Transform3D(frame * Basis(Vector3.RIGHT, PI * 0.5) * Basis.from_scale(Vector3(w * 2.0, 0.0006, step * 3.0)), at + z * 0.0004)
 			hm.set_instance_transform(hm.visible_instance_count, to_ring * band)
-			hm.set_instance_color(hm.visible_instance_count, Color(0.8, 0.79, 0.75))
+			hm.set_instance_color(hm.visible_instance_count, Color(0.42, 0.38, 0.34))
 			hm.visible_instance_count += 1
 	return upto
+
+
+## The point fraction `k` of the way along `path` (global points).
+func _along_path(path: Array, k: float) -> Vector3:
+	var total := 0.0
+	for i in path.size() - 1:
+		total += (path[i] as Vector3).distance_to(path[i + 1])
+	var s := clampf(k, 0.0, 1.0) * total
+	for i in path.size() - 1:
+		var d := (path[i] as Vector3).distance_to(path[i + 1])
+		if s <= d or i == path.size() - 2:
+			return (path[i] as Vector3).lerp(path[i + 1], clampf(s / maxf(d, 0.0001), 0.0, 1.0))
+		s -= d
+	return path.back()
 
 
 ## A weld run finished on this ring (tests count them).
@@ -1598,7 +1698,7 @@ func _count_bead() -> void:
 func _ring_beads() -> Array:
 	var mmi := ring_node.get_node_or_null("Beads") as MultiMeshInstance3D
 	if mmi == null:
-		mmi = _bead_layer("Beads", _ripple_mesh(), 0.6, 0.24)
+		mmi = _bead_layer("Beads", _ripple_mesh(), 0.8, 0.72)
 		ring_node.add_child(mmi)
 		var band := _bead_layer("Band", _band_mesh(), 0.5, 0.35)
 		mmi.add_child(band)
@@ -1650,28 +1750,44 @@ static func _band_mesh() -> CylinderMesh:
 	return _band
 
 
+## Sets a rivet head at `at` (global) on the face whose way out is `out`: Void Salvage's rivet
+## (JointView's head, its colour), one instance in the ring's rivet multimesh.
 func _rivet_head(at: Vector3, out: Vector3) -> void:
 	if _rivet_mesh == null:
-		_rivet_mesh = CylinderMesh.new()
-		_rivet_mesh.top_radius = 0.025
-		_rivet_mesh.bottom_radius = 0.04
-		_rivet_mesh.height = 0.03
-		_rivet_mesh.radial_segments = 12
-		_rivet_mesh.rings = 1
-	var head := MeshInstance3D.new()
-	head.mesh = _rivet_mesh
-	head.material_override = _rivet_material()
-	ring_node.add_child(head)
+		_rivet_mesh = JointView._mesh_for(ConnectionData.Kind.RIVET) as CylinderMesh
+	var mmi := ring_node.get_node_or_null("Rivets") as MultiMeshInstance3D
+	if mmi == null:
+		mmi = MultiMeshInstance3D.new()
+		mmi.name = "Rivets"
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _rivet_mesh
+		mm.instance_count = 512
+		mm.visible_instance_count = 0
+		mmi.multimesh = mm
+		mmi.material_override = _rivet_material()
+		ring_node.add_child(mmi)
+	var mm: MultiMesh = mmi.multimesh
+	if mm.visible_instance_count >= mm.instance_count:
+		return
 	var y := out.normalized()
 	var x := y.cross(Vector3.RIGHT if absf(y.x) < 0.9 else Vector3.FORWARD).normalized()
-	head.global_transform = Transform3D(Basis(x, y, x.cross(y)), at + y * 0.01)
+	var g := Transform3D(Basis(x, y, x.cross(y)), at + y * _rivet_mesh.height * 0.5)
+	mm.set_instance_transform(mm.visible_instance_count, ring_node.global_transform.affine_inverse() * g)
+	mm.visible_instance_count += 1
+
+
+## How many rivets ring `ring` has set (tests count them).
+static func rivets_on(ring: Node3D) -> int:
+	var mmi := ring.get_node_or_null("Rivets") as MultiMeshInstance3D
+	return mmi.multimesh.visible_instance_count if mmi else 0
 
 
 func _rivet_material() -> StandardMaterial3D:
 	if _rivet_mat == null:
 		_rivet_mat = StandardMaterial3D.new()
-		_rivet_mat.albedo_color = Color(0.32, 0.32, 0.34)
-		_rivet_mat.metallic = 0.85
+		_rivet_mat.albedo_color = Color(0.62, 0.62, 0.6)
+		_rivet_mat.metallic = 0.8
 		_rivet_mat.roughness = 0.35
 	return _rivet_mat
 

@@ -100,20 +100,30 @@ func _crew() -> void:
 	check(jobs.has("rivet") and String(jobs.rivet).begins_with("working|rivet|Riveting keel ring") and String(jobs.rivet).contains("rivet 1/4"),
 			"a busy bot's condition says what it's on: %s" % str(jobs.values()))
 	var heads := {"bolt": 0, "rivet": 0, "bead": 0, "hull": 0, "lining": 0}
+	var skin: Dictionary = {}
+	for m: Dictionary in crew._skin_list():
+		skin[(m.shape as PartShapes.PartShape).mesh] = m.part
 	for n in (crew.rings.back() as Node3D).get_children():
 		if n is MeshInstance3D and (n as MeshInstance3D).mesh == crew._bolt_mesh:
 			heads.bolt += 1
-		elif n is MeshInstance3D and (n as MeshInstance3D).mesh == crew._rivet_mesh:
-			heads.rivet += 1
-		elif _shows(n, "HullPlate"):
+		elif _shows_mesh(n, skin, "HullPlate"):
 			heads.hull += 1
-		elif _shows(n, "DeckPlate"):
+		elif _shows_mesh(n, skin, "DeckPlate"):
 			heads.lining += 1
 		elif n is MeshInstance3D:
 			heads.bead += 1
+	heads.rivet = Workers.rivets_on(crew.rings.back())
 	check(heads.bolt == 0, "no bolts in the frame or skin: beams are welded, plates riveted (%d)" % heads.bolt)
 	check(heads.hull == 6 and heads.lining == 4, "the bay skinned: %d hull plates, %d inner linings" % [heads.hull, heads.lining])
-	check(heads.rivet == 4 * (heads.hull + heads.lining), "every plate riveted at its four corners (%d rivets)" % heads.rivet)
+	var half_side: float = ((Workers.RING / 3.0 - float(crew.plate_gap)) * 0.5 - 0.08)
+	var rows := 4 * (int(half_side / float(crew.rivet_pitch)) + 1)
+	check(heads.rivet == rows * heads.hull + 4 * heads.lining,
+			"hull plates riveted in rows onto the rings, linings at their corners, as Void Salvage skins a frame (%d rivets)" % heads.rivet)
+	# Flush on the frame, edge to edge (Void Salvage's skin): each hull plate's back on the rings'
+	# outer face, no stand-off.
+	var plate: Dictionary = crew._skin_list()[0]
+	var back: float = absf((plate.t as Transform3D).origin.z) - float(crew.hull_thickness)
+	check(is_equal_approx(back, Workers.RING * 0.5 + (crew.ring_member as Vector2).x * 0.5), "hull plates lie on the rings' outer faces (%.3f m out)" % back)
 	var runs := int((crew.rings.back() as Node3D).get_meta("beads", 0))
 	check(runs >= 8 * 2 + heads.hull, "beams and girders welded at both ends, each hull plate a short seam (%d runs)" % runs)
 	var beads := (crew.rings.back() as Node3D).get_node_or_null("Beads") as MultiMeshInstance3D
@@ -238,10 +248,9 @@ func _crew() -> void:
 
 
 ## Whether `n` is a piece of `part` (it draws the part's body mesh).
-func _shows(n: Node, part: String) -> bool:
-	var body: Mesh = (preload("res://modules/yard/internal/yard_stock_look.gd").layers(part)[0] as Dictionary).mesh
+func _shows_mesh(n: Node, skin: Dictionary, part: String) -> bool:
 	for c in n.get_children():
-		if c is MeshInstance3D and (c as MeshInstance3D).mesh == body:
+		if c is MeshInstance3D and skin.get((c as MeshInstance3D).mesh, "") == part:
 			return true
 	return false
 

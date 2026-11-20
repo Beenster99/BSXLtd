@@ -42,6 +42,8 @@ var _claim_wait := 0.0
 ## Hand fastenings of a landed job waiting to be chalked: "<job>:<k>" -> blueprint joint index.
 var _to_plan: Dictionary = {}
 var _plan_wait := 0
+## Joints made at landing that are not drawn yet, by job: they show when the job is done.
+var _unwelded: Dictionary = {}
 ## How far from a joint's own spot its chalk mark may be (m).
 const SPOT_REACH := 0.45
 
@@ -138,8 +140,16 @@ func land(j: int, animate: bool) -> void:
 	if int(work.get("anchor_part")) < 0 and not made.is_empty():
 		work.set("anchor_part", made[0].id)
 	var wm: PartModel = work.get("model")
+	# Its own joints hold it together but are not drawn yet: a landed piece sits in place
+	# unjoined, no beads (beenster, 20 Nov), and they show when the job is done.
+	var hidden: Array = _unwelded.get_or_add(j, [])
 	for i: int in job.inner:
-		_join(i, 1.0)
+		var c := _join(i, 1.0)
+		if c:
+			var v := wm.forget_view(c)
+			if v:
+				v.clear()
+			hidden.append(c)
 	if in_tree:
 		parent.add_child(work)
 	for k in (job.key as Array).size():
@@ -171,41 +181,119 @@ func _plan_waiting() -> void:
 		if not real.has(c.part_a) or not real.has(c.part_b):
 			continue
 		var kind := BuildPlan.hand_kind(c.kind)
+		var weld := kind == ConnectionData.Kind.WELD
 		var spot := spot_for(c)
+		var line := []
+		if weld:
+			# The first place round the joint where a whole line lies in the open; else one met
+			# from in front all along; else a short one at the best spot.
+			# In the open before merely with room in front, before merely seen square on; at each,
+			# faces you can stand square to before ones overhead or underfoot.
+			var cands := spot_candidates(c)
+			for strict: int in [2, 1, 0]:
+				for steep: bool in [false, true]:
+					for cand: Array in cands:
+						if (absf((work.global_basis * (cand[1] as Vector3)).y) > 0.7) != steep:
+							continue
+						line = _weld_line(cand[0], cand[1], c, strict)
+						if not line.is_empty():
+							spot = cand
+							break
+					if not line.is_empty():
+						break
+				if not line.is_empty():
+					break
+			if line.is_empty():
+				var n0: Vector3 = spot[1]
+				line = [n0.cross(Vector3.UP if absf(n0.y) < 0.9 else Vector3.RIGHT).normalized(), Vector2(0.06, 0.012)]
 		var at: Vector3 = spot[0]
 		var n: Vector3 = spot[1]
-		var weld := kind == ConnectionData.Kind.WELD
-		var line := _weld_line(at, n, c) if weld else []
 		plans[key] = work.call("plan", kind, real[c.part_a], real[c.part_b], at, n,
 				line[0] if weld else Vector3.ZERO, line[1] if weld else Vector2.ZERO)
 
 
 ## [seam_up, seam_size] (body space) for a hand weld at `at` facing `n`: a stretch of joint `c`'s
-## seam (the jigs finish the rest) lying on the face, as long as it can be with both its ends on
-## the ship, so the torch follows it end to end.
-func _weld_line(at: Vector3, n: Vector3, c: ConnectionData) -> Array:
+## seam (the jigs finish the rest) lying on the face in the open, as long as it can be: every
+## point along it seen from in front, and its ends and middle open to the sides as well, so no
+## member stands over it and the torch follows it end to end (beenster, 20 Nov: "a weld line is
+## behind a beam").
+func _weld_line(at: Vector3, n: Vector3, c: ConnectionData, strict := 2) -> Array:
 	var along := c.seam_up - n * c.seam_up.dot(n)
 	var ups: Array[Vector3] = []
 	if along.length() > 0.3:
 		ups.append(along.normalized())
 		ups.append(n.cross(along).normalized())
 	ups.append(n.cross(Vector3.UP if absf(n.y) < 0.9 else Vector3.RIGHT).normalized())
+	ups.append(n.cross(ups.back()).normalized())
 	var most := clampf(c.seam_size.x if c.seam_size.x > 0.05 else 0.2, 0.08, 0.4)
 	var thick := c.seam_size.y if c.seam_size.y > 0.004 else 0.012
-	for f: float in [1.0, 0.6, 0.35]:
+	for f: float in [1.0, 0.6, 0.35, 0.2]:
 		for up in ups:
-			var half := up * most * f * 0.5
-			if _meets(at + half, n) and _meets(at - half, n):
+			if _line_open(at, n, up, most * f, strict):
 				return [up, Vector2(most * f, thick)]
-	return [ups.back(), Vector2(0.06, thick)]
+	return []
 
 
-## True when a look along -`n` at `p` (body space) meets the ship right there.
-func _meets(p: Vector3, n: Vector3) -> bool:
+## True when the weld line of plan `p` (YardWorkpiece.plan) lies where you can see it: every
+## point along it seen square on from 1.5 m with nothing of hers in front.
+func line_clear(p: Dictionary) -> bool:
+	return _line_open(p.at, p.normal, p.seam_up, (p.seam_size as Vector2).x, 0)
+
+
+## True when a weld line `length` long through `at` along `up` on the face facing `n` (body
+## space) can be got at: each of seven points along it met from in front (`strict` 0); room to
+## stand off its ends and middle too (1); those open to the sides as well (2).
+func _line_open(at: Vector3, n: Vector3, up: Vector3, length: float, strict := 2) -> bool:
+	for i in 7:
+		var p := at + up * length * (float(i) / 6.0 - 0.5)
+		if not _meets(p, n):
+			return false
+		if strict >= 1 and i % 3 == 0 and not _room(p, n):
+			return false
+		if strict >= 2 and i % 3 == 0 and not open_spot(p, n, up):
+			return false
+	return true
+
+
+## True when spot `p` facing `n` (body space) is open: room to stand in front, met from there, and from at least two
+## of the four sides 35 degrees off it (across `up` and along it), so it does not sit in under a
+## member or down a slot where neither eye nor tool gets at it.
+func open_spot(p: Vector3, n: Vector3, up: Vector3 = Vector3.ZERO) -> bool:
+	if not _meets(p, n) or not _room(p, n):
+		return false
+	if up.is_zero_approx():
+		up = n.cross(Vector3.UP if absf(n.y) < 0.9 else Vector3.RIGHT).normalized()
+	var side := n.cross(up).normalized()
+	var open := 0
+	for d: Vector3 in [up, -up, side, -side]:
+		if _meets(p, (n + d * 0.7).normalized()):
+			open += 1
+	return open >= 2
+
+
+## True when there is room for a welder in front of `p` (body space) on a face facing `n`: a
+## ball as wide as a suited head and shoulders, 0.9 m out, touches nothing of hers.
+func _room(p: Vector3, n: Vector3) -> bool:
+	var gx := work.global_transform
+	var ball := SphereShape3D.new()
+	ball.radius = 0.3
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = ball
+	q.transform = Transform3D(Basis(), gx * (p + n.normalized() * 0.9))
+	q.collision_mask = work.collision_layer
+	for hit: Dictionary in work.get_world_3d().direct_space_state.intersect_shape(q, 8):
+		if hit.collider == work:
+			return false
+	return true
+
+
+## True when a look along -`d` at `p` (body space) from 1.5 m off meets the ship right there:
+## nothing of hers in front of it.
+func _meets(p: Vector3, d0: Vector3) -> bool:
 	var gx := work.global_transform
 	var at := gx * p
-	var d := (gx.basis * n).normalized()
-	var q := PhysicsRayQueryParameters3D.create(at + d * 0.9, at - d * 0.1)
+	var d := (gx.basis * d0).normalized()
+	var q := PhysicsRayQueryParameters3D.create(at + d * 1.5, at - d * 0.1)
 	q.collision_mask = work.collision_layer
 	var skip: Array[RID] = []
 	for tries in 4:
@@ -221,8 +309,16 @@ func _meets(p: Vector3, n: Vector3) -> bool:
 
 
 ## [spot, normal] (body space) to chalk joint `c` at: where a look at its spot from in front
-## (along its normal, else from the sides) meets the ship within SPOT_REACH of it.
+## (along its normal, else from the sides) meets the ship within SPOT_REACH of it, in the open
+## (`open_spot`) where there is such a place.
 func spot_for(c: ConnectionData) -> Array:
+	return spot_candidates(c)[0]
+
+
+## Every [spot, normal] (body space) round joint `c` where a look from one side meets the ship
+## within SPOT_REACH of it, best first: open spots on faces you can stand square to, then open
+## ones overhead or underfoot, then the rest; the joint's own spot last.
+func spot_candidates(c: ConnectionData) -> Array:
 	var gx := work.global_transform
 	var at := gx * c.local_position
 	var n := (gx.basis * c.local_normal).normalized()
@@ -231,17 +327,23 @@ func spot_for(c: ConnectionData) -> Array:
 		dirs.append(d.normalized())
 	dirs.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.dot(n) > b.dot(n))
 	var space := work.get_world_3d().direct_space_state
-	# A face you can stand square to first (one overhead or underfoot only when nothing else is near).
+	var open: Array = []
+	var rest: Array = []
 	for steep in [false, true]:
-		var found := _spot_along(dirs, at, steep, space, gx)
-		if not found.is_empty():
-			return found
-	return [c.local_position, c.local_normal.normalized()]
+		for found: Array in _spots_along(dirs, at, steep, space, gx):
+			if open_spot(found[0], found[1]):
+				open.append(found)
+			else:
+				rest.append(found)
+	open.append_array(rest)
+	open.append([c.local_position, c.local_normal.normalized()])
+	return open
 
 
-func _spot_along(dirs: Array[Vector3], at: Vector3, steep: bool, space: PhysicsDirectSpaceState3D, gx: Transform3D) -> Array:
+func _spots_along(dirs: Array[Vector3], at: Vector3, steep: bool, space: PhysicsDirectSpaceState3D, gx: Transform3D) -> Array:
+	var out: Array = []
 	for d in dirs:
-		if not steep and absf(d.y) > 0.7:
+		if (not steep and absf(d.y) > 0.7) or (steep and absf(d.y) <= 0.7):
 			continue
 		var q := PhysicsRayQueryParameters3D.create(at + d * 0.9, at - d * 0.25)
 		q.collision_mask = work.collision_layer
@@ -257,9 +359,9 @@ func _spot_along(dirs: Array[Vector3], at: Vector3, steep: bool, space: PhysicsD
 			var hn := hit.normal as Vector3
 			if (hit.position as Vector3).distance_to(at) <= SPOT_REACH and (steep or absf(hn.y) <= 0.7):
 				var inv := gx.affine_inverse()
-				return [inv * (hit.position as Vector3), (inv.basis * hn).normalized()]
+				out.append([inv * (hit.position as Vector3), (inv.basis * hn).normalized()])
 			break
-	return []
+	return out
 
 
 func _physics_process(_delta: float) -> void:
@@ -294,15 +396,16 @@ func _copy_part(id: int) -> PartData:
 
 
 ## Makes blueprint joint `i` between the real parts, as strong as `quality` makes it.
-func _join(i: int, quality: float) -> void:
+func _join(i: int, quality: float) -> ConnectionData:
 	var model: PartModel = bp.get("model")
 	var c: ConnectionData = model.connections[i]
 	if not real.has(c.part_a) or not real.has(c.part_b):
-		return
+		return null
 	var wm: PartModel = work.get("model")
 	var n := wm.connect_parts(real[c.part_a], real[c.part_b], c.kind, c.local_position, c.local_normal, c.seam_up, c.seam_size)
 	n.max_health = n.max_health * lerpf(0.35, 1.0, quality)
 	n.health = n.max_health
+	return n
 
 
 func _float_in(parts: Array[PartData]) -> void:
@@ -380,13 +483,16 @@ func fastened(j: int, k: int, q: float) -> void:
 	var wm: PartModel = work.get("model")
 	if (work.get("planned") as Array).has(p):
 		work.call("work_planned", p, 1.0)
-	# The joint it made: the newest between its two parts at its spot.
+	# The joint the hand made (the newest between its two parts at its chalk mark) gives way to
+	# the design's own, as Void Salvage draws it (beenster, 20 Nov: welds, joins and plates the
+	# way VS does them): a weld's bead right round the seam where the members meet, a rivet or
+	# bolt where the design sets it. Its strength is the hand's.
 	for i in range(wm.connections.size() - 1, -1, -1):
 		var c := wm.connections[i]
 		if c.part_a == int(p.a) and c.part_b == int(p.b) and c.local_position.is_equal_approx(p.at):
-			c.max_health = ConnectionData.MAX_HEALTH.get(c.kind, c.max_health) * lerpf(0.35, 1.0, q)
-			c.health = c.max_health
+			wm.drop_connection(c)
 			break
+	_join(int((plan.jobs[j].key as Array)[k]), q)
 
 
 ## Job `j` is done: the jigs tack the rest of its fixing joints, at its quality.
@@ -394,9 +500,22 @@ func finish(j: int) -> void:
 	if work == null:
 		return
 	var q := float(bus.call("job_quality", j, contract))
+	var wm: PartModel = work.get("model")
+	for c: ConnectionData in _unwelded.get(j, []):
+		if wm.connections.has(c) and wm.parts.has(c.part_a):
+			wm.remake_view(c, wm.parts[c.part_a])
+	_unwelded.erase(j)
 	for i: int in plan.jobs[j].tack:
 		_join(i, q)
 	_glow_next()
+
+
+## True when joint `c` on the work is still undrawn (its job is not done yet).
+func unwelded(c: ConnectionData) -> bool:
+	for list: Array in _unwelded.values():
+		if list.has(c):
+			return true
+	return false
 
 
 ## [job, k] of the hand fastening `c` made on `body`, or [] when it is not one of the build's.
@@ -491,11 +610,11 @@ func card_text(p: Dictionary) -> String:
 				var n := int(counts[kind])
 				match kind:
 					ConnectionData.Kind.WELD:
-						lines.append("Weld %d chalked seam%s (welder, 8)" % [n, "" if n == 1 else "s"])
+						lines.append("%d weld%s remaining (welder, 8)" % [n, "" if n == 1 else "s"])
 					ConnectionData.Kind.BOLT:
-						lines.append("Run %d bolt%s home (socket, 3)" % [n, "" if n == 1 else "s"])
+						lines.append("%d bolt%s remaining (socket, 3)" % [n, "" if n == 1 else "s"])
 					_:
-						lines.append("Set %d rivet%s (riveter, 7)" % [n, "" if n == 1 else "s"])
+						lines.append("%d rivet%s remaining (riveter, 7)" % [n, "" if n == 1 else "s"])
 		else:
 			lines.append("Fly to the glowing pieces and press F to float them in.")
 	lines.append("Jobs %d of %d  ·  workmanship %s" % [int(p.jobs_done), int(p.jobs),
