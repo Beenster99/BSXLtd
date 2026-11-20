@@ -107,6 +107,7 @@ const DISPATCH_BAYS := [
 	AABB(Vector3(52, 0, -62), Vector3(10, 0.1, 6)),
 ]
 
+## A place changed (slot), or every place at once (-1: set_stock).
 signal changed(slot: int)
 
 ## One per place: {rack (index into RACKS), side, level, bay, part ("" empty), qty}.
@@ -175,6 +176,49 @@ func fill_demo(share := 0.6, seed_value := 7) -> void:
 			var full := int(PARTS[part].stack)
 			slots[i].part = part
 			slots[i].qty = maxi(1, full - rng.randi() % maxi(full, 1) / 2)
+
+
+## Lays out `parts` ({part id: qty}, YardRackStore.PARTS ids; others are left out) on empty
+## racks, the same way on every machine: each kind's stacks spread evenly over its racks'
+## places, one part's stacks side by side. What does not fit is left out. Emits changed(-1).
+func set_stock(parts: Dictionary) -> void:
+	pending.clear()
+	for s in slots:
+		s.part = ""
+		s.qty = 0
+	var ids: Array = parts.keys()
+	ids.sort()
+	for kind in KIND_NAMES.size():
+		var stacks: Array[Dictionary] = []
+		for id: Variant in ids:
+			var part := str(id)
+			if kind_of(part) != kind:
+				continue
+			var left := int(parts[id])
+			var full := int(PARTS[part].stack)
+			while left > 0:
+				stacks.append({"part": part, "qty": mini(left, full)})
+				left -= full
+		var places: Array[int] = []
+		for i in slots.size():
+			if slot_kind(i) == kind:
+				places.append(i)
+		var n := mini(stacks.size(), places.size())
+		for k in n:
+			# Evenly over the places (k * places / stacks), so a few parts don't all bunch at one end.
+			var i: int = places[int(floor(float(k) * float(places.size()) / float(n)))]
+			slots[i].part = stacks[k].part
+			slots[i].qty = int(stacks[k].qty)
+	changed.emit(-1)
+
+
+## How many of each part the racks hold: {part id: qty} (parts held only).
+func counts() -> Dictionary:
+	var out := {}
+	for s in slots:
+		if s.part != "":
+			out[s.part] = int(out.get(s.part, 0)) + int(s.qty)
+	return out
 
 
 ## Puts `qty` of `part` away: onto a place already holding it with room, else the empty place

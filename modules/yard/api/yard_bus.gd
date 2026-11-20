@@ -93,6 +93,13 @@ const SIM_LEAD := 30
 var sim_epoch := -1.0
 ## The worker crew as it stood at tick 0 (every machine builds it so, then replays the log).
 var sim_fleet: Array = []
+## What the stores' racks held at tick 0: {"parts": {YardRackStore.PARTS id: qty}}, or {} for
+## the demo stock (YardRackStore.fill_demo). Carried like sim_fleet, so every machine starts
+## its racks from the same stock.
+var sim_stock: Dictionary = {}
+## Where a fresh clock's starting stock comes from (host): a Callable returning {part id: qty}
+## (the Warehouse stock module sets it to the company's books). Unset: the demo stock.
+var stock_source: Callable
 ## This company's worker crew, saved ({role, mark, modules} a bot; [] is TartanCo's first six).
 var worker_fleet: Array = []
 var sim_log: Array[Dictionary] = []
@@ -439,10 +446,20 @@ func sim_start() -> void:
 		sim_epoch_rate = sim_rate
 		sim_log.clear()
 		sim_fleet = worker_fleet.duplicate(true)
+		sim_stock = starting_stock()
 		return
 	if not bool(_net.call("is_host")):
 		sim_epoch = -1.0   # wait for the host's answer
 	sim_request({"kind": "epoch"})
+
+
+## The stock a fresh clock starts the racks from (host): {"parts": {...}} from stock_source, or
+## {} (the demo stock) without one.
+func starting_stock() -> Dictionary:
+	if not stock_source.is_valid():
+		return {}
+	var parts: Variant = stock_source.call()
+	return {"parts": (parts as Dictionary).duplicate(true)} if parts is Dictionary else {}
 
 
 ## Game time (host): the yard's work runs at `rate` times its own pace from a tick a moment
@@ -473,6 +490,7 @@ func _sim_validate(sender: int, p: Dictionary) -> Variant:
 		out.epoch = _now() + 0.1 if out.fresh else sim_epoch
 		out.rate = sim_rate if out.fresh else sim_epoch_rate
 		out.fleet = worker_fleet.duplicate(true) if out.fresh else sim_fleet.duplicate(true)
+		out.stock = starting_stock() if out.fresh else sim_stock.duplicate(true)
 		return out
 	if sim_epoch < 0.0 and not String(p.get("kind", "")) in FLEET_KINDS:
 		return "the yard's clock has not started"
@@ -491,6 +509,7 @@ func _sim_apply(p: Dictionary) -> void:
 			sim_log.clear()
 			berth_claimed_by = ""
 			sim_fleet = (p.get("fleet", []) as Array).duplicate(true)
+			sim_stock = (p.get("stock", {}) as Dictionary).duplicate(true)
 		sim_epoch = float(p.epoch)
 		sim_epoch_rate = float(p.get("rate", sim_epoch_rate))
 		if changed:
@@ -533,7 +552,8 @@ func _on_session_ended(_reason: String = "") -> void:
 
 
 func get_net_snapshot() -> Dictionary:
-	return {"epoch": sim_epoch, "rate": sim_epoch_rate, "log": sim_log.duplicate(true), "fleet": sim_fleet.duplicate(true)}
+	return {"epoch": sim_epoch, "rate": sim_epoch_rate, "log": sim_log.duplicate(true), "fleet": sim_fleet.duplicate(true),
+			"stock": sim_stock.duplicate(true)}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
@@ -544,6 +564,7 @@ func apply_net_snapshot(data: Dictionary) -> void:
 	sim_epoch_rate = float(data.get("rate", 1.0))
 	sim_log.assign(data.get("log", []))
 	sim_fleet = (data.get("fleet", []) as Array).duplicate(true)
+	sim_stock = (data.get("stock", {}) as Dictionary).duplicate(true)
 	sim_reset.emit()
 
 
