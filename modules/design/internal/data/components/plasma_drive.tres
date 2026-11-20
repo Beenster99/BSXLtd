@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "plasma_drive"
+display_name = "Plasma drive"
+short = "PLS"
+colour = Color(0.55, 0.75, 1.0, 1)
+size = Vector3(1.0, 1.0, 1.6)
+cost = 86000.0
+mass = 900.0
+build_hours = 14.0
+power = -95.0
+fuel = -1
+thrust = 200.0
+hull_mount = true
+rooms = PackedStringArray()
+access = 1.0
+lead_days = 6
+category = "propulsion"
+size_class = 2
+min_class = 1
+max_class = 6
+integrity = 220.0
+signature = 45.0

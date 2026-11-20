@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DesignPartType" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://modules/design/api/design_part_type.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+version = 1
+id = "compact_fusion_cell"
+display_name = "Compact fusion cell"
+short = "CFC"
+colour = Color(1.0, 0.75, 0.25, 1)
+size = Vector3(0.9, 0.9, 0.9)
+cost = 64000.0
+mass = 850.0
+build_hours = 10.0
+power = 75.0
+fuel = -1
+rooms = PackedStringArray("reactor", "engineering")
+access = 0.8
+lead_days = 7
+category = "power"
+size_class = 1
+min_class = 1
+max_class = 5
+integrity = 260.0
+signature = 22.0
