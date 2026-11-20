@@ -91,6 +91,10 @@ const MAX_BOTS := 10
 ## The welder's sparks a second (the grinder's spray: YardSparkSpray), and what a rivet slamming
 ## home throws: swarf and flakes, sparks and puffs of steam.
 @export var weld_spark_rate := 420.0
+## The bots' weld beads: the player's neat ripples scaled up this much (their joints are big),
+## and how many ripples a ring's beads hold.
+@export var bead_scale := 1.4
+@export var bead_room := 4096
 @export var rivet_chips := 26
 @export var rivet_sparks := 14
 @export var rivet_steam := 8
@@ -1279,6 +1283,8 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 			var k := clampf(float(task.t) / weld_seconds, 0.0, 1.0)
 			var tip := face + across * lerpf(-half, half, k)
 			WorkerLook.reach(node, "R", tip, (-out + inward * 0.3).normalized())
+			# The bead grows behind the torch, ripple by ripple, as the player's does.
+			task.laid = _lay_bead(face - across * half, face + across * half, out, int(task.get("laid", 0)), k)
 			var arc_at := WorkerLook.tip_of(node, "R")
 			_weld_shower(w, arc_at, out, across * (1.0 if k < 1.0 else -1.0), delta)
 			var flick := 0.5 + 0.5 * sin(_time * 47.0) * sin(_time * 31.0 + float(w.index))
@@ -1286,7 +1292,9 @@ func _weld(w: Dictionary, task: Dictionary, delta: float) -> void:
 			light.global_position = arc_at + out * 0.3
 			light.light_energy = 1.4 + flick * 2.2
 			if float(task.t) >= weld_seconds:
-				_bead(face - across * half, face + across * half, out)
+				_lay_bead(face - across * half, face + across * half, out, int(task.get("laid", 0)), 1.0)
+				task.laid = 0
+				_count_bead()
 				joints.pop_front()
 				task.phase = "go"
 				task.t = 0.0
@@ -1498,19 +1506,104 @@ func _bolt_head(at: Vector3, out: Vector3) -> void:
 
 
 ## A weld bead left across the joint: a dark, slightly glossy ridge.
-func _bead(a: Vector3, b: Vector3, out: Vector3) -> void:
-	var bead := MeshInstance3D.new()
-	var mesh := CapsuleMesh.new()
-	mesh.radius = 0.035
-	mesh.height = a.distance_to(b) + 0.07
-	mesh.radial_segments = 10
-	mesh.rings = 2
-	bead.mesh = mesh
-	bead.material_override = _rivet_material()
-	ring_node.add_child(bead)
+## Lays a weld bead from `a` to `b` (global) on the face whose way out is `out`, the way the
+## player's welder lays one when it's done well (beenster, 20 Nov: "the welds that tartanco bot
+## leave should look like mine (nice ripples)"): stacked ripples every YardWorkpiece.RIPPLE_STEP,
+## each a flattened bead leaning back towards where the run came from, bright clean metal on a
+## heat-tinted band. Ripples `from` up to fraction `k` of the run are laid now; returns how many
+## are laid so far. All of a ring's beads share two multimeshes (the ripples, the band).
+func _lay_bead(a: Vector3, b: Vector3, out: Vector3, from: int, k: float) -> int:
+	var step := YardWorkpiece.RIPPLE_STEP * bead_scale
+	var count := maxi(int(a.distance_to(b) / step), 1)
+	var upto := clampi(int(ceil(count * k)), 0, count)
+	if upto <= from or ring_node == null:
+		return maxi(from, upto)
+	var beads := _ring_beads()
+	var mm: MultiMesh = beads[0].multimesh
+	var hm: MultiMesh = beads[1].multimesh
 	var y := (b - a).normalized()
-	var x := out.cross(y).normalized()
-	bead.global_transform = Transform3D(Basis(x, y, x.cross(y)), (a + b) * 0.5)
+	var z := out.normalized()
+	var x := y.cross(z).normalized()
+	var w := 0.016 * bead_scale
+	var h := w * 0.42
+	var lean := Basis(Vector3.RIGHT, -0.55)
+	var to_ring := ring_node.global_transform.affine_inverse()
+	for i in range(from, upto):
+		if mm.visible_instance_count >= mm.instance_count:
+			break
+		var at := a + y * (float(i) + 0.5) * step
+		var frame := Basis(x, y, z)
+		var g := Transform3D(frame * lean * Basis.from_scale(Vector3(w, step * 2.8, h)), at + z * (0.0015 + h * 0.22))
+		mm.set_instance_transform(mm.visible_instance_count, to_ring * g)
+		mm.set_instance_color(mm.visible_instance_count, Color(0.84, 0.86, 0.88))
+		mm.visible_instance_count += 1
+		if hm.visible_instance_count < hm.instance_count:
+			var band := Transform3D(frame * Basis(Vector3.RIGHT, PI * 0.5) * Basis.from_scale(Vector3(w * 2.0, 0.0006, step * 3.0)), at + z * 0.0004)
+			hm.set_instance_transform(hm.visible_instance_count, to_ring * band)
+			hm.set_instance_color(hm.visible_instance_count, Color(0.8, 0.79, 0.75))
+			hm.visible_instance_count += 1
+	return upto
+
+
+## A weld run finished on this ring (tests count them).
+func _count_bead() -> void:
+	ring_node.set_meta("beads", int(ring_node.get_meta("beads", 0)) + 1)
+
+
+## This ring's bead multimeshes: [ripples, heat band], made the first time.
+func _ring_beads() -> Array:
+	var mmi := ring_node.get_node_or_null("Beads") as MultiMeshInstance3D
+	if mmi == null:
+		mmi = _bead_layer("Beads", _ripple_mesh(), 0.6, 0.24)
+		ring_node.add_child(mmi)
+		var band := _bead_layer("Band", _band_mesh(), 0.5, 0.35)
+		mmi.add_child(band)
+	return [mmi, mmi.get_node("Band")]
+
+
+func _bead_layer(layer: String, mesh: Mesh, metallic: float, roughness: float) -> MultiMeshInstance3D:
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = layer
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = bead_room
+	mm.visible_instance_count = 0
+	mmi.multimesh = mm
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.metallic = metallic
+	m.roughness = roughness
+	m.metallic_specular = 0.8
+	mmi.material_override = m
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mmi
+
+
+static var _ripple: SphereMesh
+static var _band: CylinderMesh
+
+
+static func _ripple_mesh() -> SphereMesh:
+	if _ripple == null:
+		_ripple = SphereMesh.new()
+		_ripple.radius = 0.5
+		_ripple.height = 1.0
+		_ripple.radial_segments = 14
+		_ripple.rings = 7
+	return _ripple
+
+
+static func _band_mesh() -> CylinderMesh:
+	if _band == null:
+		_band = CylinderMesh.new()
+		_band.top_radius = 0.5
+		_band.bottom_radius = 0.5
+		_band.height = 1.0
+		_band.radial_segments = 14
+		_band.rings = 1
+	return _band
 
 
 func _rivet_head(at: Vector3, out: Vector3) -> void:

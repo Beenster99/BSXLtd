@@ -183,6 +183,23 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_tree().root.get_texture().get_image().save_png(out.path_join("berth_corner.png"))
+	# A weld bead close up: the stacked ripples the player's welder lays.
+	for r: Node3D in crew.rings:
+		var beads := r.get_node_or_null("Beads") as MultiMeshInstance3D
+		if beads == null or beads.multimesh.visible_instance_count < 60:
+			continue
+		var t0 := r.global_transform * beads.multimesh.get_instance_transform(0)
+		var t1 := r.global_transform * beads.multimesh.get_instance_transform(40)
+		var mid := (t0.origin + t1.origin) * 0.5
+		var up := t0.basis.z.normalized()
+		var run := (t1.origin - t0.origin).normalized()
+		cam.global_position = mid + up * 0.22 + run.cross(up) * 0.12 - run * 0.08
+		cam.look_at(mid, run)
+		for k in 3:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		get_tree().root.get_texture().get_image().save_png(out.path_join("berth_bead.png"))
+		break
 	# The charging docks in the berth's frame: four bots back on their docks, charging slowly so
 	# they are all still there for the shot.
 	crew.charge_seconds = 10000.0
