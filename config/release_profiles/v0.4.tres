@@ -5,6 +5,8 @@
 [resource]
 script = ExtResource("1")
 flags = {
+"build": true,
+"build.hand": true,
 "business": true,
 "business.accounts_wall": true,
 "business.debug": true,

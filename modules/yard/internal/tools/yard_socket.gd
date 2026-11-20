@@ -18,6 +18,10 @@ extends YardTool
 @export var loosen_heat: float = 0.5
 ## YardSocket spin while unscrewing, radians per second.
 @export var spin_speed: float = 25.0
+## Running a planned bolt home (Wave 5's hand building): how long one takes (s), and how close to
+## its spot the aim must land (m).
+@export var bolt_seconds: float = 1.4
+@export var plan_snap: float = 0.12
 
 ## True while the socket is on a seized bolt it can't turn (set by ToolController).
 var straining := false
