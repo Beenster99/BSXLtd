@@ -113,6 +113,7 @@ func _spray_shots(world: Node3D, bot: Node3D, cam: Camera3D, at: Vector3, out: S
 	var hit := block.position + Vector3(0.1, 0.45, 0.2)
 	var reach := hit + (at - hit).normalized() * 0.6
 	spray.set("on", true)
+	bot.set("aim_point", hit)
 	for k in 90:
 		bot.call("pose", at, hit, reach, Vector3.INF, 0.8, false, "blaster", 1.0 / 30.0)
 		spray.call("aim", bot.get("tip"), hit)

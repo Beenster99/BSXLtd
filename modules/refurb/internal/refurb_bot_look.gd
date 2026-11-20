@@ -47,6 +47,11 @@ var size := SIZE
 var tip := Vector3.ZERO
 ## Which way the tool works (global, unit), for effects.
 var tip_dir := Vector3.FORWARD
+## The camera eye's lens (global): the inspection's scan beams come from it.
+var eye := Vector3.ZERO
+## Where the tool's head points (global; INF: straight on along the forearm). The pressure
+## washer's lance turns at the wrist to point its jet at the part.
+var aim_point := Vector3.INF
 
 var _arm_r: Node3D
 var _arm_l: Node3D
@@ -64,6 +69,7 @@ var _bob := 0.0
 var _spin := 0.0
 var _thrust := 0.0
 var _heading := Basis()
+var _pitch := 0.0
 
 
 ## A weathered paint: the salvage surface's own wear (chipped paint, bare metal, rust) at `wear`.
@@ -423,7 +429,14 @@ func pose(pos: Vector3, face: Vector3, work: Vector3, hold: Vector3, charge: flo
 		if flat.length() > 0.05:
 			var want := Basis.looking_at(flat.normalized(), Vector3.UP)
 			_heading = _heading.slerp(want, clampf(delta * 3.0, 0.0, 1.0)).orthonormalized()
-	basis = _heading.scaled(Vector3.ONE * size)
+	# Scanning, it noses down (or up) so its eye looks at the part.
+	var want_pitch := 0.0
+	if tool_name == "scanner" and work.is_finite() and face.is_finite():
+		var flat_d := Vector2(face.x - pos.x, face.z - pos.z).length()
+		want_pitch = clampf(atan2(face.y - pos.y, maxf(flat_d, 0.3)), -0.7, 0.35)
+	_pitch = lerpf(_pitch, want_pitch, clampf(delta * 3.0, 0.0, 1.0))
+	basis = (_heading * Basis(Vector3.RIGHT, _pitch)).scaled(Vector3.ONE * size)
+	eye = global_transform * Vector3(0, -0.05, -0.56)
 	_reach(_arm_r, _fore_r, work, Vector3(0.1, -0.55, -0.55))
 	_reach(_arm_l, _fore_l, hold, Vector3(-0.1, -0.6, -0.5))
 	# The vice closes on a part it carries.
@@ -449,6 +462,11 @@ func pose(pos: Vector3, face: Vector3, work: Vector3, hold: Vector3, charge: flo
 	_antenna_lamp.emission = ac
 	var head: Node3D = _heads.get(tool, null)
 	if head:
+		head.basis = Basis()
+		if aim_point.is_finite():
+			var local := (_fore_r.global_transform.affine_inverse().basis * (aim_point - head.global_position)).normalized()
+			if local.length() > 0.5:
+				head.basis = Basis.looking_at(local, Vector3.UP if absf(local.y) < 0.95 else Vector3.RIGHT)
 		tip = head.global_transform * Vector3(0, 0, -float(TIP.get(tool, 0.26)))
 		tip_dir = -(head.global_basis.z).normalized()
 	else:

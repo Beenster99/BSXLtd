@@ -944,16 +944,21 @@ func _put_down(b: Dictionary, lot: Dictionary) -> void:
 func _next_spot(b: Dictionary, lot: Dictionary) -> void:
 	b.spot = int(b.spot) + 1
 	b.tool = STAGE_TOOLS[clampi(int(lot.stage), 0, STAGE_TOOLS.size() - 1)]
+	var inspect := int(lot.stage) == Stage.INSPECT
 	if not bool(lot.heavy):
 		var c := cradle_point(int(b.id)) + Vector3(0, float(lot.h) * 0.5, 0)
 		var r := maxf(maxf(float(lot.h), (lot.dims as Vector3).x) * 0.5, 0.9) + 0.9
 		var a := _rng.randf_range(-PI * 0.85, PI * 0.85)
 		var up := _rng.randf_range(-0.2, 0.75)
+		if inspect:
+			# Inspecting, it hovers further off and above, to scan across the part.
+			r += 0.7
+			up = 0.55 + up * 0.4
 		b.target = c + Vector3(sin(a) * r, up * r * 0.7, cos(a) * r * 0.8)
 		return
 	var d: Vector3 = lot.dims
 	var base: Vector3 = lot.pos
-	var off := 1.15
+	var off := 2.2 if inspect else 1.15
 	var face := _rng.randi_range(0, 4)
 	var u := _rng.randf_range(-0.42, 0.42)
 	var v := _rng.randf_range(0.15, 0.9)

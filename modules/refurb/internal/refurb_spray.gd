@@ -1,7 +1,8 @@
 extends Node3D
 ## A pressure washer's spray (beenster, 20 Nov: "The spray/debris is not detailed enough, use
 ## volumetrics and tiny droplets to create the sort of spray you get with a pressure washer"):
-## a tight jet of fine droplet streaks from the lance's nozzle to the part; where it hits, a
+## a fan jet of fine droplet streaks from the lance's nozzle to the part, hazed along its length
+## (0.4.7 playtest: "the spray needs to be a bigger cloud effect"); where it hits, a
 ## burst of tiny droplets fanning back off the surface (some carrying the dirt, brown), slower
 ## spatter that falls under gravity, a rolling cloud of soft mist that drifts and fades, and a
 ## FogVolume in the mist so it hangs in the light when volumetric fog is on. All GPU particles;
@@ -15,7 +16,7 @@ var on := false:
 		if v == on:
 			return
 		on = v
-		for p: GPUParticles3D in [_jet, _splash, _dirt, _spatter, _mist]:
+		for p: GPUParticles3D in [_jet, _splash, _dirt, _spatter, _mist, _haze]:
 			p.emitting = v
 		_core.visible = v
 		_sheath.visible = v
@@ -27,6 +28,7 @@ var _splash: GPUParticles3D
 var _dirt: GPUParticles3D
 var _spatter: GPUParticles3D
 var _mist: GPUParticles3D
+var _haze: GPUParticles3D
 var _core: MeshInstance3D
 var _sheath: MeshInstance3D
 var _fog: FogVolume
@@ -39,11 +41,12 @@ static var _puff_tex: Texture2D
 
 func _ready() -> void:
 	name = "Spray"
-	_jet = _particles("Jet", 1600, JET_LIFE, Color(0.88, 0.95, 1.0, 0.5), 2.2, Vector2(0.003, 0.05), true)
+	_jet = _particles("Jet", 1800, JET_LIFE, Color(0.88, 0.95, 1.0, 0.45), 6.0, Vector2(0.003, 0.05), true)
 	_splash = _particles("Splash", 2400, 0.35, Color(0.82, 0.9, 1.0, 0.42), 72.0, Vector2(0.0025, 0.028), true)
 	_dirt = _particles("Dirt", 500, 0.45, Color(0.36, 0.27, 0.17, 0.6), 60.0, Vector2(0.003, 0.022), true)
 	_spatter = _particles("Spatter", 400, 0.8, Color(0.8, 0.88, 0.97, 0.55), 55.0, Vector2(0.006, 0.006), false)
-	_mist = _particles("Mist", 220, 2.4, Color(0.9, 0.94, 1.0, 0.3), 85.0, Vector2(0.8, 0.8), false, true)
+	_mist = _particles("Mist", 520, 3.6, Color(0.9, 0.94, 1.0, 0.26), 95.0, Vector2(1.5, 1.5), false, true)
+	_haze = _particles("Haze", 160, 2.2, Color(0.9, 0.94, 1.0, 0.16), 40.0, Vector2(0.9, 0.9), false, true)
 	var m: ParticleProcessMaterial = _splash.process_material
 	m.initial_velocity_min = 1.5
 	m.initial_velocity_max = 5.0
@@ -60,44 +63,20 @@ func _ready() -> void:
 	m.gravity = Vector3(0, -9.8, 0)
 	m.scale_min = 0.6
 	m.scale_max = 1.6
-	m = _mist.process_material
-	m.initial_velocity_min = 0.3
-	m.initial_velocity_max = 1.4
-	m.gravity = Vector3(0, 0.12, 0)
-	m.damping_min = 0.5
-	m.damping_max = 1.2
-	m.scale_min = 0.5
-	m.scale_max = 1.4
-	m.angle_min = -180.0
-	m.angle_max = 180.0
-	m.angular_velocity_min = -20.0
-	m.angular_velocity_max = 20.0
-	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	m.emission_sphere_radius = 0.12
-	var grow := Curve.new()
-	grow.add_point(Vector2(0, 0.25))
-	grow.add_point(Vector2(1, 1.0))
-	var gt := CurveTexture.new()
-	gt.curve = grow
-	m.scale_curve = gt
-	# The mist fades in, hangs and fades out.
-	var fade := Gradient.new()
-	fade.offsets = PackedFloat32Array([0.0, 0.15, 0.6, 1.0])
-	fade.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 1), Color(1, 1, 1, 0.6), Color(1, 1, 1, 0)])
-	var ft := GradientTexture1D.new()
-	ft.gradient = fade
-	m.color_ramp = ft
+	_billow(_mist.process_material, 0.4, 2.0, 0.3)
+	# A haze round the jet itself, from the nozzle to the part (the jet's own mist).
+	_billow(_haze.process_material, 0.05, 0.5, 0.06)
 	# The jet itself: a bright thin core and a fainter sheath that widens to the surface.
-	_core = _cone("Core", 0.004, 0.012, Color(0.9, 0.96, 1.0, 0.55))
-	_sheath = _cone("Sheath", 0.01, 0.05, Color(0.8, 0.9, 1.0, 0.18))
+	_core = _cone("Core", 0.004, 0.02, Color(0.9, 0.96, 1.0, 0.28))
+	_sheath = _cone("Sheath", 0.012, 0.11, Color(0.8, 0.9, 1.0, 0.1))
 	_fog = FogVolume.new()
 	_fog.name = "MistFog"
 	_fog.shape = RenderingServer.FOG_VOLUME_SHAPE_ELLIPSOID
-	_fog.size = Vector3(1.4, 1.1, 1.4)
+	_fog.size = Vector3(3.2, 2.4, 3.2)
 	_fog_mat = FogMaterial.new()
 	_fog_mat.density = 0.0
 	_fog_mat.albedo = Color(0.92, 0.95, 1.0)
-	_fog_mat.edge_fade = 0.6
+	_fog_mat.edge_fade = 1.0
 	_fog.material = _fog_mat
 	add_child(_fog)
 
@@ -119,9 +98,14 @@ func aim(from: Vector3, to: Vector3) -> void:
 	_splash.global_transform = back
 	_dirt.global_transform = back
 	_spatter.global_transform = back
-	_mist.global_transform = Transform3D(_basis(-dir), to - dir * 0.15)
-	_fog.global_position = to - dir * 0.3 + Vector3(0, 0.1, 0)
-	_fog_target = 0.9 if on else 0.0
+	_mist.global_transform = Transform3D(_basis(-dir), to - dir * 0.2)
+	# The haze comes off the jet along its length.
+	var hm: ParticleProcessMaterial = _haze.process_material
+	hm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	hm.emission_box_extents = Vector3(0.05, 0.05, d * 0.5)
+	_haze.global_transform = Transform3D(_basis(dir), from + dir * d * 0.5)
+	_fog.global_position = to - dir * 0.5 + Vector3(0, 0.2, 0)
+	_fog_target = 0.6 if on else 0.0
 
 
 func _process(delta: float) -> void:
@@ -129,6 +113,36 @@ func _process(delta: float) -> void:
 	if _fog_mat:
 		_fog_mat.density = _fog_level
 		_fog.visible = _fog_level > 0.001
+
+
+## A rolling cloud: puffs that start small at `radius` (m), go out at up to `speed` (m/s), slow,
+## rise a little, turn and grow as they fade in, hang and fade out.
+static func _billow(m: ParticleProcessMaterial, radius: float, speed: float, rise: float) -> void:
+	m.initial_velocity_min = speed * 0.2
+	m.initial_velocity_max = speed
+	m.gravity = Vector3(0, rise, 0)
+	m.damping_min = 0.6
+	m.damping_max = 1.4
+	m.scale_min = 0.5
+	m.scale_max = 1.5
+	m.angle_min = -180.0
+	m.angle_max = 180.0
+	m.angular_velocity_min = -20.0
+	m.angular_velocity_max = 20.0
+	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	m.emission_sphere_radius = radius
+	var grow := Curve.new()
+	grow.add_point(Vector2(0, 0.3))
+	grow.add_point(Vector2(1, 1.0))
+	var gt := CurveTexture.new()
+	gt.curve = grow
+	m.scale_curve = gt
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.15, 0.6, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 1), Color(1, 1, 1, 0.6), Color(1, 1, 1, 0)])
+	var ft := GradientTexture1D.new()
+	ft.gradient = fade
+	m.color_ramp = ft
 
 
 ## A see-through cone 1 m long along +Y (scaled to the jet's length), `r0` at its bottom.
@@ -172,7 +186,7 @@ func _particles(n: String, amount: int, life: float, colour: Color, spread: floa
 	p.lifetime = life
 	p.emitting = false
 	p.local_coords = false
-	p.visibility_aabb = AABB(Vector3(-4, -4, -4), Vector3(8, 8, 8))
+	p.visibility_aabb = AABB(Vector3(-6, -6, -6), Vector3(12, 12, 12))
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var m := ParticleProcessMaterial.new()
 	m.direction = Vector3(0, 0, -1)
