@@ -73,8 +73,8 @@ func register_module() -> void:
 			func(glass: bool = false) -> Control: return PlanScreen.new().setup(self, glass), 35)
 	Menu.register_settings_section(Menu.DEBUG, "build.debug", "Building by hand", _debug_panel, 35)
 	if Flags.is_on(YardBus.DOCK):
-		for view: String in ["ghost", "frame", "weld", "hull"]:
-			Shots.register("build_" + view, YardBus.SCENE, _shot.bind(view), 40)
+		for view: String in ["ghost", "weld", "frame", "hull"]:
+			Shots.register("build_" + view, YardBus.SCENE, _shot.bind(view), 3)
 	if Modules.ready_done:
 		_hook_up()
 	else:
@@ -605,10 +605,9 @@ func debug_finish_stage() -> void:
 ## A screenshot of the build berth: the ghost skiff with her first job glowing, her frame up
 ## with the next glowing, a weld being made by hand, her hull closed.
 func _shot(scene: Node, view: String) -> void:
-	for i in 3:
-		await scene.get_tree().process_frame
+	await scene.get_tree().process_frame
 	start_sample()
-	for i in 3:
+	for i in 1:
 		await scene.get_tree().process_frame
 	match view:
 		"frame":
@@ -618,11 +617,11 @@ func _shot(scene: Node, view: String) -> void:
 			debug_finish_stage()
 		"weld":
 			land_next()
-	for i in 6:
+	for i in 4:
 		await scene.get_tree().physics_frame
 	if berth and berth.has_method("settle"):
 		berth.call("settle")
-	for i in 4:
+	for i in 2:
 		await scene.get_tree().physics_frame
 	var work: Node3D = berth.get("work") if berth else null
 	if work == null:
@@ -651,7 +650,7 @@ func _shot(scene: Node, view: String) -> void:
 			cam.position = at + n * 1.9 + right * 1.3 + Vector3(0, 0.5, 0)
 			cam.look_at(at - n * 0.1)
 			cam.current = true
-			for i in 30:
+			for i in 8:
 				await scene.get_tree().physics_frame
 			return
 	var b: AABB = (blueprint().get("bounds") as AABB) if blueprint() else AABB(Vector3(-6, -3, -12), Vector3(12, 6, 24))
