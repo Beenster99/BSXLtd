@@ -1,6 +1,6 @@
 extends ModuleTest
 ## Refurbishing bots (beenster, 19 Nov; 0.4.4 playtest): second-hand parts come in at Reclaimed
-## grade at goods in, the works' cart brings them into the annex, a TartanCo RF-2 takes a small
+## grade at goods in, the works' cart brings them into the annex, a BSX RF-2 takes a small
 ## one through inspect, strip, clean, rebuild and test on its cradle, and a big one goes under the
 ## crane onto the heavy stand where a team works it. A part that passes leaves certified at
 ## Standard, the same size, for a cost; a cracked one is scrapped (a big one cut up first). Idle

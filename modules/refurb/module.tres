@@ -7,7 +7,7 @@
 script = ExtResource("1")
 id = "refurb"
 display_name = "Refurbishing bots"
-version = "0.2.0"
+version = "0.3.0"
 depends_on = PackedStringArray("yard", "design", "shared_components")
 flag = "refurb"
 bus = ExtResource("2")

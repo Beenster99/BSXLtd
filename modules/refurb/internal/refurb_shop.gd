@@ -5,7 +5,9 @@ extends Node3D
 ## light-line cradles each with its RF-2, the heavy stand under an overhead crane for big parts
 ## (a team of RF-2H heavy bots and any idle RF-2s works them), the refurbished rack on the west
 ## wall, the heavy out bay, the scrap skip, the drones' charger rack on the back wall and the
-## works' board over it. The goods-in cart brings second-hand parts through from the hall.
+## works' wall screen over it (RefurbBoard, in the design room's wall layout). No signs or
+## floor labels (0.4.5 playtest: "remove all of the labelling its too big and misplaced"): the
+## wall screen says what is where. The goods-in cart brings second-hand parts through.
 ## The station builds the annex's floor, roof and ceiling with its other rooms; this builds its
 ## walls and everything in it.
 ##
@@ -16,6 +18,8 @@ extends Node3D
 const Paint := preload("res://modules/refurb/internal/refurb_paint.gd")
 const BotLook := preload("res://modules/refurb/internal/refurb_bot_look.gd")
 const Sounds := preload("res://modules/refurb/internal/refurb_sounds.gd")
+const Board := preload("res://modules/refurb/internal/refurb_board.gd")
+const Spray := preload("res://modules/refurb/internal/refurb_spray.gd")
 
 const TICK := 1.0 / 60.0
 const FRAME_BUDGET_MS := 6.0
@@ -44,11 +48,11 @@ var _yard: Node
 var _queue: Array[Dictionary] = []
 var _local_time := 0.0
 var _lot_nodes: Dictionary = {}
-var _cradle_labels: Array[Label3D] = []
 var _cradle_lamps: Array[StandardMaterial3D] = []
 var _work_lights: Array[OmniLight3D] = []
 var _charger_lamps: Array[StandardMaterial3D] = []
-var _board: Label3D
+var _board: Board
+var _screen: TouchScreen
 var _board_t := 0.0
 var _fx: Array[Dictionary] = []
 var _cart: Node3D
@@ -234,7 +238,7 @@ func draw(delta: float) -> void:
 	_board_t -= delta
 	if _board_t <= 0.0:
 		_board_t = 0.5
-		_board.text = board_text()
+		_board.refresh()
 
 
 ## A lot's box as drawn (local: its bottom middle and half sizes, turned by its rot).
@@ -273,7 +277,11 @@ func _draw_bot(i: int, delta: float) -> void:
 		hold = to_global(Vector3(box.get_center().x, box.end.y, box.get_center().z))
 	var moving := (look.position - (b.pos as Vector3)).length() / maxf(delta, 0.001)
 	var docked := state == RefurbWorks.BOT_DOCK and (b.pos as Vector3).distance_to(works.dock_point(i)) < 0.05
-	look.call("pose", to_global(b.pos), face, work, hold, float(b.charge), bool(b.charging), String(b.tool), delta, docked)
+	# The pressure washer is held off the part, its jet reaching it.
+	var reach := work
+	if working and String(b.tool) == "blaster" and work.is_finite():
+		reach = work + (look.global_position - work).normalized() * 0.6
+	look.call("pose", to_global(b.pos), face, reach, hold, float(b.charge), bool(b.charging), String(b.tool), delta, docked)
 	look.call("thrust", clampf(moving / 3.0, 0.0, 1.0))
 	_draw_fx(i, working, String(b.tool), centre, work)
 
@@ -307,12 +315,6 @@ func _draw_lots() -> void:
 		var glow: Node3D = n.get_meta("glow") if n.has_meta("glow") else null
 		if glow:
 			glow.visible = int(lot.stage) == RefurbWorks.Stage.TEST or where == RefurbWorks.AT_OUT
-		var tag: Label3D = n.get_meta("tag")
-		tag.visible = where in [RefurbWorks.AT_INTAKE, RefurbWorks.AT_OUT, RefurbWorks.AT_CART] or (where == RefurbWorks.AT_CRANE and String(lot.result) != "scrap")
-		tag.text = _lot_tag(lot)
-		var s := maxf(n.basis.get_scale().x, 0.05)
-		tag.position = Vector3(0, float(n.get_meta("height")) + 0.3 / s, 0)
-		tag.scale = Vector3.ONE / s
 	for id: int in _lot_nodes.keys():
 		if not seen.has(id):
 			(_lot_nodes[id] as Node3D).queue_free()
@@ -331,19 +333,11 @@ func _draw_cradle(i: int) -> void:
 	var lot := works.lot_on(i)
 	var lamp := _cradle_lamps[i]
 	var light := _work_lights[i]
-	var label := _cradle_labels[i]
 	var heavy := i == works.heavy_index()
-	var title := "HEAVY STAND" if heavy else "R%d" % (i + 1)
 	if lot.is_empty() or int(lot.stage) < 0 or String(lot.where) != RefurbWorks.AT_CRADLE:
 		lamp.emission = Color(0.15, 0.15, 0.17)
 		lamp.albedo_color = lamp.emission
 		light.light_energy = 0.5
-		if lot.is_empty():
-			label.text = "%s\nFREE" % title
-		elif String(lot.where) == RefurbWorks.AT_CRADLE:
-			label.text = "%s  %s\n%s" % [title, String(lot.name).to_upper(), "CUT UP · FOR THE SKIP" if String(lot.result) == "scrap" else "CERTIFIED · FOR THE CRANE"]
-		else:
-			label.text = "%s\n%s ON ITS WAY" % [title, String(lot.name).to_upper()]
 		return
 	var stage := int(lot.stage)
 	var c := STAGE_COLOURS[stage]
@@ -354,13 +348,6 @@ func _draw_cradle(i: int) -> void:
 	if stage in [RefurbWorks.Stage.REBUILD, RefurbWorks.Stage.CUT] and fmod(_clock * 13.0, 1.0) < 0.5:
 		light.light_color = Color(0.7, 0.85, 1.0) if stage == RefurbWorks.Stage.REBUILD else Color(1.0, 0.6, 0.3)
 		light.light_energy *= 1.6
-	var p := works.catalog.part(String(lot.type))
-	var to := works.catalog.part(works.certified_type(String(lot.type)))
-	var team := " · TEAM OF %d" % works.heavy_team(int(lot.id)).size() if heavy else ""
-	label.text = "%s  %s  %s > %s\n%s%s  %d%%   COND %d%%%s" % [title, String(lot.name).to_upper(),
-			DesignGrades.label(p) if p else "", DesignGrades.label(to) if to else "",
-			RefurbWorks.STAGE_NAMES[stage], " (RETEST)" if bool(lot.retest) and stage == RefurbWorks.Stage.REBUILD else "",
-			roundi(float(lot.progress) * 100.0), roundi(float(lot.condition) * 100.0), team]
 
 
 func _draw_crane() -> void:
@@ -442,7 +429,7 @@ func _draw_chargers() -> void:
 ## The works' board: what is on each cradle and the heavy stand, the crane and cart, what is
 ## waiting, ready, and the money.
 func board_text() -> String:
-	var lines: PackedStringArray = ["REFURB WORKS  ·  TARTANCO RF-2 / RF-2H REFURBISHERS"]
+	var lines: PackedStringArray = ["REFURB WORKS  ·  BSX RF-2 / RF-2H REFURBISHERS"]
 	for i in works.light_count():
 		var lot := works.lot_on(i)
 		var b: Dictionary = works.bots[i]
@@ -504,27 +491,9 @@ func _make_fx(look: Node3D) -> Dictionary:
 	sparks.mesh = sm
 	sparks.material_override = Paint.glow(Color(1.0, 0.65, 0.25), 6.0, true)
 	add_child(sparks)
-	var grit := CPUParticles3D.new()
-	grit.emitting = false
-	grit.amount = 160
-	grit.lifetime = 1.1
-	grit.local_coords = false
-	grit.direction = Vector3(0, 0, 1)
-	grit.spread = 18.0
-	grit.initial_velocity_min = 3.0
-	grit.initial_velocity_max = 5.5
-	grit.gravity = Vector3(0, -1.5, 0)
-	grit.damping_min = 2.0
-	grit.damping_max = 4.0
-	grit.scale_amount_min = 0.6
-	grit.scale_amount_max = 2.2
-	var gm := QuadMesh.new()
-	gm.size = Vector2(0.08, 0.08)
-	grit.mesh = gm
-	var gmat := Paint.haze(Color(0.55, 0.52, 0.46, 0.35))
-	gmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	grit.material_override = gmat
-	add_child(grit)
+	# The pressure washer's spray (the CLEAN stage).
+	var spray: Node3D = Spray.new()
+	add_child(spray)
 	var fan := MeshInstance3D.new()
 	var fm := PrismMesh.new()
 	fm.size = Vector3(0.9, 1.0, 0.01)
@@ -545,7 +514,7 @@ func _make_fx(look: Node3D) -> Dictionary:
 	hum.max_distance = 60.0
 	hum.volume_db = -8.0
 	add_child(hum)
-	return {"sparks": sparks, "grit": grit, "fan": fan, "flare": flare, "hum": hum, "sound": ""}
+	return {"sparks": sparks, "spray": spray, "fan": fan, "flare": flare, "hum": hum, "sound": ""}
 
 
 func _draw_fx(i: int, working: bool, tool_name: String, centre: Vector3, work: Vector3) -> void:
@@ -554,7 +523,6 @@ func _draw_fx(i: int, working: bool, tool_name: String, centre: Vector3, work: V
 	var tip: Vector3 = look.get("tip")
 	var aim := (work - tip).normalized() if working and work.is_finite() and work.distance_to(tip) > 0.01 else Vector3.DOWN
 	var sparks: CPUParticles3D = fx.sparks
-	var grit: CPUParticles3D = fx.grit
 	var fan: MeshInstance3D = fx.fan
 	var flare: OmniLight3D = fx.flare
 	var sparking := working and tool_name in ["welder", "nut_runner", "cutter"]
@@ -571,10 +539,10 @@ func _draw_fx(i: int, working: bool, tool_name: String, centre: Vector3, work: V
 	flare.light_color = Color(0.75, 0.85, 1.0) if tool_name == "welder" else Color(1.0, 0.6, 0.3)
 	if arc:
 		flare.global_position = tip
-	grit.emitting = working and tool_name == "blaster"
-	if grit.emitting:
-		grit.global_position = tip
-		grit.direction = aim
+	var spray: Node3D = fx.spray
+	spray.set("on", working and tool_name == "blaster" and work.is_finite())
+	if spray.get("on"):
+		spray.call("aim", tip, work)
 	fan.visible = working and tool_name == "scanner" and centre.is_finite()
 	if fan.visible:
 		var d := maxf(tip.distance_to(centre), 0.3)
@@ -650,18 +618,14 @@ func _lot_node(lot: Dictionary) -> Node3D:
 	var alb: Variant = mat.get_shader_parameter("albedo")
 	n.set_meta("albedo", Vector3(alb.r, alb.g, alb.b) if alb is Color else (alb as Vector3 if alb is Vector3 else Vector3(0.5, 0.5, 0.5)))
 	n.set_meta("height", height)
-	var tag := Paint.label(n, "", Vector3(0, height + 0.25, 0), 0.009, Color(1.0, 0.85, 0.4), 40)
-	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.no_depth_test = false
-	n.set_meta("tag", tag)
 	return n
 
 
 # --- The annex's build --------------------------------------------------------------------
 
 ## The annex's walls (the station lays its floor, roof and ceiling): west, east and back, inside
-## the room's edges like the station's own, the hall's back wall closing the front. Signs over
-## the door both sides, floor markings, the crane's runway, ceiling lamps.
+## the room's edges like the station's own, the hall's back wall closing the front. The door's
+## frame, floor markings, the crane's runway, ceiling lamps.
 func _build_walls() -> void:
 	var wall := Paint.paint(Color(0.7, 0.72, 0.75), 0.15, 0.6, "satin_paint")
 	var dark := Paint.paint(Paint.TRIM, 0.6, 0.45, "gunmetal")
@@ -686,9 +650,6 @@ func _build_walls() -> void:
 		Paint.box(self, Vector3(0.5, RefurbWorks.DOOR_H, 0.3), Vector3(x + (-0.25 if x == door.x else 0.25), RefurbWorks.DOOR_H * 0.5, -HALF.y + 0.25), orange)
 	Paint.box(self, Vector3(door.y - door.x + 1.0, 0.5, 0.3), Vector3((door.x + door.y) * 0.5, RefurbWorks.DOOR_H + 0.25, -HALF.y + 0.25), orange)
 	Paint.box(self, Vector3(door.y - door.x, 0.012, 0.6), Vector3((door.x + door.y) * 0.5, 0.006, -HALF.y + 0.5), Paint.paint(Paint.HAZARD, 0.1, 0.6, "hazard_stripes"))
-	Paint.label(self, "BSX LTD  ·  REFURB WORKS", Vector3((door.x + door.y) * 0.5, RefurbWorks.DOOR_H + 1.9, -HALF.y - 0.13), 0.012, Paint.BEAM_ORANGE, 96, Vector3.FORWARD)
-	Paint.label(self, "SECOND-HAND PARTS IN  ·  CERTIFIED PARTS OUT", Vector3((door.x + door.y) * 0.5, RefurbWorks.DOOR_H + 0.8, -HALF.y - 0.13), 0.008, Color(0.95, 0.95, 0.95), 64, Vector3.FORWARD)
-	Paint.label(self, "TO STORES · GOODS IN", Vector3((door.x + door.y) * 0.5, RefurbWorks.DOOR_H + 1.0, -HALF.y + 0.42), 0.014, Paint.BEAM_ORANGE, 64)
 	# The cart's lane, painted on the floor, and the light line's walkway.
 	_lane(Vector3(3.8, 0, -14.7), Vector3(3.8, 0, -11.3), yellow)
 	_lane(Vector3(3.8, 0, -11.3), Vector3(-9.8, 0, -11.3), yellow)
@@ -738,7 +699,7 @@ func _solid(body: StaticBody3D, size: Vector3, at: Vector3, mat: Material) -> vo
 
 
 ## A light-line cradle: a stand with padded chocks, an arch behind with its work lamp and stage
-## lamp, its number on the front.
+## lamp.
 func _build_cradle(i: int) -> void:
 	var at := works.cradle_point(i)
 	var trim := Paint.paint(Paint.TRIM, 0.4, 0.5, "gunmetal")
@@ -766,16 +727,10 @@ func _build_cradle(i: int) -> void:
 	light.omni_range = 7.0
 	add_child(light)
 	_work_lights.append(light)
-	var l := Paint.label(self, "", Vector3(at.x, 5.75, az - 0.18), 0.0055, Color(1.0, 0.85, 0.4), 44, Vector3.FORWARD)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.width = 680.0
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_cradle_labels.append(l)
-	Paint.label(self, "R%d" % (i + 1), Vector3(at.x, 0.55, at.z - 1.32), 0.02, Paint.BEAM_ORANGE, 64, Vector3.FORWARD)
 
 
 ## The heavy stand: a long low steel stand under the crane with chocks along it, a light tower at
-## each corner, its stage lamps along the front and its board on a post; the heavy out bay
+## each corner, its stage lamps along the front; the heavy out bay
 ## marked on the floor behind it.
 func _build_heavy_stand() -> void:
 	var at := RefurbWorks.HEAVY_AT
@@ -807,21 +762,10 @@ func _build_heavy_stand() -> void:
 	light.omni_range = 13.0
 	add_child(light)
 	_work_lights.append(light)
-	# Its board on a post at the front corner.
-	var bp := Vector3(at.x - size.x * 0.5 - 1.2, 0, at.z - size.y * 0.5 - 0.3)
-	Paint.box(self, Vector3(0.2, 3.4, 0.2), bp + Vector3(0, 1.7, 0), trim)
-	Paint.box(self, Vector3(3.2, 1.1, 0.1), bp + Vector3(0, 3.6, 0), Paint.glow(Color(0.02, 0.03, 0.05), 0.5))
-	var l := Paint.label(self, "", bp + Vector3(0, 3.6, -0.07), 0.0045, Color(1.0, 0.85, 0.4), 44, Vector3.FORWARD)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.width = 680.0
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_cradle_labels.append(l)
-	# The heavy out bay: a painted outline and its name.
+	# The heavy out bay: a painted outline.
 	var out := RefurbWorks.HEAVY_OUT_AT
 	_outline(Vector3(out.x, 0, out.z), Vector2(12.0, 7.2), Paint.paint(Paint.HAZARD, 0.1, 0.6, "enamel"))
 	Paint.box(self, Vector3(11.0, out.y, 6.4), Vector3(out.x, out.y * 0.5, out.z), Paint.paint(Color(0.3, 0.31, 0.33), 0.5, 0.6, "galvanised"))
-	Paint.label(self, "HEAVY OUT  ·  CERTIFIED", Vector3(out.x, 0.01, out.z - 3.85), 0.012, Paint.HAZARD, 64).basis = Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -PI * 0.5)
-	Paint.label(self, "HEAVY STAND", Vector3(at.x, at.y - 0.4, at.z - size.y * 0.5 - 0.32), 0.016, Paint.BEAM_ORANGE, 64, Vector3.FORWARD)
 
 
 func _outline(mid: Vector3, size: Vector2, mat: Material) -> void:
@@ -865,9 +809,6 @@ func _build_rollers() -> void:
 	mmi.multimesh = mm
 	mmi.material_override = steel
 	add_child(mmi)
-	for k in xs.size():
-		Paint.label(self, "IN %d" % (k + 1), Vector3(xs[k], y - 0.2, z + 0.93), 0.008, Color(0.95, 0.95, 0.95), 48)
-	Paint.label(self, "SECOND-HAND IN", Vector3((x0 + x1) * 0.5, 3.4, -HALF.y + 0.12), 0.02, Paint.BEAM_ORANGE, 96)
 
 
 ## The refurbished rack on the west wall: three bays, two levels.
@@ -886,7 +827,6 @@ func _build_out_rack() -> void:
 		Paint.box(self, Vector3(2.1, 0.06, z1 - z0), Vector3(x, y - 0.03, (z0 + z1) * 0.5), board)
 		for dx: float in [-1.0, 1.0]:
 			Paint.box(self, Vector3(0.1, 0.16, z1 - z0 + 0.02), Vector3(x + dx * 1.06, y - 0.11, (z0 + z1) * 0.5), orange)
-	Paint.label(self, "REFURBISHED", Vector3(-HALF.x + WALL_T * 0.5 + 0.4, 6.0, (z0 + z1) * 0.5), 0.011, Paint.BEAM_ORANGE, 96, Vector3.RIGHT)
 
 
 ## The drones' charger rack on the back wall: a frame with a charger head over each slot (a
@@ -909,7 +849,6 @@ func _build_charger_rack() -> void:
 		Paint.box(self, Vector3(x1 - x0 - 0.4, 0.1, 0.24), Vector3((x0 + x1) * 0.5, y + 1.32, wall_z - 0.22), dark)
 	Paint.box(self, Vector3(1.4, 2.2, 0.7), Vector3(x1 + 1.0, 1.1, wall_z - 0.35), plates)
 	Paint.box(self, Vector3(1.2, 0.2, 0.02), Vector3(x1 + 1.0, 1.7, wall_z - 0.71), Paint.glow(Color(0.25, 1.0, 0.4), 2.5))
-	Paint.label(self, "CHARGERS", Vector3(x1 + 1.0, 2.0, wall_z - 0.711), 0.008, Color(0.1, 0.1, 0.11), 48, Vector3.FORWARD)
 	# A charger head over each slot: an arm off the rail, a saddle with contacts, a lamp.
 	for i in xs.size() * ys.size():
 		var d := works.dock_point(i)
@@ -925,7 +864,6 @@ func _build_charger_rack() -> void:
 		lamp.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		Paint.box(self, Vector3(0.22, 0.1, 0.02), Vector3(d.x + 0.6, d.y + 1.1, wall_z - 0.29), lamp)
 		_charger_lamps.append(lamp)
-		Paint.label(self, "C%d" % (i + 1), Vector3(d.x - 0.6, d.y + 1.1, wall_z - 0.29), 0.008, Color(0.1, 0.1, 0.11), 48, Vector3.FORWARD)
 
 
 func _build_scrap_skip() -> void:
@@ -937,20 +875,21 @@ func _build_scrap_skip() -> void:
 	for s: float in [-1.0, 1.0]:
 		Paint.box(self, Vector3(h.x * 2.0 + 0.2, 1.4, 0.1), Vector3(at.x, 0.7, at.z + s * (h.y + 0.05)), yellow)
 		Paint.box(self, Vector3(0.1, 1.4, h.y * 2.0), Vector3(at.x + s * (h.x + 0.05), 0.7, at.z), yellow)
-	Paint.label(self, "SCRAP", Vector3(at.x, 1.0, at.z - h.y - 0.11), 0.014, Paint.TRIM, 64, Vector3.FORWARD)
 
 
 func _build_board() -> void:
 	var at := Vector3(-10.5, 10.6, HALF.y - WALL_T * 0.5)
-	Paint.box(self, Vector3(14.0, 5.4, 0.12), Vector3(at.x, at.y, at.z - 0.06), Paint.glow(Color(0.02, 0.03, 0.05), 0.5))
-	_board = Paint.label(self, "", Vector3(at.x + 6.6, at.y, at.z - 0.13), 0.0085, Color(0.45, 0.95, 1.0), 48, Vector3.FORWARD)
-	_board.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_board.width = 1560.0
-	_board.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var mono := SystemFont.new()
-	mono.font_names = PackedStringArray(["DejaVu Sans Mono", "Consolas", "Courier New", "monospace"])
-	_board.font = mono
-	_board.text = board_text()
+	var sz := Vector2(14.0, 5.4)
+	var density := 120.0
+	_board = Board.new()
+	_board.setup(works, density)
+	_screen = TouchScreen.new(_board, Vector2i(int(sz.x * density), int(sz.y * density)), sz)
+	_screen.name = "WorksScreen"
+	_screen.reach = 0.0
+	_screen.hint = {"title": "Refurb works board", "keys": []}
+	_screen.position = Vector3(at.x, at.y, at.z - 0.03)
+	_screen.rotation.y = PI
+	add_child(_screen)
 
 
 ## The overhead crane: a bridge girder across the annex riding the two rails, a trolley along it,
@@ -969,8 +908,6 @@ func _build_crane() -> void:
 	for side: float in [-1.0, 1.0]:
 		Paint.box(_bridge, Vector3(2.4, 0.55, 0.6), Vector3(0, RAIL_TOP + 0.36, side * RAIL_Z), dark)
 		Paint.box(_bridge, Vector3(0.7, 0.5, 0.36), Vector3(0, RAIL_TOP + 0.9, side * (RAIL_Z - 0.5)), dark)
-	Paint.label(_bridge, "SWL 60 t", Vector3(0.74, BRIDGE_Y, 0), 0.005, Paint.TRIM, 96, Vector3.RIGHT)
-	Paint.label(_bridge, "SWL 60 t", Vector3(-0.74, BRIDGE_Y, 0), 0.005, Paint.TRIM, 96, Vector3.LEFT)
 	_trolley = Node3D.new()
 	_trolley.name = "Trolley"
 	_bridge.add_child(_trolley)
@@ -1010,8 +947,6 @@ func _build_cart() -> void:
 		for z: float in [-1.1, 1.1]:
 			Paint.rod(_cart, 0.17, 0.25, Vector3(s * 2.4, 0.17, z * 1.25), dark, Basis(Vector3.RIGHT, PI * 0.5))
 			Paint.box(_cart, Vector3(0.05, 0.12, 0.3), Vector3(s * 3.73, 0.45, z), Paint.glow(Color(1.0, 0.55, 0.1), 3.0))
-		var name_l := Paint.label(_cart, "BSX GOODS IN  ·  MOVER 3", Vector3(0, 0.45, s * 1.51), 0.008, Color(0.1, 0.1, 0.11), 48, Vector3(0, 0, s))
-		name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	Paint.box(_cart, Vector3(0.12, 1.2, 0.12), Vector3(-3.3, bed_y + 0.6, 1.4), dark)
 	_cart_beacon = Paint.box(_cart, Vector3(0.22, 0.22, 0.22), Vector3(-3.3, bed_y + 1.3, 1.4), Paint.glow(Color(1.0, 0.6, 0.1), 6.0, true))
 
