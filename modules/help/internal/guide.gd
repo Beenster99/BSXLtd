@@ -4,7 +4,7 @@ extends RefCounted
 ## screen of the wrist, in the words players use.
 
 const TOPICS := [
-	{"id": "start", "order": 10, "title": "Getting started", "text": """You run BSX Ltd, a shipyard in orbit. Clients order new ships; your crew designs them, quotes, builds and delivers them, and gets paid in stages.
+	{"id": "start", "order": 10, "title": "Getting started", "text": """You run BSX Ltd, a shipyard in deep space. Clients order new ships; your crew designs them, quotes, builds and delivers them, and gets paid in stages.
 # The loop
 - Pick a ship order in the design room and draw up a design that meets it.
 - Send the client a quote. When they sign, they pay a deposit.
