@@ -687,7 +687,7 @@ func get_ledger(since_day := 0) -> Array[LedgerEntry]:
 ## Ledger categories grouped the way the Accounts page shows them, in its order.
 const ACCOUNT_GROUPS := {
 	"contracts": ["deposit", "goodwill", "payment", "trial", "penalty"],
-	"sales": ["scrap", "salvage", "resale"],
+	"sales": ["scrap", "salvage", "resale", "trading"],
 	"parts": ["parts", "refund"],
 	"wages": ["wages", "bonus"],
 	"rent": ["rent"],
@@ -733,7 +733,7 @@ func accounts_summary(days: int) -> Dictionary:
 ## Ledger categories' names for the detailed accounts (ACCOUNTS wall screen).
 const CATEGORY_NAMES := {"deposit": "Deposits", "goodwill": "Goodwill", "payment": "Contract payments",
 		"trial": "Trial bonus or hold-back", "penalty": "Late penalties", "scrap": "Scrap sales", "salvage": "Salvage sales",
-		"resale": "Parts resold", "parts": "Parts bought", "refund": "Refunds", "wages": "Wages", "bonus": "Bonuses",
+		"resale": "Parts resold", "trading": "Parts trading", "parts": "Parts bought", "refund": "Refunds", "wages": "Wages", "bonus": "Bonuses",
 		"rent": "Bay rent", "loan": "Loans drawn", "repayment": "Loan repayments", "upgrade": "Upgrades",
 		"debug": "Testing"}
 

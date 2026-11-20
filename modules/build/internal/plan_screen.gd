@@ -20,9 +20,15 @@ func setup(build_bus: Object, on_glass := false) -> Control:
 	_body.add_theme_constant_override("separation", 10)
 	add_child(_body)
 	bus.connect("build_changed", _fill)
+	var contracts := Modules.bus("contracts")
+	var on_contract := func(_id: String) -> void: _fill()
+	if contracts:
+		contracts.connect("ship_contract_changed", on_contract)
 	tree_exiting.connect(func() -> void:
 		if bus.is_connected("build_changed", _fill):
-			bus.disconnect("build_changed", _fill))
+			bus.disconnect("build_changed", _fill)
+		if contracts and contracts.is_connected("ship_contract_changed", on_contract):
+			contracts.disconnect("ship_contract_changed", on_contract))
 	_fill()
 	return self
 
@@ -36,6 +42,7 @@ func _fill() -> void:
 		_body.add_child(T.label("BUILD PLAN", "display_bold", 30, T.TEXT))
 		_body.add_child(T.label("Nothing in the build berth. Sign a small ship contract and its design comes to the berth as a ghost ship to build by hand.",
 				"body", 18, T.DIM))
+		_berths()
 		return
 	var head := HBoxContainer.new()
 	var title := T.label("BUILD PLAN  ·  %s" % str(p.design_name).to_upper(), "display_bold", 28, T.TEXT)
@@ -86,3 +93,63 @@ func _fill() -> void:
 	else:
 		job.text = "Next: %s. Go out to the build berth to work on her." % str(p.job_name)
 	_body.add_child(job)
+	if str(p.get("parts_wait", "")) != "":
+		var wait := T.label("Waiting for parts: %s." % str(p.parts_wait), "body", 18, T.AMBER)
+		wait.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_body.add_child(wait)
+		var orders := Modules.bus("orders")
+		if orders and str(p.parts_wait).contains("not ordered"):
+			var go := T.button("ORDER THE CHEAPEST PLAN", true, 18, false, glass)
+			var cid := str(p.contract)
+			go.pressed.connect(func() -> void: orders.call("order_cheapest", cid))
+			_body.add_child(go)
+	_gates(str(p.contract))
+	_berths()
+
+
+## Contract papers: the stage gates this build has reached, waiting for a player's signature.
+func _gates(cid: String) -> void:
+	var contracts := Modules.bus("contracts") as ContractsBus
+	if contracts == null or not Flags.is_on(ContractsBus.SIGNATURES_FLAG):
+		return
+	var gates := contracts.gates_to_sign(cid)
+	if gates.is_empty():
+		return
+	var c := contracts.ship_contract(cid)
+	var g := str(gates[0])
+	var stage_name := g
+	for st: Dictionary in c.get("stages", []):
+		if str(st.id) == g:
+			stage_name = "%s (CR %s)" % [str(st.name), T.money(int(st.value))]
+	var go := T.button("SIGN STAGE GATE: %s  as %s" % [stage_name.to_upper(), contracts.signer()], true, 18, false, glass)
+	go.pressed.connect(func() -> void: contracts.request_sign_gate(cid, g, contracts.signer()))
+	_body.add_child(go)
+
+
+## Master plan 7.4: every ship on the go, the berth she is in, and the tug to move her.
+func _berths() -> void:
+	var builds: Dictionary = bus.get("builds")
+	if builds.is_empty() or not Flags.is_on(BuildBus.HOLDING_FLAG):
+		return
+	_body.add_child(T.label("BERTHS", "display_bold", 22, T.ORANGE))
+	for cid: String in builds:
+		var b: Dictionary = builds[cid]
+		var at := str(b.get("berth", ""))
+		var p: Dictionary = bus.call("progress", cid)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var where := T.label(at if at != "" else "--", "mono_bold", 20, T.AMBER if at == "B1" else T.TEXT)
+		where.custom_minimum_size.x = 50
+		row.add_child(where)
+		var what := T.label("%s  ·  %d / %d jobs  ·  %s" % [str(b.get("design_name", cid)), int(p.get("jobs_done", 0)),
+				int(p.get("jobs", 0)), "the bots" if str(b.get("crew", "")) == BuildBus.CREW_BOTS else "by hand"], "body", 18, T.TEXT)
+		what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		what.clip_text = true
+		row.add_child(what)
+		for to in BuildBus.BERTH_IDS:
+			if to == at or not bool(bus.call("berth_free", to)):
+				continue
+			var go := T.button("TUG TO %s" % to, false, 15, false, glass)
+			go.pressed.connect(func() -> void: bus.call("move", cid, to))
+			row.add_child(go)
+		_body.add_child(row)

@@ -691,6 +691,11 @@ func pending(j: int) -> Array:
 
 # --- The next pieces glow --------------------------------------------------------------------
 
+## The glowing job again (a bot claimed the one that glowed, or let one go).
+func refresh_glow() -> void:
+	_glow_next()
+
+
 func _glow_next() -> void:
 	_fade_later()
 	for id: int in _glowing:
@@ -746,8 +751,13 @@ func _update_card() -> void:
 ## The card's text for progress `p` (BuildBus.progress).
 func card_text(p: Dictionary) -> String:
 	var lines: Array[String] = []
+	var bots := str(p.get("crew", "")) == "bots"
 	if str(p.stage) == "":
 		lines.append("Every job done: she is ready for her trial.")
+	elif bots and not bool(p.floating):
+		lines.append("The bots are building her: %d job%s in hand." % [int(p.get("in_hand", 0)), "" if int(p.get("in_hand", 0)) == 1 else "s"])
+		lines.append("Fly to the glowing pieces and press F to take a job yourself." if int(p.get("free", 0)) > 0
+				else "Every free job has a bot on it: take one over at the bot board.")
 	else:
 		lines.append("%s: %s" % [str(BuildPlan.STAGES[str(p.stage)].name), str(p.job_name)])
 		if bool(p.floating):
@@ -763,8 +773,12 @@ func card_text(p: Dictionary) -> String:
 						lines.append("%d bolt%s remaining (socket, 3)" % [n, "" if n == 1 else "s"])
 					_:
 						lines.append("%d rivet%s remaining (riveter, 7)" % [n, "" if n == 1 else "s"])
+		elif str(p.get("parts_wait", "")) != "":
+			lines.append("Waiting for parts: " + str(p.parts_wait) + ".")
 		else:
 			lines.append("Fly to the glowing pieces and press F to float them in.")
+	if bots and str(p.get("parts_wait", "")) != "" and int(p.get("free", 0)) == 0:
+		lines.append("Waiting for parts: " + str(p.parts_wait) + ".")
 	lines.append("Jobs %d of %d  ·  workmanship %s" % [int(p.jobs_done), int(p.jobs),
 			str(p.grade) if str(p.grade) != "" else "-"])
 	return "\n".join(lines)
