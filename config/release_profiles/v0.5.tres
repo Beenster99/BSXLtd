@@ -11,6 +11,7 @@ flags = {
 "bots": true,
 "bots.board": true,
 "bots.cams": true,
+"bots.tartanco": true,
 "build.holding": true,
 "orders": true,
 "orders.gate": true,
@@ -216,6 +217,7 @@ flags = {
 "yard.delivery_ships": true,
 "yard.dock": true,
 "yard.racking": true,
+"yard.room_detail": true,
 "yard.sounds": true,
 "yard.station": true
 }
