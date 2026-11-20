@@ -6,12 +6,14 @@ extends ModuleTest
 ##   tools/run_tests.sh design
 
 var cat := DesignCatalog.load_default()
+const Samples := preload("res://modules/design/internal/sample_designs.gd")
 
 
 func run_tests() -> void:
 	_reference()
 	_calibration()
 	_clauses()
+	_tutorial()
 
 
 func _reference() -> void:
@@ -94,3 +96,22 @@ func _clauses() -> void:
 	var t := DesignTotals.compute(d, cat)
 	var all := DesignContractCheck.all({"demands": {"crew": 2, "attack": 10}, "clauses": o.clauses}, d, cat, t)
 	check(all.size() == 7, "demands and clauses score together: %d rows" % all.size())
+
+
+## The starter orders are easy: generous, open to a new yard, and the sample skiff meets
+## every criterion as it stands, so the whole contract round can be learned on it.
+func _tutorial() -> void:
+	var rec := DesignRecord.new("tut", "Sample skiff")
+	Samples.skiff(rec, cat)
+	var t := DesignTotals.compute(rec, cat)
+	var orders := ShipOrders.tutorial_orders()
+	check(orders.size() == 2, "two starter orders")
+	for o: Dictionary in orders:
+		rec.order = o
+		var t2 := DesignTotals.compute(rec, cat)
+		var rows := DesignContractCheck.all(o, rec, cat, t2)
+		check(rows.all(func(r: Dictionary) -> bool: return r.ok), "the sample skiff meets %s: %s" % [o.title,
+				rows.filter(func(r: Dictionary) -> bool: return not r.ok).map(func(r: Dictionary) -> String: return "%s %s/%s" % [r.label, r.have, r.need])])
+		check(str(o.achievability.label) == "Generous" and int(o.needs_level) == 0 and int(o.berth) == 1, "and it is generous, open from the start, starter berth")
+		var q := ShipOrders.quote(o, t.cost)
+		check(int(q.margin) > 0, "the sample skiff makes a profit on it: CR %d" % int(q.margin))
