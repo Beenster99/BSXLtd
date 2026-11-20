@@ -13,7 +13,9 @@ extends RefCounted
 ##
 ## jobs: [{id (its place in the order), stage, name, parts (blueprint part ids), key, inner, tack
 ## (indexes into the blueprint's connections: the hand fastenings; the assembly's own joints,
-## made before it floats in; the fixing joints the jigs tack once the key ones are in)}].
+## made before it floats in; the fixing joints the jigs tack once the key ones are in), needs (the
+## jobs it is fixed to, all earlier in the order: it can float in once they are done, which is what
+## lets several bots work at once, Wave 6)}].
 
 ## The stages, in build order: id -> {name, verb, hand fastenings a job asks at most}.
 const STAGES := {
@@ -69,6 +71,7 @@ static func make(model: PartModel, group: Callable) -> BuildPlan:
 			mine[id] = true
 		var inner: Array[int] = []
 		var fixing: Array[int] = []
+		var needs: Dictionary = {}
 		var seen: Dictionary = {}
 		for id: int in j.parts:
 			for i: int in joints_of.get(id, []):
@@ -81,12 +84,19 @@ static func make(model: PartModel, group: Callable) -> BuildPlan:
 					inner.append(i)
 				elif placed.has(other):
 					fixing.append(i)
+					needs[int(plan.job_of[other])] = true
 		inner.sort()
 		fixing.sort()
 		var most := int((STAGES.get(str(j.stage), {}) as Dictionary).get("key", 4))
 		var from := fixing if not fixing.is_empty() else inner
 		var key := pick(model, from, most)
-		var job := {"id": plan.jobs.size(), "stage": j.stage, "name": j.name, "parts": j.parts,
+		var need_list: Array = needs.keys()
+		need_list.sort()
+		# A job fixed to nothing yet (the first ring) waits for the one before it all the same,
+		# so the frame grows from its first ring, never in two loose halves.
+		if need_list.is_empty() and plan.jobs.size() > 0:
+			need_list = [plan.jobs.size() - 1]
+		var job := {"id": plan.jobs.size(), "stage": j.stage, "name": j.name, "parts": j.parts, "needs": need_list,
 				"key": key, "inner": inner.filter(func(i: int) -> bool: return not key.has(i)),
 				"tack": fixing.filter(func(i: int) -> bool: return not key.has(i))}
 		for id: int in j.parts:
