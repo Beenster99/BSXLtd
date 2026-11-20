@@ -68,6 +68,9 @@ func run_tests() -> void:
 	# Placed, not welded: no beads on it yet (beenster, 20 Nov), and the card counts the welds.
 	var drawn := wm.connections.filter(func(c: ConnectionData) -> bool: return wm.joint_view(c) != null)
 	check(not wm.connections.is_empty() and drawn.is_empty(), "the ring sits in place unwelded, no beads (%d drawn of %d)" % [drawn.size(), wm.connections.size()])
+	check(int(berth.call("marks_shown")) == planned.size(), "each weld to make is outlined bright over the holo (%d)" % int(berth.call("marks_shown")))
+	check(planned.all(func(p: Dictionary) -> bool: return (p.seam_size as Vector2).x <= 0.13 + 0.001),
+			"each weld is short enough that aiming anywhere on it starts the arc")
 	var first_card := str(berth.call("card_text", bus.progress()))
 	check(first_card.contains("%d welds remaining (welder, 8)" % planned.size()), "the card says how many welds remain (%s)" % first_card)
 
