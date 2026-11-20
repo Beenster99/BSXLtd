@@ -27,6 +27,7 @@ import recipes_machines  # noqa: E402
 import recipes_hull  # noqa: E402
 import recipes_detail  # noqa: E402
 import recipes_moving  # noqa: E402
+import recipes_hightech  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 COMPONENTS = os.path.join(ROOT, "modules", "design", "internal", "data", "components")
@@ -43,6 +44,7 @@ RECIPES.update(recipes_machines.RECIPES)
 RECIPES.update(recipes_hull.RECIPES)
 RECIPES.update(recipes_detail.RECIPES)
 RECIPES.update(recipes_moving.RECIPES)
+RECIPES.update(recipes_hightech.RECIPES)
 
 
 def catalogue_size(pid):
