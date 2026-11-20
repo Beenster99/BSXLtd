@@ -30,9 +30,6 @@ const LIFT_DWELL := 1.0
 ## A hatch's opening through the deck, m square.
 const HATCH := 1.0
 const DOOR_H := 2.2
-## Stairs: the flight's width at most, and the landing at its top, m.
-const RAMP_W := 1.2
-const LANDING := 1.0
 ## Deck plates and wall panels, m.
 const PLATE := 1.0
 const PANEL := 1.2
@@ -206,7 +203,7 @@ func build(record: DesignRecord, parent: Node3D, plan: Dictionary = {}, structur
 		for i in cells.size():
 			var tag := str(r.id) + ("" if i == 0 else "_%d" % i)
 			_floor(r, stairs, cells[i], tag)
-			_ceiling(r, shaft(r, rec.rooms[stairs[str(r.id)]]) if stairs.has(str(r.id)) else Rect2(), cells[i], tag)
+			_ceiling(r, shaft(r, rec.rooms[stairs[str(r.id)]], rec.deck_height) if stairs.has(str(r.id)) else Rect2(), cells[i], tag)
 	for deck in rec.decks():
 		if rec.hull_outline(deck).size() >= 3:
 			_open_deck(deck)
@@ -249,7 +246,7 @@ static func stairwells(d: DesignRecord, cat: DesignCatalog) -> Dictionary:
 
 ## The opening between a deck-linking room and the one over it: the stairs' flight, or a
 ## lift's whole shaft.
-static func shaft(low: Dictionary, upper: Dictionary) -> Rect2:
+static func shaft(low: Dictionary, upper: Dictionary, height := 3.0) -> Rect2:
 	var both := Rect2(low.x, low.z, low.w, low.d).intersection(Rect2(upper.x, upper.z, upper.w, upper.d))
 	if str(low.type) == "lift":
 		return both
@@ -257,18 +254,13 @@ static func shaft(low: Dictionary, upper: Dictionary) -> Rect2:
 		# A metre-square opening against the hatch's -Z wall, the ladder up that wall.
 		var side := minf(HATCH, minf(both.size.x, both.size.y))
 		return Rect2(both.get_center().x - side * 0.5, both.position.y, side, side)
-	return ramp_plan(low).rect
+	return ramp_plan(low, height).rect
 
 
-## The flight in a stairs room: along its long side, against its start wall, climbing to a
-## landing at the far end.
-static func ramp_plan(r: Dictionary) -> Dictionary:
-	var along_z := float(r.d) >= float(r.w)
-	var length := (float(r.d) if along_z else float(r.w)) - LANDING
-	var across := float(r.w) if along_z else float(r.d)
-	var width := minf(RAMP_W, across * 0.5)
-	var foot := Rect2(r.x, r.z, width, length) if along_z else Rect2(r.x, r.z, length, width)
-	return {"rect": foot, "along_z": along_z, "length": length, "width": width}
+## The flight in a stairs room (DesignStairs): a fixed run for the deck height between a
+## landing at its foot and one at its head, the way the room says it climbs.
+static func ramp_plan(r: Dictionary, height := 3.0) -> Dictionary:
+	return DesignStairs.flight(r, height)
 
 
 ## `rect` with `hole` cut out, as up to four rectangles.
@@ -296,7 +288,7 @@ func _floor(r: Dictionary, stairs: Dictionary, rect: Rect2, tag: String) -> void
 	var hole := Rect2()
 	for low_id: String in stairs:
 		if stairs[low_id] == str(r.id):
-			hole = shaft(rec.rooms[low_id], r).intersection(rect)
+			hole = shaft(rec.rooms[low_id], r, rec.deck_height).intersection(rect)
 	if not hole.has_area():
 		hole = Rect2()
 	var covered := DesignStructure.on_deck(rec, int(r.deck) - 1, rect.get_center())
@@ -1090,7 +1082,7 @@ func _ladders(stairs: Dictionary) -> void:
 		if str(low.type) != "hatch":
 			continue
 		var up: Dictionary = rec.rooms[stairs[low_id]]
-		var rect := shaft(low, up)
+		var rect := shaft(low, up, rec.deck_height)
 		var y0 := int(low.deck) * h
 		var y1 := int(up.deck) * h
 		var steel := paint(Color(0.86, 0.62, 0.16), "satin_paint")
@@ -1137,12 +1129,13 @@ func ladder_at(p: Vector3) -> Dictionary:
 # Stairs
 
 func _stairs(r: Dictionary, upper: Dictionary) -> void:
-	var plan := ramp_plan(r)
-	var rect: Rect2 = plan.rect
 	var h := rec.deck_height
+	var plan := ramp_plan(r, h)
+	var rect: Rect2 = plan.rect
 	var y := int(r.deck) * h
 	var length: float = plan.length
 	var along_z: bool = plan.along_z
+	var climbs: int = plan.climbs
 	# What you walk on: a smooth slope (no collision on the steps).
 	var ramp := StaticBody3D.new()
 	ramp.name = "Ramp_" + str(r.id)
@@ -1153,9 +1146,9 @@ func _stairs(r: Dictionary, upper: Dictionary) -> void:
 	var c := rect.get_center()
 	ramp.position = Vector3(c.x, y + h * 0.5 - 0.06, c.y)
 	if along_z:
-		ramp.rotation.x = -angle
+		ramp.rotation.x = -angle * climbs
 	else:
-		ramp.rotation.z = angle
+		ramp.rotation.z = angle * climbs
 	var slope := Vector2(length, h).length()
 	_shape_in(ramp, Vector3(rect.size.x, 0.06, slope) if along_z else Vector3(slope, 0.06, rect.size.y), Vector3.ZERO)
 	root.add_child(ramp)
@@ -1169,8 +1162,11 @@ func _stairs(r: Dictionary, upper: Dictionary) -> void:
 		var run0 := length * i / n
 		var run1 := length * (i + 1) / n
 		var sz := Vector3(rect.size.x - 0.04, rise, run1 - run0) if along_z else Vector3(run1 - run0, rise, rect.size.y - 0.04)
-		var at := Vector3(c.x, y + rise * 0.5 - 0.002, rect.position.y + (run0 + run1) * 0.5) if along_z \
-				else Vector3(rect.position.x + (run0 + run1) * 0.5, y + rise * 0.5 - 0.002, c.y)
+		# Measured from the foot: the start of the rect climbing forward, its end climbing back.
+		var mid := (run0 + run1) * 0.5
+		var s := (rect.position.y if along_z else rect.position.x) + mid if climbs > 0 \
+				else (rect.end.y if along_z else rect.end.x) - mid
+		var at := Vector3(c.x, y + rise * 0.5 - 0.002, s) if along_z else Vector3(s, y + rise * 0.5 - 0.002, c.y)
 		steps.append(Transform3D(Basis.from_scale(sz), at))
 	_multi("Steps_" + str(r.id), steps, tread)
 	var lo := Vector3(rect.position.x, y, rect.position.y)
@@ -1193,8 +1189,10 @@ func _stairs(r: Dictionary, upper: Dictionary) -> void:
 		var on_wall := absf(m.x - up.position.x) < 0.02 or absf(m.x - up.end.x) < 0.02 \
 				or absf(m.y - up.position.y) < 0.02 or absf(m.y - up.end.y) < 0.02
 		# The top end of the flight stays open: you walk off it onto the landing.
-		var top_end := (along_z and absf(m.y - hole.end.y) < 0.02 and absf(ea.y - eb.y) < 0.02) \
-				or (not along_z and absf(m.x - hole.end.x) < 0.02 and absf(ea.x - eb.x) < 0.02)
+		var head_y := hole.end.y if climbs > 0 else hole.position.y
+		var head_x := hole.end.x if climbs > 0 else hole.position.x
+		var top_end := (along_z and absf(m.y - head_y) < 0.02 and absf(ea.y - eb.y) < 0.02) \
+				or (not along_z and absf(m.x - head_x) < 0.02 and absf(ea.x - eb.x) < 0.02)
 		if on_wall or top_end:
 			continue
 		_rail(ea, eb, top)
