@@ -51,6 +51,8 @@ const RACKING := "yard.racking"
 const DELIVERY_SHIPS := "yard.delivery_ships"
 ## The stores' and yard's bots go home to charger racks (0.4.4 playtest).
 const CHARGER_RACKS := "yard.charger_racks"
+## The controls screen's group for the yard's keys (Help lists it third, by this name).
+const KEY_GROUP := "Deep space yard"
 
 ## The design room's inside (m): width (x), the side walls' height, depth (z).
 const DESIGN_ROOM_SIZE := Vector3(24, 6, 18)
@@ -113,19 +115,19 @@ func register_module() -> void:
 	Menu.set_start(SCENE, 20)
 	_hook_net.call_deferred()
 	Saves.register_section(SAVE_SECTION, self)
-	Keys.register("yard.up", "Fly up (in zero g)", KEY_SPACE, "Orbital yard")
-	Keys.register("yard.down", "Fly down (in zero g)", KEY_CTRL, "Orbital yard")
-	Keys.register("yard.brake", "Stop drifting (in zero g)", KEY_X, "Orbital yard")
-	Keys.register("yard.roll_left", "Roll left (in zero g)", KEY_Q, "Orbital yard")
-	Keys.register("yard.roll_right", "Roll right (in zero g)", KEY_E, "Orbital yard")
-	Keys.register("yard.dampeners", "Suit dampeners on / off", KEY_Z, "Orbital yard")
-	Keys.register("yard.lamp", "Helmet lamp", KEY_L, "Orbital yard")
-	Keys.register("yard.view", "First / third person", KEY_V, "Orbital yard")
+	Keys.register("yard.up", "Fly up (in zero g)", KEY_SPACE, KEY_GROUP)
+	Keys.register("yard.down", "Fly down (in zero g)", KEY_CTRL, KEY_GROUP)
+	Keys.register("yard.brake", "Stop drifting (in zero g)", KEY_X, KEY_GROUP)
+	Keys.register("yard.roll_left", "Roll left (in zero g)", KEY_Q, KEY_GROUP)
+	Keys.register("yard.roll_right", "Roll right (in zero g)", KEY_E, KEY_GROUP)
+	Keys.register("yard.dampeners", "Suit dampeners on / off", KEY_Z, KEY_GROUP)
+	Keys.register("yard.lamp", "Helmet lamp", KEY_L, KEY_GROUP)
+	Keys.register("yard.view", "First / third person", KEY_V, KEY_GROUP)
 	var names := ["grinder", "cutter", "socket", "grabber", "tractor", "beam tablet", "riveter", "welder"]
 	for i in names.size():
-		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, "Orbital yard")
-	Keys.register("yard.holster", "Put the tool away", KEY_H, "Orbital yard")
-	Keys.register("yard.kit", "Call a mover bot with the next kit", KEY_K, "Orbital yard")
+		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, KEY_GROUP)
+	Keys.register("yard.holster", "Put the tool away", KEY_H, KEY_GROUP)
+	Keys.register("yard.kit", "Call a mover bot with the next kit", KEY_K, KEY_GROUP)
 	for view: String in ["station_outside", "corridor", "design_room", "design_vault", "design_mezzanine", "design_window", "design_lock", "stores_hall",
 			"stores_long", "stores_components", "stores_heavy", "stores_goods_in", "stores_yard_side",
 			"stores_deliveries", "stores_put_away", "stores_to_yard", "contracts", "crew", "airlock"]:
