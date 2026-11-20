@@ -50,7 +50,7 @@ const FIELD_NAMES := {
 	"integrity": ["Integrity", "hp"], "jump": ["Jump", "ly (100 t ship)"], "attack": ["Damage", "dps"],
 	"defence": ["Defence", "pts"], "signature": ["Signature", ""], "cargo": ["Cargo", "m³"],
 	"tank": ["Tank", "m³"], "sensor": ["Sensor range", "km"], "tow_t": ["Tow rating", "t"],
-	"access": ["Clear floor in front", "m"], "lead_days": ["Supplier wait", "days"],
+	"access": ["Clear floor in front", "m"], "lead_days": ["Delivery from suppliers", "days"],
 	"move_s": ["Opens in", "s"], "move_range": ["Travel", ""], "move_kw": ["Motor while moving", "kW"],
 	"load_kg": ["Rated load", "kg"], "clearance": ["Ground clearance", "m"],
 }
@@ -168,7 +168,7 @@ func _component(p: DesignPartType, group: String) -> Dictionary:
 	attrs.append(_field(p, "access"))
 	if p.shared_part != "":
 		attrs.append(["Model", p.shared_part])
-	var cols := ["Variant", "Price cr", "Mass kg", "Size m", "Power kW", "Rating", "Integrity", "Wait d"]
+	var cols := ["Variant", "Price cr", "Mass kg", "Size m", "Power kW", "Rating", "Integrity", "Delivery days"]
 	var rows: Array = []
 	var lo := span[0] if span[0] > 0 else 0
 	var hi := span[1] if span[1] > 0 else 0
