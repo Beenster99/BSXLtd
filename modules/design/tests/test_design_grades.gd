@@ -257,8 +257,8 @@ func _palette() -> void:
 		check(console.plan.tool == "part:reactor_small:5H", "picking it arms that variant: %s" % console.plan.tool)
 	# The compact list: a search finds parts across every group, closed or not, as you type.
 	var search := console.find_child("CompSearch", true, false) as LineEdit
-	check(search != null and console.find_child("CompGroups", true, false) is HFlowContainer,
-			"the components have a search box and group chips")
+	check(search != null and console.find_child("CompGroups", true, false) is MenuButton,
+			"the components have a search box and a sections drop-down")
 	if search:
 		console._open_groups = {}
 		search.text = "reactor"

@@ -36,6 +36,9 @@ var _comp_search := ""
 var _comp_list: VBoxContainer
 ## Door kind buttons under the tools (kind -> Button).
 var _door_buttons: Dictionary = {}
+var _room_pick: MenuButton
+## The room type last armed, shown on the room drop-down.
+var _last_room := ""
 var _grid_pick: OptionButton
 ## The ship order list is open on the palette.
 var _orders_open := false
@@ -50,6 +53,11 @@ var _holo_cam: Camera3D
 var _cam_turn := 0.0
 var _cam_pitch := 0.55
 var _cam_dist := 7.2
+## How close the 3D window's camera is (1 = the whole design fills it), wheel to change.
+var view_zoom := 1.0
+const VIEW_ZOOM_STEP := 1.15
+const VIEW_ZOOM_MIN := 0.6
+const VIEW_ZOOM_MAX := 6.0
 var _dragging_holo := false
 
 
@@ -107,7 +115,7 @@ func _build() -> void:
 	bus.crew_edited.connect(_on_crew_edited)
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.size_flags_stretch_ratio = 1.3
+	right.size_flags_stretch_ratio = 1.0  # a little narrower (beenster, 20 Nov; was 1.3)
 	right.add_theme_constant_override("separation", 0)
 	body.add_child(right)
 	right.add_child(_holo_panel())
@@ -117,6 +125,7 @@ func _build() -> void:
 	data.lists = false
 	data.setup(bus, true)
 	data.assessment_requested.connect(toggle_assessment)
+	data.problem_picked.connect(go_to_problem)
 	right.add_child(data)
 	_library_panel = _make_library_panel()
 	_library_panel.visible = false
@@ -309,12 +318,8 @@ func _fill_palette() -> void:
 		_tool_buttons[spec[0]] = b
 		frame.add_child(b)
 	_palette.add_child(frame)
-	_palette.add_child(T.label("ROOMS  (drag out on the grid, or click)", "display_medium", 15, T.DIM))
-	for rt in bus.catalog.room_list():
-		var b := _swatch_button(rt.display_name, rt.colour)
-		b.pressed.connect(plan.set_tool.bind("room:" + rt.id))
-		_tool_buttons["room:" + rt.id] = b
-		_palette.add_child(b)
+	_palette.add_child(T.label("ROOMS  (pick one, then drag out on the grid or click)", "display_medium", 15, T.DIM))
+	_palette.add_child(_room_dropdown())
 	_palette.add_child(T.label("MODULES  (pick up, click on a plan to drop)", "display_medium", 15, T.DIM))
 	var mods := bus.library.modules()
 	if mods.is_empty():
@@ -655,24 +660,8 @@ func _fill_components() -> void:
 		_comp_search = t
 		_fill_comp_list())
 	_palette.add_child(search)
-	# The groups as small chips that wrap, instead of a full-width header each.
-	var chips := HFlowContainer.new()
-	chips.name = "CompGroups"
-	chips.add_theme_constant_override("h_separation", 3)
-	chips.add_theme_constant_override("v_separation", 3)
-	for cat: Array in DesignCatalog.CATEGORIES:
-		var list := bus.catalog.parts_in(str(cat[0]))
-		if list.is_empty():
-			continue
-		var open := bool(_open_groups.get(cat[0], false))
-		var head := T.button("%s %d" % [str(cat[1]).get_slice(" ", 0).trim_suffix(",").to_upper(), list.size()], false, 12, open)
-		head.name = "Group_" + str(cat[0])
-		head.tooltip_text = str(cat[1])
-		head.pressed.connect(func() -> void:
-			_open_groups[cat[0]] = not bool(_open_groups.get(cat[0], false))
-			_fill_palette())
-		chips.add_child(head)
-	_palette.add_child(chips)
+	# The groups as one drop-down of sections, any number ticked (beenster, 20 Nov).
+	_palette.add_child(_group_dropdown())
 	_comp_list = VBoxContainer.new()
 	_comp_list.name = "CompList"
 	_comp_list.add_theme_constant_override("separation", 1)
@@ -809,6 +798,124 @@ static func part_card(pt: DesignPartType) -> String:
 	return "\n".join(rows)
 
 
+## A drop-down button in the console's style: a MenuButton dressed as a T.button.
+static func _menu_button(text: String, size := 15) -> MenuButton:
+	var look := T.button(text, false, size)
+	var b := MenuButton.new()
+	b.text = text + "  v"
+	b.flat = false
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.clip_text = true
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for st: String in ["normal", "hover", "pressed", "disabled", "focus"]:
+		b.add_theme_stylebox_override(st, look.get_theme_stylebox(st))
+	b.add_theme_font_override("font", look.get_theme_font("font"))
+	b.add_theme_font_size_override("font_size", look.get_theme_font_size("font_size"))
+	for c: String in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
+		b.add_theme_color_override(c, look.get_theme_color(c))
+	look.free()
+	var pop := b.get_popup()
+	pop.add_theme_font_size_override("font_size", T.px(15))
+	return b
+
+
+static func _swatch(col: Color) -> ImageTexture:
+	var img := Image.create(14, 14, false, Image.FORMAT_RGBA8)
+	img.fill(col)
+	return ImageTexture.create_from_image(img)
+
+
+## The room types in one drop-down: picking one arms it (the button shows which, lit while armed).
+func _room_dropdown() -> MenuButton:
+	var b := _menu_button("PICK A ROOM", 15)
+	b.name = "RoomPick"
+	b.add_theme_constant_override("icon_max_width", 14)
+	var pop := b.get_popup()
+	pop.add_theme_constant_override("icon_max_width", 14)
+	var list := bus.catalog.room_list()
+	for i in list.size():
+		pop.add_icon_item(_swatch(list[i].colour), list[i].display_name, i)
+		pop.set_item_metadata(i, list[i].id)
+	pop.id_pressed.connect(func(i: int) -> void: pick_room(list[i].id))
+	_room_pick = b
+	_show_room_pick()
+	return b
+
+
+## Arms drawing a room of type `type_id` (the room drop-down's pick).
+func pick_room(type_id: String) -> void:
+	plan.set_tool("room:" + type_id)
+	_show_room_pick()
+
+
+func _show_room_pick() -> void:
+	if _room_pick == null or not is_instance_valid(_room_pick):
+		return
+	var rt: DesignRoomType = null
+	if plan.tool.begins_with("room:"):
+		rt = bus.catalog.room(plan.tool.trim_prefix("room:"))
+	if rt == null and _last_room != "":
+		rt = bus.catalog.room(_last_room)
+	if rt:
+		_last_room = rt.id
+		_room_pick.text = "ROOM  %s  v" % rt.display_name.to_upper()
+		_room_pick.icon = _swatch(rt.colour)
+	var on := plan.tool.begins_with("room:")
+	_room_pick.add_theme_stylebox_override("normal", T.box(T.PLATE_HI if on else T.PLATE, T.ORANGE if on else T.EDGE, 2, 8.0))
+
+
+## The component sections as one drop-down with a tick each (any number open), and ALL / NONE.
+func _group_dropdown() -> MenuButton:
+	var b := _menu_button("SECTIONS", 14)
+	b.name = "CompGroups"
+	var pop := b.get_popup()
+	pop.hide_on_checkable_item_selection = false
+	pop.hide_on_item_selection = false
+	pop.add_item("ALL", 1000)
+	pop.add_item("NONE", 1001)
+	pop.add_separator()
+	var ids: Array[String] = []
+	for cat: Array in DesignCatalog.CATEGORIES:
+		var n := bus.catalog.parts_in(str(cat[0])).size()
+		if n == 0:
+			continue
+		pop.add_check_item("%s  (%d)" % [str(cat[1]), n], ids.size())
+		pop.set_item_checked(pop.get_item_index(ids.size()), bool(_open_groups.get(cat[0], false)))
+		ids.append(str(cat[0]))
+	pop.id_pressed.connect(func(id: int) -> void:
+		if id >= 1000:
+			for g: String in ids:
+				_open_groups[g] = id == 1000
+		elif id < ids.size():
+			_open_groups[ids[id]] = not bool(_open_groups.get(ids[id], false))
+		for i in ids.size():
+			pop.set_item_checked(pop.get_item_index(i), bool(_open_groups.get(ids[i], false)))
+		_group_text(b, ids)
+		_fill_comp_list())
+	_group_text(b, ids)
+	return b
+
+
+## Sets which component sections are open (the drop-down's ticks), by category id.
+func set_groups(groups: Array) -> void:
+	_open_groups = {}
+	for g: Variant in groups:
+		_open_groups[str(g)] = true
+	_fill_palette()
+
+
+func _group_text(b: MenuButton, ids: Array[String]) -> void:
+	var names: Array[String] = []
+	for cat: Array in DesignCatalog.CATEGORIES:
+		if str(cat[0]) in ids and bool(_open_groups.get(cat[0], false)):
+			names.append(str(cat[1]).get_slice(" ", 0).trim_suffix(","))
+	var t := "NONE" if names.is_empty() else ("ALL" if names.size() == ids.size() else ", ".join(names))
+	b.text = "SECTIONS: %s  v" % t.to_upper()
+	b.tooltip_text = "Tick the sections of components to list (or search below)."
+
+
 func _swatch_button(text: String, col: Color, size := 15) -> Button:
 	var b := T.button(text, false, size)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -820,6 +927,7 @@ func _swatch_button(text: String, col: Color, size := 15) -> Button:
 
 
 func _mark_tools() -> void:
+	_show_room_pick()
 	for id: String in _tool_buttons:
 		var b: Button = _tool_buttons[id]
 		var on := id == plan.tool
@@ -893,15 +1001,21 @@ func _restyle_toggle(b: Button, on: bool) -> void:
 	b.add_theme_color_override("font_color", T.TEXT if on else T.DIM)
 
 
+## Wheel in and out on the 3D window (beenster, 20 Nov): the camera moves, only on this console;
+## the table's own hologram stays as it is.
+func zoom_view(factor: float) -> void:
+	view_zoom = clampf(view_zoom * factor, VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+
+
 func _holo_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_RIGHT:
 			_dragging_holo = mb.pressed
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			holo.zoom = clampf(holo.zoom * 1.1, 0.4, 4.0)
+			zoom_view(VIEW_ZOOM_STEP)
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			holo.zoom = clampf(holo.zoom / 1.1, 0.4, 4.0)
+			zoom_view(1.0 / VIEW_ZOOM_STEP)
 	elif event is InputEventMouseMotion and _dragging_holo:
 		holo.turn += event.relative.x * 0.01
 		_cam_pitch = clampf(_cam_pitch + event.relative.y * 0.005, 0.1, 1.3)
@@ -914,7 +1028,7 @@ func _process(_delta: float) -> void:
 		_holo_view.world_3d = get_viewport().world_3d
 	# Framed on the hologram: its middle, far enough back to see all of it.
 	var target := holo.model.global_transform * holo.view_middle
-	var dist := holo.view_radius * holo.model.scale.x / sin(deg_to_rad(_holo_cam.fov * 0.5)) * 1.05
+	var dist := holo.view_radius * holo.model.scale.x / sin(deg_to_rad(_holo_cam.fov * 0.5)) * 1.05 / view_zoom
 	var off := Vector3(sin(_cam_turn), 0, cos(_cam_turn)) * cos(_cam_pitch) * dist
 	off.y = sin(_cam_pitch) * dist
 	_holo_cam.global_position = target + off
@@ -950,6 +1064,63 @@ func _change_deck(step: int) -> void:
 		bus.editor.do({"op": "shift_decks", "by": 1})
 	plan.set_deck(plan.deck + step)
 	_deck_label.text = "DECK %d" % (plan.deck + 1)
+
+
+## Shows a WILL IT WORK problem on the plan: its first room, component or door picked, on its
+## deck and in the middle of the view, with a ring round it.
+func go_to_problem(p: Dictionary) -> bool:
+	var rec := bus.library.current
+	if rec == null:
+		return false
+	var at := Vector2.INF
+	var dk := plan.deck
+	var kind := ""
+	var id := ""
+	for rid: Variant in p.get("rooms", []):
+		var r: Dictionary = rec.rooms.get(str(rid), {})
+		if not r.is_empty():
+			kind = "room"
+			id = str(rid)
+			dk = int(r.deck)
+			at = rec.room_rect(id).get_center()
+			break
+	if kind == "":
+		for cid: Variant in p.get("components", []):
+			var c: Dictionary = rec.components.get(str(cid), {})
+			var k := "part"
+			if c.is_empty():
+				c = rec.mounts.get(str(cid), {})
+				k = "mount"
+			if not c.is_empty():
+				kind = k
+				id = str(cid)
+				dk = int(c.get("deck", rec.rooms.get(str(c.get("room", "")), {}).get("deck", plan.deck)))
+				at = Vector2(float(c.get("x", 0.0)), float(c.get("z", 0.0)))
+				break
+	if kind == "":
+		for did: Variant in p.get("doors", []):
+			var d: Dictionary = rec.doors.get(str(did), {})
+			if not d.is_empty():
+				kind = "door"
+				id = str(did)
+				dk = int(d.get("deck", plan.deck))
+				at = Vector2(float(d.get("x", 0.0)), float(d.get("z", 0.0)))
+				break
+	if kind == "":
+		return false
+	if plan.mode != PlanView.PLAN:
+		_set_view(PlanView.PLAN)
+	plan.set_tool("select")
+	plan.set_deck(dk)
+	_deck_label.text = "DECK %d" % (plan.deck + 1)
+	plan.centre = at
+	plan.zoom = maxf(plan.zoom, 22.0)
+	plan.select(kind, id)
+	plan.marks.on_look(dk, at, "problem", T.BAD)
+	plan.queue_redraw()
+	if is_inside_tree():
+		get_tree().create_timer(4.1).timeout.connect(plan.queue_redraw)
+	return true
 
 
 func _set_view(v: String) -> void:
