@@ -42,6 +42,17 @@ func _run() -> void:
 	await _shot(out, "help_matrix_supply")
 	m.call("set_category", "propulsion")
 	await _shot(out, "help_matrix_engines")
+	# Every part: a component with its sizes and grades, a room, and a search.
+	screen.call("show_topic", HelpBus.PARTS_TOPIC)
+	var parts := screen.find_child("Parts", true, false)
+	parts.call("pick", "air_scrubber")
+	await _shot(out, "help_parts_component")
+	parts.call("set_group", "Rooms")
+	parts.call("pick", "room.medbay")
+	await _shot(out, "help_parts_room")
+	parts.call("set_group", "")
+	screen.call("set_query", "glass")
+	await _shot(out, "help_parts_search")
 	get_tree().quit()
 
 

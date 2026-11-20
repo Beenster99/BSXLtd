@@ -566,16 +566,7 @@ func _draw_link_mark(rec: DesignRecord, r: Dictionary, sr: Rect2, col: Color) ->
 	var ink := Color(col.lightened(0.3), 0.7)
 	match str(r.type):
 		"stairs":
-			var along_z := float(r.d) >= float(r.w)
-			var n := int((float(r.d) if along_z else float(r.w)) / 0.3)
-			for i in range(1, n):
-				var t := float(i) / n
-				if along_z:
-					var y := lerpf(sr.position.y, sr.end.y, t)
-					draw_line(Vector2(sr.position.x + 3, y), Vector2(sr.end.x - 3, y), ink, 1.0)
-				else:
-					var x := lerpf(sr.position.x, sr.end.x, t)
-					draw_line(Vector2(x, sr.position.y + 3), Vector2(x, sr.end.y - 3), ink, 1.0)
+			_draw_flight(rec, r, ink)
 		"lift":
 			draw_line(sr.position, sr.end, ink, 1.5)
 			draw_line(Vector2(sr.end.x, sr.position.y), Vector2(sr.position.x, sr.end.y), ink, 1.5)
@@ -590,6 +581,57 @@ func _draw_link_mark(rec: DesignRecord, r: Dictionary, sr: Rect2, col: Color) ->
 		reach.append("DOWN")
 	var t2 := " / ".join(reach) if not reach.is_empty() else "ONE DECK ONLY"
 	_text(Vector2(sr.position.x + 4, sr.end.y - 5), t2, SELECT if not reach.is_empty() else WARN, 11, sr.size.x - 6)
+
+
+## A stairwell's flight (DesignStairs): its treads, an arrow up the way it climbs, and the
+## landings at its foot and head; on the deck above, the opening it comes up through.
+func _draw_flight(rec: DesignRecord, r: Dictionary, ink: Color) -> void:
+	var below := _stacked(rec, r, -1)
+	if _stacked(rec, r, 1) == "":
+		if below != "":
+			var hole: Rect2 = DesignStairs.flight(rec.rooms[below], rec.deck_height).rect
+			var a := to_screen(hole.position)
+			var b := to_screen(hole.end)
+			var hr := Rect2(a, b - a).abs()
+			for e: Array in [[hr.position, Vector2(hr.end.x, hr.position.y)], [Vector2(hr.end.x, hr.position.y), hr.end],
+					[hr.end, Vector2(hr.position.x, hr.end.y)], [Vector2(hr.position.x, hr.end.y), hr.position]]:
+				draw_dashed_line(e[0], e[1], ink, 1.0, 5.0)
+			_text(hr.get_center() - Vector2(18, -4), "OPEN", ink, 10, hr.size.x)
+		return
+	var f := DesignStairs.flight(r, rec.deck_height)
+	var fr: Rect2 = f.rect
+	var p0 := to_screen(fr.position)
+	var p1 := to_screen(fr.end)
+	var sr := Rect2(p0, p1 - p0).abs()
+	var col := ink if bool(f.fits) else Color(WARN, 0.8)
+	draw_rect(sr, col, false, 1.5)
+	var along_z: bool = f.along_z
+	var n := maxi(int(float(f.length) / 0.25), 2)
+	for i in range(1, n):
+		var t := float(i) / n
+		if along_z:
+			var y := lerpf(sr.position.y, sr.end.y, t)
+			draw_line(Vector2(sr.position.x + 2, y), Vector2(sr.end.x - 2, y), col, 1.0)
+		else:
+			var x := lerpf(sr.position.x, sr.end.x, t)
+			draw_line(Vector2(x, sr.position.y + 2), Vector2(x, sr.end.y - 2), col, 1.0)
+	# The arrow: from the foot up to the head.
+	var dir := (Vector2(0, 1) if along_z else Vector2(1, 0)) * float(f.climbs)
+	var c := sr.get_center()
+	var half := (sr.size.y if along_z else sr.size.x) * 0.4
+	var tip := c + dir * half
+	var tail := c - dir * half
+	draw_line(tail, tip, SELECT, 2.0)
+	var side := Vector2(-dir.y, dir.x) * minf(6.0, sr.size.length() * 0.05)
+	draw_line(tip, tip - dir * 8.0 + side, SELECT, 2.0)
+	draw_line(tip, tip - dir * 8.0 - side, SELECT, 2.0)
+	_text(tail - Vector2(10, -4) - dir * 10.0, "UP", SELECT, 10)
+	# The landings, faint.
+	for k: String in ["foot", "head"]:
+		var lr: Rect2 = f[k]
+		var la := to_screen(lr.position)
+		var lb := to_screen(lr.end)
+		draw_rect(Rect2(la, lb - la).abs(), Color(SELECT, 0.12))
 
 
 ## The room of the same kind stacked on the deck `step` above (or below) `r`, "" if none.

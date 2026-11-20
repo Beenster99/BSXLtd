@@ -111,7 +111,9 @@ class Runner:
 		var walk: Node3D = room.furnishing.walk
 		for shot in [["walk_corridor", Vector3(0, 1.0, 3.0), 0.0, -0.05],
 				["walk_engineering", Vector3(6.2, 1.0, -1.3), 2.36, -0.2],
-				["walk_stairs", Vector3(-1.5, 1.0, 1.0), PI * 0.5, 0.45],
+				# From the landing at the stairs' foot, up the flight; then from the head, down it.
+				["walk_stairs", Vector3(-1.25, 1.0, 0.3), PI - 0.45, 0.12],
+				["walk_stairs_top", Vector3(-2.4, 4.0, 4.75), 0.0, -0.55],
 				["walk_outside", Vector3(9, 1.0, 12), 0.62, 0.0],
 				["walk_bridge", Vector3(0.3, 1.0, -6.6), 0.0, -0.35]]:
 			walk.body.position = shot[1]

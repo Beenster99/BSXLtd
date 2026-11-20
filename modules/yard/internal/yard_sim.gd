@@ -105,9 +105,10 @@ func run_ticks(count: int) -> void:
 		run_tick()
 
 
-## The crew as it stood at tick 0 first, then everything logged since.
+## The racks' stock and the crew as they stood at tick 0 first, then everything logged since.
 func _take_log() -> void:
 	rate = float(_bus.get("sim_epoch_rate"))
+	_enqueue({"kind": "stock", "tick": 0, "n": -2, "stock": (_bus.get("sim_stock") as Dictionary).duplicate(true)})
 	_enqueue({"kind": "fleet", "tick": 0, "n": -1, "state": (_bus.get("sim_fleet") as Array).duplicate(true)})
 	for e: Dictionary in _bus.get("sim_log"):
 		_enqueue(e)

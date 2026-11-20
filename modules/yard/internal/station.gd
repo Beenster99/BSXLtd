@@ -15,6 +15,8 @@ const DesignLock := preload("res://modules/yard/internal/design_lock.gd")
 const DesignShell := preload("res://modules/yard/internal/design_shell.gd")
 const Dock := preload("res://modules/yard/internal/dock.gd")
 const Solar := preload("res://modules/yard/internal/solar_array.gd")
+## How far the stores' solar arrays' low edges stand over the roof (m).
+const STORES_SOLAR_CLEAR := 0.8
 const Quarters := preload("res://modules/yard/internal/quarters.gd")
 const YardWorkers := preload("res://modules/yard/internal/yard_workers.gd")
 const LivedIn := preload("res://modules/yard/internal/lived_in.gd")
@@ -68,6 +70,8 @@ const VIEWS := {
 	"station_from_berth": [Vector3(-8, -2, -72), Vector3(4, 3, -18)],
 	"chargers_wall": [Vector3(70, 19, -28), Vector3(73.5, 19.5, -5)],
 	"chargers_apron": [Vector3(30, 5, -78), Vector3(33, -0.5, -65)],
+	"dock_arm_feet": [Vector3(-22, -10, -44), Vector3(-4, -2, -22)],
+	"berth_docks": [Vector3(-10, 2, -96), Vector3(-10, -3, -70)],
 }
 ## Views of the stores at work: id -> seconds into a contract's deliveries (stage 1.7).
 ## (0.4.1: the demo brings the freighter first, about 27 s in, open till about 105 s, then
@@ -537,6 +541,8 @@ func _build_dock(tier := 0) -> void:
 	dock.name = "Dock"
 	add_child(dock)
 	dock.call("build", tier)
+	if workers:
+		workers.call("set_berth_tier", tier)
 
 
 ## Reputation moved the berths up (or down) a tier: the dock is built again at the new size.
@@ -590,6 +596,11 @@ func _apply_sim(e: Dictionary) -> void:
 			if mine:
 				var what := YardKits.display_name(kit_id).to_lower()
 				_show_note("Mover bot on its way with a %s" % what if id >= 0 else "No stock for a %s" % what)
+		"stock":
+			# The racks' stock at tick 0 (YardBus.sim_stock): {} keeps the demo stock.
+			var stock: Dictionary = e.get("stock", {})
+			if stock.has("parts"):
+				_rack_store().set_stock(stock.parts)
 		"contract":
 			start_demo_contract()
 		"order":
@@ -825,9 +836,13 @@ func _build_station() -> void:
 	if Flags.is_on(YardBus.RACKING):
 		var roof := YardLayout.ROOMS["racking"].box as AABB
 		var tilt := Basis(Vector3.BACK, -0.35)
+		# High enough that the low edge of the tipped array clears the roof (20 Nov playtest: "some
+		# of the solar panels poke through the roof of the warehouse": at 1.6 m up, its low edge
+		# hung 1.3 m into the hall).
+		var lift := Solar.half_width(10) * sin(0.35) + STORES_SOLAR_CLEAR
 		for x: float in [26.0, 46.0, 66.0]:
 			for z: float in [-51.0, -21.0]:
-				var at := Vector3(x, roof.end.y + 1.6, z)
+				var at := Vector3(x, roof.end.y + lift, z)
 				Solar.build(self, "StoresSolar_%d_%d" % [int(x), int(-z)], at, tilt, 10, 6)
 				for lx: float in [-6.0, 6.0]:
 					for lz: float in [-8.0, 8.0]:
@@ -836,9 +851,9 @@ func _build_station() -> void:
 						k.box(Vector3(0.16, h, 0.16), Vector3(leg.x, roof.end.y + 0.3 + h * 0.5, leg.z), dark, false)
 	k.box(Vector3(0.3, 3.2, 0.3), Vector3(-24.0, 4.8, -2.0), dark, false)
 	k.box(Vector3(0.2, 0.2, 24.0), Vector3(-24.0, 6.4, -2.0), dark, false)
-	for i in 4:
-		k.box(Vector3(5.0, 2.4, 0.06), Vector3(24.0 + i * 12.0, 17.6, -34.0), k.paint(Kit.HULL, 0.2, 0.4), false)
-		k.box(Vector3(0.2, 1.4, 0.2), Vector3(24.0 + i * 12.0, 17.0, -34.0), dark, false)
+	# (Four radiator fins stood here on a roof at 16 m. Since the stores hall's upper deck went
+	# in at that height they stood across its aisles: 20 Nov playtest, "some of the corridors in
+	# the warehouse are blocked by these objects". Gone.)
 	# Running lights on the corners.
 	for p: Vector3 in [Vector3(-40.2, 3.4, -5.2), Vector3(46.2, 3.4, 12.2), Vector3(-12.2, 6.3, -22.2)]:
 		k.box(Vector3(0.3, 0.3, 0.3), p, k.glow(Color(1.0, 0.25, 0.2), 6.0), false)
