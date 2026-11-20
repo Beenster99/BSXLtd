@@ -16,6 +16,10 @@ const SURFACE := preload("res://shared/void_salvage/shaders/salvage_surface.gdsh
 var root: Node3D
 var body: StaticBody3D
 var _paints: Dictionary = {}
+## What was built, for the room detail pass to dress: every wall() call ({along_x, at, from,
+## to, y0, height, gaps, thick}) and every ceiling_lamp() ({at, panel}).
+var walls: Array[Dictionary] = []
+var lamps: Array[Dictionary] = []
 
 
 func _init(parent: Node3D, body_name := "Body") -> void:
@@ -126,6 +130,7 @@ func span(a: Vector3, b: Vector3, mat: Material, solid := true) -> MeshInstance3
 ## `pane` to glaze it).
 func wall(along_x: bool, at: float, from: float, to: float, y0: float, height: float, mat: Material,
 		gaps: Array = [], thick := 0.2, pane: Material = null) -> void:
+	walls.append({"along_x": along_x, "at": at, "from": from, "to": to, "y0": y0, "height": height, "gaps": gaps.duplicate(true), "thick": thick})
 	var cuts: Array = gaps.duplicate()
 	cuts.sort_custom(func(p: Array, q: Array) -> bool: return p[0] < q[0])
 	var pos := from
@@ -161,6 +166,7 @@ func _wall_piece(along_x: bool, at: float, a: float, b: float, y0: float, y1: fl
 ## soft pool down the room and a faint omni round it for the ceiling and the walls' tops.
 ## Returns the spot (its energy is the lamp's); a light_range of 0 builds the panel alone (null).
 func ceiling_lamp(at: Vector3, panel: Vector2, energy := 1.2, light_range := 9.0, shadow := false) -> SpotLight3D:
+	lamps.append({"at": at, "panel": panel})
 	box(Vector3(panel.x + 0.12, 0.06, panel.y + 0.12), at + Vector3(0, -0.04, 0), paint(DARK, 0.7, 0.45, "gunmetal"), false)
 	box(Vector3(panel.x, 0.02, panel.y), at + Vector3(0, -0.075, 0), glow(LAMP, 3.0), false)
 	if light_range <= 0.0:   # the panel only: the caller lights it its own way

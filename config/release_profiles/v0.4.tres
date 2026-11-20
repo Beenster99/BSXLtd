@@ -217,6 +217,7 @@ flags = {
 "yard.delivery_ships": true,
 "yard.dock": true,
 "yard.racking": true,
+"yard.room_detail": true,
 "yard.sounds": true,
 "yard.station": true
 }
