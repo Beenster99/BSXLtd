@@ -175,19 +175,22 @@ static func charge_dock(number: int) -> Node3D:
 	if not meshes().has("charge_dock"):
 		var m := YardToolMesh.new()
 		var key := "charge_dock"
-		m.box(key, "gunmetal", Vector3(0, 0.1, -0.06), Vector3(1.5, 4.6, 0.12), 0.04)
+		# Two slim light rails on the rib, not a black backplate (beenster, 20 Nov: "a bit more
+		# subtle, they're too big and black").
+		for sx: float in [1.0, -1.0]:
+			m.box(key, "plates", Vector3(sx * 0.42, 0.1, -0.06), Vector3(0.1, 4.4, 0.1), 0.03)
 		for y: float in [2.2, -2.0]:
-			m.box(key, "dark", Vector3(0, y, 0.3), Vector3(0.95, 0.24, 0.72), 0.04)
+			m.box(key, "plates", Vector3(0, y, 0.3), Vector3(0.94, 0.16, 0.72), 0.03)
 			for sx: float in [1.0, -1.0]:
-				m.bolt(key, Vector3(sx * 0.35, y, -0.125), Vector3.FORWARD, 0.025)
+				m.bolt(key, Vector3(sx * 0.35, y, -0.055), Vector3.FORWARD, 0.02)
 		for y: float in [1.0, 0.25]:
-			m.box(key, "dark", Vector3(0, y, -0.18), Vector3(0.95, 0.2, 0.24), 0.04)
+			m.box(key, "steel", Vector3(0, y, -0.16), Vector3(0.84, 0.12, 0.18), 0.03)
 			for sx: float in [1.0, -1.0]:
-				m.box(key, "accent", Vector3(sx * 0.5, y, -0.32), Vector3(0.1, 0.24, 0.3), 0.03)
-		m.rod(key, "dark", Vector3(0.62, 0.66, -0.12), Vector3(0.46, 0.66, -0.55), 0.035, -1.0, 10)
+				m.box(key, "accent", Vector3(sx * 0.44, y, -0.27), Vector3(0.07, 0.16, 0.22), 0.02)
+		m.rod(key, "dark", Vector3(0.47, 0.66, -0.12), Vector3(0.46, 0.66, -0.55), 0.035, -1.0, 10)
 		m.rod(key, "steel", Vector3(0.46, 0.66, -0.55), Vector3(0.43, 0.66, -0.63), 0.045, -1.0, 12)
-		m.box(key, "plates", Vector3(0, 2.1, -0.2), Vector3(1.5, 0.45, 0.2), 0.05)
-		m.box(key, "accent", Vector3(0, 1.9, -0.305), Vector3(1.5, 0.05, 0.01), 0.004)
+		m.box(key, "plates", Vector3(0, 2.1, -0.2), Vector3(1.32, 0.3, 0.2), 0.04)
+		m.box(key, "accent", Vector3(0, 1.97, -0.305), Vector3(1.32, 0.03, 0.01), 0.004)
 		m.box(key, "dark", Vector3(DOCK_BAR_X + DOCK_BAR * 0.5, 2.12, -0.305), Vector3(DOCK_BAR + 0.06, 0.12, 0.01), 0.004)
 		_meshes["charge_dock"] = m.meshes()[key]
 	var dock := Node3D.new()

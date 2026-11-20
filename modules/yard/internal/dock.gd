@@ -32,6 +32,14 @@ var _reach := 100.0
 var _flood_scale := 1.0
 
 
+## The two arms' feet under the station (x, z): under the design room's front and the stores.
+const ARM_FEET: Array[Vector3] = [Vector3(-6.0, 0, -21.0), Vector3(30.0, 0, -29.0)]
+## The station's underside (y, m: YardLayout.HULL_BOX's bottom) and how far under it an arm's
+## line ends, in the middle of its hard point (m).
+const HULL_UNDER := YardLayout.HULL_BOX.position.y
+const HARD_POINT := 1.5
+
+
 func build(berth_tier := 1) -> void:
 	tier = berth_tier
 	kit = Kit.new(self, "DockBody")
@@ -114,8 +122,15 @@ func _dock_arm() -> void:
 	var z := -66.0
 	var y := -16.0
 	_truss(Vector3(-_reach, y, z), Vector3(_reach, y, z), white, dark)
-	_truss(Vector3(-6.0, y, z), Vector3(-6.0, -1.2, -21.0), white, dark)
-	_truss(Vector3(30.0, y, z), Vector3(30.0, -1.2, -29.0), white, dark)
+	# The two arms up to the station's underside: each lands in a hard point bolted flat under
+	# the hull, and meets the berth's truss in a node, so neither ends in the air (20 Nov
+	# playtest: "please join the design office properly to the berth - this could be better
+	# attached": their sloped ends stopped short of the underside, chords dangling).
+	for arm: Vector3 in ARM_FEET:
+		var foot := Vector3(arm.x, HULL_UNDER - HARD_POINT, arm.z)
+		_truss(Vector3(arm.x, y, z), foot, white, dark)
+		_hard_point(foot, white, dark)
+		kit.box(Vector3(2.4, 2.4, 2.4), Vector3(arm.x, y, z), dark, false)
 	# Solar wings off both ends of the arm, up and down, turned to the sun.
 	var sun_h := Vector3(0.55, 0.0, -0.35).normalized()
 	var face := Basis(sun_h.cross(Vector3.UP), sun_h, Vector3.UP)
@@ -127,6 +142,19 @@ func _dock_arm() -> void:
 	# Walkway lamps along the arm, so you can find your way out in the dark.
 	for i in range(-int(_reach / 10.0) + 1, int(_reach / 10.0)):
 		kit.box(Vector3(0.25, 0.25, 0.25), Vector3(i * 10.0, y + 1.3, z), kit.glow(Color(0.4, 0.8, 1.0), 5.0), false)
+
+
+## Where an arm meets the station: a block the truss ends in, its top flush on a mount plate
+## bolted under the hull at HULL_UNDER, with four gussets out to the plate's corners.
+func _hard_point(foot: Vector3, white: Material, dark: Material) -> void:
+	var top := HULL_UNDER
+	kit.box(Vector3(4.2, 0.3, 4.2), Vector3(foot.x, top - 0.15, foot.z), white, false)
+	for sx: float in [-1.0, 1.0]:
+		for sz: float in [-1.0, 1.0]:
+			kit.box(Vector3(0.22, 0.12, 0.22), Vector3(foot.x + sx * 1.8, top - 0.36, foot.z + sz * 1.8), dark, false)
+			kit.span(Vector3(foot.x + sx * 0.9, top - HARD_POINT - 0.9, foot.z + sz * 0.9),
+					Vector3(foot.x + sx * 1.5, top - 0.3, foot.z + sz * 1.5), dark, false)
+	kit.box(Vector3(2.4, HARD_POINT * 2.0 - 0.3, 2.4), Vector3(foot.x, top - 0.3 - (HARD_POINT * 2.0 - 0.3) * 0.5, foot.z), dark, false)
 
 
 ## A square truss of four chords from `a` to `b` with rungs every 3 m.
