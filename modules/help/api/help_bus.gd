@@ -122,7 +122,7 @@ func keys_text() -> String:
 			by_group[g] = []
 			groups.append(g)
 		(by_group[g] as Array).append(a)
-	var first := [Keys.MOVEMENT, Keys.ACTIONS, "Orbital yard"]
+	var first := [Keys.MOVEMENT, Keys.ACTIONS, "Deep space yard", "Orbital yard"]
 	groups.sort_custom(func(x: String, y: String) -> bool:
 		var ix := first.find(x)
 		var iy := first.find(y)

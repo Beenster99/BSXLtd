@@ -51,6 +51,8 @@ const RACKING := "yard.racking"
 const DELIVERY_SHIPS := "yard.delivery_ships"
 ## The stores' and yard's bots go home to charger racks (0.4.4 playtest).
 const CHARGER_RACKS := "yard.charger_racks"
+## The controls screen's group for the yard's keys (Help lists it third, by this name).
+const KEY_GROUP := "Deep space yard"
 
 ## The design room's inside (m): width (x), the side walls' height, depth (z).
 const DESIGN_ROOM_SIZE := Vector3(24, 6, 18)
@@ -91,6 +93,13 @@ const SIM_LEAD := 30
 var sim_epoch := -1.0
 ## The worker crew as it stood at tick 0 (every machine builds it so, then replays the log).
 var sim_fleet: Array = []
+## What the stores' racks held at tick 0: {"parts": {YardRackStore.PARTS id: qty}}, or {} for
+## the demo stock (YardRackStore.fill_demo). Carried like sim_fleet, so every machine starts
+## its racks from the same stock.
+var sim_stock: Dictionary = {}
+## Where a fresh clock's starting stock comes from (host): a Callable returning {part id: qty}
+## (the Warehouse stock module sets it to the company's books). Unset: the demo stock.
+var stock_source: Callable
 ## This company's worker crew, saved ({role, mark, modules} a bot; [] is TartanCo's first six).
 var worker_fleet: Array = []
 var sim_log: Array[Dictionary] = []
@@ -113,19 +122,19 @@ func register_module() -> void:
 	Menu.set_start(SCENE, 20)
 	_hook_net.call_deferred()
 	Saves.register_section(SAVE_SECTION, self)
-	Keys.register("yard.up", "Fly up (in zero g)", KEY_SPACE, "Orbital yard")
-	Keys.register("yard.down", "Fly down (in zero g)", KEY_CTRL, "Orbital yard")
-	Keys.register("yard.brake", "Stop drifting (in zero g)", KEY_X, "Orbital yard")
-	Keys.register("yard.roll_left", "Roll left (in zero g)", KEY_Q, "Orbital yard")
-	Keys.register("yard.roll_right", "Roll right (in zero g)", KEY_E, "Orbital yard")
-	Keys.register("yard.dampeners", "Suit dampeners on / off", KEY_Z, "Orbital yard")
-	Keys.register("yard.lamp", "Helmet lamp", KEY_L, "Orbital yard")
-	Keys.register("yard.view", "First / third person", KEY_V, "Orbital yard")
+	Keys.register("yard.up", "Fly up (in zero g)", KEY_SPACE, KEY_GROUP)
+	Keys.register("yard.down", "Fly down (in zero g)", KEY_CTRL, KEY_GROUP)
+	Keys.register("yard.brake", "Stop drifting (in zero g)", KEY_X, KEY_GROUP)
+	Keys.register("yard.roll_left", "Roll left (in zero g)", KEY_Q, KEY_GROUP)
+	Keys.register("yard.roll_right", "Roll right (in zero g)", KEY_E, KEY_GROUP)
+	Keys.register("yard.dampeners", "Suit dampeners on / off", KEY_Z, KEY_GROUP)
+	Keys.register("yard.lamp", "Helmet lamp", KEY_L, KEY_GROUP)
+	Keys.register("yard.view", "First / third person", KEY_V, KEY_GROUP)
 	var names := ["grinder", "cutter", "socket", "grabber", "tractor", "beam tablet", "riveter", "welder"]
 	for i in names.size():
-		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, "Orbital yard")
-	Keys.register("yard.holster", "Put the tool away", KEY_H, "Orbital yard")
-	Keys.register("yard.kit", "Call a mover bot with the next kit", KEY_K, "Orbital yard")
+		Keys.register("yard.tool_%d" % (i + 1), "Tool %d (%s)" % [i + 1, names[i]], KEY_1 + i, KEY_GROUP)
+	Keys.register("yard.holster", "Put the tool away", KEY_H, KEY_GROUP)
+	Keys.register("yard.kit", "Call a mover bot with the next kit", KEY_K, KEY_GROUP)
 	for view: String in ["station_outside", "corridor", "design_room", "design_vault", "design_mezzanine", "design_window", "design_lock", "stores_hall",
 			"stores_long", "stores_components", "stores_heavy", "stores_goods_in", "stores_yard_side",
 			"stores_deliveries", "stores_put_away", "stores_to_yard", "contracts", "crew", "airlock"]:
@@ -437,10 +446,20 @@ func sim_start() -> void:
 		sim_epoch_rate = sim_rate
 		sim_log.clear()
 		sim_fleet = worker_fleet.duplicate(true)
+		sim_stock = starting_stock()
 		return
 	if not bool(_net.call("is_host")):
 		sim_epoch = -1.0   # wait for the host's answer
 	sim_request({"kind": "epoch"})
+
+
+## The stock a fresh clock starts the racks from (host): {"parts": {...}} from stock_source, or
+## {} (the demo stock) without one.
+func starting_stock() -> Dictionary:
+	if not stock_source.is_valid():
+		return {}
+	var parts: Variant = stock_source.call()
+	return {"parts": (parts as Dictionary).duplicate(true)} if parts is Dictionary else {}
 
 
 ## Game time (host): the yard's work runs at `rate` times its own pace from a tick a moment
@@ -471,6 +490,7 @@ func _sim_validate(sender: int, p: Dictionary) -> Variant:
 		out.epoch = _now() + 0.1 if out.fresh else sim_epoch
 		out.rate = sim_rate if out.fresh else sim_epoch_rate
 		out.fleet = worker_fleet.duplicate(true) if out.fresh else sim_fleet.duplicate(true)
+		out.stock = starting_stock() if out.fresh else sim_stock.duplicate(true)
 		return out
 	if sim_epoch < 0.0 and not String(p.get("kind", "")) in FLEET_KINDS:
 		return "the yard's clock has not started"
@@ -489,6 +509,7 @@ func _sim_apply(p: Dictionary) -> void:
 			sim_log.clear()
 			berth_claimed_by = ""
 			sim_fleet = (p.get("fleet", []) as Array).duplicate(true)
+			sim_stock = (p.get("stock", {}) as Dictionary).duplicate(true)
 		sim_epoch = float(p.epoch)
 		sim_epoch_rate = float(p.get("rate", sim_epoch_rate))
 		if changed:
@@ -531,7 +552,8 @@ func _on_session_ended(_reason: String = "") -> void:
 
 
 func get_net_snapshot() -> Dictionary:
-	return {"epoch": sim_epoch, "rate": sim_epoch_rate, "log": sim_log.duplicate(true), "fleet": sim_fleet.duplicate(true)}
+	return {"epoch": sim_epoch, "rate": sim_epoch_rate, "log": sim_log.duplicate(true), "fleet": sim_fleet.duplicate(true),
+			"stock": sim_stock.duplicate(true)}
 
 
 func apply_net_snapshot(data: Dictionary) -> void:
@@ -542,6 +564,7 @@ func apply_net_snapshot(data: Dictionary) -> void:
 	sim_epoch_rate = float(data.get("rate", 1.0))
 	sim_log.assign(data.get("log", []))
 	sim_fleet = (data.get("fleet", []) as Array).duplicate(true)
+	sim_stock = (data.get("stock", {}) as Dictionary).duplicate(true)
 	sim_reset.emit()
 
 
