@@ -63,6 +63,23 @@ func _run() -> void:
 			break
 	screen.call("refresh")
 	await _save(out, "orders_placed")
+	# 7.6: parts trading, with a few held and a sale made.
+	Flags.set_flag(OrdersBus.SELL_FLAG, true)
+	screen.queue_free()
+	var tl := orders.trade_lines()
+	for i in mini(4, tl.size()):
+		orders.trade_buy(str(tl[i].key), 5, i == 2)
+	for o: Dictionary in orders.orders:
+		o.due = orders.now_minute()
+		o.late = 0
+	orders.deliver_due()
+	if tl.size() > 1:
+		orders.trade_sell(str(tl[1].key), 2)
+	var ts: Control = orders.make_trade_screen(150.0)
+	ts.size = Vector2(size) - Vector2(80, 80)
+	ts.position = Vector2(40, 40)
+	back.add_child(ts)
+	await _save(out, "trading")
 	get_tree().quit()
 
 

@@ -33,6 +33,16 @@ const STATE_EVENT := "orders.state"
 const WALL_VIEW := "orders"
 const HOLO_CHANNEL := "orders.book"
 const USED := "used"
+## Master plan 7.6, selling parts: vendors buy parts back from stock, and parts can be bought
+## for stock (new, or second-hand lots through the refurb works) to sell on.
+const SELL_FLAG := "orders.sell"
+## The order "build" id of parts bought for stock.
+const STOCK := "stock"
+## The ledger category trading goes under (its own line on the accounts screen).
+const TRADING := "trading"
+const TRADE_VIEW := "trading"
+const TRADE_CHANNEL := "orders.trade"
+const TradeScreen := preload("res://modules/orders/internal/trade_screen.gd")
 ## How often the host looks for deliveries due (s).
 const CHECK_EVERY := 1.0
 ## A vendor's standing goes up this much for each order placed with it, and a little more
@@ -51,6 +61,11 @@ var tracked: Dictionary = {}
 ## Build id -> stages whose parts went out to the berth from the stores.
 var sent: Dictionary = {}
 var next_id := 1
+## Trade line key -> how many the yard holds to sell (bought for stock, certified from a lot).
+var holdings: Dictionary = {}
+## Every sale: {minute, key, name, qty, vendor, name_of_vendor, each, total}.
+var sales: Array = []
+var _trade_lines: Array[Dictionary] = []
 
 var _net: Object
 var _build: Object
@@ -67,6 +82,8 @@ func register_module() -> void:
 	HudSlots.register_holo_channel(HOLO_CHANNEL, "Parts orders",
 			func(_glass: bool = false) -> Control: return make_screen(150.0), 25)
 	Menu.register_settings_section(Menu.DEBUG, "orders.debug", "Orders", _debug_panel, 37)
+	HudSlots.register_holo_channel(TRADE_CHANNEL, "Parts trading",
+			func(_glass: bool = false) -> Control: return make_trade_screen(150.0), 26)
 	if Modules.ready_done:
 		_hook_up()
 	else:
@@ -76,9 +93,11 @@ func register_module() -> void:
 func unregister_module() -> void:
 	Saves.unregister_section(SAVE_SECTION)
 	HudSlots.unregister_holo_channel(HOLO_CHANNEL)
+	HudSlots.unregister_holo_channel(TRADE_CHANNEL)
 	var design := Modules.bus("design")
 	if design:
 		design.call("unregister_wall_view", WALL_VIEW)
+		design.call("unregister_wall_view", TRADE_VIEW)
 
 
 func _hook_up() -> void:
@@ -95,6 +114,7 @@ func _hook_up() -> void:
 	var design := Modules.bus("design")
 	if design:
 		design.call("register_wall_view", WALL_VIEW, "PARTS ORDERS", make_screen)
+		design.call("register_wall_view", TRADE_VIEW, "PARTS TRADING", make_trade_screen)
 
 
 func hook_net(net: Object) -> void:
@@ -112,6 +132,12 @@ func is_host() -> bool:
 
 func make_screen(px_per_m: float) -> Control:
 	var s := OrdersScreen.new()
+	s.setup(self, px_per_m)
+	return s
+
+
+func make_trade_screen(px_per_m: float) -> Control:
+	var s := TradeScreen.new()
 	s.setup(self, px_per_m)
 	return s
 
@@ -385,6 +411,8 @@ func _ask(p: Dictionary) -> void:
 
 
 func _validate_ask(_sender: int, p: Dictionary) -> Variant:
+	if str(p.get("what", "")).begins_with("trade_"):
+		return _validate_trade(p)
 	var cid := str(p.get("cid", ""))
 	if _build == null or not (_build.get("builds") as Dictionary).has(cid):
 		return "no such build"
@@ -408,7 +436,7 @@ func _validate_ask(_sender: int, p: Dictionary) -> Variant:
 
 
 func _apply_ask(p: Dictionary) -> void:
-	var cid := str(p.cid)
+	var cid := str(p.get("cid", ""))
 	match str(p.what):
 		"split":
 			var sp: Dictionary = splits.get_or_add(cid, {})
@@ -438,6 +466,10 @@ func _apply_ask(p: Dictionary) -> void:
 			splits.erase(cid)
 		"place":
 			_place(cid, bool(p.get("express", false)), int(p.get("cost", 0)))
+		"trade_buy":
+			_trade_buy(p)
+		"trade_sell":
+			_trade_sell(p)
 	_changed()
 
 
@@ -539,6 +571,10 @@ func _arrive(o: Dictionary) -> void:
 				for i in n:
 					_refurb.call("receive_used", str(l.type), OrderBook.USED_CONDITION, "parts order %d" % int(o.id))
 			continue
+		if str(o.cid) == STOCK:
+			holdings[str(l.key)] = int(holdings.get(str(l.key), 0)) + roundi(float(l.qty))
+			_stock_loads(str(l.key), roundi(float(l.qty)), true, "new")
+			continue
 		# Its loads go to the stores: the company's books gain them and the haulers bring them in.
 		if _business and _business.has_method("add_stock") and not full.is_empty():
 			var loads := OrderBook.rack_loads(full, float(l.qty), cat)
@@ -558,6 +594,9 @@ func _on_certified(type_id: String, _lot: Dictionary) -> void:
 		for l: Dictionary in o.lines:
 			if int(l.get("refurbing", 0)) > 0 and str(l.get("type", "")).get_slice(":", 0) == base:
 				l.refurbing = int(l.refurbing) - 1
+				if str(o.cid) == STOCK:
+					holdings[str(l.key)] = int(holdings.get(str(l.key), 0)) + 1
+					_stock_loads(str(l.key), 1, true, "refurbished")
 				_changed()
 				return
 
@@ -636,6 +675,176 @@ func track(cid: String) -> void:
 	_changed()
 
 
+# --- 7.6 Selling parts -----------------------------------------------------------------------------
+
+## The lines the yard trades in (catalogue components, one each).
+func trade_lines() -> Array[Dictionary]:
+	if _trade_lines.is_empty():
+		_trade_lines = TradeBook.lines(catalog())
+	return _trade_lines
+
+
+func trade_line(key: String) -> Dictionary:
+	for l in trade_lines():
+		if str(l.key) == key:
+			return l
+	return {}
+
+
+func _vendors() -> Array:
+	return _supply.get("vendors") if _supply else []
+
+
+## Buying `qty` of `key` new for stock today: {vendor, name, unit, total, lead} ({} if nobody sells it).
+func trade_buy_quote(key: String, qty: int) -> Dictionary:
+	var l := trade_line(key)
+	if l.is_empty() or qty < 1:
+		return {}
+	var q := TradeBook.buy_quote(l, qty, _vendors(), _standing(), market_day(), catalog())
+	if not q.is_empty():
+		var b := _buyer()
+		q.unit = float(q.unit) * b
+		q.total = float(q.unit) * qty
+	return q
+
+
+## A second-hand lot of `qty` of `key`, refurbished here before it can be sold: {unit, total,
+## lead, refurb} ({} where the works can't take it).
+func trade_used_quote(key: String, qty: int) -> Dictionary:
+	var l := trade_line(key)
+	if l.is_empty() or qty < 1 or not Flags.is_on(USED_FLAG):
+		return {}
+	var est := _refurb_estimate(OrderBook.used_type(l))
+	var news := quotes("", TradeBook.sized(l, 1)).filter(func(q: Dictionary) -> bool: return str(q.vendor) != USED)
+	if est.is_empty() or news.is_empty():
+		return {}
+	var mid: Dictionary = news[floori((news.size() - 1) / 2.0)]
+	var each := TradeBook.used_each(qty, float(mid.unit), float(est.get("cost", 0.0)))
+	return {"vendor": USED, "name": "Second-hand lot", "unit": each, "total": each * qty, "refurb": float(est.get("cost", 0.0)),
+			"lead": maxi(1, int(l.get("lead", 2))) + OrderBook.USED_EXTRA_DAYS}
+
+
+## What each vendor pays for `qty` of `key` today, best first: [{vendor, name, each, total}].
+func trade_offers(key: String, qty: int) -> Array[Dictionary]:
+	var l := trade_line(key)
+	if l.is_empty():
+		return [] as Array[Dictionary]
+	return TradeBook.offers(l, qty, _vendors(), market_day(), catalog())
+
+
+## The best buy-back for one of `key` over the `days` up to today.
+func trade_trend(key: String, days := 14) -> PackedFloat32Array:
+	var l := trade_line(key)
+	return TradeBook.trend(l, _vendors(), market_day(), days, catalog()) if not l.is_empty() else PackedFloat32Array()
+
+
+## Buys `qty` of `key` for stock (second-hand through the refurb works when `used`). Through the host.
+func trade_buy(key: String, qty: int, used := false) -> void:
+	_ask({"what": "trade_buy", "key": key, "qty": qty, "used": used})
+
+
+## Sells `qty` of `key` from stock to `vendor` (the best offer when ""). Through the host.
+func trade_sell(key: String, qty: int, vendor := "") -> void:
+	_ask({"what": "trade_sell", "key": key, "qty": qty, "vendor": vendor})
+
+
+## Trading's money in and out so far: {spent, earned, net}.
+func trade_totals() -> Dictionary:
+	var spent := 0.0
+	for o: Dictionary in orders:
+		if str(o.cid) == STOCK:
+			spent += float(o.total)
+	var earned := 0.0
+	for e: Dictionary in sales:
+		earned += float(e.total)
+	return {"spent": roundi(spent), "earned": roundi(earned), "net": roundi(earned - spent)}
+
+
+func _validate_trade(p: Dictionary) -> Variant:
+	if not Flags.is_on(SELL_FLAG):
+		return "trading is off"
+	var key := str(p.get("key", ""))
+	var qty := int(p.get("qty", 0))
+	if trade_line(key).is_empty() or qty < 1 or qty > 999:
+		return "no such part"
+	if str(p.what) == "trade_buy":
+		var q := trade_used_quote(key, qty) if bool(p.get("used", false)) else trade_buy_quote(key, qty)
+		if q.is_empty():
+			return "nobody sells that"
+		var cost := roundi(float(q.total))
+		if _business and _business.has_method("can_afford") and not bool(_business.call("can_afford", cost)):
+			return "not enough cash"
+		p["cost"] = cost
+		p["quote"] = q
+		return p
+	if int(holdings.get(key, 0)) < qty:
+		return "only %d in stock" % int(holdings.get(key, 0))
+	var offers := trade_offers(key, qty)
+	var pick := {}
+	for o: Dictionary in offers:
+		if str(p.get("vendor", "")) == "" or str(o.vendor) == str(p.vendor):
+			pick = o
+			break
+	if pick.is_empty():
+		return "that vendor doesn't buy it"
+	p["offer"] = pick
+	return p
+
+
+func _trade_buy(p: Dictionary) -> void:
+	var key := str(p.key)
+	var qty := int(p.qty)
+	var q: Dictionary = p.quote
+	var l := trade_line(key)
+	if is_host() and _business and _business.has_method("charge"):
+		var r: Object = _business.call("charge", int(p.cost), TRADING, "Bought for stock: %d x %s" % [qty, str(l.name)])
+		if r and r.has_method("is_ok") and not bool(r.call("is_ok")):
+			return
+	var used := bool(p.get("used", false))
+	var id := next_id
+	next_id += 1
+	var now := now_minute()
+	orders.append({"id": id, "cid": STOCK, "vendor": str(q.vendor), "name": str(q.get("name", q.vendor)), "minute": now,
+			"due": now + int(q.lead) * 1440, "late": 0, "express": false, "total": int(p.cost), "arrived": false,
+			"lines": [{"key": key, "name": str(l.name), "qty": float(qty), "unit": float(q.unit), "used": used,
+				"type": OrderBook.used_type(l) if used else ""}]})
+
+
+func _trade_sell(p: Dictionary) -> void:
+	var key := str(p.key)
+	var qty := int(p.qty)
+	var o: Dictionary = p.offer
+	var l := trade_line(key)
+	holdings[key] = int(holdings.get(key, 0)) - qty
+	if int(holdings[key]) <= 0:
+		holdings.erase(key)
+	_stock_loads(key, qty, false, "")
+	if is_host() and _business and _business.has_method("credit"):
+		_business.call("credit", roundi(float(o.total)), TRADING, "Sold to %s: %d x %s" % [str(o.name), qty, str(l.name)])
+	if _supply and _supply.has_method("set_standing"):
+		_supply.call("set_standing", str(o.vendor), float(_supply.call("standing_of", str(o.vendor))) + 0.1)
+	sales.append({"minute": now_minute(), "key": key, "name": str(l.name), "qty": qty, "vendor": str(o.vendor),
+			"vendor_name": str(o.name), "each": float(o.each), "total": float(o.total)})
+
+
+## The stores' rack parts for `qty` of trade line `key`: in when `add`, out when not.
+func _stock_loads(key: String, qty: int, add: bool, condition: String) -> void:
+	if _business == null or not is_host():
+		return
+	var l := trade_line(key)
+	if l.is_empty():
+		return
+	var loads := OrderBook.rack_loads(l, float(qty), catalog())
+	var stock: Dictionary = _business.call("get_stock") if _business.has_method("get_stock") else {}
+	for part: String in loads:
+		if add and _business.has_method("add_stock"):
+			_business.call("add_stock", part, int(loads[part]), condition, "parts trading")
+		elif not add and _business.has_method("use_stock"):
+			var n := mini(int(loads[part]), int(stock.get(part, 0)))
+			if n > 0:
+				_business.call("use_stock", part, n)
+
+
 # --- Saving -------------------------------------------------------------------------------------
 
 func save_version() -> int:
@@ -644,7 +853,7 @@ func save_version() -> int:
 
 func save_data() -> Dictionary:
 	return {"splits": splits.duplicate(true), "orders": orders.duplicate(true), "tracked": tracked.duplicate(),
-			"sent": sent.duplicate(true), "next": next_id}
+			"sent": sent.duplicate(true), "next": next_id, "holdings": holdings.duplicate(), "sales": sales.duplicate(true)}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -653,6 +862,8 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	tracked = (data.get("tracked", {}) as Dictionary).duplicate()
 	sent = (data.get("sent", {}) as Dictionary).duplicate(true)
 	next_id = int(data.get("next", 1))
+	holdings = (data.get("holdings", {}) as Dictionary).duplicate()
+	sales = (data.get("sales", []) as Array).duplicate(true)
 	_lines.clear()
 	changed.emit()
 
