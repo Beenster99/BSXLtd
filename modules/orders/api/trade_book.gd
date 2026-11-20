@@ -7,9 +7,8 @@ extends RefCounted
 ##
 ## The rule that keeps it honest: a vendor's buy-back is always under the cheapest price anyone
 ## could buy the same part for that day (any vendor, any deal, the best standing, the biggest
-## volume): no buy-and-sell on one day ever pays. The money is in timing (buy when the market or a
-## weekly deal is low, sell when it is high) and in flipping (cheap second-hand lots through the
-## refurb works, sold on as certified parts).
+## volume): buying new to sell never pays, so the yard trades only in refurbished lots (a few a
+## day, `lots`), bought cheap, fixed up in the refurb works and sold on, best on a HIGH day.
 
 ## A vendor buys back at this share of its own list price that day...
 const SPREAD := 0.74
@@ -23,6 +22,10 @@ const CAP := 0.92
 ## (OrderBook.USED_SHARE for fewer).
 const BULK_LOT := 4
 const BULK_USED_SHARE := 0.24
+## Refurbished lots on offer each day (different parts each day), each of LOT_SIZE parts. The
+## yard trades in these only: new parts are for builds (buying new to sell never pays).
+const LOTS_A_DAY := 3
+const LOT_SIZE := 5
 ## The standing a cap is worked against (the best there is).
 const BEST_STANDING := 100.0
 ## Units a cap is worked against (more than anyone buys: the biggest volume discount).
@@ -52,6 +55,22 @@ static func lines(cat: DesignCatalog) -> Array[Dictionary]:
 			one.units = 1
 			out.append(one)
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.name) < str(b.name))
+	return out
+
+
+## The keys of the lines whose refurbished lots are on offer on `day` (LOTS_A_DAY of them, the
+## same on every machine).
+static func lots(all: Array[Dictionary], day: int) -> Array[String]:
+	var keys: Array[String] = []
+	for l in all:
+		keys.append(str(l.key))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("bsx_lots_%d" % day)
+	var out: Array[String] = []
+	while out.size() < mini(LOTS_A_DAY, keys.size()):
+		var k: String = keys[rng.randi_range(0, keys.size() - 1)]
+		if not out.has(k):
+			out.append(k)
 	return out
 
 

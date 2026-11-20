@@ -1,8 +1,9 @@
 extends ModuleTest
 ## Master plan 7.6, selling parts: the lines the yard trades in, buy-back always under the day's
 ## cheapest price (no buy-then-sell on one day pays, at any standing or volume), a glut fetches
-## less each, buying for stock (new and a second-hand lot through the refurb works), selling to
-## the best buyer, trading in the accounts; it saves and loads.
+## less each, trading in refurbished lots only (a few a day, each bought once, through the refurb
+## works; buying new to trade is refused), selling to the best buyer, trading in the accounts; it
+## saves and loads.
 ##   tools/run_tests.sh orders
 
 
@@ -56,61 +57,66 @@ func run_tests() -> void:
 		moves = moves or absf(v - trend[0]) > 0.5
 	check(trend.size() == 14 and moves, "the buy-back moves from day to day (time a sale)")
 
-	# Buy for stock, it comes in, sell it.
+	# Trading is in refurbished lots only: a few a day, each bought once.
+	var lots := orders.trade_lots()
+	check(lots.size() == TradeBook.LOTS_A_DAY or not Flags.is_on(OrdersBus.USED_FLAG), "%d refurbished lots on offer today (%s)" % [lots.size(), str(lots)])
+	check(TradeBook.lots(lines, day0) == TradeBook.lots(lines, day0), "the same lots on every machine")
+	var other := false
+	for d in range(day0 + 1, day0 + 8):
+		other = other or TradeBook.lots(lines, d) != TradeBook.lots(lines, day0)
+	check(other, "different parts on other days")
 	var cash := int(biz.call("get_cash")) if biz else 0
 	orders.trade_buy(key, 5)
-	check(orders.orders.size() == 1 and str(orders.orders[0].cid) == OrdersBus.STOCK, "bought for stock: an order")
+	check(orders.orders.is_empty(), "buying new to trade is refused (new parts are for builds)")
+	var off := ""
+	for l: Dictionary in lines:
+		if not lots.has(str(l.key)):
+			off = str(l.key)
+			break
+	orders.trade_buy(off, TradeBook.LOT_SIZE, true)
+	check(orders.orders.is_empty(), "a part with no lot today cannot be bought")
+	if lots.is_empty():
+		return
+	var used_key: String = lots[0]
+	var u := orders.trade_used_quote(used_key, TradeBook.LOT_SIZE)
+	var n := orders.trade_buy_quote(used_key, TradeBook.LOT_SIZE)
+	check(float(u.unit) < float(n.unit), "a lot comes cheaper than new, refurb and all (%.0f against %.0f)" % [float(u.unit), float(n.unit)])
+	orders.trade_buy(used_key, TradeBook.LOT_SIZE, true)
+	check(orders.orders.size() == 1 and str(orders.orders[0].cid) == OrdersBus.STOCK, "bought a lot for stock: an order")
 	if biz:
 		check(int(biz.call("get_cash")) < cash, "paid for")
-	orders.trade_sell(key, 1)
+	check(not orders.trade_lots().has(used_key), "and that lot is gone for today")
+	orders.trade_buy(used_key, TradeBook.LOT_SIZE, true)
+	check(orders.orders.size() == 1, "it cannot be bought twice")
+	orders.trade_sell(used_key, 1)
 	check(orders.sales.is_empty(), "nothing to sell before it comes in")
-	for o: Dictionary in orders.orders:
-		o.due = orders.now_minute()
+	var o: Dictionary = orders.orders.back()
+	o.due = orders.now_minute()
 	orders.deliver_due()
-	check(int(orders.holdings.get(key, 0)) == 5, "in: the yard holds 5")
+	check(int(orders.holdings.get(used_key, 0)) == 0, "in the works, not held yet")
+	for i in TradeBook.LOT_SIZE:
+		orders._on_certified(str(o.lines[0].type), {})
+	check(int(orders.holdings.get(used_key, 0)) == TradeBook.LOT_SIZE, "certified, the yard holds them to sell")
+	var best := orders.trade_offers(used_key, 2)
+	var high := 0.0
+	for v in orders.trade_trend(used_key, 14):
+		high = maxf(high, v)
+	check(not best.is_empty() and high > float(u.unit), "a buyer for them, paying more than they cost on a good day (today CR %.0f, best of 14 days CR %.0f, against CR %.0f)" % [float(best[0].each) if not best.is_empty() else 0.0, high, float(u.unit)])
 	cash = int(biz.call("get_cash")) if biz else 0
-	orders.trade_sell(key, 2)
-	check(int(orders.holdings.get(key, 0)) == 3 and orders.sales.size() == 1, "sold 2 to the best buyer")
+	orders.trade_sell(used_key, 2)
+	check(int(orders.holdings.get(used_key, 0)) == 3 and orders.sales.size() == 1, "sold 2 to the best buyer")
 	if biz:
 		check(int(biz.call("get_cash")) > cash, "and paid for them")
 		check(str(biz.call("account_group", OrdersBus.TRADING)) == "sales", "trading shows as its own line in the accounts' sales")
 	var t := orders.trade_totals()
-	check(int(t.spent) > 0 and int(t.earned) > 0 and int(t.net) < 0, "buy and sell straight away and the yard is down (%s)" % str(t))
-
-	# A second-hand lot: cheaper, through the works, counted once certified.
-	var refurb := Modules.bus("refurb")
-	var used_key := ""
-	for l: Dictionary in lines:
-		if not orders.trade_used_quote(str(l.key), 5).is_empty():
-			used_key = str(l.key)
-			break
-	if refurb:
-		check(used_key != "", "a second-hand lot can be had")
-	if used_key != "":
-		var u := orders.trade_used_quote(used_key, 5)
-		var n := orders.trade_buy_quote(used_key, 5)
-		check(float(u.unit) < float(n.unit), "a used lot comes cheaper than new, refurb and all (%.0f against %.0f)" % [float(u.unit), float(n.unit)])
-		var u1 := orders.trade_used_quote(used_key, 1)
-		check(float(u.unit) < float(u1.unit), "and cheaper still in bulk")
-		var held_before := int(orders.holdings.get(used_key, 0))
-		orders.trade_buy(used_key, 5, true)
-		var o: Dictionary = orders.orders.back()
-		o.due = orders.now_minute()
-		orders.deliver_due()
-		check(int(orders.holdings.get(used_key, 0)) == held_before, "in the works, not held yet")
-		for i in 5:
-			orders._on_certified(str(o.lines[0].type), {})
-		check(int(orders.holdings.get(used_key, 0)) == held_before + 5, "certified, the yard holds them to sell")
-		var best := orders.trade_offers(used_key, 5)
-		if not best.is_empty():
-			print("trading: a used lot of %s at CR %.0f each sells for CR %.0f each; new costs CR %.0f" % [used_key, float(u.unit), float(best[0].each), float(n.unit)])
-		check(not best.is_empty(), "and a buyer for them (CR %.0f each against CR %.0f paid)" % [float(best[0].each) if not best.is_empty() else 0.0, float(u.unit)])
+	check(int(t.spent) > 0 and int(t.earned) > 0, "trading's money in and out (%s)" % str(t))
+	key = used_key
 
 	var held_key := int(orders.holdings.get(key, 0))
 	var saved := orders.save_data()
 	orders.reset_data()
 	orders.load_data(saved, OrdersBus.SAVE_VERSION)
-	check(int(orders.holdings.get(key, 0)) == held_key and orders.sales.size() == 1, "holdings and sales keep across a save")
+	check(int(orders.holdings.get(key, 0)) == held_key and orders.sales.size() == 1 and not orders.trade_lots().has(key), "holdings and sales keep across a save")
 	var screen := orders.make_trade_screen(150.0)
 	add_child(screen)
 	await frames(1)

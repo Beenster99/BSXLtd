@@ -65,6 +65,8 @@ var next_id := 1
 var holdings: Dictionary = {}
 ## Every sale: {minute, key, name, qty, vendor, name_of_vendor, each, total}.
 var sales: Array = []
+## Market day -> trade line keys whose lot the yard bought that day (only today's is kept).
+var lots_taken: Dictionary = {}
 var _trade_lines: Array[Dictionary] = []
 
 var _net: Object
@@ -738,6 +740,17 @@ func trade_trend(key: String, days := 14) -> PackedFloat32Array:
 	return TradeBook.trend(l, _vendors(), market_day(), days, catalog()) if not l.is_empty() else PackedFloat32Array()
 
 
+## The refurbished lots on offer today and not yet bought: trade line keys.
+func trade_lots() -> Array[String]:
+	var day := market_day()
+	var taken: Array = lots_taken.get(str(day), [])
+	var out: Array[String] = []
+	for k in TradeBook.lots(trade_lines(), day):
+		if not taken.has(k) and not trade_used_quote(k, TradeBook.LOT_SIZE).is_empty():
+			out.append(k)
+	return out
+
+
 ## Buys `qty` of `key` for stock (second-hand through the refurb works when `used`). Through the host.
 func trade_buy(key: String, qty: int, used := false) -> void:
 	_ask({"what": "trade_buy", "key": key, "qty": qty, "used": used})
@@ -768,7 +781,11 @@ func _validate_trade(p: Dictionary) -> Variant:
 	if trade_line(key).is_empty() or qty < 1 or qty > 999:
 		return "no such part"
 	if str(p.what) == "trade_buy":
-		var q := trade_used_quote(key, qty) if bool(p.get("used", false)) else trade_buy_quote(key, qty)
+		if not bool(p.get("used", false)):
+			return "trading buys refurbished lots only; new parts are for builds"
+		if not trade_lots().has(key) or qty != TradeBook.LOT_SIZE:
+			return "no lot of that on offer today"
+		var q := trade_used_quote(key, qty)
 		if q.is_empty():
 			return "nobody sells that"
 		var cost := roundi(float(q.total))
@@ -801,6 +818,9 @@ func _trade_buy(p: Dictionary) -> void:
 		if r and r.has_method("is_ok") and not bool(r.call("is_ok")):
 			return
 	var used := bool(p.get("used", false))
+	var day := str(market_day())
+	var taken: Array = lots_taken.get(day, [])
+	lots_taken = {day: taken + [key]}
 	var id := next_id
 	next_id += 1
 	var now := now_minute()
@@ -853,7 +873,8 @@ func save_version() -> int:
 
 func save_data() -> Dictionary:
 	return {"splits": splits.duplicate(true), "orders": orders.duplicate(true), "tracked": tracked.duplicate(),
-			"sent": sent.duplicate(true), "next": next_id, "holdings": holdings.duplicate(), "sales": sales.duplicate(true)}
+			"sent": sent.duplicate(true), "next": next_id, "holdings": holdings.duplicate(), "sales": sales.duplicate(true),
+			"lots_taken": lots_taken.duplicate(true)}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -864,6 +885,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	next_id = int(data.get("next", 1))
 	holdings = (data.get("holdings", {}) as Dictionary).duplicate()
 	sales = (data.get("sales", []) as Array).duplicate(true)
+	lots_taken = (data.get("lots_taken", {}) as Dictionary).duplicate(true)
 	_lines.clear()
 	changed.emit()
 
