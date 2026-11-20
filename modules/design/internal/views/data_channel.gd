@@ -8,6 +8,9 @@ const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
 
 ## The full contract fit assessment was asked for (the console opens it full screen).
 signal assessment_requested
+## A WILL IT WORK row was clicked (beenster, 20 Nov: "take me to the part of the design in
+## error"): the problem, {code, text, rooms, components, doors}.
+signal problem_picked(problem: Dictionary)
 
 var bus: DesignBus
 ## Contract demands to score against (Wave 4 fills these from the contract).
@@ -151,7 +154,18 @@ func refresh() -> void:
 		var text := T.label(p.text, "body", 17, T.TEXT)
 		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_body.add_child(T.row([T.tag("ERROR" if p.severity == DesignRules.ERROR else "CHECK", col, 13), _gap(8), text], alt))
+		var row := T.row([T.tag("ERROR" if p.severity == DesignRules.ERROR else "CHECK", col, 13), _gap(8), text], alt)
+		if has_place(p):
+			# Clickable: the console goes to the room, part or door it is about.
+			row.name = "Problem_%d" % _body.get_child_count()
+			row.mouse_filter = Control.MOUSE_FILTER_STOP
+			row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			row.tooltip_text = "Click to show it on the plan"
+			text.text += "  >"
+			row.gui_input.connect(func(e: InputEvent) -> void:
+				if e is InputEventMouseButton and e.pressed and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+					problem_picked.emit(p))
+		_body.add_child(row)
 		alt = not alt
 	if not lists:
 		_attributes(rec, t)
@@ -269,6 +283,14 @@ func _attributes(rec: DesignRecord, t: DesignTotals) -> void:
 		["Line items", "%d" % t.lines.size(), T.TEXT],
 		["Problems", "%d" % bus.problems().size(), T.GOOD if bus.problems().is_empty() else T.AMBER],
 	])
+
+
+## True when a problem names a room, component or door to go to.
+static func has_place(p: Dictionary) -> bool:
+	for k: String in ["rooms", "components", "doors"]:
+		if not (p.get(k, []) as Array).is_empty():
+			return true
+	return false
 
 
 func _section(title: String, figs: Array) -> void:
