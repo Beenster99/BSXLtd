@@ -107,6 +107,17 @@ const TYPES := {
 		"speed": 4.5, "quality": 0.78, "price": 80000, "upkeep": 165, "drain": 0.0016, "paint": "Teal"},
 }
 ## The order the shop lists them in.
+## The TartanCo android trade each type is built on (beenster, 20 Nov: "TartanCo androids
+## build them"): F fitter (grippers), W welder (torch), R riveter (rivet gun), B bolter (nut
+## runner), E TartanCo's engineer (inspectors and refurbishers).
+const TARTANCO_ROLE := {"yardhand": "F", "welder": "W", "riveter": "R", "plater": "R", "wirer": "R",
+		"pipe_fitter": "B", "hauler": "F", "inspector": "E", "refurbisher": "E", "frame_tech": "W", "fitout_tech": "B"}
+
+
+static func tartanco_role(type_id: String) -> String:
+	return str(TARTANCO_ROLE.get(type_id, "F"))
+
+
 const ORDER: PackedStringArray = ["yardhand", "welder", "riveter", "plater", "wirer", "pipe_fitter",
 		"hauler", "inspector", "refurbisher", "frame_tech", "fitout_tech"]
 ## What a new company's bot bay holds (master plan 6.1: "Two general bots").

@@ -362,6 +362,13 @@ func _station_opened(s: Node3D) -> void:
 	station_ready.emit(s)
 
 
+## TartanCo's android look (yard_worker_look.gd) for other modules' crews (the build bots,
+## beenster 20 Nov: "TartanCo androids build them"): its static make(role, number), reach,
+## rest, tuck, stand, tip_of and ROLES ("F", "W", "R", "B", "E").
+static func worker_look() -> Script:
+	return preload("res://modules/yard/internal/yard_worker_look.gd")
+
+
 ## The worker bots building in the build berth (TartanCo's androids), [] while no station is
 ## open.
 func worker_bots() -> Array[Node3D]:

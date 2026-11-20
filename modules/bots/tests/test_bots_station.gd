@@ -11,7 +11,7 @@ const Look := preload("res://modules/bots/internal/bot_look.gd")
 
 func run_tests() -> void:
 	for f: String in [YardBus.FLAG, YardBus.STATION, YardBus.DOCK, YardBus.RACKING, BuildBus.FLAG, BuildBus.HAND_FLAG,
-			BuildBus.BOT_FLAG, BotsBus.FLAG, BotsBus.BOARD_FLAG, BotsBus.CAMS_FLAG]:
+			BuildBus.BOT_FLAG, BotsBus.FLAG, BotsBus.BOARD_FLAG, BotsBus.CAMS_FLAG, BotsBus.TARTANCO_FLAG]:
 		Flags.set_flag(f, true)
 	Flags.set_flag("company.growth", false)  # the yard's rank does not hold the test back
 	var build := Modules.bus("build") as BuildBus
@@ -51,6 +51,9 @@ func run_tests() -> void:
 	await frames(2)
 	check(view.call("look_of", int(bots.crew.bots[0].id)) != null, "each bot has its look")
 	check((view.get("_bots") as Dictionary).size() == bots.crew.bots.size(), "one look per bot (%d)" % (view.get("_bots") as Dictionary).size())
+	var first: Node3D = view.call("look_of", int(bots.crew.bots[0].id))
+	check(first != null and bool(first.get_meta("android", false)) and str(first.get_meta("tartanco_model", "")) != "",
+			"the crew are TartanCo's androids (%s)" % (str(first.get_meta("tartanco_model", "")) if first else "none"))
 	# Run the crew till a welder is welding, and look.
 	var saw_sparks := false
 	for i in 120:

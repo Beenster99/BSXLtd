@@ -9,6 +9,10 @@ extends Node3D
 ## work: a welder's arc with sparks, a riveter's flash, a nut runner's spin, an inspector's scan
 ## beam, a crate of parts while it carries one, tractor lines while it floats a job in. Each hums
 ## (its own lift fans) and its tool makes its own sound.
+##
+## With BotsBus.TARTANCO_FLAG (on) the crew are TartanCo's androids instead (beenster, 20 Nov):
+## each type on the TartanCo trade with its tools (BotTypes.TARTANCO_ROLE), in TartanCo's livery,
+## legs tucked as it flies on its thrusters, the tool arm reaching the work by IK.
 
 const Look := preload("res://modules/bots/internal/bot_look.gd")
 const Sounds := preload("res://modules/bots/internal/bot_sounds.gd")
@@ -103,7 +107,7 @@ func sync() -> void:
 	for b: Dictionary in bus.crew.bots:
 		var id := int(b.id)
 		seen[id] = true
-		var key := "%s/%s/%d" % [b.type, b.paint, int(b.mark)]
+		var key := "%s/%s/%d/%s" % [b.type, b.paint, int(b.mark), str(_android())]
 		var e: Dictionary = _bots.get(id, {})
 		if e.is_empty() or str(e.key) != key:
 			if not e.is_empty():
@@ -116,16 +120,33 @@ func sync() -> void:
 			_bots.erase(id)
 
 
+## TartanCo's android look (YardBus.worker_look), or null when the flag is off or no yard.
+func _android() -> Script:
+	if not Flags.is_on(BotsBus.TARTANCO_FLAG):
+		return null
+	var yard := Modules.bus("yard")
+	return yard.call("worker_look") if yard and yard.has_method("worker_look") else null
+
+
 func _make(b: Dictionary, key: String) -> Dictionary:
 	var t := Types.info(str(b.type))
 	var paint: Color = Types.PAINTS.get(str(b.paint), Color("e8792b"))
-	var look := Look.make(str(t.family), paint, int(b.mark), float(b.wear), int(b.id))
+	var wl := _android()
+	var look: Node3D
+	if wl:
+		look = wl.call("make", Types.tartanco_role(str(b.type)), "%02d" % int(b.id))
+		look.set_meta("android", true)
+		var thrust := look.get_node_or_null("Thrust") as Node3D
+		if thrust:
+			thrust.visible = true
+	else:
+		look = Look.make(str(t.family), paint, int(b.mark), float(b.wear), int(b.id))
 	look.name = "Bot%d" % int(b.id)
 	look.position = b.pos
 	add_child(look)
-	var e := {"look": look, "key": key, "t": randf() * 10.0, "flash": 0.0, "family": str(t.family)}
+	var e := {"look": look, "key": key, "t": randf() * 10.0, "flash": 0.0, "family": str(t.family), "wl": wl}
 	# Sparks and an arc light for the welders, a scan beam for the inspectors, tractor lines for fitting.
-	var tips := Look.tips(look)
+	var tips := _tips(e, look)
 	var tip: Node3D = tips[tips.size() - 1] if not tips.is_empty() else look
 	e.tip = tip
 	var sparks := CPUParticles3D.new()
@@ -233,7 +254,10 @@ func _draw_bot(b: Dictionary, e: Dictionary, delta: float) -> void:
 		skin.set_shader_parameter("wear", clampf(float(b.wear), 0.0, 1.0) * 0.8 + 0.08)
 		skin.set_shader_parameter("grime", 0.25 + clampf(float(b.wear), 0.0, 1.0) * 0.5)
 	var lean := look.basis.inverse() * vel
-	Look.animate(look, float(e.t), 1.0 if working else (0.35 if kind == "idle" else 0.0), speed, lean)
+	if e.wl:
+		_animate_android(e, look, task, working, speed)
+	else:
+		Look.animate(look, float(e.t), 1.0 if working else (0.35 if kind == "idle" else 0.0), speed, lean)
 	# A refurbisher in the annex is out of sight.
 	look.visible = not (kind == "refurb" and look.position.distance_to(to) < 1.0)
 	var cargo := look.find_child("Cargo", true, false) as Node3D
@@ -249,7 +273,9 @@ func _draw_bot(b: Dictionary, e: Dictionary, delta: float) -> void:
 	var arc := e.arc as OmniLight3D
 	arc.light_energy = (1.6 + sin(_t * 47.0) * 0.6 + sin(_t * 113.0) * 0.4) if welding else (2.5 if riveting and fmod(float(e.t), 0.7) < 0.06 else 0.0)
 	var tip := e.tip as Node3D
-	if bolting:
+	if bolting and e.wl:
+		(e.wl as Script).call("spin_socket", look, float(e.t) * 18.0)
+	elif bolting:
 		tip.rotate_object_local(Vector3(0, 0, 1), delta * 18.0)
 	var beam := e.beam as MeshInstance3D
 	beam.visible = scanning
@@ -257,6 +283,59 @@ func _draw_bot(b: Dictionary, e: Dictionary, delta: float) -> void:
 		_stretch(beam, tip.global_position, task.spot as Vector3)
 	_draw_lines(e, phase == "fit", task, look)
 	_sound(e, welding, riveting, bolting, scanning, kind)
+
+
+## The tool tips effects hang from: the android's hands (a tip node at each tool's end), or the
+## flying bot's own.
+func _tips(e: Dictionary, look: Node3D) -> Array[Node3D]:
+	if not e.get("wl"):
+		return Look.tips(look)
+	var out: Array[Node3D] = []
+	for side: String in ["L", "R"]:
+		var hand := look.get_node_or_null("Hand" + side) as Node3D
+		if hand == null:
+			continue
+		var tip := hand.get_node_or_null("Tip") as Node3D
+		if tip == null:
+			tip = Node3D.new()
+			tip.name = "Tip"
+			var wl := e.wl as Script
+			var lengths: Dictionary = wl.get("TOOL_LEN") if wl.get("TOOL_LEN") is Dictionary else {}
+			tip.position = Vector3(0, -float(lengths.get(str(wl.call("tool_of", look, side)), 0.5)), 0)
+			hand.add_child(tip)
+		out.append(tip)
+	return out
+
+
+## The android in flight and at work: legs tucked under it on its thrusters, the tool arm on the
+## work's spot while it fastens, fits or scans, the other arm at rest (the clamp braced when close).
+func _animate_android(e: Dictionary, look: Node3D, task: Dictionary, working: bool, speed: float) -> void:
+	if not look.is_inside_tree():
+		return
+	var wl := e.wl as Script
+	var t := float(e.t)
+	var sway := sin(t * 1.3 + float(look.get_instance_id() % 7)) * (0.3 + minf(speed, 3.0) * 0.2)
+	for side: String in ["R", "L"]:
+		wl.call("tuck", look, side, sway if side == "R" else -sway)
+	var spot: Vector3 = task.get("spot", Vector3.INF) if task.has("spot") else Vector3.INF
+	if working and spot == Vector3.INF and str(task.get("phase", "")) == "fit":
+		var info: Dictionary = bus.call("job_info", int(task.get("job", -1)))
+		spot = info.get("centre", Vector3.INF)
+	if working and spot != Vector3.INF:
+		var sh: Vector3 = wl.call("shoulder", look, "R")
+		var to := spot - sh
+		# Within reach the tool goes onto the spot; beyond it the arm points that way.
+		var tip := spot if to.length() < 1.6 else sh + to.normalized() * 1.5
+		var kick := 0.04 * maxf(0.0, sin(t * 22.0)) if str(task.get("phase", "")) == "fasten" else 0.0
+		wl.call("reach", look, "R", tip + Vector3(sin(t * 2.1), cos(t * 1.7), sin(t * 2.9)) * 0.03, to, kick)
+		var lsh: Vector3 = wl.call("shoulder", look, "L")
+		if (spot - lsh).length() < 1.4:
+			wl.call("reach", look, "L", spot + look.global_basis.x * -0.35, spot - lsh)
+		else:
+			wl.call("rest", look, "L")
+	else:
+		wl.call("rest", look, "R")
+		wl.call("rest", look, "L")
 
 
 ## Points mesh `m` (a cone 1 m tall along y) from `a` to `b`.
@@ -283,7 +362,7 @@ func _draw_lines(e: Dictionary, on: bool, task: Dictionary, look: Node3D) -> voi
 	var im := lines.mesh as ImmediateMesh
 	im.clear_surfaces()
 	im.surface_begin(Mesh.PRIMITIVE_LINES)
-	for tip in Look.tips(look):
+	for tip in _tips(e, look):
 		for k in 3:
 			var wob := Vector3(sin(_t * 3.0 + k), cos(_t * 2.3 + k), sin(_t * 1.7 + k * 2.0)) * 0.15
 			im.surface_add_vertex(tip.global_position)
