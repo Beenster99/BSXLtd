@@ -107,12 +107,21 @@ func _flow() -> void:
 	var saved := bus.save_data()
 	bus.load_data(saved, ContractsBus.SAVE_VERSION)
 	check(bool(bus.ship_contract(str(c.id)).stages[1].paid), "ship contracts are saved")
+	bus.track_build(str(c.id))
+	bus._pay_due_stages(int(c.due_day) + 5)
+	check(bus.is_build_tracked(str(c.id)) and paid == ["keel"], "a contract the build tracks is left to the build: the stand-in pays nothing")
+	var asked: Array = []
+	bus.register_trial_rows("test", func(id: String) -> Array:
+		asked.append(id)
+		return [{"key": "workmanship", "label": "Workmanship", "need": 1.0, "have": 1.0, "ok": true, "share": 1.0}])
 	var client := str(order.client)
 	var before := bus.standing_of(client)
 	var rows := [{"key": "speed", "label": "Speed", "need": 10.0, "have": 20.0, "ok": true, "share": 1.0}]
 	bus.request_deliver_ship(str(c.id), rows)
 	c = bus.ship_contract(str(c.id))
 	check(c.state == "delivered" and paid == ["keel", "fit_out"], "delivery pays any stage still owed first")
+	check(asked == [str(c.id)], "the trial asks other modules for their rows (the build's workmanship)")
+	bus.register_trial_rows("test", Callable())
 	check(adjusted.size() == 1 and adjusted[0] > 0 and handed == [str(c.id)], "the trial's bonus comes before the handover")
 	check(bus.standing_of(client) > before, "a ship delivered to spec raises standing with the client")
 	check(bus.payment_profiles().all(func(p: Dictionary) -> bool: return p.contract_id != c.id), "a delivered contract leaves the forecast")
