@@ -48,7 +48,14 @@ func _orders() -> void:
 	copy.from_dict(JSON.parse_string(JSON.stringify(o.to_dict())))
 	copy.apply({"op": "group_add", "name": "Third"})
 	check(copy.groups[2].id == "g3", "ids carry on after a save (%s)" % copy.groups[2].id)
-	check(o.apply({"op": "group_remove", "group": "g1"}) and o.groups.size() == 1, "a group is disbanded")
+	check(o.apply({"op": "group_save", "group": "", "name": "Saved crew", "bots": ["TC-W3-01", "TC-R3-01"]}), "a group is saved new")
+	var saved := o.groups[o.groups.size() - 1]
+	check(saved.name == "Saved crew" and saved.bots == ["TC-W3-01", "TC-R3-01"] and o.group("g2").bots.is_empty(),
+			"with its name and bots, taken from their old group (%s)" % str(saved))
+	check(o.apply({"op": "group_save", "group": saved.id, "name": "Saved crew", "bots": ["TC-R3-01"]})
+			and o.group(saved.id).bots == ["TC-R3-01"], "saving again drops a bot left out")
+	check(not o.apply({"op": "group_save", "group": "g99", "name": "x", "bots": []}), "not a group that isn't there")
+	check(o.apply({"op": "group_remove", "group": "g1"}) and o.groups.size() == 2, "a group is disbanded")
 
 
 func _plan() -> void:
@@ -123,7 +130,37 @@ func _screen(bus: FleetBus) -> void:
 	screen.call("show_tab", "orders")
 	(screen.find_child("NewGroup", true, false) as Button).pressed.emit()
 	await frames(1)
-	check(bus.orders.groups.size() == 1, "NEW GROUP makes a group")
+	check(bus.orders.groups.is_empty(), "NEW GROUP opens the editor; nothing is made till it's saved")
+	var name_box := screen.find_child("GroupName", true, false) as LineEdit
+	check(name_box != null, "the editor asks for the group's name")
+	if name_box:
+		name_box.text = "Weld team"
+		name_box.text_changed.emit("Weld team")
+	await frames(1)
+	check(screen.find_child("GroupName", true, false) == name_box, "typing isn't lost to a refresh")
+	for serial: String in ["TC-X-00", "TC-X-02"]:
+		var pick := screen.find_child("Pick_" + serial, true, false) as Button
+		check(pick != null, "a button to pick %s" % serial)
+		if pick:
+			pick.button_pressed = true
+	(screen.find_child("SaveGroup", true, false) as Button).pressed.emit()
+	await frames(1)
+	check(bus.orders.groups.size() == 1 and bus.orders.groups[0].name == "Weld team", "SAVE GROUP makes the named group")
+	check(bus.orders.groups[0].bots == ["TC-X-00", "TC-X-02"], "with the bots picked (%s)" % str(bus.orders.groups[0].bots))
+	check(screen.get("group") == bus.orders.groups[0].id, "and shows it")
+	# Rename it and swap a bot.
+	(screen.find_child("EditGroup", true, false) as Button).pressed.emit()
+	await frames(1)
+	name_box = screen.find_child("GroupName", true, false) as LineEdit
+	check(name_box != null and name_box.text == "Weld team", "the editor opens on the group's name")
+	if name_box:
+		name_box.text_changed.emit("Seam crew")
+	(screen.find_child("Pick_TC-X-00", true, false) as Button).button_pressed = false
+	(screen.find_child("Pick_TC-X-03", true, false) as Button).button_pressed = true
+	(screen.find_child("SaveGroup", true, false) as Button).pressed.emit()
+	await frames(1)
+	check(bus.orders.groups[0].name == "Seam crew" and bus.orders.groups[0].bots == ["TC-X-02", "TC-X-03"],
+			"renamed, one bot out and one in (%s)" % str(bus.orders.groups[0]))
 	screen.call("select", "TC-X-01")
 	var join := screen.find_child("Join_" + str(bus.orders.groups[0].id), true, false) as Button
 	check(join != null, "a bot's detail offers its group")

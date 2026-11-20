@@ -34,6 +34,13 @@ var _clock := 0.0
 var _table_key := ""
 var _side_key := ""
 var _rows: Array[Dictionary] = []
+## The group editor (beenster, 20 Nov: name a group, add specific bots, then save it): open
+## while editing, with its draft {group ("" new), name, bots: {serial: true}}. While it's open
+## the side isn't rebuilt under the player's typing.
+var editing := false
+var draft: Dictionary = {}
+var _pick_newest := false
+var _rebuild_editor := false
 
 
 func setup(fleet_bus: FleetBus, density: float, on_glass := false) -> void:
@@ -108,8 +115,13 @@ func _process(delta: float) -> void:
 
 
 func _on_orders_changed() -> void:
+	if _pick_newest and not bus.orders.groups.is_empty():
+		_pick_newest = false
+		group = str(bus.orders.groups[bus.orders.groups.size() - 1].id)
 	if group != "" and bus.orders.group(group).is_empty():
 		group = ""
+	if editing and str(draft.get("group", "")) != "" and bus.orders.group(str(draft.group)).is_empty():
+		editing = false   # someone disbanded the group being edited
 	refresh(true)
 
 
@@ -130,6 +142,9 @@ func refresh(force := false) -> void:
 	var skey := "%s|%s|%s|%s" % [tab, selected, group, JSON.stringify(bus.orders.to_dict())]
 	if tab == "bot":
 		skey += _key(_rows.filter(func(r: Dictionary) -> bool: return r.serial == selected))
+	if editing and tab == "orders" and not _rebuild_editor:
+		return
+	_rebuild_editor = false
 	if force or skey != _side_key:
 		_side_key = skey
 		_fill_tabs()
@@ -156,12 +171,52 @@ func select(serial: String) -> void:
 
 func show_tab(which: String) -> void:
 	tab = which
+	_rebuild_editor = true
 	refresh(true)
 
 
 func show_group(id: String) -> void:
 	group = id
 	tab = "orders"
+	editing = false
+	refresh(true)
+
+
+## Opens the group editor on a group ("" a new one): its name and its bots, saved together.
+func edit_group(id: String) -> void:
+	var g := bus.orders.group(id)
+	var bots := {}
+	for serial: String in (g.get("bots", []) as Array):
+		bots[serial] = true
+	draft = {"group": id, "name": str(g.name) if not g.is_empty() else _next_name(), "bots": bots}
+	editing = true
+	tab = "orders"
+	_rebuild_editor = true
+	refresh(true)
+
+
+## SAVE GROUP: the draft's name and bots as one order.
+func save_group() -> void:
+	if not editing:
+		return
+	var bots: Array = []
+	for r in _rows:
+		if (draft.bots as Dictionary).has(str(r.serial)):
+			bots.append(str(r.serial))
+	# Bots listed but not on site now (the yard closed) stay listed.
+	for serial: String in (draft.bots as Dictionary):
+		if not bots.has(serial):
+			bots.append(serial)
+	editing = false
+	_pick_newest = str(draft.group) == ""
+	if not _pick_newest:
+		group = str(draft.group)
+	bus.command({"op": "group_save", "group": str(draft.group), "name": str(draft.name), "bots": bots})
+	refresh(true)
+
+
+func cancel_edit() -> void:
+	editing = false
 	refresh(true)
 
 
@@ -424,15 +479,18 @@ func _fill_orders() -> void:
 		b.add_theme_color_override("font_color", Color.html(str(g.colour)))
 		b.pressed.connect(show_group.bind(str(g.id)))
 		flow.add_child(b)
-	var add := T.button("+ NEW GROUP", true, fs - 2, false, glass)
+	var add := T.button("+ NEW GROUP", true, fs - 2, editing and str(draft.group) == "", glass)
 	add.name = "NewGroup"
-	add.pressed.connect(func() -> void: bus.command({"op": "group_add", "name": _next_name()}))
+	add.pressed.connect(edit_group.bind(""))
 	flow.add_child(add)
 	gv.add_child(flow)
 	_side.add_child(groups_card)
+	if editing:
+		_side.add_child(_editor())
+		return
 	var g := bus.orders.group(group)
 	if g.is_empty():
-		var hint := _label("Make a group, put bots in it from their BOT DETAIL, then give it work from the build plan.",
+		var hint := _label("Press + NEW GROUP, name it, pick its bots and save it. Then give it work from the build plan.",
 				"body", fs - 2, T.DIM)
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_side.add_child(hint)
@@ -449,6 +507,10 @@ func _fill_orders() -> void:
 	top.add_child(_label("PRIORITY", "display_medium", fs - 3, T.DIM))
 	top.add_child(_stepper(int(g.priority), func(p: int) -> void:
 		bus.command({"op": "group_priority", "group": str(g.id), "priority": p}), "GroupPriority"))
+	var edit := T.button("RENAME / PICK BOTS", false, fs - 3, false, glass)
+	edit.name = "EditGroup"
+	edit.pressed.connect(edit_group.bind(str(g.id)))
+	top.add_child(edit)
 	var drop := T.button("DISBAND", false, fs - 3, false, glass)
 	drop.name = "Disband"
 	drop.pressed.connect(func() -> void: bus.command({"op": "group_remove", "group": str(g.id)}))
@@ -457,7 +519,7 @@ func _fill_orders() -> void:
 	var names := PackedStringArray()
 	for s: String in g.bots:
 		names.append(s)
-	v.add_child(_fact("Bots", ", ".join(names) if not names.is_empty() else "None yet: pick a bot and add it from BOT DETAIL"))
+	v.add_child(_fact("Bots", ", ".join(names) if not names.is_empty() else "None yet: press RENAME / PICK BOTS"))
 	var trades := {}
 	for r in _rows:
 		if (g.bots as Array).has(r.serial):
@@ -490,6 +552,70 @@ func _fill_orders() -> void:
 		tv.add_child(_task_row(g, tasks[i], i, tasks.size()))
 	_side.add_child(tcard)
 	_side.add_child(_footnote())
+
+
+## The group editor: the name, a button per bot to put it in or take it out, SAVE GROUP.
+func _editor() -> Control:
+	var card := _card("NEW GROUP" if str(draft.group) == "" else "EDIT GROUP")
+	card.name = "GroupEditor"
+	var v: VBoxContainer = card.get_child(0)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", int(fs * 0.4))
+	var nl := _label("NAME", "display_medium", fs - 3, T.DIM)
+	nl.custom_minimum_size.x = fs * 5.5
+	row.add_child(nl)
+	var name_box := T.search("Name the group", func(t: String) -> void: draft.name = t, glass)
+	name_box.name = "GroupName"
+	name_box.clear_button_enabled = false
+	name_box.max_length = 32
+	name_box.text = str(draft.name)
+	name_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_box.add_theme_font_size_override("font_size", T.px(fs))
+	name_box.text_submitted.connect(func(_t: String) -> void: save_group())
+	row.add_child(name_box)
+	v.add_child(row)
+	v.add_child(_label("BOTS: press a bot to put it in this group or take it out", "display_medium", fs - 3, T.DIM))
+	if _rows.is_empty():
+		v.add_child(_label("No bots on site. Open the orbital yard to pick them.", "body", fs - 2, T.DIM))
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 4)
+	flow.add_theme_constant_override("v_separation", 4)
+	for r in _rows:
+		var serial := str(r.serial)
+		var other := bus.orders.group_of(serial)
+		var away := not other.is_empty() and str(other.id) != str(draft.group)
+		var b := T.button("%s  %s%s" % [serial, str(r.trade).to_upper(), ("  (IN %s)" % str(other.name).to_upper()) if away else ""],
+				false, fs - 3, (draft.bots as Dictionary).has(serial), glass)
+		b.name = "Pick_" + serial.validate_node_name()
+		b.toggle_mode = true
+		b.button_pressed = (draft.bots as Dictionary).has(serial)
+		b.toggled.connect(func(on: bool) -> void:
+			if on:
+				draft.bots[serial] = true
+			else:
+				(draft.bots as Dictionary).erase(serial)
+			# Its look follows (the kit lights a tab with `on`).
+			var lit := T.button(b.text, false, fs - 3, on, glass)
+			b.add_theme_stylebox_override("normal", lit.get_theme_stylebox("normal"))
+			b.add_theme_color_override("font_color", lit.get_theme_color("font_color"))
+			lit.free())
+		flow.add_child(b)
+	v.add_child(flow)
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 4)
+	var save := T.button("SAVE GROUP", true, fs - 1, false, glass)
+	save.name = "SaveGroup"
+	save.pressed.connect(save_group)
+	bar.add_child(save)
+	var cancel := T.button("CANCEL", false, fs - 1, false, glass)
+	cancel.name = "CancelEdit"
+	cancel.pressed.connect(cancel_edit)
+	bar.add_child(cancel)
+	v.add_child(bar)
+	var note := _label("A bot is in one group at a time: saving moves it here from any other.", "body", fs - 4, T.DIM)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(note)
+	return card
 
 
 ## Adds the plan's tasks this group doesn't have yet: the ones its bots' trades do, or every one

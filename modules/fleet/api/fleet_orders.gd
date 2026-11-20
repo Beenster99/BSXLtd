@@ -34,8 +34,11 @@ const TRADES := {"F": "Fitter", "W": "Welder", "R": "Riveter", "B": "Bolter"}
 ##   task_add {group, task}                task_remove {group, task}
 ##   task_move {group, task, by}           task_priority {group, task, priority}
 ##   tasks_clear {group}
+##   group_save {group ("" for a new one), name, bots: [serial]}: the group editor's SAVE GROUP
+##       (beenster, 20 Nov: name the group, add specific bots, then save it). The bots listed
+##       leave any other group; bots no longer listed leave this one.
 const OPS: PackedStringArray = ["group_add", "group_remove", "group_rename", "group_priority", "bot_assign",
-		"task_add", "task_remove", "task_move", "task_priority", "tasks_clear"]
+		"task_add", "task_remove", "task_move", "task_priority", "tasks_clear", "group_save"]
 
 var groups: Array[Dictionary] = []
 var _next_group := 1
@@ -54,6 +57,27 @@ func apply(cmd: Dictionary) -> bool:
 					"colour": COLOURS[(_next_group - 1) % COLOURS.size()].to_html(false),
 					"priority": PRIORITY_DEFAULT, "bots": [], "tasks": []})
 			_next_group += 1
+			return true
+		"group_save":
+			var id := str(cmd.get("group", ""))
+			var name := str(cmd.get("name", "")).strip_edges()
+			var bots: Variant = cmd.get("bots", [])
+			if not bots is Array or (id != "" and group(id).is_empty()):
+				return false
+			if id == "":
+				apply({"op": "group_add", "name": name})
+				id = str(groups[groups.size() - 1].id)
+			var g := group(id)
+			if name != "":
+				g.name = name.left(32)
+			var keep: Array = []
+			for b: Variant in bots:
+				if str(b) != "" and not keep.has(str(b)):
+					keep.append(str(b))
+			for other: Dictionary in groups:
+				for serial: String in keep:
+					(other.bots as Array).erase(serial)
+			g.bots = keep
 			return true
 		"group_remove":
 			var i := _group_index(str(cmd.get("group", "")))
