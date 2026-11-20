@@ -590,6 +590,11 @@ func _apply_sim(e: Dictionary) -> void:
 			if mine:
 				var what := YardKits.display_name(kit_id).to_lower()
 				_show_note("Mover bot on its way with a %s" % what if id >= 0 else "No stock for a %s" % what)
+		"stock":
+			# The racks' stock at tick 0 (YardBus.sim_stock): {} keeps the demo stock.
+			var stock: Dictionary = e.get("stock", {})
+			if stock.has("parts"):
+				_rack_store().set_stock(stock.parts)
 		"contract":
 			start_demo_contract()
 		"order":

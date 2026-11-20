@@ -108,6 +108,7 @@ flags = {
 "shared_components": true,
 "stores": true,
 "stores.wall": true,
+"stores.company_stock": true,
 "time": true,
 "time.hud": true,
 "trades": true,
