@@ -618,6 +618,9 @@ func _apply_sim(e: Dictionary) -> void:
 					workers.call("fit_module", bot, String(e.get("id", "")))
 				"bot_unfit":
 					workers.call("remove_module", bot, String(e.get("id", "")))
+		"berth_claim":
+			if workers:
+				workers.call("set_claimed", String(e.get("by", "")))
 		"lock":
 			var lock: Node = design_lock if String(e.get("lock", "")) == "design_lock" else airlock
 			lock.call("operate", String(e.get("mode", "toggle")))

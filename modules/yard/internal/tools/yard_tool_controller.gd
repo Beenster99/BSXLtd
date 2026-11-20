@@ -271,7 +271,9 @@ func _physics_process(delta: float) -> void:
 	tool.work_factor = factor
 	tool.work_kind = targeted.kind if targeted else -1
 	tool.work_heat = targeted.heat_now() if targeted else 0.0
-	if tool is YardFastener:
+	if socket and lock == null and _bolting(socket, hit, body):
+		_update_bolting(socket, hit, body, delta)
+	elif tool is YardFastener:
 		_update_fastening(tool as YardFastener, hit, body, delta)
 	elif tool is YardTablet:
 		_update_tablet(tool as YardTablet, hit)
@@ -428,6 +430,72 @@ func _update_fastening(tool: YardFastener, hit: Dictionary, body: YardWorkpiece,
 		_update_riveting(tool as YardRiveter, on_plan, delta)
 
 
+## A fastening went in by hand: the yard bus tells whoever builds (Wave 5's hand building).
+func _tell_yard(body: YardWorkpiece, c: ConnectionData, quality: float) -> void:
+	var bus := Modules.bus("yard")
+	if bus and c:
+		bus.emit_signal("hand_fastened", body, c, clampf(quality, 0.0, 1.0))
+
+
+## How well a rivet or bolt went in, by how square the tool met the work (its normal `n`): 1.0
+## within about 20 degrees, falling to 0.4 at 60 degrees off and past it.
+func square_quality(n: Vector3) -> float:
+	var square := aim_dir.normalized().dot(-n.normalized())
+	return clampf(remap(square, 0.5, 0.94, 0.4, 1.0), 0.4, 1.0)
+
+
+## The socket on a planned bolt (Wave 5: fittings, pipes and wall panels bolted by hand), with no
+## bolt of the work's own under the aim to take out: the trigger runs it home instead. Bolts the
+## work already has still come out as before.
+func _bolting(socket: YardSocket, hit: Dictionary, body: YardWorkpiece) -> bool:
+	if not plan.is_empty() and int(plan.get("kind", -1)) == ConnectionData.Kind.BOLT and is_instance_valid(plan_body) \
+			and plan_body.planned.has(plan) and trigger:
+		return true
+	if body == null or hit.is_empty() or (targeted != null and targeted.kind == ConnectionData.Kind.BOLT):
+		return false
+	return not body.planned_near(hit.position, socket.plan_snap, ConnectionData.Kind.BOLT).is_empty()
+
+
+func _update_bolting(socket: YardSocket, hit: Dictionary, body: YardWorkpiece, delta: float) -> void:
+	_draw_beam(false)
+	if not trigger:
+		plan = {}
+		plan_body = null
+	elif plan.is_empty() and body and not hit.is_empty():
+		var near := body.planned_near(hit.position, socket.plan_snap, ConnectionData.Kind.BOLT)
+		if not near.is_empty():
+			plan = near
+			plan_body = body
+	var on_plan := trigger and not plan.is_empty() and is_instance_valid(plan_body)
+	socket.set_working(trigger, on_plan)
+	socket.biting = on_plan
+	if socket.voice:
+		socket.voice.feed(trigger, on_plan, false)
+	if not on_plan:
+		_effects.update(false, Vector3.ZERO, Vector3.UP, socket, false)
+		return
+	var at := plan_body.planned_position(plan)
+	var n := plan_body.planned_normal(plan)
+	_work = [at, n]
+	_effects.update(true, at, n, socket, false)
+	work_label = "BOLT IN"
+	var p := plan
+	var b := plan_body
+	if b.work_planned(p, delta / maxf(socket.bolt_seconds, 0.1)):
+		fastened_count += 1
+		fastened.emit(b.model.connections.back())
+		_tell_yard(b, b.model.connections.back(), square_quality(n))
+		work_progress = 1.0
+		_held_label = "BOLT IN"
+		_held_stuck = false
+		_bar_hold = 0.5
+		plan = {}
+		plan_body = null
+		return
+	work_progress = float(p.get("done", 0.0))
+	rig.apply_central_force(-(at - aim_origin).normalized() * socket.push_force)
+
+
 ## The welder (0.4.1 playtest): the bead follows where you aim, as fast as you move it. Steady
 ## along the chalk line lays a neat bead; too fast, a thin broken one; too slow, a fat burnt one.
 func _update_welding(tool: YardWelder, hit: Dictionary, on_plan: bool, delta: float) -> void:
@@ -442,6 +510,7 @@ func _update_welding(tool: YardWelder, hit: Dictionary, on_plan: bool, delta: fl
 		if bool(r.done):
 			fastened_count += 1
 			fastened.emit(plan_body.model.connections.back())
+			_tell_yard(plan_body, plan_body.model.connections.back(), float(plan_body.last_weld.get("quality", 1.0)))
 			work_progress = 1.0
 			work_label = "WELD %s" % String(plan_body.last_weld.get("grade", ""))
 			_bar_hold = 1.2
@@ -505,6 +574,7 @@ func _update_riveting(tool: YardRiveter, on_plan: bool, delta: float) -> void:
 	plan_body.work_planned(plan, 1.0)
 	fastened_count += 1
 	fastened.emit(plan_body.model.connections.back())
+	_tell_yard(plan_body, plan_body.model.connections.back(), square_quality(n))
 	_effects.rivet_punch(tool, at, n)
 	if tool.tool_voice:
 		tool.tool_voice.punch()

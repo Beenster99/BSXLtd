@@ -35,6 +35,10 @@ signal sim_logged(entry: Dictionary)
 signal berth_tier_changed(tier: int)
 ## The shared clock started again from another moment (a new session's yard).
 signal sim_reset
+## Your riveter, welder or socket put in a planned fastening (Wave 5's hand building), on the
+## machine of the player holding the tool: the workpiece (new_workpiece's), the joint made and
+## how well (0..1: a weld's bead; a rivet or bolt by how square the tool was held to the work).
+signal hand_fastened(body: RigidBody3D, c: ConnectionData, quality: float)
 
 const SCENE := "yard.station"
 const SCENE_PATH := "res://modules/yard/internal/station.tscn"
@@ -63,6 +67,10 @@ const DESIGN_CLEAR_SIZE := Vector2(10, 6)
 ## The old clear circle's radius (m): the rectangle holds it. Kept until the design room's
 ## test reads DESIGN_CLEAR_SIZE.
 const DESIGN_CLEAR_RADIUS := 3.0
+
+const Workpiece := preload("res://modules/yard/internal/tools/yard_workpiece.gd")
+## Who has the build berth (claim_build_berth), "" for the TartanCo stand-in keel.
+var berth_claimed_by := ""
 
 ## The racking hall's store (shared by the scene and anyone who asks while it is open).
 var rack_store: YardRackStore
@@ -146,6 +154,53 @@ func order_parts(items: Array) -> void:
 ## Asks for parts at the yard side: bots take them off the racks and out to the build berth.
 func send_to_yard(items: Array) -> void:
 	sim_request({"kind": "send", "items": items})
+
+
+# --- Building in the berth (Wave 5) -----------------------------------------------------------
+
+## A body built from parts and joints that the hand tools work, as the practice frame is
+## (frozen, gravity off): build parts into its `model` (the shared PartModel) and plan the
+## fastenings to make with `plan(kind, a, b, at, normal, seam_up, seam_size)` (body space, as
+## PartModel.connect_parts takes them; it returns the plan, a Dictionary). Planned ones are in
+## `planned`; work one in with `work_planned(plan, 1.0)` (a crewmate's, from the network). The
+## riveter sets RIVET plans, the welder runs WELD plans and the socket runs BOLT plans home, and
+## each one finished emits hand_fastened here. Set `anchor_part` to the part that stays put
+## when a cut frees the rest.
+func new_workpiece() -> RigidBody3D:
+	var w: RigidBody3D = Workpiece.new()
+	w.freeze = true
+	return w
+
+
+## Where a ship being built in the build berth goes (station space): a node at the middle of
+## the company's build berth, turned so its -Z (a ship's bow) runs along the berth to -X, +Y up.
+## Made on asking; null while no station is open.
+func build_berth_root() -> Node3D:
+	var s := station()
+	if s == null:
+		return null
+	var root := s.get_node_or_null("BuildBerthRoot") as Node3D
+	if root == null:
+		root = Node3D.new()
+		root.name = "BuildBerthRoot"
+		s.add_child(root)
+	for b: Dictionary in current_berths():
+		if String(b.kind) == "build":
+			root.transform = Transform3D(Basis(Vector3.UP, PI * 0.5), (b.box as AABB).get_center())
+	return root
+
+
+## Another module builds in the build berth (`by`: its name): the TartanCo crew's stand-in keel
+## is hidden and the worker bots stay on their docks till release_build_berth. On the shared
+## clock, so every player's crew stands down at the same tick.
+func claim_build_berth(by: String) -> void:
+	if by != "" and by != berth_claimed_by:
+		sim_request({"kind": "berth_claim", "by": by})
+
+
+func release_build_berth() -> void:
+	if berth_claimed_by != "":
+		sim_request({"kind": "berth_claim", "by": ""})
 
 
 func _traffic() -> Node:
@@ -288,6 +343,7 @@ func _on_reputation(_value: float = 0.0, _delta: float = 0.0, _reason: String = 
 
 func _station_opened(s: Node3D) -> void:
 	_station = s
+	berth_claimed_by = ""
 	_hook_net()
 	_hook_business()
 	sim_start()
@@ -431,6 +487,7 @@ func _sim_apply(p: Dictionary) -> void:
 		var changed := not is_equal_approx(float(p.epoch), sim_epoch)
 		if bool(p.get("fresh", false)):
 			sim_log.clear()
+			berth_claimed_by = ""
 			sim_fleet = (p.get("fleet", []) as Array).duplicate(true)
 		sim_epoch = float(p.epoch)
 		sim_epoch_rate = float(p.get("rate", sim_epoch_rate))
@@ -441,6 +498,8 @@ func _sim_apply(p: Dictionary) -> void:
 	while at > 0 and int(sim_log[at - 1].tick) > int(p.tick):
 		at -= 1
 	sim_log.insert(at, p)
+	if String(p.get("kind", "")) == "berth_claim":
+		berth_claimed_by = String(p.get("by", ""))
 	if String(p.get("kind", "")) in FLEET_KINDS and _keeps_fleet():
 		worker_fleet = fleet_after(worker_fleet, p)
 	sim_logged.emit(p)

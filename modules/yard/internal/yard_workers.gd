@@ -523,9 +523,38 @@ func _process(delta: float) -> void:
 	step(delta)
 
 
+## Another module builds in the build berth (YardBus.claim_build_berth: Wave 5's hand
+## building): who, or "". While claimed the stand-in keel is hidden and the crew put their jobs
+## down and stay on their docks. Set at a tick of the shared clock (the station's _apply_sim).
+var claimed := ""
+
+
+func set_claimed(by: String) -> void:
+	if by == claimed:
+		return
+	claimed = by
+	if by != "":
+		for w: Dictionary in workers:
+			_drop_task(w)
+	for r: Node3D in rings:
+		r.visible = by == ""
+	if ring_node:
+		ring_node.visible = by == ""
+	if supply:
+		supply.visible = by == ""
+
+
 func step(delta: float) -> void:
 	_time += delta
 	_step_dt = delta
+	if claimed != "":
+		_send_to_charge()
+		for w: Dictionary in workers:
+			_work(w, delta * pace(w))
+			WorkerLook.show_charge(charge_docks.get_node("Dock%d" % (int(w.index) + 1)), float(w.charge) if _docked(w) else -1.0, float(w.charge) < 1.0)
+		_check_service()
+		service.call("step", delta)
+		return
 	if ring_node == null and _fitout.is_empty():
 		if fit_out and rings.size() >= FITOUT_EVERY and rings.size() % FITOUT_EVERY == 0 \
 				and not fitted_out.has(rings.size()) and rings.size() > start_rings:
