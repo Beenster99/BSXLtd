@@ -1427,6 +1427,18 @@ func info_rows(kind: String, id: String) -> Array:
 			if absf(v) > 0.001:
 				out.append([spec[1], str(spec[2]) % (int(v) if spec[0] == "crew" else v)])
 		out.append(["Integrity", "%.0f" % pt.integrity])
+		# How hard it works for its size and weight (DesignMatrix: bigger is not always better).
+		var grp := DesignMatrix.group_of(pt)
+		if grp != "" and pt.size_class > 0:
+			var g := DesignMatrix.group(grp)
+			var cell := DesignMatrix.cell(bus.catalog, bus.catalog.base_of(pt.id), pt.size_class, pt.grade, grp)
+			if not cell.is_empty() and float(cell.figure) > 0.0:
+				out.append(["Packs", "%.1f %s per m3, %.1f per t" % [float(cell.per_m3), str(g.unit), float(cell.per_t)], T.CYAN])
+		if DesignMatrix.draw_kw(pt) > 0.0:
+			var by := DesignMatrix.supported_by(bus.catalog, pt.id)
+			if not by.is_empty():
+				var src := bus.catalog.part(by[0])
+				out.append(["Run by", "%s %s or bigger (%d units can)" % [src.display_name, DesignGrades.label(src), by.size()]])
 		# Moving parts: what it opens, how fast, and (where the catalogue gives them) its motor,
 		# load and the room it needs to swing.
 		if pt.open_size != Vector2.ZERO:
