@@ -5,11 +5,15 @@ extends RefCounted
 ## each vendor pays to buy them back, and what a second-hand lot costs. Worked out from the
 ## market, the day and the catalogue alone, so every machine agrees.
 ##
+## Each part has its own trading market on top of the suppliers' prices (`market`): a slow swing
+## over months, a quicker one over weeks and a daily wobble, so prices rise and fall and the money
+## is in buying at a low and selling at a high. It moves buying new, a lot's parts and buy-backs
+## alike.
+##
 ## The rule that keeps it honest: a vendor's buy-back is always under the cheapest price anyone
 ## could buy the same part for that day (any vendor, any deal, the best standing, the biggest
-## volume): no buy-and-sell on one day ever pays. The money is in timing (buy when the market or a
-## weekly deal is low, sell when it is high) and in flipping (cheap second-hand lots through the
-## refurb works, sold on as certified parts).
+## volume): no buy-and-sell on one day ever pays. Profit comes from timing, and from second-hand
+## lots (cheap parts, plus the refurb works' bill to fix them up).
 
 ## A vendor buys back at this share of its own list price that day...
 const SPREAD := 0.74
@@ -23,13 +27,48 @@ const CAP := 0.92
 ## (OrderBook.USED_SHARE for fewer).
 const BULK_LOT := 4
 const BULK_USED_SHARE := 0.24
+## Second-hand lots on offer each day (different parts each day), each of LOT_SIZE parts.
+const LOTS_A_DAY := 3
+const LOT_SIZE := 5
+## A second-hand part's refurb bill is only known once the works have seen it: the estimate is
+## a window of these shares of the works' usual bill, and each part's real bill falls in it.
+const REFURB_LOW := 0.6
+const REFURB_HIGH := 1.6
+## The trading market's swings: the slow one (months), the quicker one (weeks), the daily wobble,
+## each a share of the price either way; the slow and quick ones' lengths in days, from..to.
+const SWING_LONG := 0.16
+const SWING_MID := 0.05
+const WOBBLE := 0.015
+const LONG_DAYS := Vector2(70.0, 120.0)
+const MID_DAYS := Vector2(14.0, 30.0)
 ## The standing a cap is worked against (the best there is).
 const BEST_STANDING := 100.0
 ## Units a cap is worked against (more than anyone buys: the biggest volume discount).
 const BEST_UNITS := 9999
 
 
-## Components in the sample designs' parts lists, one each: the lines the yard trades in.
+## The kinds of parts-list line the yard trades in: components, and the hull's plates, beams
+## and fixings (beenster, 20 Nov), one pack each (a sheet, a 6 m length, a pack of 50).
+const KINDS := ["component", "hull"]
+## Parts-list lines that are work, not stock (no one sells a weld).
+const SKIP := ["hull:welds"]
+## How many a buy takes: components five at a time, hull stock fifty (sheets, lengths, packs).
+const BUY_COMPONENTS := 5
+const BUY_STOCK := 50
+## The trade advisor's tips: how far ahead the advisor looks (days), the least change worth a tip,
+## and how far the advisor's figure can be out (a share of the change, either way).
+const TIP_AHEAD := [7, 14]
+const TIP_MIN := 0.07
+const TIP_ERROR := 0.25
+
+
+## How many one buy of `line` takes.
+static func buy_qty(line: Dictionary) -> int:
+	return BUY_COMPONENTS if str(line.get("kind", "")) == "component" else BUY_STOCK
+
+
+## Components and hull stock in the sample designs' parts lists, one each: the lines the yard
+## trades in.
 static func lines(cat: DesignCatalog) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if cat == null:
@@ -43,7 +82,7 @@ static func lines(cat: DesignCatalog) -> Array[Dictionary]:
 			DesignBus.Samples.skiff(rec, cat)
 		var totals := DesignTotals.compute(rec, cat, DesignStructure.measure(rec), DesignFrame.propose(rec))
 		for l: Dictionary in SupplyMarket.buy_lines(totals, cat):
-			if str(l.kind) != "component" or seen.has(str(l.key)):
+			if not KINDS.has(str(l.kind)) or SKIP.has(str(l.key)) or seen.has(str(l.key)):
 				continue
 			seen[str(l.key)] = true
 			var one := l.duplicate(true)
@@ -52,6 +91,70 @@ static func lines(cat: DesignCatalog) -> Array[Dictionary]:
 			one.units = 1
 			out.append(one)
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.name) < str(b.name))
+	return out
+
+
+## The trading market for `line` on `day`: a share of the suppliers' price (about 0.75 to 1.25),
+## the same on every machine.
+static func market(line: Dictionary, day: int) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("bsx_market_" + str(line.key))
+	var long_len := rng.randf_range(LONG_DAYS.x, LONG_DAYS.y)
+	var mid_len := rng.randf_range(MID_DAYS.x, MID_DAYS.y)
+	var p1 := rng.randf() * TAU
+	var p2 := rng.randf() * TAU
+	var d := float(day)
+	var f := 1.0 + SWING_LONG * sin(TAU * d / long_len + p1) + SWING_MID * sin(TAU * d / mid_len + p2)
+	var w := RandomNumberGenerator.new()
+	w.seed = hash("bsx_wobble_%s_%d" % [str(line.key), day])
+	return f + w.randf_range(-WOBBLE, WOBBLE)
+
+
+## The trade advisor's word on `line` on `day`: {ahead (days), change (the best buy-back then
+## against today, as the advisor reckons it: the real move give or take TIP_ERROR of it)}, or {}
+## when nothing is worth a tip. The same on every machine.
+static func outlook(line: Dictionary, vendors: Array, day: int, cat: DesignCatalog) -> Dictionary:
+	var now := offers(line, 1, vendors, day, cat)
+	if now.is_empty() or float(now[0].each) <= 0.0:
+		return {}
+	var best := {}
+	for ahead: int in TIP_AHEAD:
+		var then := offers(line, 1, vendors, day + ahead, cat)
+		if then.is_empty():
+			continue
+		var change := float(then[0].each) / float(now[0].each) - 1.0
+		if best.is_empty() or absf(change) > absf(float(best.change)):
+			best = {"ahead": ahead, "change": change}
+	if best.is_empty():
+		return {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("bsx_tip_%s_%d" % [str(line.key), day])
+	best.change = float(best.change) * (1.0 + rng.randf_range(-TIP_ERROR, TIP_ERROR))
+	return best if absf(float(best.change)) >= TIP_MIN else {}
+
+
+## The real refurb bill of the `n`th part of stock order `order_id`, against the works' usual bill
+## `usual`: somewhere in the estimate's window (the part's condition), the same on every machine.
+static func refurb_bill(usual: float, order_id: int, n: int) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("bsx_refurb_%d_%d" % [order_id, n])
+	return roundf(usual * rng.randf_range(REFURB_LOW, REFURB_HIGH))
+
+
+## The keys of the lines whose second-hand lots are on offer on `day` (LOTS_A_DAY of them, the
+## same on every machine).
+static func lots(all: Array[Dictionary], day: int) -> Array[String]:
+	var keys: Array[String] = []
+	for l in all:
+		if str(l.kind) == "component":
+			keys.append(str(l.key))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("bsx_lots_%d" % day)
+	var out: Array[String] = []
+	while out.size() < mini(LOTS_A_DAY, keys.size()):
+		var k: String = keys[rng.randi_range(0, keys.size() - 1)]
+		if not out.has(k):
+			out.append(k)
 	return out
 
 
@@ -72,7 +175,7 @@ static func floor_price(line: Dictionary, vendors: Array, day: int, cat: DesignC
 		var q := SupplyMarket.quote(v, big, day, BEST_STANDING, cat)
 		if not q.is_empty():
 			best = minf(best, float(q.unit))
-	return best
+	return best * market(line, day)
 
 
 ## The new price to buy `qty` of `line` for stock today: the cheapest vendor's quote at the
@@ -85,6 +188,10 @@ static func buy_quote(line: Dictionary, qty: int, vendors: Array, standing: Dict
 		if not q.is_empty() and (best.is_empty() or float(q.unit) < float(best.unit)):
 			best = q
 			best["name"] = v.display_name
+	if not best.is_empty():
+		var m := market(line, day)
+		best.unit = float(best.unit) * m
+		best.total = float(best.total) * m
 	return best
 
 
@@ -96,10 +203,11 @@ static func offers(line: Dictionary, qty: int, vendors: Array, day: int, cat: De
 	if cap == INF or qty < 1:
 		return out
 	var glut := maxf(VOLUME_FLOOR, 1.0 - VOLUME_FALL * float(qty - 1))
+	var m := market(line, day)
 	for v: SupplyVendor in vendors:
 		if not SupplyMarket.supplies(v, line):
 			continue
-		var each := minf(SupplyMarket.list_price(v, line, day) * SPREAD * glut, cap)
+		var each := minf(SupplyMarket.list_price(v, line, day) * m * SPREAD * glut, cap)
 		each = floorf(each)
 		out.append({"vendor": v.id, "name": v.display_name, "each": each, "total": each * qty})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.each) > float(b.each))
@@ -115,7 +223,7 @@ static func trend(line: Dictionary, vendors: Array, day: int, days: int, cat: De
 	return out
 
 
-## A second-hand lot of `qty`: each one's price (a share of `median_unit`, cheaper in bulk) plus
-## the refurb works' bill.
-static func used_each(qty: int, median_unit: float, refurb_cost: float) -> float:
-	return median_unit * (BULK_USED_SHARE if qty >= BULK_LOT else OrderBook.USED_SHARE) + refurb_cost
+## A second-hand lot of `qty`: each part's price before the refurb works' bill (a share of
+## `median_unit`, cheaper in bulk).
+static func used_each(qty: int, median_unit: float) -> float:
+	return median_unit * (BULK_USED_SHARE if qty >= BULK_LOT else OrderBook.USED_SHARE)

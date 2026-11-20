@@ -65,7 +65,13 @@ var next_id := 1
 var holdings: Dictionary = {}
 ## Every sale: {minute, key, name, qty, vendor, name_of_vendor, each, total}.
 var sales: Array = []
+## Market day -> trade line keys whose lot the yard bought that day (only today's is kept).
+var lots_taken: Dictionary = {}
+## Build cid -> {trade line key: parts taken from the trading stock for it} (held parts used on
+## a contract build: no new cost).
+var from_stock: Dictionary = {}
 var _trade_lines: Array[Dictionary] = []
+var _trends: Dictionary = {}
 
 var _net: Object
 var _build: Object
@@ -291,7 +297,7 @@ func _standing() -> Dictionary:
 
 
 func _ordered(cid: String) -> Dictionary:
-	var out := {}
+	var out := _stock_qty(cid)
 	for o: Dictionary in orders:
 		if str(o.cid) == cid:
 			for l: Dictionary in o.lines:
@@ -301,7 +307,7 @@ func _ordered(cid: String) -> Dictionary:
 
 ## What has come in, line by line: a second-hand line counts once the works has certified it.
 func _arrived(cid: String) -> Dictionary:
-	var out := {}
+	var out := _stock_qty(cid)
 	for o: Dictionary in orders:
 		if str(o.cid) != cid or not bool(o.arrived):
 			continue
@@ -311,6 +317,39 @@ func _arrived(cid: String) -> Dictionary:
 				q = maxf(0.0, q - float(l.get("refurbing", 0)))
 			out[str(l.key)] = float(out.get(str(l.key), 0.0)) + q
 	return out
+
+
+## Build `cid`'s lines covered from held stock, in the lines' own quantities: {key: qty}.
+func _stock_qty(cid: String) -> Dictionary:
+	var out := {}
+	var taken: Dictionary = from_stock.get(cid, {})
+	if taken.is_empty():
+		return out
+	if not _lines.has(cid):
+		lines(cid)
+	for l: Dictionary in _lines.get(cid, []):
+		var n := int(taken.get(str(l.key), 0))
+		if n > 0:
+			out[str(l.key)] = float(l.qty) * float(n) / maxf(1.0, float(l.units))
+	return out
+
+
+## How many of build `cid`'s line `key` could still come from the trading stock: the parts held,
+## up to what the line still needs (in parts).
+func stock_can_cover(cid: String, key: String) -> int:
+	var l := line(cid, key)
+	var held := int(holdings.get(key, 0))
+	if l.is_empty() or held <= 0 or not Flags.is_on(SELL_FLAG):
+		return 0
+	var per := float(l.need) / maxf(1.0, float(l.units))
+	var left := float(l.need) - float(l.ordered) - float(l.split)
+	return mini(held, floori(left / maxf(per, 0.0001) + 0.001))
+
+
+## Covers up to `count` of build `cid`'s line `key` from the parts the yard holds (bought for
+## trading): no new cost, in at once. Through the host.
+func use_held(cid: String, key: String, count: int) -> void:
+	_ask({"what": "use_held", "cid": cid, "key": key, "count": count})
 
 
 # --- What a build waits for ----------------------------------------------------------------------
@@ -428,6 +467,11 @@ func _validate_ask(_sender: int, p: Dictionary) -> Variant:
 				return "not enough cash"
 			# The host fixes the price it charges.
 			p["cost"] = cost
+		"use_held":
+			var n := mini(int(p.get("count", 0)), stock_can_cover(cid, str(p.get("key", ""))))
+			if n < 1:
+				return "none held to use"
+			p["count"] = n
 		"plan", "clear":
 			pass
 		_:
@@ -466,6 +510,14 @@ func _apply_ask(p: Dictionary) -> void:
 			splits.erase(cid)
 		"place":
 			_place(cid, bool(p.get("express", false)), int(p.get("cost", 0)))
+		"use_held":
+			var key := str(p.key)
+			var n := int(p.count)
+			var taken: Dictionary = from_stock.get_or_add(cid, {})
+			taken[key] = int(taken.get(key, 0)) + n
+			holdings[key] = int(holdings.get(key, 0)) - n
+			if int(holdings[key]) <= 0:
+				holdings.erase(key)
 		"trade_buy":
 			_trade_buy(p)
 		"trade_sell":
@@ -597,8 +649,23 @@ func _on_certified(type_id: String, _lot: Dictionary) -> void:
 				if str(o.cid) == STOCK:
 					holdings[str(l.key)] = int(holdings.get(str(l.key), 0)) + 1
 					_stock_loads(str(l.key), 1, true, "refurbished")
+					_refurb_bill(o, l)
 				_changed()
 				return
+
+
+## A stock lot's part out of the refurb works: its real bill (somewhere in the estimate) is paid.
+func _refurb_bill(o: Dictionary, l: Dictionary) -> void:
+	var usual := float(l.get("refurb_usual", 0.0))
+	if usual <= 0.0:
+		return
+	var n := roundi(float(l.qty)) - int(l.refurbing)
+	var bill := TradeBook.refurb_bill(usual, int(o.id), n)
+	l["refurb_paid"] = float(l.get("refurb_paid", 0.0)) + bill
+	o.total = int(o.total) + int(bill)
+	if _business and _business.has_method("charge"):
+		_business.call("charge", int(bill), TRADING, "Refurb bill: %s (estimate CR %d to %d)" % [str(l.name),
+				int(usual * TradeBook.REFURB_LOW), int(usual * TradeBook.REFURB_HIGH)])
 
 
 ## Once a stage of the build in the berth has its parts in, they go out to the berth: the
@@ -616,8 +683,16 @@ func _send_ready() -> void:
 		return
 	done.append(stage)
 	if _business and _business.has_method("get_stock") and _business.has_method("use_stock"):
-		var stock: Dictionary = _business.call("get_stock")
+		var stock: Dictionary = (_business.call("get_stock") as Dictionary).duplicate()
 		var cat := catalog()
+		# The trading stock's rack parts stay put (only what this build took from it goes).
+		for key: String in holdings:
+			var tl := trade_line(key)
+			if tl.is_empty():
+				continue
+			var loads := OrderBook.rack_loads(tl, float(holdings[key]), cat)
+			for part: String in loads:
+				stock[part] = int(stock.get(part, 0)) - int(loads[part])
 		for l in lines(cid):
 			if str(l.stage) != stage:
 				continue
@@ -708,8 +783,9 @@ func trade_buy_quote(key: String, qty: int) -> Dictionary:
 	return q
 
 
-## A second-hand lot of `qty` of `key`, refurbished here before it can be sold: {unit, total,
-## lead, refurb} ({} where the works can't take it).
+## A second-hand lot of `qty` of `key`, refurbished here before it can be sold: {unit and parts
+## (each, paid when bought), total, refurb (the works' usual bill each), refurb_lo..refurb_hi (the
+## estimate: each part's real bill, paid as the works finish it, falls in it), lead} ({} where the works can't take it).
 func trade_used_quote(key: String, qty: int) -> Dictionary:
 	var l := trade_line(key)
 	if l.is_empty() or qty < 1 or not Flags.is_on(USED_FLAG):
@@ -719,8 +795,10 @@ func trade_used_quote(key: String, qty: int) -> Dictionary:
 	if est.is_empty() or news.is_empty():
 		return {}
 	var mid: Dictionary = news[floori((news.size() - 1) / 2.0)]
-	var each := TradeBook.used_each(qty, float(mid.unit), float(est.get("cost", 0.0)))
-	return {"vendor": USED, "name": "Second-hand lot", "unit": each, "total": each * qty, "refurb": float(est.get("cost", 0.0)),
+	var parts := TradeBook.used_each(qty, float(mid.unit)) * TradeBook.market(l, market_day())
+	var refurb := float(est.get("cost", 0.0))
+	return {"vendor": USED, "name": "Second-hand lot", "unit": parts, "total": parts * qty, "parts": parts, "refurb": refurb,
+			"refurb_lo": roundf(refurb * TradeBook.REFURB_LOW), "refurb_hi": roundf(refurb * TradeBook.REFURB_HIGH),
 			"lead": maxi(1, int(l.get("lead", 2))) + OrderBook.USED_EXTRA_DAYS}
 
 
@@ -732,10 +810,90 @@ func trade_offers(key: String, qty: int) -> Array[Dictionary]:
 	return TradeBook.offers(l, qty, _vendors(), market_day(), catalog())
 
 
-## The best buy-back for one of `key` over the `days` up to today.
+## The best buy-back for one of `key` over the `days` up to today (kept for the day: the screen
+## asks for 90 days of every part).
 func trade_trend(key: String, days := 14) -> PackedFloat32Array:
 	var l := trade_line(key)
-	return TradeBook.trend(l, _vendors(), market_day(), days, catalog()) if not l.is_empty() else PackedFloat32Array()
+	if l.is_empty():
+		return PackedFloat32Array()
+	var k := "%s|%d|%d" % [key, market_day(), days]
+	if not _trends.has(k):
+		if _trends.size() > 200:
+			_trends.clear()
+		_trends[k] = TradeBook.trend(l, _vendors(), market_day(), days, catalog())
+	return _trends[k]
+
+
+## The trade advisor's tips for today, best first: [{key, name, kind ("rise", "fall", "build",
+## "held"), text, change}]. Market tips for any part; build tips for the parts the builds in
+## hand still have to order (buy now before a rise, or wait out a fall) or could take from stock.
+func trade_tips() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var day := market_day()
+	var cat := catalog()
+	var looks := {}
+	for l in trade_lines():
+		var o := TradeBook.outlook(l, _vendors(), day, cat)
+		if not o.is_empty():
+			looks[str(l.key)] = o
+	# The builds in hand first: what is still to order (the biggest moves, and parts held).
+	var for_builds: Array[Dictionary] = []
+	if _build:
+		for cid: String in (_build.get("builds") as Dictionary):
+			var bname := str((_build.get("builds")[cid] as Dictionary).get("design_name", cid))
+			for l in lines(cid):
+				var left := float(l.need) - float(l.ordered)
+				if left <= 0.001 or trade_line(str(l.key)).is_empty():
+					continue
+				var packs := ceili(left / maxf(0.0001, float(l.need) / maxf(1.0, float(l.units))) - 0.001)
+				var what := "%d × %s" % [packs, str(l.name)] + (" (%s)" % str(l.pack) if str(l.pack) != "" else "")
+				var can := stock_can_cover(cid, str(l.key))
+				if can > 0:
+					for_builds.append({"key": l.key, "name": l.name, "kind": "held", "change": 9.0,
+							"text": "%s still needs %s. You hold %d from trading: use them from stock and they cost nothing more." % [bname, what, can]})
+				var o: Dictionary = looks.get(str(l.key), {})
+				if o.is_empty():
+					continue
+				var pct := roundi(absf(float(o.change)) * 100.0)
+				if float(o.change) > 0.0:
+					for_builds.append({"key": l.key, "name": l.name, "kind": "build", "change": absf(float(o.change)),
+							"text": "%s still needs %s. My sources say the price climbs about %d%% within %d days: order now." % [bname, what, pct, int(o.ahead)]})
+				else:
+					for_builds.append({"key": l.key, "name": l.name, "kind": "build", "change": absf(float(o.change)),
+							"text": "%s still needs %s. It looks set to fall about %d%% within %d days: if the build can wait, so can the order." % [bname, what, pct, int(o.ahead)]})
+	for_builds.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.change) > float(b.change))
+	out.append_array(for_builds.slice(0, 5))
+	var market: Array[Dictionary] = []
+	for l in trade_lines():
+		var o: Dictionary = looks.get(str(l.key), {})
+		if o.is_empty():
+			continue
+		var pct := roundi(absf(float(o.change)) * 100.0)
+		var held := int(holdings.get(str(l.key), 0))
+		var text := ""
+		if float(o.change) > 0.0:
+			text = "%s: expect suppliers to pay about %d%% more within %d days. A good time to buy, and worth having in stock ahead of a contract that needs it." % [str(l.name), pct, int(o.ahead)]
+			if held > 0:
+				text += " Hold on to the %d you have." % held
+		else:
+			text = "%s: expect it to slide about %d%% within %d days." % [str(l.name), pct, int(o.ahead)]
+			text += (" Sell the %d you hold now." % held) if held > 0 else " Wait to buy."
+		market.append({"key": l.key, "name": l.name, "kind": "rise" if float(o.change) > 0.0 else "fall",
+				"change": absf(float(o.change)), "text": text})
+	market.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.change) > float(b.change))
+	out.append_array(market.slice(0, 6))
+	return out
+
+
+## The refurbished lots on offer today and not yet bought: trade line keys.
+func trade_lots() -> Array[String]:
+	var day := market_day()
+	var taken: Array = lots_taken.get(str(day), [])
+	var out: Array[String] = []
+	for k in TradeBook.lots(trade_lines(), day):
+		if not taken.has(k) and not trade_used_quote(k, TradeBook.LOT_SIZE).is_empty():
+			out.append(k)
+	return out
 
 
 ## Buys `qty` of `key` for stock (second-hand through the refurb works when `used`). Through the host.
@@ -768,7 +926,10 @@ func _validate_trade(p: Dictionary) -> Variant:
 	if trade_line(key).is_empty() or qty < 1 or qty > 999:
 		return "no such part"
 	if str(p.what) == "trade_buy":
-		var q := trade_used_quote(key, qty) if bool(p.get("used", false)) else trade_buy_quote(key, qty)
+		var used := bool(p.get("used", false))
+		if used and (not trade_lots().has(key) or qty != TradeBook.LOT_SIZE):
+			return "no lot of that on offer today"
+		var q := trade_used_quote(key, qty) if used else trade_buy_quote(key, qty)
 		if q.is_empty():
 			return "nobody sells that"
 		var cost := roundi(float(q.total))
@@ -801,13 +962,18 @@ func _trade_buy(p: Dictionary) -> void:
 		if r and r.has_method("is_ok") and not bool(r.call("is_ok")):
 			return
 	var used := bool(p.get("used", false))
+	if used:
+		var day := str(market_day())
+		var taken: Array = lots_taken.get(day, [])
+		lots_taken = {day: taken + [key]}
 	var id := next_id
 	next_id += 1
 	var now := now_minute()
 	orders.append({"id": id, "cid": STOCK, "vendor": str(q.vendor), "name": str(q.get("name", q.vendor)), "minute": now,
 			"due": now + int(q.lead) * 1440, "late": 0, "express": false, "total": int(p.cost), "arrived": false,
 			"lines": [{"key": key, "name": str(l.name), "qty": float(qty), "unit": float(q.unit), "used": used,
-				"type": OrderBook.used_type(l) if used else ""}]})
+				"type": OrderBook.used_type(l) if used else "", "refurb_usual": float(q.get("refurb", 0.0)) if used else 0.0,
+				"refurb_paid": 0.0}]})
 
 
 func _trade_sell(p: Dictionary) -> void:
@@ -853,7 +1019,8 @@ func save_version() -> int:
 
 func save_data() -> Dictionary:
 	return {"splits": splits.duplicate(true), "orders": orders.duplicate(true), "tracked": tracked.duplicate(),
-			"sent": sent.duplicate(true), "next": next_id, "holdings": holdings.duplicate(), "sales": sales.duplicate(true)}
+			"sent": sent.duplicate(true), "next": next_id, "holdings": holdings.duplicate(), "sales": sales.duplicate(true),
+			"lots_taken": lots_taken.duplicate(true), "from_stock": from_stock.duplicate(true)}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -864,6 +1031,8 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	next_id = int(data.get("next", 1))
 	holdings = (data.get("holdings", {}) as Dictionary).duplicate()
 	sales = (data.get("sales", []) as Array).duplicate(true)
+	lots_taken = (data.get("lots_taken", {}) as Dictionary).duplicate(true)
+	from_stock = (data.get("from_stock", {}) as Dictionary).duplicate(true)
 	_lines.clear()
 	changed.emit()
 

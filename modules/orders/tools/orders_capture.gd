@@ -66,20 +66,28 @@ func _run() -> void:
 	# 7.6: parts trading, with a few held and a sale made.
 	Flags.set_flag(OrdersBus.SELL_FLAG, true)
 	screen.queue_free()
-	var tl := orders.trade_lines()
-	for i in mini(4, tl.size()):
-		orders.trade_buy(str(tl[i].key), 5, i == 2)
+	var lots := orders.trade_lots()
+	for i in mini(2, lots.size()):
+		orders.trade_buy(lots[i], TradeBook.LOT_SIZE, true)
 	for o: Dictionary in orders.orders:
 		o.due = orders.now_minute()
 		o.late = 0
 	orders.deliver_due()
-	if tl.size() > 1:
-		orders.trade_sell(str(tl[1].key), 2)
+	# The first lot through the refurb works, two of it sold.
+	for o: Dictionary in orders.orders:
+		if str(o.cid) == OrdersBus.STOCK:
+			for i in TradeBook.LOT_SIZE:
+				orders._on_certified(str(o.lines[0].type), {})
+			orders.trade_sell(str(o.lines[0].key), 2)
+			break
 	var ts: Control = orders.make_trade_screen(150.0)
 	ts.size = Vector2(size) - Vector2(80, 80)
 	ts.position = Vector2(40, 40)
 	back.add_child(ts)
 	await _save(out, "trading")
+	ts.set("page", "TIPS")
+	ts.call("refresh")
+	await _save(out, "trading_tips")
 	get_tree().quit()
 
 
