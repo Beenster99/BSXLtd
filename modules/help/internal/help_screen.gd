@@ -88,6 +88,8 @@ func show_topic(id: String) -> void:
 
 func set_query(q: String) -> void:
 	query = q
+	if _search and _search.text != q:
+		_search.text = q
 	refresh()
 
 
@@ -140,6 +142,8 @@ func _fill_page() -> void:
 			_custom_id = current
 		if _custom:
 			_page.add_child(_custom)
+			if _custom.has_method("set_query"):
+				_custom.call("set_query", query)
 		return
 	for line in bus.page_text(current).split("\n"):
 		var s := line.strip_edges()
