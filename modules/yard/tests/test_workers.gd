@@ -114,7 +114,11 @@ func _crew() -> void:
 	check(heads.bolt == 0, "no bolts in the frame or skin: beams are welded, plates riveted (%d)" % heads.bolt)
 	check(heads.hull == 6 and heads.lining == 4, "the bay skinned: %d hull plates, %d inner linings" % [heads.hull, heads.lining])
 	check(heads.rivet == 4 * (heads.hull + heads.lining), "every plate riveted at its four corners (%d rivets)" % heads.rivet)
-	check(heads.bead >= 8 * 2 + heads.hull, "beams and girders welded at both ends, each hull plate a short seam (%d beads)" % heads.bead)
+	var runs := int((crew.rings.back() as Node3D).get_meta("beads", 0))
+	check(runs >= 8 * 2 + heads.hull, "beams and girders welded at both ends, each hull plate a short seam (%d runs)" % runs)
+	var beads := (crew.rings.back() as Node3D).get_node_or_null("Beads") as MultiMeshInstance3D
+	check(beads != null and beads.multimesh.visible_instance_count > runs * 40,
+			"each run a bead of stacked ripples, like the player's (%d ripples)" % (beads.multimesh.visible_instance_count if beads else 0))
 	var steps: Array = crew._member_list(true).map(func(m: Dictionary) -> String: return "%s:%s" % [m.part, ",".join(Workers.JOINING.get(m.part, ["bolt"]))])
 	check(steps.has("BoxBeam:weld") and steps.has("Girder:weld") and steps.has("HullPlate:rivet,weld") and steps.has("DeckPlate:rivet"),
 			"the joining rule: %s" % str(steps))
