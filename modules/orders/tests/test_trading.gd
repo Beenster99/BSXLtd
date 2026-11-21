@@ -125,6 +125,7 @@ func run_tests() -> void:
 	check(orders.sales.is_empty(), "nothing to sell before it comes in")
 	var o: Dictionary = orders.orders.back()
 	o.due = orders.now_minute()
+	o.erase("arrive")
 	orders.deliver_due()
 	check(int(orders.holdings.get(used_key, 0)) == 0, "in the works, not held yet")
 	var spent_before := int(o.total)

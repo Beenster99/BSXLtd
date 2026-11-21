@@ -53,7 +53,8 @@ const OrdersScreen := preload("res://modules/orders/internal/orders_screen.gd")
 
 ## Build id -> {line key -> [{vendor, qty, used}]}: where each line is to come from.
 var splits: Dictionary = {}
-## Every order placed: {id, cid, vendor, minute (placed), due (minute it comes), late (days),
+## Every order placed: {id, cid, vendor, minute (placed), due (minute quoted), arrive (minute it
+## really comes: due plus any slip, at most 10 real minutes on; older saves have none), late (slips),
 ## express, lines: [{key, name, qty, unit, used}], total, arrived (bool), refurb: {type: count}}.
 var orders: Array = []
 ## Builds whose parts it waits for (a build started with the gate on, before anything landed).
@@ -159,6 +160,50 @@ func now_minute() -> int:
 	if _business and _business.has_method("get_day"):
 		return int(_business.call("get_day")) * 1440
 	return 0
+
+
+## Game minutes a real second at normal speed (the time module's, 2 by default).
+func minutes_per_second() -> float:
+	if _time and _time.has_method("minutes_per_second"):
+		return float(_time.call("minutes_per_second"))
+	return 2.0
+
+
+## When order `o` comes in (game minute): its quoted due plus any slip, never more than 10 real
+## minutes after it was placed (OrderBook.MAX_REAL_SECONDS). Orders from older saves keep their days.
+func arrival(o: Dictionary) -> int:
+	if o.has("arrive"):
+		return int(o.arrive)
+	return int(o.due) + int(o.late) * 1440
+
+
+## Game minutes ahead as real time at normal speed: "under a minute", "about 4 min".
+func real_text(game_minutes: int) -> String:
+	var secs := float(game_minutes) / maxf(0.1, minutes_per_second())
+	if secs < 60.0:
+		return "under a minute"
+	return "about %d min" % ceili(secs / 60.0)
+
+
+## A game minute as the day and the clock: "day 3, 14:20".
+func clock(minute: int) -> String:
+	var m := maxi(0, minute)
+	return "day %d, %02d:%02d" % [m / 1440, (m % 1440) / 60, m % 60]
+
+
+## When game minute `minute` comes, for a parts line or an order: "due day 3, 14:20 (about 4 min)",
+## "due now".
+func due_text(minute: int) -> String:
+	var left := minute - now_minute()
+	if left <= 0:
+		return "due now"
+	return "due %s (%s)" % [clock(minute), real_text(left)]
+
+
+## A supplier's quoted lead (days) as the real time it takes at normal speed ("4 min").
+func lead_text(lead: int) -> String:
+	var secs := float(OrderBook.delivery_minutes(lead, 0, minutes_per_second())) / maxf(0.1, minutes_per_second())
+	return "%d min" % maxi(1, ceili(secs / 60.0))
 
 
 func market_day() -> int:
@@ -386,12 +431,12 @@ func stage_wait(cid: String, stage: String) -> String:
 			unordered = true
 	for o: Dictionary in orders:
 		if str(o.cid) == cid and not bool(o.arrived) and (o.lines as Array).any(func(x: Dictionary) -> bool: return str(_stage_of_key(cid, str(x.key))) == stage):
-			due = maxi(due, int(o.due) + int(o.late) * 1440)
+			due = maxi(due, arrival(o))
 	if unordered:
 		return "%s parts not ordered: order them at the parts orders screen" % name
 	if due < 0:
 		return "%s parts in the refurb works" % name
-	return "%s parts due %s" % [name, when(due)]
+	return "%s parts %s" % [name, due_text(due)]
 
 
 ## When the last order still out for build `cid`'s line `key` is due in (game minute), -1 when none.
@@ -399,7 +444,7 @@ func line_due(cid: String, key: String) -> int:
 	var due := -1
 	for o: Dictionary in orders:
 		if str(o.cid) == cid and not bool(o.arrived) and (o.lines as Array).any(func(x: Dictionary) -> bool: return str(x.key) == key):
-			due = maxi(due, int(o.due) + int(o.late) * 1440)
+			due = maxi(due, arrival(o))
 	return due
 
 
@@ -435,15 +480,16 @@ func use_plan(cid: String, plan: String, stage := "") -> void:
 	_ask({"what": "plan", "cid": cid, "plan": plan, "stage": stage})
 
 
-## The first build stage of `cid` (in the berth's order) with parts still to order ("" when none).
+## The first payment stage of `cid` (OrderBook.PAY_STAGES: keel, fit_out, delivery) with parts
+## still to order ("" when none): parts are ordered and delivered a payment stage at a time.
 func next_stage(cid: String) -> String:
 	var left := {}
 	for l in _to_order(cid):
-		left[str(l.stage)] = true
-	for st: String in OrderBook.STAGE_ORDER:
-		if left.has(st):
-			return st
-	return "" if left.is_empty() else str(left.keys()[0])
+		left[OrderBook.pay_stage_of(str(l.stage))] = true
+	for ps: Dictionary in OrderBook.PAY_STAGES:
+		if left.has(str(ps.id)):
+			return str(ps.id)
+	return ""
 
 
 ## The yard's cash, CR (a big number when there is no business module).
@@ -451,9 +497,10 @@ func cash() -> int:
 	return int(_business.call("get_cash")) if _business and _business.has_method("get_cash") else 1 << 40
 
 
-## What the cheapest plan for `stage` of build `cid` comes to, CR (0 when nothing to order).
+## What the cheapest plan for `stage` (a payment stage, or a build stage) of build `cid` comes
+## to, CR (0 when nothing to order).
 func stage_cheapest(cid: String, stage: String) -> int:
-	var ls := _to_order(cid).filter(func(l: Dictionary) -> bool: return str(l.stage) == stage)
+	var ls := _to_order(cid).filter(func(l: Dictionary) -> bool: return OrderBook.in_stage(l, stage))
 	if ls.is_empty() or _supply == null:
 		return 0
 	var o := SupplyOptimiser.run(ls, _supply.get("vendors"), _standing(), market_day(), catalog())
@@ -575,7 +622,7 @@ func _apply_ask(p: Dictionary) -> void:
 			var sp: Dictionary = splits.get_or_add(cid, {})
 			var ls := _to_order(cid)
 			if str(p.get("stage", "")) != "":
-				ls = ls.filter(func(l: Dictionary) -> bool: return str(l.stage) == str(p.stage))
+				ls = ls.filter(func(l: Dictionary) -> bool: return OrderBook.in_stage(l, str(p.stage)))
 			if ls.is_empty() or _supply == null:
 				return
 			var o := SupplyOptimiser.run(ls, _supply.get("vendors"), _standing(), market_day(), catalog())
@@ -647,18 +694,22 @@ func _place(cid: String, express: bool, cost: int) -> void:
 			var r := OrderBook.roll(id, vendor)
 			if r >= roundi(float(d.on_time) * 1000.0):
 				late = 1 + r % 3
-		var due := now + (OrderBook.EXPRESS_MINUTES if express else int(d.lead) * 1440)
+		var mps := minutes_per_second()
+		var due := now + (OrderBook.EXPRESS_MINUTES if express else OrderBook.delivery_minutes(int(d.lead), 0, mps))
+		var arrive := now + (OrderBook.EXPRESS_MINUTES if express else OrderBook.delivery_minutes(int(d.lead), late, mps))
 		orders.append({"id": id, "cid": cid, "vendor": vendor, "name": str(d.name), "minute": now, "due": due,
-				"late": late, "express": express, "lines": d.lines, "total": roundi(float(d.total)), "arrived": false})
+				"arrive": arrive, "late": late, "express": express, "lines": d.lines, "total": roundi(float(d.total)), "arrived": false})
 		if vendor != USED and _supply and _supply.has_method("set_standing"):
 			_supply.call("set_standing", vendor, float(_supply.call("standing_of", vendor)) + STANDING_PER_ORDER
 					+ STANDING_PER_100K * float(d.total) / 100000.0)
 	var total := 0.0
-	var lead := 0
+	var last := now
 	for d: Dictionary in drafts.values():
 		total += float(d.total)
-		lead = maxi(lead, int(d.lead))
-	last_placed[cid] = {"minute": now, "orders": drafts.size(), "total": roundi(total), "days": 0 if express else lead}
+	for o: Dictionary in orders:
+		if int(o.get("minute", -1)) == now and str(o.cid) == cid:
+			last = maxi(last, int(o.due))
+	last_placed[cid] = {"minute": now, "orders": drafts.size(), "total": roundi(total), "due": last}
 	splits.erase(cid)
 
 
@@ -685,7 +736,7 @@ func deliver_due() -> void:
 	var now := now_minute()
 	var any := false
 	for o: Dictionary in orders:
-		if bool(o.arrived) or int(o.due) + int(o.late) * 1440 > now:
+		if bool(o.arrived) or arrival(o) > now:
 			continue
 		_arrive(o)
 		any = true
@@ -1053,7 +1104,8 @@ func _trade_buy(p: Dictionary) -> void:
 	next_id += 1
 	var now := now_minute()
 	orders.append({"id": id, "cid": STOCK, "vendor": str(q.vendor), "name": str(q.get("name", q.vendor)), "minute": now,
-			"due": now + int(q.lead) * 1440, "late": 0, "express": false, "total": int(p.cost), "arrived": false,
+			"due": now + OrderBook.delivery_minutes(int(q.lead), 0, minutes_per_second()),
+			"arrive": now + OrderBook.delivery_minutes(int(q.lead), 0, minutes_per_second()), "late": 0, "express": false, "total": int(p.cost), "arrived": false,
 			"lines": [{"key": key, "name": str(l.name), "qty": float(qty), "unit": float(q.unit), "used": used,
 				"type": OrderBook.used_type(l) if used else "", "refurb_usual": float(q.get("refurb", 0.0)) if used else 0.0,
 				"refurb_paid": 0.0}]})
@@ -1144,6 +1196,7 @@ func _debug_panel() -> Control:
 			["Orders: everything due arrives now", func() -> void:
 				for o: Dictionary in orders:
 					o.due = mini(int(o.due), now_minute())
+					o.arrive = o.due
 					o.late = 0
 				deliver_due()]]:
 		var b := Button.new()

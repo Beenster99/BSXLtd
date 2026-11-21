@@ -4,7 +4,7 @@ extends PanelContainer
 ## for components): click a quote to take the rest of the line from that vendor, or HALF to take
 ## half of it there and split the rest elsewhere. The calculator above sums the three plans the
 ## market works out (cheapest, most reliable, median) against your own mix; USE takes a plan.
-## PLACE ORDER buys what is split (EXPRESS: today, dearer). Below, the orders on their way and
+## PLACE ORDER buys what is split (EXPRESS: under a real minute, dearer). Below, the orders on their way and
 ## what came in.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
@@ -101,8 +101,19 @@ func refresh() -> void:
 	_head(ids)
 	_calculator()
 	_section("PARTS LIST")
-	for l: Dictionary in lines:
-		_line_row(l)
+	# A payment stage at a time (beenster, 21 Nov): the keel's frame first, then the fit-out's,
+	# then the delivery's.
+	for ps: Dictionary in OrderBook.PAY_STAGES:
+		var mine := lines.filter(func(l: Dictionary) -> bool: return OrderBook.pay_stage_of(str(l.stage)) == str(ps.id))
+		if mine.is_empty():
+			continue
+		var got := mine.filter(func(l: Dictionary) -> bool: return float(l.arrived) >= float(l.need) - 0.001).size()
+		var head := _label("%s STAGE · %s · %d of %d lines in" % [str(ps.name).to_upper(), str(ps.what), got, mine.size()],
+				"mono_bold", fs - 3, T.CYAN)
+		head.name = "PayStage_" + str(ps.id)
+		_body.add_child(head)
+		for l: Dictionary in mine:
+			_line_row(l)
 	_orders()
 
 
@@ -142,7 +153,8 @@ func _calculator() -> void:
 		v.add_child(_label("YOUR MIX" if p == "mine" else str(SupplyOptimiser.PLAN_NAMES.get(p, p)), "mono_medium", fs - 3, T.DIM))
 		var total := float(s.get("total", 0.0)) * (OrderBook.EXPRESS_FACTOR if express and p == "mine" else 1.0)
 		v.add_child(_label("CR %s" % T.money(roundi(total)), "mono_bold", fs + 2, T.ORANGE if p == "mine" else T.TEXT))
-		v.add_child(_label("%s · %d%% on time" % ["today" if express and p == "mine" else "%d days" % int(s.get("lead", 0)),
+		v.add_child(_label("%s · %d%% on time" % ["about %d min" % ceili(OrderBook.EXPRESS_MINUTES / maxf(0.1, float(bus.call("minutes_per_second"))) / 60.0)
+				if express and p == "mine" else str(bus.call("lead_text", int(s.get("lead", 0)))),
 				roundi(float(s.get("on_time", 0.0)) * 100.0)], "mono_medium", fs - 3, T.DIM))
 		if p != "mine":
 			var use := T.button("USE", false, fs - 3)
@@ -154,7 +166,7 @@ func _calculator() -> void:
 	_body.add_child(row)
 	var act := HBoxContainer.new()
 	act.add_theme_constant_override("separation", int(fs * 0.5))
-	var ex := T.button("EXPRESS: TODAY, +%d%%" % roundi((OrderBook.EXPRESS_FACTOR - 1.0) * 100.0), false, fs - 2, express)
+	var ex := T.button("EXPRESS: UNDER A MINUTE, +%d%%" % roundi((OrderBook.EXPRESS_FACTOR - 1.0) * 100.0), false, fs - 2, express)
 	ex.pressed.connect(func() -> void:
 		express = not express
 		refresh())
@@ -180,8 +192,10 @@ func _calculator() -> void:
 	var stage := str(bus.call("next_stage", cid))
 	if stage != "":
 		var stage_cost := int(bus.call("stage_cheapest", cid, stage)) * (OrderBook.EXPRESS_FACTOR if express else 1.0)
-		var sb := T.button("ORDER NEXT STAGE: %s, CR %s" % [stage.to_upper(), T.money(roundi(stage_cost))], true, fs - 2)
-		sb.tooltip_text = "Order just the %s stage's parts from the cheapest suppliers, now. The berth can start that stage when they are in." % stage
+		var ps := OrderBook.pay_stage(stage)
+		var sb := T.button("ORDER NEXT STAGE: %s, CR %s" % [str(ps.get("name", stage)).to_upper(), T.money(roundi(stage_cost))], true, fs - 2)
+		sb.tooltip_text = "Order just the parts for the %s payment stage (%s) from the cheapest suppliers, now. The client pays that stage when the berth has built it." % [
+				str(ps.get("name", stage)), str(ps.get("what", ""))]
 		sb.disabled = int(bus.call("cash")) < roundi(stage_cost)
 		sb.pressed.connect(func() -> void: bus.call("order_stage_cheapest", cid, stage, express))
 		act.add_child(sb)
@@ -194,7 +208,8 @@ func _calculator() -> void:
 		_body.add_child(nl)
 	var lp: Dictionary = (bus.get("last_placed") as Dictionary).get(cid, {})
 	if not lp.is_empty():
-		var due := "arriving today" if int(lp.days) == 0 else "arriving in about %d days" % int(lp.days)
+		var due := "all in now" if int(lp.get("due", 0)) <= int(bus.call("now_minute")) else "arriving by %s (%s)" % [
+				str(bus.call("clock", int(lp.due))), str(bus.call("real_text", int(lp.due) - int(bus.call("now_minute"))))]
 		_body.add_child(_label("Last order placed: %d supplier order%s, CR %s, %s. See ORDERS below." % [int(lp.orders),
 				"" if int(lp.orders) == 1 else "s", T.money(int(lp.total)), due], "body_medium", fs - 2, T.GOOD))
 
@@ -225,7 +240,7 @@ func _line_row(l: Dictionary) -> void:
 	else:
 		var due := int(bus.call("line_due", cid, str(l.key)))
 		if due >= 0:
-			status += " · due day %d (%s)" % [due / 1440, str(bus.call("when", due))]
+			status += " · " + str(bus.call("due_text", due))
 		elif float(l.ordered) >= need - 0.001:
 			status += " · in the refurb works"
 		else:
@@ -258,7 +273,7 @@ func _line_row(l: Dictionary) -> void:
 	var qs: Array = bus.call("quotes", cid, l)
 	for i in mini(qs.size(), 5):
 		var q: Dictionary = qs[i]
-		var btn := T.button("%s  CR %s  %dd  %d%%" % [str(q.name), T.money(roundi(float(q.unit))), int(q.lead),
+		var btn := T.button("%s  CR %s  %s  %d%%" % [str(q.name), T.money(roundi(float(q.unit))), str(bus.call("lead_text", int(q.lead))),
 				roundi(float(q.on_time) * 100.0)], i == 0 and sp.is_empty(), fs - 4)
 		var vendor := str(q.vendor)
 		btn.tooltip_text = "Take the rest of the line from %s" % str(q.name)
@@ -295,8 +310,8 @@ func _orders() -> void:
 			state = "in the refurb works (%d)" % refurbing if refurbing > 0 else "in the stores"
 			colour = T.AMBER if refurbing > 0 else T.GOOD
 		else:
-			var due := int(o.due) + int(o.late) * 1440
-			state = ("express, " if bool(o.get("express", false)) else "") + "due " + str(bus.call("when", due))
+			var due := int(bus.call("arrival", o))
+			state = ("express, " if bool(o.get("express", false)) else "") + str(bus.call("due_text", due))
 			if int(o.late) > 0 and int(o.due) <= int(bus.call("now_minute")):
 				state += " (late)"
 				colour = T.BAD

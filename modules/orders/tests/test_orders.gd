@@ -111,12 +111,16 @@ func run_tests() -> void:
 		# One stage at a time fits a smaller purse.
 		var st := orders.next_stage("order_test")
 		var st_cost := orders.stage_cheapest("order_test", st)
-		check(st == "frame" and st_cost > 0 and st_cost < int(orders.plan_sums("order_test").cheapest.total),
+		check(st == "keel" and st_cost > 0 and st_cost < int(orders.plan_sums("order_test").cheapest.total),
 				"the next stage to order is the frame, for less than the whole ship (CR %d)" % st_cost)
 		biz.call("credit", st_cost + 10, "test", "test: enough for the frame")
 		orders.order_stage_cheapest("order_test", st)
 		check(not orders.orders.is_empty() and orders.lines("order_test").all(func(l: Dictionary) -> bool:
-				return str(l.stage) != st or float(l.ordered) >= float(l.need) - 0.001), "the frame's parts ordered on their own")
+				return OrderBook.in_stage(l, st) == (float(l.ordered) >= float(l.need) - 0.001)),
+				"the keel's lines ordered, and only them: the frame's beams and welds (beenster, 21 Nov)")
+		var cap := int(OrderBook.MAX_REAL_SECONDS * orders.minutes_per_second())
+		check(orders.orders.all(func(o: Dictionary) -> bool: return orders.arrival(o) - int(o.minute) <= cap and orders.arrival(o) >= int(o.due)),
+				"every order comes within 10 real minutes, slips and all (%s)" % str(orders.orders.map(func(o: Dictionary) -> int: return orders.arrival(o) - int(o.minute))))
 		check(orders.next_stage("order_test") != st, "and the next stage moves on (%s)" % orders.next_stage("order_test"))
 		orders.orders.clear()
 		biz.call("credit", all, "test", "test: cash back")
@@ -142,6 +146,7 @@ func run_tests() -> void:
 	for o: Dictionary in orders.orders:
 		o.due = orders.now_minute()
 		o.late = 0
+		o.erase("arrive")
 	orders.deliver_due()
 	check(orders.orders.all(func(o: Dictionary) -> bool: return bool(o.arrived)), "the orders come in")
 	check(orders.stage_ready("order_test", "frame") and build.next_job("order_test") == 0, "the frame's parts are in: the first job can float in")
@@ -180,6 +185,7 @@ func run_tests() -> void:
 		check(str(o2.vendor) == OrdersBus.USED and bool(o2.lines[0].used), "a second-hand order")
 		o2.due = orders.now_minute()
 		o2.late = 0
+		o2.erase("arrive")
 		orders.deliver_due()
 		var line2: Dictionary = orders.line("order_test_2", str(comp.key))
 		check(float(line2.arrived) < float(line2.need), "it is in the refurb works, not in yet")

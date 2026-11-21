@@ -32,9 +32,54 @@ const RACK_BY_CATEGORY := {"flight": "PilotConsole", "power": "Generator", "prop
 const USED_SHARE := 0.38
 const USED_CONDITION := 0.55
 const USED_EXTRA_DAYS := 1
-## Express: this much dearer, and it comes the same day (game minutes after ordering).
+## Express: this much dearer, and it comes the soonest (game minutes after ordering).
 const EXPRESS_FACTOR := 1.35
-const EXPRESS_MINUTES := 120
+const EXPRESS_MINUTES := 60
+## Deliveries (beenster, 21 Nov: "nothing should take more than 10 real minutes to get to
+## us"): each day of a supplier's quoted lead is this many game minutes on the way, each late
+## step (1 to 3 when a supplier slips) this many more, and nothing takes longer than
+## MAX_REAL_SECONDS at normal speed (1,200 game minutes at the default 2 a second).
+const LEAD_MINUTES := 120
+const LATE_MINUTES := 90
+const MAX_REAL_SECONDS := 600.0
+## The contract's payment stages and the build stages each waits on (BuildPlan.PAYMENTS: the
+## keel is paid when the frame is done, the fit-out when the plates and fittings are, the
+## delivery after the rest). Parts are ordered a payment stage at a time (beenster, 21 Nov:
+## "for the keel part of the build I am only expecting beams").
+const PAY_STAGES: Array = [
+	{"id": "keel", "name": "Keel laid", "stages": ["frame"], "what": "the frame: beams and their welds"},
+	{"id": "fit_out", "name": "Fit-out", "stages": ["plates", "fittings"],
+		"what": "the hull plates, doors, rooms and machinery"},
+	{"id": "delivery", "name": "Delivery", "stages": ["wiring", "pipes"], "what": "the wiring and pipes"},
+]
+
+
+## The payment stage (PAY_STAGES id) build stage `stage` is ordered with.
+static func pay_stage_of(stage: String) -> String:
+	for ps: Dictionary in PAY_STAGES:
+		if stage in (ps.stages as Array):
+			return str(ps.id)
+	return "fit_out"
+
+
+## PAY_STAGES entry `id` ({} when none).
+static func pay_stage(id: String) -> Dictionary:
+	for ps: Dictionary in PAY_STAGES:
+		if str(ps.id) == id:
+			return ps
+	return {}
+
+
+## Whether line `line` is in stage `stage`: a build stage ("frame") or a payment stage ("keel").
+static func in_stage(line: Dictionary, stage: String) -> bool:
+	return str(line.get("stage", "")) == stage or pay_stage_of(str(line.get("stage", ""))) == stage
+
+
+## Game minutes on the way for a quoted lead of `lead` days and `late` late steps, at
+## `minutes_per_second` game minutes a real second at normal speed.
+static func delivery_minutes(lead: int, late: int, minutes_per_second: float) -> int:
+	var cap := int(MAX_REAL_SECONDS * maxf(0.1, minutes_per_second))
+	return clampi(maxi(1, lead) * LEAD_MINUTES + maxi(0, late) * LATE_MINUTES, 1, cap)
 
 
 ## Build design `design` (DesignRecord.to_dict) as lines to buy, each with its "stage".
