@@ -15,7 +15,14 @@ static func size_of(d: DesignRecord) -> Dictionary:
 	var box := d.bounds()
 	var decks := d.decks()
 	var n := (decks[decks.size() - 1] - decks[0] + 1) if decks.size() > 0 else 1
-	return {"length": box.size.y, "beam": box.size.x, "height": float(n) * d.deck_height}
+	var out := {"length": box.size.y, "beam": box.size.x, "height": float(n) * d.deck_height}
+	# Her nose, stern, wings, fins and pods reach past her rooms (DesignShape).
+	if not d.shapes.is_empty():
+		var e := DesignShape.extent(DesignOutside.plan_for(d))
+		out.length = maxf(float(out.length), e.size.z)
+		out.beam = maxf(float(out.beam), e.size.x)
+		out.height = maxf(float(out.height), e.size.y)
+	return out
 
 
 ## How the design sits in `berth`: {ok, length, beam, height (the design's), need (each with

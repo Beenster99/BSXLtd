@@ -28,7 +28,44 @@ static func check(d: DesignRecord, cat: DesignCatalog, totals: DesignTotals = nu
 	_service_checks(d, cat, out)
 	_mount_checks(d, cat, out)
 	_frame_checks(d, out)
+	_shape_checks(d, out)
 	return out
+
+
+## Her free shapes (the outside designer, stage 2): a nose or stern that can't be built for a
+## door through that end, limbs that run into each other, and a limb over a door to space.
+static func _shape_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
+	if d.shapes.is_empty():
+		return
+	var p := DesignOutside.plan_for(d)
+	for sid: String in p.get("shape_blocked", []):
+		var s: Dictionary = d.shapes.get(sid, {})
+		var front := str(s.get("type", "")) == "nose"
+		out.append(_problem("shape_blocked", WARNING, "No %s: a door opens through the %s end" % [
+				"nose" if front else "tapered stern", "bow" if front else "stern"]))
+	var limbs: Array = p.get("limbs", [])
+	var boxes: Array[AABB] = []
+	for limb: Dictionary in limbs:
+		boxes.append(DesignShape.limb_box(limb).grow(-0.02))
+	var said := {}
+	for i in limbs.size():
+		for j in range(i + 1, limbs.size()):
+			if str(limbs[i].shape) == str(limbs[j].shape) or not boxes[i].intersects(boxes[j]):
+				continue
+			var key := "%s:%s" % [limbs[i].shape, limbs[j].shape]
+			if said.has(key):
+				continue
+			said[key] = true
+			out.append(_problem("shape_clash", WARNING, "%s runs into %s" % [
+					DesignShape.describe(d.shapes[str(limbs[i].shape)]), DesignShape.describe(d.shapes[str(limbs[j].shape)]).to_lower()]))
+		for o: Dictionary in p.get("openings", []):
+			if int(o.get("edge", -1)) < 0 or not boxes[i].intersects(o.box as AABB):
+				continue
+			var key := "%s:%s" % [limbs[i].shape, o.name]
+			if said.has(key):
+				continue
+			said[key] = true
+			out.append(_problem("shape_over_door", WARNING, "%s is over a door to space" % DesignShape.describe(d.shapes[str(limbs[i].shape)])))
 
 
 ## The structure as the designers changed it (the outside designer, stage 1): plates left off

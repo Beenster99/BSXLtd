@@ -341,6 +341,7 @@ func _draw_plan(rec: DesignRecord) -> void:
 			var sr := Rect2(to_screen(Vector2(r.x, r.z)), Vector2(r.w, r.d) * zoom)
 			draw_rect(sr, Color(DIM, 0.25), false, 1.0)
 	_draw_hull_fill(rec)
+	_draw_shapes()
 	for r in rec.rooms_on(deck):
 		_draw_room(rec, r)
 	_draw_hull(rec)
@@ -1157,6 +1158,9 @@ func delete_selected() -> void:
 			bus.editor.do({"op": "remove_beam", "id": selected_id})
 		"mount":
 			bus.editor.do({"op": "remove_mount", "id": selected_id})
+		"shape":
+			bus.editor.do({"op": "remove_shape", "id": selected_id})
+			select("", "")
 		"hull":
 			# A corner: take it out (a hull keeps at least three).
 			var pts: Array = _rec().hull.get(str(deck), []).duplicate(true)
@@ -1254,7 +1258,47 @@ func pick(s: Vector2) -> Dictionary:
 			edge.y = 1
 		if edge != Vector2i.ZERO or sr.has_point(s):
 			return {"kind": "room", "id": r.id, "edge": edge}
+	# Her wings, pods and fins, seen from above (outside designer, stage 2).
+	for sh: Array in _shape_outlines():
+		if Geometry2D.is_point_in_polygon(p, sh[1]):
+			return {"kind": "shape", "id": sh[0]}
 	return {}
+
+
+## Each limb's outline from above (x, z): [[shape id, outline]], from the frame plan.
+func _shape_outlines() -> Array:
+	var out: Array = []
+	var rec := _rec()
+	if rec == null or rec.shapes.is_empty() or bus == null:
+		return out
+	for limb: Dictionary in bus.frame_plan().get("limbs", []):
+		var fore := PackedVector2Array()
+		var aft := PackedVector2Array()
+		for st: Dictionary in limb.stations:
+			var lo := INF
+			var hi := -INF
+			for v: Vector2 in (st.profile as PackedVector2Array):
+				lo = minf(lo, v.x)
+				hi = maxf(hi, v.x)
+			fore.append(Vector2(lo, float(st.z)))
+			aft.append(Vector2(hi, float(st.z)))
+		aft.reverse()
+		out.append([str(limb.shape), fore + aft])
+	return out
+
+
+## The limbs drawn round the hull: a dashed outline, filled faint, orange when picked.
+func _draw_shapes() -> void:
+	for sh: Array in _shape_outlines():
+		var pts := PackedVector2Array()
+		for v: Vector2 in (sh[1] as PackedVector2Array):
+			pts.append(to_screen(v))
+		var on: bool = selected_kind == "shape" and selected_id == sh[0]
+		var c := SELECT if on else DIM
+		if pts.size() >= 3 and Geometry2D.triangulate_polygon(pts).size() > 0:
+			draw_colored_polygon(pts, Color(c, 0.12))
+		pts.append(pts[0])
+		draw_polyline(pts, c, 2.0 if on else 1.0)
 
 
 func _update_cursor(s: Vector2) -> void:
