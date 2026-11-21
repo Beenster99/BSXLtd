@@ -35,7 +35,7 @@ const OVERHANG := 0.12
 ## The proposed frame for `d`, kept while the design's shape is unchanged (the build module,
 ## the rules and the views all ask for it once per part).
 static func plan_for(d: DesignRecord) -> Dictionary:
-	var key := hash([d.rooms, d.hull, d.frame_edits, d.structure, d.doors, d.deck_height])
+	var key := hash([d.rooms, d.hull, d.frame_edits, d.structure, d.doors, d.deck_height, d.livery])
 	if _memo.get("key", -1) == key and _memo.get("d") == d:
 		return _memo.plan
 	var p := DesignFrame.propose(d)

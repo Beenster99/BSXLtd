@@ -214,6 +214,8 @@ func rebuild() -> void:
 	_build_runs(rec, _layer_nodes.wiring, "wiring")
 	_build_runs(rec, _layer_nodes.pipes, "pipes")
 	_build_power(rec, _layer_nodes.power)
+	if _marked != "":
+		mark_panel(bus.frame_plan() if rec == bus.library.current else DesignFrame.propose(rec), _marked)
 	bus.holo_built.emit(self, inner)
 
 
@@ -417,28 +419,37 @@ func _build_skin(plan: Dictionary, parent: Node3D, metal: Material, glass: Mater
 		return
 	var st: Array = plan.stations
 	var panes: Dictionary = plan.glass
-	for which in 2:
+	var open: Dictionary = plan.get("open", {})
+	# Painted (DesignLivery): the panels in their colours, still see-through.
+	var groups := {}
+	for i in range(1, st.size()):
+		var a: PackedVector2Array = st[i - 1].profile
+		var b: PackedVector2Array = st[i].profile
+		var za := float(st[i - 1].z)
+		var zb := float(st[i].z)
+		for k in a.size():
+			var gk := "%d:%d" % [i - 1, k]
+			if open.has(gk):
+				continue
+			var col: Variant = DesignLivery.colour(plan, i - 1, k)
+			var key := "glass" if panes.has(gk) else ("metal" if col == null else (col as Color).to_html(false))
+			var k1 := (k + 1) % a.size()
+			var p0 := Vector3(a[k].x, a[k].y, za)
+			var p1 := Vector3(a[k1].x, a[k1].y, za)
+			var p2 := Vector3(b[k1].x, b[k1].y, zb)
+			var p3 := Vector3(b[k].x, b[k].y, zb)
+			(groups.get_or_add(key, PackedVector3Array()) as PackedVector3Array).append_array([p0, p1, p2, p0, p2, p3])
+	var cap: Variant = DesignLivery.cap_colour(plan)
+	var cap_key := "metal" if cap == null else (cap as Color).to_html(false)
+	for end in 2:
+		var o: PackedVector2Array = st[0 if end == 0 else st.size() - 1].profile
+		var z := float(st[0 if end == 0 else st.size() - 1].z)
 		var tris := PackedVector3Array()
-		for i in range(1, st.size()):
-			var a: PackedVector2Array = st[i - 1].profile
-			var b: PackedVector2Array = st[i].profile
-			var za := float(st[i - 1].z)
-			var zb := float(st[i].z)
-			for k in a.size():
-				if panes.has("%d:%d" % [i - 1, k]) != (which == 1):
-					continue
-				var k1 := (k + 1) % a.size()
-				var p0 := Vector3(a[k].x, a[k].y, za)
-				var p1 := Vector3(a[k1].x, a[k1].y, za)
-				var p2 := Vector3(b[k1].x, b[k1].y, zb)
-				var p3 := Vector3(b[k].x, b[k].y, zb)
-				tris.append_array([p0, p1, p2, p0, p2, p3])
-		if which == 0:
-			for end in 2:
-				var o: PackedVector2Array = st[0 if end == 0 else st.size() - 1].profile
-				var z := float(st[0 if end == 0 else st.size() - 1].z)
-				for k in range(1, o.size() - 1):
-					tris.append_array([Vector3(o[0].x, o[0].y, z), Vector3(o[k].x, o[k].y, z), Vector3(o[k + 1].x, o[k + 1].y, z)])
+		for k in range(1, o.size() - 1):
+			tris.append_array([Vector3(o[0].x, o[0].y, z), Vector3(o[k].x, o[k].y, z), Vector3(o[k + 1].x, o[k + 1].y, z)])
+		(groups.get_or_add(cap_key, PackedVector3Array()) as PackedVector3Array).append_array(tris)
+	for key: String in groups:
+		var tris: PackedVector3Array = groups[key]
 		if tris.is_empty():
 			continue
 		var stool := SurfaceTool.new()
@@ -446,9 +457,9 @@ func _build_skin(plan: Dictionary, parent: Node3D, metal: Material, glass: Mater
 		for v in tris:
 			stool.add_vertex(v)
 		var mi := MeshInstance3D.new()
-		mi.name = "Skin" if which == 0 else "SkinGlass"
+		mi.name = "Skin" if key == "metal" else ("SkinGlass" if key == "glass" else "Skin_" + key)
 		mi.mesh = stool.commit()
-		mi.material_override = metal if which == 0 else glass
+		mi.material_override = metal if key == "metal" else (glass if key == "glass" else _mat(Color.from_string(key, Color.WHITE), 0.3, 0.8))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(mi)
 
@@ -643,3 +654,40 @@ func show_ghost(xf: Transform3D, size: Vector3, ok: bool) -> void:
 	g.material_override = _mat(Color(0.4, 1.0, 0.5) if ok else Color(1.0, 0.35, 0.3), 0.55, 1.2)
 	g.transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5, 0))
 	g.visible = true
+
+
+## The skin panel picked in the 3D view, outlined ("<z>:<edge>", z in its bay; "" clears it).
+var _marked := ""
+
+
+func mark_panel(plan: Dictionary, id: String) -> void:
+	_marked = id
+	var ship := ship_node()
+	if ship == null:
+		return
+	var old := ship.get_node_or_null("PanelMark")
+	if old:
+		ship.remove_child(old)
+		old.queue_free()
+	if id == "" or plan.is_empty():
+		return
+	var k := DesignFrame.bay_at(plan, float(id.get_slice(":", 0)))
+	if k < 0:
+		return
+	var e := int(id.get_slice(":", 1))
+	var st: Array = plan.stations
+	var a: PackedVector2Array = st[k].profile
+	var b: PackedVector2Array = st[k + 1].profile
+	var e1 := (e + 1) % a.size()
+	var za := float(st[k].z)
+	var zb := float(st[k + 1].z)
+	var q := [Vector3(a[e].x, a[e].y, za), Vector3(a[e1].x, a[e1].y, za), Vector3(b[e1].x, b[e1].y, zb), Vector3(b[e].x, b[e].y, zb)]
+	var segs := PackedVector3Array()
+	for i in 4:
+		segs.append_array([q[i], q[(i + 1) % 4]])
+	var holder := Node3D.new()
+	holder.name = "PanelMark"
+	ship.add_child(holder)
+	_lines(holder, segs, _mat(Color(1.0, 0.55, 0.2), 1.0, 1.5))
+	for v in holder.find_children("*", "VisualInstance3D", true, false):
+		(v as VisualInstance3D).layers |= VIEW_LAYER

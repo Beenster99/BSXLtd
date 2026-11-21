@@ -51,7 +51,7 @@ const STUD := 0.6
 const LINKS := ["stairs", "lift", "hatch"]
 ## The frame kit's part names, as the designers call them.
 const PART_NAMES := {"FrameNode": "Node block", "FrameRing": "Frame ring", "Stringer": "Stringer",
-		"HullPlate": "Hull plate", "CapPlate": "End plate", "WindowPane": "Glass panel", "FramePost": "Door post",
+		"HullPlate": "Hull plate", "ArmourPlate": "Armour plate", "CapPlate": "End plate", "WindowPane": "Glass panel", "FramePost": "Door post",
 		"FrameRail": "Door rail", "FrameSplice": "Splice", "DeckBeam": "Deck beam", "DeckGirder": "Deck girder",
 		"DeckTrimmer": "Deck trimmer", "DeckPlate": "Deck plate", "Stud": "Wall stud", "StudSill": "Wall sill",
 		"StudHead": "Wall head rail", "StudLintel": "Door lintel", "StudFoot": "Wall foot rail", "WallPanel": "Wall panel"}
@@ -85,6 +85,7 @@ static func propose(d: DesignRecord) -> Dictionary:
 	var zs: Array[float] = []
 	for i in n + 1:
 		zs.append(lerpf(z0, z1, float(i) / n))
+	zs = _hand_rings(d, zs)
 	var stations: Array = []
 	var last := {}
 	for i in zs.size():
@@ -103,10 +104,12 @@ static func propose(d: DesignRecord) -> Dictionary:
 				float(span.x1) - float(span.x0) + (clear + g) * 2.0, (int(span.hi) - int(span.lo) + 1) * h + BELLY + top + g * 2.0)
 		stations.append({"z": zs[i], "label": "f%d" % i, "rect": rect, "profile": section(rect)})
 	var out := {"style": style_id, "weight": weight, "spacing": spacing, "clearance": clear,
-			"stations": stations, "glass": {}, "openings": [], "skip": {}}
+			"stations": stations, "glass": {}, "openings": [], "skip": {}, "armour": {}, "open": {},
+			"no_stringer": {}, "hand_skip": {}, "paint": {}, "livery": d.livery.duplicate(true)}
 	_grow(d, stations)
 	_glaze(d, out)
 	_panels(d, out)
+	_members(d, out)
 	_openings(d, out)
 	_inside(d, out)
 	return out
@@ -222,7 +225,9 @@ static func _grow(d: DesignRecord, st: Array) -> void:
 		st[i].profile = section(r)
 
 
-## The designers' panels: glass or metal, over the proposal's (glass over the bridge).
+## The designers' panels: glass or metal over the proposal's (glass over the bridge), armour,
+## or left off (open): "panel:<z>:<edge>" -> {kind: "metal" | "armour" | "glass" | "open"}
+## (older saves: {glass: bool}).
 static func _panels(d: DesignRecord, p: Dictionary) -> void:
 	var glass: Dictionary = p.glass
 	for key: String in d.frame_edits:
@@ -232,10 +237,132 @@ static func _panels(d: DesignRecord, p: Dictionary) -> void:
 		if k < 0:
 			continue
 		var gk := "%d:%d" % [k, int(key.get_slice(":", 2))]
-		if bool((d.frame_edits[key] as Dictionary).get("glass", false)):
-			glass[gk] = true
-		else:
-			glass.erase(gk)
+		var edit: Dictionary = d.frame_edits[key]
+		if str(edit.get("paint", "")) != "":
+			p.paint[gk] = str(edit.paint)
+		if not edit.has("kind") and not edit.has("glass"):
+			continue
+		var kind := panel_kind(edit)
+		glass.erase(gk)
+		(p.armour as Dictionary).erase(gk)
+		(p.open as Dictionary).erase(gk)
+		match kind:
+			"glass":
+				glass[gk] = true
+			"armour":
+				p.armour[gk] = true
+			"open":
+				p.open[gk] = true
+
+
+## What a panel edit asks for (PANEL_KINDS).
+static func panel_kind(edit: Dictionary) -> String:
+	if edit.has("kind"):
+		return str(edit.kind)
+	return "glass" if bool(edit.get("glass", false)) else "metal"
+
+
+## What a skin panel can be, as the designers pick it (the outside designer, stage 1).
+const PANEL_KINDS := ["metal", "armour", "glass", "open"]
+const PANEL_NAMES := {"metal": "Hull plate", "armour": "Armour plate", "glass": "Glass panel", "open": "Left open"}
+## Armour plating over the plain skin, per m2: what it costs, weighs and takes to fit on top.
+const ARMOUR := {"name": "Armour plating", "cost": 220.0, "mass": 95.0, "hours": 0.6}
+## The longest bay a plate spans before it wants another frame, m.
+const MAX_BAY := 3.5
+
+
+## What a panel is in the proposal: "metal", "armour", "glass" or "open" (bay `k`, edge `e`).
+static func panel_at(p: Dictionary, k: int, e: int) -> String:
+	var gk := "%d:%d" % [k, e]
+	if (p.get("open", {}) as Dictionary).has(gk):
+		return "open"
+	if (p.get("armour", {}) as Dictionary).has(gk):
+		return "armour"
+	if (p.get("glass", {}) as Dictionary).has(gk):
+		return "glass"
+	return "metal"
+
+
+## The frame rings the designers added or took out ("ring:<z>" -> {add: true} or {remove: true}):
+## an added ring goes in where there is room (not within RING_GAP of another), a removed one is
+## the proposed ring nearest it (never the end ones: they carry the end plates).
+const RING_GAP := 0.4
+
+
+static func ring_key(z: float) -> String:
+	return "ring:%.1f" % z
+
+
+static func _hand_rings(d: DesignRecord, zs: Array[float]) -> Array[float]:
+	var adds: Array[float] = []
+	var removes: Array[float] = []
+	for key: String in d.frame_edits:
+		if not key.begins_with("ring:"):
+			continue
+		var z := float(key.get_slice(":", 1))
+		var e: Dictionary = d.frame_edits[key]
+		if bool(e.get("remove", false)):
+			removes.append(z)
+		elif bool(e.get("add", false)):
+			adds.append(z)
+	if adds.is_empty() and removes.is_empty():
+		return zs
+	var out := zs.duplicate()
+	for z in removes:
+		var best := -1
+		for i in range(1, out.size() - 1):
+			if absf(out[i] - z) < RING_GAP and (best < 0 or absf(out[i] - z) < absf(out[best] - z)):
+				best = i
+		if best > 0:
+			out.remove_at(best)
+	for z in adds:
+		if z <= out[0] + RING_GAP or z >= out[out.size() - 1] - RING_GAP:
+			continue
+		var clear := true
+		for o in out:
+			clear = clear and absf(o - z) >= RING_GAP
+		if clear:
+			out.append(z)
+	out.sort()
+	return out
+
+
+## Single members the designers took out: a ring's girder along one edge
+## ("member:<z>:<edge>" -> {remove: true}, the ring nearest z) and a stringer along one corner of
+## a bay ("stringer:<z>:<corner>" -> {remove: true}, the bay holding z).
+static func member_key(z: float, edge: int) -> String:
+	return "member:%.1f:%d" % [z, edge]
+
+
+static func stringer_key(z: float, corner: int) -> String:
+	return "stringer:%.1f:%d" % [z, corner]
+
+
+static func _members(d: DesignRecord, p: Dictionary) -> void:
+	for key: String in d.frame_edits:
+		if not bool((d.frame_edits[key] as Dictionary).get("remove", false)):
+			continue
+		var z := float(key.get_slice(":", 1))
+		var e := int(key.get_slice(":", 2))
+		if key.begins_with("member:"):
+			var i := station_at(p, z)
+			if i >= 0:
+				p.skip["%d:%d" % [i, e]] = true
+				p.hand_skip["%d:%d" % [i, e]] = true
+		elif key.begins_with("stringer:"):
+			var k := bay_at(p, z)
+			if k >= 0:
+				p.no_stringer["%d:%d" % [k, e]] = true
+
+
+## What holds a plate up: the ring girders at its two ends and the stringers at its two sides
+## still in (a plate with neither pair is unsupported).
+static func plate_support(p: Dictionary, k: int, e: int) -> Dictionary:
+	var hs: Dictionary = p.get("hand_skip", {})
+	var ns: Dictionary = p.get("no_stringer", {})
+	var ends := int(not hs.has("%d:%d" % [k, e])) + int(not hs.has("%d:%d" % [k + 1, e]))
+	var sides := int(not ns.has("%d:%d" % [k, e])) + int(not ns.has("%d:%d" % [k, (e + 1) % SIDES]))
+	return {"ends": ends, "sides": sides}
 
 
 ## Room the frame takes between the rooms' walls and the skin's outer face: the plate, the
@@ -263,13 +390,15 @@ static func counts(p: Dictionary) -> Dictionary:
 	if p.is_empty():
 		return {"stations": 0, "nodes": 0, "rings": 0, "stringers": 0, "plates": 0, "glass": 0,
 				"openings": 0, "welds": 0, "rivets": 0, "bolts": 0, "member_m": 0.0, "skin_m2": 0.0,
-				"decks": 0, "deck_plates": 0, "walls": 0, "studs": 0, "wall_panels": 0}
+				"decks": 0, "deck_plates": 0, "walls": 0, "studs": 0, "wall_panels": 0, "armour": 0, "armour_m2": 0.0,
+				"open": 0}
 	var st: Array = p.stations
 	var s: Dictionary = FrameStyle.STYLES.get(str(p.style), FrameStyle.STYLES["channel"])
 	var pitch := float(s.get("rivet_pitch", 0.5))
 	var member_m := 0.0
 	var skin_m2 := 0.0
 	var rivets := 0
+	var armour_m2 := 0.0
 	for i in st.size():
 		var a: PackedVector2Array = st[i].profile
 		for k in SIDES:
@@ -286,12 +415,18 @@ static func counts(p: Dictionary) -> Dictionary:
 			var lb := b[k].distance_to(b[(k + 1) % SIDES])
 			var along := Vector3(a[k].x - b[k].x, a[k].y - b[k].y, dz).length()
 			member_m += along
+			var kind := panel_at(p, i - 1, k)
+			if kind == "open":
+				continue
+			if kind == "armour":
+				armour_m2 += (la + lb) * 0.5 * along
 			skin_m2 += (la + lb) * 0.5 * along
 			# Rows along the rings at both ends and the stringers at both sides.
 			rivets += int(la / pitch) + int(lb / pitch) + int(along / pitch) * 2
-	var rings := st.size() * SIDES
-	var stringers := (st.size() - 1) * SIDES
-	var plates := stringers + 2
+	var rings := st.size() * SIDES - (p.get("hand_skip", {}) as Dictionary).size()
+	var stringers := (st.size() - 1) * SIDES - (p.get("no_stringer", {}) as Dictionary).size()
+	var open := (p.get("open", {}) as Dictionary).size()
+	var plates := (st.size() - 1) * SIDES + 2 - open
 	# A weld at each ring corner (the mitre) and at each end of a stringer.
 	var welds := rings + stringers * 2
 	# Inside, estimated before it is built: the decks' members, plates and spot welds; the
@@ -325,7 +460,8 @@ static func counts(p: Dictionary) -> Dictionary:
 			"glass": (p.glass as Dictionary).size(), "openings": (p.openings as Array).size(),
 			"welds": welds, "rivets": rivets, "bolts": bolts, "member_m": member_m, "skin_m2": skin_m2,
 			"decks": (p.get("decks", []) as Array).size(), "deck_plates": deck_plates,
-			"walls": (p.get("walls", []) as Array).size(), "studs": studs, "wall_panels": wall_panels}
+			"walls": (p.get("walls", []) as Array).size(), "studs": studs, "wall_panels": wall_panels,
+			"armour": (p.get("armour", {}) as Dictionary).size(), "armour_m2": armour_m2, "open": open}
 
 
 ## The yard's build list for the proposal: every kind of member, plate and joint the crew will
@@ -338,7 +474,8 @@ static func build_list(p: Dictionary) -> Array[Dictionary]:
 	for row: Array in [
 		["Frame rings", c.rings, "x", "ends mitred, welded to each other"],
 		["Stringers", c.stringers, "x", "butt welded ring to ring"],
-		["Hull plates", int(c.plates) - int(c.glass), "x", "riveted to rings and stringers"],
+		["Hull plates", int(c.plates) - int(c.glass) - int(c.armour), "x", "riveted to rings and stringers"],
+		["Armour plates", c.armour, "x", "riveted over the frame, thicker"],
 		["Glass panels", c.glass, "x", "set in the frame"],
 		["Outer door frames", c.openings, "x", "posts and rails welded in"],
 		["Deck plates", c.deck_plates, "x", "spot welded to beams and girders"],
@@ -381,10 +518,29 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 	for st: Dictionary in p.stations:
 		h.add_station(float(st.z), st.profile, str(st.label))
 	var panes: Dictionary = p.glass
+	var armour: Dictionary = p.get("armour", {})
+	var open: Dictionary = p.get("open", {})
+	var armour_mat: Material = mats.get("armour", ShipKit.paint(Color(0.3, 0.33, 0.3), 0.6, 0.55))
+	# Painted (DesignLivery): each colour one material, armour a shade darker.
+	var tints := {}
+	var tint := func(c: Color, dark: bool) -> Material:
+		var key := c.to_html(false) + ("a" if dark else "")
+		if not tints.has(key):
+			tints[key] = ShipKit.paint(c.darkened(0.25) if dark else c, 0.45, 0.5, "satin_paint")
+		return tints[key]
 	h.style = func(seg: int, edge: int) -> Dictionary:
-		if panes.has("%d:%d" % [seg, edge]):
+		var gk := "%d:%d" % [seg, edge]
+		if open.has(gk):
+			return {"skip": true}
+		if panes.has(gk):
 			return {"mat": glass, "glass": true}
-		return {"mat": shell}
+		var col: Variant = DesignLivery.colour(p, seg, edge)
+		if armour.has(gk):
+			return {"mat": armour_mat if col == null else tint.call(col, true), "name": "ArmourPlate"}
+		return {"mat": shell if col == null else tint.call(col, false)}
+	var no_stringer: Dictionary = p.get("no_stringer", {})
+	h.corner_skip = func(seg: int, corner: int) -> bool:
+		return no_stringer.has("%d:%d" % [seg, corner])
 	var skip: Dictionary = p.skip
 	h.frame_skip = func(station: int, edge: int) -> bool:
 		return skip.has("%d:%d" % [station, edge])
@@ -401,7 +557,9 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 				holes.append(o.hole)
 		var pieces := _cut(outline, holes)
 		var glazed := bool((p.get("cap_glass", [false, false]) as Array)[end])
-		h.cap(end, pieces, glass if glazed else shell, "", glazed)
+		var cap_col: Variant = DesignLivery.cap_colour(p)
+		var cap_mat: Material = shell if cap_col == null else tint.call(cap_col, false)
+		h.cap(end, pieces, glass if glazed else cap_mat, "", glazed)
 	var lining: Material = mats.get("lining", ShipKit.paint(Color(0.52, 0.54, 0.54), 0.2, 0.6))
 	var plating: Material = mats.get("deck", ShipKit.paint(Color(0.46, 0.48, 0.5), 0.6, 0.45))
 	var decks: Array[DeckFrame] = []

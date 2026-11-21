@@ -205,9 +205,19 @@ class Runner:
 				continue
 			m["type"] = pk[0]
 			bus.editor.do({"op": "add_mount", "mount": m})
+		# Stage 1: armour down the roof's middle bays and a frame added by hand.
+		for k in range(1, st.size() - 2):
+			var bz := (float(st[k].z) + float(st[k + 1].z)) * 0.5
+			for e in [7, 0, 1]:
+				bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(bz, e), "value": {"kind": "armour"}})
+		# Stage 4: a livery, a stripe, her name and number.
+		bus.editor.do({"op": "set_meta", "fields": {"livery": {"base": "#1f4e79", "trim": "#d9dcd8", "pattern": "top",
+				"stripe": "#d46a1e", "stripe_at": "low", "show_name": true, "number": "BSX-01"}}})
 		room.furnishing.open_console()
 		for layer in ["frame", "plates", "components", "power"]:
-			(room.console.find_child("Layer_" + layer, true, false) as Button).button_pressed = layer in ["plates", "components"]
+			(room.console.find_child("Layer_" + layer, true, false) as Button).button_pressed = layer in ["frame", "plates", "components"]
+		var sel_z := (float(st[1].z) + float(st[2].z)) * 0.5
+		room.console.plan.select("panel", "%.2f:%d" % [sel_z, DesignFrame.ROOF_EDGE])
 		room.console.plan.set_tool("mount:antenna")
 		await _frames(30)
 		var ship: Node3D = room.console.holo.ship_node()
@@ -216,13 +226,19 @@ class Runner:
 			room.console.holo_hover(at)
 		await _frames(10)
 		await _save(out, "outside_console")
+		room.console.plan.select("", "")
+		await _frames(10)
+		await _save(out, "outside_livery")
 		room.console.plan.set_tool("select")
 		room.furnishing.open_walk()
 		var walk: Node3D = room.furnishing.walk
 		await _frames(5)
 		walk.set_physics_process(false)
+		# The real look, so her paint shows (the CAD look colours by kind).
+		walk.set_cad(false)
+		await _frames(5)
 		var centre := Vector3(0, 2.0, mid)
-		for shot in [["outside_bow", -2.5, 0.25, 15.0], ["outside_roof", 0.7, 0.55, 15.0]]:
+		for shot in [["outside_bow", -2.5, 0.25, 15.0], ["outside_roof", 0.7, 0.55, 15.0], ["outside_side", 1.3, 0.35, 20.0]]:
 			var yaw: float = shot[1]
 			var up := float(shot[3]) * float(shot[2])
 			var flat := Vector3(sin(yaw), 0, cos(yaw)) * float(shot[3])
