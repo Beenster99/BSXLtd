@@ -218,6 +218,7 @@ flags = {
 "yard.racking": true,
 "yard.room_detail": true,
 "yard.warp_out": true,
+"yard.airlock_detail": true,
 "yard.sounds": true,
 "yard.station": true
 }

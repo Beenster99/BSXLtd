@@ -12,7 +12,7 @@ const YardWorkersScript := preload("res://modules/yard/internal/yard_workers.gd"
 const YardServiceScript := preload("res://modules/yard/internal/yard_service.gd")
 
 func run_tests() -> void:
-	for f: String in [YardBus.FLAG, YardBus.STATION, YardBus.DOCK, YardBus.RACKING]:
+	for f: String in [YardBus.FLAG, YardBus.STATION, YardBus.DOCK, YardBus.RACKING, YardBus.AIRLOCK_DETAIL]:
 		Flags.set_flag(f, true)
 	var bus := Modules.bus("yard") as YardBus
 	if bus == null:
@@ -260,14 +260,32 @@ func physics_steps(n: int) -> void:
 func _airlock(station: Node3D) -> void:
 	var lock := station.get("airlock") as Node3D
 	check(lock.get("state") == 0, "the airlock starts open to the corridor")
+	# Its panels (21 Nov): a housing on the wall, a lit button facing out, a screen with its state.
+	var panels_ok := true
+	for where: String in ["corridor", "inside", "outside"]:
+		var p := lock.get_node_or_null("Panel_" + where) as Node3D
+		var button := p.get_node_or_null("Button") as MeshInstance3D if p else null
+		var status := p.get_node_or_null("Status") as Label3D if p else null
+		panels_ok = panels_ok and button != null and status != null and status.text == "READY"
+		if button != null:
+			# The button stands out of the wall it is on, into the room the panel faces.
+			var out := button.global_basis.y.normalized()
+			panels_ok = panels_ok and absf(absf(out.dot(p.global_basis.x)) - 1.0) < 0.01
+	check(panels_ok, "each airlock panel has a lit button and a status screen reading READY")
+	check(lock.get_node_or_null("../AirlockGauges") != null or station.find_children("AirlockGauges", "", true, false).size() > 0,
+			"the airlock has its pressure board")
 	lock.call("cycle", true)
 	var both_open := false
+	var pumping_shown := false
 	var steps := 0
 	while lock.call("is_busy") and steps < 1000:
 		lock.call("advance", 0.05)
 		var o: Vector2 = lock.call("openness")
 		both_open = both_open or (o.x > 0.0 and o.y > 0.0)
+		var screen := lock.get_node("Panel_inside/Status") as Label3D
+		pumping_shown = pumping_shown or (int(lock.get("state")) == 3 and screen.text == "PUMPING")
 		steps += 1
+	check(pumping_shown, "the panels' screens say PUMPING while it pumps")
 	check(lock.get("state") == 1, "cycled out: the outer door is open")
 	check(not both_open, "never both doors open")
 	var o: Vector2 = lock.call("openness")
