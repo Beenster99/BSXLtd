@@ -48,8 +48,20 @@ func run_tests() -> void:
 	await frames(1)
 	send.pressed.emit()
 	await frames(1)
+	var pad := console.find_child("SignaturePad", true, false) as ContractSignaturePad
+	if Flags.is_on(ContractsBus.SIGNATURES_FLAG):
+		check(pad != null and not send.visible and contracts.ship_contract_for(str(order.id)).is_empty(),
+				"SIGN AS ... opens a pad to sign on, signing nothing yet")
+		if pad:
+			pad.add_stroke(PackedVector2Array([Vector2(0.1, 0.7), Vector2(0.2, 0.4), Vector2(0.3, 0.7), Vector2(0.4, 0.4),
+					Vector2(0.5, 0.7), Vector2(0.6, 0.5)]))
+			(pad.find_child("Sign", true, false) as Button).pressed.emit()
+			await frames(1)
 	var c := contracts.ship_contract_for(str(order.id))
 	check(not c.is_empty() and str(c.design_id) == rec.id, "SEND QUOTE signs the contract for this design")
+	if Flags.is_on(ContractsBus.SIGNATURES_FLAG) and not c.is_empty():
+		var pp := contracts.papers(str(c.id))
+		check(not pp.is_empty() and (pp[0].get("sig", []) as Array).size() == 1, "the design paper keeps the drawn signature")
 	check(int(c.price) <= int(order.budget) and bool(c.stages[0].paid), "at no more than the budget, the deposit paid")
 	check(console.find_child("DeliverTrial", true, false) != null and console.find_child("SendQuote", true, false) == null,
 			"once signed the console offers DELIVER FOR TRIAL")

@@ -4,7 +4,7 @@ extends PanelContainer
 ## for components): click a quote to take the rest of the line from that vendor, or HALF to take
 ## half of it there and split the rest elsewhere. The calculator above sums the three plans the
 ## market works out (cheapest, most reliable, median) against your own mix; USE takes a plan.
-## PLACE ORDER buys what is split (EXPRESS: today, dearer). Below, the orders on their way and
+## PLACE ORDER buys what is split (EXPRESS: under a real minute, dearer). Below, the orders on their way and
 ## what came in.
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
@@ -96,13 +96,24 @@ func refresh() -> void:
 			ordered += 1
 		if float(l.arrived) >= float(l.need) - 0.001:
 			arrived += 1
-	_status.text = "PARTS ORDERS · %s · %d LINES · %d ORDERED · %d IN%s" % [str(b.get("design_name", cid)).to_upper(),
+	_status.text = "PARTS ORDERS · %s · %d LINES · %d ORDERED · %d ARRIVED%s" % [str(b.get("design_name", cid)).to_upper(),
 			lines.size(), ordered, arrived, " · WAITS FOR ITS PARTS" if bool(bus.call("gated", cid)) else ""]
 	_head(ids)
 	_calculator()
 	_section("PARTS LIST")
-	for l: Dictionary in lines:
-		_line_row(l)
+	# A payment stage at a time (beenster, 21 Nov): the keel's frame first, then the fit-out's,
+	# then the delivery's.
+	for ps: Dictionary in OrderBook.PAY_STAGES:
+		var mine := lines.filter(func(l: Dictionary) -> bool: return OrderBook.pay_stage_of(str(l.stage)) == str(ps.id))
+		if mine.is_empty():
+			continue
+		var got := mine.filter(func(l: Dictionary) -> bool: return float(l.arrived) >= float(l.need) - 0.001).size()
+		var head := _label("%s STAGE · %s · %d of %d lines in" % [str(ps.name).to_upper(), str(ps.what), got, mine.size()],
+				"mono_bold", fs - 3, T.CYAN)
+		head.name = "PayStage_" + str(ps.id)
+		_body.add_child(head)
+		for l: Dictionary in mine:
+			_line_row(l)
 	_orders()
 
 
@@ -128,7 +139,7 @@ func _calculator() -> void:
 	_section("BILL OF MATERIALS CALCULATOR")
 	var sums: Dictionary = bus.call("plan_sums", cid)
 	if sums.is_empty():
-		_body.add_child(_label("Every line is ordered.", "body_medium", fs - 1, T.GOOD))
+		_body.add_child(_label("Every line is ordered: each line below says the day it is due.", "body_medium", fs - 1, T.GOOD))
 		return
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", int(fs * 0.5))
@@ -142,7 +153,8 @@ func _calculator() -> void:
 		v.add_child(_label("YOUR MIX" if p == "mine" else str(SupplyOptimiser.PLAN_NAMES.get(p, p)), "mono_medium", fs - 3, T.DIM))
 		var total := float(s.get("total", 0.0)) * (OrderBook.EXPRESS_FACTOR if express and p == "mine" else 1.0)
 		v.add_child(_label("CR %s" % T.money(roundi(total)), "mono_bold", fs + 2, T.ORANGE if p == "mine" else T.TEXT))
-		v.add_child(_label("%s · %d%% on time" % ["today" if express and p == "mine" else "%d days" % int(s.get("lead", 0)),
+		v.add_child(_label("%s · %d%% on time" % ["about %d min" % ceili(OrderBook.EXPRESS_MINUTES / maxf(0.1, float(bus.call("minutes_per_second"))) / 60.0)
+				if express and p == "mine" else str(bus.call("lead_text", int(s.get("lead", 0)))),
 				roundi(float(s.get("on_time", 0.0)) * 100.0)], "mono_medium", fs - 3, T.DIM))
 		if p != "mine":
 			var use := T.button("USE", false, fs - 3)
@@ -154,7 +166,7 @@ func _calculator() -> void:
 	_body.add_child(row)
 	var act := HBoxContainer.new()
 	act.add_theme_constant_override("separation", int(fs * 0.5))
-	var ex := T.button("EXPRESS: TODAY, +%d%%" % roundi((OrderBook.EXPRESS_FACTOR - 1.0) * 100.0), false, fs - 2, express)
+	var ex := T.button("EXPRESS: UNDER A MINUTE, +%d%%" % roundi((OrderBook.EXPRESS_FACTOR - 1.0) * 100.0), false, fs - 2, express)
 	ex.pressed.connect(func() -> void:
 		express = not express
 		refresh())
@@ -165,15 +177,41 @@ func _calculator() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	act.add_child(spacer)
-	var mine: Dictionary = sums.get("mine", {})
+	var problem := str(bus.call("place_problem", cid, express))
 	var place := T.button("PLACE ORDER", true, fs)
-	place.disabled = int(mine.get("lines", 0)) == 0
+	place.disabled = problem != ""
+	place.tooltip_text = problem if problem != "" else "Order your mix: each supplier gets its own order, paid now."
 	place.pressed.connect(func() -> void: bus.call("place", cid, express))
 	act.add_child(place)
+	var cheap_problem := str(bus.call("cheapest_problem", cid, express))
 	var quick := T.button("ORDER CHEAPEST", false, fs - 2)
+	quick.disabled = cheap_problem != ""
+	quick.tooltip_text = cheap_problem if cheap_problem != "" else "Order every line still to order from the cheapest suppliers, now."
 	quick.pressed.connect(func() -> void: bus.call("order_cheapest", cid, express))
 	act.add_child(quick)
+	var stage := str(bus.call("next_stage", cid))
+	if stage != "":
+		var stage_cost := int(bus.call("stage_cheapest", cid, stage)) * (OrderBook.EXPRESS_FACTOR if express else 1.0)
+		var ps := OrderBook.pay_stage(stage)
+		var sb := T.button("ORDER NEXT STAGE: %s, CR %s" % [str(ps.get("name", stage)).to_upper(), T.money(roundi(stage_cost))], true, fs - 2)
+		sb.tooltip_text = "Order just the parts for the %s payment stage (%s) from the cheapest suppliers, now. The client pays that stage when the berth has built it." % [
+				str(ps.get("name", stage)), str(ps.get("what", ""))]
+		sb.disabled = int(bus.call("cash")) < roundi(stage_cost)
+		sb.pressed.connect(func() -> void: bus.call("order_stage_cheapest", cid, stage, express))
+		act.add_child(sb)
 	_body.add_child(act)
+	# What PLACE ORDER needs, or what the last order came to.
+	var note := problem if problem != "" else cheap_problem
+	if note != "":
+		var nl := _label(note, "body_medium", fs - 2, T.AMBER)
+		nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_body.add_child(nl)
+	var lp: Dictionary = (bus.get("last_placed") as Dictionary).get(cid, {})
+	if not lp.is_empty():
+		var due := "all in now" if int(lp.get("due", 0)) <= int(bus.call("now_minute")) else "arriving by %s (%s)" % [
+				str(bus.call("clock", int(lp.due))), str(bus.call("real_text", int(lp.due) - int(bus.call("now_minute"))))]
+		_body.add_child(_label("Last order placed: %d supplier order%s, CR %s, %s. See ORDERS below." % [int(lp.orders),
+				"" if int(lp.orders) == 1 else "s", T.money(int(lp.total)), due], "body_medium", fs - 2, T.GOOD))
 
 
 func _line_row(l: Dictionary) -> void:
@@ -196,7 +234,18 @@ func _line_row(l: Dictionary) -> void:
 	var need := float(l.need)
 	var st := "%s %s" % [_qty(need), unit if unit != "x" else ""]
 	var colour := T.GOOD if float(l.arrived) >= need - 0.001 else (T.AMBER if float(l.ordered) >= need - 0.001 else T.DIM)
-	top.add_child(_label("%s · ordered %s · in %s" % [st.strip_edges(), _qty(float(l.ordered)), _qty(float(l.arrived))], "mono_medium", fs - 2, colour))
+	var status := "%s · ordered %s · arrived %s" % [st.strip_edges(), _qty(float(l.ordered)), _qty(float(l.arrived))]
+	if float(l.arrived) >= need - 0.001:
+		status += " · all in"
+	else:
+		var due := int(bus.call("line_due", cid, str(l.key)))
+		if due >= 0:
+			status += " · " + str(bus.call("due_text", due))
+		elif float(l.ordered) >= need - 0.001:
+			status += " · in the refurb works"
+		else:
+			status += " · not ordered"
+	top.add_child(_label(status, "mono_medium", fs - 2, colour))
 	v.add_child(top)
 	var left := need - float(l.ordered)
 	if left <= 0.001:
@@ -224,7 +273,7 @@ func _line_row(l: Dictionary) -> void:
 	var qs: Array = bus.call("quotes", cid, l)
 	for i in mini(qs.size(), 5):
 		var q: Dictionary = qs[i]
-		var btn := T.button("%s  CR %s  %dd  %d%%" % [str(q.name), T.money(roundi(float(q.unit))), int(q.lead),
+		var btn := T.button("%s  CR %s  %s  %d%%" % [str(q.name), T.money(roundi(float(q.unit))), str(bus.call("lead_text", int(q.lead))),
 				roundi(float(q.on_time) * 100.0)], i == 0 and sp.is_empty(), fs - 4)
 		var vendor := str(q.vendor)
 		btn.tooltip_text = "Take the rest of the line from %s" % str(q.name)
@@ -261,8 +310,8 @@ func _orders() -> void:
 			state = "in the refurb works (%d)" % refurbing if refurbing > 0 else "in the stores"
 			colour = T.AMBER if refurbing > 0 else T.GOOD
 		else:
-			var due := int(o.due) + int(o.late) * 1440
-			state = ("express, " if bool(o.get("express", false)) else "") + "due " + str(bus.call("when", due))
+			var due := int(bus.call("arrival", o))
+			state = ("express, " if bool(o.get("express", false)) else "") + str(bus.call("due_text", due))
 			if int(o.late) > 0 and int(o.due) <= int(bus.call("now_minute")):
 				state += " (late)"
 				colour = T.BAD

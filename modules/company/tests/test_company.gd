@@ -122,14 +122,20 @@ func _launch(co: CompanyBus, contracts: ContractsBus) -> void:
 	check(not bool(keel.paid) and contracts.gates_to_sign(str(c.id)) == ["keel"], "the build reaching the keel makes its gate ready, unpaid")
 	contracts.request_sign_gate(str(c.id), "fit_out", "Tester")
 	check(not bool(contracts.ship_contract(str(c.id)).stages[1].paid), "a gate not ready cannot be signed")
-	contracts.request_sign_gate(str(c.id), "keel", "Tester")
+	var sig := [[10, 200, 40, 150, 70, 210, 300, 120], ["bad"], [5]]
+	contracts.request_sign_gate(str(c.id), "keel", "Tester", sig)
 	keel = contracts.ship_contract(str(c.id)).stages[1]
 	check(bool(keel.paid) and contracts.gates_to_sign(str(c.id)).is_empty(), "signed, the keel is paid")
 	papers = contracts.papers(str(c.id))
 	check(papers.size() == 2 and str(papers[1].kind) == "gate" and str(papers[1].by) == "Tester", "and the signed gate is kept with the contract")
+	check(papers[1].get("sig", []) == [[10, 200, 40, 150, 70, 210, 255, 120]], "with the drawn signature, cleaned by the host (%s)" % str(papers[1].get("sig")))
+	var saved_c := contracts.save_data()
+	contracts.load_data(saved_c, ContractsBus.SAVE_VERSION)
+	check(contracts.papers(str(c.id))[1].get("sig", []).size() == 1, "and the signature is saved with the paper")
 	var shot := co.make_screen(150.0, "PAPERS")
 	add_child(shot)
 	await frames(1)
+	check(shot.find_child("Signature", true, false) != null, "the PAPERS page draws the signature")
 	shot.queue_free()
 	co.name_ship(str(c.id), "Brave Tern")
 	var seen: Array = []

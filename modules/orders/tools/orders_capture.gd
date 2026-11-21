@@ -55,6 +55,7 @@ func _run() -> void:
 		if o.id == 1:
 			o.due = orders.now_minute()
 			o.late = 0
+			o.erase("arrive")
 	orders.deliver_due()
 	for l: Dictionary in orders.lines("shot_ship"):
 		if str(l.kind) == "component":
@@ -72,6 +73,7 @@ func _run() -> void:
 	for o: Dictionary in orders.orders:
 		o.due = orders.now_minute()
 		o.late = 0
+		o.erase("arrive")
 	orders.deliver_due()
 	# The first lot through the refurb works, two of it sold.
 	for o: Dictionary in orders.orders:
