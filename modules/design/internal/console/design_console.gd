@@ -1355,13 +1355,143 @@ func _holo_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_RIGHT:
 			_dragging_holo = mb.pressed
+			if mb.pressed:
+				_holo_press = mb.position
+				_holo_moved = 0.0
+			elif mb.button_index == MOUSE_BUTTON_LEFT and _holo_moved < 6.0:
+				holo_click(mb.position)
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
 			zoom_view(VIEW_ZOOM_STEP)
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
 			zoom_view(1.0 / VIEW_ZOOM_STEP)
-	elif event is InputEventMouseMotion and _dragging_holo:
-		holo.turn += event.relative.x * 0.01
-		_cam_pitch = clampf(_cam_pitch + event.relative.y * 0.005, 0.1, 1.3)
+	elif event is InputEventMouseMotion:
+		var mm := event as InputEventMouseMotion
+		if _dragging_holo:
+			_holo_moved += mm.relative.length()
+			if _holo_moved >= 6.0:
+				holo.turn += mm.relative.x * 0.01
+				_cam_pitch = clampf(_cam_pitch + mm.relative.y * 0.005, 0.1, 1.3)
+		else:
+			holo_hover(mm.position)
+
+
+## Hull parts placed anywhere on the outside (plan 3.10, the outside designer): with one in
+## hand, the 3D view shows where it would go on the skin under the pointer, and a click fits it.
+const OUTSIDE_FLAG := "design.outside"
+var _holo_press := Vector2.ZERO
+var _holo_moved := 0.0
+
+
+## The pointer's ray in the design's own space (metres, ship space): [origin, direction], or [].
+func holo_ray(at: Vector2) -> Array:
+	var ship := holo.ship_node() if holo else null
+	if ship == null or _holo_cam == null:
+		return []
+	var inv := ship.global_transform.affine_inverse()
+	var o := _holo_cam.project_ray_origin(at)
+	var dir := _holo_cam.project_ray_normal(at)
+	return [inv * o, (inv.basis * dir).normalized()]
+
+
+## The hull part in hand (a "mount:" tool on the plan), "" for none.
+func _mount_in_hand() -> String:
+	if plan == null or not Flags.is_on(OUTSIDE_FLAG) or not plan.editable:
+		return ""
+	return plan.tool.trim_prefix("mount:") if plan.tool.begins_with("mount:") else ""
+
+
+## Where the part in hand would go on the skin under `at`: the mount's fields, or {}.
+func holo_spot(at: Vector2) -> Dictionary:
+	var type := _mount_in_hand()
+	var ray := holo_ray(at)
+	var rec := bus.library.current
+	if type == "" or ray.is_empty() or rec == null:
+		return {}
+	var fp := bus.frame_plan()
+	var hit := DesignOutside.pick(fp, ray[0], ray[1])
+	if hit.is_empty():
+		return {}
+	var m := DesignOutside.anchor(hit, rec)
+	# On the grid's quarter along the ship, so parts line up.
+	var step := maxf(rec.grid * 0.25, 0.05)
+	if int(m.edge) >= 0:
+		m.z = snappedf(float(m.z), step)
+	else:
+		m.x = snappedf(float(m.x), step)
+		m.y = snappedf(float(m.y), step)
+	m["type"] = type
+	return m
+
+
+func holo_hover(at: Vector2) -> void:
+	var m := holo_spot(at)
+	var pt := bus.catalog.part(str(m.get("type", ""))) if not m.is_empty() else null
+	if pt == null:
+		holo.show_ghost(Transform3D.IDENTITY, Vector3.ZERO, false)
+		return
+	var xf := DesignRules.mount_transform(bus.library.current, m, pt, bus.frame_plan())
+	holo.show_ghost(xf, pt.size, _fits_outside(m, pt, xf))
+
+
+## Whether a part would fit where it is shown: on the hull, clear of the other parts outside.
+func _fits_outside(m: Dictionary, pt: DesignPartType, xf: Transform3D) -> bool:
+	var rec := bus.library.current
+	var fp := bus.frame_plan()
+	if not DesignOutside.on_hull(fp, m) or DesignOutside.overhang(fp, m, xf, pt) > 0:
+		return false
+	var bx := DesignOutside.box_of(xf, pt)
+	for o: Dictionary in rec.mounts.values():
+		var op := bus.catalog.part(str(o.type))
+		if op == null:
+			continue
+		var ob := DesignOutside.box_of(DesignRules.mount_transform(rec, o, op, fp), op)
+		if DesignOutside.boxes_overlap(bx[0], bx[1], ob[0], ob[1], 0.02):
+			return false
+	return true
+
+
+## A click in the 3D view: fits the hull part in hand where it shows, else picks the part on
+## the hull under the pointer. Returns the mount's id ("" for nothing).
+func holo_click(at: Vector2) -> String:
+	var m := holo_spot(at)
+	if not m.is_empty():
+		var before := bus.library.current.mounts.duplicate()
+		bus.editor.do(DesignMirror.with_twin(bus.library.current, {"op": "add_mount", "mount": m}, bus.mirror))
+		for id: String in bus.library.current.mounts:
+			if not before.has(id):
+				plan.select("mount", id)
+				return id
+		return ""
+	var id := holo_pick_mount(at)
+	if id != "":
+		plan.select("mount", id)
+	return id
+
+
+## The part on the hull under `at` in the 3D view, "" for none.
+func holo_pick_mount(at: Vector2) -> String:
+	var ray := holo_ray(at)
+	var rec := bus.library.current
+	if ray.is_empty() or rec == null:
+		return ""
+	var best := ""
+	var best_d := INF
+	for m: Dictionary in rec.mounts.values():
+		var pt := bus.catalog.part(str(m.type))
+		if pt == null:
+			continue
+		var bx := DesignOutside.box_of(DesignRules.mount_transform(rec, m, pt, bus.frame_plan()), pt)
+		var inv := (bx[0] as Transform3D).affine_inverse()
+		var o: Vector3 = inv * (ray[0] as Vector3)
+		var dir: Vector3 = inv.basis * (ray[1] as Vector3)
+		var half: Vector3 = (bx[1] as Vector3) * 0.5
+		var hit: Variant = AABB(-half, half * 2.0).intersects_ray(o, dir)
+		if hit != null:
+			var dist := o.distance_to(hit as Vector3)
+			if dist < best_d:
+				best_d = dist
+				best = str(m.id)
+	return best
 
 
 func _process(_delta: float) -> void:
@@ -1616,6 +1746,8 @@ func _on_selection(kind: String, id: String) -> void:
 		if pt:
 			_selection.add_child(T.label("%s   %s" % [pt.display_name.to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
 			_selection.add_child(_info_panel(kind, id))
+			if DesignOutside.on_skin(rec.mounts[id]):
+				_selection.add_child(_skin_row(rec.mounts[id]))
 			_grade_rows(str(rec.mounts[id].type), func(t: String) -> void:
 				bus.editor.do({"op": "set_mount", "id": id, "fields": {"type": t}}))
 		_selection.add_child(_remove_button())
@@ -1625,6 +1757,40 @@ func _on_selection(kind: String, id: String) -> void:
 		_selection.add_child(T.label("%d corners, drag to reshape. Delete takes this one out." % outline.size(),
 				"body", 14, T.DIM))
 		_selection.add_child(_remove_button())
+
+
+## A part on the skin: where it is (roof, port side, nose...), TURN a quarter about the hull's
+## normal, and nudges along the ship and across its face.
+func _skin_row(m: Dictionary) -> Control:
+	var id := str(m.id)
+	var col := VBoxContainer.new()
+	col.name = "SkinRow"
+	col.add_child(T.label("On the %s" % DesignOutside.face_name(m), "body", 14, T.DIM))
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 4)
+	col.add_child(row)
+	var edge := int(m.get("edge", 0))
+	var pt := bus.catalog.part(str(m.type))
+	var stands := pt != null and DesignOutside.standing(m, pt, DesignOutside.surface(bus.frame_plan(), m).get("normal", Vector3.UP))
+	var buttons := [["SkinTurn", "TURN", {"spin": wrapf(float(m.get("spin", 0.0)) + PI * 0.5, -PI, PI)}],
+			["SkinStand", "LAY FLAT" if stands else "STAND UP", {"stand": not stands}]]
+	if edge >= 0:
+		buttons.append(["SkinFore", "FORE", {"z": float(m.z) - 0.25}])
+		buttons.append(["SkinAft", "AFT", {"z": float(m.z) + 0.25}])
+		buttons.append(["SkinLeft", "ACROSS -", {"t": clampf(float(m.get("t", 0.5)) - 0.1, 0.0, 1.0)}])
+		buttons.append(["SkinRight", "ACROSS +", {"t": clampf(float(m.get("t", 0.5)) + 0.1, 0.0, 1.0)}])
+	else:
+		buttons.append(["SkinLeft", "PORT", {"x": float(m.get("x", 0.0)) - 0.25}])
+		buttons.append(["SkinRight", "STARBOARD", {"x": float(m.get("x", 0.0)) + 0.25}])
+		buttons.append(["SkinUp", "UP", {"y": float(m.get("y", 0.0)) + 0.25}])
+		buttons.append(["SkinDown", "DOWN", {"y": float(m.get("y", 0.0)) - 0.25}])
+	for spec: Array in buttons:
+		var b := T.button(spec[1], false, 14)
+		b.name = spec[0]
+		var fields: Dictionary = spec[2]
+		b.pressed.connect(func() -> void: bus.editor.do({"op": "set_mount", "id": id, "fields": fields}))
+		row.add_child(b)
+	return col
 
 
 ## SIZE and GRADE steppers for a placed component of type `type_id`: each step calls `on_type`

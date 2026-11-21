@@ -415,20 +415,52 @@ func _draw_mount(m: Dictionary, sel: bool, alpha: float) -> void:
 	var pt := bus.catalog.part(str(m.type))
 	if pt == null:
 		return
-	var at := Vector2(float(m.x), float(m.z))
-	var n := Vector2.from_angle(float(m.angle))
-	var t := Vector2(-n.y, n.x)
-	var half_w := pt.size.x * 0.5
-	var depth := pt.size.z
 	var pts := PackedVector2Array()
-	for c in [at + t * half_w, at + t * half_w + n * depth, at - t * half_w + n * depth, at - t * half_w]:
-		pts.append(to_screen(c))
+	var mid: Vector2
+	if DesignOutside.on_skin(m):
+		# A part on the skin anywhere (roof, belly, nose...): the plan of its box, dashed round
+		# when it is on the roof or belly, over the rooms.
+		var foot := _skin_foot(m, pt)
+		for c in foot:
+			pts.append(to_screen(c))
+		var sum := Vector2.ZERO
+		for c in foot:
+			sum += c
+		mid = to_screen(sum / maxf(foot.size(), 1))
+	else:
+		var at := Vector2(float(m.x), float(m.z))
+		var n := Vector2.from_angle(float(m.get("angle", 0.0)))
+		var t := Vector2(-n.y, n.x)
+		var half_w := pt.size.x * 0.5
+		var depth := pt.size.z
+		for c in [at + t * half_w, at + t * half_w + n * depth, at - t * half_w + n * depth, at - t * half_w]:
+			pts.append(to_screen(c))
+		mid = to_screen(at + n * depth * 0.5)
+	if pts.size() < 3:
+		return
 	var bad: bool = problem_parts.get(str(m.get("id", "")), "") == DesignRules.ERROR
 	draw_colored_polygon(pts, Color(pt.colour, 0.55 * alpha))
 	pts.append(pts[0])
 	draw_polyline(pts, SELECT if sel else (BAD if bad else Color(INK, alpha)), 2.0 if sel else 1.2)
-	var mid := to_screen(at + n * depth * 0.5)
 	_text(mid - Vector2(12, -4), pt.short, Color(INK, alpha), 11)
+
+
+## A part on the skin seen from above: the outline of its box, ship x z.
+func _skin_foot(m: Dictionary, pt: DesignPartType) -> PackedVector2Array:
+	var xf := DesignRules.mount_transform(_rec(), m, pt, bus.frame_plan())
+	var bx := DesignOutside.box_of(xf, pt)
+	var c: Transform3D = bx[0]
+	var h: Vector3 = (bx[1] as Vector3) * 0.5
+	var pts := PackedVector2Array()
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				var p := c * Vector3(sx * h.x, sy * h.y, sz * h.z)
+				pts.append(Vector2(p.x, p.z))
+	var hull := Geometry2D.convex_hull(pts)
+	if hull.size() > 1:
+		hull.remove_at(hull.size() - 1)
+	return hull
 
 
 ## A hull part in hand: it snaps to the nearest stretch of hull under the pointer.
@@ -1156,7 +1188,10 @@ func pick(s: Vector2) -> Dictionary:
 				return {"kind": "hull", "id": str(i)}
 	for m: Dictionary in rec.mounts.values():
 		var mp := bus.catalog.part(str(m.type))
-		if mp and int(m.deck) == deck:
+		if mp and int(m.deck) == deck and DesignOutside.on_skin(m):
+			if Geometry2D.is_point_in_polygon(p, _skin_foot(m, mp)):
+				return {"kind": "mount", "id": m.id}
+		elif mp and int(m.deck) == deck:
 			var n := Vector2.from_angle(float(m.angle))
 			var rel := p - Vector2(float(m.x), float(m.z))
 			if absf(rel.dot(Vector2(-n.y, n.x))) < mp.size.x * 0.5 and rel.dot(n) > -0.1 and rel.dot(n) < mp.size.z:
@@ -1741,6 +1776,16 @@ func paste(at: Vector2 = Vector2.INF) -> String:
 			select("part", id)
 			return id
 		"mount":
+			if DesignOutside.on_skin(item):
+				# A part on the skin: the copy a step along the hull (across the nose or stern).
+				var step := maxf((bus.catalog.part(str(item.type)).size.x if bus.catalog.part(str(item.type)) else 1.0) + 0.2, 0.5)
+				if int(item.get("edge", 0)) < 0:
+					item.x = float(item.get("x", 0.0)) + step
+				else:
+					item.z = float(item.get("z", 0.0)) + step
+				var sid := _add({"op": "add_mount", "mount": item}, rec.mounts)
+				select("mount", sid)
+				return sid
 			var spot := _mount_spot(at if at != Vector2.INF else Vector2(float(item.get("x", 0.0)), float(item.get("z", 0.0))) + Vector2(0, 1.0))
 			if spot.is_empty():
 				return ""

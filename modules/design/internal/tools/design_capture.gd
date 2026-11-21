@@ -63,6 +63,10 @@ class Runner:
 			await _fit_shots(room, out)
 			get_tree().quit()
 			return
+		if "--outside" in OS.get_cmdline_user_args():
+			await _outside_shots(room, out)
+			get_tree().quit()
+			return
 		if "--frame" in OS.get_cmdline_user_args():
 			await _frame_shots(room, out)
 			get_tree().quit()
@@ -173,6 +177,60 @@ class Runner:
 			await _frames(20)
 			await _save(out, shot[0])
 		room.furnishing.close_walk()
+
+	## The outside designer (--outside, plan 3.10 stage 3): parts fitted anywhere on the
+	## sample's skin (a mast and an antenna on the roof, thrusters on the nose and shoulders, a
+	## sensor under the belly), the console with one in hand over the 3D view (outside_console),
+	## then walking round outside (outside_bow, outside_roof).
+	func _outside_shots(room: Node, out: String) -> void:
+		var bus: DesignBus = room.bus
+		var rec := bus.library.current
+		var plan := bus.frame_plan()
+		var st: Array = plan.stations
+		var z0 := float(st[0].z)
+		var z1 := float(st[st.size() - 1].z)
+		var mid := (z0 + z1) * 0.5
+		var picks := [["antenna_mast", Vector3(0.6, 40, mid - 1.0), Vector3.DOWN],
+				["antenna", Vector3(-1.4, 40, mid + 2.0), Vector3.DOWN],
+				["thruster_pack", Vector3(2.0, 2.0, -40), Vector3.BACK],
+				["thruster_pack", Vector3(-2.0, 2.0, -40), Vector3.BACK],
+				["thruster_pack", Vector3(30, 30, z0 + 1.2), Vector3(-1, -1, 0)],
+				["thruster_pack", Vector3(-30, 30, z0 + 1.2), Vector3(1, -1, 0)],
+				["thruster_pack", Vector3(1.0, -40, mid), Vector3.UP]]
+		for pk: Array in picks:
+			if bus.catalog.part(str(pk[0])) == null:
+				continue
+			var m := DesignOutside.anchor(DesignOutside.pick(plan, pk[1], pk[2]), rec)
+			if m.is_empty():
+				continue
+			m["type"] = pk[0]
+			bus.editor.do({"op": "add_mount", "mount": m})
+		room.furnishing.open_console()
+		for layer in ["frame", "plates", "components", "power"]:
+			(room.console.find_child("Layer_" + layer, true, false) as Button).button_pressed = layer in ["plates", "components"]
+		room.console.plan.set_tool("mount:antenna")
+		await _frames(30)
+		var ship: Node3D = room.console.holo.ship_node()
+		if ship:
+			var at: Vector2 = room.console._holo_cam.unproject_position(ship.global_transform * Vector3(1.5, 7.0, mid + 3.0))
+			room.console.holo_hover(at)
+		await _frames(10)
+		await _save(out, "outside_console")
+		room.console.plan.set_tool("select")
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		await _frames(5)
+		walk.set_physics_process(false)
+		var centre := Vector3(0, 2.0, mid)
+		for shot in [["outside_bow", -2.5, 0.25, 15.0], ["outside_roof", 0.7, 0.55, 15.0]]:
+			var yaw: float = shot[1]
+			var up := float(shot[3]) * float(shot[2])
+			var flat := Vector3(sin(yaw), 0, cos(yaw)) * float(shot[3])
+			walk.body.position = centre + flat + Vector3(0, up, 0)
+			walk.body.rotation.y = yaw
+			walk.camera.rotation.x = -atan2(up, float(shot[3]))
+			await _frames(20)
+			await _save(out, shot[0])
 
 	## The structure proposed round the sample: from outside with its skin, then as a bare
 	## skeleton of rings, stringers and node blocks, and on the holotable.

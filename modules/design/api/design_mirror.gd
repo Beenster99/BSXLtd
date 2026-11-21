@@ -111,6 +111,8 @@ static func twin(rec: DesignRecord, op: Dictionary, axis: int) -> Dictionary:
 		"add_mount":
 			var h: Dictionary = (op.mount as Dictionary).duplicate()
 			h.erase("id")
+			if DesignOutside.on_skin(h):
+				return _skin_twin(h, axis)
 			var q := flip(Vector2(float(h.x), float(h.z)), axis)
 			if q.distance_to(Vector2(float(h.x), float(h.z))) < 0.3:
 				return {}
@@ -120,6 +122,27 @@ static func twin(rec: DesignRecord, op: Dictionary, axis: int) -> Dictionary:
 			h.angle = n.angle()
 			return {"op": "add_mount", "mount": h}
 	return {}
+
+
+## A part on the skin (DesignOutside) mirrored: across, onto the matching edge the other side
+## (the edges run round the section, so t runs the other way); along, to the other end.
+static func _skin_twin(h: Dictionary, axis: int) -> Dictionary:
+	var e := int(h.get("edge", 0))
+	var q := flip(Vector2(float(h.get("x", 0.0)), float(h.get("z", 0.0))), axis)
+	if q.distance_to(Vector2(float(h.get("x", 0.0)), float(h.get("z", 0.0)))) < 0.3:
+		return {}
+	h.x = q.x
+	h.z = q.y
+	h.spin = -float(h.get("spin", 0.0))
+	if axis == ACROSS:
+		if e >= 0:
+			h.edge = (DesignFrame.SIDES - e) % DesignFrame.SIDES
+			h.t = 1.0 - float(h.get("t", 0.5))
+	elif e < 0:
+		h.edge = DesignOutside.STERN if e == DesignOutside.NOSE else DesignOutside.NOSE
+	if h.has("angle"):
+		h.angle = flip(Vector2.from_angle(float(h.angle)), axis).angle()
+	return {"op": "add_mount", "mount": h}
 
 
 ## `op` and, with symmetry on, its twin, as one op (a batch: one undo step).

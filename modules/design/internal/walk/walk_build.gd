@@ -1427,7 +1427,7 @@ func _mount(m: Dictionary) -> void:
 	body.name = "Mount_" + str(m.id)
 	# Against the plating, its front (-Z) turned to the hull's outward normal; a landing leg
 	# under the hull's edge (DesignRules.mount_transform).
-	body.transform = DesignRules.mount_transform(rec, m, pt)
+	body.transform = DesignRules.mount_transform(rec, m, pt, frame_plan)
 	var vs := VsParts.instance(pt.shared_part) if pt.shared_part != "" else null
 	var model := part_model(pt) if vs == null else null
 	if vs != null:
