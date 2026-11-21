@@ -579,12 +579,25 @@ static func _nearest_edge(pr: PackedVector2Array, p: Vector2) -> int:
 	return edge
 
 
-## E on the hull: the palette with the panel's rows and the hull parts to fit. Returns whether it
-## opened.
+## E on the hull: the palette with what you aim at: a wing, fin, pod or fairing's sizes, a hull
+## part's place on her skin, or a panel's rows (with her nose's or stern's sizes on their plates);
+## flying with nothing aimed at, the whole hull's rows. Then her shapes to add, her paint and the
+## hull parts to fit: everything the console has for the hull (beenster, 21 Nov: "all hull
+## modifications" from anywhere). Returns whether it opened.
 func open_hull_menu() -> bool:
 	if not Flags.is_on(OUTSIDE_FLAG):
 		return false
-	var id := panel_aimed()
+	var id := ""
+	var sid := shape_aimed()
+	var a := aim()
+	if sid != "":
+		id = "shape:" + sid
+	elif not a.is_empty() and str(a.info.get("kind", "")) == "mount" and record().mounts.has(str(a.info.id)):
+		id = "mount:" + str(a.info.id)
+	else:
+		id = panel_aimed()
+	if id == "" and flying:
+		id = "hull"
 	if id == "":
 		return false
 	if is_palette_open():
@@ -594,6 +607,21 @@ func open_hull_menu() -> bool:
 	hull_menu = id
 	_fill_palette()
 	return true
+
+
+## The wing, fin, pod or fairing you aim at (its shape's id), "".
+func shape_aimed() -> String:
+	var f := frame_aimed()
+	if f.is_empty() or f.part == null:
+		return ""
+	return HullRows.shape_of_path((f.part as PartData).path)
+
+
+## The hull menu shows shape `sid` (just added, or picked in the HULL SHAPE row).
+func show_shape(sid: String) -> void:
+	hull_menu = "shape:" + sid
+	if is_palette_open():
+		_fill_palette()
 
 
 ## The mouse wheel on the frame: her section there pushed out (or back in) on the side you
@@ -932,7 +960,7 @@ func _aim_text() -> String:
 				pt.display_name if pt else str(holding.type), str(spot.get("why", "Aim at a floor"))]
 	var a := aim()
 	if a.is_empty():
-		return "Flying   Space up   C down   Q to walk" if flying else "Tab  parts and hull"
+		return "Flying   Space up   C down   E hull   Q to walk" if flying else "Tab  parts and hull"
 	var rec := record()
 	match str(a.info.kind):
 		"component":
@@ -944,7 +972,7 @@ func _aim_text() -> String:
 		"mount":
 			var hm: Dictionary = rec.mounts.get(str(a.info.id), {})
 			var mp := bus.catalog.part(str(hm.get("type", "")))
-			return "%s on the hull\nR turn   X remove" % (mp.display_name if mp else "Part")
+			return "%s on the hull\n%sR turn   X remove" % [mp.display_name if mp else "Part", "E move it   " if Flags.is_on(OUTSIDE_FLAG) else ""]
 		"wall":
 			var what := "Outer wall: %s, %s" % [
 					DesignStructure.option("hull", str(rec.structure.hull)).name,
@@ -957,7 +985,7 @@ func _aim_text() -> String:
 			var part := builder.frame_part(a.collider, int(a.shape))
 			var joint := builder.frame_joint(a.point)
 			if part and part.path.begins_with("shape_"):
-				return "%s\nWings, fins and pods: change them at the table (HULL SHAPE)" % DesignFrame.describe(part, joint, builder.frame_model)
+				return "%s\nE shape menu" % DesignFrame.describe(part, joint, builder.frame_model)
 			return "%s\n%sG glass or metal   Wheel push the hull out or in" % [DesignFrame.describe(part, joint, builder.frame_model),
 					"E hull menu   " if Flags.is_on(OUTSIDE_FLAG) else ""]
 	return ""
@@ -1226,6 +1254,8 @@ func _fill_palette() -> void:
 		b.pressed.connect(func() -> void:
 			bus.editor.do({"op": "set_meta", "fields": {"structure": {kind: DesignStructure.next_choice(kind, rec.structure.get(kind))}}}))
 		_palette_list.add_child(b)
+	if Flags.is_on(OUTSIDE_FLAG):
+		_palette_list.add_child(HullRows.whole_hull(bus, show_shape))
 	var row := HBoxContainer.new()
 	for spec in [["UNDO", func() -> void: bus.editor.undo()], ["REDO", func() -> void: bus.editor.redo()]]:
 		var b := T.button(spec[0], false, 16)
@@ -1236,12 +1266,49 @@ func _fill_palette() -> void:
 			+ "Aim at a wall: F for a door, the mouse wheel to push or pull it.", "body", 14, T.DIM))
 
 
-## The hull menu (E on the hull): the panel's rows, as at the console, and the hull parts to
-## fit on her skin.
-func _fill_hull_menu(_rec: DesignRecord) -> void:
-	var rows := HullRows.panel(bus, hull_menu)
-	rows.name = "HullMenu"
-	_palette_list.add_child(rows)
+## The hull menu (E on the hull): what you aimed at, as at the console, then the whole hull's
+## rows (her shapes and paint) and the hull parts to fit on her skin.
+func _fill_hull_menu(rec: DesignRecord) -> void:
+	var head: Control = null
+	if hull_menu.begins_with("shape:"):
+		var sid := hull_menu.trim_prefix("shape:")
+		head = HullRows.shape_edit(bus, sid, func() -> void:
+			bus.editor.do({"op": "remove_shape", "id": sid})
+			hull_menu = "hull"
+			_fill_palette())
+	elif hull_menu.begins_with("mount:"):
+		var mid := hull_menu.trim_prefix("mount:")
+		head = VBoxContainer.new()
+		var pt := bus.catalog.part(str(rec.mounts.get(mid, {}).get("type", "")))
+		if pt and rec.mounts.has(mid):
+			head.add_child(T.label("%s   %s" % [pt.display_name.to_upper(), DesignRecord.tag(mid)], "display_bold", 18, T.ORANGE))
+			if DesignOutside.on_skin(rec.mounts[mid]):
+				head.add_child(HullRows.skin_row(bus, rec.mounts[mid]))
+			var rm := T.button("REMOVE", false, 15)
+			rm.name = "MountRemove"
+			rm.pressed.connect(func() -> void:
+				bus.editor.do({"op": "remove_mount", "id": mid})
+				hull_menu = "hull"
+				_fill_palette())
+			head.add_child(rm)
+		else:
+			head.add_child(T.label("That part has been taken off.", "body", 14, T.DIM))
+	elif hull_menu != "hull":
+		head = VBoxContainer.new()
+		head.add_child(HullRows.panel(bus, hull_menu))
+		var end := HullRows.end_shape_at(bus, hull_menu)
+		if end != "":
+			head.add_child(HullRows.shape_edit(bus, end, func() -> void:
+				bus.editor.do({"op": "remove_shape", "id": end})
+				hull_menu = "hull"
+				_fill_palette()))
+	var menu := VBoxContainer.new()
+	menu.name = "HullMenu"
+	menu.add_theme_constant_override("separation", 8)
+	_palette_list.add_child(menu)
+	if head:
+		menu.add_child(head)
+	menu.add_child(HullRows.whole_hull(bus, show_shape))
 	_palette_list.add_child(T.label("FIT A HULL PART", "display_bold", 18, T.ORANGE))
 	for pt: DesignPartType in bus.catalog.parts.values():
 		if not pt.hull_mount:

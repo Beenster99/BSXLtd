@@ -10,6 +10,7 @@ extends Node
 ## the parts' detailed models (models_*.png). With --fit: fit_console.png, fit_wall.png and fit_room.png
 ## (the contract fit assessment).
 
+const HullRows := preload("res://modules/design/internal/console/hull_rows.gd")
 const SIZE := Vector2i(1920, 1080)
 
 
@@ -219,6 +220,25 @@ class Runner:
 			m.pressed.emit()
 		await _frames(20)
 		await _save(out, "fly_mount")
+		# A wing added from out there, its sizes in the hull menu (every hull change from any view).
+		walk.holding = {}
+		if walk.is_palette_open():
+			walk.toggle_palette()
+		walk.set("rebuild_delay", 0.0)
+		var sid := HullRows.add_shape(bus, "wing")
+		await _frames(40)
+		var limbs: Array = (bus.frame_plan().limbs as Array).filter(func(l): return str(l.shape) == sid and float(l.side) > 0.0)
+		if not limbs.is_empty():
+			var box := DesignShape.limb_box(limbs[0])
+			walk.body.position = Vector3(box.end.x + 4.0, box.end.y + 6.0, box.get_center().z + 6.0)
+			walk.body.rotation.y = 0.55
+			walk.camera.rotation.x = -0.75
+			await _frames(20)
+			walk.show_shape(sid)
+			walk.toggle_palette()
+			walk.show_shape(sid)
+			await _frames(10)
+			await _save(out, "fly_wing")
 
 	## The outside designer's free shapes (--shapes, plan 3.10 stage 2): the sample with a nose
 	## (its stern has a door, so no tapered stern), swept wings, a fin and pods on struts, painted; the console with the wings
