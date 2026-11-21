@@ -63,6 +63,10 @@ class Runner:
 			await _fit_shots(room, out)
 			get_tree().quit()
 			return
+		if "--fly" in OS.get_cmdline_user_args():
+			await _fly_shots(room, out)
+			get_tree().quit()
+			return
 		if "--shapes" in OS.get_cmdline_user_args():
 			await _shape_shots(room, out)
 			get_tree().quit()
@@ -181,6 +185,40 @@ class Runner:
 			await _frames(20)
 			await _save(out, shot[0])
 		room.furnishing.close_walk()
+
+	## Walk-inside, flying (--fly): over the roof looking down at it with the hull menu open
+	## (fly_menu), then a hull part in hand over the roof (fly_mount), from out on the quarter.
+	func _fly_shots(room: Node, out: String) -> void:
+		var bus: DesignBus = room.bus
+		bus.editor.do({"op": "set_meta", "fields": {"livery": {"base": "#1f4e79", "trim": "#d9dcd8", "pattern": "top"}}})
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		await _frames(10)
+		walk.set_physics_process(false)
+		walk.set_cad(false)
+		walk.toggle_fly()
+		var plan := bus.frame_plan()
+		var st: Array = plan.stations
+		var mid := (float(st[1].z) + float(st[2].z)) * 0.5
+		var roof := float(DesignShape.hull_at(plan, mid - 0.5, mid + 0.5).roof)
+		walk.body.position = Vector3(3.0, roof + 9.0, mid + 7.0)
+		walk.body.rotation.y = 0.35
+		walk.camera.rotation.x = -0.85
+		await _frames(20)
+		walk.open_hull_menu()
+		await _frames(10)
+		await _save(out, "fly_menu")
+		var b := walk.find_child("Panel_armour", true, false) as Button
+		if b:
+			b.pressed.emit()
+		await _frames(20)
+		var m := walk.find_child("Mount_antenna_mast", true, false) as Button
+		if m == null:
+			m = walk.find_child("Mount_*", true, false) as Button
+		if m:
+			m.pressed.emit()
+		await _frames(20)
+		await _save(out, "fly_mount")
 
 	## The outside designer's free shapes (--shapes, plan 3.10 stage 2): the sample with a nose
 	## (its stern has a door, so no tapered stern), swept wings, a fin and pods on struts, painted; the console with the wings
