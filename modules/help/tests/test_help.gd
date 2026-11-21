@@ -12,7 +12,7 @@ func run_tests() -> void:
 		return
 	check(not HudSlots.holo_channel(HelpBus.HOLO_CHANNEL).is_empty(), "Help is a wrist tab")
 	var topics := bus.topics()
-	check(topics.size() >= 8, "the built-in pages are there: %d" % topics.size())
+	check(topics.size() >= 25, "the built-in chapters are there: %d" % topics.size())
 	check(str(topics[0].id) == "start", "Getting started comes first")
 	for t in topics:
 		var text := bus.page_text(str(t.id))
@@ -22,30 +22,103 @@ func run_tests() -> void:
 	var keys := bus.page_text(HelpBus.KEYS_TOPIC)
 	check(keys.contains("Wrist screen") and keys.contains(Keys.key_name(Keys.HOLO)), "the keys page lists the wrist key as bound")
 	check(HelpBus.fill_keys("{key:interact}") == Keys.prompt(Keys.INTERACT), "a key mark becomes its key")
-	bus.add_topic("_test.page", "Test page", "# Heading\n- a bullet {key:interact}", 15)
-	check(str(bus.topics()[1].id) == "_test.page", "an added page sits by its order")
+	_test_chapters(bus)
+	bus.add_topic("_test.page", "Test page", "# Heading\n- a bullet {key:interact}", 15, HelpBus.Guide.START)
+	check(str(bus.topics()[1].id) == "_test.page", "an added page sits by its order in its group")
 	check(bus.search("bullet").size() == 1, "search finds a word in a page")
-	check(bus.search("deposit").any(func(t: Dictionary) -> bool: return t.id == "contracts"), "search finds the contracts page by 'deposit'")
+	check(bus.search("deposit").any(func(t: Dictionary) -> bool: return t.id == "first_contract"), "search finds the first contract by 'deposit'")
+	bus.add_topic("orders", "Ordering parts", "An old page another module used to add.", 31)
+	check(bus.topic("orders").is_empty(), "pages the chapters replace are left out")
 
 	var screen := bus.make_screen(150.0)
 	screen.size = Vector2(1400, 800)
 	add_child(screen)
 	await frames(2)
 	var list := screen.find_child("Topics", true, false) as VBoxContainer
-	check(list.get_child_count() == bus.topics().size(), "every page is listed")
-	(screen.find_child("Topic_contracts", true, false) as Button).pressed.emit()
+	check((screen.call("topic_buttons") as Array).size() == bus.topics().size(), "every page is listed")
+	check(list.get_child_count() > bus.topics().size(), "under its group's heading")
+	(screen.find_child("Topic_orders_screen", true, false) as Button).pressed.emit()
 	await frames(1)
-	check(str(screen.get("current")) == "contracts", "clicking a page shows it")
+	check(str(screen.get("current")) == "orders_screen", "clicking a page shows it")
 	var page := screen.find_child("Page", true, false) as VBoxContainer
 	check(page.get_child_count() > 5, "the page has its headings and lines")
+	check(screen.find_child("Shot_orders", true, false) != null, "a screen's chapter shows its picture")
+	check(screen.find_child("Goto_buy_parts", true, false) != null, "and links to the step-by-step it belongs with")
+	(screen.find_child("Goto_buy_parts", true, false) as Button).pressed.emit()
+	await frames(1)
+	check(str(screen.get("current")) == "buy_parts", "a link opens that chapter")
+	check(screen.find_child("Open_orders_book", true, false) != null, "a step-by-step has a button that opens the screen")
 	screen.call("set_query", "airlock")
 	await frames(1)
-	check(list.get_child_count() < bus.topics().size() and str(screen.get("current")) == "yard", "searching narrows the list and shows the first match: %d" % list.get_child_count())
+	var hits := screen.call("topic_buttons") as Array
+	check(hits.size() < bus.topics().size() and hits.any(func(b: Button) -> bool: return b.name == "Topic_yard"), "searching narrows the list: %d" % hits.size())
 	bus.remove_topic("_test.page")
 	screen.call("set_query", "")
+	await _test_context(bus)
 	await _test_matrix(bus, screen)
 	await _test_parts(bus, screen)
 	screen.queue_free()
+
+
+## Every chapter's pictures, callouts and links hold together: a picture named is in shots/
+## and was made with at least as many rings as the chapter has callouts under it, a link goes to
+## a chapter or a wrist screen that is there, and every wrist screen has a chapter.
+func _test_chapters(bus: HelpBus) -> void:
+	var rings := {}
+	for sh: Dictionary in HelpBus.Shots.SHOTS:
+		rings[str(sh.id)] = (sh.get("ring", []) as Array).size()
+	for t in bus.topics():
+		var shot := ""
+		var callouts := 0
+		var lines := (str(t.text) + "\n! _end").split("\n")
+		for line in lines:
+			var l := line.strip_edges()
+			if l.begins_with("! "):
+				if shot != "" and shot != "_end":
+					check(callouts <= int(rings.get(shot, 0)), "%s: %s has a ring for each of its %d callouts (%d)" % [t.id, shot, callouts, int(rings.get(shot, 0))])
+				shot = l.substr(2)
+				callouts = 0
+				if shot != "_end":
+					check(rings.has(shot), "%s: the picture %s is made by the shots tool" % [t.id, shot])
+					check(ResourceLoader.exists(HelpBus.Shots.DIR.path_join(shot + ".webp")), "%s: the picture %s is in the game" % [t.id, shot])
+			elif l.begins_with("@ "):
+				callouts += 1
+			elif l.begins_with("-> "):
+				var to := l.substr(3).get_slice("|", 0)
+				check(not bus.topic(to).is_empty(), "%s: its link to %s goes somewhere" % [t.id, to])
+			elif l.begins_with("=> "):
+				var ch := l.substr(3).get_slice("|", 0)
+				check(not HudSlots.holo_channel(ch).is_empty(), "%s: its button opens the %s screen" % [t.id, ch])
+	var groups := {}
+	for t in bus.topics():
+		groups[str(t.group)] = true
+	check(groups.size() == 4, "the chapters are in their four groups: %s" % [groups.keys()])
+	for ch: Dictionary in HudSlots.holo_channels():
+		if str(ch.id) != HelpBus.HOLO_CHANNEL:
+			check(bus.help_for_screen(str(ch.id)) != "", "the %s screen has a chapter" % ch.label)
+
+
+## Help opens on the chapter of the screen shown just before it (a terminal's "Channel" node
+## names its channel), once, then where it was left.
+func _test_context(bus: HelpBus) -> void:
+	var before := Control.new()
+	before.name = "Channel"
+	before.set_meta("channel", "orders.book")
+	add_child(before)
+	var s := bus.make_screen(150.0)
+	s.size = Vector2(1400, 800)
+	add_child(s)
+	await frames(1)
+	check(str(s.get("current")) == "orders_screen", "Help opened from Parts orders opens on its chapter: %s" % s.get("current"))
+	s.call("show_topic", "deliver")
+	s.queue_free()
+	before.queue_free()
+	await frames(1)
+	var again := bus.make_screen(150.0)
+	add_child(again)
+	await frames(1)
+	check(str(again.get("current")) == "deliver", "opened again, Help is where it was left")
+	again.queue_free()
 
 
 ## The size x class matrix: a page of its own; every graded type in every size; a reactor
