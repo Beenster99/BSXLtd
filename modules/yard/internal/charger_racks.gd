@@ -77,7 +77,7 @@ func build(stores: int, yard: int, stores_colour: Color, yard_colour: Color) -> 
 			strut.basis = Basis.looking_at((b - a).normalized(), Vector3.UP)
 		_pad(k, at, dark, stores_colour, "StoresPad%d" % i)
 		# The charge lead: a dark box on the wall behind the pad.
-		k.box(Vector3(0.36, 0.24, 0.1), Vector3(at.x, top + 0.2, WALL_Z - 0.05), dark, false)
+		k.box(Vector3(0.36, 0.24, 0.14), Vector3(at.x, top + 0.2, WALL_Z - 0.07), dark, false)   # (its face stands off the wall's: no flicker)
 	k.sign("CHARGING", Vector3((LOWER_X[0] + UPPER_X[4]) * 0.5, float(ROWS_Y[1]) + 3.4, WALL_Z - 0.12), Vector3.FORWARD, 0.02, Kit.ORANGE, 96)
 	# The yard's apron off the hall floor: a tread deck, an edge rail, its pads.
 	var mid := Vector3((APRON_X.x + APRON_X.y) * 0.5, APRON_TOP - 0.2, FACE_Z - APRON_DEPTH * 0.5)

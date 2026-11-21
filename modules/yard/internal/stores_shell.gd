@@ -153,7 +153,7 @@ func _deck(k, hull: Material, dark: Material, yellow: Material) -> void:
 	# across the stair's width and on past its top, railed on its open sides.
 	var land_x1 := x + STAIR_W * 0.5 + 0.1
 	var land_z := STAIR_TOP_Z - LANDING
-	k.slab(Vector3(DECK_X1, DECK_Y - 0.25, land_z), Vector3(land_x1, DECK_Y, STAIR_TOP_Z), tread)
+	k.slab(Vector3(DECK_X1, DECK_Y - 0.25, land_z), Vector3(land_x1, DECK_Y, STAIR_TOP_Z - 0.012), tread)   # (short of the top tread's lip)
 	k.box(Vector3(land_x1 - DECK_X1, 0.012, 0.3), Vector3((DECK_X1 + land_x1) * 0.5, DECK_Y + 0.006, STAIR_TOP_Z - 0.17), hazard, false)
 	k.box(Vector3(0.12, 0.45, LANDING), Vector3(land_x1 - 0.06, DECK_Y - 0.25, (land_z + STAIR_TOP_Z) * 0.5), dark, false)
 	_rail(Vector3(land_x1 - 0.05, DECK_Y, STAIR_TOP_Z), Vector3(land_x1 - 0.05, DECK_Y, land_z + 0.05), yellow, dark)
