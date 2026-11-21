@@ -59,8 +59,9 @@ func rod(mat: Material, a: Vector3, b: Vector3, radius: float, sides := 8) -> vo
 	count += 1
 
 
-## Every gathered shape as meshes under `parent`, named `prefix`N.
-func commit(parent: Node3D, prefix: String) -> int:
+## Every gathered shape as meshes under `parent`, named `prefix`N; with `shadows` off they cast
+## none (seams and bolts a few mm proud of a wall throw nothing worth a shadow pass).
+func commit(parent: Node3D, prefix: String, shadows := true) -> int:
 	var n := 0
 	for key: String in _parts:
 		var p: Dictionary = _parts[key]
@@ -69,6 +70,8 @@ func commit(parent: Node3D, prefix: String) -> int:
 		mi.name = "%s%d" % [prefix, n]
 		mi.mesh = st.commit()
 		mi.material_override = p.mat
+		if not shadows:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(mi)
 		n += 1
 	_parts.clear()

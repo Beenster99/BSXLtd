@@ -68,7 +68,7 @@ func build(kit, parent: Node3D) -> Node3D:
 	var node := Node3D.new()
 	node.name = "RoomDetail"
 	parent.add_child(node)
-	dm.commit(node, "Detail")
+	dm.commit(node, "Detail", false)   # (0.5.1: 40 fps in the quarters; the rooms' lamps cast none anyway)
 	return node
 
 

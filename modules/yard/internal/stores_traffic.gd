@@ -442,6 +442,7 @@ func _make_freighter(brand: Dictionary) -> Node3D:
 		light.omni_range = 22.0
 		light.light_energy = 1.4
 		light.light_color = Color(1.0, 0.94, 0.84)
+		light.set_meta("gfx_no_shadow", true)   # a hold lamp: its shadows drew the hall again
 		n.add_child(light)
 	var tag := Label3D.new()
 	tag.text = String(brand.name)
@@ -1086,6 +1087,7 @@ func _make_hauler(i: int, brand: Dictionary) -> Node3D:
 	light.omni_range = 12.0
 	light.light_energy = 1.2
 	light.light_color = Color(1.0, 0.92, 0.8)
+	light.set_meta("gfx_no_shadow", true)
 	n.add_child(light)
 	for side: float in [-1.0, 1.0]:
 		var tag := Label3D.new()
