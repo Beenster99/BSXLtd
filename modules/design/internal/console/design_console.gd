@@ -786,7 +786,12 @@ func _contract_block(contracts: ContractsBus, order: Dictionary) -> void:
 		send.tooltip_text = why.capitalize() if why != "" else "The client signs off this design at CR %s and pays the deposit of CR %s." % [
 				T.money(int(q.price)), T.money(int(ShipOrders.payment_plan(int(q.price), 0, 1)[0].value))]
 		send.pressed.connect(func() -> void:
-			contracts.request_sign_ship(order, rec.id, rec.name, int(bus.totals().cost), contracts.signer()))
+			if not signing:
+				contracts.request_sign_ship(order, rec.id, rec.name, int(bus.totals().cost), contracts.signer())
+				return
+			_ask_signature(row, send, "Sign the contract for %s as %s, on the line below." % [rec.name, contracts.signer()],
+					func(sig: Array) -> void:
+						contracts.request_sign_ship(order, rec.id, rec.name, int(bus.totals().cost), contracts.signer(), sig)))
 		row.add_child(send)
 	else:
 		var paid := 0
@@ -813,7 +818,9 @@ func _contract_block(contracts: ContractsBus, order: Dictionary) -> void:
 			sign.name = "SignGate_" + g
 			sign.disabled = g != str(contracts.gates_to_sign(str(c.id))[0])
 			sign.tooltip_text = "The build has reached this gate. Sign it as %s and the client pays the stage." % contracts.signer()
-			sign.pressed.connect(func() -> void: contracts.request_sign_gate(str(c.id), g, contracts.signer()))
+			sign.pressed.connect(func() -> void:
+				_ask_signature(sign, sign, "Sign the %s stage gate as %s, on the line below." % [stage_name, contracts.signer()],
+						func(sig: Array) -> void: contracts.request_sign_gate(str(c.id), g, contracts.signer(), sig)))
 			_palette.add_child(sign)
 		var papers := contracts.papers(str(c.id))
 		if not papers.is_empty():
@@ -2010,3 +2017,23 @@ func _gap(w: int) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size.x = w
 	return c
+
+
+## Shows a signature pad in the palette under `anchor` (beenster, 21 Nov: sign by scribbling on
+## a line), hiding `button` while it is open; SIGN sends the drawn signature to `on_signed`.
+func _ask_signature(anchor: Control, button: Button, title: String, on_signed: Callable) -> void:
+	var parent := anchor.get_parent()
+	if parent == null or parent.has_node("SignaturePad"):
+		return
+	var pad := ContractSignaturePad.make(title, 14)
+	pad.name = "SignaturePad"
+	parent.add_child(pad)
+	parent.move_child(pad, anchor.get_index() + 1)
+	button.visible = false
+	pad.cancelled.connect(func() -> void:
+		button.visible = true
+		pad.queue_free())
+	pad.signed.connect(func(sig: Array) -> void:
+		button.visible = true
+		pad.queue_free()
+		on_signed.call(sig))

@@ -272,9 +272,23 @@ func _papers() -> void:
 			var b := T.button("SIGN", true, fs - 2)
 			b.disabled = g != str(gates[0])
 			var cid := str(c.id)
-			b.pressed.connect(func() -> void: contracts.request_sign_gate(cid, g, contracts.signer()))
 			row.add_child(b)
 			_body.add_child(row)
+			var gate_title := "Sign the %s stage gate as %s, on the line below." % [name, contracts.signer()]
+			b.pressed.connect(func() -> void:
+				if row.get_parent().has_node("SignaturePad"):
+					return
+				var pad := ContractSignaturePad.make(gate_title, fs - 1)
+				pad.name = "SignaturePad"
+				row.get_parent().add_child(pad)
+				row.get_parent().move_child(pad, row.get_index() + 1)
+				b.visible = false
+				pad.cancelled.connect(func() -> void:
+					b.visible = true
+					pad.queue_free())
+				pad.signed.connect(func(sig: Array) -> void:
+					pad.queue_free()
+					contracts.request_sign_gate(cid, g, contracts.signer(), sig)))
 	var all := contracts.all_papers()
 	if all.is_empty():
 		_body.add_child(_label("No papers yet. Sign a design's quote in the design room to start one.", "body_medium", fs, T.DIM))
@@ -287,6 +301,12 @@ func _papers() -> void:
 		for t: Variant in pp.get("terms", []):
 			v.add_child(_label(str(t), "mono_medium", fs - 3, T.TEXT))
 		v.add_child(_label("Signed for BSX Ltd: %s" % str(pp.by), "body_medium", fs - 2, T.CYAN))
+		var sig: Array = pp.get("sig", [])
+		if not sig.is_empty():
+			var mark := ContractSignaturePad.view(sig, Vector2(fs * 14.0, fs * 14.0 / ContractSignaturePad.ASPECT))
+			mark.name = "Signature"
+			mark.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			v.add_child(mark)
 		_body.add_child(card)
 
 
