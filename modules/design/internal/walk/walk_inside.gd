@@ -7,6 +7,10 @@ extends Node3D
 ## change from in here, through the same editor, so the table and the walls follow.
 ##
 ##   WASD walk, Shift run, Space jump, mouse look, Esc back to the table.
+##   Q flies (beenster, 21 Nov: "fly outside the model and design beams and plates"): no
+##   gravity, through the walls, WASD where you look, Space up, C down; Q again to walk.
+##   E on the hull: its panel's rows (metal, armour, glass, open, paint, the frames and members
+##   round it) and the hull parts to fit; a hull part in hand fits where you aim on her skin.
 ##   Tab: the parts for the room you're in, the hull choices, undo and redo.
 ##   Aim at a part: click to pick it up and click again to put it down, R turns it, X removes it.
 ##   Aim at a wall: F puts a door in it, X on a door takes it out, the mouse wheel pushes or
@@ -20,6 +24,7 @@ extends Node3D
 const T := preload("res://modules/ui/api/terminal_kit.gd")
 const WalkBuild := preload("res://modules/design/internal/walk/walk_build.gd")
 const WalkCad := preload("res://modules/design/internal/walk/walk_cad.gd")
+const HullRows := preload("res://modules/design/internal/console/hull_rows.gd")
 
 ## Where the walk-inside world is built, from the design room, m.
 ## The sun lights only what faces space (WalkBuild.EXTERIOR): the inside is lit by its lamps.
@@ -28,6 +33,10 @@ const LAYER := WalkBuild.LAYER
 const DOOR_H := WalkBuild.DOOR_H
 ## How far you can reach to design, m.
 const REACH := 8.0
+## How far you can reach flying round her outside, m.
+const FLY_REACH := 40.0
+## The outside designer's flag: hull parts and the hull's panels from in here.
+const OUTSIDE_FLAG := "design.outside"
 ## How far a wheel step pushes her section out, and the most it goes past the proposal, m.
 const HULL_STEP := 0.25
 const HULL_MAX := 4.0
@@ -44,6 +53,8 @@ const SERVICE_REACH := 1.5
 @export var climb_speed := 1.8
 ## Gravity, m/s2.
 @export var gravity := 9.8
+## Flying (Q): how fast, m/s (Shift twice as fast).
+@export var fly_speed := 6.0
 ## Mouse look, radians per pixel.
 @export var look_speed := 0.003
 
@@ -62,6 +73,10 @@ var camera: Camera3D
 var hud: CanvasLayer
 ## A part in your hands: {type, id ("" for a new one), rot}; empty when none.
 var holding: Dictionary = {}
+## Flying (Q): no gravity, through the walls.
+var flying := false
+## The hull panel whose rows the palette shows (E on the hull): "<z>:<edge>", "" for the parts.
+var hull_menu := ""
 ## Where the part in your hands would go now: {ok, room, x, z, why}.
 var spot: Dictionary = {}
 var _built: Node3D
@@ -259,7 +274,7 @@ func look(relative: Vector2) -> void:
 ## space, or {} for nothing.
 func aim() -> Dictionary:
 	var from := camera.global_position
-	var to := from - camera.global_basis.z * REACH
+	var to := from - camera.global_basis.z * (FLY_REACH if flying else REACH)
 	var q := PhysicsRayQueryParameters3D.create(from, to, LAYER, [body.get_rid()])
 	var hit := world.get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty() or not (hit.collider as Object).has_meta("walk"):
@@ -277,15 +292,21 @@ func is_palette_open() -> bool:
 
 func toggle_palette() -> void:
 	_palette.visible = not _palette.visible
+	if not _palette.visible:
+		hull_menu = ""
 	if _palette.visible:
 		_fill_palette()
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _palette.visible else Input.MOUSE_MODE_CAPTURED
 
 
-## Takes a new part of `type` in your hands.
+## Takes a new part of `type` in your hands (a hull part goes on her skin where you aim).
 func take_new(type: String) -> void:
+	var pt := bus.catalog.part(type)
 	holding = {"type": type, "id": "", "rot": 0}
+	if pt and pt.hull_mount and Flags.is_on(OUTSIDE_FLAG):
+		holding["mount"] = true
+		holding["spin"] = 0.0
 	if is_palette_open():
 		toggle_palette()
 
@@ -300,6 +321,12 @@ func pick_up(component_id: String) -> void:
 ## Puts the part in your hands down where you're aiming. Returns true if it went down.
 func put_down() -> bool:
 	_update_spot()
+	if bool(holding.get("mount", false)):
+		if not spot.has("mount"):
+			return false
+		bus.editor.do(DesignMirror.with_twin(record(), {"op": "add_mount", "mount": spot.mount}, bus.mirror))
+		holding = {}
+		return true
 	if holding.is_empty() or str(spot.get("room", "")) == "":
 		return false
 	var at := {"room": spot.room, "x": spot.x, "z": spot.z, "rot": int(holding.rot)}
@@ -314,10 +341,18 @@ func put_down() -> bool:
 
 
 func turn() -> void:
+	if bool(holding.get("mount", false)):
+		holding.spin = fposmod(float(holding.spin) + PI * 0.5, TAU)
+		return
 	if not holding.is_empty():
 		holding.rot = (int(holding.rot) + 1) % 4
 		return
 	var a := aim()
+	if not a.is_empty() and str(a.info.kind) == "mount":
+		var hm: Dictionary = record().mounts.get(str(a.info.id), {})
+		if DesignOutside.on_skin(hm):
+			bus.editor.do({"op": "set_mount", "id": hm.id, "fields": {"spin": fposmod(float(hm.get("spin", 0.0)) + PI * 0.5, TAU)}})
+		return
 	if not a.is_empty() and str(a.info.kind) == "component":
 		var c: Dictionary = record().components.get(str(a.info.id), {})
 		if not c.is_empty():
@@ -335,6 +370,9 @@ func remove_aimed() -> bool:
 			return true
 		"door":
 			bus.editor.do({"op": "remove_door", "id": str(a.info.id)})
+			return true
+		"mount":
+			bus.editor.do({"op": "remove_mount", "id": str(a.info.id)})
 			return true
 	return false
 
@@ -494,6 +532,70 @@ func hull_panel_along_aim() -> Vector2i:
 	return Vector2i(DesignFrame.bay_at(plan, z), edge)
 
 
+## Q: fly (no gravity, through the walls, where you look) or walk again. Returns whether you fly.
+func toggle_fly() -> bool:
+	flying = not flying
+	body.velocity = Vector3.ZERO
+	body.collision_mask = 0 if flying else LAYER
+	return flying
+
+
+## The hull panel you aim at, as the console names it ("<z>:<edge>", z its bay's middle): the
+## plate itself, or the panel by the ring, stringer or lining you aim at, else the one straight
+## on along the view. "" off the hull, or on a wing or pod (shaped at the table).
+func panel_aimed() -> String:
+	var plan := builder.frame_plan
+	if plan.is_empty():
+		return ""
+	var st: Array = plan.stations
+	var f := frame_aimed()
+	var k := -1
+	var edge := -1
+	if not f.is_empty():
+		if f.part and (f.part as PartData).path.begins_with("shape_"):
+			return ""
+		var p: Vector3 = f.point
+		k = DesignFrame.bay_at(plan, p.z)
+		edge = int(f.edge)
+		if edge < 0 or edge >= DesignFrame.SIDES:
+			edge = _nearest_edge(st[DesignFrame.station_at(plan, p.z)].profile, Vector2(p.x, p.y))
+	if k < 0 or edge < 0:
+		var along := hull_panel_along_aim()
+		k = along.x
+		edge = along.y
+	if k < 0 or edge < 0 or k >= st.size() - 1:
+		return ""
+	return "%.2f:%d" % [(float(st[k].z) + float(st[k + 1].z)) * 0.5, edge]
+
+
+static func _nearest_edge(pr: PackedVector2Array, p: Vector2) -> int:
+	var best := INF
+	var edge := -1
+	for i in pr.size():
+		var q := Geometry2D.get_closest_point_to_segment(p, pr[i], pr[(i + 1) % pr.size()])
+		if q.distance_to(p) < best:
+			best = q.distance_to(p)
+			edge = i
+	return edge
+
+
+## E on the hull: the palette with the panel's rows and the hull parts to fit. Returns whether it
+## opened.
+func open_hull_menu() -> bool:
+	if not Flags.is_on(OUTSIDE_FLAG):
+		return false
+	var id := panel_aimed()
+	if id == "":
+		return false
+	if is_palette_open():
+		toggle_palette()
+	hull_menu = id
+	toggle_palette()
+	hull_menu = id
+	_fill_palette()
+	return true
+
+
 ## The mouse wheel on the frame: her section there pushed out (or back in) on the side you
 ## aim at, a quarter metre a step.
 func push_hull(steps: int) -> bool:
@@ -523,6 +625,9 @@ func push_hull(steps: int) -> bool:
 func _update_spot() -> void:
 	spot = {}
 	if holding.is_empty():
+		return
+	if bool(holding.get("mount", false)):
+		_update_mount_spot()
 		return
 	var rec := record()
 	var pt := bus.catalog.part(str(holding.type))
@@ -562,6 +667,23 @@ func _update_spot() -> void:
 			spot.why = "No %s within %.1f m" % [" or ".join(missing), SERVICE_REACH]
 	if rt == null:
 		pass
+
+
+## A hull part in hand: where it lands on her skin along your view, and whether it fits there.
+func _update_mount_spot() -> void:
+	var pt := bus.catalog.part(str(holding.type))
+	var inv := world.global_transform.affine_inverse()
+	var from: Vector3 = inv * camera.global_position
+	var dir: Vector3 = (inv.basis * -camera.global_basis.z).normalized()
+	var m := HullRows.mount_spot(bus, str(holding.type), from, dir)
+	if pt == null or m.is_empty():
+		spot = {"why": "Aim at her hull"}
+		return
+	m.spin = float(holding.get("spin", 0.0))
+	var xf := DesignRules.mount_transform(record(), m, pt, bus.frame_plan())
+	var ok := HullRows.fits(bus, m, pt, xf)
+	spot = {"mount": m, "xf": xf, "ok": ok,
+			"why": ("On the %s" if ok else "Won't fit on the %s: off the edge or in the way") % DesignOutside.face_name(m)}
 
 
 func _uses_services(pt: DesignPartType) -> bool:
@@ -642,6 +764,10 @@ func _input(event: InputEvent) -> void:
 				door_here()
 			KEY_G:
 				handled = glass_here()
+			KEY_Q:
+				toggle_fly()
+			KEY_E:
+				handled = open_hull_menu()
 			KEY_V:
 				set_cad(not cad)
 			KEY_Z:
@@ -722,6 +848,9 @@ func _physics_process(delta: float) -> void:
 		return
 	var move := Vector2.ZERO if is_palette_open() else _axis(Keys.LEFT, Keys.RIGHT, Keys.FORWARD, Keys.BACK)
 	var running := InputMap.has_action(Keys.RUN) and Input.is_action_pressed(Keys.RUN)
+	if flying:
+		_fly(move, running)
+		return
 	var dir := (body.global_basis * Vector3(move.x, 0, move.y))
 	dir.y = 0.0
 	dir = dir.normalized() * minf(move.length(), 1.0)
@@ -750,6 +879,24 @@ func _physics_process(delta: float) -> void:
 	if body.position.y < -30.0:
 		spawn()
 	# The crew outside see where you are on their plans and the holotable.
+	if bus.crew:
+		bus.crew.call("walk_at", body.position - Vector3(0, 0.9, 0), body.rotation.y)
+
+
+## Flying: where you look, Space up and C down, through the walls.
+func _fly(move: Vector2, running: bool) -> void:
+	var dir := camera.global_basis * Vector3(move.x, 0, move.y)
+	var up := 0.0
+	if not is_palette_open():
+		if InputMap.has_action(Keys.JUMP) and Input.is_action_pressed(Keys.JUMP):
+			up += 1.0
+		if Input.is_physical_key_pressed(KEY_C):
+			up -= 1.0
+	dir += Vector3.UP * up
+	if dir.length() > 1.0:
+		dir = dir.normalized()
+	body.velocity = dir * fly_speed * (2.0 if running else 1.0)
+	body.move_and_slide()
 	if bus.crew:
 		bus.crew.call("walk_at", body.position - Vector3(0, 0.9, 0), body.rotation.y)
 
@@ -785,7 +932,7 @@ func _aim_text() -> String:
 				pt.display_name if pt else str(holding.type), str(spot.get("why", "Aim at a floor"))]
 	var a := aim()
 	if a.is_empty():
-		return "Tab  parts and hull"
+		return "Flying   Space up   C down   Q to walk" if flying else "Tab  parts and hull"
 	var rec := record()
 	match str(a.info.kind):
 		"component":
@@ -794,6 +941,10 @@ func _aim_text() -> String:
 			return "%s\nClick pick up   R turn   X remove" % (pt.display_name if pt else "Part")
 		"door":
 			return "Door\nX remove"
+		"mount":
+			var hm: Dictionary = rec.mounts.get(str(a.info.id), {})
+			var mp := bus.catalog.part(str(hm.get("type", "")))
+			return "%s on the hull\nR turn   X remove" % (mp.display_name if mp else "Part")
 		"wall":
 			var what := "Outer wall: %s, %s" % [
 					DesignStructure.option("hull", str(rec.structure.hull)).name,
@@ -805,7 +956,10 @@ func _aim_text() -> String:
 		"frame":
 			var part := builder.frame_part(a.collider, int(a.shape))
 			var joint := builder.frame_joint(a.point)
-			return "%s\nG glass or metal   Wheel push the hull out or in" % DesignFrame.describe(part, joint, builder.frame_model)
+			if part and part.path.begins_with("shape_"):
+				return "%s\nWings, fins and pods: change them at the table (HULL SHAPE)" % DesignFrame.describe(part, joint, builder.frame_model)
+			return "%s\n%sG glass or metal   Wheel push the hull out or in" % [DesignFrame.describe(part, joint, builder.frame_model),
+					"E hull menu   " if Flags.is_on(OUTSIDE_FLAG) else ""]
 	return ""
 
 
@@ -842,6 +996,12 @@ func _update_ghost() -> void:
 			_ghost = _make_ghost()
 	if _ghost == null:
 		return
+	if bool(holding.get("mount", false)):
+		_ghost.visible = spot.has("mount")
+		if _ghost.visible:
+			var pt := bus.catalog.part(str(holding.type))
+			_ghost.transform = DesignOutside.box_of(spot.xf as Transform3D, pt)[0] if pt else Transform3D.IDENTITY
+		return
 	_ghost.visible = str(spot.get("room", "")) != ""
 	if _ghost.visible:
 		_ghost.position = Vector3(float(spot.x), int(spot.deck) * record().deck_height + 0.01, float(spot.z))
@@ -853,6 +1013,21 @@ func _make_ghost() -> Node3D:
 	g.name = "Ghost"
 	world.add_child(g)
 	if pt == null:
+		return g
+	if bool(holding.get("mount", false)):
+		# A hull part: its box, centred on its own middle.
+		var gm := StandardMaterial3D.new()
+		gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		gm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		var gc := Color(0.35, 1.0, 0.5) if spot.get("ok", false) else Color(1.0, 0.7, 0.2)
+		gm.albedo_color = Color(gc.r, gc.g, gc.b, 0.35)
+		var gmi := MeshInstance3D.new()
+		var gb := BoxMesh.new()
+		gb.size = pt.size
+		gmi.mesh = gb
+		gmi.material_override = gm
+		g.add_child(gmi)
 		return g
 	var c := {"x": 0.0, "z": 0.0, "rot": int(holding.rot)}
 	var f := DesignRules.footprint(c, pt)
@@ -983,7 +1158,7 @@ func _add_hud() -> void:
 	_where = T.label("", "mono_bold", 18, T.TEXT)
 	_where.name = "Where"
 	col.add_child(_where)
-	col.add_child(T.label("WASD walk   Shift run   Space jump   Mouse look   Tab design   V CAD or real look   Esc back to the table",
+	col.add_child(T.label("WASD walk   Shift run   Space jump   Mouse look   Tab design   Q fly   E hull   V CAD or real look   Esc back to the table",
 			"body", 15, T.DIM))
 	_add_legend()
 	_aim_label = T.label("", "body_medium", 18, T.TEXT)
@@ -1030,6 +1205,9 @@ func _fill_palette() -> void:
 		_palette_list.remove_child(c)
 		c.queue_free()
 	var rec := record()
+	if hull_menu != "":
+		_fill_hull_menu(rec)
+		return
 	var w := where()
 	var room_type := str(rec.rooms[w.room].type) if str(w.room) != "" else ""
 	_palette_list.add_child(T.label("PARTS FOR THIS ROOM" if room_type != "" else "PARTS", "display_bold", 18, T.ORANGE))
@@ -1056,3 +1234,27 @@ func _fill_palette() -> void:
 	_palette_list.add_child(row)
 	_palette_list.add_child(T.label("Aim at a part: click to move it, R to turn it, X to remove it.\n"
 			+ "Aim at a wall: F for a door, the mouse wheel to push or pull it.", "body", 14, T.DIM))
+
+
+## The hull menu (E on the hull): the panel's rows, as at the console, and the hull parts to
+## fit on her skin.
+func _fill_hull_menu(_rec: DesignRecord) -> void:
+	var rows := HullRows.panel(bus, hull_menu)
+	rows.name = "HullMenu"
+	_palette_list.add_child(rows)
+	_palette_list.add_child(T.label("FIT A HULL PART", "display_bold", 18, T.ORANGE))
+	for pt: DesignPartType in bus.catalog.parts.values():
+		if not pt.hull_mount:
+			continue
+		var b := T.button("%s   %s" % [pt.display_name, T.money(pt.cost)], false, 15)
+		b.name = "Mount_" + pt.id
+		b.pressed.connect(take_new.bind(pt.id))
+		_palette_list.add_child(b)
+	var row := HBoxContainer.new()
+	for spec in [["UNDO", func() -> void: bus.editor.undo()], ["REDO", func() -> void: bus.editor.redo()]]:
+		var b := T.button(spec[0], false, 16)
+		b.pressed.connect(spec[1])
+		row.add_child(b)
+	_palette_list.add_child(row)
+	_palette_list.add_child(T.label("Esc closes. With a hull part in hand, aim at her skin and click; R turns it.",
+			"body", 14, T.DIM))
