@@ -54,6 +54,8 @@ const CHARGER_RACKS := "yard.charger_racks"
 ## The station's rooms dressed to Void Salvage's standard: panelled walls, ribs, cased
 ## openings, beamed ceilings, plated floors (beenster, 20 Nov).
 const ROOM_DETAIL := "yard.room_detail"
+## Delivery ships leave the yard by warp, with a flash and a sound (beenster, 21 Nov).
+const WARP_OUT := "yard.warp_out"
 ## The controls screen's group for the yard's keys (Help lists it third, by this name).
 const KEY_GROUP := "Deep space yard"
 

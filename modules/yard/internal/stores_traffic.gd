@@ -20,6 +20,7 @@ const FreighterLook := preload("res://modules/yard/internal/yard_freighter_look.
 const Ships := preload("res://modules/yard/internal/yard_delivery_ships.gd")
 ## The bots' charger racks (0.4.4 playtest, flag yard.charger_racks): their homes.
 const Racks := preload("res://modules/yard/internal/charger_racks.gd")
+const Warp := preload("res://modules/yard/internal/yard_warp.gd")
 
 signal delivered(part: String, qty: int)
 signal sent(part: String, qty: int)
@@ -32,6 +33,10 @@ signal kit_delivered(order_id: int, kit: String)
 ## Haulers' cruise in and out (m/s), and how far off they come from (m, east of the berths).
 @export var hauler_speed := 28.0
 @export var hauler_approach := 260.0
+## With yard.warp_out, how far past its berth (m) a delivery jumps to warp (21 Nov).
+@export var warp_after := 45.0
+## Deliveries gone by warp so far (tests read it).
+var warps := 0
 @export var store_bots := 10
 @export var yard_bots := 6
 ## How long a kit's loads stay where a mover bot set them down for you before they go back (s).
@@ -382,12 +387,17 @@ func _step_haulers(delta: float) -> void:
 			"out":
 				if _open_by(h, delta, false) <= 0.01:
 					node.position.x += minf(top_speed, 4.0 + (node.position.x - berth.x) * 0.5) * delta
-				if node.position.x > berth.x + hauler_approach:
+				var warp := Flags.is_on(YardBus.WARP_OUT)
+				if node.position.x > berth.x + (warp_after if warp else hauler_approach):
 					for b: Dictionary in h.crew:
 						(b.grip as Node).queue_free()
 						bots.erase(b)
-					node.queue_free()
 					haulers.remove_at(haulers.find_custom(func(x: Dictionary) -> bool: return x.node == node))
+					if warp:
+						warps += 1
+						Warp.jump(self, node, Vector3.RIGHT, YardSounds.enabled())
+					else:
+						node.queue_free()
 					if ship:
 						_ship = {}
 					else:
