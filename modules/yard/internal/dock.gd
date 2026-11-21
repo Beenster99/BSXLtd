@@ -36,10 +36,12 @@ var _flood_scale := 1.0
 
 
 ## The two arms' feet under the station (x, z): under the design room's front and the stores.
-const ARM_FEET: Array[Vector3] = [Vector3(-6.0, 0, -21.0), Vector3(30.0, 0, -29.0)]
-## The station's underside (y, m: YardLayout.HULL_BOX's bottom) and how far under it an arm's
+## (The design room's is far enough in that its 4.2 m mount plate stops at the room's front,
+## z -22, where it ran 1.1 m out past it.)
+const ARM_FEET: Array[Vector3] = [Vector3(-6.0, 0, -19.9), Vector3(30.0, 0, -29.0)]
+## The station's underside (y, m: the rooms' floor slabs' bottom) and how far under it an arm's
 ## line ends, in the middle of its hard point (m).
-const HULL_UNDER := YardLayout.HULL_BOX.position.y
+const HULL_UNDER := YardLayout.UNDERSIDE
 const HARD_POINT := 1.5
 
 
@@ -231,6 +233,8 @@ func _flood(berth: Node3D, at: Vector3, target: Vector3, build_berth: bool, dark
 	spot.spot_angle = 36.0
 	spot.light_color = Color(1.0, 0.96, 0.88)
 	spot.shadow_enabled = false
+	if not build_berth:
+		spot.set_meta("gfx_no_shadow", true)   # only the build berth's floods cast shadows (0.5.1: frame rate)
 	spot.position = Vector3(0, 0, -0.45)
 	tilt.add_child(spot)
 	var f := {"berth": String(berth.name).trim_prefix("Berth_"), "pan": pan, "tilt": tilt, "spot": spot, "home": target, "aim": target}
