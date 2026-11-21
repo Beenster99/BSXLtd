@@ -56,6 +56,9 @@ const CHARGER_RACKS := "yard.charger_racks"
 const ROOM_DETAIL := "yard.room_detail"
 ## Delivery ships leave the yard by warp, with a flash and a sound (beenster, 21 Nov).
 const WARP_OUT := "yard.warp_out"
+## The airlocks' control panels (a housing, a status screen, a big lit button) and their
+## detail: door frames, handrails, gauges, a vacuum sign, vents (beenster, 21 Nov).
+const AIRLOCK_DETAIL := "yard.airlock_detail"
 ## The controls screen's group for the yard's keys (Help lists it third, by this name).
 const KEY_GROUP := "Deep space yard"
 

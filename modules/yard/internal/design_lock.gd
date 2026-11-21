@@ -49,13 +49,7 @@ func _apply_doors() -> void:
 	var h := YardLayout.DESIGN_LOCK_DOOR_H
 	inner_door.position.y = h * 0.5 + o.x * (h + 0.05)
 	outer_door.position.y = h * 0.5 + o.y * (h + 0.05)
-	var c := Color(0.2, 1.0, 0.35)
-	if state == State.PUMPING:
-		c = Color(1.0, 0.6, 0.1)
-	elif is_busy():
-		c = Color(1.0, 0.2, 0.15)
-	for l in _lamps:
-		l.material_override = _lamp_mat(c)
+	_show_state()
 
 
 ## A door in the plane z = `x` (the base's name for the one coordinate a door sits at).
@@ -77,12 +71,8 @@ func _door(x: float, node_name: String) -> AnimatableBody3D:
 	return d
 
 
-## The base's panels face along x; these turn to lie flat on whichever wall they are on.
+## The base's panels turn to lie flat on whichever wall they are on; these get their own ids.
 func _panel(at: Vector3, facing: Vector3, where: String) -> void:
 	super._panel(at, facing, where)
 	var area := get_child(get_child_count() - 1) as Node3D
 	area.set_meta("gfx_id", "design_lock:" + where)
-	area.basis = Basis(Vector3.UP, atan2(-facing.z, facing.x))
-	for c in area.get_children():
-		if c is MeshInstance3D:
-			(c as MeshInstance3D).position = Vector3(0.02, 0.0, 0.0)
