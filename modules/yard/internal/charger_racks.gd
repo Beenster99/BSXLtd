@@ -57,18 +57,27 @@ func build(stores: int, yard: int, stores_colour: Color, yard_colour: Color) -> 
 	var dark := k.paint(Kit.DARK, 0.3, 0.6)
 	var deck := k.paint(Kit.DECK, 0.5, 0.55, "tread_diamond_steel")
 	# The stores' wall rack: a pair of rails up the wall for each pad, the pad on a bracket.
+	# (0.5.1 playtest: "these racks are excessively large". Each brace was drawn as a box from
+	# corner to corner, a flat black sheet up to 4 m by 2.3 m; now it is a slim strut.)
 	for i in stores:
 		var at := home(i, false)
 		var top := at.y - SIT
 		var out := WALL_Z - at.z
+		var reach := out + PAD.z * 0.5 - 0.1   # the arm, from the wall to under the pad's far edge
+		var drop := minf(reach * 0.6, 1.4)     # how far down the rail its strut starts
 		for side: float in [-1.0, 1.0]:
-			k.box(Vector3(0.14, 3.2, 0.12), Vector3(at.x + side * ARM_X, top - 1.1, WALL_Z - 0.06), steel, false)
-			# Arm out to the pad's far edge, braced down to the rail.
-			k.box(Vector3(0.12, 0.14, out + PAD.z * 0.5), Vector3(at.x + side * ARM_X, top - PAD.y - 0.07, WALL_Z - (out + PAD.z * 0.5) * 0.5), steel, false)
-			k.span(Vector3(at.x + side * ARM_X, top - 2.5, WALL_Z - 0.1), Vector3(at.x + side * ARM_X, top - 0.2, at.z - PAD.z * 0.3), steel, false)
+			var ax := at.x + side * ARM_X
+			var arm_y := top - PAD.y - 0.05
+			k.box(Vector3(0.08, drop + 0.4, 0.08), Vector3(ax, arm_y - drop * 0.5 + 0.1, WALL_Z - 0.04), steel, false)
+			k.box(Vector3(0.07, 0.08, reach), Vector3(ax, arm_y, WALL_Z - reach * 0.5), steel, false)
+			# A strut from the rail's foot up to the arm, two thirds of the way out.
+			var a := Vector3(ax, arm_y - drop, WALL_Z - 0.06)
+			var b := Vector3(ax, arm_y - 0.04, WALL_Z - reach * 0.66)
+			var strut: MeshInstance3D = k.box(Vector3(0.05, 0.05, a.distance_to(b)), (a + b) * 0.5, steel, false)
+			strut.basis = Basis.looking_at((b - a).normalized(), Vector3.UP)
 		_pad(k, at, dark, stores_colour, "StoresPad%d" % i)
 		# The charge lead: a dark box on the wall behind the pad.
-		k.box(Vector3(0.6, 0.4, 0.16), Vector3(at.x, top + 0.35, WALL_Z - 0.08), dark, false)
+		k.box(Vector3(0.36, 0.24, 0.14), Vector3(at.x, top + 0.2, WALL_Z - 0.07), dark, false)   # (its face stands off the wall's: no flicker)
 	k.sign("CHARGING", Vector3((LOWER_X[0] + UPPER_X[4]) * 0.5, float(ROWS_Y[1]) + 3.4, WALL_Z - 0.12), Vector3.FORWARD, 0.02, Kit.ORANGE, 96)
 	# The yard's apron off the hall floor: a tread deck, an edge rail, its pads.
 	var mid := Vector3((APRON_X.x + APRON_X.y) * 0.5, APRON_TOP - 0.2, FACE_Z - APRON_DEPTH * 0.5)

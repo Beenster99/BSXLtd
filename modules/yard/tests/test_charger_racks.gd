@@ -32,6 +32,19 @@ func run_tests() -> void:
 	check(apart, "no two bots on top of each other")
 	check(Racks.home(0, false).z > -10.0 and Racks.home(0, false).x > YardRackStore.UPPER_EDGE_X,
 			"the stores' rack is on the back wall of the well")
+	# Slim steel (0.5.1 playtest: "these racks are excessively large"): no flat sheet, nothing but
+	# the pads over 0.5 m across in two directions.
+	var big := []
+	for m: Node in racks.find_children("*", "MeshInstance3D", true, false):
+		var bm := (m as MeshInstance3D).mesh as BoxMesh
+		if bm == null or String(m.name).contains("Pad") or (m as MeshInstance3D).global_position.y < 5.0:
+			continue
+		var sz := bm.size
+		var dims := [sz.x, sz.y, sz.z]
+		dims.sort()
+		if dims[0] < 0.01 or dims[1] > 0.5:
+			big.append("%s %s" % [m.name, sz])
+	check(big.is_empty(), "the wall rack is slim steel %s" % [big.slice(0, 4)])
 	traffic.call("step", 0.02)
 	var lit := 0
 	for b: Dictionary in bots:

@@ -32,6 +32,8 @@ const STAIR_W := 1.6
 const STEP_RISE := 0.2
 const STAIR_BOTTOM_Z := -6.0
 const STAIR_TOP_Z := -34.0
+## The landing at the stair's head runs on this far past its top step (m).
+const LANDING := 1.8
 
 var _kit
 
@@ -146,6 +148,16 @@ func _deck(k, hull: Material, dark: Material, yellow: Material) -> void:
 	ramp.rotation.x = tilt
 	_kit.body.add_child(ramp)
 	_rail(Vector3(x + STAIR_W * 0.5 + 0.05, 0.0, STAIR_BOTTOM_Z), Vector3(x + STAIR_W * 0.5 + 0.05, DECK_Y, STAIR_TOP_Z), yellow, dark)
+	# The landing at its top (0.5.1 playtest: "missing landing at top of warehouse stairs"):
+	# the last step ran out over the well beside the rail's gap. A plate from the deck's edge
+	# across the stair's width and on past its top, railed on its open sides.
+	var land_x1 := x + STAIR_W * 0.5 + 0.1
+	var land_z := STAIR_TOP_Z - LANDING
+	k.slab(Vector3(DECK_X1, DECK_Y - 0.25, land_z), Vector3(land_x1, DECK_Y, STAIR_TOP_Z - 0.012), tread)   # (short of the top tread's lip)
+	k.box(Vector3(land_x1 - DECK_X1, 0.012, 0.3), Vector3((DECK_X1 + land_x1) * 0.5, DECK_Y + 0.006, STAIR_TOP_Z - 0.17), hazard, false)
+	k.box(Vector3(0.12, 0.45, LANDING), Vector3(land_x1 - 0.06, DECK_Y - 0.25, (land_z + STAIR_TOP_Z) * 0.5), dark, false)
+	_rail(Vector3(land_x1 - 0.05, DECK_Y, STAIR_TOP_Z), Vector3(land_x1 - 0.05, DECK_Y, land_z + 0.05), yellow, dark)
+	_rail(Vector3(land_x1 - 0.05, DECK_Y, land_z + 0.05), Vector3(DECK_X1 - 0.12, DECK_Y, land_z + 0.05), yellow, dark)
 
 
 ## A safety rail from `a` to `b` (its foot): posts every 2 m, a top rail and a knee rail.

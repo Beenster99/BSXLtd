@@ -129,6 +129,7 @@ static func make(brand: Dictionary, size: String) -> Node3D:
 			light.omni_range = 22.0
 			light.light_energy = 1.4
 			light.light_color = Color(1.0, 0.94, 0.84)
+			light.set_meta("gfx_no_shadow", true)   # a hold lamp: its shadows drew the hall again
 			n.add_child(light)
 		var hx := FreighterLook.HALF.x
 		_badge(n, brand, s, model, Vector3(-hx - 0.36, 17.6, -4.0), -PI * 0.5, 2.2)
@@ -157,6 +158,7 @@ static func make(brand: Dictionary, size: String) -> Node3D:
 		light.omni_range = 9.0 if size == SMALL else 14.0
 		light.light_energy = 1.1
 		light.light_color = Color(1.0, 0.92, 0.8)
+		light.set_meta("gfx_no_shadow", true)
 		n.add_child(light)
 		var body: Array = p.body
 		var mid := (float(body[0]) + float(body[1])) * 0.5
