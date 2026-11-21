@@ -81,7 +81,7 @@ const TOPICS := [
 @ 3|**CONTRACT DETAILS**: the payment stages and their days.
 # 4. Buy her parts, a stage at a time
 10. Open the wrist ({key:holo}) on **Parts orders**. Her whole parts list is there, coloured by build stage.
-11. The deposit will not buy everything. Order the **frame** lines first (grey stripe): the build only needs each stage's parts when it gets there.
+11. The deposit will not buy everything. Press **ORDER NEXT STAGE: KEEL LAID** to buy just the frame (grey stripe): the build only needs each stage's parts when it gets there. Deliveries arrive within 10 real minutes.
 -> buy_parts|Buying parts within your cash
 # 5. Build her
 12. A small ship is built **by hand**: fly out of the airlock to the build berth, go to the glowing pieces and press {key:interact}. They float into place, chalked where to weld, rivet or bolt. Use the welder, riveter and socket on the chalk marks.
@@ -97,17 +97,16 @@ const TOPICS := [
 > Name her first, on The company's LAUNCH page. At delivery the bots line up and a bottle breaks on her bow."""},
 	{"id": "buy_parts", "order": 110, "group": STEPS, "title": "Buying parts within your cash", "screens": [], "text": """A ship's parts cost most of her price, but the client pays only 20% up front. So buy her parts **a stage at a time**, as the payments come in. The build waits for each stage's parts only when it reaches that stage.
 # Which lines belong to which stage
-On Parts orders, the coloured stripe at the left of each line is its stage:
-- **Grey: frame.** The frame and its welds. Needed first.
-- **Blue: plates.** Hull plating, rivets, inner walls, deck plating and doors.
-- **Yellow: fittings.** Rooms' fit-out kits, components and bolts.
-- **Orange: wiring.**  **Green: pipes.**
+On Parts orders the parts list is grouped under a cyan heading for each payment stage, and the coloured stripe at the left of each line is its build stage:
+- **KEEL LAID STAGE: grey, the frame.** Beams and their welds. Needed first.
+- **FIT-OUT STAGE: blue plates and yellow fittings.** Hull plating, rivets, walls, deck and doors; rooms' kits, components and bolts.
+- **DELIVERY STAGE: orange wiring and green pipes.**
 # Step by step
 1. Look at the cash at the top right of the wrist screen.
 2. Open Parts orders. Check the plans in the **BILL OF MATERIALS CALCULATOR**: CHEAPEST, MOST RELIABLE and MEDIAN COST each give the total, the wait and how often those suppliers arrive on time.
-3. Don't press a plan's USE yet: that picks every line at once. Instead, on each **frame** line (grey), click the supplier you want. Your choice shows as "Split:" under the line, and **YOUR MIX** adds it up.
-4. YOUR MIX more than your cash? Pick cheaper suppliers, or fewer lines. Less than your cash? Press **PLACE ORDER**.
-5. Wait for the frame to come in (each line then reads all delivered), build the frame and sign **Keel laid**. That payment buys the blue **plates** lines. Then fittings at Fit-out, and so on.
+3. The quick way: **ORDER NEXT STAGE: KEEL LAID, CR x** orders just the frame from the cheapest suppliers. It is greyed out when the cash won't cover it.
+4. To choose suppliers yourself, don't press a plan's USE (that picks every line at once). On each line under **KEEL LAID STAGE**, click the supplier you want. Your choice shows as "Split:" under the line, and **YOUR MIX** adds it up. Then press **PLACE ORDER**. Greyed out? The amber line under it says why.
+5. Every delivery arrives within 10 real minutes; each line counts down "due ... (about N min)". When the stage heading says all its lines are in, build the frame and sign **Keel laid**. That payment buys the **Fit-out** stage, and Fit-out's payment the **Delivery** stage.
 => orders.book|Open Parts orders
 # Ways to stretch the money
 - **Cheaper suppliers** wait longer and are late more often. A late part holds the build up, and a late ship costs 1% of the price a day.
@@ -117,7 +116,7 @@ On Parts orders, the coloured stripe at the left of each line is its stage:
 - **Insider tips** (Parts trading) say which prices are about to rise or fall.
 - **A loan**: Esc > Settings > Company lends a little at interest.
 - **Sell parts** you hold on Parts trading.
-> EXPRESS brings an order today, but costs 35% more. Keep it for the one part holding everything up."""},
+> EXPRESS brings an order in under a minute, but costs 35% more. Keep it for the one part holding everything up."""},
 	{"id": "build_ship", "order": 120, "group": STEPS, "title": "Building a ship", "text": """Once a contract is signed, her build is set up in the **build berth** (B1) outside the station, as a faint holo of the whole ship. Only the ship in B1 is worked on.
 # Who builds her
 - **Small ships are built by hand**, by you and your crew, one job at a time.
@@ -169,7 +168,7 @@ Holding berths (H1, H2) keep part-built ships. On the Build plan, **TUG TO H1** 
 	{"id": "stuck", "order": 160, "group": STEPS, "title": "Why isn't it working?", "text": """Some buttons go grey, or nothing seems to happen. Hold the pointer over a greyed button: its tooltip says why. The usual reasons:
 # Parts orders
 - **PLACE ORDER greyed**: nothing chosen yet (click a supplier on a line, or USE a plan), or not enough cash for the order. The line under the buttons says which.
-- **Ordered but nothing arrives**: each supplier has a wait (the "d" on its quote). Late suppliers come one to three days late.
+- **Ordered but nothing arrives**: each supplier has a wait (the minutes on its quote), and every delivery arrives within 10 real minutes. The line's end counts down "due ... (about N min)"; "in the refurb works" means second-hand parts still being rebuilt.
 - **"Waits for its parts"** at the top: the build will not start a stage until that stage's parts are in.
 # Design console
 - **SEND QUOTE greyed**: the order is already signed, the client doesn't know BSX well enough for an order that size, or the yard's berths are too small for her.
@@ -245,15 +244,16 @@ Holding berths (H1, H2) keep part-built ships. On the Build plan, **TUG TO H1** 
 => orders.book|Buy them on Parts orders"""},
 	{"id": "orders_screen", "order": 240, "group": SCREENS, "title": "Parts orders", "screens": ["orders.book"], "text": """Where you **buy** a ship's parts and watch them arrive. Each signed contract's parts list comes here; the build waits for each stage's parts.
 ! orders
-@ 1|**The status line**: the ship, how many lines, how many are fully ordered, how many are fully in, and "WAITS FOR ITS PARTS" while the build is held up for them.
+@ 1|**The status line**: the ship, how many lines, how many are fully ordered, how many have fully **arrived**, and "WAITS FOR ITS PARTS" while the build is held up for them.
 @ 2|**The ship** and her berth. ◀ ▶ switch between ships when there is more than one.
 @ 3|**Bill of materials calculator.** Totals for buying everything still to order three ways (CHEAPEST, MOST RELIABLE, MEDIAN COST), each with its wait and on-time rate. **USE** picks that plan's supplier for every line.
 @ 4|**YOUR MIX**: what you have chosen so far and what it would cost.
-@ 5|**PLACE ORDER** buys your mix: each supplier gets its own order and the company pays now. **ORDER CHEAPEST** picks the cheapest plan and orders it in one go. Greyed out? The line under them says why (nothing chosen, or not enough cash).
-@ 6|**A part line.** Its stage stripe, its name, then how much the ship **needs**, how much is **ordered**, and how much is **in** (delivered to the stores). Amber: all ordered, still coming. Green: all in.
-@ 7|**A supplier's quote**: name, price each, wait in days, on-time rate. Click it to take the rest of the line from them. **½** takes half the line there.
+@ 5|**PLACE ORDER** buys your mix: each supplier gets its own order and the company pays now. **ORDER CHEAPEST** orders every line still to order from the cheapest suppliers. **ORDER NEXT STAGE** orders just the next payment stage's parts, cheapest, with its cost on the button: the easiest way to buy within your cash. Greyed out? The amber line under the buttons says why (nothing chosen, or not enough cash).
+@ 6|**A part line.** Its stage stripe, its name, then how much the ship **needs**, how much is **ordered** and how much has **arrived** in the stores. The end says where it stands: **all in**, **due day N, HH:MM (about N min)** for an order on its way, **in the refurb works** for second-hand parts being rebuilt, or **not ordered**. Grey: not all ordered. Amber: all ordered, still coming. Green: all in.
+@ 7|**A supplier's quote**: name, price each, how long delivery takes in real minutes, and how often they arrive on time. Click it to take the rest of the line from them. **½** takes half the line there.
+@ 8|**A payment stage's heading** (cyan): the parts list is grouped by the payment each stage earns. **KEEL LAID** is the frame; **FIT-OUT** the hull plates, doors, rooms and machinery; **DELIVERY** the wiring and pipes. It counts how many of its lines are in.
 # Lower down
-- **EXPRESS: TODAY, +35%**: everything you order comes today, for 35% more.
+- **EXPRESS: UNDER A MINUTE, +35%**: everything you order next arrives in under a minute, for 35% more. Every normal delivery arrives within 10 real minutes anyway.
 - **CLEAR MIX** forgets what you chose (nothing ordered is undone).
 - **USE n FROM STOCK** on a line: parts the yard already holds cover it, at no new cost.
 - **ORDERS**: each order placed, its supplier, value, and when it is due (or "in the stores", or "in the refurb works" for second-hand parts being rebuilt).
