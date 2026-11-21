@@ -109,6 +109,7 @@ func _berth(root: Node3D, env: Environment, out: String) -> void:
 	var crew: Node3D = Workers.new()
 	crew.set_process(false)
 	root.add_child(crew)
+	crew.stand_in_keel = true
 	crew.build(traffic)
 	crew.wear_per_job = 0.0
 	var cam := Camera3D.new()

@@ -15,7 +15,9 @@ extends Node3D
 ## crew fits it out: they send for a power kit, and movers bring it to the lead fitter when it's
 ## wanted; fitters set the battery rack, cabinet and junction boxes on the ring and the bolters
 ## bolt them down; the next fit-out is a piping kit, the pipes clamped on with bolts. Presentation only: it
-## stands in for Wave 5's real building.
+## stood in for Wave 5's real building, and is off now (`stand_in_keel`, beenster 21 Nov: "Please
+## remove the original skiff that tartanco bots worked on back in wave3"): in an empty berth the
+## crew rest on their charging docks, and a contract's ship is built by the bots module's crew.
 ##
 ## How things are joined is TartanCo's rule (beenster, 19 Nov): beams are welded together; inner
 ## walls are riveted at the plate corners; outer hull plates are riveted at the corners and
@@ -133,7 +135,11 @@ var docks: Array[Vector3] = DOCKS.duplicate()
 ## spare turns up from the berth's own stock (s).
 @export var fly_speed := 4.0
 @export var spare_after := 120.0
-## Rings standing when the yard opens.
+## The wave 3 stand-in keel (the "skiff" the crew framed in an empty berth). Off since 0.5.2: with
+## no build in the berth the crew rest on their docks. Tests and the capture tool turn it on to
+## see the trades at work.
+@export var stand_in_keel := false
+## Rings standing when the yard opens (with the stand-in keel).
 @export var start_rings := 3
 ## Once the keel has all its rings, the crew waits this long (s), then the finished keel makes
 ## way for a new one and they start again (0.4.2 playtest: after the last ring they stood idle
@@ -207,8 +213,9 @@ var _owed := {}
 func build(stores_traffic: Node) -> void:
 	name = "YardWorkers"
 	traffic = stores_traffic
-	for i in start_rings:
-		_whole_ring()
+	if stand_in_keel:
+		for i in start_rings:
+			_whole_ring()
 	supply = Node3D.new()
 	supply.name = "Supply"
 	add_child(supply)
@@ -229,7 +236,8 @@ func build(stores_traffic: Node) -> void:
 	service = Service.new()
 	add_child(service)
 	service.build(self)
-	_start_ring()
+	if stand_in_keel:
+		_start_ring()
 
 
 ## The fitter the movers' first loads come to (the crew's lead).
@@ -566,7 +574,7 @@ func set_claimed(by: String) -> void:
 func step(delta: float) -> void:
 	_time += delta
 	_step_dt = delta
-	if claimed != "":
+	if claimed != "" or not stand_in_keel:
 		_send_to_charge()
 		for w: Dictionary in workers:
 			_work(w, delta * pace(w))

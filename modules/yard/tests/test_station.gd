@@ -707,7 +707,8 @@ func _dock(station: Node3D) -> void:
 	check(not fan.rotation.is_equal_approx(turned), "the corridor's vent fan turns")
 	# Worker bots at the keel frame in the build berth; K calls a mover with the next kit.
 	var crew := station.get("workers") as Node3D
-	check(crew != null and crew.call("foreman") != null and int(crew.call("rings_built")) >= 3, "worker bots at a keel frame in the build berth")
+	check(crew != null and crew.call("foreman") != null and int(crew.call("rings_built")) == 0 and crew.get("ring_node") == null,
+			"the TartanCo crew are in the yard, with no stand-in keel in the empty build berth")
 	var kit: String = station.call("call_kit")
 	var note := station.get_node("Hud/KitNote") as Label
 	for i in 60:   # on the shared clock: a tick or so later
