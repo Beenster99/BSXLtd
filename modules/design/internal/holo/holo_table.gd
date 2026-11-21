@@ -465,12 +465,13 @@ func _build_components(rec: DesignRecord, parent: Node3D) -> void:
 		_box(parent, Vector3(f.get_center().x, y + h * 0.5 + 0.05, f.get_center().y),
 				Vector3(f.size.x, h, f.size.y), _mat(pt.colour, 0.3, 0.8))
 	# Parts on the hull stand out from its side.
+	var plan := _plan(rec)
 	for m: Dictionary in rec.mounts.values():
 		var mp := bus.catalog.part(str(m.type))
 		if mp == null:
 			continue
-		# Fitted as walk-inside fits it (a landing leg under the hull's edge).
-		var xf := DesignRules.mount_transform(rec, m, mp)
+		# Fitted as walk-inside fits it (a landing leg under the hull's edge, a part on the skin).
+		var xf := DesignRules.mount_transform(rec, m, mp, plan)
 		var box := _box(parent, Vector3.ZERO, mp.size, _mat(mp.colour, 0.35, 0.9))
 		box.transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, mp.size.y * 0.5, 0))
 
@@ -612,3 +613,33 @@ func _solid(id: String, sz: Vector3, at: Vector3, mat: Material, parent: Node = 
 	mi.name = id
 	parent.add_child(mi, true)
 	return mi
+
+
+## The hologram's ship space (the record's metres): picks in the 3D view are made in it.
+func ship_node() -> Node3D:
+	return model.get_node_or_null("Ship") as Node3D if model else null
+
+
+## A hull part in hand, shown where it would go (the outside designer): a box at `xf` (its foot,
+## DesignRules.mount_transform) of `size`, green where it fits and red where it does not; hidden
+## with `size` zero.
+func show_ghost(xf: Transform3D, size: Vector3, ok: bool) -> void:
+	var ship := ship_node()
+	if ship == null:
+		return
+	var g := ship.get_node_or_null("Ghost") as MeshInstance3D
+	if size == Vector3.ZERO:
+		if g:
+			g.visible = false
+		return
+	if g == null:
+		g = MeshInstance3D.new()
+		g.name = "Ghost"
+		g.mesh = BoxMesh.new()
+		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		g.layers = 1 | VIEW_LAYER
+		ship.add_child(g)
+	(g.mesh as BoxMesh).size = size
+	g.material_override = _mat(Color(0.4, 1.0, 0.5) if ok else Color(1.0, 0.35, 0.3), 0.55, 1.2)
+	g.transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5, 0))
+	g.visible = true

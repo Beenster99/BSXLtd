@@ -30,11 +30,18 @@ static func check(d: DesignRecord, cat: DesignCatalog, totals: DesignTotals = nu
 	return out
 
 
-## A hull part must be one that fits on the hull, and sit on the hull's side.
+## A hull part must be one that fits on the hull, and sit on the hull (a side's outline, or the
+## skin anywhere); parts on the outside must not run into each other, cover an outer door, hang
+## past an edge of the hull or face into it.
 static func _mount_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictionary]) -> void:
 	if d.mounts.is_empty():
 		return
 	var st := DesignStructure.measure(d)
+	var skin := false
+	for m: Dictionary in d.mounts.values():
+		skin = skin or DesignOutside.on_skin(m)
+	var plan := DesignOutside.plan_for(d) if skin else {}
+	var boxes: Array = []
 	for m: Dictionary in d.mounts.values():
 		var pt := cat.part(str(m.type))
 		if pt == null:
@@ -42,9 +49,63 @@ static func _mount_checks(d: DesignRecord, cat: DesignCatalog, out: Array[Dictio
 			continue
 		if not pt.hull_mount:
 			out.append(_problem("not_hull_part", ERROR, "%s goes inside, not on the hull" % pt.display_name, [], [m.id]))
-		var near := DesignStructure.nearest_hull(d, int(m.deck), Vector2(m.x, m.z), st)
-		if near.is_empty() or float(near.dist) > 0.3:
-			out.append(_problem("off_hull", ERROR, "%s is not on the hull" % pt.display_name, [], [m.id]))
+		if DesignOutside.on_skin(m):
+			if not DesignOutside.on_hull(plan, m):
+				out.append(_problem("off_hull", ERROR, "%s is not on the hull" % pt.display_name, [], [m.id]))
+				continue
+		else:
+			var near := DesignStructure.nearest_hull(d, int(m.deck), Vector2(m.x, m.z), st)
+			if near.is_empty() or float(near.dist) > 0.3:
+				out.append(_problem("off_hull", ERROR, "%s is not on the hull" % pt.display_name, [], [m.id]))
+				continue
+		var xf := mount_transform(d, m, pt, plan)
+		boxes.append({"m": m, "pt": pt, "xf": xf, "box": DesignOutside.box_of(xf, pt)})
+		if DesignOutside.on_skin(m):
+			if DesignOutside.overhang(plan, m, xf, pt) > 0:
+				out.append(_problem("mount_overhang", WARNING, "%s hangs past the edge of the %s" % [
+						pt.display_name, DesignOutside.face_name(m)], [], [m.id]))
+			if DesignOutside.front_blocked(plan, m, xf, pt):
+				out.append(_problem("mount_blocked", WARNING, "%s faces into the hull" % pt.display_name, [], [m.id]))
+			for o: Dictionary in plan.get("openings", []):
+				if _over_opening(plan, o, xf, pt):
+					out.append(_problem("mount_over_door", ERROR, "%s is over an outer door" % pt.display_name, [], [m.id]))
+					break
+	for i in boxes.size():
+		var a: Dictionary = boxes[i]
+		var ab: Array = a.box
+		for j in range(i + 1, boxes.size()):
+			var b: Dictionary = boxes[j]
+			var bb: Array = b.box
+			if DesignOutside.boxes_overlap(ab[0], ab[1], bb[0], bb[1], 0.02):
+				out.append(_problem("mount_clash", ERROR, "%s and %s on the hull run into each other" % [
+						a.pt.display_name, b.pt.display_name], [], [a.m.id, b.m.id]))
+				continue
+			# The clear space in front of each (an engine's plume) must be clear of the other.
+			for pair: Array in [[a, b], [b, a]]:
+				var p0: Dictionary = pair[0]
+				var p1: Dictionary = pair[1]
+				var fb := DesignOutside.clear_box(plan, p0.m, p0.xf, p0.pt)
+				if fb.is_empty():
+					continue
+				var ob: Array = p1.box
+				if DesignOutside.boxes_overlap(fb[0], fb[1], ob[0], ob[1], 0.02):
+					out.append(_problem("mount_in_front", WARNING, "%s is in front of %s" % [
+							p1.pt.display_name, p0.pt.display_name], [], [p0.m.id, p1.m.id]))
+
+
+## Whether a part fitted to the skin covers an outer door's opening (DesignFrame's openings: a
+## box through a side, a hole in an end plate).
+static func _over_opening(plan: Dictionary, o: Dictionary, xf: Transform3D, pt: DesignPartType) -> bool:
+	var bx := DesignOutside.box_of(xf, pt)
+	if o.has("box"):
+		var box: AABB = o.box
+		var c := Transform3D(Basis.IDENTITY, box.get_center())
+		return DesignOutside.boxes_overlap(bx[0], bx[1], c, box.size, 0.02)
+	var st: Array = plan.stations
+	var z := float(st[0 if int(o.get("cap", 0)) == 0 else st.size() - 1].z)
+	var hole: Rect2 = o.hole
+	var c2 := Transform3D(Basis.IDENTITY, Vector3(hole.get_center().x, hole.get_center().y, z))
+	return DesignOutside.boxes_overlap(bx[0], bx[1], c2, Vector3(hole.size.x, hole.size.y, 0.6), 0.02)
 
 
 ## Parts that need power with no wire to a source, engines with no fuel line to a pump. Only
@@ -109,8 +170,12 @@ const MOUNT_FLOOR := 0.1
 const BELLY := 0.4
 
 
-static func mount_transform(d: DesignRecord, m: Dictionary, pt: DesignPartType) -> Transform3D:
-	var n := Vector2.from_angle(float(m.angle))
+## A part fitted to the skin anywhere (DesignOutside, the outside designer) sits on the
+## proposed frame's skin: `plan` is that frame when the caller has it.
+static func mount_transform(d: DesignRecord, m: Dictionary, pt: DesignPartType, plan: Dictionary = {}) -> Transform3D:
+	if DesignOutside.on_skin(m):
+		return DesignOutside.transform(plan if not plan.is_empty() else DesignOutside.plan_for(d), m, pt)
+	var n := Vector2.from_angle(float(m.get("angle", 0.0)))
 	var basis := Basis(Vector3.UP, atan2(-n.x, -n.y))
 	var p := Vector2(float(m.x), float(m.z))
 	if pt.under_hull():
