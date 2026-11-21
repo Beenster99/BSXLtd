@@ -341,6 +341,30 @@ func _lines_ships() -> void:
 	check(bool(seen.open), "the frames' lids stood open")
 	check(bool(seen.high), "loads were drawn up clear of the command module")
 	check(store.count("Generator") >= 2, "the stores hold the courier's load")
+	# They leave by warp (21 Nov, flag yard.warp_out): a spool, a jump that stretches the ship
+	# out along her heading, a flash and its sound, and she is gone.
+	if Flags.is_on(YardBus.WARP_OUT):
+		check(traffic.warps == 2, "both left by warp (%d)" % traffic.warps)
+		var w: Node3D = null
+		for c in traffic.get_children():
+			if String(c.name).begins_with("Warp_"):
+				w = c
+		check(w != null and w.get("ship") != null, "the warp has her")
+		if w != null:
+			w.set_process(false)
+			var her: Node3D = w.get("ship")
+			var sound := w.get_node_or_null("Sound") as AudioStreamPlayer3D
+			check(sound == null or sound.stream == YardSoundBank.stream("warp_jump"), "with the warp's own sound")
+			check(YardSoundBank.stream("warp_jump") != null and YardSoundBank.stream("warp_jump").get_length() > 2.5, "a warp sound made in code")
+			w.call("advance", float(w.get("spool")) + 0.2)
+			check(w.get("phase") == "jump", "spooled up, she jumps")
+			var stretched := (her.get_parent() as Node3D).basis * Vector3.RIGHT
+			check(stretched.length() > 5.0, "stretched out along her heading (x%.0f)" % stretched.length())
+			w.call("advance", 0.2)
+			w.call("advance", 0.1)
+			check(not is_instance_valid(her) or her.is_queued_for_deletion(), "and she is gone")
+			w.call("advance", 3.0)
+			check(w.get("phase") == "done", "the flash fades")
 	for size: String in Ships.SIZES:
 		for brand: Dictionary in BotLook.BRANDS:
 			var ship := Ships.make(brand, size)
