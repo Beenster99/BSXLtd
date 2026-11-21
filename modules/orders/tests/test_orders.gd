@@ -95,6 +95,35 @@ func run_tests() -> void:
 	check(sums.has("cheapest") and sums.has("reliable") and sums.has("median") and sums.has("mine"), "the calculator sums every plan")
 	check(float(sums.cheapest.total) <= float(sums.median.total) + 0.5, "the cheapest plan is no dearer than the median")
 
+	# PLACE ORDER says why it can't go: nothing chosen, or not enough cash.
+	var kept: Dictionary = (orders.splits.get("order_test", {}) as Dictionary).duplicate(true)
+	orders.clear_splits("order_test")
+	check(orders.place_problem("order_test").begins_with("Nothing chosen"), "with nothing chosen, PLACE ORDER says what to do")
+	orders.splits["order_test"] = kept
+	check(orders.place_problem("order_test") == "", "with a mix chosen and the cash, it can go")
+	if biz:
+		var all := int(biz.call("get_cash"))
+		biz.call("charge", all, "test", "test: empty the bank")
+		check(orders.place_problem("order_test").begins_with("Not enough cash") and orders.cheapest_problem("order_test").begins_with("Not enough cash"),
+				"with no cash, both buttons say so (%s)" % orders.place_problem("order_test"))
+		orders.place("order_test")
+		check(orders.orders.is_empty(), "and nothing is ordered")
+		# One stage at a time fits a smaller purse.
+		var st := orders.next_stage("order_test")
+		var st_cost := orders.stage_cheapest("order_test", st)
+		check(st == "keel" and st_cost > 0 and st_cost < int(orders.plan_sums("order_test").cheapest.total),
+				"the next stage to order is the frame, for less than the whole ship (CR %d)" % st_cost)
+		biz.call("credit", st_cost + 10, "test", "test: enough for the frame")
+		orders.order_stage_cheapest("order_test", st)
+		check(not orders.orders.is_empty() and orders.lines("order_test").all(func(l: Dictionary) -> bool:
+				return OrderBook.in_stage(l, st) == (float(l.ordered) >= float(l.need) - 0.001)),
+				"the keel's lines ordered, and only them: the frame's beams and welds (beenster, 21 Nov)")
+		var cap := int(OrderBook.MAX_REAL_SECONDS * orders.minutes_per_second())
+		check(orders.orders.all(func(o: Dictionary) -> bool: return orders.arrival(o) - int(o.minute) <= cap and orders.arrival(o) >= int(o.due)),
+				"every order comes within 10 real minutes, slips and all (%s)" % str(orders.orders.map(func(o: Dictionary) -> int: return orders.arrival(o) - int(o.minute))))
+		check(orders.next_stage("order_test") != st, "and the next stage moves on (%s)" % orders.next_stage("order_test"))
+		orders.orders.clear()
+		biz.call("credit", all, "test", "test: cash back")
 	# Place it: the plan fills the lines not split yet.
 	var standing_before := supply.standing_of(str(qs[0].vendor))
 	var cash_before := int(biz.call("get_cash")) if biz else 0
@@ -103,6 +132,8 @@ func run_tests() -> void:
 	orders.set_split("order_test", "hull:frame", str(qs[1].vendor), float(frame_line.need))
 	orders.place("order_test")
 	check(orders.orders.size() >= 2, "one order a vendor (%d)" % orders.orders.size())
+	var lp: Dictionary = orders.last_placed.get("order_test", {})
+	check(int(lp.get("orders", 0)) == orders.orders.size() and int(lp.get("total", 0)) > 0, "the screen can say what the order came to (%s)" % str(lp))
 	if biz:
 		check(int(biz.call("get_cash")) < cash_before, "the company paid for the parts")
 	check(supply.standing_of(str(qs[0].vendor)) > standing_before, "the vendor thinks better of the yard")
@@ -115,6 +146,7 @@ func run_tests() -> void:
 	for o: Dictionary in orders.orders:
 		o.due = orders.now_minute()
 		o.late = 0
+		o.erase("arrive")
 	orders.deliver_due()
 	check(orders.orders.all(func(o: Dictionary) -> bool: return bool(o.arrived)), "the orders come in")
 	check(orders.stage_ready("order_test", "frame") and build.next_job("order_test") == 0, "the frame's parts are in: the first job can float in")
@@ -153,6 +185,7 @@ func run_tests() -> void:
 		check(str(o2.vendor) == OrdersBus.USED and bool(o2.lines[0].used), "a second-hand order")
 		o2.due = orders.now_minute()
 		o2.late = 0
+		o2.erase("arrive")
 		orders.deliver_due()
 		var line2: Dictionary = orders.line("order_test_2", str(comp.key))
 		check(float(line2.arrived) < float(line2.need), "it is in the refurb works, not in yet")

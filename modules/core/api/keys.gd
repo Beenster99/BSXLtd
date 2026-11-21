@@ -32,6 +32,12 @@ const ACTIONS := "Actions"
 ## action -> {action, label, group, default (physical keycode), order}
 var _actions: Dictionary = {}
 var _order := 0
+## Text fields with the keyboard now (LineEdit, TextEdit: on a wall screen or anywhere): while
+## any has it, no shortcut on a letter, digit or space fires (beenster, 21 Nov: typing an "f"
+## in a name box left the screen). The events are taken out of their actions and put back after.
+var _typing: Dictionary = {}
+## action -> the key events taken out while typing.
+var _stashed: Dictionary = {}
 
 
 func _ready() -> void:
@@ -46,6 +52,60 @@ func _ready() -> void:
 	register(INTERACT, "Use / do", KEY_F, ACTIONS)
 	register(HOLO, "Wrist screen", KEY_F1, ACTIONS)
 	register(CANCEL, "Back / close", KEY_ESCAPE, ACTIONS)
+	get_tree().node_added.connect(_on_node_added)
+
+
+## Whether a text field has the keyboard (for code that reads raw keys, not actions).
+func typing() -> bool:
+	return not _typing.is_empty()
+
+
+func _on_node_added(n: Node) -> void:
+	if n is LineEdit or n is TextEdit:
+		var c := n as Control
+		c.focus_entered.connect(_typing_on.bind(c))
+		c.focus_exited.connect(_typing_off.bind(c))
+		c.tree_exiting.connect(_typing_off.bind(c))
+
+
+func _typing_on(c: Control) -> void:
+	if c is LineEdit and not (c as LineEdit).editable or c is TextEdit and not (c as TextEdit).editable:
+		return
+	var was := _typing.is_empty()
+	_typing[c.get_instance_id()] = true
+	if was:
+		_stash()
+
+
+func _typing_off(c: Control) -> void:
+	if not _typing.erase(c.get_instance_id()):
+		return
+	if _typing.is_empty():
+		_unstash()
+
+
+## Takes every action's printable key events out (letters, digits, space, punctuation).
+func _stash() -> void:
+	for action: StringName in InputMap.get_actions():
+		if str(action).begins_with("ui_"):
+			continue
+		for e: InputEvent in InputMap.action_get_events(action):
+			var k := e as InputEventKey
+			if k == null or k.ctrl_pressed or k.alt_pressed or k.meta_pressed:
+				continue
+			var code := int(k.physical_keycode if k.physical_keycode != KEY_NONE else k.keycode)
+			if code >= KEY_SPACE and code <= KEY_ASCIITILDE:
+				(_stashed.get_or_add(str(action), []) as Array).append(k)
+				InputMap.action_erase_event(action, k)
+				Input.action_release(action)
+
+
+func _unstash() -> void:
+	for action: String in _stashed:
+		if InputMap.has_action(action):
+			for k: InputEvent in _stashed[action]:
+				InputMap.action_add_event(action, k)
+	_stashed.clear()
 
 
 ## Adds (or replaces) an action with its default key; a saved rebind wins over the default.

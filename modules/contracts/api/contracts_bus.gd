@@ -519,8 +519,9 @@ func ship_sign_problem(order: Dictionary) -> String:
 ## Sends BSX's quote for `order`, built to the design `design_id` whose parts cost `cost` CR.
 ## The client signs it off at ShipOrders.quote's price (never over its budget) and pays the
 ## deposit. Through the host in multiplayer.
-func request_sign_ship(order: Dictionary, design_id: String, design_name: String, cost: int, by := "") -> void:
-	_request_action({"op": "sign_ship", "order": order, "design": design_id, "design_name": design_name, "cost": cost, "by": by})
+func request_sign_ship(order: Dictionary, design_id: String, design_name: String, cost: int, by := "", sig := []) -> void:
+	_request_action({"op": "sign_ship", "order": order, "design": design_id, "design_name": design_name, "cost": cost, "by": by,
+			"sig": sig})
 
 
 ## The trial on the delivered ship: `rows` are the order's criteria scored on the design
@@ -531,8 +532,9 @@ func request_deliver_ship(contract_id: String, rows: Array, by := "") -> void:
 
 ## A player signs stage gate `stage_id` (ready once the build reached it): the client pays it.
 ## Through the host in multiplayer.
-func request_sign_gate(contract_id: String, stage_id: String, by := "") -> void:
-	_request_action({"op": "sign_gate", "contract": contract_id, "stage": stage_id, "by": by if by != "" else signer()})
+## `sig`: the signature written on the pad (ContractSignaturePad.pack), kept on the paper.
+func request_sign_gate(contract_id: String, stage_id: String, by := "", sig := []) -> void:
+	_request_action({"op": "sign_gate", "contract": contract_id, "stage": stage_id, "by": by if by != "" else signer(), "sig": sig})
 
 
 ## A stage paid by hand (keel laid, fit-out done), until the build says so (Wave 5).
@@ -553,7 +555,7 @@ func _request_action(p: Dictionary) -> void:
 
 
 ## Host: signs `order`. Returns the contract id ("" if it could not).
-func sign_ship(order: Dictionary, design_id: String, design_name: String, cost: int, by := "") -> String:
+func sign_ship(order: Dictionary, design_id: String, design_name: String, cost: int, by := "", sig := []) -> String:
 	if ship_sign_problem(order) != "":
 		return ""
 	var q := ShipOrders.quote(order, cost)
@@ -576,7 +578,7 @@ func sign_ship(order: Dictionary, design_id: String, design_name: String, cost: 
 				"Price: CR %s" % _cr(int(q.price)), "Due: day %d" % due]
 		for st: Dictionary in stages:
 			terms.append("%s: CR %s, about day %d" % [str(st.name), _cr(int(st.value)), int(st.expected_day)])
-		_add_paper(_ships[id], "design", "Design sign-off: %s" % design_name, by, terms)
+		_add_paper(_ships[id], "design", "Design sign-off: %s" % design_name, by, terms, sig)
 	var plan: Array = []
 	for st: Dictionary in stages:
 		plan.append({"id": st.id, "name": st.name, "value": st.value, "expected_day": st.expected_day})
@@ -616,7 +618,8 @@ func signer() -> String:
 
 
 ## The signed papers of ship contract `contract_id`, oldest first: [{kind (design, gate,
-## delivery), title, by, day, terms: [String]}].
+## delivery), title, by, day, terms: [String], sig (the handwritten signature, ContractSignaturePad;
+## [] when signed without one)}].
 func papers(contract_id: String) -> Array:
 	return (ship_contract(contract_id).get("papers", []) as Array).duplicate(true)
 
@@ -659,7 +662,7 @@ func gate_ready(contract_id: String, stage_id: String) -> void:
 
 ## Host: `by` signs stage gate `stage_id`; it is paid once every gate before it is signed too
 ## (gates are signed in order: the first unsigned one ready is the one to sign).
-func sign_gate(contract_id: String, stage_id: String, by := "") -> bool:
+func sign_gate(contract_id: String, stage_id: String, by := "", sig := []) -> bool:
 	var c: Dictionary = _ships.get(contract_id, {})
 	var ready := gates_to_sign(contract_id)
 	if c.is_empty() or ready.is_empty() or str(ready[0]) != stage_id:
@@ -667,7 +670,7 @@ func sign_gate(contract_id: String, stage_id: String, by := "") -> bool:
 	for st: Dictionary in c.stages:
 		if str(st.id) == stage_id:
 			_add_paper(c, "gate", "Stage gate: %s" % str(st.name), by,
-					["%s" % str(st.get("trigger", "")), "Payment: CR %s" % _cr(int(st.value))])
+					["%s" % str(st.get("trigger", "")), "Payment: CR %s" % _cr(int(st.value))], sig)
 	return pay_ship_stage(contract_id, stage_id)
 
 
@@ -681,11 +684,11 @@ static func _cr(n: int) -> String:
 	return ("-" if n < 0 else "") + t + out
 
 
-func _add_paper(c: Dictionary, kind: String, title: String, by: String, terms: Array) -> void:
+func _add_paper(c: Dictionary, kind: String, title: String, by: String, terms: Array, sig := []) -> void:
 	if not c.has("papers"):
 		c["papers"] = []
 	(c.papers as Array).append({"kind": kind, "title": title, "by": by if by != "" else "BSX", "day": today(),
-			"terms": terms})
+			"terms": terms, "sig": ContractSignaturePad.clean(sig)})
 
 
 ## Host: the build (Wave 5) pays keel and fit-out for this contract itself, so the stand-in
@@ -1191,7 +1194,8 @@ func _validate_action(_sender: int, p: Dictionary) -> Variant:
 				return "that order is no longer on the board"
 			var why := ship_sign_problem(own)
 			return {"op": op, "order": own, "design": str(p.get("design", "")), "design_name": str(p.get("design_name", "")),
-				"cost": maxi(0, int(p.get("cost", 0))), "by": str(p.get("by", "")).left(40)} if why == "" else why
+				"cost": maxi(0, int(p.get("cost", 0))), "by": str(p.get("by", "")).left(40),
+				"sig": ContractSignaturePad.clean(p.get("sig", []))} if why == "" else why
 		"deliver_ship":
 			var c := ship_contract(str(p.get("contract", "")))
 			if c.is_empty() or c.state != "building":
@@ -1203,6 +1207,7 @@ func _validate_action(_sender: int, p: Dictionary) -> Variant:
 			var c := ship_contract(str(p.get("contract", "")))
 			if c.is_empty() or c.state != "building":
 				return "no ship contract being built"
+			p["sig"] = ContractSignaturePad.clean(p.get("sig", []))
 			return p if gates_to_sign(str(c.id)).has(str(p.get("stage", ""))) else "that gate is not ready to sign"
 	var job := get_job(str(p.get("job", "")))
 	if job == null:
@@ -1232,7 +1237,7 @@ func _apply_action(p: Dictionary) -> void:
 		"sign_stage":
 			sign_off_stage(str(p.get("job", "")), str(p.get("stage", "")), str(p.get("by", "surveyor")), bool(p.get("force", false)))
 		"sign_ship":
-			sign_ship(p.order, str(p.design), str(p.design_name), int(p.cost), str(p.get("by", "")))
+			sign_ship(p.order, str(p.design), str(p.design_name), int(p.cost), str(p.get("by", "")), p.get("sig", []))
 		"deliver_ship":
 			deliver_ship(str(p.contract), p.rows, str(p.get("by", "")))
 		"ship_stage":
@@ -1241,7 +1246,7 @@ func _apply_action(p: Dictionary) -> void:
 			else:
 				pay_ship_stage(str(p.contract), str(p.stage))
 		"sign_gate":
-			sign_gate(str(p.contract), str(p.stage), str(p.get("by", "")))
+			sign_gate(str(p.contract), str(p.stage), str(p.get("by", "")), p.get("sig", []))
 
 
 ## Asks for an offer from a client at a tier (1 to 3), whatever BSX's standing with them:

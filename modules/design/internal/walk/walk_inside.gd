@@ -622,7 +622,7 @@ func _input(event: InputEvent) -> void:
 				if not push_wall(-1):
 					push_hull(-1)
 		get_viewport().set_input_as_handled()
-	elif event is InputEventKey and event.pressed and not event.echo:
+	elif event is InputEventKey and event.pressed and not event.echo and not Keys.typing():
 		var handled := true
 		match event.physical_keycode:
 			KEY_TAB:

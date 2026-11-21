@@ -203,14 +203,14 @@ func _row(head: bool, l: Dictionary, have: int, coming: int, lot: bool) -> Contr
 	var b := T.button("NEW %d" % n, false, fs - 3)
 	b.disabled = buy.is_empty()
 	if not buy.is_empty():
-		b.tooltip_text = "Buy %d new from %s for CR %s; they arrive in %d days." % [n, str(buy.get("name", "")), T.money(int(buy.total)), int(buy.get("lead", 0))]
+		b.tooltip_text = "Buy %d new from %s for CR %s; they arrive in about %s." % [n, str(buy.get("name", "")), T.money(int(buy.total)), str(bus.call("lead_text", int(buy.get("lead", 0))))]
 	b.pressed.connect(func() -> void: bus.call("trade_buy", key, n, false))
 	_button(row, b)
 	var u := T.button("BUY LOT", false, fs - 3)
 	u.disabled = used.is_empty()
 	if not used.is_empty():
-		u.tooltip_text = "Buy this second-hand lot of %d for CR %s now. Nobody knows their condition until the refurb works see them: each one's refurb bill should be CR %s to %s, paid as it is finished. Ready to sell in about %d days." % [
-				LOT, T.money(int(used.total)), T.money(int(used.refurb_lo)), T.money(int(used.refurb_hi)), int(used.lead)]
+		u.tooltip_text = "Buy this second-hand lot of %d for CR %s now. Nobody knows their condition until the refurb works see them: each one's refurb bill should be CR %s to %s, paid as it is finished. It arrives in about %s, then goes through the works before you can sell it." % [
+				LOT, T.money(int(used.total)), T.money(int(used.refurb_lo)), T.money(int(used.refurb_hi)), str(bus.call("lead_text", int(used.lead)))]
 	u.pressed.connect(func() -> void: bus.call("trade_buy", key, LOT, true))
 	_button(row, u)
 	var s1 := T.button("SELL 1", true, fs - 3)
