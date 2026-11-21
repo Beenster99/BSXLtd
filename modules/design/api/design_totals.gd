@@ -97,6 +97,7 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		var framed := int(fc.stations) > 0
 		for row: Array in [["frame", DesignStructure.option("frame", str(spec.frame)), fc.member_m if framed else st.frame_m, "m"],
 				["hull", DesignStructure.option("hull", str(spec.hull)), fc.skin_m2 if framed else st.outer_area, "m2"],
+				["armour", DesignFrame.ARMOUR, float(fc.get("armour_m2", 0.0)), "m2"],
 				["welds", DesignFrame.WELD, float(fc.welds), "x"],
 				["rivets", DesignFrame.RIVET, float(fc.rivets), "x"],
 				["bolts", DesignFrame.BOLT, float(fc.bolts), "x"],

@@ -27,7 +27,53 @@ static func check(d: DesignRecord, cat: DesignCatalog, totals: DesignTotals = nu
 	_ship_checks(d, cat, out, totals)
 	_service_checks(d, cat, out)
 	_mount_checks(d, cat, out)
+	_frame_checks(d, out)
 	return out
+
+
+## The structure as the designers changed it (the outside designer, stage 1): plates left off
+## (a gap in the hull), plates with nothing holding them (both ring girders at their ends taken
+## out, or both stringers at their sides) and bays longer than a plate spans.
+static func _frame_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
+	var hand := false
+	for key: String in d.frame_edits:
+		hand = hand or key.begins_with("ring:") or key.begins_with("member:") or key.begins_with("stringer:") \
+				or key.begins_with("panel:") and DesignFrame.panel_kind(d.frame_edits[key]) == "open"
+	if not hand:
+		return
+	var p := DesignOutside.plan_for(d)
+	var st: Array = p.get("stations", [])
+	if st.is_empty():
+		return
+	var open: Dictionary = p.get("open", {})
+	if not open.is_empty():
+		var where: Array = []
+		for gk: String in open:
+			var e := int(gk.get_slice(":", 1))
+			where.append("%s at frame %d" % [_edge_name(e), int(gk.get_slice(":", 0))])
+		where.sort()
+		out.append(_problem("hull_gap", WARNING, "Gap in the hull: %d plate%s left off (%s)" % [open.size(),
+				"" if open.size() == 1 else "s", ", ".join(where.slice(0, 3)) + (", ..." if where.size() > 3 else "")]))
+	var loose: Array = []
+	for k in st.size() - 1:
+		for e in DesignFrame.SIDES:
+			if DesignFrame.panel_at(p, k, e) == "open":
+				continue
+			var sup := DesignFrame.plate_support(p, k, e)
+			if int(sup.ends) == 0 or int(sup.sides) == 0:
+				loose.append("%s at frame %d" % [_edge_name(e), k])
+	if not loose.is_empty():
+		out.append(_problem("plate_unsupported", WARNING, "Nothing holds %d plate%s up: %s" % [loose.size(),
+				"" if loose.size() == 1 else "s", ", ".join(loose.slice(0, 3)) + (", ..." if loose.size() > 3 else "")]))
+	for k in st.size() - 1:
+		var span := float(st[k + 1].z) - float(st[k].z)
+		if span > DesignFrame.MAX_BAY + 0.01:
+			out.append(_problem("long_bay", WARNING, "Frames %d and %d are %s m apart: plates span %s m at most" % [
+					k, k + 1, _m(span), _m(DesignFrame.MAX_BAY)]))
+
+
+static func _edge_name(e: int) -> String:
+	return DesignFrame.EDGE_NAMES[e % DesignFrame.SIDES]
 
 
 ## A hull part must be one that fits on the hull, and sit on the hull (a side's outline, or the

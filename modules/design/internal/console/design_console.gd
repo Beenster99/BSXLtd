@@ -1465,7 +1465,28 @@ func holo_click(at: Vector2) -> String:
 	var id := holo_pick_mount(at)
 	if id != "":
 		plan.select("mount", id)
-	return id
+		return id
+	# Nothing on the hull there: the plate under the pointer (the outside designer, stage 1).
+	var panel := holo_pick_panel(at)
+	if panel != "":
+		plan.select("panel", panel)
+	return panel
+
+
+## The skin panel under `at` in the 3D view as "<z>:<edge>" (z: the middle of its bay), "".
+func holo_pick_panel(at: Vector2) -> String:
+	var ray := holo_ray(at)
+	if ray.is_empty() or not Flags.is_on(OUTSIDE_FLAG):
+		return ""
+	var fp := bus.frame_plan()
+	var hit := DesignOutside.pick(fp, ray[0], ray[1])
+	if hit.is_empty() or int(hit.edge) < 0:
+		return ""
+	var k := DesignFrame.bay_at(fp, float(hit.z))
+	if k < 0:
+		return ""
+	var st: Array = fp.stations
+	return "%.2f:%d" % [(float(st[k].z) + float(st[k + 1].z)) * 0.5, int(hit.edge)]
 
 
 ## The part on the hull under `at` in the 3D view, "" for none.
@@ -1639,6 +1660,8 @@ func _on_selection(kind: String, id: String) -> void:
 	if rec == null:
 		return
 	holo.light_rooms([id] if kind == "room" else [])
+	if kind != "panel":
+		holo.mark_panel({}, "")
 	_selection.add_child(T.label("DESIGN", "display_bold", 20, T.TEXT))
 	var name_edit := LineEdit.new()
 	name_edit.text = rec.name
@@ -1751,12 +1774,103 @@ func _on_selection(kind: String, id: String) -> void:
 			_grade_rows(str(rec.mounts[id].type), func(t: String) -> void:
 				bus.editor.do({"op": "set_mount", "id": id, "fields": {"type": t}}))
 		_selection.add_child(_remove_button())
+	elif kind == "panel":
+		_selection.add_child(_panel_rows(id))
+		holo.mark_panel(bus.frame_plan(), id)
 	elif kind == "hull":
 		var outline := rec.hull_outline(plan.deck)
 		_selection.add_child(T.label("HULL CORNER", "display_bold", 18, T.ORANGE))
 		_selection.add_child(T.label("%d corners, drag to reshape. Delete takes this one out." % outline.size(),
 				"body", 14, T.DIM))
 		_selection.add_child(_remove_button())
+
+
+## A skin panel picked in the 3D view (the outside designer, stage 1): what it is made of, and
+## the frame round it: split it with a new frame, move or take out the frames at its ends, take
+## out (or put back) the ring girders at its ends and the stringers at its sides.
+func _panel_rows(id: String) -> Control:
+	var col := VBoxContainer.new()
+	col.name = "PanelRows"
+	var fp := bus.frame_plan()
+	var st: Array = fp.get("stations", [])
+	var z := float(id.get_slice(":", 0))
+	var e := int(id.get_slice(":", 1))
+	var k := DesignFrame.bay_at(fp, z)
+	if k < 0 or st.is_empty():
+		col.add_child(T.label("That panel is gone: the hull has changed.", "body", 14, T.DIM))
+		return col
+	var rec := bus.library.current
+	var za := float(st[k].z)
+	var zb := float(st[k + 1].z)
+	var kind := DesignFrame.panel_at(fp, k, e)
+	col.add_child(T.label("HULL PANEL   %s" % DesignFrame.EDGE_NAMES[e].to_upper(), "display_bold", 18, T.ORANGE))
+	col.add_child(T.label("%s, frames %d to %d, %s m long" % [DesignFrame.PANEL_NAMES[kind], k, k + 1,
+			PlanView._m(snappedf(zb - za, 0.1))], "body", 14, T.DIM))
+	var mid := (za + zb) * 0.5
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 4)
+	col.add_child(row)
+	for pk: String in DesignFrame.PANEL_KINDS:
+		var b := T.button(pk.to_upper(), false, 14, pk == kind)
+		b.name = "Panel_" + pk
+		b.pressed.connect(func() -> void:
+			bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(mid, e), "value": {"kind": pk}}))
+		row.add_child(b)
+	var frames := HFlowContainer.new()
+	frames.add_theme_constant_override("h_separation", 4)
+	col.add_child(frames)
+	var split := T.button("SPLIT (NEW FRAME)", false, 14)
+	split.name = "PanelSplit"
+	split.pressed.connect(func() -> void:
+		bus.editor.do({"op": "set_frame", "key": DesignFrame.ring_key(mid), "value": {"add": true}}))
+	frames.add_child(split)
+	for end: Array in [[k, "FORE"], [k + 1, "AFT"]]:
+		var i: int = end[0]
+		if i <= 0 or i >= st.size() - 1:
+			continue
+		var at_z := float(st[i].z)
+		var take := T.button("REMOVE FRAME " + str(end[1]), false, 14)
+		take.name = "RemoveFrame" + str(end[1]).capitalize()
+		take.pressed.connect(func() -> void: bus.editor.do(_ring_op(rec, at_z, INF)))
+		frames.add_child(take)
+		for step: float in [-0.25, 0.25]:
+			var mv := T.button("FRAME %s %s" % [str(end[1]), "FWD" if step < 0.0 else "BACK"], false, 14)
+			mv.name = "MoveFrame%s%s" % [str(end[1]).capitalize(), "Fwd" if step < 0.0 else "Back"]
+			mv.pressed.connect(func() -> void: bus.editor.do(_ring_op(rec, at_z, at_z + step)))
+			frames.add_child(mv)
+	var members := HFlowContainer.new()
+	members.add_theme_constant_override("h_separation", 4)
+	col.add_child(members)
+	var specs := [[DesignFrame.member_key(za, e), "RING FORE"], [DesignFrame.member_key(zb, e), "RING AFT"],
+			[DesignFrame.stringer_key(mid, e), "STRINGER A"], [DesignFrame.stringer_key(mid, (e + 1) % DesignFrame.SIDES), "STRINGER B"]]
+	for spec: Array in specs:
+		var key: String = spec[0]
+		var gone := rec.frame_edits.has(key)
+		var b := T.button(("PUT BACK " if gone else "TAKE OUT ") + str(spec[1]), false, 14, gone)
+		b.name = "Member_" + str(spec[1]).replace(" ", "")
+		b.pressed.connect(func() -> void:
+			bus.editor.do({"op": "set_frame", "key": key, "value": null if gone else {"remove": true}}))
+		members.add_child(b)
+	return col
+
+
+## The op that takes the ring at `z` out (to = INF) or moves it to `to`: a ring the designers
+## added is moved or dropped by its own edit; a proposed one is taken out by a "remove" edit and
+## a new one added where it goes.
+func _ring_op(rec: DesignRecord, z: float, to: float) -> Dictionary:
+	var ops: Array = []
+	var own := ""
+	for key: String in rec.frame_edits:
+		if key.begins_with("ring:") and bool((rec.frame_edits[key] as Dictionary).get("add", false)) \
+				and absf(float(key.get_slice(":", 1)) - z) < DesignFrame.RING_GAP:
+			own = key
+	if own != "":
+		ops.append({"op": "set_frame", "key": own, "value": null})
+	else:
+		ops.append({"op": "set_frame", "key": DesignFrame.ring_key(z), "value": {"remove": true}})
+	if to != INF:
+		ops.append({"op": "set_frame", "key": DesignFrame.ring_key(to), "value": {"add": true}})
+	return {"op": "batch", "ops": ops}
 
 
 ## A part on the skin: where it is (roof, port side, nose...), TURN a quarter about the hull's

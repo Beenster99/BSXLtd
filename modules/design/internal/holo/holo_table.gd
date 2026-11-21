@@ -214,6 +214,8 @@ func rebuild() -> void:
 	_build_runs(rec, _layer_nodes.wiring, "wiring")
 	_build_runs(rec, _layer_nodes.pipes, "pipes")
 	_build_power(rec, _layer_nodes.power)
+	if _marked != "":
+		mark_panel(bus.frame_plan() if rec == bus.library.current else DesignFrame.propose(rec), _marked)
 	bus.holo_built.emit(self, inner)
 
 
@@ -643,3 +645,40 @@ func show_ghost(xf: Transform3D, size: Vector3, ok: bool) -> void:
 	g.material_override = _mat(Color(0.4, 1.0, 0.5) if ok else Color(1.0, 0.35, 0.3), 0.55, 1.2)
 	g.transform = xf * Transform3D(Basis.IDENTITY, Vector3(0, size.y * 0.5, 0))
 	g.visible = true
+
+
+## The skin panel picked in the 3D view, outlined ("<z>:<edge>", z in its bay; "" clears it).
+var _marked := ""
+
+
+func mark_panel(plan: Dictionary, id: String) -> void:
+	_marked = id
+	var ship := ship_node()
+	if ship == null:
+		return
+	var old := ship.get_node_or_null("PanelMark")
+	if old:
+		ship.remove_child(old)
+		old.queue_free()
+	if id == "" or plan.is_empty():
+		return
+	var k := DesignFrame.bay_at(plan, float(id.get_slice(":", 0)))
+	if k < 0:
+		return
+	var e := int(id.get_slice(":", 1))
+	var st: Array = plan.stations
+	var a: PackedVector2Array = st[k].profile
+	var b: PackedVector2Array = st[k + 1].profile
+	var e1 := (e + 1) % a.size()
+	var za := float(st[k].z)
+	var zb := float(st[k + 1].z)
+	var q := [Vector3(a[e].x, a[e].y, za), Vector3(a[e1].x, a[e1].y, za), Vector3(b[e1].x, b[e1].y, zb), Vector3(b[e].x, b[e].y, zb)]
+	var segs := PackedVector3Array()
+	for i in 4:
+		segs.append_array([q[i], q[(i + 1) % 4]])
+	var holder := Node3D.new()
+	holder.name = "PanelMark"
+	ship.add_child(holder)
+	_lines(holder, segs, _mat(Color(1.0, 0.55, 0.2), 1.0, 1.5))
+	for v in holder.find_children("*", "VisualInstance3D", true, false):
+		(v as VisualInstance3D).layers |= VIEW_LAYER
