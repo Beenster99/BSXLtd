@@ -45,6 +45,9 @@ extends RefCounted
 ##   {op = "remove_stroke", id}
 ##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?, structure? (merged), order?,
 ##       livery? (merged; a null value takes that key out), livery_set? (the whole livery)}}
+##   {op = "add_shape", shape = {id?, type, ...}}   # a nose, stern, wing, fin, pod or fairing (DesignShape)
+##   {op = "set_shape", id, fields = {...}}
+##   {op = "remove_shape", id}
 ##   {op = "batch", ops = [...]}         # applied in order, undone in reverse
 ## The undo of a remove re-adds what was removed with its old id, so ids stay stable.
 
@@ -92,6 +95,10 @@ var livery: Dictionary = {}
 ## angle}, (x, z) on the hull's side and `angle` the way its front faces (radians, from +X
 ## towards +Z: the hull's outward normal where it was fitted).
 var mounts: Dictionary = {}
+## Her free shapes (DesignShape, the outside designer stage 2): id -> {id, type, ...}: a nose
+## and a stern drawn out of the hull, wings, fins, pods on struts and fairings, each built as
+## frames and plates.
+var shapes: Dictionary = {}
 ## Notes pinned to the ship (plan 3.4): id -> {id, deck, x, z, text}.
 var pins: Dictionary = {}
 ## Inner walls drawn anywhere: wall id -> {id, deck, a: [x, z], b: [x, z]}.
@@ -277,6 +284,20 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _set_fields(mounts, str(op.get("id", "")), op.get("fields", {}), "set_mount")
 		"remove_mount":
 			return _remove_entry(mounts, str(op.get("id", "")), "mount", "add_mount")
+		"add_shape":
+			var sh: Dictionary = (op.get("shape", {}) as Dictionary).duplicate(true)
+			if not str(sh.get("type", "")) in DesignShape.TYPES:
+				return {}
+			# One nose and one stern: a second one is the first changed.
+			if str(sh.type) in DesignShape.ENDS:
+				for other: Dictionary in shapes.values():
+					if str(other.type) == str(sh.type):
+						return {}
+			return _add_entry(shapes, sh, "s", "shape", "remove_shape")
+		"set_shape":
+			return _set_fields(shapes, str(op.get("id", "")), op.get("fields", {}), "set_shape")
+		"remove_shape":
+			return _remove_entry(shapes, str(op.get("id", "")), "shape", "add_shape")
 		"add_pin":
 			var nt: Dictionary = op.get("pin", {}).duplicate()
 			if str(nt.get("text", "")).strip_edges() == "":
@@ -764,6 +785,7 @@ func to_dict() -> Dictionary:
 		"runs": _sorted(runs), "structure": structure.duplicate(),
 		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
 		"hull": hull.duplicate(true), "frame_edits": frame_edits.duplicate(true), "livery": livery.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts), "pins": _sorted(pins),
+		"shapes": _sorted(shapes),
 	}
 
 
@@ -807,6 +829,8 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		var m := mv.duplicate(true)
 		m.deck = int(m.get("deck", 0))
 		d.mounts[str(m.id)] = m
+	for sv: Dictionary in data.get("shapes", []):
+		d.shapes[str(sv.id)] = sv.duplicate(true)
 	for nv: Dictionary in data.get("pins", []):
 		var nt := nv.duplicate(true)
 		nt.deck = int(nt.get("deck", 0))
@@ -823,7 +847,7 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		d.structure[k] = st[k]
 	d.structure.spacing = float(d.structure.spacing)
 	d._next = int(data.get("next", 1))
-	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams, d.mounts, d.pins]:
+	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams, d.mounts, d.pins, d.shapes]:
 		for eid: String in table:
 			d._bump_next(eid)
 	return d

@@ -448,6 +448,25 @@ func _build_skin(plan: Dictionary, parent: Node3D, metal: Material, glass: Mater
 		for k in range(1, o.size() - 1):
 			tris.append_array([Vector3(o[0].x, o[0].y, z), Vector3(o[k].x, o[k].y, z), Vector3(o[k + 1].x, o[k + 1].y, z)])
 		(groups.get_or_add(cap_key, PackedVector3Array()) as PackedVector3Array).append_array(tris)
+	# Her wings, fins, pods and fairings (DesignShape), in her base colour.
+	for limb: Dictionary in plan.get("limbs", []):
+		var ls: Array = limb.stations
+		var lt := PackedVector3Array()
+		for i in range(1, ls.size()):
+			var a: PackedVector2Array = ls[i - 1].profile
+			var b: PackedVector2Array = ls[i].profile
+			var za := float(ls[i - 1].z)
+			var zb := float(ls[i].z)
+			for k in a.size():
+				var k1 := (k + 1) % a.size()
+				lt.append_array([Vector3(a[k].x, a[k].y, za), Vector3(a[k1].x, a[k1].y, za), Vector3(b[k1].x, b[k1].y, zb),
+						Vector3(a[k].x, a[k].y, za), Vector3(b[k1].x, b[k1].y, zb), Vector3(b[k].x, b[k].y, zb)])
+		for end in 2:
+			var o: PackedVector2Array = ls[0 if end == 0 else ls.size() - 1].profile
+			var z := float(ls[0 if end == 0 else ls.size() - 1].z)
+			for k in range(1, o.size() - 1):
+				lt.append_array([Vector3(o[0].x, o[0].y, z), Vector3(o[k].x, o[k].y, z), Vector3(o[k + 1].x, o[k + 1].y, z)])
+		(groups.get_or_add(cap_key, PackedVector3Array()) as PackedVector3Array).append_array(lt)
 	for key: String in groups:
 		var tris: PackedVector3Array = groups[key]
 		if tris.is_empty():
