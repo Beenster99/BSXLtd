@@ -63,6 +63,10 @@ class Runner:
 			await _fit_shots(room, out)
 			get_tree().quit()
 			return
+		if "--shapes" in OS.get_cmdline_user_args():
+			await _shape_shots(room, out)
+			get_tree().quit()
+			return
 		if "--outside" in OS.get_cmdline_user_args():
 			await _outside_shots(room, out)
 			get_tree().quit()
@@ -177,6 +181,57 @@ class Runner:
 			await _frames(20)
 			await _save(out, shot[0])
 		room.furnishing.close_walk()
+
+	## The outside designer's free shapes (--shapes, plan 3.10 stage 2): the sample with a nose
+	## (its stern has a door, so no tapered stern), swept wings, a fin and pods on struts, painted; the console with the wings
+	## picked (shapes_console), then from outside (shapes_bow, shapes_side, shapes_top).
+	func _shape_shots(room: Node, out: String) -> void:
+		var bus: DesignBus = room.bus
+		var rec := bus.library.current
+		var plan := bus.frame_plan()
+		var st: Array = plan.stations
+		var z0 := float(st[0].z)
+		var z1 := float(st[st.size() - 1].z)
+		var mid := (z0 + z1) * 0.5
+		bus.editor.do({"op": "set_meta", "fields": {"livery": {"base": "#d9dcd8", "trim": "#1f4e79", "pattern": "top",
+				"stripe": "#d46a1e", "stripe_at": "low", "show_name": true, "number": "BSX-02"}}})
+		var nose := DesignShape.make("nose")
+		nose.length = 5.0
+		nose.drop = -0.25
+		bus.editor.do({"op": "add_shape", "shape": nose})
+		var wing := DesignShape.make("wing", snappedf(mid + 1.0, 0.25))
+		wing.span = 5.0
+		wing.sweep = 2.5
+		bus.editor.do({"op": "add_shape", "shape": wing})
+		bus.editor.do({"op": "add_shape", "shape": DesignShape.make("fin", snappedf(z1 - 2.0, 0.25))})
+		var pod := DesignShape.make("pod", snappedf(z1 - 3.0, 0.25))
+		pod.at = 0.85
+		bus.editor.do({"op": "add_shape", "shape": pod})
+		room.furnishing.open_console()
+		await _frames(20)
+		room.console._set_view("plan")
+		for sid: String in rec.shapes:
+			if str(rec.shapes[sid].type) == "wing":
+				room.console.plan.select("shape", sid)
+		await _frames(20)
+		await _save(out, "shapes_console")
+		room.console.plan.select("", "")
+		room.furnishing.open_walk()
+		var walk: Node3D = room.furnishing.walk
+		await _frames(5)
+		walk.set_physics_process(false)
+		walk.set_cad(false)
+		await _frames(5)
+		var centre := Vector3(0, 2.0, mid)
+		for shot in [["shapes_bow", -2.4, 0.3, 26.0], ["shapes_side", 1.3, 0.35, 28.0], ["shapes_top", 0.4, 1.1, 22.0]]:
+			var yaw: float = shot[1]
+			var up := float(shot[3]) * sin(float(shot[2]))
+			var flat := Vector3(sin(yaw), 0, cos(yaw)) * float(shot[3]) * cos(float(shot[2]))
+			walk.body.position = centre + flat + Vector3(0, up, 0)
+			walk.body.rotation.y = yaw
+			walk.camera.rotation.x = -float(shot[2])
+			await _frames(20)
+			await _save(out, shot[0])
 
 	## The outside designer (--outside, plan 3.10 stage 3): parts fitted anywhere on the
 	## sample's skin (a mast and an antenna on the roof, thrusters on the nose and shoulders, a

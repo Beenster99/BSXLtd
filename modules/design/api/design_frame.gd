@@ -107,11 +107,14 @@ static func propose(d: DesignRecord) -> Dictionary:
 			"stations": stations, "glass": {}, "openings": [], "skip": {}, "armour": {}, "open": {},
 			"no_stringer": {}, "hand_skip": {}, "paint": {}, "livery": d.livery.duplicate(true)}
 	_grow(d, stations)
+	# Her nose and stern drawn out of the body (DesignShape), then her wings, fins and pods.
+	DesignShape.extend(d, out, _end_doors(d, stations, clear))
 	_glaze(d, out)
 	_panels(d, out)
 	_members(d, out)
 	_openings(d, out)
 	_inside(d, out)
+	out["limbs"] = DesignShape.limbs(d, out)
 	return out
 
 
@@ -391,7 +394,7 @@ static func counts(p: Dictionary) -> Dictionary:
 		return {"stations": 0, "nodes": 0, "rings": 0, "stringers": 0, "plates": 0, "glass": 0,
 				"openings": 0, "welds": 0, "rivets": 0, "bolts": 0, "member_m": 0.0, "skin_m2": 0.0,
 				"decks": 0, "deck_plates": 0, "walls": 0, "studs": 0, "wall_panels": 0, "armour": 0, "armour_m2": 0.0,
-				"open": 0}
+				"open": 0, "limbs": 0, "struts": 0}
 	var st: Array = p.stations
 	var s: Dictionary = FrameStyle.STYLES.get(str(p.style), FrameStyle.STYLES["channel"])
 	var pitch := float(s.get("rivet_pitch", 0.5))
@@ -456,12 +459,28 @@ static func counts(p: Dictionary) -> Dictionary:
 		wall_panels += 2 * maxi(1, ceili(len / STUD))
 		bolts += 2 * maxi(1, ceili(len / STUD)) * (int(hgt) + 2)
 		welds += n
+	# Her wings, fins, pods and fairings (DesignShape): their own frames and skin, bolted on.
+	var limbs := 0
+	var struts := 0
+	for limb: Dictionary in p.get("limbs", []):
+		var lc := DesignShape.counts(limb)
+		limbs += 1
+		struts += int(lc.struts)
+		member_m += float(lc.member_m)
+		skin_m2 += float(lc.skin_m2)
+		plates += int(lc.plates)
+		rings += int(lc.rings)
+		stringers += int(lc.stringers)
+		bolts += int(lc.bolts)
+		welds += int(lc.rings) * 2 + int(lc.stringers) * 2
+		rivets += int(float(lc.skin_m2) * 4.0)
 	return {"stations": st.size(), "nodes": 0, "rings": rings, "stringers": stringers, "plates": plates,
 			"glass": (p.glass as Dictionary).size(), "openings": (p.openings as Array).size(),
 			"welds": welds, "rivets": rivets, "bolts": bolts, "member_m": member_m, "skin_m2": skin_m2,
 			"decks": (p.get("decks", []) as Array).size(), "deck_plates": deck_plates,
 			"walls": (p.get("walls", []) as Array).size(), "studs": studs, "wall_panels": wall_panels,
-			"armour": (p.get("armour", {}) as Dictionary).size(), "armour_m2": armour_m2, "open": open}
+			"armour": (p.get("armour", {}) as Dictionary).size(), "armour_m2": armour_m2, "open": open,
+			"limbs": limbs, "struts": struts}
 
 
 ## The yard's build list for the proposal: every kind of member, plate and joint the crew will
@@ -477,6 +496,8 @@ static func build_list(p: Dictionary) -> Array[Dictionary]:
 		["Hull plates", int(c.plates) - int(c.glass) - int(c.armour), "x", "riveted to rings and stringers"],
 		["Armour plates", c.armour, "x", "riveted over the frame, thicker"],
 		["Glass panels", c.glass, "x", "set in the frame"],
+		["Wings, fins, pods and fairings", c.get("limbs", 0), "x", "framed and plated, bolted to the hull's rings"],
+		["Pod struts", c.get("struts", 0), "x", "girders bolted body to pod"],
 		["Outer door frames", c.openings, "x", "posts and rails welded in"],
 		["Deck plates", c.deck_plates, "x", "spot welded to beams and girders"],
 		["Wall studs", c.studs, "x", "welded to the sills"],
@@ -560,6 +581,14 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 		var cap_col: Variant = DesignLivery.cap_colour(p)
 		var cap_mat: Material = shell if cap_col == null else tint.call(cap_col, false)
 		h.cap(end, pieces, glass if glazed else cap_mat, "", glazed)
+	# Her wings, fins, pods and fairings, in her base colour (the trim on a wing's or fin's tip).
+	var limb_mat := func(_seg: int, edge: int, limb: Dictionary) -> Material:
+		var l: Dictionary = p.get("livery", {})
+		if l.is_empty():
+			return shell
+		var tip := str(limb.type) in ["wing", "fin"] and edge == (1 if str(limb.type) == "fin" or float(limb.side) > 0.0 else 3)
+		return tint.call(DesignLivery.trim(l) if tip else DesignLivery.base(l), false)
+	h.set_meta("limbs", DesignShape.build(p, h, kit, steel, glass, limb_mat))
 	var lining: Material = mats.get("lining", ShipKit.paint(Color(0.52, 0.54, 0.54), 0.2, 0.6))
 	var plating: Material = mats.get("deck", ShipKit.paint(Color(0.46, 0.48, 0.5), 0.6, 0.45))
 	var decks: Array[DeckFrame] = []
@@ -692,7 +721,8 @@ static func _glaze(d: DesignRecord, p: Dictionary) -> void:
 	var st: Array = p.stations
 	var glass: Dictionary = p.glass
 	var caps := [false, false]
-	var zmin := float(st[0].z) + float(p.clearance)
+	var body: Array = p.get("body", [0, st.size() - 1])
+	var zmin := float(st[int(body[0])].z) + float(p.clearance)
 	for r: Dictionary in d.rooms.values():
 		if not str(r.type) in GLAZED:
 			continue
@@ -708,7 +738,43 @@ static func _glaze(d: DesignRecord, p: Dictionary) -> void:
 					glass["%d:%d" % [k, e]] = true
 		if float(r.z) <= zmin + 0.01:
 			caps[0] = true
+	# A bridge at the bow with a nose drawn out ahead of it: the nose's top glazed, a canopy.
+	if caps[0] and int(body[0]) > 0:
+		for k in int(body[0]):
+			for e in [7, 0, 1]:
+				glass["%d:%d" % [k, e]] = true
 	p["cap_glass"] = caps
+
+
+## Which of her ends (front, back) a door to space opens through: no nose or stern there.
+static func _end_doors(d: DesignRecord, st: Array, clear: float) -> Array:
+	var out := [false, false]
+	for g: Dictionary in d.doors.values():
+		if str(g.get("b", "")) != "" and str(g.get("a", "")) != "":
+			continue
+		var room_id := str(g.a) if str(g.get("a", "")) != "" else str(g.b)
+		if not d.rooms.has(room_id):
+			continue
+		var end := _door_end(d.rooms[room_id], g)
+		if end < 0:
+			continue
+		var cap_z := float(st[st.size() - 1 if end == 1 else 0].z)
+		if absf(cap_z - float(g.z)) <= clear + 0.05:
+			out[end] = true
+	return out
+
+
+## The end a door faces (0 front, 1 back), or -1 for a door in a side.
+static func _door_end(r: Dictionary, g: Dictionary) -> int:
+	var x := float(g.x)
+	var z := float(g.z)
+	var sides := {"px": absf(x - float(r.x) - float(r.w)), "nx": absf(x - float(r.x)),
+			"pz": absf(z - float(r.z) - float(r.d)), "nz": absf(z - float(r.z))}
+	var best := "px"
+	for k: String in sides:
+		if float(sides[k]) < float(sides[best]):
+			best = k
+	return 1 if best == "pz" else (0 if best == "nz" else -1)
 
 
 ## Doors to space: each one cut through the skin in front of it (a side) or through an end cap.

@@ -1673,7 +1673,10 @@ func _on_selection(kind: String, id: String) -> void:
 			bus.editor.do({"op": "set_meta", "fields": {"name": t}}))
 	_selection.add_child(name_edit)
 	if kind == "" and Flags.is_on(OUTSIDE_FLAG):
+		_selection.add_child(_shape_rows(rec))
 		_selection.add_child(_livery_rows(rec))
+	if kind == "shape" and rec.shapes.has(id):
+		_selection.add_child(_shape_edit_rows(rec, id))
 	if kind == "room" and rec.rooms.has(id):
 		var r: Dictionary = rec.rooms[id]
 		var rt := bus.catalog.room(str(r.type))
@@ -1962,6 +1965,125 @@ func _livery_rows(rec: DesignRecord) -> Control:
 		bare.name = "Livery_bare"
 		bare.pressed.connect(func() -> void: bus.editor.do({"op": "set_meta", "fields": {"livery_set": {}}}))
 		marks.add_child(bare)
+	return col
+
+
+## HULL SHAPE (the outside designer, stage 2): her nose, stern, wings, fins, pods and fairings,
+## each a button that picks it, and ADD for each kind.
+func _shape_rows(rec: DesignRecord) -> Control:
+	var col := VBoxContainer.new()
+	col.name = "ShapeRows"
+	col.add_theme_constant_override("separation", 3)
+	col.add_child(T.label("HULL SHAPE", "display_bold", 16, T.ORANGE))
+	if not rec.shapes.is_empty():
+		var have := HFlowContainer.new()
+		have.add_theme_constant_override("h_separation", 3)
+		col.add_child(have)
+		var ids := rec.shapes.keys()
+		ids.sort()
+		for sid: String in ids:
+			var b := T.button(DesignShape.describe(rec.shapes[sid]).to_upper(), false, 13)
+			b.name = "Shape_" + sid
+			b.pressed.connect(func() -> void: plan.select("shape", sid))
+			have.add_child(b)
+	var adds := HFlowContainer.new()
+	adds.add_theme_constant_override("h_separation", 3)
+	col.add_child(adds)
+	for type: String in DesignShape.TYPES:
+		if type in DesignShape.ENDS and not DesignShape.end_shape(rec, type).is_empty():
+			continue
+		var b := T.button("ADD " + str(DesignShape.NAMES[type]).to_upper(), false, 13)
+		b.name = "AddShape_" + type
+		b.pressed.connect(func() -> void: add_shape(type))
+		adds.add_child(b)
+	return col
+
+
+## Adds a shape of `type` where it sits best on her (a wing amidships, a fin and pods aft), and
+## picks it. Returns its id.
+func add_shape(type: String) -> String:
+	var rec := bus.library.current
+	var fp := bus.frame_plan()
+	var st: Array = fp.get("stations", [])
+	if rec == null or st.is_empty():
+		return ""
+	var body: Array = fp.get("body", [0, st.size() - 1])
+	var z0 := float(st[int(body[0])].z)
+	var z1 := float(st[int(body[1])].z)
+	var z := (z0 + z1) * 0.5
+	match type:
+		"fin":
+			z = z1 - minf(2.0, (z1 - z0) * 0.25)
+		"pod":
+			z = lerpf(z0, z1, 0.7)
+	var id := rec.peek_id("s")
+	bus.editor.do({"op": "add_shape", "shape": DesignShape.make(type, snappedf(z, 0.25))})
+	if not rec.shapes.has(id):
+		return ""
+	plan.select("shape", id)
+	return id
+
+
+## A shape picked: each of its sizes with - and +, where it sits along her, MIRROR, the face it
+## stands on, REMOVE.
+func _shape_edit_rows(rec: DesignRecord, id: String) -> Control:
+	var s: Dictionary = rec.shapes[id]
+	var type := str(s.type)
+	var col := VBoxContainer.new()
+	col.name = "ShapeEdit"
+	col.add_theme_constant_override("separation", 3)
+	col.add_child(T.label("%s   %s" % [DesignShape.describe(s).to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
+	col.add_child(T.label("Built as frames and plates, bolted to her rings.", "body", 13, T.DIM))
+	var set_s := func(fields: Dictionary) -> void:
+		bus.editor.do({"op": "set_shape", "id": id, "fields": fields})
+	var rows: Array = []
+	if not type in DesignShape.ENDS:
+		rows.append(["z", "ALONG", -200.0, 200.0, 0.25])
+	for f: Array in DesignShape.FIELDS.get(type, []):
+		if f[0] == "at" and type == "fairing" and str(s.get("face", "roof")) != "side":
+			continue
+		if f[0] == "x" and type == "fairing" and str(s.get("face", "roof")) == "side":
+			continue
+		rows.append([f[0], f[1], f[3], f[4], f[5]])
+	for r: Array in rows:
+		var key: String = r[0]
+		var now := DesignShape.field(s, key) if key != "z" else float(s.get("z", 0.0))
+		var h := HBoxContainer.new()
+		col.add_child(h)
+		var l := T.label(str(r[1]), "display_medium", 13, T.DIM)
+		l.custom_minimum_size.x = 120
+		h.add_child(l)
+		for dir: float in [-1.0, 1.0]:
+			var b := T.button("-" if dir < 0.0 else "+", false, 13)
+			b.name = "Shape_%s_%s" % [key, "minus" if dir < 0.0 else "plus"]
+			var to := clampf(snappedf(now + dir * float(r[4]), float(r[4])), float(r[2]), float(r[3]))
+			b.disabled = is_equal_approx(to, now)
+			b.pressed.connect(func() -> void: set_s.call({key: to}))
+			if dir < 0.0:
+				h.add_child(b)
+				var v := T.label("%.2f" % now if float(r[4]) < 0.1 else "%.1f" % now, "mono", 13, T.TEXT)
+				v.name = "Shape_%s_value" % key
+				v.custom_minimum_size.x = 48
+				h.add_child(v)
+			else:
+				h.add_child(b)
+	var opts := HFlowContainer.new()
+	opts.add_theme_constant_override("h_separation", 3)
+	col.add_child(opts)
+	if type in ["wing", "pod"]:
+		var m := T.button("BOTH SIDES", false, 13, DesignShape.mirrored(s))
+		m.name = "ShapeMirror"
+		m.pressed.connect(func() -> void: set_s.call({"mirror": not DesignShape.mirrored(s)}))
+		opts.add_child(m)
+	for face: String in DesignShape.FACES.get(type, []):
+		var b := T.button("ON THE " + face.to_upper(), false, 13, str(s.get("face", "")) == face)
+		b.name = "ShapeFace_" + face
+		b.pressed.connect(func() -> void: set_s.call({"face": face}))
+		opts.add_child(b)
+	var rm := T.button("REMOVE (DEL)", false, 15)
+	rm.name = "ShapeRemove"
+	rm.pressed.connect(plan.delete_selected)
+	col.add_child(rm)
 	return col
 
 
