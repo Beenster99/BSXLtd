@@ -48,6 +48,10 @@ extends RefCounted
 ##   {op = "add_shape", shape = {id?, type, ...}}   # a nose, stern, wing, fin, pod or fairing (DesignShape)
 ##   {op = "set_shape", id, fields = {...}}
 ##   {op = "remove_shape", id}
+##   {op = "add_free_beam", beam = {id?, a = [x, y, z], b = [x, y, z], roll?, size?}}   # DesignFree
+##   {op = "set_free_beam", id, fields}, {op = "remove_free_beam", id}
+##   {op = "add_free_plate", plate = {id?, pts = [[x, y, z] x3..4], kind?, paint?}}
+##   {op = "set_free_plate", id, fields}, {op = "remove_free_plate", id}
 ##   {op = "batch", ops = [...]}         # applied in order, undone in reverse
 ## The undo of a remove re-adds what was removed with its old id, so ids stay stable.
 
@@ -105,6 +109,10 @@ var pins: Dictionary = {}
 var walls: Dictionary = {}
 ## Beams placed by hand under a deckhead: beam id -> {id, deck, a: [x, z], b: [x, z]}.
 var beams: Dictionary = {}
+## Free beams (DesignFree): id -> {id, a: [x, y, z], b: [x, y, z], roll, size}, ship space.
+var free_beams: Dictionary = {}
+## Free plates (DesignFree): id -> {id, pts: [[x, y, z] x3..4], kind, paint?}.
+var free_plates: Dictionary = {}
 ## The design's whiteboard (Whiteboard view): layer id -> {id, name, visible, order}, drawn
 ## lowest order first, and stroke id -> {id, layer, tool ("pen", "marker", "line", "box"),
 ## colour (html), width (board units), points: [[x, y], ...]} in board units (Whiteboard.BOARD).
@@ -216,6 +224,15 @@ func _apply(op: Dictionary) -> Dictionary:
 			for table: Dictionary in [rooms, doors, runs, walls, beams, mounts]:
 				for e: Dictionary in table.values():
 					e["deck"] = int(e.get("deck", 0)) + by
+			var dy := by * deck_height
+			for fb: Dictionary in free_beams.values():
+				for end: String in ["a", "b"]:
+					fb[end] = DesignFree.arr(DesignFree.v3(fb[end]) + Vector3(0, dy, 0))
+			for fp: Dictionary in free_plates.values():
+				var moved_pts: Array = []
+				for c: Variant in fp.pts:
+					moved_pts.append(DesignFree.arr(DesignFree.v3(c) + Vector3(0, dy, 0)))
+				fp["pts"] = moved_pts
 			var moved := {}
 			for k in hull:
 				moved[str(int(k) + by)] = hull[k]
@@ -284,6 +301,49 @@ func _apply(op: Dictionary) -> Dictionary:
 			return _set_fields(mounts, str(op.get("id", "")), op.get("fields", {}), "set_mount")
 		"remove_mount":
 			return _remove_entry(mounts, str(op.get("id", "")), "mount", "add_mount")
+		"add_free_beam":
+			var fb: Dictionary = (op.get("beam", {}) as Dictionary).duplicate(true)
+			if not (fb.get("a") is Array and fb.get("b") is Array):
+				return {}
+			var fa := DesignFree.v3(fb.a)
+			var fe := DesignFree.v3(fb.b)
+			if fa.distance_to(fe) < DesignFree.MIN_BEAM:
+				return {}
+			fb["a"] = DesignFree.arr(fa)
+			fb["b"] = DesignFree.arr(fe)
+			fb["roll"] = float(fb.get("roll", 0.0))
+			fb["size"] = str(fb.get("size", "medium")) if DesignFree.SIZES.has(str(fb.get("size", ""))) else "medium"
+			return _add_entry(free_beams, fb, "g", "free_beam", "remove_free_beam")
+		"set_free_beam":
+			var fid := str(op.get("id", ""))
+			if not free_beams.has(fid):
+				return {}
+			var ff: Dictionary = (op.get("fields", {}) as Dictionary).duplicate(true)
+			for end: String in ["a", "b"]:
+				if ff.has(end):
+					ff[end] = DesignFree.arr(DesignFree.v3(ff[end]))
+			if DesignFree.v3(ff.get("a", free_beams[fid].a)).distance_to(DesignFree.v3(ff.get("b", free_beams[fid].b))) < DesignFree.MIN_BEAM:
+				return {}
+			return _set_fields(free_beams, fid, ff, "set_free_beam")
+		"remove_free_beam":
+			return _remove_entry(free_beams, str(op.get("id", "")), "beam", "add_free_beam")
+		"add_free_plate":
+			var fp: Dictionary = (op.get("plate", {}) as Dictionary).duplicate(true)
+			var pts := PackedVector3Array()
+			for c: Variant in fp.get("pts", []):
+				pts.append(DesignFree.v3(c))
+			if not DesignFree.plate_ok(pts):
+				return {}
+			var pa: Array = []
+			for c in pts:
+				pa.append(DesignFree.arr(c))
+			fp["pts"] = pa
+			fp["kind"] = str(fp.get("kind", "metal")) if DesignFree.PLATES.has(str(fp.get("kind", ""))) else "metal"
+			return _add_entry(free_plates, fp, "p", "free_plate", "remove_free_plate")
+		"set_free_plate":
+			return _set_fields(free_plates, str(op.get("id", "")), op.get("fields", {}), "set_free_plate")
+		"remove_free_plate":
+			return _remove_entry(free_plates, str(op.get("id", "")), "plate", "add_free_plate")
 		"add_shape":
 			var sh: Dictionary = (op.get("shape", {}) as Dictionary).duplicate(true)
 			if not str(sh.get("type", "")) in DesignShape.TYPES:
@@ -785,7 +845,7 @@ func to_dict() -> Dictionary:
 		"runs": _sorted(runs), "structure": structure.duplicate(),
 		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
 		"hull": hull.duplicate(true), "frame_edits": frame_edits.duplicate(true), "livery": livery.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts), "pins": _sorted(pins),
-		"shapes": _sorted(shapes),
+		"shapes": _sorted(shapes), "free_beams": _sorted(free_beams), "free_plates": _sorted(free_plates),
 	}
 
 
@@ -831,6 +891,10 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		d.mounts[str(m.id)] = m
 	for sv: Dictionary in data.get("shapes", []):
 		d.shapes[str(sv.id)] = sv.duplicate(true)
+	for fv: Dictionary in data.get("free_beams", []):
+		d.free_beams[str(fv.id)] = fv.duplicate(true)
+	for fv: Dictionary in data.get("free_plates", []):
+		d.free_plates[str(fv.id)] = fv.duplicate(true)
 	for nv: Dictionary in data.get("pins", []):
 		var nt := nv.duplicate(true)
 		nt.deck = int(nt.get("deck", 0))
@@ -847,7 +911,7 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 		d.structure[k] = st[k]
 	d.structure.spacing = float(d.structure.spacing)
 	d._next = int(data.get("next", 1))
-	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams, d.mounts, d.pins, d.shapes]:
+	for table: Dictionary in [d.rooms, d.doors, d.components, d.runs, d.sketch_layers, d.strokes, d.walls, d.beams, d.mounts, d.pins, d.shapes, d.free_beams, d.free_plates]:
 		for eid: String in table:
 			d._bump_next(eid)
 	return d

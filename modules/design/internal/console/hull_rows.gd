@@ -241,39 +241,29 @@ static func livery(bus: DesignBus) -> Control:
 		marks.add_child(bare)
 	return col
 
-## HULL SHAPE (the outside designer, stage 2): her nose, stern, wings, fins, pods and fairings,
-## each a button that picks it, and ADD for each kind.
+## Shapes made before free beams and plates (the prefab wings, fins, noses, sterns and pods of
+## 21 Nov, kept for designs that have them): each a button that picks it, to remove it. No new
+## ones are added (beenster, 21 Nov: "I dont want things to be prefabricated").
 static func shapes(bus: DesignBus, pick: Callable) -> Control:
 	var rec := bus.library.current
 	var col := VBoxContainer.new()
 	col.name = "ShapeRows"
 	col.add_theme_constant_override("separation", 3)
-	col.add_child(T.label("HULL SHAPE", "display_bold", 16, T.ORANGE))
-	if not rec.shapes.is_empty():
-		var have := HFlowContainer.new()
-		have.add_theme_constant_override("h_separation", 3)
-		col.add_child(have)
-		var ids := rec.shapes.keys()
-		ids.sort()
-		for sid: String in ids:
-			var b := T.button(DesignShape.describe(rec.shapes[sid]).to_upper(), false, 13)
-			b.name = "Shape_" + sid
-			b.pressed.connect(func() -> void: pick.call(sid))
-			have.add_child(b)
-	var adds := HFlowContainer.new()
-	adds.add_theme_constant_override("h_separation", 3)
-	col.add_child(adds)
-	for type: String in DesignShape.TYPES:
-		if type in DesignShape.ENDS and not DesignShape.end_shape(rec, type).is_empty():
-			continue
-		var b := T.button("ADD " + str(DesignShape.NAMES[type]).to_upper(), false, 13)
-		b.name = "AddShape_" + type
-		b.pressed.connect(func() -> void:
-			var sid := add_shape(bus, type)
-			if sid != "":
-				pick.call(sid))
-		adds.add_child(b)
+	if rec == null or rec.shapes.is_empty():
+		return col
+	col.add_child(T.label("OLD SHAPES (made before free beams)", "display_bold", 16, T.ORANGE))
+	var have := HFlowContainer.new()
+	have.add_theme_constant_override("h_separation", 3)
+	col.add_child(have)
+	var ids := rec.shapes.keys()
+	ids.sort()
+	for sid: String in ids:
+		var b := T.button(DesignShape.describe(rec.shapes[sid]).to_upper(), false, 13)
+		b.name = "Shape_" + sid
+		b.pressed.connect(func() -> void: pick.call(sid))
+		have.add_child(b)
 	return col
+
 
 ## Adds a shape of `type` where it sits best on her (a wing amidships, a fin and pods aft). Returns
 ## its id.
@@ -441,12 +431,13 @@ static func pick_shape(bus: DesignBus, from: Vector3, dir: Vector3) -> Dictionar
 	return best
 
 
-## Every hull row that is not about one panel: HULL SHAPE (pick or add a shape) and PAINT AND
-## MARKINGS, as at the console with nothing picked.
-static func whole_hull(bus: DesignBus, pick: Callable) -> Control:
+## Every hull row that is not about one panel: BEAMS AND PLATES (the tools and their settings),
+## any old shapes, HULL OUTLINE and PAINT AND MARKINGS, as at the console with nothing picked.
+static func whole_hull(bus: DesignBus, pick: Callable, start: Callable, mode := "") -> Control:
 	var col := VBoxContainer.new()
 	col.name = "WholeHull"
 	col.add_theme_constant_override("separation", 8)
+	col.add_child(free_rows(bus, start, mode))
 	col.add_child(shapes(bus, pick))
 	col.add_child(outline(bus))
 	col.add_child(livery(bus))
@@ -490,3 +481,151 @@ static func outline(bus: DesignBus) -> Control:
 			clear_b.pressed.connect(func() -> void: bus.editor.do({"op": "set_hull", "deck": d, "points": []}))
 			row.add_child(clear_b)
 	return col
+
+
+# Free beams and plates (DesignFree) --------------------------------------------------------
+
+static func _flow(col: Control) -> HFlowContainer:
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 3)
+	row.add_theme_constant_override("v_separation", 3)
+	col.add_child(row)
+	return row
+
+
+static func _btn(row: Control, node_name: String, text: String, on: bool, pressed: Callable, fs := 13) -> Button:
+	var b := T.button(text, false, fs, on)
+	b.name = node_name
+	b.pressed.connect(pressed)
+	row.add_child(b)
+	return b
+
+
+## BEAMS AND PLATES: the two tools (`start` takes "beam" or "plate"; `mode` the one in hand),
+## the beam section and plate kind they lay, the grid they snap to, and what she has of them.
+static func free_rows(bus: DesignBus, start: Callable, mode := "") -> Control:
+	var col := VBoxContainer.new()
+	col.name = "FreeRows"
+	col.add_theme_constant_override("separation", 3)
+	col.add_child(T.label("BEAMS AND PLATES", "display_bold", 16, T.ORANGE))
+	var tools := _flow(col)
+	_btn(tools, "FreeTool_beam", "BEAM (B)", mode == "beam", func() -> void: start.call("beam"), 14)
+	_btn(tools, "FreeTool_plate", "PLATE (P)", mode == "plate", func() -> void: start.call("plate"), 14)
+	var sizes := _flow(col)
+	sizes.add_child(T.label("BEAM", "display_medium", 13, T.DIM))
+	for k: String in DesignFree.SIZE_ORDER:
+		_btn(sizes, "FreeSize_" + k, str(DesignFree.SIZES[k].name).to_upper(), bus.free_size == k,
+				func() -> void: bus.set_free("free_size", k))
+	var kinds := _flow(col)
+	kinds.add_child(T.label("PLATE", "display_medium", 13, T.DIM))
+	for k: String in DesignFree.PLATE_ORDER:
+		_btn(kinds, "FreePlate_" + k, str(DesignFree.PLATES[k].name).to_upper(), bus.free_kind == k,
+				func() -> void: bus.set_free("free_kind", k))
+	var grids := _flow(col)
+	grids.add_child(T.label("GRID", "display_medium", 13, T.DIM))
+	for i in DesignFree.GRIDS.size():
+		var g: float = DesignFree.GRIDS[i]
+		_btn(grids, "FreeGrid_%d" % i, "%s m" % str(g), is_equal_approx(bus.free_grid, g),
+				func() -> void: bus.set_free("free_grid", g))
+	# The work point: where the drawings place when nothing is under the pointer (the plan at its
+	# height above the deck, the side view at its x, the end view at its z).
+	for ax in 3:
+		var w: Vector3 = bus.free_work
+		_stepper(col, ["WORK X (SIDE)", "WORK HEIGHT (PLAN)", "WORK Z (END)"][ax], "FreeWork_%s" % ["x", "y", "z"][ax], "%.2f m" % w[ax],
+				func(dir: float) -> void:
+					var nw: Vector3 = bus.free_work
+					nw[ax] = snappedf(nw[ax] + dir * maxf(bus.free_grid, 0.25), 0.001)
+					bus.set_free("free_work", nw))
+	var c := DesignFree.counts(bus.library.current)
+	col.add_child(T.label("%d beams, %.1f m   %d plates, %.1f m2   %s kg" % [int(c.beams), float(c.beam_m),
+			int(c.plates), float(c.plate_m2), str(roundi(float(c.kg)))], "mono", 13, T.TEXT))
+	var hint := T.label("Build any shape from beams and plates. Points snap to beam ends, along beams, "
+			+ "her frame's corners and the grid; coloured lines show what a point lines up with.", "body", 13, T.DIM)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size.x = 200
+	col.add_child(hint)
+	return col
+
+
+## A free beam picked: its section, ROLL about its length, each end's x, y and z a grid step
+## at a time, REMOVE. `done` runs when it is removed.
+static func free_beam(bus: DesignBus, id: String, done: Callable) -> Control:
+	var col := VBoxContainer.new()
+	col.name = "FreeBeamRows"
+	col.add_theme_constant_override("separation", 3)
+	var rec := bus.library.current
+	if rec == null or not rec.free_beams.has(id):
+		col.add_child(T.label("That beam has been taken off.", "body", 14, T.DIM))
+		return col
+	var b: Dictionary = rec.free_beams[id]
+	var set_b := func(fields: Dictionary) -> void:
+		bus.editor.do({"op": "set_free_beam", "id": id, "fields": fields})
+	col.add_child(T.label("BEAM   %s" % DesignRecord.tag(id), "display_bold", 18, T.ORANGE))
+	col.add_child(T.label("%s m, %s section, welded where it meets other beams" % [PlanView._m(snappedf(DesignFree.length(b), 0.01)),
+			str(DesignFree.size_of(b).name)], "body", 13, T.DIM))
+	var sizes := _flow(col)
+	for k: String in DesignFree.SIZE_ORDER:
+		_btn(sizes, "FreeBeamSize_" + k, str(DesignFree.SIZES[k].name).to_upper(), str(b.get("size", "medium")) == k,
+				func() -> void: set_b.call({"size": k}))
+	var roll := float(b.get("roll", 0.0))
+	_stepper(col, "ROLL", "FreeBeamRoll", "%d deg" % roundi(rad_to_deg(roll)),
+			func(dir: float) -> void: set_b.call({"roll": wrapf(snappedf(roll + dir * DesignFree.ROLL_STEP, 0.0001), -PI, PI)}))
+	for end: String in ["a", "b"]:
+		var at := DesignFree.v3(b[end])
+		for ax in 3:
+			var axis: String = ["x", "y", "z"][ax]
+			_stepper(col, "END %s  %s" % [end.to_upper(), axis.to_upper()], "FreeBeam_%s_%s" % [end, axis], "%.2f" % at[ax],
+					func(dir: float) -> void:
+						var q := at
+						q[ax] = snappedf(q[ax] + dir * bus.free_grid, 0.001)
+						set_b.call({end: DesignFree.arr(q)}))
+	_btn(col, "FreeBeamRemove", "REMOVE (X)", false, func() -> void:
+		bus.editor.do({"op": "remove_free_beam", "id": id})
+		done.call(), 15)
+	return col
+
+
+## A free plate picked: what it is made of, its paint, REMOVE.
+static func free_plate(bus: DesignBus, id: String, done: Callable) -> Control:
+	var col := VBoxContainer.new()
+	col.name = "FreePlateRows"
+	col.add_theme_constant_override("separation", 3)
+	var rec := bus.library.current
+	if rec == null or not rec.free_plates.has(id):
+		col.add_child(T.label("That plate has been taken off.", "body", 14, T.DIM))
+		return col
+	var p: Dictionary = rec.free_plates[id]
+	var set_p := func(fields: Dictionary) -> void:
+		bus.editor.do({"op": "set_free_plate", "id": id, "fields": fields})
+	col.add_child(T.label("PLATE   %s" % DesignRecord.tag(id), "display_bold", 18, T.ORANGE))
+	col.add_child(T.label("%d corners, %.2f m2, riveted to the beams under its edges" % [(p.pts as Array).size(),
+			DesignFree.plate_area(DesignFree.corners(p))], "body", 13, T.DIM))
+	var kinds := _flow(col)
+	for k: String in DesignFree.PLATE_ORDER:
+		_btn(kinds, "FreePlateKind_" + k, str(DesignFree.PLATES[k].name).to_upper(), str(p.get("kind", "metal")) == k,
+				func() -> void: set_p.call({"kind": k}))
+	var paint := _flow(col)
+	paint.add_child(T.label("PAINT", "display_medium", 13, T.DIM))
+	var now := str(p.get("paint", "")) if p.get("paint") is String else ""
+	for sw: String in DesignLivery.SWATCHES:
+		paint.add_child(chip("FreePlatePaint_" + sw.substr(1), sw, sw == now, func() -> void: set_p.call({"paint": sw})))
+	if now != "":
+		_btn(paint, "FreePlatePaintClear", "NONE", false, func() -> void: set_p.call({"paint": null}))
+	_btn(col, "FreePlateRemove", "REMOVE (X)", false, func() -> void:
+		bus.editor.do({"op": "remove_free_plate", "id": id})
+		done.call(), 15)
+	return col
+
+
+static func _stepper(col: Control, label: String, node_name: String, value: String, step: Callable) -> void:
+	var h := HBoxContainer.new()
+	col.add_child(h)
+	var l := T.label(label, "display_medium", 13, T.DIM)
+	l.custom_minimum_size.x = 110
+	h.add_child(l)
+	_btn(h, node_name + "_minus", "-", false, func() -> void: step.call(-1.0))
+	var v := T.label(value, "mono", 13, T.TEXT)
+	v.name = node_name + "_value"
+	v.custom_minimum_size.x = 64
+	h.add_child(v)
+	_btn(h, node_name + "_plus", "+", false, func() -> void: step.call(1.0))

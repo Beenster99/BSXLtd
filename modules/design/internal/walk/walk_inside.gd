@@ -25,6 +25,8 @@ const T := preload("res://modules/ui/api/terminal_kit.gd")
 const WalkBuild := preload("res://modules/design/internal/walk/walk_build.gd")
 const WalkCad := preload("res://modules/design/internal/walk/walk_cad.gd")
 const HullRows := preload("res://modules/design/internal/console/hull_rows.gd")
+const FreeTool := preload("res://modules/design/internal/free/free_tool.gd")
+const FreeDraw := preload("res://modules/design/internal/free/free_draw.gd")
 
 ## Where the walk-inside world is built, from the design room, m.
 ## The sun lights only what faces space (WalkBuild.EXTERIOR): the inside is lit by its lamps.
@@ -85,6 +87,9 @@ var _ghost_key := ""
 var _title: Label
 var _where: Label
 var _aim_label: Label
+## Free beams and plates placed from in here (B and P): the same tool as the table's.
+var free: FreeTool
+var _free_ghost: MeshInstance3D
 var _palette: PanelContainer
 var _palette_list: VBoxContainer
 var _pitch := 0.0
@@ -120,6 +125,11 @@ func setup(design_bus: DesignBus, origin: Transform3D) -> void:
 	_add_player()
 	_add_hud()
 	bus.design_changed.connect(_on_changed)
+	free = FreeTool.new(bus)
+	_free_ghost = FreeDraw.make()
+	_free_ghost.visible = false
+	world.add_child(_free_ghost)
+	bus.free_settings_changed.connect(_on_free_settings)
 	spawn()
 	_join_crew()
 
@@ -127,6 +137,8 @@ func setup(design_bus: DesignBus, origin: Transform3D) -> void:
 func _exit_tree() -> void:
 	if bus and bus.design_changed.is_connected(_on_changed):
 		bus.design_changed.disconnect(_on_changed)
+	if bus and bus.free_settings_changed.is_connected(_on_free_settings):
+		bus.free_settings_changed.disconnect(_on_free_settings)
 	_leave_crew()
 
 
@@ -347,6 +359,11 @@ func turn() -> void:
 	if not holding.is_empty():
 		holding.rot = (int(holding.rot) + 1) % 4
 		return
+	var fa := free_aimed()
+	if str(fa.get("kind", "")) == "beam":
+		var fb: Dictionary = record().free_beams[fa.id]
+		bus.editor.do({"op": "set_free_beam", "id": fa.id, "fields": {"roll": wrapf(float(fb.get("roll", 0.0)) + DesignFree.ROLL_STEP, -PI, PI)}})
+		return
 	var a := aim()
 	if not a.is_empty() and str(a.info.kind) == "mount":
 		var hm: Dictionary = record().mounts.get(str(a.info.id), {})
@@ -361,6 +378,10 @@ func turn() -> void:
 
 ## Removes the part or door you're aiming at.
 func remove_aimed() -> bool:
+	var fa := free_aimed()
+	if not fa.is_empty():
+		bus.editor.do({"op": "remove_free_%s" % fa.kind, "id": fa.id})
+		return true
 	var a := aim()
 	if a.is_empty():
 		return false
@@ -590,7 +611,10 @@ func open_hull_menu() -> bool:
 	var id := ""
 	var sid := shape_aimed()
 	var a := aim()
-	if sid != "":
+	var fa := free_aimed()
+	if not fa.is_empty():
+		id = "free:%s:%s" % [fa.kind, fa.id]
+	elif sid != "":
 		id = "shape:" + sid
 	elif not a.is_empty() and str(a.info.get("kind", "")) == "mount" and record().mounts.has(str(a.info.id)):
 		id = "mount:" + str(a.info.id)
@@ -762,8 +786,13 @@ func _input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT:
 				if DisplayServer.get_name() != "headless":
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-				click()
+				if free.active():
+					free_click()
+				else:
+					click()
 			MOUSE_BUTTON_RIGHT:
+				if free.active():
+					free.back()
 				holding = {}
 			MOUSE_BUTTON_WHEEL_UP:
 				if not push_wall(1):
@@ -780,6 +809,8 @@ func _input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				if is_palette_open():
 					toggle_palette()
+				elif free.active():
+					free.cancel()
 				elif not holding.is_empty():
 					holding = {}
 				else:
@@ -788,6 +819,12 @@ func _input(event: InputEvent) -> void:
 				turn()
 			KEY_X, KEY_DELETE:
 				remove_aimed()
+			KEY_B:
+				handled = start_free("beam")
+			KEY_P:
+				handled = start_free("plate")
+			KEY_ENTER, KEY_KP_ENTER:
+				handled = free.mode == "plate" and free.finish() != ""
 			KEY_F:
 				door_here()
 			KEY_G:
@@ -939,6 +976,7 @@ func _process(delta: float) -> void:
 	builder.update_doors(near, delta)
 	_update_spot()
 	_update_ghost()
+	_update_free()
 	if _where == null:
 		return
 	var rec := record()
@@ -954,6 +992,12 @@ func _process(delta: float) -> void:
 
 
 func _aim_text() -> String:
+	if free.active():
+		return free.hint()
+	var fa := free_aimed()
+	if not fa.is_empty():
+		var what := "Beam %s" % DesignRecord.tag(fa.id) if fa.kind == "beam" else "Plate %s" % DesignRecord.tag(fa.id)
+		return "%s\nE edit   %sX remove   B beam   P plate" % [what, "R roll   " if fa.kind == "beam" else ""]
 	if not holding.is_empty():
 		var pt := bus.catalog.part(str(holding.type))
 		return "%s   %s\nClick put down   R turn   Right-click or Esc drop" % [
@@ -1238,6 +1282,9 @@ func _fill_palette() -> void:
 		return
 	var w := where()
 	var room_type := str(rec.rooms[w.room].type) if str(w.room) != "" else ""
+	# Flying round her: the hull's rows first (beams and plates, paint, outline).
+	if flying and Flags.is_on(OUTSIDE_FLAG):
+		_palette_list.add_child(HullRows.whole_hull(bus, show_shape, func(m: String) -> void: start_free(m), free.mode))
 	_palette_list.add_child(T.label("PARTS FOR THIS ROOM" if room_type != "" else "PARTS", "display_bold", 18, T.ORANGE))
 	for pt in (bus.catalog.parts_for(room_type) if room_type != "" else bus.catalog.parts.values()):
 		var b := T.button("%s   %s" % [pt.display_name, T.money(pt.cost)], false, 16)
@@ -1254,8 +1301,8 @@ func _fill_palette() -> void:
 		b.pressed.connect(func() -> void:
 			bus.editor.do({"op": "set_meta", "fields": {"structure": {kind: DesignStructure.next_choice(kind, rec.structure.get(kind))}}}))
 		_palette_list.add_child(b)
-	if Flags.is_on(OUTSIDE_FLAG):
-		_palette_list.add_child(HullRows.whole_hull(bus, show_shape))
+	if Flags.is_on(OUTSIDE_FLAG) and not flying:
+		_palette_list.add_child(HullRows.whole_hull(bus, show_shape, func(m: String) -> void: start_free(m), free.mode))
 	var row := HBoxContainer.new()
 	for spec in [["UNDO", func() -> void: bus.editor.undo()], ["REDO", func() -> void: bus.editor.redo()]]:
 		var b := T.button(spec[0], false, 16)
@@ -1270,7 +1317,13 @@ func _fill_palette() -> void:
 ## rows (her shapes and paint) and the hull parts to fit on her skin.
 func _fill_hull_menu(rec: DesignRecord) -> void:
 	var head: Control = null
-	if hull_menu.begins_with("shape:"):
+	if hull_menu.begins_with("free:"):
+		var fid := hull_menu.get_slice(":", 2)
+		var back := func() -> void:
+			hull_menu = "hull"
+			_fill_palette()
+		head = HullRows.free_beam(bus, fid, back) if hull_menu.get_slice(":", 1) == "beam" else HullRows.free_plate(bus, fid, back)
+	elif hull_menu.begins_with("shape:"):
 		var sid := hull_menu.trim_prefix("shape:")
 		head = HullRows.shape_edit(bus, sid, func() -> void:
 			bus.editor.do({"op": "remove_shape", "id": sid})
@@ -1308,7 +1361,7 @@ func _fill_hull_menu(rec: DesignRecord) -> void:
 	_palette_list.add_child(menu)
 	if head:
 		menu.add_child(head)
-	menu.add_child(HullRows.whole_hull(bus, show_shape))
+	menu.add_child(HullRows.whole_hull(bus, show_shape, func(m: String) -> void: start_free(m), free.mode))
 	_palette_list.add_child(T.label("FIT A HULL PART", "display_bold", 18, T.ORANGE))
 	for pt: DesignPartType in bus.catalog.parts.values():
 		if not pt.hull_mount:
@@ -1325,3 +1378,67 @@ func _fill_hull_menu(rec: DesignRecord) -> void:
 	_palette_list.add_child(row)
 	_palette_list.add_child(T.label("Esc closes. With a hull part in hand, aim at her skin and click; R turns it.",
 			"body", 14, T.DIM))
+
+
+# Free beams and plates (DesignFree): B and P take up the tools; the point under the crosshair
+# snaps to ends, along beams, to her frame's corners and the grid, with guidelines.
+
+## B or P (or the menu's BEAM and PLATE): the tool in hand, the menu closed so you can aim.
+func start_free(mode: String) -> bool:
+	if not Flags.is_on(OUTSIDE_FLAG):
+		return false
+	if is_palette_open():
+		toggle_palette()
+	holding = {}
+	free.start(mode)
+	return true
+
+
+## A click with a tool in hand: the point placed (and the beam or plate made). Returns its id.
+func free_click() -> String:
+	_update_free()
+	return free.click()
+
+
+## The camera's ray in ship space: [from, dir].
+func view_ray() -> Array:
+	var inv := world.global_transform.affine_inverse()
+	return [inv * camera.global_position, (inv.basis * -camera.global_basis.z).normalized()]
+
+
+func _update_free() -> void:
+	if free == null:
+		return
+	_free_ghost.visible = free.active()
+	if not free.active():
+		return
+	var ray := view_ray()
+	var a := aim()
+	free.aim_ray(ray[0], ray[1], a.point if not a.is_empty() else null, 4.0)
+	FreeDraw.draw(_free_ghost, free.ghost(), ray[1], bus.free_grid)
+
+
+## The free beam or plate in the crosshair: {kind, id}, {} (nearer than anything else hit).
+func free_aimed() -> Dictionary:
+	var rec := record()
+	if rec == null or (rec.free_beams.is_empty() and rec.free_plates.is_empty()):
+		return {}
+	var a := aim()
+	if not a.is_empty() and str(a.info.kind) == "frame":
+		var part := builder.frame_part(a.collider, int(a.shape))
+		if part:
+			var of := DesignFree.of_path(part.path)
+			if not of.is_empty():
+				return of
+	var ray := view_ray()
+	var hit := DesignFree.pick(rec, ray[0], ray[1])
+	if hit.is_empty() or float(hit.dist) > (FLY_REACH if flying else REACH):
+		return {}
+	if not a.is_empty() and (ray[0] as Vector3).distance_to(a.point) < float(hit.dist) - 0.15:
+		return {}
+	return {"kind": hit.kind, "id": hit.id}
+
+
+func _on_free_settings() -> void:
+	if is_palette_open():
+		_fill_palette()
