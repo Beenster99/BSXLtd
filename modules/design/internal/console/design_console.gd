@@ -1672,6 +1672,8 @@ func _on_selection(kind: String, id: String) -> void:
 		else:
 			bus.editor.do({"op": "set_meta", "fields": {"name": t}}))
 	_selection.add_child(name_edit)
+	if kind == "" and Flags.is_on(OUTSIDE_FLAG):
+		_selection.add_child(_livery_rows(rec))
 	if kind == "room" and rec.rooms.has(id):
 		var r: Dictionary = rec.rooms[id]
 		var rt := bus.catalog.room(str(r.type))
@@ -1814,8 +1816,31 @@ func _panel_rows(id: String) -> Control:
 		var b := T.button(pk.to_upper(), false, 14, pk == kind)
 		b.name = "Panel_" + pk
 		b.pressed.connect(func() -> void:
-			bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(mid, e), "value": {"kind": pk}}))
+			var was: Dictionary = (rec.frame_edits.get(DesignFrame.panel_key(mid, e), {}) as Dictionary).duplicate()
+			was.erase("glass")
+			was["kind"] = pk
+			bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(mid, e), "value": was}))
 		row.add_child(b)
+	# Paint this one panel by hand (DesignLivery), over the livery.
+	var paint_row := HFlowContainer.new()
+	paint_row.add_theme_constant_override("h_separation", 4)
+	col.add_child(paint_row)
+	paint_row.add_child(T.label("PAINT", "display_medium", 14, T.DIM))
+	var pkey := DesignFrame.panel_key(mid, e)
+	var painted := str((rec.frame_edits.get(pkey, {}) as Dictionary).get("paint", ""))
+	for sw: String in DesignLivery.SWATCHES:
+		paint_row.add_child(_paint_chip("PanelPaint_" + sw.trim_prefix("#"), sw, sw == painted, func() -> void:
+			var was: Dictionary = (rec.frame_edits.get(pkey, {}) as Dictionary).duplicate()
+			was["paint"] = sw
+			bus.editor.do({"op": "set_frame", "key": pkey, "value": was})))
+	if painted != "":
+		var clear := T.button("CLEAR", false, 14)
+		clear.name = "PanelPaintClear"
+		clear.pressed.connect(func() -> void:
+			var was: Dictionary = (rec.frame_edits.get(pkey, {}) as Dictionary).duplicate()
+			was.erase("paint")
+			bus.editor.do({"op": "set_frame", "key": pkey, "value": was if not was.is_empty() else null}))
+		paint_row.add_child(clear)
 	var frames := HFlowContainer.new()
 	frames.add_theme_constant_override("h_separation", 4)
 	col.add_child(frames)
@@ -1851,6 +1876,92 @@ func _panel_rows(id: String) -> Control:
 		b.pressed.connect(func() -> void:
 			bus.editor.do({"op": "set_frame", "key": key, "value": null if gone else {"remove": true}}))
 		members.add_child(b)
+	return col
+
+
+## A colour swatch button: a small square of `html`, outlined when it is the one in use.
+func _paint_chip(node_name: String, html: String, on: bool, pressed: Callable) -> Button:
+	var b := Button.new()
+	b.name = node_name
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(26, 26)
+	b.tooltip_text = html
+	var c := Color.from_string(html, Color.GRAY)
+	for state: String in ["normal", "hover", "pressed"]:
+		b.add_theme_stylebox_override(state, T.box(c if state != "hover" else c.lightened(0.15), T.ORANGE if on else T.EDGE, 3 if on else 1, 3.0))
+	b.pressed.connect(pressed)
+	return b
+
+
+## PAINT AND MARKINGS (the outside designer, stage 4), under the design's name when nothing is
+## picked: base and trim colours, a pattern, a stripe down her sides and its height, her name and
+## hull number painted on, the client's livery in one go, and back to bare alloy.
+func _livery_rows(rec: DesignRecord) -> Control:
+	var col := VBoxContainer.new()
+	col.name = "LiveryRows"
+	col.add_theme_constant_override("separation", 3)
+	var l := rec.livery
+	col.add_child(T.label("PAINT AND MARKINGS", "display_bold", 16, T.ORANGE))
+	var set_l := func(fields: Dictionary) -> void:
+		bus.editor.do({"op": "set_meta", "fields": {"livery": fields}})
+	for which: Array in [["base", "BASE", DesignLivery.base(l)], ["trim", "TRIM", DesignLivery.trim(l)], ["stripe", "STRIPE", null]]:
+		var row := HFlowContainer.new()
+		row.add_theme_constant_override("h_separation", 3)
+		col.add_child(row)
+		var lbl := T.label(which[1], "display_medium", 13, T.DIM)
+		lbl.custom_minimum_size.x = 58
+		row.add_child(lbl)
+		var now := str(l.get(which[0], ""))
+		for sw: String in DesignLivery.SWATCHES:
+			var key: String = which[0]
+			row.add_child(_paint_chip("Livery_%s_%s" % [key, sw.trim_prefix("#")], sw, sw == now, func() -> void:
+				set_l.call({key: sw})))
+		if which[0] == "stripe" and now != "":
+			var off := T.button("NONE", false, 13)
+			off.name = "Livery_stripe_none"
+			off.pressed.connect(func() -> void: set_l.call({"stripe": null}))
+			row.add_child(off)
+	var pats := HFlowContainer.new()
+	pats.add_theme_constant_override("h_separation", 3)
+	col.add_child(pats)
+	for pat: String in DesignLivery.PATTERNS:
+		var b := T.button(str(DesignLivery.PATTERN_NAMES[pat]).to_upper(), false, 13, str(l.get("pattern", "plain")) == pat)
+		b.name = "Livery_pattern_" + pat
+		b.pressed.connect(func() -> void: set_l.call({"pattern": pat}))
+		pats.add_child(b)
+	if str(l.get("stripe", "")) != "":
+		for at: String in DesignLivery.STRIPES:
+			var b := T.button("STRIPE " + at.to_upper(), false, 13, str(l.get("stripe_at", "mid")) == at)
+			b.name = "Livery_stripe_at_" + at
+			b.pressed.connect(func() -> void: set_l.call({"stripe_at": at}))
+			pats.add_child(b)
+	var marks := HFlowContainer.new()
+	marks.add_theme_constant_override("h_separation", 3)
+	col.add_child(marks)
+	var show := T.button("NAME ON HULL", false, 13, bool(l.get("show_name", false)))
+	show.name = "Livery_show_name"
+	show.pressed.connect(func() -> void: set_l.call({"show_name": not bool(l.get("show_name", false))}))
+	marks.add_child(show)
+	var num := LineEdit.new()
+	num.name = "Livery_number"
+	num.placeholder_text = "Hull number"
+	num.text = str(l.get("number", ""))
+	num.custom_minimum_size.x = 120
+	num.text_submitted.connect(func(t: String) -> void: set_l.call({"number": t.strip_edges() if t.strip_edges() != "" else null}))
+	marks.add_child(num)
+	var client := str(rec.order.get("client", ""))
+	if client != "":
+		var cb := T.button("CLIENT LIVERY", false, 13)
+		cb.name = "Livery_client"
+		cb.pressed.connect(func() -> void:
+			var sector := str(rec.order.get("sector", (ShipClients.TABLE.get(client, {}) as Dictionary).get("sector", "trade")))
+			set_l.call(DesignLivery.for_client(client, sector)))
+		marks.add_child(cb)
+	if not l.is_empty():
+		var bare := T.button("BARE ALLOY", false, 13)
+		bare.name = "Livery_bare"
+		bare.pressed.connect(func() -> void: bus.editor.do({"op": "set_meta", "fields": {"livery_set": {}}}))
+		marks.add_child(bare)
 	return col
 
 

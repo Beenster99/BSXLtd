@@ -748,6 +748,8 @@ func _frame() -> void:
 			"frame": paint(Color(0.34, 0.36, 0.38), "gunmetal"), "lining": paint(Color(0.52, 0.54, 0.54), "satin_paint"),
 			"deck": paint(Color(0.46, 0.48, 0.5), "bare_steel")}
 	frame = DesignFrame.build(frame_plan, kit, frame_mats)
+	# Her stripe and lettering (DesignLivery), painted on the skin.
+	DesignLivery.decorate(frame_plan, rec, frame_body)
 	for v in frame_body.find_children("*", "VisualInstance3D", true, false):
 		(v as VisualInstance3D).layers = 1 | EXTERIOR
 	_sills()

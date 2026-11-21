@@ -60,6 +60,13 @@ var hull_mass := 0.0
 var lines: Array[Dictionary] = []
 
 
+static func _hand_painted(d: DesignRecord) -> bool:
+	for key: String in d.frame_edits:
+		if key.begins_with("panel:") and str((d.frame_edits[key] as Dictionary).get("paint", "")) != "":
+			return true
+	return false
+
+
 ## `structure` and `plan` (DesignStructure.measure, DesignFrame.propose of `d`) can be passed
 ## in when already worked out: they are the slow part (the bus keeps both per edit).
 static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStructure = null,
@@ -98,6 +105,7 @@ static func compute(d: DesignRecord, cat: DesignCatalog, structure: DesignStruct
 		for row: Array in [["frame", DesignStructure.option("frame", str(spec.frame)), fc.member_m if framed else st.frame_m, "m"],
 				["hull", DesignStructure.option("hull", str(spec.hull)), fc.skin_m2 if framed else st.outer_area, "m2"],
 				["armour", DesignFrame.ARMOUR, float(fc.get("armour_m2", 0.0)), "m2"],
+				["paint", DesignLivery.PAINT, float(fc.skin_m2) if framed and (DesignLivery.painted(d) or _hand_painted(d)) else 0.0, "m2"],
 				["welds", DesignFrame.WELD, float(fc.welds), "x"],
 				["rivets", DesignFrame.RIVET, float(fc.rivets), "x"],
 				["bolts", DesignFrame.BOLT, float(fc.bolts), "x"],
