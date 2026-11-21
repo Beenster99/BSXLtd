@@ -186,6 +186,7 @@ func _ready() -> void:
 	if Flags.is_on(YardBus.ROOM_DETAIL):
 		room_detail = RoomDetail.new()
 		room_detail.build(kit, self)
+	_unshade_closed_rooms()
 	if Flags.is_on(YardBus.DOCK):
 		_build_dock()
 		practice = PracticeFrame.new()
@@ -224,6 +225,28 @@ func _ready() -> void:
 		show_view(start)
 	elif DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Rooms the sun never reaches into except through a window: what stands inside them throws no
+## sun shadow (0.5.1 playtest: 40 fps in the sleeping quarters; the sun's shadow drew every
+## mug, bunk and partition in the station each frame, two to four times over). Their walls,
+## floors and ceilings stand on the rooms' edges and still keep the sun out.
+const CLOSED_ROOMS := ["corridor", "contracts", "crew", "quarters", "airlock", "design_lock"]
+
+
+func _unshade_closed_rooms() -> void:
+	var boxes: Array[AABB] = []
+	for id: String in CLOSED_ROOMS:
+		var b: AABB = YardLayout.ROOMS[id].box
+		# (walls stand 0.1 m into a room, the floor slab under y 0, the ceiling 0.02 down from the top)
+		boxes.append(AABB(b.position + Vector3(0.05, -0.01, 0.05), b.size - Vector3(0.1, 0.03, 0.1)))
+	for n: Node in find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		var box := g.global_transform * g.get_aabb()
+		for b: AABB in boxes:
+			if b.encloses(box):
+				g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				break
 
 
 func _exit_tree() -> void:
@@ -754,6 +777,9 @@ func _build_station() -> void:
 					bounce.light_energy = 0.32
 					bounce.light_specular = 0.0
 					bounce.light_color = Color(0.92, 0.95, 1.0)
+					# A fill casts no shadow (0.5.1 playtest: 40 fps in the quarters): at High every
+					# one of these did, each drawing the station round it again every frame.
+					bounce.set_meta("gfx_no_shadow", true)
 					room.add_child(bounce)
 
 	# Design room (x -12..12, z -22..-4, walls 6 m high under a glass vault): the window wall
@@ -972,4 +998,5 @@ func _furnish_crew(k) -> void:
 	warm.light_color = Color(1.0, 0.75, 0.5)
 	warm.light_energy = 0.6
 	warm.omni_range = 6.0
+	warm.set_meta("gfx_no_shadow", true)
 	add_child(warm)

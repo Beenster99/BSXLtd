@@ -16,6 +16,10 @@ const ROOMS := {
 	"design_lock": {"name": "Design room airlock", "box": AABB(Vector3(-11.9, 0, -25), Vector3(1.7, 5, 2.9))},
 	"refurb": {"name": "Refurb annex", "box": AABB(Vector3(48, 0, -4), Vector3(36, 16, 30))},
 }
+## The station's underside (y, m): the bottom of every room's floor slab. What bolts under the
+## station meets it here (0.5.1 playtest: "the plate doesn't meet the underside of the
+## station": the dock arms' mount plates were at HULL_BOX's bottom, 0.4 m below it).
+const UNDERSIDE := -0.3
 ## The whole station's outside, hull included (m).
 const HULL_BOX := AABB(Vector3(-40.3, -0.7, -64.3), Vector3(124.6, 33.8, 90.6))
 ## The airlock's doors: x of the inner (corridor) and outer (space) door, and the door

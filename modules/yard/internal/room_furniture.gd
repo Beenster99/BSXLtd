@@ -45,7 +45,8 @@ func _crew() -> void:
 	k.span(Vector3(3.25, 0.0, 0.2), Vector3(4.5, 0.95, 0.85), bench)
 	k.box(Vector3(0.45, 0.6, 0.4), Vector3(3.8, 1.25, 0.55), k.paint(Kit.DARK, 0.6, 0.35))
 	k.box(Vector3(0.12, 0.05, 0.02), Vector3(3.8, 1.4, 0.76), k.glow(Color(0.3, 1.0, 0.5), 3.0), false)
-	k.sign("COFFEE", Vector3(3.8, 1.65, 0.751), Vector3.BACK, 0.0035, Color.WHITE)
+	# Its sign on the wall behind it (it hung in the air over the machine's front).
+	k.sign("COFFEE", Vector3(3.8, 1.85, 0.2), Vector3.BACK, 0.0035, Color.WHITE)
 	# The corner sofa facing the window, an armchair beside it.
 	_vs("CornerSofa", Vector3(13.0, 0.0, 8.7), 0.0)
 	_vs("Armchair", Vector3(16.0, 0.0, 9.6), -PI * 0.3)
@@ -64,6 +65,7 @@ func _crew() -> void:
 	warm.light_color = Color(1.0, 0.75, 0.5)
 	warm.light_energy = 0.6
 	warm.omni_range = 6.0
+	warm.set_meta("gfx_no_shadow", true)   # a glow by the sofa: its shadows cost a whole pass
 	_root.add_child(warm)
 
 
@@ -128,7 +130,10 @@ func _vs(id: String, at: Vector3, yaw: float) -> Node3D:
 		return null
 	var shape := VsParts.shape(id)
 	var box := shape.mesh.get_aabb()
-	var basis := Basis(Vector3.UP, yaw)
+	# Void Salvage's parts face -Z (a seat's back, a locker's hinges and a counter's wall side
+	# are at +Z), so the half turn makes `yaw` turn their front from +Z as the rooms are laid
+	# out (0.5.1 playtest: "some of the furniture is the wrong way around").
+	var basis := Basis(Vector3.UP, yaw + PI)
 	var offset := basis * Vector3(box.get_center().x, box.position.y, box.get_center().z)
 	n.transform = Transform3D(basis, at - offset)
 	n.name = "%s_%d" % [id, _root.get_child_count()]

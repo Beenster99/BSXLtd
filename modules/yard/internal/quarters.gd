@@ -114,6 +114,7 @@ func _cabin(i: int, span: Vector2, z0: float, z1: float, north: bool, partition:
 	warm.omni_range = 3.6
 	warm.omni_attenuation = 1.4
 	warm.light_specular = 0.2
+	warm.set_meta("gfx_no_shadow", true)   # eight reading lamps: no shadows (0.5.1: 40 fps here)
 	_root.add_child(warm)
 	# A poster on the side wall and the owner's name by the curtain.
 	var px := span.x + 0.08 if span.x != DOOR.y else span.x + 0.08
@@ -132,7 +133,10 @@ func _vs(id: String, at: Vector3, yaw: float) -> Node3D:
 		return null
 	var shape := VsParts.shape(id)
 	var box := shape.mesh.get_aabb()
-	var basis := Basis(Vector3.UP, yaw)
+	# Void Salvage's parts face -Z (a seat's back, a locker's hinges and a counter's wall side
+	# are at +Z), so the half turn makes `yaw` turn their front from +Z as the rooms are laid
+	# out (0.5.1 playtest: "some of the furniture is the wrong way around").
+	var basis := Basis(Vector3.UP, yaw + PI)
 	var offset := basis * Vector3(box.get_center().x, box.position.y, box.get_center().z)
 	n.transform = Transform3D(basis, at - offset)
 	n.name = "%s_%d" % [id, _root.get_child_count()]
