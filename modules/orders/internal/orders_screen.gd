@@ -128,7 +128,7 @@ func _calculator() -> void:
 	_section("BILL OF MATERIALS CALCULATOR")
 	var sums: Dictionary = bus.call("plan_sums", cid)
 	if sums.is_empty():
-		_body.add_child(_label("Every line is ordered.", "body_medium", fs - 1, T.GOOD))
+		_body.add_child(_label("Every line is ordered: see ORDERS below for when they come in.", "body_medium", fs - 1, T.GOOD))
 		return
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", int(fs * 0.5))
@@ -165,15 +165,30 @@ func _calculator() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	act.add_child(spacer)
-	var mine: Dictionary = sums.get("mine", {})
+	var problem := str(bus.call("place_problem", cid, express))
 	var place := T.button("PLACE ORDER", true, fs)
-	place.disabled = int(mine.get("lines", 0)) == 0
+	place.disabled = problem != ""
+	place.tooltip_text = problem if problem != "" else "Order your mix: each supplier gets its own order, paid now."
 	place.pressed.connect(func() -> void: bus.call("place", cid, express))
 	act.add_child(place)
+	var cheap_problem := str(bus.call("cheapest_problem", cid, express))
 	var quick := T.button("ORDER CHEAPEST", false, fs - 2)
+	quick.disabled = cheap_problem != ""
+	quick.tooltip_text = cheap_problem if cheap_problem != "" else "Order every line still to order from the cheapest suppliers, now."
 	quick.pressed.connect(func() -> void: bus.call("order_cheapest", cid, express))
 	act.add_child(quick)
 	_body.add_child(act)
+	# What PLACE ORDER needs, or what the last order came to.
+	var note := problem if problem != "" else cheap_problem
+	if note != "":
+		var nl := _label(note, "body_medium", fs - 2, T.AMBER)
+		nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_body.add_child(nl)
+	var lp: Dictionary = (bus.get("last_placed") as Dictionary).get(cid, {})
+	if not lp.is_empty():
+		var due := "arriving today" if int(lp.days) == 0 else "arriving in about %d days" % int(lp.days)
+		_body.add_child(_label("Last order placed: %d supplier order%s, CR %s, %s. See ORDERS below." % [int(lp.orders),
+				"" if int(lp.orders) == 1 else "s", T.money(int(lp.total)), due], "body_medium", fs - 2, T.GOOD))
 
 
 func _line_row(l: Dictionary) -> void:

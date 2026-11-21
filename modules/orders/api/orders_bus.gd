@@ -70,6 +70,8 @@ var lots_taken: Dictionary = {}
 ## Build cid -> {trade line key: parts taken from the trading stock for it} (held parts used on
 ## a contract build: no new cost).
 var from_stock: Dictionary = {}
+## Build cid -> what the last order placed for it came to (the screen's confirmation line).
+var last_placed: Dictionary = {}
 var _trade_lines: Array[Dictionary] = []
 var _trends: Dictionary = {}
 
@@ -434,6 +436,38 @@ func place(cid: String, express := false) -> void:
 	_ask({"what": "place", "cid": cid, "express": express})
 
 
+## Why PLACE ORDER can't go for build `cid` now: "" when it can, else a line saying what to do.
+func place_problem(cid: String, express := false) -> String:
+	if _drafts(cid, express).is_empty():
+		return "Nothing chosen to order yet: press USE on a plan above, or pick a supplier on each line below. ORDER CHEAPEST does both at once."
+	return _cash_problem(_place_cost(cid, express))
+
+
+## Why ORDER CHEAPEST can't go for build `cid` now: "" when it can.
+func cheapest_problem(cid: String, express := false) -> String:
+	var sums := plan_sums(cid)
+	if sums.is_empty():
+		return "Every line is ordered."
+	var total := float((sums.get(SupplyOptimiser.CHEAPEST, {}) as Dictionary).get("total", 0.0))
+	return _cash_problem(roundi(total * (OrderBook.EXPRESS_FACTOR if express else 1.0)))
+
+
+func _cash_problem(cost: int) -> String:
+	if _business and _business.has_method("can_afford") and not bool(_business.call("can_afford", cost)):
+		return "Not enough cash: this order comes to CR %s and the yard has CR %s. Order fewer lines now (CLEAR MIX, then pick the next stage's), or wait for the contract's next stage payment." % [
+				_cr(cost), _cr(int(_business.call("get_cash")))]
+	return ""
+
+
+static func _cr(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.right(3) + out
+		s = s.left(s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
+
+
 ## The cheapest plan, placed at once (the berth's and the board's one button).
 func order_cheapest(cid: String, express := false) -> void:
 	use_plan(cid, SupplyOptimiser.CHEAPEST)
@@ -576,6 +610,12 @@ func _place(cid: String, express: bool, cost: int) -> void:
 		if vendor != USED and _supply and _supply.has_method("set_standing"):
 			_supply.call("set_standing", vendor, float(_supply.call("standing_of", vendor)) + STANDING_PER_ORDER
 					+ STANDING_PER_100K * float(d.total) / 100000.0)
+	var total := 0.0
+	var lead := 0
+	for d: Dictionary in drafts.values():
+		total += float(d.total)
+		lead = maxi(lead, int(d.lead))
+	last_placed[cid] = {"minute": now, "orders": drafts.size(), "total": roundi(total), "days": 0 if express else lead}
 	splits.erase(cid)
 
 
@@ -1020,7 +1060,8 @@ func save_version() -> int:
 func save_data() -> Dictionary:
 	return {"splits": splits.duplicate(true), "orders": orders.duplicate(true), "tracked": tracked.duplicate(),
 			"sent": sent.duplicate(true), "next": next_id, "holdings": holdings.duplicate(), "sales": sales.duplicate(true),
-			"lots_taken": lots_taken.duplicate(true), "from_stock": from_stock.duplicate(true)}
+			"lots_taken": lots_taken.duplicate(true), "from_stock": from_stock.duplicate(true),
+			"last_placed": last_placed.duplicate(true)}
 
 
 func load_data(data: Dictionary, _from_version: int) -> void:
@@ -1033,6 +1074,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	sales = (data.get("sales", []) as Array).duplicate(true)
 	lots_taken = (data.get("lots_taken", {}) as Dictionary).duplicate(true)
 	from_stock = (data.get("from_stock", {}) as Dictionary).duplicate(true)
+	last_placed = (data.get("last_placed", {}) as Dictionary).duplicate(true)
 	_lines.clear()
 	changed.emit()
 

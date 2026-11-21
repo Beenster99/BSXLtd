@@ -95,6 +95,20 @@ func run_tests() -> void:
 	check(sums.has("cheapest") and sums.has("reliable") and sums.has("median") and sums.has("mine"), "the calculator sums every plan")
 	check(float(sums.cheapest.total) <= float(sums.median.total) + 0.5, "the cheapest plan is no dearer than the median")
 
+	# PLACE ORDER says why it can't go: nothing chosen, or not enough cash.
+	var kept: Dictionary = (orders.splits.get("order_test", {}) as Dictionary).duplicate(true)
+	orders.clear_splits("order_test")
+	check(orders.place_problem("order_test").begins_with("Nothing chosen"), "with nothing chosen, PLACE ORDER says what to do")
+	orders.splits["order_test"] = kept
+	check(orders.place_problem("order_test") == "", "with a mix chosen and the cash, it can go")
+	if biz:
+		var all := int(biz.call("get_cash"))
+		biz.call("charge", all, "test", "test: empty the bank")
+		check(orders.place_problem("order_test").begins_with("Not enough cash") and orders.cheapest_problem("order_test").begins_with("Not enough cash"),
+				"with no cash, both buttons say so (%s)" % orders.place_problem("order_test"))
+		orders.place("order_test")
+		check(orders.orders.is_empty(), "and nothing is ordered")
+		biz.call("credit", all, "test", "test: cash back")
 	# Place it: the plan fills the lines not split yet.
 	var standing_before := supply.standing_of(str(qs[0].vendor))
 	var cash_before := int(biz.call("get_cash")) if biz else 0
@@ -103,6 +117,8 @@ func run_tests() -> void:
 	orders.set_split("order_test", "hull:frame", str(qs[1].vendor), float(frame_line.need))
 	orders.place("order_test")
 	check(orders.orders.size() >= 2, "one order a vendor (%d)" % orders.orders.size())
+	var lp: Dictionary = orders.last_placed.get("order_test", {})
+	check(int(lp.get("orders", 0)) == orders.orders.size() and int(lp.get("total", 0)) > 0, "the screen can say what the order came to (%s)" % str(lp))
 	if biz:
 		check(int(biz.call("get_cash")) < cash_before, "the company paid for the parts")
 	check(supply.standing_of(str(qs[0].vendor)) > standing_before, "the vendor thinks better of the yard")
