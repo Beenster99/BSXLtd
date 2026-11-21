@@ -36,6 +36,7 @@ func run_tests() -> void:
 	_design_lock(station)
 	_room_detail(station)
 	_furniture(station)
+	_frame_rate(station)
 	await _racking(station)
 	await _dock(station)
 
@@ -392,6 +393,52 @@ func _furniture(station: Node3D) -> void:
 				clash.append("%s/%s" % [placed[i].name, placed[j].name])
 	check(clash.is_empty(), "no two pieces stand in one place %s" % [clash])
 	check(station.get_node_or_null("Use_contract") != null, "the desk still takes contracts")
+	# Each faces the way its room wants (0.5.1 playtest: "some of the furniture is the wrong way
+	# around"; Void Salvage's parts face -Z): lockers into the room, the galley off its wall, the
+	# desk's seats at the desk, the visitors' at it from the front.
+	var wrong := []
+	for n: Node3D in placed:
+		var front := -n.global_basis.z
+		var id := String(n.name).get_slice("_", 0)
+		var p := n.global_position
+		var ok := true
+		match id:
+			"Locker": ok = front.x < -0.9                       # on the east wall
+			"GalleyCounter", "JunctionBox": ok = front.z > 0.9  # off the corridor wall
+			"MediaWall": ok = front.x > 0.9                     # on the west wall
+			"Seat": ok = front.z < -0.9 if p.z > 5.8 else front.z > 0.9
+			"CornerSofa": ok = front.z > 0.9                    # facing the window
+		if not ok:
+			wrong.append("%s %s" % [n.name, front.snapped(Vector3.ONE * 0.01)])
+	check(wrong.is_empty(), "each piece faces into its room %s" % [wrong])
+	# The quarters' desk seats face their desks.
+	var turned := []
+	for n: Node in station.find_children("Seat_*", "Node3D", true, false):
+		var s := n as Node3D
+		if YardLayout.room_at(s.global_position + Vector3(0, 0.3, 0)) == "quarters" and (-s.global_basis.z).x > -0.9:
+			turned.append(s.name)
+	check(turned.is_empty(), "the cabins' seats face their desks %s" % [turned])
+
+
+## What the 0.5.1 playtest's 40 fps in the quarters came from: every room's fill light cast
+## shadows at High (87 of them), and everything in the station threw a sun shadow.
+func _frame_rate(station: Node3D) -> void:
+	var fills := station.find_children("Bounce_*", "OmniLight3D", true, false)
+	check(fills.size() > 20 and fills.all(func(l: Node) -> bool: return l.has_meta("gfx_no_shadow")), "no fill light casts a shadow (%d)" % fills.size())
+	var lit := 0
+	var bunks := station.find_children("Bunk_*", "Node3D", true, false)
+	for b: Node in bunks:
+		for m: Node in b.find_children("*", "GeometryInstance3D", true, false) + ([b] if b is GeometryInstance3D else []):
+			if (m as GeometryInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				lit += 1
+	check(bunks.size() == 8 and lit == 0, "what stands in a closed room throws no sun shadow (%d)" % lit)
+	var walls_cast := 0
+	for m: Node in station.find_children("*", "MeshInstance3D", false, false):
+		var g := m as MeshInstance3D
+		var b := g.global_transform * g.get_aabb()
+		if b.size.y > 2.5 and b.size.x < 0.3 and YardLayout.room_at(b.get_center() + Vector3(0.4, 0, 0)) == "quarters" and g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			walls_cast += 1
+	check(walls_cast > 0, "its walls still keep the sun out (%d)" % walls_cast)
 
 
 func _world_box(n: Node3D) -> AABB:
@@ -563,6 +610,13 @@ func _racking(station: Node3D) -> void:
 		heights.append((h.position as Vector3).y if not h.is_empty() else -1.0)
 	check(heights[0] > 0.3 and heights[1] > heights[0] + 4.0 and heights[2] > heights[1] + 4.0 and heights[2] < deck_y,
 			"a stair climbs to the deck beside the well %s" % str(heights))
+	# A landing at its head (0.5.1 playtest: "missing landing at top of warehouse stairs"): floor
+	# at the deck's height from the stair across to the deck's edge, past the top step.
+	var landed := true
+	for p: Vector2 in [Vector2(stair_x, -34.9), Vector2(YardRackStore.UPPER_EDGE_X + 0.05, -34.9), Vector2(stair_x, -35.6)]:
+		var h := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(p.x, deck_y + 1.0, p.y), Vector3(p.x, deck_y - 1.0, p.y)))
+		landed = landed and not h.is_empty() and absf((h.position as Vector3).y - deck_y) < 0.02
+	check(landed, "a landing at the stair's head, level with the deck")
 	# The racks are solid: walking into one stops at its face.
 	var q3 := PhysicsRayQueryParameters3D.create(Vector3(33.5, 1.0, -30), Vector3(42.5, 1.0, -30))
 	var hit := space.intersect_ray(q3)
@@ -614,8 +668,16 @@ func _dock(station: Node3D) -> void:
 	for foot: Vector3 in DockScript.ARM_FEET:
 		for m in dock.find_children("*", "MeshInstance3D", true, false):
 			var b := (m as MeshInstance3D).global_transform * (m as MeshInstance3D).get_aabb()
-			if absf(b.end.y - YardLayout.HULL_BOX.position.y) < 0.02 and b.size.x >= 4.0 and b.has_point(Vector3(foot.x, b.get_center().y, foot.z)):
-				feet += 1
+			if absf(b.end.y - YardLayout.UNDERSIDE) < 0.02 and b.size.x >= 4.0 and b.has_point(Vector3(foot.x, b.get_center().y, foot.z)):
+				# ...and the plate stays under a room's floor all round (0.5.1: it stood 0.4 m
+				# below the floor and ran out past the design room's front).
+				var c := b.get_center()
+				var under := true
+				for corner: Vector3 in [b.position, Vector3(b.end.x, c.y, b.end.z), Vector3(b.position.x, c.y, b.end.z), Vector3(b.end.x, c.y, b.position.z)]:
+					if YardLayout.room_at(Vector3(corner.x + signf(c.x - corner.x) * 0.01, 1.0, corner.z + signf(c.z - corner.z) * 0.01)) == "":
+						under = false
+				if under:
+					feet += 1
 				break
 	check(feet == DockScript.ARM_FEET.size(), "both dock arms bolted flat under the station (%d)" % feet)
 	# Lived in: steam off the coffee, dust in the stores, a fan turning, a lamp that stutters.
