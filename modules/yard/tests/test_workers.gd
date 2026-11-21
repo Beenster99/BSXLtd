@@ -65,6 +65,7 @@ func _crew() -> void:
 	var crew: Node3D = Workers.new()
 	crew.set_process(false)
 	add_child(crew)
+	crew.stand_in_keel = true
 	crew.build(traffic)
 	crew.wear_per_job = 0.0   # no faults while it builds
 	crew.charge_per_job = 0.0   # nor runs flat
@@ -271,6 +272,7 @@ func _upgrades() -> void:
 	var crew: Node3D = Workers.new()
 	crew.set_process(false)
 	add_child(crew)
+	crew.stand_in_keel = true
 	crew.build(traffic)
 	var w: Dictionary = crew.workers[2]
 	var bot: Node3D = w.node
@@ -309,9 +311,23 @@ func _upgrades() -> void:
 	var again: Node3D = Workers.new()
 	again.set_process(false)
 	add_child(again)
+	again.stand_in_keel = true
 	again.build(traffic)
 	again.restore_fleet(saved)
 	check(again.workers.size() == Workers.MAX_BOTS and again.fleet_state() == saved, "a saved fleet comes back as it was")
 	again.queue_free()
+	# No stand-in keel by default (beenster, 21 Nov: the wave 3 skiff removed): in an empty berth
+	# the crew lay nothing and rest on their docks.
+	var resting: Node3D = Workers.new()
+	resting.set_process(false)
+	add_child(resting)
+	resting.build(traffic)
+	for i in 600:
+		traffic.step(0.1)
+		resting.step(0.1)
+	var on_docks: bool = resting.workers.all(func(r: Dictionary) -> bool: return resting.call("_docked", r))
+	check(resting.rings_built() == 0 and resting.ring_node == null and on_docks,
+			"no stand-in keel in an empty berth: the crew rest on their docks")
+	resting.queue_free()
 	crew.queue_free()
 	traffic.queue_free()

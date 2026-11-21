@@ -246,6 +246,7 @@ func _kits() -> void:
 	var crew: Node3D = Workers.new()
 	crew.set_process(false)
 	add_child(crew)
+	crew.stand_in_keel = true
 	crew.build(traffic)
 	var rings: int = crew.rings_built()
 	t = 0.0
