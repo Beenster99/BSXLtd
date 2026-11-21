@@ -15,6 +15,13 @@ extends Node
 ## A page can be a control of its own instead (add_page: make(px_per_m) -> Control), as the
 ## size x class matrix of every component is ("matrix", read from the design catalogue).
 ##
+## Chapters: a page can name the wrist screen it explains (`screen`, a HudSlots channel id) and
+## a group for the list ("Start here", "Step by step", "Screens", "More"). Context help: open the
+## HELP tab from any screen and it opens on that screen's chapter (the screen shown just before;
+## help_for_screen). A page's text can also hold "! <shot>" (a picture from shots/), "@ 3|..."
+## (the picture's callout 3), "1. ..." (a numbered step), "=> <channel>|Open it" (a button that
+## puts that screen up) and "-> <page>|See ..." (a link to another page).
+##
 ## Features (Flags): "help" (the module), "help.wrist" (the wrist tab).
 
 signal topics_changed
@@ -34,6 +41,8 @@ const Guide := preload("res://modules/help/internal/guide.gd")
 const CapabilityMatrix := preload("res://modules/help/internal/capability_matrix.gd")
 const PartsPage := preload("res://modules/help/internal/parts_page.gd")
 const PartsData := preload("res://modules/help/internal/parts_data.gd")
+## The chapters' pictures (made by internal/tools/help_shots.tscn).
+const Shots := preload("res://modules/help/internal/help_shots_data.gd")
 ## The list of every building part.
 const PARTS_TOPIC := "parts_list"
 const PARTS_TEXT := """Every part you can build with, from the design catalogue: components, rooms, doors, the hull's frame, plates and glass, wires and pipes. Each with all its numbers, where it goes, and every size and grade."""
@@ -41,34 +50,81 @@ const PARTS_TEXT := """Every part you can build with, from the design catalogue:
 const MATRIX_TOPIC := "matrix"
 const MATRIX_TEXT := """Every component that comes in sizes, at sizes 1 to 8 and grades R S L H Q P: power made, thrust, jump, damage, defence, range, cargo and the power each one uses. Click a reactor, generator or battery to see everything it can power."""
 
-## id -> {id, title, text, order[, make]}
+## The list's groups, in order.
+const GROUPS: PackedStringArray = [Guide.START, Guide.STEPS, Guide.SCREENS, Guide.MORE]
+## id -> {id, title, text, order, group[, make]}
 var _topics: Dictionary = {}
+## Wrist channel id -> the page that explains it.
+var _screens: Dictionary = {}
+## The screen shown on a terminal just before Help (its chapter opens), "" once used.
+var _last_screen := ""
+## The page shown last, so Help opens where it was left.
+var last_topic := ""
 
 
 func register_module() -> void:
 	for t: Dictionary in Guide.TOPICS:
-		add_topic(str(t.id), str(t.title), str(t.text), int(t.order))
+		add_topic(str(t.id), str(t.title), str(t.text), int(t.order), str(t.get("group", "")))
+		for sc: String in t.get("screens", []):
+			_screens[sc] = str(t.id)
 	var design := Modules.bus("design") as DesignBus
 	if design:
 		var cat := design.catalog
 		add_page(MATRIX_TOPIC, "Sizes and classes", MATRIX_TEXT,
-				func(px: float) -> Control: return make_matrix(cat, px), 45,
+				func(px: float) -> Control: return make_matrix(cat, px), 410,
 				func() -> String: return _matrix_words(cat))
 		add_page(PARTS_TOPIC, "Every part", PARTS_TEXT,
-				func(px: float) -> Control: return make_parts(cat, px), 46,
+				func(px: float) -> Control: return make_parts(cat, px), 411,
 				func() -> String: return PartsData.new(cat).search_text())
+		_topics[MATRIX_TOPIC]["group"] = Guide.MORE
+		_topics[PARTS_TOPIC]["group"] = Guide.MORE
 	if Flags.is_on(WRIST_FLAG):
 		HudSlots.register_holo_channel(HOLO_CHANNEL, HOLO_LABEL,
 				func(_glass: bool) -> Control: return make_screen(WRIST_PX), HOLO_ORDER)
+		# Which screen was up before Help: a terminal names each screen it shows "Channel" with
+		# its channel id as meta (HoloTerminal.show_channel).
+		if not get_tree().node_added.is_connected(_on_node_added):
+			get_tree().node_added.connect(_on_node_added)
+
+
+func _on_node_added(node: Node) -> void:
+	if node.name == "Channel" and node.has_meta("channel") and node is Control:
+		var ch := str(node.get_meta("channel"))
+		if ch != HOLO_CHANNEL:
+			_last_screen = ch
+
+
+## The page that explains wrist screen `channel` ("" when none does).
+func help_for_screen(channel: String) -> String:
+	var id := str(_screens.get(channel, ""))
+	return id if not topic(id).is_empty() else ""
+
+
+## Says page `id` explains wrist screen `channel` (for a module adding its own page).
+func add_screen_help(channel: String, id: String) -> void:
+	_screens[channel] = id
+
+
+## The page Help should open on now: the chapter of the screen shown just before it, else the
+## page shown last. Used once: the screen before is forgotten.
+func take_pending() -> String:
+	var id := help_for_screen(_last_screen)
+	_last_screen = ""
+	return id if id != "" else last_topic
 
 
 func unregister_module() -> void:
 	HudSlots.unregister_holo_channel(HOLO_CHANNEL)
+	if get_tree() and get_tree().node_added.is_connected(_on_node_added):
+		get_tree().node_added.disconnect(_on_node_added)
 
 
-## Adds or replaces a page (see the header for the text's form).
-func add_topic(id: String, title: String, text: String, order: int = 50) -> void:
-	_topics[id] = {"id": id, "title": title, "text": text, "order": order}
+## Adds or replaces a page (see the header for the text's form). `group`: the heading it is
+## listed under (Guide's groups; "" goes with More).
+func add_topic(id: String, title: String, text: String, order: int = 50, group: String = "") -> void:
+	if id in Guide.REPLACES:
+		return
+	_topics[id] = {"id": id, "title": title, "text": text, "order": order, "group": group if group != "" else Guide.MORE}
 	topics_changed.emit()
 
 
@@ -77,7 +133,7 @@ func add_topic(id: String, title: String, text: String, order: int = 50) -> void
 ## and kept). A control with set_query(q) is told the words typed in Help's search box.
 func add_page(id: String, title: String, text: String, make: Callable, order: int = 50,
 		words: Callable = Callable()) -> void:
-	_topics[id] = {"id": id, "title": title, "text": text, "order": order, "make": make, "words": words}
+	_topics[id] = {"id": id, "title": title, "text": text, "order": order, "make": make, "words": words, "group": Guide.MORE}
 	topics_changed.emit()
 
 
@@ -125,6 +181,10 @@ func topics() -> Array[Dictionary]:
 	for t: Dictionary in _topics.values():
 		out.append(t)
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ga := GROUPS.find(str(a.get("group", Guide.MORE)))
+		var gb := GROUPS.find(str(b.get("group", Guide.MORE)))
+		if ga != gb:
+			return ga < gb
 		return int(a.order) < int(b.order) if int(a.order) != int(b.order) else str(a.title) < str(b.title))
 	return out
 

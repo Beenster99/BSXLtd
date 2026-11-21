@@ -26,12 +26,20 @@ func _run() -> void:
 	var screen := bus.make_screen(150.0)
 	screen.size = Vector2(size)
 	layer.add_child(screen)
-	for id in ["start", "contracts", "keys"]:
+	for id in ["start", "first_contract", "buy_parts", "orders_screen", "plan_screen", "stuck", "keys"]:
 		screen.call("show_topic", id)
 		for i in 8:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(out.path_join("help_%s.png" % id))
+		# A long chapter: further down too.
+		var sc := screen.find_children("*", "ScrollContainer", true, false)
+		if id in ["first_contract", "orders_screen"] and sc.size() >= 2:
+			(sc[1] as ScrollContainer).scroll_vertical = 700
+			for i in 4:
+				await get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(out.path_join("help_%s_2.png" % id))
 	# The matrix: the reactors, then a small reactor as the supply over the engines.
 	screen.call("show_topic", HelpBus.MATRIX_TOPIC)
 	await _shot(out, "help_matrix")
