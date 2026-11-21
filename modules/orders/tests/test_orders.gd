@@ -108,6 +108,17 @@ func run_tests() -> void:
 				"with no cash, both buttons say so (%s)" % orders.place_problem("order_test"))
 		orders.place("order_test")
 		check(orders.orders.is_empty(), "and nothing is ordered")
+		# One stage at a time fits a smaller purse.
+		var st := orders.next_stage("order_test")
+		var st_cost := orders.stage_cheapest("order_test", st)
+		check(st == "frame" and st_cost > 0 and st_cost < int(orders.plan_sums("order_test").cheapest.total),
+				"the next stage to order is the frame, for less than the whole ship (CR %d)" % st_cost)
+		biz.call("credit", st_cost + 10, "test", "test: enough for the frame")
+		orders.order_stage_cheapest("order_test", st)
+		check(not orders.orders.is_empty() and orders.lines("order_test").all(func(l: Dictionary) -> bool:
+				return str(l.stage) != st or float(l.ordered) >= float(l.need) - 0.001), "the frame's parts ordered on their own")
+		check(orders.next_stage("order_test") != st, "and the next stage moves on (%s)" % orders.next_stage("order_test"))
+		orders.orders.clear()
 		biz.call("credit", all, "test", "test: cash back")
 	# Place it: the plan fills the lines not split yet.
 	var standing_before := supply.standing_of(str(qs[0].vendor))

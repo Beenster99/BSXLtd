@@ -96,7 +96,7 @@ func refresh() -> void:
 			ordered += 1
 		if float(l.arrived) >= float(l.need) - 0.001:
 			arrived += 1
-	_status.text = "PARTS ORDERS · %s · %d LINES · %d ORDERED · %d IN%s" % [str(b.get("design_name", cid)).to_upper(),
+	_status.text = "PARTS ORDERS · %s · %d LINES · %d ORDERED · %d ARRIVED%s" % [str(b.get("design_name", cid)).to_upper(),
 			lines.size(), ordered, arrived, " · WAITS FOR ITS PARTS" if bool(bus.call("gated", cid)) else ""]
 	_head(ids)
 	_calculator()
@@ -128,7 +128,7 @@ func _calculator() -> void:
 	_section("BILL OF MATERIALS CALCULATOR")
 	var sums: Dictionary = bus.call("plan_sums", cid)
 	if sums.is_empty():
-		_body.add_child(_label("Every line is ordered: see ORDERS below for when they come in.", "body_medium", fs - 1, T.GOOD))
+		_body.add_child(_label("Every line is ordered: each line below says the day it is due.", "body_medium", fs - 1, T.GOOD))
 		return
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", int(fs * 0.5))
@@ -177,6 +177,14 @@ func _calculator() -> void:
 	quick.tooltip_text = cheap_problem if cheap_problem != "" else "Order every line still to order from the cheapest suppliers, now."
 	quick.pressed.connect(func() -> void: bus.call("order_cheapest", cid, express))
 	act.add_child(quick)
+	var stage := str(bus.call("next_stage", cid))
+	if stage != "":
+		var stage_cost := int(bus.call("stage_cheapest", cid, stage)) * (OrderBook.EXPRESS_FACTOR if express else 1.0)
+		var sb := T.button("ORDER NEXT STAGE: %s, CR %s" % [stage.to_upper(), T.money(roundi(stage_cost))], true, fs - 2)
+		sb.tooltip_text = "Order just the %s stage's parts from the cheapest suppliers, now. The berth can start that stage when they are in." % stage
+		sb.disabled = int(bus.call("cash")) < roundi(stage_cost)
+		sb.pressed.connect(func() -> void: bus.call("order_stage_cheapest", cid, stage, express))
+		act.add_child(sb)
 	_body.add_child(act)
 	# What PLACE ORDER needs, or what the last order came to.
 	var note := problem if problem != "" else cheap_problem
@@ -211,7 +219,18 @@ func _line_row(l: Dictionary) -> void:
 	var need := float(l.need)
 	var st := "%s %s" % [_qty(need), unit if unit != "x" else ""]
 	var colour := T.GOOD if float(l.arrived) >= need - 0.001 else (T.AMBER if float(l.ordered) >= need - 0.001 else T.DIM)
-	top.add_child(_label("%s · ordered %s · in %s" % [st.strip_edges(), _qty(float(l.ordered)), _qty(float(l.arrived))], "mono_medium", fs - 2, colour))
+	var status := "%s · ordered %s · arrived %s" % [st.strip_edges(), _qty(float(l.ordered)), _qty(float(l.arrived))]
+	if float(l.arrived) >= need - 0.001:
+		status += " · all in"
+	else:
+		var due := int(bus.call("line_due", cid, str(l.key)))
+		if due >= 0:
+			status += " · due day %d (%s)" % [due / 1440, str(bus.call("when", due))]
+		elif float(l.ordered) >= need - 0.001:
+			status += " · in the refurb works"
+		else:
+			status += " · not ordered"
+	top.add_child(_label(status, "mono_medium", fs - 2, colour))
 	v.add_child(top)
 	var left := need - float(l.ordered)
 	if left <= 0.001:

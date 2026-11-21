@@ -9,6 +9,8 @@ extends RefCounted
 const STAGE_OF := {"hull:frame": "frame", "hull:welds": "frame", "hull:hull": "plates", "hull:rivets": "plates",
 		"hull:inner": "plates", "hull:deck": "plates", "hull:bolts": "fittings", "service:wire": "wiring",
 		"service:fuel": "pipes"}
+## The build stages in the order the berth works them (the order to buy their parts in).
+const STAGE_ORDER := ["frame", "plates", "fittings", "wiring", "pipes"]
 ## Stages by line kind where the id doesn't say (rooms' fit-out, components, doors).
 const STAGE_OF_KIND := {"room": "fittings", "component": "fittings", "door": "plates", "hull": "plates",
 		"service": "pipes"}

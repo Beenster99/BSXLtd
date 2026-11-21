@@ -394,6 +394,15 @@ func stage_wait(cid: String, stage: String) -> String:
 	return "%s parts due %s" % [name, when(due)]
 
 
+## When the last order still out for build `cid`'s line `key` is due in (game minute), -1 when none.
+func line_due(cid: String, key: String) -> int:
+	var due := -1
+	for o: Dictionary in orders:
+		if str(o.cid) == cid and not bool(o.arrived) and (o.lines as Array).any(func(x: Dictionary) -> bool: return str(x.key) == key):
+			due = maxi(due, int(o.due) + int(o.late) * 1440)
+	return due
+
+
 func _stage_of_key(cid: String, key: String) -> String:
 	for l: Dictionary in _lines.get(cid, []):
 		if str(l.key) == key:
@@ -422,8 +431,40 @@ func set_split(cid: String, key: String, vendor: String, qty: float) -> void:
 
 
 ## Every line still to order split whole to the vendor plan `plan` picks for it.
-func use_plan(cid: String, plan: String) -> void:
-	_ask({"what": "plan", "cid": cid, "plan": plan})
+func use_plan(cid: String, plan: String, stage := "") -> void:
+	_ask({"what": "plan", "cid": cid, "plan": plan, "stage": stage})
+
+
+## The first build stage of `cid` (in the berth's order) with parts still to order ("" when none).
+func next_stage(cid: String) -> String:
+	var left := {}
+	for l in _to_order(cid):
+		left[str(l.stage)] = true
+	for st: String in OrderBook.STAGE_ORDER:
+		if left.has(st):
+			return st
+	return "" if left.is_empty() else str(left.keys()[0])
+
+
+## The yard's cash, CR (a big number when there is no business module).
+func cash() -> int:
+	return int(_business.call("get_cash")) if _business and _business.has_method("get_cash") else 1 << 40
+
+
+## What the cheapest plan for `stage` of build `cid` comes to, CR (0 when nothing to order).
+func stage_cheapest(cid: String, stage: String) -> int:
+	var ls := _to_order(cid).filter(func(l: Dictionary) -> bool: return str(l.stage) == stage)
+	if ls.is_empty() or _supply == null:
+		return 0
+	var o := SupplyOptimiser.run(ls, _supply.get("vendors"), _standing(), market_day(), catalog())
+	return roundi(float((o.plans.get(SupplyOptimiser.CHEAPEST, {}) as Dictionary).get("total", 0.0)))
+
+
+## Orders the parts for one stage of build `cid` from the cheapest suppliers, now.
+func order_stage_cheapest(cid: String, stage: String, express := false) -> void:
+	clear_splits(cid)
+	use_plan(cid, SupplyOptimiser.CHEAPEST, stage)
+	place(cid, express)
 
 
 func clear_splits(cid: String) -> void:
@@ -454,7 +495,7 @@ func cheapest_problem(cid: String, express := false) -> String:
 
 func _cash_problem(cost: int) -> String:
 	if _business and _business.has_method("can_afford") and not bool(_business.call("can_afford", cost)):
-		return "Not enough cash: this order comes to CR %s and the yard has CR %s. Order fewer lines now (CLEAR MIX, then pick the next stage's), or wait for the contract's next stage payment." % [
+		return "Not enough cash: this order comes to CR %s and the yard has CR %s. Order one stage at a time (ORDER NEXT STAGE): the contract pays as the build passes its stages." % [
 				_cr(cost), _cr(int(_business.call("get_cash")))]
 	return ""
 
@@ -533,6 +574,8 @@ func _apply_ask(p: Dictionary) -> void:
 		"plan":
 			var sp: Dictionary = splits.get_or_add(cid, {})
 			var ls := _to_order(cid)
+			if str(p.get("stage", "")) != "":
+				ls = ls.filter(func(l: Dictionary) -> bool: return str(l.stage) == str(p.stage))
 			if ls.is_empty() or _supply == null:
 				return
 			var o := SupplyOptimiser.run(ls, _supply.get("vendors"), _standing(), market_day(), catalog())
