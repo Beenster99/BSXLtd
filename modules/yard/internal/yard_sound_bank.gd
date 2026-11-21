@@ -43,6 +43,7 @@ const SOUNDS := {
 	"vent_puff": "a vent breathing out",
 	"rivet_punch": "a worker's rivet gun firing",
 	"bolt_run": "a worker's nut runner spinning a bolt home",
+	"warp_jump": "a delivery ship spooling up and jumping out to warp",
 }
 const LOOPS := ["station_hum", "dock_hum", "jet", "bot_hover", "worker_jets", "ship_engine", "airlock_pump", "weld_arc"]
 ## A loop's length (s) and the cross-fade over its seam (s).
@@ -152,6 +153,17 @@ static func _make(sound: String, rng: RandomNumberGenerator, length: float) -> P
 		"rivet_punch":
 			return _sum([_hit(rng, 0.05, 5000.0, 0.8), _tone(0.3, 880.0, 16.0, 0.4), _tone(0.3, 1960.0, 24.0, 0.18),
 					_tone(0.25, 110.0, 20.0, 0.6)])
+		"warp_jump":
+			# The spool: a whine climbing over 1.4 s on a rising rush, then the jump: a deep
+			# thump, a crack and a whoosh that falls away (beenster, 21 Nov).
+			var whine := _sweep(1.5, 140.0, 1100.0, [1.0, 0.45, 0.2, 0.1], 0.3)
+			var rush := _band(rng, 1.5, 300.0, 3000.0, 0.5)
+			_fade(rush, 1.3, 0.05)
+			var thump := _sum([_tone(1.6, 42.0, 2.2, 1.0), _tone(1.2, 84.0, 3.5, 0.45), _hit(rng, 0.08, 7000.0, 0.9)])
+			var fall := _sweep(1.4, 900.0, 60.0, [1.0, 0.5, 0.25], 0.35)
+			var whoosh := _band(rng, 1.8, 150.0, 5000.0, 0.8)
+			_fade(whoosh, 0.01, 1.7)
+			return _sum([whine, rush, _delay(_sum([thump, fall, whoosh]), 1.4)])
 		"bolt_run":
 			var spin := _sweep(0.9, 300.0, 180.0, [1.0, 0.6, 0.3, 0.2], 0.25)
 			var out := spin
