@@ -1,9 +1,9 @@
 class_name DesignFrame
 extends RefCounted
 ## The ship's structure, proposed from its rooms and hull for the designers to change: a beam
-## skeleton of frame rings at stations along the ship (node blocks at the corners, girders
-## between them), stringers along every corner from ring to ring, every member welded at its
-## ends, and an outer shell of metal and glass plates cut to the faces and riveted to the
+## skeleton of frame rings at stations along the ship (box girders, their ends mitred to meet
+## at the corners and welded there), stringers along every corner butted onto the rings,
+## every member welded at its ends, and an outer shell of metal and glass plates cut to the faces and riveted to the
 ## members. It is built with Void Salvage's own frame kit (FrameHull, the shared files), the
 ## code its Kestrel and Manta are built with, so a design's structure is real parts and joints:
 ## every joint is a weld, rivet or bolt someone will make in the yard.
@@ -430,7 +430,8 @@ static func counts(p: Dictionary) -> Dictionary:
 	var stringers := (st.size() - 1) * SIDES - (p.get("no_stringer", {}) as Dictionary).size()
 	var open := (p.get("open", {}) as Dictionary).size()
 	var plates := (st.size() - 1) * SIDES + 2 - open
-	var welds := rings * 2 + stringers * 2
+	# A weld at each ring corner (the mitre) and at each end of a stringer.
+	var welds := rings + stringers * 2
 	# Inside, estimated before it is built: the decks' members, plates and spot welds; the
 	# walls' studs and rails, panels and bolts.
 	var deck_plates := 0
@@ -473,7 +474,7 @@ static func counts(p: Dictionary) -> Dictionary:
 		bolts += int(lc.bolts)
 		welds += int(lc.rings) * 2 + int(lc.stringers) * 2
 		rivets += int(float(lc.skin_m2) * 4.0)
-	return {"stations": st.size(), "nodes": rings, "rings": rings, "stringers": stringers, "plates": plates,
+	return {"stations": st.size(), "nodes": 0, "rings": rings, "stringers": stringers, "plates": plates,
 			"glass": (p.glass as Dictionary).size(), "openings": (p.openings as Array).size(),
 			"welds": welds, "rivets": rivets, "bolts": bolts, "member_m": member_m, "skin_m2": skin_m2,
 			"decks": (p.get("decks", []) as Array).size(), "deck_plates": deck_plates,
@@ -490,9 +491,8 @@ static func build_list(p: Dictionary) -> Array[Dictionary]:
 	if int(c.stations) == 0:
 		return out
 	for row: Array in [
-		["Frame rings", c.rings, "x", "welded to the node blocks"],
-		["Node blocks", c.nodes, "x", "at every ring corner"],
-		["Stringers", c.stringers, "x", "welded ring to ring"],
+		["Frame rings", c.rings, "x", "ends mitred, welded to each other"],
+		["Stringers", c.stringers, "x", "butt welded ring to ring"],
 		["Hull plates", int(c.plates) - int(c.glass) - int(c.armour), "x", "riveted to rings and stringers"],
 		["Armour plates", c.armour, "x", "riveted over the frame, thicker"],
 		["Glass panels", c.glass, "x", "set in the frame"],
@@ -519,7 +519,7 @@ static func _rect_near(st: Array, z: float) -> Rect2:
 
 ## Builds the proposal into `kit` (a ShipKit with a PartModel) as parts and joints: the rings,
 ## stringers, nodes and skin, the openings framed, the end caps. `mats`: shell, frame, glass
-## (Materials; plain paint if left out). Returns the FrameHull (its parts: nodes, rings,
+## (Materials; plain paint if left out). Returns the FrameHull (its parts: rings (nodes all null),
 ## stringers, plates, cap_plates, jambs; its joints: welds, rivets, jamb_welds).
 static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHull:
 	var shell: Material = mats.get("shell", ShipKit.paint(Color(0.56, 0.58, 0.6), 0.35, 0.45))
@@ -528,6 +528,14 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 	var h := FrameHull.new(kit, str(p.style), shell, steel, glass)
 	h.name = "hull"
 	h.groove = 0.0
+	# No node blocks (beenster, 21 Nov: "why can't we just join the row beams?"): the ring's
+	# girders meet on each corner, cut to the bisector and welded round the seam, and the
+	# stringers butt onto the ring (Void Salvage's mitred joints, F10). Those want box members,
+	# so a channel frame is built in box girders of the same size.
+	if str(h.spec.get("section", "box")) != "box":
+		h.spec = h.spec.duplicate()
+		h.spec["section"] = "box"
+	h.mitred_joints = true
 	for st: Dictionary in p.stations:
 		h.add_station(float(st.z), st.profile, str(st.label))
 	var panes: Dictionary = p.glass
@@ -622,7 +630,7 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 
 
 ## What a frame part and a joint near it are, for the walk-inside label: "Frame ring, frame 3,
-## starboard side\nWeld here (to the node block)". `model` holds both.
+## starboard side\nWeld here (to the frame ring)". `model` holds both.
 static func describe(part: PartData, joint: ConnectionData = null, model: PartModel = null) -> String:
 	if part == null:
 		return "Hull structure"
