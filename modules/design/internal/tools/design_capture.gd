@@ -205,9 +205,16 @@ class Runner:
 				continue
 			m["type"] = pk[0]
 			bus.editor.do({"op": "add_mount", "mount": m})
+		# Stage 1: armour down the roof's middle bays and a frame added by hand.
+		for k in range(1, st.size() - 2):
+			var bz := (float(st[k].z) + float(st[k + 1].z)) * 0.5
+			for e in [7, 0, 1]:
+				bus.editor.do({"op": "set_frame", "key": DesignFrame.panel_key(bz, e), "value": {"kind": "armour"}})
 		room.furnishing.open_console()
 		for layer in ["frame", "plates", "components", "power"]:
-			(room.console.find_child("Layer_" + layer, true, false) as Button).button_pressed = layer in ["plates", "components"]
+			(room.console.find_child("Layer_" + layer, true, false) as Button).button_pressed = layer in ["frame", "plates", "components"]
+		var sel_z := (float(st[1].z) + float(st[2].z)) * 0.5
+		room.console.plan.select("panel", "%.2f:%d" % [sel_z, DesignFrame.ROOF_EDGE])
 		room.console.plan.set_tool("mount:antenna")
 		await _frames(30)
 		var ship: Node3D = room.console.holo.ship_node()
