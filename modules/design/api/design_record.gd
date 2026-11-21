@@ -43,7 +43,8 @@ extends RefCounted
 ##   {op = "remove_layer", id}           # its strokes go with it
 ##   {op = "add_stroke", stroke = {id?, layer, tool, colour, width, points = [[x, y], ...]}}
 ##   {op = "remove_stroke", id}
-##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?, structure? (merged), order?}}
+##   {op = "set_meta", fields = {name?, notes?, grid?, deck_height?, structure? (merged), order?,
+##       livery? (merged; a null value takes that key out), livery_set? (the whole livery)}}
 ##   {op = "batch", ops = [...]}         # applied in order, undone in reverse
 ## The undo of a remove re-adds what was removed with its old id, so ids stay stable.
 
@@ -84,6 +85,9 @@ var hull: Dictionary = {}
 ##   "panel:<z>:<edge>" -> {glass: bool}     the hull panel over edge <edge> of the bay at z
 ##   "section:<z>" -> {grow: [port, starboard, roof, belly]}   the ring nearest z pushed out, m
 var frame_edits: Dictionary = {}
+## Her paint and markings (DesignLivery, the outside designer stage 4): {base, trim, stripe,
+## stripe_at, pattern, number, show_name, client}; {} for the yard's bare alloy.
+var livery: Dictionary = {}
 ## Parts fitted on the outside of the hull (thrusters, engines): id -> {id, type, deck, x, z,
 ## angle}, (x, z) on the hull's side and `angle` the way its front faces (radians, from +X
 ## towards +Z: the hull's outward normal where it was fitted).
@@ -481,6 +485,17 @@ func _set_meta(fields: Dictionary) -> Dictionary:
 				old.structure = structure.duplicate()
 				for k2 in (fields.structure as Dictionary):
 					structure[k2] = fields.structure[k2]
+			"livery", "livery_set":
+				if not old.has("livery_set"):
+					old.livery_set = livery.duplicate(true)
+				if str(k) == "livery_set":
+					livery = (fields[k] as Dictionary).duplicate(true) if fields[k] is Dictionary else {}
+				else:
+					for k2 in (fields.livery as Dictionary):
+						if fields.livery[k2] == null:
+							livery.erase(k2)
+						else:
+							livery[k2] = fields.livery[k2]
 	return {} if old.is_empty() else {"op": "set_meta", "fields": old}
 
 
@@ -748,7 +763,7 @@ func to_dict() -> Dictionary:
 		"rooms": _sorted(rooms), "doors": _sorted(doors), "components": _sorted(components),
 		"runs": _sorted(runs), "structure": structure.duplicate(),
 		"sketch_layers": _sorted(sketch_layers), "strokes": _sorted(strokes),
-		"hull": hull.duplicate(true), "frame_edits": frame_edits.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts), "pins": _sorted(pins),
+		"hull": hull.duplicate(true), "frame_edits": frame_edits.duplicate(true), "livery": livery.duplicate(true), "walls": _sorted(walls), "beams": _sorted(beams), "mounts": _sorted(mounts), "pins": _sorted(pins),
 	}
 
 
@@ -779,6 +794,7 @@ static func from_dict(data: Dictionary) -> DesignRecord:
 	for dk in hd:
 		d.hull[str(dk)] = (hd[dk] as Array).duplicate(true)
 	d.frame_edits = (data.get("frame_edits", {}) as Dictionary).duplicate(true)
+	d.livery = (data.get("livery", {}) as Dictionary).duplicate(true)
 	for wv: Dictionary in data.get("walls", []):
 		var wall := wv.duplicate(true)
 		wall.deck = int(wall.get("deck", 0))

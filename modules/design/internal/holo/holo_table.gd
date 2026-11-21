@@ -419,28 +419,37 @@ func _build_skin(plan: Dictionary, parent: Node3D, metal: Material, glass: Mater
 		return
 	var st: Array = plan.stations
 	var panes: Dictionary = plan.glass
-	for which in 2:
+	var open: Dictionary = plan.get("open", {})
+	# Painted (DesignLivery): the panels in their colours, still see-through.
+	var groups := {}
+	for i in range(1, st.size()):
+		var a: PackedVector2Array = st[i - 1].profile
+		var b: PackedVector2Array = st[i].profile
+		var za := float(st[i - 1].z)
+		var zb := float(st[i].z)
+		for k in a.size():
+			var gk := "%d:%d" % [i - 1, k]
+			if open.has(gk):
+				continue
+			var col: Variant = DesignLivery.colour(plan, i - 1, k)
+			var key := "glass" if panes.has(gk) else ("metal" if col == null else (col as Color).to_html(false))
+			var k1 := (k + 1) % a.size()
+			var p0 := Vector3(a[k].x, a[k].y, za)
+			var p1 := Vector3(a[k1].x, a[k1].y, za)
+			var p2 := Vector3(b[k1].x, b[k1].y, zb)
+			var p3 := Vector3(b[k].x, b[k].y, zb)
+			(groups.get_or_add(key, PackedVector3Array()) as PackedVector3Array).append_array([p0, p1, p2, p0, p2, p3])
+	var cap: Variant = DesignLivery.cap_colour(plan)
+	var cap_key := "metal" if cap == null else (cap as Color).to_html(false)
+	for end in 2:
+		var o: PackedVector2Array = st[0 if end == 0 else st.size() - 1].profile
+		var z := float(st[0 if end == 0 else st.size() - 1].z)
 		var tris := PackedVector3Array()
-		for i in range(1, st.size()):
-			var a: PackedVector2Array = st[i - 1].profile
-			var b: PackedVector2Array = st[i].profile
-			var za := float(st[i - 1].z)
-			var zb := float(st[i].z)
-			for k in a.size():
-				if panes.has("%d:%d" % [i - 1, k]) != (which == 1):
-					continue
-				var k1 := (k + 1) % a.size()
-				var p0 := Vector3(a[k].x, a[k].y, za)
-				var p1 := Vector3(a[k1].x, a[k1].y, za)
-				var p2 := Vector3(b[k1].x, b[k1].y, zb)
-				var p3 := Vector3(b[k].x, b[k].y, zb)
-				tris.append_array([p0, p1, p2, p0, p2, p3])
-		if which == 0:
-			for end in 2:
-				var o: PackedVector2Array = st[0 if end == 0 else st.size() - 1].profile
-				var z := float(st[0 if end == 0 else st.size() - 1].z)
-				for k in range(1, o.size() - 1):
-					tris.append_array([Vector3(o[0].x, o[0].y, z), Vector3(o[k].x, o[k].y, z), Vector3(o[k + 1].x, o[k + 1].y, z)])
+		for k in range(1, o.size() - 1):
+			tris.append_array([Vector3(o[0].x, o[0].y, z), Vector3(o[k].x, o[k].y, z), Vector3(o[k + 1].x, o[k + 1].y, z)])
+		(groups.get_or_add(cap_key, PackedVector3Array()) as PackedVector3Array).append_array(tris)
+	for key: String in groups:
+		var tris: PackedVector3Array = groups[key]
 		if tris.is_empty():
 			continue
 		var stool := SurfaceTool.new()
@@ -448,9 +457,9 @@ func _build_skin(plan: Dictionary, parent: Node3D, metal: Material, glass: Mater
 		for v in tris:
 			stool.add_vertex(v)
 		var mi := MeshInstance3D.new()
-		mi.name = "Skin" if which == 0 else "SkinGlass"
+		mi.name = "Skin" if key == "metal" else ("SkinGlass" if key == "glass" else "Skin_" + key)
 		mi.mesh = stool.commit()
-		mi.material_override = metal if which == 0 else glass
+		mi.material_override = metal if key == "metal" else (glass if key == "glass" else _mat(Color.from_string(key, Color.WHITE), 0.3, 0.8))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(mi)
 

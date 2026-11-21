@@ -105,7 +105,7 @@ static func propose(d: DesignRecord) -> Dictionary:
 		stations.append({"z": zs[i], "label": "f%d" % i, "rect": rect, "profile": section(rect)})
 	var out := {"style": style_id, "weight": weight, "spacing": spacing, "clearance": clear,
 			"stations": stations, "glass": {}, "openings": [], "skip": {}, "armour": {}, "open": {},
-			"no_stringer": {}, "hand_skip": {}}
+			"no_stringer": {}, "hand_skip": {}, "paint": {}, "livery": d.livery.duplicate(true)}
 	_grow(d, stations)
 	_glaze(d, out)
 	_panels(d, out)
@@ -237,7 +237,12 @@ static func _panels(d: DesignRecord, p: Dictionary) -> void:
 		if k < 0:
 			continue
 		var gk := "%d:%d" % [k, int(key.get_slice(":", 2))]
-		var kind := panel_kind(d.frame_edits[key])
+		var edit: Dictionary = d.frame_edits[key]
+		if str(edit.get("paint", "")) != "":
+			p.paint[gk] = str(edit.paint)
+		if not edit.has("kind") and not edit.has("glass"):
+			continue
+		var kind := panel_kind(edit)
 		glass.erase(gk)
 		(p.armour as Dictionary).erase(gk)
 		(p.open as Dictionary).erase(gk)
@@ -508,15 +513,23 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 	var armour: Dictionary = p.get("armour", {})
 	var open: Dictionary = p.get("open", {})
 	var armour_mat: Material = mats.get("armour", ShipKit.paint(Color(0.3, 0.33, 0.3), 0.6, 0.55))
+	# Painted (DesignLivery): each colour one material, armour a shade darker.
+	var tints := {}
+	var tint := func(c: Color, dark: bool) -> Material:
+		var key := c.to_html(false) + ("a" if dark else "")
+		if not tints.has(key):
+			tints[key] = ShipKit.paint(c.darkened(0.25) if dark else c, 0.45, 0.5, "satin_paint")
+		return tints[key]
 	h.style = func(seg: int, edge: int) -> Dictionary:
 		var gk := "%d:%d" % [seg, edge]
 		if open.has(gk):
 			return {"skip": true}
 		if panes.has(gk):
 			return {"mat": glass, "glass": true}
+		var col: Variant = DesignLivery.colour(p, seg, edge)
 		if armour.has(gk):
-			return {"mat": armour_mat, "name": "ArmourPlate"}
-		return {"mat": shell}
+			return {"mat": armour_mat if col == null else tint.call(col, true), "name": "ArmourPlate"}
+		return {"mat": shell if col == null else tint.call(col, false)}
 	var no_stringer: Dictionary = p.get("no_stringer", {})
 	h.corner_skip = func(seg: int, corner: int) -> bool:
 		return no_stringer.has("%d:%d" % [seg, corner])
@@ -536,7 +549,9 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 				holes.append(o.hole)
 		var pieces := _cut(outline, holes)
 		var glazed := bool((p.get("cap_glass", [false, false]) as Array)[end])
-		h.cap(end, pieces, glass if glazed else shell, "", glazed)
+		var cap_col: Variant = DesignLivery.cap_colour(p)
+		var cap_mat: Material = shell if cap_col == null else tint.call(cap_col, false)
+		h.cap(end, pieces, glass if glazed else cap_mat, "", glazed)
 	var lining: Material = mats.get("lining", ShipKit.paint(Color(0.52, 0.54, 0.54), 0.2, 0.6))
 	var plating: Material = mats.get("deck", ShipKit.paint(Color(0.46, 0.48, 0.5), 0.6, 0.45))
 	var decks: Array[DeckFrame] = []
