@@ -481,6 +481,28 @@ func spot_candidates(c: ConnectionData) -> Array:
 				open.append(found)
 			else:
 				rest.append(found)
+	# A member butted onto a face (a stringer on a ring, the joints mitred): its seam runs round
+	# the member's end on that face, so look at the face just beside it, square on.
+	var inv := gx.affine_inverse()
+	var su := (gx.basis * c.seam_up).normalized() if not c.seam_up.is_zero_approx() else Vector3.ZERO
+	var across: Array[Vector3] = []
+	if not su.is_zero_approx():
+		var w := n.cross(su).normalized()
+		across.append_array([w, -w, su, -su])
+	for o: Vector3 in across:
+		for r: float in [0.12, 0.18, 0.26]:
+			var p := at + o * r
+			var q := PhysicsRayQueryParameters3D.create(p + n * 0.9, p - n * 0.1)
+			q.collision_mask = work.collision_layer
+			var hit := space.intersect_ray(q)
+			if hit.is_empty() or hit.collider != work or (hit.normal as Vector3).dot(n) < 0.9:
+				continue
+			var found := [inv * (hit.position as Vector3), (inv.basis * (hit.normal as Vector3)).normalized()]
+			if open_spot(found[0], found[1]):
+				open.append(found)
+			else:
+				rest.append(found)
+			break
 	open.append_array(rest)
 	open.append([c.local_position, c.local_normal.normalized()])
 	return open

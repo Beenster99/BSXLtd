@@ -1,6 +1,6 @@
 extends ModuleTest
 ## Design Room: the structure. The room proposes a ship's structure from its rooms and hull:
-## frame rings at stations along her, stringers, node blocks and welds, the skin riveted on,
+## frame rings at stations along her, stringers welded to each other (mitred, no node blocks), the skin riveted on,
 ## glass over the bridge, the outer doors cut and framed. It is built with Void Salvage's frame
 ## kit as parts and joints, priced by its members, skin and joints, drawn on the holotable and
 ## walked in.
@@ -62,8 +62,8 @@ func run_tests() -> void:
 	var names := {}
 	for p: PartData in kit.model.parts.values():
 		names[p.part_name] = int(names.get(p.part_name, 0)) + 1
-	check(int(names.get("FrameNode", 0)) > 0 and int(names.get("FrameRing", 0)) > 0 and int(names.get("Stringer", 0)) > 0,
-			"node blocks, rings and stringers: %s" % [names])
+	check(int(names.get("FrameNode", 0)) == 0 and int(names.get("FrameRing", 0)) > 0 and int(names.get("Stringer", 0)) > 0,
+			"rings and stringers welded to each other, no node blocks: %s" % [names])
 	check(h.welds.size() > 50 and h.rivets.size() > 100, "welded frame, riveted skin: %d welds, %d rivets" % [h.welds.size(), h.rivets.size()])
 	check(h.jambs.size() >= 2, "the side door framed with posts and rails: %d" % h.jambs.size())
 	check(h.cap_plates.size() > 1, "the stern plate cut round its door: %d pieces" % h.cap_plates.size())
