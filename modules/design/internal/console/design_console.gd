@@ -1439,11 +1439,30 @@ func holo_click(at: Vector2) -> String:
 	if id != "":
 		plan.select("mount", id)
 		return id
+	# A wing, fin, pod or fairing nearer than her skin there: the shape (designed from any view).
+	var shape := holo_pick_shape(at)
+	if shape != "":
+		plan.select("shape", shape)
+		return shape
 	# Nothing on the hull there: the plate under the pointer (the outside designer, stage 1).
 	var panel := holo_pick_panel(at)
 	if panel != "":
 		plan.select("panel", panel)
 	return panel
+
+
+## The wing, fin, pod or fairing under `at` in the 3D view, when it is nearer than her skin; "".
+func holo_pick_shape(at: Vector2) -> String:
+	var ray := holo_ray(at)
+	if ray.is_empty() or not Flags.is_on(OUTSIDE_FLAG):
+		return ""
+	var hit := HullRows.pick_shape(bus, ray[0], ray[1])
+	if hit.is_empty():
+		return ""
+	var skin := DesignOutside.pick(bus.frame_plan(), ray[0], ray[1])
+	if not skin.is_empty() and (ray[0] as Vector3).distance_to(skin.point) < float(hit.dist):
+		return ""
+	return str(hit.id)
 
 
 ## The skin panel under `at` in the 3D view as "<z>:<edge>" (z: the middle of its bay), "".
@@ -1754,6 +1773,12 @@ func _on_selection(kind: String, id: String) -> void:
 		_selection.add_child(_remove_button())
 	elif kind == "panel":
 		_selection.add_child(_panel_rows(id))
+		# A panel of her nose or stern: that shape's sizes too.
+		var end := HullRows.end_shape_at(bus, id)
+		if end != "":
+			_selection.add_child(HullRows.shape_edit(bus, end, func() -> void:
+				bus.editor.do({"op": "remove_shape", "id": end})
+				plan.select("", "")))
 		holo.mark_panel(bus.frame_plan(), id)
 	elif kind == "hull":
 		var outline := rec.hull_outline(plan.deck)
@@ -1772,229 +1797,28 @@ func _paint_chip(node_name: String, html: String, on: bool, pressed: Callable) -
 	return HullRows.chip(node_name, html, on, pressed)
 
 
-## PAINT AND MARKINGS (the outside designer, stage 4), under the design's name when nothing is
-## picked: base and trim colours, a pattern, a stripe down her sides and its height, her name and
-## hull number painted on, the client's livery in one go, and back to bare alloy.
-func _livery_rows(rec: DesignRecord) -> Control:
-	var col := VBoxContainer.new()
-	col.name = "LiveryRows"
-	col.add_theme_constant_override("separation", 3)
-	var l := rec.livery
-	col.add_child(T.label("PAINT AND MARKINGS", "display_bold", 16, T.ORANGE))
-	var set_l := func(fields: Dictionary) -> void:
-		bus.editor.do({"op": "set_meta", "fields": {"livery": fields}})
-	for which: Array in [["base", "BASE", DesignLivery.base(l)], ["trim", "TRIM", DesignLivery.trim(l)], ["stripe", "STRIPE", null]]:
-		var row := HFlowContainer.new()
-		row.add_theme_constant_override("h_separation", 3)
-		col.add_child(row)
-		var lbl := T.label(which[1], "display_medium", 13, T.DIM)
-		lbl.custom_minimum_size.x = 58
-		row.add_child(lbl)
-		var now := str(l.get(which[0], ""))
-		for sw: String in DesignLivery.SWATCHES:
-			var key: String = which[0]
-			row.add_child(_paint_chip("Livery_%s_%s" % [key, sw.substr(1)], sw, sw == now, func() -> void:
-				set_l.call({key: sw})))
-		if which[0] == "stripe" and now != "":
-			var off := T.button("NONE", false, 13)
-			off.name = "Livery_stripe_none"
-			off.pressed.connect(func() -> void: set_l.call({"stripe": null}))
-			row.add_child(off)
-	var pats := HFlowContainer.new()
-	pats.add_theme_constant_override("h_separation", 3)
-	col.add_child(pats)
-	for pat: String in DesignLivery.PATTERNS:
-		var b := T.button(str(DesignLivery.PATTERN_NAMES[pat]).to_upper(), false, 13, str(l.get("pattern", "plain")) == pat)
-		b.name = "Livery_pattern_" + pat
-		b.pressed.connect(func() -> void: set_l.call({"pattern": pat}))
-		pats.add_child(b)
-	if str(l.get("stripe", "")) != "":
-		for at: String in DesignLivery.STRIPES:
-			var b := T.button("STRIPE " + at.to_upper(), false, 13, str(l.get("stripe_at", "mid")) == at)
-			b.name = "Livery_stripe_at_" + at
-			b.pressed.connect(func() -> void: set_l.call({"stripe_at": at}))
-			pats.add_child(b)
-	var marks := HFlowContainer.new()
-	marks.add_theme_constant_override("h_separation", 3)
-	col.add_child(marks)
-	var show := T.button("NAME ON HULL", false, 13, bool(l.get("show_name", false)))
-	show.name = "Livery_show_name"
-	show.pressed.connect(func() -> void: set_l.call({"show_name": not bool(l.get("show_name", false))}))
-	marks.add_child(show)
-	var num := LineEdit.new()
-	num.name = "Livery_number"
-	num.placeholder_text = "Hull number"
-	num.text = str(l.get("number", ""))
-	num.custom_minimum_size.x = 120
-	num.text_submitted.connect(func(t: String) -> void: set_l.call({"number": t.strip_edges() if t.strip_edges() != "" else null}))
-	marks.add_child(num)
-	var client := str(rec.order.get("client", ""))
-	if client != "":
-		var cb := T.button("CLIENT LIVERY", false, 13)
-		cb.name = "Livery_client"
-		cb.pressed.connect(func() -> void:
-			var sector := str(rec.order.get("sector", (ShipClients.TABLE.get(client, {}) as Dictionary).get("sector", "trade")))
-			set_l.call(DesignLivery.for_client(client, sector)))
-		marks.add_child(cb)
-	if not l.is_empty():
-		var bare := T.button("BARE ALLOY", false, 13)
-		bare.name = "Livery_bare"
-		bare.pressed.connect(func() -> void: bus.editor.do({"op": "set_meta", "fields": {"livery_set": {}}}))
-		marks.add_child(bare)
-	return col
+func _livery_rows(_rec: DesignRecord) -> Control:
+	return HullRows.livery(bus)
 
 
-## HULL SHAPE (the outside designer, stage 2): her nose, stern, wings, fins, pods and fairings,
-## each a button that picks it, and ADD for each kind.
-func _shape_rows(rec: DesignRecord) -> Control:
-	var col := VBoxContainer.new()
-	col.name = "ShapeRows"
-	col.add_theme_constant_override("separation", 3)
-	col.add_child(T.label("HULL SHAPE", "display_bold", 16, T.ORANGE))
-	if not rec.shapes.is_empty():
-		var have := HFlowContainer.new()
-		have.add_theme_constant_override("h_separation", 3)
-		col.add_child(have)
-		var ids := rec.shapes.keys()
-		ids.sort()
-		for sid: String in ids:
-			var b := T.button(DesignShape.describe(rec.shapes[sid]).to_upper(), false, 13)
-			b.name = "Shape_" + sid
-			b.pressed.connect(func() -> void: plan.select("shape", sid))
-			have.add_child(b)
-	var adds := HFlowContainer.new()
-	adds.add_theme_constant_override("h_separation", 3)
-	col.add_child(adds)
-	for type: String in DesignShape.TYPES:
-		if type in DesignShape.ENDS and not DesignShape.end_shape(rec, type).is_empty():
-			continue
-		var b := T.button("ADD " + str(DesignShape.NAMES[type]).to_upper(), false, 13)
-		b.name = "AddShape_" + type
-		b.pressed.connect(func() -> void: add_shape(type))
-		adds.add_child(b)
-	return col
+func _shape_rows(_rec: DesignRecord) -> Control:
+	return HullRows.shapes(bus, func(sid: String) -> void: plan.select("shape", sid))
 
 
-## Adds a shape of `type` where it sits best on her (a wing amidships, a fin and pods aft), and
-## picks it. Returns its id.
+## Adds a shape of `type` where it sits best on her and picks it. Returns its id.
 func add_shape(type: String) -> String:
-	var rec := bus.library.current
-	var fp := bus.frame_plan()
-	var st: Array = fp.get("stations", [])
-	if rec == null or st.is_empty():
-		return ""
-	var body: Array = fp.get("body", [0, st.size() - 1])
-	var z0 := float(st[int(body[0])].z)
-	var z1 := float(st[int(body[1])].z)
-	var z := (z0 + z1) * 0.5
-	match type:
-		"fin":
-			z = z1 - minf(2.0, (z1 - z0) * 0.25)
-		"pod":
-			z = lerpf(z0, z1, 0.7)
-	var id := rec.peek_id("s")
-	bus.editor.do({"op": "add_shape", "shape": DesignShape.make(type, snappedf(z, 0.25))})
-	if not rec.shapes.has(id):
-		return ""
-	plan.select("shape", id)
+	var id := HullRows.add_shape(bus, type)
+	if id != "":
+		plan.select("shape", id)
 	return id
 
 
-## A shape picked: each of its sizes with - and +, where it sits along her, MIRROR, the face it
-## stands on, REMOVE.
-func _shape_edit_rows(rec: DesignRecord, id: String) -> Control:
-	var s: Dictionary = rec.shapes[id]
-	var type := str(s.type)
-	var col := VBoxContainer.new()
-	col.name = "ShapeEdit"
-	col.add_theme_constant_override("separation", 3)
-	col.add_child(T.label("%s   %s" % [DesignShape.describe(s).to_upper(), DesignRecord.tag(id)], "display_bold", 18, T.ORANGE))
-	col.add_child(T.label("Built as frames and plates, bolted to her rings.", "body", 13, T.DIM))
-	var set_s := func(fields: Dictionary) -> void:
-		bus.editor.do({"op": "set_shape", "id": id, "fields": fields})
-	var rows: Array = []
-	if not type in DesignShape.ENDS:
-		rows.append(["z", "ALONG", -200.0, 200.0, 0.25])
-	for f: Array in DesignShape.FIELDS.get(type, []):
-		if f[0] == "at" and type == "fairing" and str(s.get("face", "roof")) != "side":
-			continue
-		if f[0] == "x" and type == "fairing" and str(s.get("face", "roof")) == "side":
-			continue
-		rows.append([f[0], f[1], f[3], f[4], f[5]])
-	for r: Array in rows:
-		var key: String = r[0]
-		var now := DesignShape.field(s, key) if key != "z" else float(s.get("z", 0.0))
-		var h := HBoxContainer.new()
-		col.add_child(h)
-		var l := T.label(str(r[1]), "display_medium", 13, T.DIM)
-		l.custom_minimum_size.x = 120
-		h.add_child(l)
-		for dir: float in [-1.0, 1.0]:
-			var b := T.button("-" if dir < 0.0 else "+", false, 13)
-			b.name = "Shape_%s_%s" % [key, "minus" if dir < 0.0 else "plus"]
-			var to := clampf(snappedf(now + dir * float(r[4]), float(r[4])), float(r[2]), float(r[3]))
-			b.disabled = is_equal_approx(to, now)
-			b.pressed.connect(func() -> void: set_s.call({key: to}))
-			if dir < 0.0:
-				h.add_child(b)
-				var v := T.label("%.2f" % now if float(r[4]) < 0.1 else "%.1f" % now, "mono", 13, T.TEXT)
-				v.name = "Shape_%s_value" % key
-				v.custom_minimum_size.x = 48
-				h.add_child(v)
-			else:
-				h.add_child(b)
-	var opts := HFlowContainer.new()
-	opts.add_theme_constant_override("h_separation", 3)
-	col.add_child(opts)
-	if type in ["wing", "pod"]:
-		var m := T.button("BOTH SIDES", false, 13, DesignShape.mirrored(s))
-		m.name = "ShapeMirror"
-		m.pressed.connect(func() -> void: set_s.call({"mirror": not DesignShape.mirrored(s)}))
-		opts.add_child(m)
-	for face: String in DesignShape.FACES.get(type, []):
-		var b := T.button("ON THE " + face.to_upper(), false, 13, str(s.get("face", "")) == face)
-		b.name = "ShapeFace_" + face
-		b.pressed.connect(func() -> void: set_s.call({"face": face}))
-		opts.add_child(b)
-	var rm := T.button("REMOVE (DEL)", false, 15)
-	rm.name = "ShapeRemove"
-	rm.pressed.connect(plan.delete_selected)
-	col.add_child(rm)
-	return col
+func _shape_edit_rows(_rec: DesignRecord, id: String) -> Control:
+	return HullRows.shape_edit(bus, id, plan.delete_selected)
 
 
-## A part on the skin: where it is (roof, port side, nose...), TURN a quarter about the hull's
-## normal, and nudges along the ship and across its face.
 func _skin_row(m: Dictionary) -> Control:
-	var id := str(m.id)
-	var col := VBoxContainer.new()
-	col.name = "SkinRow"
-	col.add_child(T.label("On the %s" % DesignOutside.face_name(m), "body", 14, T.DIM))
-	var row := HFlowContainer.new()
-	row.add_theme_constant_override("h_separation", 4)
-	col.add_child(row)
-	var edge := int(m.get("edge", 0))
-	var pt := bus.catalog.part(str(m.type))
-	var stands := pt != null and DesignOutside.standing(m, pt, DesignOutside.surface(bus.frame_plan(), m).get("normal", Vector3.UP))
-	var buttons := [["SkinTurn", "TURN", {"spin": wrapf(float(m.get("spin", 0.0)) + PI * 0.5, -PI, PI)}],
-			["SkinStand", "LAY FLAT" if stands else "STAND UP", {"stand": not stands}]]
-	if edge >= 0:
-		buttons.append(["SkinFore", "FORE", {"z": float(m.z) - 0.25}])
-		buttons.append(["SkinAft", "AFT", {"z": float(m.z) + 0.25}])
-		buttons.append(["SkinLeft", "ACROSS -", {"t": clampf(float(m.get("t", 0.5)) - 0.1, 0.0, 1.0)}])
-		buttons.append(["SkinRight", "ACROSS +", {"t": clampf(float(m.get("t", 0.5)) + 0.1, 0.0, 1.0)}])
-	else:
-		buttons.append(["SkinLeft", "PORT", {"x": float(m.get("x", 0.0)) - 0.25}])
-		buttons.append(["SkinRight", "STARBOARD", {"x": float(m.get("x", 0.0)) + 0.25}])
-		buttons.append(["SkinUp", "UP", {"y": float(m.get("y", 0.0)) + 0.25}])
-		buttons.append(["SkinDown", "DOWN", {"y": float(m.get("y", 0.0)) - 0.25}])
-	for spec: Array in buttons:
-		var b := T.button(spec[1], false, 14)
-		b.name = spec[0]
-		var fields: Dictionary = spec[2]
-		b.pressed.connect(func() -> void: bus.editor.do({"op": "set_mount", "id": id, "fields": fields}))
-		row.add_child(b)
-	return col
+	return HullRows.skin_row(bus, m)
 
 
 ## SIZE and GRADE steppers for a placed component of type `type_id`: each step calls `on_type`

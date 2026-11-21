@@ -294,6 +294,11 @@ func _hook_net() -> void:
 	hook_net(Modules.bus("multiplayer"))
 
 
+## Whether edits go through the crew's host (online with others), so they land a moment later.
+func is_shared() -> bool:
+	return _net != null and bool(_net.call("is_online"))
+
+
 ## Shares the design through `net` (the multiplayer bus, or a test's stand-in with the same
 ## register_event / request / register_snapshot_provider / local_peer_id / is_online).
 func hook_net(net: Object) -> void:
