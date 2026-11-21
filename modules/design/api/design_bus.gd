@@ -107,6 +107,15 @@ func unregister_console_tool(id: String) -> void:
 
 ## Symmetry mode for this player's plans (DesignMirror: OFF, ACROSS or ALONG); not shared.
 var mirror := 0
+## Free beams and plates (DesignFree), this player's own settings: the grid they snap to (m),
+## the section of the beams and kind of plates they lay, and the work point the views place on
+## when nothing else is under the pointer (its height above a deck's floor in the plan, its x in
+## the side view, its z in the end view).
+var free_grid := 0.25
+var free_size := "medium"
+var free_kind := "metal"
+var free_work := Vector3(0.0, 1.5, 0.0)
+signal free_settings_changed
 signal mirror_changed(axis: int)
 
 
@@ -292,6 +301,12 @@ signal walkers_changed
 
 func _hook_net() -> void:
 	hook_net(Modules.bus("multiplayer"))
+
+
+## Changes one of the free-structure settings (free_grid, free_size, free_kind, free_work).
+func set_free(key: String, value: Variant) -> void:
+	set(key, value)
+	free_settings_changed.emit()
 
 
 ## Whether edits go through the crew's host (online with others), so they land a moment later.

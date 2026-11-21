@@ -130,10 +130,12 @@ func run_tests() -> void:
 	bus.editor.undo()
 	check(rec.shapes.size() == before - 1, "undo takes the last one off")
 
-	# The console: HULL SHAPE, ADD WINGS, a size stepped up, REMOVE.
+	# The console: an old design's wings listed (no new ones are added: beams and plates now,
+	# beenster 21 Nov), picked, a size stepped up, REMOVE.
 	bus.library.reset_data()
 	rec = bus.library.create("Shapes 2")
 	bus.editor.do({"op": "add_room", "room": {"type": "cargo", "deck": 0, "x": -3, "z": -4, "w": 6, "d": 8}})
+	bus.editor.do({"op": "add_shape", "shape": DesignShape.make("wing", 0.0)})
 	var room := Node3D.new()
 	add_child(room)
 	var cam := Camera3D.new()
@@ -147,12 +149,13 @@ func run_tests() -> void:
 	var con = fu.console
 	con.plan.select("", "")
 	await frames(2)
-	check(con.find_child("ShapeRows", true, false) != null, "nothing picked: HULL SHAPE")
-	var add := con.find_child("AddShape_wing", true, false) as Button
-	if add:
-		add.pressed.emit()
+	check(con.find_child("ShapeRows", true, false) != null and con.find_child("AddShape_wing", true, false) == null,
+			"nothing picked: the old shapes listed, none to add")
+	var pick_b := con.find_child("Shape_" + str(rec.shapes.keys()[0]), true, false) as Button
+	if pick_b:
+		pick_b.pressed.emit()
 	await frames(2)
-	check(rec.shapes.size() == 1 and con.plan.selected_kind == "shape", "ADD WINGS adds a pair and picks them")
+	check(rec.shapes.size() == 1 and con.plan.selected_kind == "shape", "the old wings picked")
 	var sid: String = rec.shapes.keys()[0] if not rec.shapes.is_empty() else ""
 	var plus := con.find_child("Shape_span_plus", true, false) as Button
 	if plus:

@@ -11,6 +11,7 @@ extends Node
 ## (the contract fit assessment).
 
 const HullRows := preload("res://modules/design/internal/console/hull_rows.gd")
+const FreeDraw := preload("res://modules/design/internal/free/free_draw.gd")
 const SIZE := Vector2i(1920, 1080)
 
 
@@ -220,25 +221,55 @@ class Runner:
 			m.pressed.emit()
 		await _frames(20)
 		await _save(out, "fly_mount")
-		# A wing added from out there, its sizes in the hull menu (every hull change from any view).
+		# A wing of free beams and plates off her side (no prefabs: beenster, 21 Nov), and the beam
+		# tool in hand, its grid and guidelines showing.
 		walk.holding = {}
 		if walk.is_palette_open():
 			walk.toggle_palette()
 		walk.set("rebuild_delay", 0.0)
-		var sid := HullRows.add_shape(bus, "wing")
+		var bd: Array = plan.body
+		var ia := int(bd[0]) + 1
+		var ib := mini(ia + 1, int(bd[1]))
+		var ca := _side_corner(plan, ia)
+		var cb := _side_corner(plan, ib)
+		var tip_a := ca + Vector3(4.5, -0.4, 0.5)
+		var tip_b := cb + Vector3(4.5, -0.4, 0.0)
+		var ops: Array = []
+		for pair: Array in [[ca, tip_a], [cb, tip_b], [tip_a, tip_b], [ca, cb]]:
+			ops.append({"op": "add_free_beam", "beam": {"a": DesignFree.arr(pair[0]), "b": DesignFree.arr(pair[1]), "size": "medium"}})
+		ops.append({"op": "add_free_plate", "plate": {"pts": [DesignFree.arr(ca), DesignFree.arr(cb), DesignFree.arr(tip_b), DesignFree.arr(tip_a)], "kind": "metal"}})
+		bus.editor.do({"op": "batch", "ops": ops})
 		await _frames(40)
-		var limbs: Array = (bus.frame_plan().limbs as Array).filter(func(l): return str(l.shape) == sid and float(l.side) > 0.0)
-		if not limbs.is_empty():
-			var box := DesignShape.limb_box(limbs[0])
-			walk.body.position = Vector3(box.end.x + 4.0, box.end.y + 6.0, box.get_center().z + 6.0)
-			walk.body.rotation.y = 0.55
-			walk.camera.rotation.x = -0.75
-			await _frames(20)
-			walk.show_shape(sid)
-			walk.toggle_palette()
-			walk.show_shape(sid)
-			await _frames(10)
-			await _save(out, "fly_wing")
+		walk.body.position = Vector3(tip_a.x + 5.0, tip_a.y + 4.0, (tip_a.z + tip_b.z) * 0.5 + 7.0)
+		walk.body.rotation.y = 0.65
+		walk.camera.rotation.x = -0.4
+		await _frames(10)
+		walk.start_free("beam")
+		var ft = walk.get("free")
+		ft.aim_point(tip_b)
+		ft.click()
+		ft.aim_point(tip_b + Vector3(0.0, 2.5, 0.6))
+		walk.set_process(false)
+		FreeDraw.draw(walk.get("_free_ghost"), ft.ghost(), Vector3(-0.6, -0.4, -0.7), bus.free_grid)
+		walk.get("_free_ghost").visible = true
+		walk._aim_label.text = ft.hint()
+		await _frames(10)
+		await _save(out, "free_wing")
+		walk.set_process(true)
+		ft.cancel()
+		ft.cancel()
+		walk.toggle_palette()
+		await _frames(10)
+		await _save(out, "free_menu")
+
+	## Her side's upper corner at station i (ship space).
+	func _side_corner(plan: Dictionary, i: int) -> Vector3:
+		var st: Dictionary = plan.stations[i]
+		var best := Vector2(-INF, -INF)
+		for c: Vector2 in (st.profile as PackedVector2Array):
+			if c.x > best.x + 0.01 or (absf(c.x - best.x) <= 0.01 and c.y > best.y):
+				best = c
+		return Vector3(best.x, best.y, float(st.z))
 
 	## The outside designer's free shapes (--shapes, plan 3.10 stage 2): the sample with a nose
 	## (its stern has a door, so no tapered stern), swept wings, a fin and pods on struts, painted; the console with the wings

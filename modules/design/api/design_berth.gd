@@ -22,6 +22,13 @@ static func size_of(d: DesignRecord) -> Dictionary:
 		out.length = maxf(float(out.length), e.size.z)
 		out.beam = maxf(float(out.beam), e.size.x)
 		out.height = maxf(float(out.height), e.size.y)
+	# Her free beams and plates reach past her too (DesignFree), measured with her hull.
+	if not d.free_beams.is_empty() or not d.free_plates.is_empty():
+		var fp := DesignOutside.plan_for(d)
+		var e := DesignShape.extent(fp).merge(DesignFree.extent(d))
+		out.length = maxf(float(out.length), e.size.z)
+		out.beam = maxf(float(out.beam), e.size.x)
+		out.height = maxf(float(out.height), e.size.y)
 	return out
 
 

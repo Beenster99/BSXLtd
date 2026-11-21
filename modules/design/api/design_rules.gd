@@ -29,7 +29,19 @@ static func check(d: DesignRecord, cat: DesignCatalog, totals: DesignTotals = nu
 	_mount_checks(d, cat, out)
 	_frame_checks(d, out)
 	_shape_checks(d, out)
+	_free_checks(d, out)
 	return out
+
+
+## Free beams and plates (DesignFree) that reach nothing holding them to her hull.
+static func _free_checks(d: DesignRecord, out: Array[Dictionary]) -> void:
+	if d.free_beams.is_empty() and d.free_plates.is_empty():
+		return
+	var loose := DesignFree.adrift(d, DesignOutside.plan_for(d))
+	if not loose.is_empty():
+		out.append(_problem("free_adrift", WARNING, "%d beam%s and plate%s not joined to her hull: %s" % [
+				loose.size(), "" if loose.size() == 1 else "s", "" if loose.size() == 1 else "s",
+				", ".join(loose.slice(0, 6).map(func(i): return DesignRecord.tag(str(i))))]))
 
 
 ## Her free shapes (the outside designer, stage 2): a nose or stern that can't be built for a

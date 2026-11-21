@@ -12,6 +12,7 @@ signal leave_requested
 signal walk_requested
 
 const T := preload("res://modules/ui/api/terminal_kit.gd")
+const FreeDraw := preload("res://modules/design/internal/free/free_draw.gd")
 const HullRows := preload("res://modules/design/internal/console/hull_rows.gd")
 const PlanView := preload("res://modules/design/internal/views/plan_view.gd")
 const DataChannel := preload("res://modules/design/internal/views/data_channel.gd")
@@ -145,7 +146,13 @@ func _build() -> void:
 	plan.size_flags_stretch_ratio = 2.2
 	plan.setup(bus, PlanView.PLAN, true)
 	plan.selection_changed.connect(_on_selection)
-	plan.tool_changed.connect(func(_t: String) -> void: _mark_tools())
+	plan.tool_changed.connect(func(_t: String) -> void:
+		_mark_tools()
+		if _free_ghost and is_instance_valid(_free_ghost):
+			_free_ghost.visible = plan.free.active()
+		if plan.selected_kind == "":
+			_on_selection("", ""))
+	bus.free_settings_changed.connect(func() -> void: _on_selection(plan.selected_kind, plan.selected_id))
 	_inner.add_child(plan)
 	_inner.add_child(_dock_boxes.right)
 	_outer.split_offset = int(layout.left)
@@ -1361,6 +1368,9 @@ func _holo_input(event: InputEvent) -> void:
 				_holo_moved = 0.0
 			elif mb.button_index == MOUSE_BUTTON_LEFT and _holo_moved < 6.0:
 				holo_click(mb.position)
+			elif mb.button_index == MOUSE_BUTTON_RIGHT and _holo_moved < 6.0 and plan and plan.free.active():
+				plan.free.back()
+				_draw_free_ghost()
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
 			zoom_view(VIEW_ZOOM_STEP)
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
@@ -1410,6 +1420,12 @@ func holo_spot(at: Vector2) -> Dictionary:
 
 
 func holo_hover(at: Vector2) -> void:
+	if plan and plan.free.active():
+		var ray := holo_ray(at)
+		if not ray.is_empty():
+			plan.free.aim_ray(ray[0], ray[1], null, 12.0)
+		_draw_free_ghost(ray[1] if not ray.is_empty() else Vector3.FORWARD)
+		return
 	var m := holo_spot(at)
 	var pt := bus.catalog.part(str(m.get("type", ""))) if not m.is_empty() else null
 	if pt == null:
@@ -1426,6 +1442,11 @@ func _fits_outside(m: Dictionary, pt: DesignPartType, xf: Transform3D) -> bool:
 ## A click in the 3D view: fits the hull part in hand where it shows, else picks the part on
 ## the hull under the pointer. Returns the mount's id ("" for nothing).
 func holo_click(at: Vector2) -> String:
+	if plan and plan.free.active():
+		holo_hover(at)
+		var made := plan.free.click()
+		_draw_free_ghost()
+		return made
 	var m := holo_spot(at)
 	if not m.is_empty():
 		var before := bus.library.current.mounts.duplicate()
@@ -1439,6 +1460,11 @@ func holo_click(at: Vector2) -> String:
 	if id != "":
 		plan.select("mount", id)
 		return id
+	# A free beam or plate there (nearer than her skin).
+	var free := holo_pick_free(at)
+	if not free.is_empty():
+		plan.select("free_" + str(free.kind), str(free.id))
+		return str(free.id)
 	# A wing, fin, pod or fairing nearer than her skin there: the shape (designed from any view).
 	var shape := holo_pick_shape(at)
 	if shape != "":
@@ -1449,6 +1475,36 @@ func holo_click(at: Vector2) -> String:
 	if panel != "":
 		plan.select("panel", panel)
 	return panel
+
+
+## The free beam or plate under `at` in the 3D view, when nearer than her skin: {kind, id}, {}.
+func holo_pick_free(at: Vector2) -> Dictionary:
+	var ray := holo_ray(at)
+	if ray.is_empty():
+		return {}
+	var hit := DesignFree.pick(bus.library.current, ray[0], ray[1])
+	if hit.is_empty():
+		return {}
+	var skin := DesignOutside.pick(bus.frame_plan(), ray[0], ray[1])
+	if not skin.is_empty() and (ray[0] as Vector3).distance_to(skin.point) < float(hit.dist) - 0.1:
+		return {}
+	return hit
+
+
+var _free_ghost: MeshInstance3D
+
+
+## The free tool's ghost in the 3D view (the grid, guidelines, the beam or plate being drawn).
+func _draw_free_ghost(view := Vector3.FORWARD) -> void:
+	var ship := holo.ship_node() if holo else null
+	if ship == null:
+		return
+	if _free_ghost == null or not is_instance_valid(_free_ghost):
+		_free_ghost = FreeDraw.make()
+		ship.get_parent().add_child(_free_ghost)
+	_free_ghost.transform = ship.transform
+	_free_ghost.visible = plan.free.active()
+	FreeDraw.draw(_free_ghost, plan.free.ghost(), view, bus.free_grid)
 
 
 ## The wing, fin, pod or fairing under `at` in the 3D view, when it is nearer than her skin; "".
@@ -1665,8 +1721,13 @@ func _on_selection(kind: String, id: String) -> void:
 			bus.editor.do({"op": "set_meta", "fields": {"name": t}}))
 	_selection.add_child(name_edit)
 	if kind == "" and Flags.is_on(OUTSIDE_FLAG):
+		_selection.add_child(HullRows.free_rows(bus, start_free, plan.free.mode))
 		_selection.add_child(_shape_rows(rec))
 		_selection.add_child(_livery_rows(rec))
+	if kind == "free_beam":
+		_selection.add_child(HullRows.free_beam(bus, id, func() -> void: plan.select("", "")))
+	if kind == "free_plate":
+		_selection.add_child(HullRows.free_plate(bus, id, func() -> void: plan.select("", "")))
 	if kind == "shape" and rec.shapes.has(id):
 		_selection.add_child(_shape_edit_rows(rec, id))
 	if kind == "room" and rec.rooms.has(id):
@@ -1803,6 +1864,12 @@ func _livery_rows(_rec: DesignRecord) -> Control:
 
 func _shape_rows(_rec: DesignRecord) -> Control:
 	return HullRows.shapes(bus, func(sid: String) -> void: plan.select("shape", sid))
+
+
+## Takes up the BEAM or PLATE tool (the plan, its elevations and the 3D view all place with it).
+func start_free(mode: String) -> void:
+	plan.set_tool("free_" + mode)
+	_on_selection(plan.selected_kind, plan.selected_id)
 
 
 ## Adds a shape of `type` where it sits best on her and picks it. Returns its id.

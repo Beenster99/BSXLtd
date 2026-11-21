@@ -16,6 +16,9 @@ signal tool_changed(tool: String)
 
 const RoomShape := preload("res://modules/design/internal/views/room_shape.gd")
 const PlanMarks := preload("res://modules/design/internal/views/plan_marks.gd")
+const FreeTool := preload("res://modules/design/internal/free/free_tool.gd")
+const FREE_INK := Color(0.85, 0.9, 0.95)
+const FREE_PLATE := Color(0.55, 0.8, 1.0, 0.18)
 const PLAN := "plan"
 const SIDE := "side"
 const END := "end"
@@ -99,6 +102,7 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 	bus.look_requested.connect(_on_look)
 	marks = PlanMarks.new(self)
 	marks.build_bar(14)
+	free = FreeTool.new(bus)
 	if bus.crew:
 		bus.crew.call("attach_view", self)
 	_on_changed()
@@ -106,10 +110,14 @@ func setup(design_bus: DesignBus, view_mode: String = PLAN, can_edit: bool = fal
 
 ## What the DOOR tool places (DesignCatalog.DOOR_KINDS).
 var door_kind := "door"
+## Free beams and plates placed from this drawing (and the console's 3D view): FreeTool.
+var free: FreeTool
 
 
 func set_tool(t: String) -> void:
 	tool = t
+	if free:
+		free.start(t.trim_prefix("free_") if t.begins_with("free_") else "")
 	_drag = {}
 	_run_pts = []
 	_hull_pts = []
@@ -121,6 +129,10 @@ func set_tool(t: String) -> void:
 ## cancel (the console then closes).
 func cancel() -> bool:
 	if marks and marks.cancel():
+		return true
+	if free and free.active() and not free.pts.is_empty():
+		free.cancel()
+		queue_redraw()
 		return true
 	if bus and bus.carrying != "":
 		bus.carry("")
@@ -292,6 +304,7 @@ func _draw() -> void:
 		_draw_mirror_line()
 	else:
 		_draw_elevation(rec)
+	_draw_free(rec)
 	_draw_drag_ghost(rec)
 	_draw_guides()
 	marks.draw(rec)
@@ -1012,6 +1025,9 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 		elif not _drag.is_empty():
 			_drag_move(event.position)
+		elif editable and free and free.active():
+			free_aim(event.position)
+			queue_redraw()
 		elif bus.carrying != "" or editable and (tool.begins_with("part:") or tool.begins_with("run:")
 				or tool in ["hull", "wall", "beam"] or tool.begins_with("mount:")):
 			queue_redraw()
@@ -1032,6 +1048,12 @@ func _gui_input(event: InputEvent) -> void:
 					and not _run_pts.is_empty():
 				_finish_run()
 				return
+			if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT and editable and free and free.active():
+				free.back()
+				if not free.active():
+					set_tool("select")
+				queue_redraw()
+				return
 			if mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT and editable and tool != "select":
 				set_tool("select")
 				return
@@ -1041,6 +1063,10 @@ func _gui_input(event: InputEvent) -> void:
 				_finish_run()
 			elif mb.pressed and mb.double_click and tool == "hull" and editable:
 				_finish_hull()
+			elif mb.pressed and editable and free and free.active():
+				free_aim(mb.position)
+				free.click()
+				queue_redraw()
 			elif mb.pressed and marks.press(mb.position, mb.shift_pressed):
 				pass
 			elif mb.pressed:
@@ -1062,6 +1088,16 @@ func _gui_input(event: InputEvent) -> void:
 				paste(Vector2.INF)
 			clipboard = kept
 			accept_event()
+		elif k.keycode in [KEY_B, KEY_P] and not k.ctrl_pressed and Flags.is_on("design.outside"):
+			set_tool("free_beam" if k.keycode == KEY_B else "free_plate")
+			accept_event()
+		elif k.keycode in [KEY_ENTER, KEY_KP_ENTER] and free and free.mode == "plate":
+			free.finish()
+			queue_redraw()
+			accept_event()
+		elif k.keycode == KEY_R and selected_kind == "free_beam":
+			turn_free_beam(selected_id)
+			accept_event()
 		elif k.keycode == KEY_R:
 			rotate_selected()
 			accept_event()
@@ -1079,6 +1115,12 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 		elif k.keycode == KEY_ESCAPE and tool.begins_with("run:") and not _run_pts.is_empty():
 			_run_pts = []
+			queue_redraw()
+			accept_event()
+		elif k.keycode == KEY_ESCAPE and free and free.active():
+			free.cancel()
+			if not free.active():
+				set_tool("select")
 			queue_redraw()
 			accept_event()
 		elif k.keycode == KEY_ESCAPE and tool != "select":
@@ -1160,6 +1202,12 @@ func delete_selected() -> void:
 			bus.editor.do({"op": "remove_mount", "id": selected_id})
 		"shape":
 			bus.editor.do({"op": "remove_shape", "id": selected_id})
+			select("", "")
+		"free_beam":
+			bus.editor.do({"op": "remove_free_beam", "id": selected_id})
+			select("", "")
+		"free_plate":
+			bus.editor.do({"op": "remove_free_plate", "id": selected_id})
 			select("", "")
 		"hull":
 			# A corner: take it out (a hull keeps at least three).
@@ -1332,6 +1380,11 @@ func _press(s: Vector2) -> void:
 	var rec := _rec()
 	if rec == null:
 		return
+	if tool == "select" and bus.carrying == "":
+		var fh := pick_free(s)
+		if not fh.is_empty():
+			select("free_" + str(fh.kind), str(fh.id))
+			return
 	if mode != PLAN:
 		_press_elevation(rec, s)
 		return
@@ -1953,3 +2006,130 @@ func _newest(table: Dictionary) -> String:
 			best_n = n
 			best = id
 	return best
+
+
+# Free beams and plates (DesignFree) --------------------------------------------------------
+
+## A ship point as this view draws it: plan x/z, side z/height, end x/height.
+func view_of(p: Vector3) -> Vector2:
+	match mode:
+		SIDE:
+			return Vector2(p.z, -p.y)
+		END:
+			return Vector2(p.x, -p.y)
+	return Vector2(p.x, p.z)
+
+
+## The ship point under a screen point: the view's two coordinates, and the third from the last
+## point placed, else the work point (in the plan, its height above this deck's floor).
+func free_point(s: Vector2) -> Vector3:
+	var v := to_ship(s)
+	var rec := _rec()
+	var w: Vector3 = bus.free_work
+	var anchor: Variant = free.anchor() if free else null
+	match mode:
+		SIDE:
+			return Vector3((anchor as Vector3).x if anchor is Vector3 else w.x, -v.y, v.x)
+		END:
+			return Vector3(v.x, -v.y, (anchor as Vector3).z if anchor is Vector3 else w.z)
+	var y := (anchor as Vector3).y if anchor is Vector3 else (deck * (rec.deck_height if rec else 3.0) + w.y)
+	return Vector3(v.x, y, v.y)
+
+
+## Aims the free tool at a screen point: a node drawn within 10 px (the one nearest the work
+## depth), else the point there, snapped.
+func free_aim(s: Vector2) -> void:
+	var rec := _rec()
+	var want := free_point(s)
+	var best := INF
+	var node: Variant = null
+	for n in DesignFree.nodes(rec, bus.frame_plan()):
+		var d := to_screen(view_of(n)).distance_to(s)
+		if d > 10.0:
+			continue
+		var score := d + (n - want).length() * 0.5
+		if score < best:
+			best = score
+			node = n
+	if node is Vector3:
+		free.aim_node(node)
+	else:
+		free.aim_point(want)
+
+
+## The free beam or plate under a screen point: {kind, id}, {}.
+func pick_free(s: Vector2) -> Dictionary:
+	var rec := _rec()
+	if rec == null:
+		return {}
+	for b: Dictionary in rec.free_beams.values():
+		var a := to_screen(view_of(DesignFree.v3(b.a)))
+		var e := to_screen(view_of(DesignFree.v3(b.b)))
+		if Geometry2D.get_closest_point_to_segment(s, a, e).distance_to(s) < 6.0:
+			return {"kind": "beam", "id": str(b.id)}
+	for p: Dictionary in rec.free_plates.values():
+		var poly := PackedVector2Array()
+		for c in DesignFree.corners(p):
+			poly.append(to_screen(view_of(c)))
+		if Geometry2D.is_point_in_polygon(s, poly):
+			return {"kind": "plate", "id": str(p.id)}
+	return {}
+
+
+## R on a picked beam: turned a step about its length.
+func turn_free_beam(id: String) -> void:
+	var rec := _rec()
+	if rec == null or not rec.free_beams.has(id):
+		return
+	var roll := float(rec.free_beams[id].get("roll", 0.0))
+	bus.editor.do({"op": "set_free_beam", "id": id, "fields": {"roll": wrapf(roll + DesignFree.ROLL_STEP, -PI, PI)}})
+
+
+func _draw_free(rec: DesignRecord) -> void:
+	for p: Dictionary in rec.free_plates.values():
+		var poly := PackedVector2Array()
+		for c in DesignFree.corners(p):
+			poly.append(to_screen(view_of(c)))
+		var sel := selected_kind == "free_plate" and str(p.id) == selected_id
+		var col := Color(0.6, 0.9, 1.0, 0.3) if str(p.get("kind", "")) == "glass" else FREE_PLATE
+		if poly.size() >= 3 and absf(_area(poly)) > 4.0:
+			draw_colored_polygon(poly, Color(col, col.a + (0.15 if sel else 0.0)))
+		var ring := poly.duplicate()
+		ring.append(poly[0])
+		draw_polyline(ring, SELECT if sel else Color(FREE_INK, 0.6), 2.0 if sel else 1.0)
+	for b: Dictionary in rec.free_beams.values():
+		var a := to_screen(view_of(DesignFree.v3(b.a)))
+		var e := to_screen(view_of(DesignFree.v3(b.b)))
+		var sel := selected_kind == "free_beam" and str(b.id) == selected_id
+		var w := maxf(2.0, float(DesignFree.size_of(b).w) * zoom)
+		draw_line(a, e, SELECT if sel else FREE_INK, w)
+		draw_circle(a, w * 0.5 + 1.0, SELECT if sel else FREE_INK)
+		draw_circle(e, w * 0.5 + 1.0, SELECT if sel else FREE_INK)
+	if not (editable and free and free.active()):
+		return
+	var g := free.ghost()
+	if not (g.point is Vector3):
+		return
+	for gd: Array in g.guides:
+		var col: Color = [Color(1.0, 0.35, 0.3), Color(0.4, 1.0, 0.45), Color(0.35, 0.6, 1.0)][int(gd[2])]
+		draw_dashed_line(to_screen(view_of(gd[0])), to_screen(view_of(gd[1])), col, 1.5, 6.0)
+	var rub: Array = g.rubber
+	if rub.size() == 2:
+		draw_line(to_screen(view_of(rub[0])), to_screen(view_of(rub[1])), Color(1.0, 0.6, 0.3), 3.0)
+	var ol: Array = g.outline
+	for i in ol.size():
+		draw_line(to_screen(view_of(ol[i])), to_screen(view_of(ol[(i + 1) % ol.size()])), Color(0.45, 0.95, 1.0), 2.0)
+	var sp := to_screen(view_of(g.point))
+	draw_line(sp - Vector2(7, 0), sp + Vector2(7, 0), Color(1.0, 0.95, 0.4), 2.0)
+	draw_line(sp - Vector2(0, 7), sp + Vector2(0, 7), Color(1.0, 0.95, 0.4), 2.0)
+	if str(g.kind) == "node":
+		draw_arc(sp, 9.0, 0.0, TAU, 20, Color(1.0, 0.95, 0.4), 2.0)
+	var pt: Vector3 = g.point
+	_text(sp + Vector2(12, -10), "%s   x %.2f  y %.2f  z %.2f" % [free.hint().get_slice("   ", 0), pt.x, pt.y, pt.z], INK, 12)
+
+
+static func _area(poly: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in poly.size():
+		a += poly[i].cross(poly[(i + 1) % poly.size()])
+	return a * 0.5

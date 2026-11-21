@@ -115,6 +115,9 @@ static func propose(d: DesignRecord) -> Dictionary:
 	_openings(d, out)
 	_inside(d, out)
 	out["limbs"] = DesignShape.limbs(d, out)
+	# Free beams and plates (DesignFree): whatever the crew have built of them.
+	out["free_beams"] = d.free_beams.duplicate(true)
+	out["free_plates"] = d.free_plates.duplicate(true)
 	return out
 
 
@@ -394,7 +397,7 @@ static func counts(p: Dictionary) -> Dictionary:
 		return {"stations": 0, "nodes": 0, "rings": 0, "stringers": 0, "plates": 0, "glass": 0,
 				"openings": 0, "welds": 0, "rivets": 0, "bolts": 0, "member_m": 0.0, "skin_m2": 0.0,
 				"decks": 0, "deck_plates": 0, "walls": 0, "studs": 0, "wall_panels": 0, "armour": 0, "armour_m2": 0.0,
-				"open": 0, "limbs": 0, "struts": 0}
+				"open": 0, "limbs": 0, "struts": 0, "free_beams": 0, "free_beam_m": 0.0, "free_plates": 0, "free_m2": 0.0}
 	var st: Array = p.stations
 	var s: Dictionary = FrameStyle.STYLES.get(str(p.style), FrameStyle.STYLES["channel"])
 	var pitch := float(s.get("rivet_pitch", 0.5))
@@ -474,13 +477,20 @@ static func counts(p: Dictionary) -> Dictionary:
 		bolts += int(lc.bolts)
 		welds += int(lc.rings) * 2 + int(lc.stringers) * 2
 		rivets += int(float(lc.skin_m2) * 4.0)
+	# Free beams and plates (DesignFree).
+	var fc := DesignFree.counts_of(p.get("free_beams", {}), p.get("free_plates", {}))
+	member_m += float(fc.beam_m)
+	skin_m2 += float(fc.plate_m2)
+	welds += int(fc.welds)
+	rivets += int(fc.rivets)
 	return {"stations": st.size(), "nodes": 0, "rings": rings, "stringers": stringers, "plates": plates,
 			"glass": (p.glass as Dictionary).size(), "openings": (p.openings as Array).size(),
 			"welds": welds, "rivets": rivets, "bolts": bolts, "member_m": member_m, "skin_m2": skin_m2,
 			"decks": (p.get("decks", []) as Array).size(), "deck_plates": deck_plates,
 			"walls": (p.get("walls", []) as Array).size(), "studs": studs, "wall_panels": wall_panels,
 			"armour": (p.get("armour", {}) as Dictionary).size(), "armour_m2": armour_m2, "open": open,
-			"limbs": limbs, "struts": struts}
+			"limbs": limbs, "struts": struts, "free_beams": int(fc.beams), "free_beam_m": float(fc.beam_m),
+			"free_plates": int(fc.plates), "free_m2": float(fc.plate_m2)}
 
 
 ## The yard's build list for the proposal: every kind of member, plate and joint the crew will
@@ -498,6 +508,8 @@ static func build_list(p: Dictionary) -> Array[Dictionary]:
 		["Glass panels", c.glass, "x", "set in the frame"],
 		["Wings, fins, pods and fairings", c.get("limbs", 0), "x", "framed and plated, bolted to the hull's rings"],
 		["Pod struts", c.get("struts", 0), "x", "girders bolted body to pod"],
+		["Free beams", c.get("free_beams", 0), "x", "%.1f m, welded end to end, bolted to her rings" % float(c.get("free_beam_m", 0.0))],
+		["Free plates", c.get("free_plates", 0), "x", "%.1f m2, riveted to the beams under them" % float(c.get("free_m2", 0.0))],
 		["Outer door frames", c.openings, "x", "posts and rails welded in"],
 		["Deck plates", c.deck_plates, "x", "spot welded to beams and girders"],
 		["Wall studs", c.studs, "x", "welded to the sills"],
@@ -589,6 +601,15 @@ static func build(p: Dictionary, kit: ShipKit, mats: Dictionary = {}) -> FrameHu
 		var tip := str(limb.type) in ["wing", "fin"] and edge == (1 if str(limb.type) == "fin" or float(limb.side) > 0.0 else 3)
 		return tint.call(DesignLivery.trim(l) if tip else DesignLivery.base(l), false)
 	h.set_meta("limbs", DesignShape.build(p, h, kit, steel, glass, limb_mat))
+	# Free beams and plates, in her base colour unless painted.
+	var free_mat := func(plate: Dictionary) -> Material:
+		if plate.get("paint") is String and str(plate.paint) != "":
+			return tint.call(Color.html(str(plate.paint)), str(plate.get("kind", "")) == "armour")
+		if str(plate.get("kind", "")) == "armour":
+			return armour_mat
+		var l: Dictionary = p.get("livery", {})
+		return shell if l.is_empty() else tint.call(DesignLivery.base(l), false)
+	h.set_meta("free", DesignFree.build(p, h, kit, steel, glass, free_mat))
 	var lining: Material = mats.get("lining", ShipKit.paint(Color(0.52, 0.54, 0.54), 0.2, 0.6))
 	var plating: Material = mats.get("deck", ShipKit.paint(Color(0.46, 0.48, 0.5), 0.6, 0.45))
 	var decks: Array[DeckFrame] = []
