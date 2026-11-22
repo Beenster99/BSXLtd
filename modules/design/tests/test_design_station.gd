@@ -29,8 +29,9 @@ func run_tests() -> void:
 	check(f != null, "the design room is furnished")
 	if f == null:
 		return
-	# The walls themselves are the screens (beenster, 18 Nov), and the two long side walls are
-	# split into screens of their own (22 Nov: "split them, so that we can configure more info").
+	# The walls themselves are the screens (beenster, 18 Nov), split into screens of their own
+	# (22 Nov: "the two long wall screens can contain 4 screens in each. The other two wall
+	# screens only 2").
 	var walls: Dictionary = f.get("walls")
 	var plane_of: Dictionary = f.get("plane_of")
 	var planes := {}
@@ -43,9 +44,13 @@ func run_tests() -> void:
 		if planes.has(p):
 			on_plane[p] = (on_plane.get(p, []) as Array) + [id]
 	check(on_plane.size() == planes.size() and planes.size() >= 4, "every wall plane has screens: %s" % [on_plane.keys()])
-	for id: String in ["wall_left", "wall_right"]:
+	var splits := {"wall_back_low_left": 4, "wall_back_high": 4, "wall_left": 2, "wall_right": 2}
+	check((f.get_script() as Script).get_script_constant_map().get("WALL_SPLIT") == splits,
+			"the two long walls are four screens each, the side walls two")
+	for id: String in splits:
+		var n: int = splits[id]
 		var ids: Array = on_plane.get(id, [])
-		check(ids.size() == 4 and walls.has(id) and walls.has(id + "_4"), "%s is four screens: %s" % [id, ids])
+		check(ids.size() == n and walls.has(id) and walls.has("%s_%d" % [id, n]), "%s is %d screens: %s" % [id, n, ids])
 		var plane: Transform3D = planes[id].transform
 		var sz: Vector2 = planes[id].size
 		var cover := 0.0
@@ -57,8 +62,8 @@ func run_tests() -> void:
 			cover += (screen.get("size_m") as Vector2).x
 			lefts.append(at.x)
 			check(is_equal_approx((screen.get("size_m") as Vector2).y, sz.y), "%s is the wall's full height" % sid)
-		check(cover < sz.x and cover > sz.x - 1.5, "the four fill the wall with gaps between (%.1f of %.1f m)" % [cover, sz.x])
-		var falls := lefts.size() == 4
+		check(cover < sz.x and cover > sz.x - 1.5, "they fill the wall with gaps between (%.1f of %.1f m)" % [cover, sz.x])
+		var falls := lefts.size() == n
 		for i in range(1, lefts.size()):
 			falls = falls and lefts[i] < lefts[i - 1]
 		check(falls, "they run left to right as seen from the room, the first on the left")
@@ -69,7 +74,7 @@ func run_tests() -> void:
 	for id: String in walls:
 		var screen: Node3D = walls[id]
 		var plane: Transform3D = planes[plane_of[id]].transform
-		if plane_of[id] == id and not ["wall_left", "wall_right"].has(id):
+		if plane_of[id] == id and not splits.has(id):
 			check(screen.position.distance_to(plane.origin) < 0.1, "%s covers its plane" % id)
 			var sz: Vector2 = planes[id].size
 			check(is_equal_approx((screen.get("size_m") as Vector2).x, sz.x), "%s spans the whole wall (%.1f m)" % [id, sz.x])
@@ -77,10 +82,10 @@ func run_tests() -> void:
 		check(screen.basis.z.dot(-plane.basis.z) > 0.99, "%s faces into the room" % id)
 	var board: Node = (walls["wall_left"] as Node).get("content")
 	# A crewmate's change to one screen of a split wall shows on that screen only.
-	var b2: Node = (walls["wall_left_2"] as Node).get("content")
-	var b3: Node = (walls["wall_left_3"] as Node).get("content")
+	var b2: Node = (walls["wall_back_high_2"] as Node).get("content")
+	var b3: Node = (walls["wall_back_high_3"] as Node).get("content")
 	var was3 := str(b3.get("panels")[0].view)
-	bus.set_screen("wall:wall_left_2:0", "whiteboard")
+	bus.set_screen("wall:wall_back_high_2:0", "whiteboard")
 	check(str(b2.get("panels")[0].view) == "whiteboard" and str(b3.get("panels")[0].view) == was3,
 			"each screen of a split wall is set on its own")
 	var first := str(board.get("panels")[0].view)

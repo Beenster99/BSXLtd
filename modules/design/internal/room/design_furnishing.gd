@@ -12,23 +12,27 @@ const WalkInside := preload("res://modules/design/internal/walk/walk_inside.gd")
 
 ## What each wall's panels show at first: wall id -> [[view, share of the width], ...].
 ## Anyone can change a panel with its < and > (WallBoard.views()).
-## The long side walls are split into screens of their own (beenster, 22 Nov: "split them, so
-## that we can configure more info"): "wall_left" is the first, then "wall_left_2" and on.
+## Walls split into screens of their own (beenster, 22 Nov: "the two long wall screens can
+## contain 4 screens in each. The other two wall screens only 2"): "wall_back_high" is the first,
+## then "wall_back_high_2" and on, left to right as seen from the room.
 const WALL_LAYOUT := {
 	"wall_left": [["plan:0", 1.0]],
-	"wall_left_2": [["side", 1.0]],
-	"wall_left_3": [["fit", 1.0]],
-	"wall_left_4": [["data", 1.0]],
+	"wall_left_2": [["fit", 1.0]],
 	"wall_right": [["market", 1.0]],
-	"wall_right_2": [["accounts", 1.0]],
-	"wall_right_3": [["modules", 1.0]],
-	"wall_right_4": [["plan:1", 1.0]],
-	"wall_back_low_left": [["whiteboard", 0.65], ["plan:0", 0.35]],
+	"wall_right_2": [["plan:1", 1.0]],
+	"wall_back_low_left": [["whiteboard", 1.0]],
+	"wall_back_low_left_2": [["plan:0", 1.0]],
+	"wall_back_low_left_3": [["modules", 1.0]],
+	"wall_back_low_left_4": [["data", 1.0]],
+	"wall_back_high": [["side", 1.0]],
+	"wall_back_high_2": [["end", 1.0]],
+	"wall_back_high_3": [["accounts", 1.0]],
+	"wall_back_high_4": [["plan:1", 1.0]],
 	"wall_back_low_right": [["data", 1.0]],
-	"wall_back_high": [["side", 0.6], ["plan:1", 0.4]],
 }
-## How many screens each long wall is split into, left to right as seen from the room.
-const WALL_SPLIT := {"wall_left": 4, "wall_right": 4}
+## How many screens each wall is split into: the two really long ones (the 16 m low back wall
+## left of the door and the 23 m one above it) four, the side walls two.
+const WALL_SPLIT := {"wall_back_low_left": 4, "wall_back_high": 4, "wall_left": 2, "wall_right": 2}
 ## The bare wall between two screens of a split wall, m.
 const SPLIT_GAP := 0.35
 ## Pixels per metre on the walls (an 18 m wall is 2,700 px across).
