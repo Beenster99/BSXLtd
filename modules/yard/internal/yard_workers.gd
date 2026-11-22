@@ -329,6 +329,8 @@ func add_bot(role: String) -> Node3D:
 	w.wear = 0.0
 	w.charge = 1.0
 	w.speed = _rng.randf_range(0.8, 1.2)
+	if lent:
+		set_lent(true)
 	return w.node
 
 
@@ -556,6 +558,24 @@ func _process(delta: float) -> void:
 var claimed := ""
 
 
+## The crew is lent to another module that runs it (YardBus.lend_worker_crew: the bots module,
+## which builds contracts with TartanCo's fleet; 0.5.3 playtest, "only the tartanco fleet should
+## exist"): this crew's own bodies are hidden and stand still, and only their docks stay. Set the
+## same way on every machine (from the station's start), so the shared clock stays in step.
+var lent := false
+
+
+func set_lent(on: bool) -> void:
+	lent = on
+	for w: Dictionary in workers:
+		_drop_task(w)
+		(w.node as Node3D).visible = not on
+		for k: String in ["sparks", "light"]:
+			var n: Node3D = w.get(k)
+			if n:
+				n.visible = not on
+
+
 func set_claimed(by: String) -> void:
 	if by == claimed:
 		return
@@ -574,6 +594,8 @@ func set_claimed(by: String) -> void:
 func step(delta: float) -> void:
 	_time += delta
 	_step_dt = delta
+	if lent:
+		return
 	if claimed != "" or not stand_in_keel:
 		_send_to_charge()
 		for w: Dictionary in workers:

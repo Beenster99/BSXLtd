@@ -129,7 +129,7 @@ func _step(b: Dictionary, dt: float, authority: bool) -> void:
 			b.line = "Standing by"
 		"charge":
 			if _fly(b, _bay(_index(b)), dt):
-				b.charge = minf(1.0, float(b.charge) + CHARGE_RATE * dt)
+				b.charge = minf(1.0, float(b.charge) + CHARGE_RATE * Types.effect(b, "charge") * dt)
 				b.line = "Charging %d%%" % roundi(float(b.charge) * 100.0)
 				if authority and float(b.charge) >= 0.999:
 					_set_task(b, {"kind": "idle"})
@@ -164,11 +164,11 @@ func _step(b: Dictionary, dt: float, authority: bool) -> void:
 			b.line = "Seeing her off"
 			if authority and float(task.t) >= float(task.get("for", 30.0)):
 				_set_task(b, {"kind": "idle"})
-	var drain := float(Types.info(str(b.type)).drain) if working else IDLE_DRAIN
+	var drain := float(Types.info(str(b.type)).drain) * Types.effect(b, "drain") if working else IDLE_DRAIN
 	if str(task.kind) != "charge" and str(task.kind) != "service":
 		b.charge = maxf(0.0, float(b.charge) - drain * dt)
 	if working:
-		b.wear = minf(1.0, float(b.wear) + WEAR_RATE * dt)
+		b.wear = minf(1.0, float(b.wear) + WEAR_RATE * Types.effect(b, "wear") * dt)
 		b.worked = float(b.worked) + dt
 		totals.worked = float(totals.worked) + dt
 
@@ -624,7 +624,7 @@ func _fly(b: Dictionary, to: Vector3, dt: float) -> bool:
 	if dist <= ARRIVE:
 		b.pos = to
 		return true
-	var speed := float(Types.info(str(b.type)).speed) * Types.pace(b)
+	var speed := float(Types.info(str(b.type)).speed) * (Types.effect(b, "fly") if b.has("fx") else Types.pace(b))
 	var v := minf(speed, maxf(dist * 1.5, 0.6))
 	b.pos = p + d / dist * minf(dist, v * dt)
 	b.heading = d / dist
@@ -664,7 +664,8 @@ func roster() -> Array:
 		out.append({"id": b.id, "type": b.type, "name": b.name, "paint": b.paint, "mark": b.mark,
 				"modules": (b.modules as Array).duplicate(), "charge": snappedf(float(b.charge), 0.001),
 				"wear": snappedf(float(b.wear), 0.0001), "jobs": b.jobs, "fastenings": b.fastenings,
-				"worked": snappedf(float(b.worked), 0.1)})
+				"worked": snappedf(float(b.worked), 0.1), "fleet": int(b.get("fleet", -1)), "role": str(b.get("role", "")),
+				"number": int(b.get("number", 0))})
 	return out
 
 

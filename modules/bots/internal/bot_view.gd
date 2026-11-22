@@ -42,7 +42,9 @@ func setup(bots_bus: Object) -> void:
 	_line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_line_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_line_mat.albedo_color = Color(0.5, 0.8, 1.0, 0.5)
-	_build_bay()
+	# TartanCo's fleet hangs on its own charge docks on the berth's frame (the yard's): no bay.
+	if not bool(bus.call("fleet_mode")):
+		_build_bay()
 	sync()
 	bus.connect("crew_changed", sync)
 
@@ -107,7 +109,7 @@ func sync() -> void:
 	for b: Dictionary in bus.crew.bots:
 		var id := int(b.id)
 		seen[id] = true
-		var key := "%s/%s/%d/%s" % [b.type, b.paint, int(b.mark), str(_android())]
+		var key := "%s/%s/%d/%s/%s/%d" % [b.type, b.paint, int(b.mark), str(_android()), str(b.get("role", "")), int(b.get("number", 0))]
 		var e: Dictionary = _bots.get(id, {})
 		if e.is_empty() or str(e.key) != key:
 			if not e.is_empty():
@@ -134,7 +136,7 @@ func _make(b: Dictionary, key: String) -> Dictionary:
 	var wl := _android()
 	var look: Node3D
 	if wl:
-		look = wl.call("make", Types.tartanco_role(str(b.type)), "%02d" % int(b.id))
+		look = wl.call("make", str(b.get("role", Types.tartanco_role(str(b.type)))), "%02d" % int(b.get("number", int(b.id))))
 		look.set_meta("android", true)
 		var thrust := look.get_node_or_null("Thrust") as Node3D
 		if thrust:

@@ -155,7 +155,10 @@ func _bot_row(b: Dictionary) -> Control:
 	var name_col := VBoxContainer.new()
 	name_col.custom_minimum_size.x = fs * 11
 	name_col.add_child(_label(str(b.name), "display_bold", fs + 2, T.TEXT))
-	name_col.add_child(_label("%s %s · Mk%d" % [t.code, t.name, int(b.mark)], "mono_medium", fs - 3, T.DIM))
+	var sub := "%s %s · Mk%d" % [t.code, t.name, int(b.mark)]
+	if b.has("role"):
+		sub = "TartanCo %s · Mk%d" % [str(Types.TRADE_NAMES.get(str(b.role), "bot")).to_lower(), int(b.mark)]
+	name_col.add_child(_label(sub, "mono_medium", fs - 3, T.DIM))
 	row.add_child(name_col)
 	var line := _label(str(b.get("line", "")), "body_medium", fs, T.TEXT)
 	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -172,6 +175,8 @@ func _bot_row(b: Dictionary) -> Control:
 
 
 func _bot_detail(b: Dictionary) -> Control:
+	if bool(bus.call("fleet_mode")):
+		return _fleet_detail(b)
 	var card := _card(true)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", int(fs * 0.4))
@@ -237,6 +242,82 @@ func _bot_detail(b: Dictionary) -> Control:
 	acts.add_child(sell)
 	col.add_child(acts)
 	return card
+
+
+## A TartanCo fleet bot: what it does, its mark and modules from TartanCo, a service.
+func _fleet_detail(b: Dictionary) -> Control:
+	var card := _card(true)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", int(fs * 0.4))
+	card.add_child(col)
+	col.add_child(_wrap(FLEET_BLURB.get(str(b.get("role", "F")), ""), T.DIM))
+	col.add_child(_label("Skills: %s" % Types.skill_line(str(b.type)), "mono_medium", fs - 2, T.CYAN))
+	var yard := Modules.bus("yard")
+	var fitted: Array = b.get("fleet_modules", [])
+	var cat: Dictionary = yard.call("tartanco_catalogue") if yard else {}
+	if not fitted.is_empty() and not cat.is_empty():
+		col.add_child(_label("Modules: " + ", ".join(fitted.map(func(m: String) -> String: return str(cat.modules[m].name))),
+				"mono_medium", fs - 2, T.CYAN))
+	col.add_child(_label("Jobs %d · fastenings %d · %s worked" % [int(b.jobs), int(b.fastenings), _span(float(b.worked))], "mono_medium", fs - 2, T.DIM))
+	var acts := HFlowContainer.new()
+	acts.add_theme_constant_override("h_separation", 6)
+	acts.add_theme_constant_override("v_separation", 6)
+	var next := int(b.mark) + 1
+	if not cat.is_empty() and (cat.marks as Dictionary).has(next):
+		var up := T.button("UPGRADE TO MK%d · CR %s" % [next, T.money(int(cat.marks[next].price))], true, fs - 2)
+		up.pressed.connect(func() -> void: bus.call("upgrade", int(b.id)))
+		acts.add_child(up)
+	var slots := int(yard.call("worker_slots", int(b.mark))) if yard else 0
+	if fitted.size() < slots and not cat.is_empty():
+		for m: String in cat.modules:
+			if fitted.has(m):
+				continue
+			var mb := T.button("FIT %s · CR %s" % [str(cat.modules[m].name).to_upper(), T.money(int(cat.modules[m].price))], false, fs - 3)
+			mb.tooltip_text = str(cat.modules[m].line)
+			mb.pressed.connect(func() -> void: bus.call("teach", int(b.id), m))
+			acts.add_child(mb)
+	var sv := T.button("SERVICE · CR %s" % T.money(int(bus.call("service_cost", b))), false, fs - 2)
+	sv.pressed.connect(func() -> void: bus.call("service", int(b.id)))
+	acts.add_child(sv)
+	col.add_child(acts)
+	return card
+
+
+const FLEET_BLURB := {
+	"F": "TartanCo F-3 component fitter: grippers both hands. Lifts any job into place and makes any fastening, at a steady pace.",
+	"W": "TartanCo W-3 welder: torch and clamp. Runs a frame's welds very fast and lifts frame members in.",
+	"R": "TartanCo R-3 riveter: rivet gun and clamp. Sets hull plates, linings and the wiring's clips very fast.",
+	"B": "TartanCo B-3 bolter: nut runner and clamp. Lifts pipe runs in and bolts fittings and pipes up.",
+}
+
+
+## The shop with TartanCo's fleet: a new bot of each trade from TartanCo, at its price.
+func _fleet_shop() -> void:
+	var yard := Modules.bus("yard")
+	var cat: Dictionary = yard.call("tartanco_catalogue") if yard else {}
+	_body.add_child(_wrap("New bots come from TartanCo, Mk1, with a charge dock of their own on the berth (room for %d). Upgrade them from the CREW page." % BotsBus.FLEET_MAX, T.DIM))
+	for role: String in ["F", "W", "R", "B"]:
+		if cat.is_empty() or not (cat.bots as Dictionary).has(role):
+			continue
+		var t := Types.info(str(Types.FLEET_TYPE[role]))
+		var card := _card(false)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", int(fs * 0.6))
+		card.add_child(row)
+		var col := VBoxContainer.new()
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.add_child(_label("%s  %s" % [str(Types.TARTANCO_CODES[role]), str(Types.TRADE_NAMES[role]).to_upper()], "display_bold", fs + 1, T.TEXT))
+		col.add_child(_wrap(str(FLEET_BLURB[role]), T.DIM))
+		col.add_child(_label(Types.skill_line(str(Types.FLEET_TYPE[role])), "mono_medium", fs - 3, T.CYAN))
+		row.add_child(col)
+		var price := VBoxContainer.new()
+		price.add_child(_label("CR %s" % T.money(int(cat.bots[role].price)), "mono_medium", fs, T.TEXT))
+		price.add_child(_label("CR %s a day" % T.money(int(t.upkeep)), "mono_medium", fs - 3, T.DIM))
+		row.add_child(price)
+		var buy := T.button("BUY", true, fs - 1)
+		buy.pressed.connect(func() -> void: bus.call("buy", role))
+		row.add_child(buy)
+		_body.add_child(card)
 
 
 # --- RULES ---------------------------------------------------------------------------------------
@@ -393,6 +474,9 @@ func _shop_page() -> void:
 	var business := Modules.bus("business")
 	if business and business.has_method("get_cash"):
 		_body.add_child(_label("Company cash CR %s" % T.money(int(business.call("get_cash"))), "mono_medium", fs, T.GOOD))
+	if bool(bus.call("fleet_mode")):
+		_fleet_shop()
+		return
 	for id in Types.ORDER:
 		var t := Types.info(id)
 		var card := _card(false)

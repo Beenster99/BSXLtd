@@ -37,17 +37,20 @@ func run_tests() -> void:
 	await frames(3)
 	var view := bots.view
 	check(view != null and is_instance_valid(view) and view.get_parent() == station, "the bots are in the station")
-	var bay := view.get("bay") as Node3D
-	check(bay != null and (view.get("_cradles") as Array).size() == 16, "the bot bay has sixteen cradles")
-	var tier := int(Modules.bus("yard").call("berth_tier"))
-	var berth_box: AABB = YardLayout.berths(tier)[0].box
-	var bay_at := bots.bay_origin()
-	check(bay_at.x < berth_box.position.x and bay_at.x > YardLayout.berths(tier)[1].box.end.x,
-			"the bay is between the build berth and a holding berth (tier %d, x %.0f)" % [tier, bay_at.x])
+	# The crew is TartanCo's fleet (0.5.3 playtest): no bay of its own; the yard's own bodies stand
+	# down and the fleet hangs on its charge docks on the berth's frame.
+	var yard := Modules.bus("yard")
+	check(bots.fleet_mode() and view.get("bay") == null, "TartanCo's fleet needs no bot bay")
+	var own: Array = (station.get("workers") as Node).get("workers")
+	check(not own.is_empty() and own.all(func(w: Dictionary) -> bool: return not (w.node as Node3D).visible),
+			"the yard's own copies of the fleet are hidden")
+	bots.fast_forward(60.0)
+	check(bots.crew.bots.size() == 6 and (bots.crew.bots[3].pos as Vector3).distance_to(yard.call("worker_dock_spot", 3)) < 0.3,
+			"the six hang on the fleet's charge docks")
 
 	build.start_sample_bots()
-	for t: String in ["welder", "welder", "plater", "hauler", "inspector", "wirer"]:
-		bots.buy(t)
+	for r: String in ["W", "R"]:
+		bots.buy(r)
 	await frames(2)
 	check(view.call("look_of", int(bots.crew.bots[0].id)) != null, "each bot has its look")
 	check((view.get("_bots") as Dictionary).size() == bots.crew.bots.size(), "one look per bot (%d)" % (view.get("_bots") as Dictionary).size())
@@ -71,15 +74,21 @@ func run_tests() -> void:
 	check(berth != null and str(berth.call("card_text", build.progress())).contains("The bots are building her")
 			or str(berth.call("card_text", build.progress())).contains("by hand") or build.job_in_hand() >= 0,
 			"the berth's card says the bots are building her (%s)" % str(berth.call("card_text", build.progress())) if berth else "")
+	var fleet := Modules.bus("fleet")
+	if fleet:
+		var rows: Array = fleet.call("rows")
+		check(rows.size() == bots.crew.bots.size() and str(rows[2].serial) == "TC-W3-01",
+				"the TARTANCO FLEET screen lists the crew (%d)" % rows.size())
+		check(rows.any(func(r: Dictionary) -> bool: return str(r.state) == "working"), "and shows them working")
 	var work := berth.get("work") as RigidBody3D if berth else null
 	check(work != null and (work.get("model") as PartModel).parts.size() > 0, "the jobs the bots floated in are on the ship")
 
-	# Repaint and rename show.
+	# A TartanCo mark shows (the chest's model and mark).
 	var b0: Dictionary = bots.crew.bots[0]
 	var old_look: Node3D = view.call("look_of", int(b0.id))
-	bots.repaint(int(b0.id), "Dock blue")
+	bots.upgrade(int(b0.id))
 	await frames(2)
-	check(view.call("look_of", int(b0.id)) != old_look, "a repainted bot is drawn again in its paint")
+	check(int(bots.crew.bots[0].mark) == 2 and view.call("look_of", int(bots.crew.bots[0].id)) != old_look, "an upgraded bot is drawn again")
 
 	# The board.
 	var board: Control = bots.make_board(150.0)

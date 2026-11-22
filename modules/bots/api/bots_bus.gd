@@ -48,6 +48,8 @@ const SYNC_EVERY := 0.25
 ## How much of a skipped stretch of game time the bots work through (s at x1; four game days).
 const SKIP_MAX := 2880.0
 const SKIP_STEP := 0.5
+## The most TartanCo bots the berth has charge docks for (YardWorkers.MAX_BOTS).
+const FLEET_MAX := 10
 
 const Types := preload("res://modules/bots/api/bot_types.gd")
 const Rules := preload("res://modules/bots/api/bot_rules.gd")
@@ -117,6 +119,7 @@ func _hook_up() -> void:
 	_build = Modules.bus("build")
 	_yard = Modules.bus("yard")
 	_business = Modules.bus("business")
+	_hook_fleet()
 	if _build:
 		_build.connect("job_done", _on_job_done)
 		_build.connect("build_changed", _on_build_changed)
@@ -135,6 +138,117 @@ func _hook_up() -> void:
 	var time := Modules.bus("time")
 	if time and time.has_signal("skipped"):
 		time.connect("skipped", _on_skipped)
+
+
+# --- TartanCo's fleet is the crew ---------------------------------------------------------------
+# 0.5.3 playtest: "only the tartanco fleet should exist - the other ones I dont know why they are
+# there". With the androids on (TARTANCO_FLAG) the crew is the yard's TartanCo fleet, bot for bot
+# (YardBus.worker_fleet_state: their trades, marks and modules): this module drives and draws them
+# and the yard's own copies stand down (YardBus.lend_worker_crew). They hang on the fleet's
+# charge docks on the berth's frame; the fleet is bought and upgraded from TartanCo on the bot
+# board, and the TARTANCO FLEET screen shows them as they work.
+
+## True when the crew is TartanCo's fleet (the androids' flag on, and a yard to have a fleet).
+func fleet_mode() -> bool:
+	return Flags.is_on(TARTANCO_FLAG) and _yard != null and _yard.has_method("worker_fleet_state")
+
+
+var _fleet_hooked := false
+
+
+## Takes the yard's crew on (once; tests call it again after turning the flag on).
+func _hook_fleet() -> void:
+	if not fleet_mode() or _fleet_hooked:
+		sync_fleet()
+		return
+	_fleet_hooked = true
+	_yard.call("lend_worker_crew", "bots")
+	if _yard.has_signal("sim_logged"):
+		_yard.connect("sim_logged", func(e: Dictionary) -> void:
+			var k := str(e.get("kind", ""))
+			if k.begins_with("bot_") or k == "fleet":
+				sync_fleet())
+	if _yard.has_signal("sim_reset"):
+		_yard.connect("sim_reset", sync_fleet)
+	var fleet := Modules.bus("fleet")
+	if fleet and "source" in fleet:
+		fleet.set("source", fleet_rows)
+	sync_fleet()
+
+
+## Makes the crew the fleet as it stands: a bot for each fleet bot, in fleet order (bot i hangs
+## on dock i), with its trade, number, mark and modules; any other bot goes (a save's Gus and
+## Mabel). Charge, wear and work in hand are kept. The host's; guests get the crew from it.
+func sync_fleet() -> void:
+	if not fleet_mode() or not is_host():
+		return
+	var fleet: Array = _yard.call("worker_fleet_planned")
+	var by_index := {}
+	for b: Dictionary in crew.bots:
+		var i := int(b.get("fleet", -1))
+		if i >= 0 and i < fleet.size() and not by_index.has(i):
+			by_index[i] = b
+	var counts := {}
+	var out: Array[Dictionary] = []
+	for i in fleet.size():
+		var f: Dictionary = fleet[i]
+		var role := str(f.get("role", "F"))
+		counts[role] = int(counts.get(role, 0)) + 1
+		var t := str(Types.FLEET_TYPE.get(role, "yardhand"))
+		var b: Dictionary = by_index.get(i, {})
+		if b.is_empty() or str(b.get("role", "")) != role:
+			b = crew.call("add", t, Types.fleet_name(role, int(counts[role])))
+			crew.bots.erase(b)
+		b.type = t
+		b.fleet = i
+		b.role = role
+		b.number = int(counts[role])
+		b.mark = int(f.get("mark", 1))
+		b.fleet_modules = (f.get("modules", []) as Array).duplicate()
+		b.fx = _yard.call("worker_effects", int(b.mark), b.fleet_modules)
+		b.modules = []
+		out.append(b)
+	for b: Dictionary in crew.bots:
+		if not out.has(b) and str(b.task.get("kind", "")) in ["job", "help", "haul", "inspect"]:
+			crew.call("_drop", b)
+	crew.bots.assign(out)
+	crew.next_id = maxi(int(crew.next_id), 1)
+	_dirty = true
+	crew_changed.emit()
+
+
+## The TARTANCO FLEET screen's rows from the crew at work (FleetBus.rows' shape).
+func fleet_rows() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if _yard == null or _yard.call("station") == null:
+		return out
+	var fleet := Modules.bus("fleet")
+	for i in crew.bots.size():
+		var b: Dictionary = crew.bots[i]
+		var role := str(b.get("role", Types.tartanco_role(str(b.type))))
+		var k := str(b.task.get("kind", "idle"))
+		var at_dock := (b.pos as Vector3).distance_to(bay_slot(i)) < 0.6
+		var state := "idle"
+		match k:
+			"job", "help", "haul", "inspect", "line":
+				state = "working"
+			"charge":
+				state = "charging" if at_dock else "to_dock"
+			"service":
+				state = "servicing"
+			_:
+				state = "charging" if at_dock and float(b.charge) < 0.999 else "idle"
+		var mark := int(b.get("mark", 1))
+		var cond := {"wear": float(b.wear), "charge": float(b.charge), "charging": state == "charging", "errors": [],
+				"role": role, "state": state, "job": str(b.get("line", "")) if state == "working" else "",
+				"serial": Types.fleet_serial(role, int(b.get("number", int(b.id)))),
+				"model": str(Types.TARTANCO_CODES.get(role, "F-3")), "speed": Types.mark_pace(b),
+				"productivity": Types.pace(b), "mark_name": "Mk%d" % mark,
+				"slots": int(_yard.call("worker_slots", mark)) if _yard else 1,
+				"upgrades": _yard.call("worker_fitted", b.get("fleet_modules", [])) if _yard else []}
+		var name := "Worker%d" % (i + 1)
+		out.append(fleet.call("row_for", name, cond, b.pos, {}) if fleet else cond)
+	return out
 
 
 func hook_net(net: Object) -> void:
@@ -333,6 +447,8 @@ func _ask(p: Dictionary) -> void:
 func _validate_ask(_sender: int, p: Dictionary) -> Variant:
 	var what := str(p.get("what", ""))
 	var b: Dictionary = crew.call("bot", int(p.get("id", -1)))
+	if fleet_mode() and what in ["buy", "sell", "paint", "mark", "teach"]:
+		return _validate_fleet_ask(what, b, p)
 	match what:
 		"buy":
 			if not Types.TYPES.has(str(p.get("type", ""))):
@@ -380,8 +496,64 @@ func _validate_ask(_sender: int, p: Dictionary) -> Variant:
 	return p
 
 
+## Buying and upgrading TartanCo's fleet (fleet mode): from TartanCo, at its prices; the yard
+## adds the bot or fits the mark or module on its shared clock, and the crew follows (sync_fleet).
+func _validate_fleet_ask(what: String, b: Dictionary, p: Dictionary) -> Variant:
+	var cat: Dictionary = _yard.call("tartanco_catalogue")
+	match what:
+		"buy":
+			var role := str(p.get("type", ""))
+			if not (cat.bots as Dictionary).has(role):
+				return "TartanCo has no such bot"
+			var company := Modules.bus("company")
+			if company and company.has_method("bot_cap") and crew.bots.size() >= int(company.call("bot_cap")):
+				return "the yard can keep %d bots at its rank: grow the company for more" % int(company.call("bot_cap"))
+			if crew.bots.size() >= FLEET_MAX:
+				return "every charge dock on the berth is taken"
+			if not _pay(int(cat.bots[role].price), "TartanCo bot: %s" % str(cat.bots[role].name)):
+				return "the company cannot afford a %s" % str(cat.bots[role].name)
+		"mark":
+			var next := int(b.get("mark", 1)) + 1
+			if b.is_empty() or not (cat.marks as Dictionary).has(next):
+				return "already at the top mark"
+			if not _pay(int(cat.marks[next].price), "TartanCo upgrade: %s to Mk%d" % [b.name, next]):
+				return "the company cannot afford the upgrade"
+		"teach":
+			var m := str(p.get("module", ""))
+			var fitted: Array = b.get("fleet_modules", [])
+			if b.is_empty() or not (cat.modules as Dictionary).has(m) or fitted.has(m):
+				return "cannot fit that"
+			if fitted.size() >= int(_yard.call("worker_slots", int(b.mark))):
+				return "%s has no free slot: raise it a mark first" % b.name
+			if not _pay(int(cat.modules[m].price), "TartanCo module: %s for %s" % [cat.modules[m].name, b.name]):
+				return "the company cannot afford it"
+		_:
+			return "TartanCo's bots are leased in their livery: they cannot be sold or painted"
+	return p
+
+
+func _apply_fleet_ask(p: Dictionary, b: Dictionary) -> void:
+	if not is_host():
+		return
+	match str(p.what):
+		"buy":
+			if _yard.call("add_worker_bot", str(p.type)):
+				_on_said("A new TartanCo %s joins the crew" % str(Types.TRADE_NAMES.get(str(p.type), "bot")).to_lower())
+		"mark":
+			_yard.call("set_worker_mark", int(b.fleet), int(b.mark) + 1)
+			_on_said("%s is now a Mk%d" % [b.name, int(b.mark) + 1])
+		"teach":
+			_yard.call("fit_worker_module", int(b.fleet), str(p.module))
+	sync_fleet()
+
+
 func _apply_ask(p: Dictionary) -> void:
 	var b: Dictionary = crew.call("bot", int(p.get("id", -1)))
+	if fleet_mode() and str(p.what) in ["buy", "mark", "teach"]:
+		_apply_fleet_ask(p, b)
+		_dirty = true
+		crew_changed.emit()
+		return
 	match str(p.what):
 		"buy":
 			var nb: Dictionary = crew.call("add", str(p.type))
@@ -656,6 +828,8 @@ func poorest(under: float, skip: Dictionary) -> Dictionary:
 ## The bot bay: a slot for each bot (station space), in the gap between the build berth and the
 ## holding berth to its -X side, facing the berth.
 func bay_slot(i: int) -> Vector3:
+	if fleet_mode():
+		return _yard.call("worker_dock_spot", i)
 	return bay_origin() + Vector3(float(i % 4) * 3.0 - 4.5, -float(i / 4) * 3.2, 0.0)
 
 
@@ -667,6 +841,8 @@ func bay_origin() -> Vector3:
 
 ## Where an idle bot hovers: in front of its bay slot.
 func idle_point(i: int) -> Vector3:
+	if fleet_mode():
+		return bay_slot(i)
 	return bay_slot(i) + Vector3(0, 0, -2.2)
 
 
@@ -733,6 +909,7 @@ func load_data(data: Dictionary, _from_version: int) -> void:
 	lapse = (data.get("lapse", {}) as Dictionary).duplicate(true)
 	build_clock = (data.get("clock", {}) as Dictionary).duplicate()
 	crew.totals = (data.get("totals", crew.totals) as Dictionary).duplicate()
+	sync_fleet()
 	crew_changed.emit()
 
 
@@ -746,6 +923,9 @@ func reset_data() -> void:
 	crew.totals = fresh.totals.duplicate()
 	lapse.clear()
 	build_clock.clear()
+	if fleet_mode():
+		crew.bots.clear()
+		sync_fleet()
 	crew_changed.emit()
 
 
