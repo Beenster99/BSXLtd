@@ -20,7 +20,7 @@ class FakeContracts:
 
 
 func run_tests() -> void:
-	for f: String in [YardBus.FLAG, YardBus.STATION, YardBus.DOCK, YardBus.RACKING, BuildBus.FLAG, BuildBus.HAND_FLAG]:
+	for f: String in [YardBus.FLAG, YardBus.STATION, YardBus.DOCK, YardBus.RACKING, BuildBus.FLAG, BuildBus.HAND_FLAG, "build.weld_beacons"]:
 		Flags.set_flag(f, true)
 	var bus := Modules.bus("build") as BuildBus
 	check(bus != null, "the module is loaded")
@@ -69,6 +69,24 @@ func run_tests() -> void:
 	var drawn := wm.connections.filter(func(c: ConnectionData) -> bool: return wm.joint_view(c) != null)
 	check(not wm.connections.is_empty() and drawn.is_empty(), "the ring sits in place unwelded, no beads (%d drawn of %d)" % [drawn.size(), wm.connections.size()])
 	check(int(berth.call("marks_shown")) == planned.size(), "each weld to make is outlined bright over the holo (%d)" % int(berth.call("marks_shown")))
+	# Easy to find (beenster, 0.5.3: "VERY hard to find"): a marker over the view for each one,
+	# through beams, an arrow to the nearest, a light on each, an outline drawn through members.
+	var beacons := berth.get("beacons") as CanvasLayer
+	check(beacons != null and is_instance_valid(beacons), "the welds get markers over the view")
+	if beacons:
+		var targets: Array = beacons.call("targets")
+		check(targets.size() == planned.size(), "one marker for each weld to make (%d)" % targets.size())
+		var far := (work.global_position + Vector3(0, 0, 30))
+		var near: Dictionary = beacons.call("nearest", targets, far)
+		check(not near.is_empty() and targets.all(func(t: Dictionary) -> bool:
+				return far.distance_to(t.at) >= far.distance_to(near.at) - 0.001), "the nearest is the one pointed to")
+	var marks: Dictionary = berth.get("_marks")
+	check(not marks.is_empty() and marks.values().all(func(m: Node) -> bool: return m.get_node_or_null("Glow") is OmniLight3D),
+			"each weld's spot glows")
+	var mmat := berth.get("_mark_mat") as ShaderMaterial
+	check(mmat != null and mmat.next_pass is ShaderMaterial and
+			(mmat.next_pass as ShaderMaterial).shader.resource_path.ends_with("seam_mark_through.gdshader"),
+			"and its outline shows through the beams in front")
 	check(planned.all(func(p: Dictionary) -> bool: return (p.seam_size as Vector2).x <= 0.13 + 0.001),
 			"each weld is short enough that aiming anywhere on it starts the arc")
 	var first_card := str(berth.call("card_text", bus.progress()))

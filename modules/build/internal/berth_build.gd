@@ -12,6 +12,8 @@ extends Node3D
 
 const GHOST_SHADER := preload("res://modules/build/internal/ghost.gdshader")
 const MARK_SHADER := preload("res://modules/build/internal/seam_mark.gdshader")
+const THROUGH_SHADER := preload("res://modules/build/internal/seam_mark_through.gdshader")
+const BEACONS := preload("res://modules/build/internal/weld_beacons.gd")
 ## Longest hand weld (m): short enough that aiming anywhere on the chalk starts the arc (the
 ## welder starts from the nearer end, within 7 cm of the aim).
 const MAX_WELD := 0.13
@@ -58,6 +60,8 @@ var _stage := ""
 ## The bright outline round each fastening still to make: plan key -> node on the work.
 var _marks: Dictionary = {}
 var _mark_mat: ShaderMaterial
+## The screen markers and edge arrow to the fastenings still to make (flag build.weld_beacons).
+var beacons: CanvasLayer
 ## The holo of the stages after the one in hand, drawn fainter so it doesn't wash over the work
 ## (beenster, 0.4.7: the welds got lost in the blue).
 var _faint_mat: ShaderMaterial
@@ -112,6 +116,9 @@ func setup(build_bus: Object, contract_id: String) -> void:
 		if bool(bus.call("job_finished", j, contract)):
 			finish(j)
 	ship.add_child(work)
+	if Flags.is_on(BEACONS.FLAG):
+		beacons = BEACONS.new().setup(self)
+		add_child(beacons)
 	_glow_next()
 
 
@@ -270,6 +277,14 @@ func _sync_marks() -> void:
 		_mark_mat = ShaderMaterial.new()
 		_mark_mat.shader = MARK_SHADER
 		_mark_mat.render_priority = 10
+		if Flags.is_on(BEACONS.FLAG):
+			# A fainter copy drawn through whatever stands in front, so a weld behind a beam
+			# still shows where it is (beenster, 0.5.3: "the welds are VERY hard to find").
+			var through := ShaderMaterial.new()
+			through.shader = THROUGH_SHADER
+			through.render_priority = 9
+			_mark_mat.next_pass = through
+	var big := 1.6 if Flags.is_on(BEACONS.FLAG) else 1.0
 	for key: String in plans:
 		if _marks.has(key):
 			continue
@@ -285,9 +300,9 @@ func _sync_marks() -> void:
 		mark.transform = Transform3D(Basis(side, up, n), (p.at as Vector3) + n * 0.003)
 		var length := (p.seam_size as Vector2).x
 		if length > 0.0:
-			var w := 0.09
-			var h := length + 0.06
-			var bar := 0.014
+			var w := 0.09 * big
+			var h := length + 0.06 * big
+			var bar := 0.014 * big
 			for bx: Array in [[Vector3(0, h * 0.5, 0), Vector3(w, bar, 0.002)], [Vector3(0, -h * 0.5, 0), Vector3(w, bar, 0.002)],
 					[Vector3(w * 0.5, 0, 0), Vector3(bar, h, 0.002)], [Vector3(-w * 0.5, 0, 0), Vector3(bar, h, 0.002)]]:
 				var mi := MeshInstance3D.new()
@@ -301,8 +316,8 @@ func _sync_marks() -> void:
 		else:
 			var mi := MeshInstance3D.new()
 			var tm := TorusMesh.new()
-			tm.inner_radius = 0.032
-			tm.outer_radius = 0.046
+			tm.inner_radius = 0.032 * big
+			tm.outer_radius = 0.046 * big
 			tm.rings = 24
 			tm.ring_segments = 6
 			mi.mesh = tm
@@ -311,6 +326,16 @@ func _sync_marks() -> void:
 			mi.material_override = _mark_mat
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mark.add_child(mi)
+		if big > 1.0:
+			# A warm light on the spot, so the face round a weld glows from across the berth.
+			var lamp := OmniLight3D.new()
+			lamp.name = "Glow"
+			lamp.light_color = Color(1.0, 0.55, 0.15) if length > 0.0 else Color(0.5, 0.9, 1.0)
+			lamp.light_energy = 1.6
+			lamp.omni_range = 1.4
+			lamp.shadow_enabled = false
+			lamp.position = Vector3(0, 0, 0.18)
+			mark.add_child(lamp)
 		work.add_child(mark)
 		_marks[key] = mark
 
