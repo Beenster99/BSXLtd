@@ -13,6 +13,7 @@ flags = {
 "bots.cams": true,
 "bots.tartanco": true,
 "build.holding": true,
+"build.weld_beacons": true,
 "orders": true,
 "orders.gate": true,
 "orders.used": true,
