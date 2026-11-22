@@ -192,3 +192,68 @@ func run_tests() -> void:
 	build.stop()
 	bots.reset_data()
 	print("crew totals: %s" % str(bots.crew.totals))
+	_hand_build_to_bots(build, bots)
+	_tartanco_names(bots)
+
+
+## 0.5.3 playtest: "I couldn't assign the TartanCo bots to do the work on my first contract". A
+## small ship comes to the berth as a hand build; BOTS BUILD HER puts the bots on her, they pick
+## up where the crew left off (a job the crew had floated in included), and she can be given
+## back to the crew to finish by hand, in order.
+func _hand_build_to_bots(build: BuildBus, bots: BotsBus) -> void:
+	build.start_sample()
+	check(build.crew_of() == BuildBus.CREW_HAND and not bots.active(), "a small ship is a hand build: the bots stand by")
+	check(build.can_go_to_bots(), "and can be handed to the bots")
+	# The crew floats the first job in and makes one of its fastenings.
+	var first := build.next_job()
+	build.land_next()
+	build.fasten(first, 0, 0.8)
+	check(build.job_in_hand() == first, "the crew has the first job in hand")
+	bots.put_on_build()
+	check(build.crew_of() == BuildBus.CREW_BOTS and bots.active(), "BOTS BUILD HER: she is the bots' build now")
+	check(bots.orphans().has(first), "the crew's half-done job is there for the bots to pick up")
+	bots.fast_forward(240.0)
+	var p := build.progress()
+	check(build.job_finished(first), "the bots finish the crew's job")
+	check(int(p.jobs_done) >= 2, "and carry on building her (%d of %d jobs)" % [int(p.jobs_done), int(p.jobs)])
+	# Back to the crew: the bots let go, and the hand build goes on in order from what is in.
+	bots.stand_down()
+	check(build.crew_of() == BuildBus.CREW_HAND and not bots.active(), "BUILD HER BY HAND gives her back to the crew")
+	check((build.active().claims as Dictionary).is_empty(), "with no bot holding a job")
+	bots.fast_forward(5.0)
+	check(not bots.crew.bots.any(func(b: Dictionary) -> bool: return str(b.task.kind) in ["job", "help", "haul"]),
+			"the bots stand down")
+	var in_hand := build.job_in_hand()
+	if in_hand >= 0:
+		var pl := build.plan()
+		for k in (pl.jobs[in_hand].key as Array).size():
+			build.fasten(in_hand, k, 0.8)
+	check(build.job_in_hand() == -1, "the crew finishes any job the bots left in hand")
+	var nxt := build.next_job()
+	var landed: Array = build.active().landed
+	check(nxt >= 0 and not landed.has(nxt) and range(nxt).all(func(j: int) -> bool: return landed.has(j)),
+			"and the next job by hand is the first one not in yet (%d)" % nxt)
+	build.land_next()
+	check((build.active().landed as Array).has(nxt), "which floats in")
+	build.stop()
+	bots.reset_data()
+
+
+## The crew are TartanCo's androids: named by trade and number ("F-3 01"), as on their chests,
+## not Gus and Mabel; an old save's pet names give way (a name the players chose stays).
+func _tartanco_names(bots: BotsBus) -> void:
+	Flags.set_flag(BotsBus.TARTANCO_FLAG, true)
+	bots.reset_data()
+	check(str(bots.crew.bots[0].name) == "F-3 01" and str(bots.crew.bots[1].name) == "F-3 02",
+			"the starting crew are TartanCo F-3s by number (%s, %s)" % [bots.crew.bots[0].name, bots.crew.bots[1].name])
+	var nb: Dictionary = bots.crew.call("add", "welder")
+	check(str(nb.name) == "W-3 03", "a welder is a W-3 (%s)" % nb.name)
+	bots.crew.call("load_roster", [{"id": 1, "type": "yardhand", "name": "Gus"}, {"id": 2, "type": "yardhand", "name": "Mabel"},
+			{"id": 3, "type": "welder", "name": "Sparky"}])
+	check(str(bots.crew.bots[0].name) == "F-3 01" and str(bots.crew.bots[1].name) == "F-3 02",
+			"an old save's Gus and Mabel come back as F-3 01 and F-3 02")
+	check(str(bots.crew.bots[2].name) == "Sparky", "a name the players gave stays")
+	Flags.set_flag(BotsBus.TARTANCO_FLAG, false)
+	bots.reset_data()
+	check(str(bots.crew.bots[0].name) == "Gus", "with the flying bots back, the pet names come back")
+	bots.reset_data()

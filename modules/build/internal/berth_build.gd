@@ -799,6 +799,8 @@ func card_text(p: Dictionary) -> String:
 			lines.append("Waiting for parts: " + str(p.parts_wait) + ".")
 		else:
 			lines.append("Fly to the glowing pieces and press F to float them in.")
+	if not bots and str(p.stage) != "" and Flags.is_on(BuildBus.BOT_FLAG):
+		lines.append("Or put the bots on her: BOTS BUILD HER on the build plan or the bot board.")
 	if bots and str(p.get("parts_wait", "")) != "" and int(p.get("free", 0)) == 0:
 		lines.append("Waiting for parts: " + str(p.parts_wait) + ".")
 	lines.append("Jobs %d of %d  ·  workmanship %s" % [int(p.jobs_done), int(p.jobs),

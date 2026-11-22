@@ -127,6 +127,25 @@ const NAMES: PackedStringArray = ["Gus", "Mabel", "Sprocket", "Dot", "Rivet", "B
 		"Pip", "Clank", "Hettie", "Bolt", "Wren", "Ivo", "Nell", "Toby", "Fen", "Maud", "Ozzy", "Kit"]
 
 
+## TartanCo's chest code for each trade (YardWorkerLook.ROLES' codes).
+const TARTANCO_CODES := {"F": "F-3", "W": "W-3", "R": "R-3", "B": "B-3", "E": "TC-E"}
+
+
+## A bot's name when the crew are TartanCo's androids: its trade's chest code and its number
+## ("W-3 04"), the number on its chest. The pet names (NAMES: Gus, Mabel...) were the flying
+## bots'; with the androids they read as strangers (0.5.3 playtest: "I don't know what Mabel
+## and Gus are").
+static func tartanco_name(type_id: String, id: int) -> String:
+	return "%s %02d" % [str(TARTANCO_CODES.get(tartanco_role(type_id), "F-3")), id]
+
+
+## A new bot's name: TartanCo's code and number with the androids on, else a name from NAMES.
+static func default_name(type_id: String, id: int) -> String:
+	if Flags.is_on("bots.tartanco"):
+		return tartanco_name(type_id, id)
+	return NAMES[(id - 1) % NAMES.size()]
+
+
 static func info(type_id: String) -> Dictionary:
 	return TYPES.get(type_id, TYPES.yardhand)
 

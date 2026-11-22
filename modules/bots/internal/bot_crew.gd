@@ -14,7 +14,7 @@ extends RefCounted
 ## Positions are station space (m). Times are seconds at the yard's normal pace.
 
 signal changed
-## A line for the board's log ("Gus floated in Frame ring 3").
+## A line for the board's log ("F-3 01 floated in Frame ring 3").
 signal said(line: String)
 ## A bot finished a job / a fastening / a rework (for the stats and the sounds).
 signal worked(bot_id: int, what: String, job: int)
@@ -70,7 +70,7 @@ func add(type_id: String, bot_name := "", paint := "") -> Dictionary:
 	var id := next_id
 	next_id += 1
 	var b := {"id": id, "type": type_id if Types.TYPES.has(type_id) else "yardhand",
-			"name": bot_name if bot_name != "" else Types.NAMES[(id - 1) % Types.NAMES.size()],
+			"name": bot_name if bot_name != "" else Types.default_name(type_id, id),
 			"paint": paint if paint != "" else str(t.paint), "mark": 1, "modules": [],
 			"charge": 1.0, "wear": 0.0, "pos": _bay(bots.size()), "task": {"kind": "idle"},
 			"jobs": 0, "fastenings": 0, "worked": 0.0, "line": "Docked"}
@@ -683,6 +683,11 @@ func load_roster(list: Array) -> void:
 			b[k] = int(b.get(k, 0))
 		b.worked = float(b.get("worked", 0.0))
 		b.modules = b.get("modules", [])
+		# A save from before 0.5.4 named its bots from the pet names: with TartanCo's androids
+		# they take their trade's code and number instead (a name the players gave them stays).
+		if Types.NAMES.has(str(b.get("name", ""))) and str(b.name) == Types.NAMES[(int(b.id) - 1) % Types.NAMES.size()] \
+				and Flags.is_on("bots.tartanco"):
+			b.name = Types.tartanco_name(str(b.type), int(b.id))
 		bots.append(b)
 		next_id = maxi(next_id, int(b.id) + 1)
 	_dirty = true
