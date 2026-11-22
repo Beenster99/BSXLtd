@@ -317,11 +317,11 @@ The trade advisor's word on where prices are going in the next week or two, firs
 - Bots wear as they work. Past 40% wear they slow down; at 75% TartanCo's service ship comes to put them right.
 - The bots are only listed while you are in the orbital yard, where they work.
 -> bots_screen|The Bot board: what they do and in what order"""},
-	{"id": "bots_screen", "order": 300, "group": SCREENS, "title": "Bot board", "screens": ["bots.board"], "text": """Runs the bots that build bigger ships: who they are, the rules they work to, the work in hand, and the shop. Five pages along the top.
+	{"id": "bots_screen", "order": 300, "group": SCREENS, "title": "Bot board", "screens": ["bots.board"], "text": """Runs TartanCo's fleet, the androids that build your ships: who they are, the rules they work to, the work in hand, and the shop. Five pages along the top.
 ! bots
 @ 1|**The status line**: how many bots, how many at work, the build's jobs done, and their upkeep a day.
 @ 2|**The pages**: CREW, RULES, WORK, SHOP, LOG.
-@ 3|**CREW**: each bot, its type and mark, what it is doing, its charge (CHG) and wear. Click one to rename it, paint it, raise its mark, teach it a trade, service it or sell it.
+@ 3|**CREW**: each TartanCo bot (F-3 fitters, W-3 welders, R-3 riveters, B-3 bolters), its mark, what it is doing, its charge (CHG) and wear. Click one to raise its mark (up to Mk5), fit a TartanCo module or send it for a service.
 # Rules
 ! bots_rules
 The bots read the rule cards top to bottom.
@@ -333,10 +333,10 @@ The bots read the rule cards top to bottom.
 - **Charge below 25%**: a bot goes to charge under that.
 - **ON/OFF** switches a card; **CHANGE** what it says; **UP** moves it up; **X** removes it; the + buttons add one.
 # Work and shop
-- **WORK**: the build by stage, the jobs in hand and who has them (TAKE OVER to do one yourself, HAND BACK to return it), and what is stuck and why.
-- **SHOP**: every type of bot, what it does best ("weld x4" is four times a yardhand's speed), its price and its upkeep a day. BUY.
+- **WORK**: who builds the ship in the berth (BOTS BUILD HER puts the bots on any ship, BUILD HER BY HAND gives her back to you), the build by stage, the jobs in hand and who has them (TAKE OVER to do one yourself, HAND BACK to return it), and what is stuck and why.
+- **SHOP**: a new bot of each trade from TartanCo, what it does best ("weld x4" is four times a fitter's speed), its price and its upkeep a day. BUY. Each new bot gets a charge dock of its own on the berth (room for 10).
 ! bots_shop
-> Welders weld four times as fast as a yardhand; haulers fetch parts; inspectors redo poor fastenings. Bots low on charge dock in the bot bay beside the build berth."""},
+> Welders weld four times as fast as a fitter; riveters rivet plates and wiring; bolters fit pipes. Bots low on charge hang on their charge docks on the build berth's frame. The TARTANCO FLEET screen shows the same bots."""},
 	{"id": "company_screen", "order": 310, "group": SCREENS, "title": "The company", "screens": ["company.yard"], "text": """BSX Ltd as a whole: its rank, its clients and rivals, the crew's roles, naming ships, the trophy shelf and the signed papers.
 ! company
 @ 1|**The headline**: the yard's rank, ships delivered and reputation.

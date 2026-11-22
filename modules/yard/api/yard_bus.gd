@@ -367,7 +367,52 @@ func _station_opened(s: Node3D) -> void:
 	var crew := _workers()
 	if crew and crew.has_signal("service_needed"):
 		crew.connect("service_needed", func(bots: Array) -> void: workers_need_service.emit(bots))
+	if crew and crew_lent_to != "":
+		crew.call("set_lent", true)
 	station_ready.emit(s)
+
+
+## Who runs the TartanCo crew instead of the yard ("" the yard itself): see lend_worker_crew.
+var crew_lent_to := ""
+
+
+## Another module runs TartanCo's fleet (the bots module builds contracts with it: 0.5.3
+## playtest, "only the tartanco fleet should exist"): the yard's own crew bodies are hidden and
+## still, worker_bots() is [] (so TartanCo's maintenance ship has nobody to see to), and `by`
+## draws and drives the fleet itself from worker_fleet_state(), hanging them on worker_dock_spot.
+## Their docks stay. Call it from register_module (before a station opens) on every machine.
+func lend_worker_crew(by: String) -> void:
+	crew_lent_to = by
+	var crew := _workers()
+	if crew:
+		crew.call("set_lent", by != "")
+
+
+## Where TartanCo bot `i` hangs on its charge dock (station space), at the berth's tier.
+func worker_dock_spot(i: int) -> Vector3:
+	var crew := _workers()
+	if crew:
+		var docks: Array = crew.get("docks")
+		if i < docks.size():
+			return crew.call("dock_spot", i)
+	var d: Array[Vector3] = Workers.DOCKS
+	return d[i % d.size()] + Vector3(0, 0, -float(worker_look().get_script_constant_map().get("DOCK_OUT", 0.9)))
+
+
+## What a TartanCo bot of `mark` with `modules` fitted does, as factors (1 = a new Mk1): {pace,
+## fly, drain, charge, wear, faults} (TartanCoUpgrades.effects).
+static func worker_effects(mark: int, modules: Array) -> Dictionary:
+	return Upgrades.effects(mark, modules)
+
+
+## The modules fitted, as the screens show them: [{id, name, line}].
+static func worker_fitted(modules: Array) -> Array:
+	return Upgrades.fitted(modules)
+
+
+## How many module slots a TartanCo bot of `mark` has.
+static func worker_slots(mark: int) -> int:
+	return Upgrades.slots(mark)
 
 
 ## TartanCo's android look (yard_worker_look.gd) for other modules' crews (the build bots,
@@ -382,7 +427,7 @@ static func worker_look() -> Script:
 func worker_bots() -> Array[Node3D]:
 	var out: Array[Node3D] = []
 	var crew := _workers()
-	if crew:
+	if crew and crew_lent_to == "":
 		out.assign(crew.call("bots"))
 	return out
 
@@ -630,6 +675,12 @@ func worker_fleet_state() -> Array:
 	if crew:
 		return crew.call("fleet_state")
 	return fleet_after(worker_fleet, {})
+
+
+## The crew with every change asked so far on the host (or solo), ahead of the tick each lands
+## on: what a module driving the crew (lend_worker_crew) follows. Elsewhere as it stands.
+func worker_fleet_planned() -> Array:
+	return _planned()
 
 
 ## Puts a crew back (as worker_fleet_state gave it).

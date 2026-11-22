@@ -127,6 +127,24 @@ const NAMES: PackedStringArray = ["Gus", "Mabel", "Sprocket", "Dot", "Rivet", "B
 		"Pip", "Clank", "Hettie", "Bolt", "Wren", "Ivo", "Nell", "Toby", "Fen", "Maud", "Ozzy", "Kit"]
 
 
+## TartanCo's fleet (the yard's TARTANCO FLEET) is the crew (0.5.3 playtest: "only the tartanco
+## fleet should exist"): each fleet bot works as the bot type of its trade. F fitters lift any
+## job in and make any fastening (a yardhand's skills), W welders weld, R riveters rivet (hull
+## plates and wiring), B bolters fit pipes and bolt fittings and pipes.
+const FLEET_TYPE := {"F": "yardhand", "W": "welder", "R": "riveter", "B": "pipe_fitter"}
+const TRADE_NAMES := {"F": "Component fitter", "W": "Welder", "R": "Riveter", "B": "Bolter", "E": "Engineer"}
+
+
+## A fleet bot's name: its trade's chest code and its number within the trade ("W-3 02"), as on
+## its chest and in the fleet's serials (TC-W3-02).
+static func fleet_name(role: String, number: int) -> String:
+	return "%s %02d" % [str(TARTANCO_CODES.get(role, "F-3")), number]
+
+
+static func fleet_serial(role: String, number: int) -> String:
+	return "TC-%s-%02d" % [str(TARTANCO_CODES.get(role, "F-3")).replace("-", ""), number]
+
+
 ## TartanCo's chest code for each trade (YardWorkerLook.ROLES' codes).
 const TARTANCO_CODES := {"F": "F-3", "W": "W-3", "R": "R-3", "B": "B-3", "E": "TC-E"}
 
@@ -168,19 +186,32 @@ static func level(bot: Dictionary, skill: String) -> float:
 
 ## How fast bot `bot` works (its mark's speed, slowed by wear past half).
 static func pace(bot: Dictionary) -> float:
-	var mark: Dictionary = MARKS.get(int(bot.get("mark", 1)), MARKS[1])
 	var wear := float(bot.get("wear", 0.0))
-	return float(mark.speed) * (1.0 - maxf(0.0, wear - 0.5) * 0.6)
+	return mark_pace(bot) * (1.0 - maxf(0.0, wear - 0.5) * 0.6)
+
+
+## A bot's mark and fitted modules as a factor on its pace: a fleet bot's TartanCo effects
+## ("fx", YardBus.worker_effects), else this module's MARKS.
+static func mark_pace(bot: Dictionary) -> float:
+	if bot.has("fx"):
+		return float((bot.fx as Dictionary).get("pace", 1.0))
+	return float((MARKS.get(int(bot.get("mark", 1)), MARKS[1]) as Dictionary).speed)
+
+
+## One of a fleet bot's TartanCo effect factors (fly, drain, charge, wear), 1 for others.
+static func effect(bot: Dictionary, what: String) -> float:
+	return float((bot.get("fx", {}) as Dictionary).get(what, 1.0))
 
 
 ## How well bot `bot` makes a fastening it has the skill for, before the day's luck (0..1).
 static func quality(bot: Dictionary) -> float:
 	var t := info(str(bot.get("type", "yardhand")))
-	var mark: Dictionary = MARKS.get(int(bot.get("mark", 1)), MARKS[1])
+	var mq := 0.03 * float(int(bot.get("mark", 1)) - 1) if bot.has("fx") \
+			else float((MARKS.get(int(bot.get("mark", 1)), MARKS[1]) as Dictionary).quality)
 	var q := float(t.quality)
 	if q <= 0.0:
 		q = 0.6
-	return clampf(q + float(mark.quality) - float(bot.get("wear", 0.0)) * 0.25, 0.2, 0.98)
+	return clampf(q + mq - float(bot.get("wear", 0.0)) * 0.25, 0.2, 0.98)
 
 
 ## The stages bot `bot` can fit.

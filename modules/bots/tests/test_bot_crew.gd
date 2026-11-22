@@ -14,6 +14,8 @@ const Rules := preload("res://modules/bots/api/bot_rules.gd")
 func run_tests() -> void:
 	for f: String in [BuildBus.FLAG, BuildBus.HAND_FLAG, BuildBus.BOT_FLAG, BotsBus.FLAG]:
 		Flags.set_flag(f, true)
+	# The flying bots first (the module's own crew); TartanCo's fleet as the crew at the end.
+	Flags.set_flag(BotsBus.TARTANCO_FLAG, false)
 	Flags.set_flag("company.growth", false)  # the yard's rank does not hold the test back
 	var build := Modules.bus("build") as BuildBus
 	var bots := Modules.bus("bots") as BotsBus
@@ -239,20 +241,55 @@ func _hand_build_to_bots(build: BuildBus, bots: BotsBus) -> void:
 	bots.reset_data()
 
 
-## The crew are TartanCo's androids: named by trade and number ("F-3 01"), as on their chests,
-## not Gus and Mabel; an old save's pet names give way (a name the players chose stays).
+## The crew is TartanCo's fleet (0.5.3 playtest: "only the tartanco fleet should exist"): the
+## yard's six (F, F, W, W, R, B), named by trade and number as on their chests, hanging on the
+## fleet's docks; the yard's own copies stand down; a save's Gus and Mabel go; buying and
+## upgrading go to TartanCo through the yard; the TARTANCO FLEET screen shows the crew at work.
 func _tartanco_names(bots: BotsBus) -> void:
 	Flags.set_flag(BotsBus.TARTANCO_FLAG, true)
+	bots.call("_hook_fleet")
+	var yard := Modules.bus("yard")
+	check(bots.fleet_mode() and str(yard.get("crew_lent_to")) == "bots", "the bots module runs TartanCo's fleet")
+	check(yard.call("worker_bots").is_empty(), "the yard's own copies stand down (none for the maintenance ship)")
 	bots.reset_data()
-	check(str(bots.crew.bots[0].name) == "F-3 01" and str(bots.crew.bots[1].name) == "F-3 02",
-			"the starting crew are TartanCo F-3s by number (%s, %s)" % [bots.crew.bots[0].name, bots.crew.bots[1].name])
-	var nb: Dictionary = bots.crew.call("add", "welder")
-	check(str(nb.name) == "W-3 03", "a welder is a W-3 (%s)" % nb.name)
-	bots.crew.call("load_roster", [{"id": 1, "type": "yardhand", "name": "Gus"}, {"id": 2, "type": "yardhand", "name": "Mabel"},
-			{"id": 3, "type": "welder", "name": "Sparky"}])
-	check(str(bots.crew.bots[0].name) == "F-3 01" and str(bots.crew.bots[1].name) == "F-3 02",
-			"an old save's Gus and Mabel come back as F-3 01 and F-3 02")
-	check(str(bots.crew.bots[2].name) == "Sparky", "a name the players gave stays")
+	var names: Array = bots.crew.bots.map(func(b: Dictionary) -> String: return str(b.name))
+	check(names == ["F-3 01", "F-3 02", "W-3 01", "W-3 02", "R-3 01", "B-3 01"], "the crew is the fleet's six: %s" % str(names))
+	check(bots.crew.bots.map(func(b: Dictionary) -> String: return str(b.type)) == ["yardhand", "yardhand", "welder", "welder", "riveter", "pipe_fitter"],
+			"each working its trade")
+	check(bots.bay_slot(2).distance_to(yard.call("worker_dock_spot", 2)) < 0.01, "they hang on the fleet's charge docks")
+	# An old save: Gus and Mabel go, the fleet comes back.
+	bots.load_data({"roster": [{"id": 1, "type": "yardhand", "name": "Gus"}, {"id": 2, "type": "yardhand", "name": "Mabel"}], "next_id": 3}, BotsBus.SAVE_VERSION)
+	names = bots.crew.bots.map(func(b: Dictionary) -> String: return str(b.name))
+	check(not names.has("Gus") and not names.has("Mabel") and names.size() == 6, "an old save's Gus and Mabel are gone: %s" % str(names))
+	# Charge and wear are kept through a save.
+	bots.crew.bots[4].wear = 0.3
+	var saved := bots.save_data()
+	bots.load_data(saved, BotsBus.SAVE_VERSION)
+	check(is_equal_approx(float(bots.crew.bots[4].wear), 0.3) and str(bots.crew.bots[4].name) == "R-3 01", "a fleet bot keeps its wear through a save")
+	# Buying and upgrading from TartanCo.
+	var biz := Modules.bus("business")
+	if biz:
+		biz.call("credit", 5000000, "test", "test cash")
+	bots.buy("W")
+	check(bots.crew.bots.size() == 7 and str(bots.crew.bots[6].name) == "W-3 03", "a welder bought from TartanCo joins as W-3 03")
+	check((yard.call("worker_fleet_planned") as Array).size() == 7, "and is in the yard's fleet")
+	var w: Dictionary = bots.crew.bots[2]
+	var pace1 := Types.pace(w)
+	bots.upgrade(int(w.id))
+	w = bots.crew.bots[2]
+	check(int(w.mark) == 2 and Types.pace(w) > pace1, "a TartanCo mark makes it quicker (Mk%d)" % int(w.mark))
+	bots.teach(int(w.id), "servo_set")
+	w = bots.crew.bots[2]
+	check((w.fleet_modules as Array).has("servo_set"), "a TartanCo module fitted")
+	bots.sell(int(w.id))
+	check(bots.crew.bots.size() == 7, "TartanCo's bots are not sold off")
+	# They build: a ship to the berth for the bots, and the fleet works her.
+	var build := Modules.bus("build") as BuildBus
+	build.start_sample_bots()
+	bots.fast_forward(240.0)
+	check(int(build.progress().jobs_done) >= 2, "the fleet builds her (%d jobs)" % int(build.progress().jobs_done))
+	build.stop()
+	yard.set("worker_fleet", [])
 	Flags.set_flag(BotsBus.TARTANCO_FLAG, false)
 	bots.reset_data()
 	check(str(bots.crew.bots[0].name) == "Gus", "with the flying bots back, the pet names come back")
