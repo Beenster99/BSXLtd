@@ -57,6 +57,8 @@ const EV_FASTEN := "build.fasten"
 const EV_STOP := "build.stop"
 const EV_CLAIM := "build.claim"
 const EV_MOVE := "build.move"
+## Who builds her changed: the crew by hand or the bots (set_crew).
+const EV_CREW := "build.crew"
 const HOLDING_FLAG := "build.holding"
 ## The berths a build can be in: the build berth, then the holding berths (YardLayout.berths order).
 const BERTH_IDS: PackedStringArray = ["B1", "H1", "H2"]
@@ -153,6 +155,7 @@ func hook_net(net: Object) -> void:
 	_net.call("register_event", EV_STOP, _apply_stop, _validate_stop)
 	_net.call("register_event", EV_CLAIM, _apply_claim, _validate_claim)
 	_net.call("register_event", EV_MOVE, _apply_move, _validate_move)
+	_net.call("register_event", EV_CREW, _apply_crew, _validate_crew)
 	_net.call("register_snapshot_provider", SAVE_SECTION, self)
 
 
@@ -167,12 +170,12 @@ func _request(ev: String, p: Dictionary) -> void:
 
 func _validators() -> Dictionary:
 	return {EV_START: _validate_start, EV_LAND: _validate_land, EV_FASTEN: _validate_fasten, EV_STOP: _validate_stop,
-			EV_CLAIM: _validate_claim, EV_MOVE: _validate_move}
+			EV_CLAIM: _validate_claim, EV_MOVE: _validate_move, EV_CREW: _validate_crew}
 
 
 func _appliers() -> Dictionary:
 	return {EV_START: _apply_start, EV_LAND: _apply_land, EV_FASTEN: _apply_fasten, EV_STOP: _apply_stop,
-			EV_CLAIM: _apply_claim, EV_MOVE: _apply_move}
+			EV_CLAIM: _apply_claim, EV_MOVE: _apply_move, EV_CREW: _apply_crew}
 
 
 func _is_host() -> bool:
@@ -227,6 +230,50 @@ static func is_bot_build(contract: Dictionary) -> bool:
 ## Who builds build `cid`: CREW_HAND or CREW_BOTS.
 func crew_of(cid := "") -> String:
 	return str((builds.get(cid if cid != "" else current, {}) as Dictionary).get("crew", CREW_HAND))
+
+
+## Who builds build `cid` from now on: CREW_BOTS puts the company's bots on her (any size of
+## ship: 0.5.3 playtest, "I couldn't assign the TartanCo bots to do the work on my first
+## contract"), CREW_HAND gives her back to the crew to build by hand. Work done so far stays
+## done; jobs the bots had in hand are let go for the crew to finish. Through the host.
+func set_crew(crew: String, cid := "") -> void:
+	_request(EV_CREW, {"contract": cid if cid != "" else current, "crew": crew})
+
+
+## Whether build `cid` can be handed to the bots (the bots' flag on, and not theirs already).
+func can_go_to_bots(cid := "") -> bool:
+	cid = cid if cid != "" else current
+	return Flags.is_on(BOT_FLAG) and builds.has(cid) and crew_of(cid) != CREW_BOTS
+
+
+func _validate_crew(_sender: int, p: Dictionary) -> Variant:
+	var cid := str(p.get("contract", ""))
+	var crew := str(p.get("crew", ""))
+	if not builds.has(cid):
+		return "no such build"
+	if crew not in [CREW_HAND, CREW_BOTS]:
+		return "no such crew"
+	if crew == CREW_BOTS and not Flags.is_on(BOT_FLAG):
+		return "the bots are not on in this build of the game"
+	if crew == crew_of(cid):
+		return "already so"
+	return p
+
+
+func _apply_crew(p: Dictionary) -> void:
+	var cid := str(p.contract)
+	var b: Dictionary = builds.get(cid, {})
+	if b.is_empty():
+		return
+	b.crew = str(p.crew)
+	# The bots' claims go with them; a job the crew had in hand stays the crew's.
+	var claims: Dictionary = b.get_or_add("claims", {})
+	for k: String in claims.keys():
+		if str(p.crew) == CREW_HAND or str(claims[k]) != CREW_CLAIM:
+			claims.erase(k)
+	if berth and is_instance_valid(berth) and cid == current:
+		berth.call("refresh_glow")
+	build_changed.emit()
 
 
 ## Starts building `contract_id` in the berth from design `design` (DesignRecord.to_dict). The
@@ -330,9 +377,15 @@ func next_job(cid := "") -> int:
 		var free := free_jobs(cid)
 		return int(free[0]) if not free.is_empty() else -1
 	var landed: Array = b.landed
-	if not landed.is_empty() and not job_finished(int(landed.back()), cid):
+	if job_in_hand(cid) >= 0:
 		return -1
-	var nxt := landed.size() if landed.size() < pl.jobs.size() else -1
+	# In order: the first job not in yet (on a build only ever by hand, the one after the last;
+	# the bots float jobs in out of order).
+	var nxt := -1
+	for j in pl.jobs.size():
+		if not landed.has(j):
+			nxt = j
+			break
 	return nxt if nxt >= 0 and parts_ready(nxt, cid) else -1
 
 
@@ -439,8 +492,11 @@ func job_in_hand(cid := "") -> int:
 			if claimed_by(j, cid) == CREW_CLAIM:
 				return j
 		return -1
-	var j := int((b.landed as Array).back())
-	return -1 if job_finished(j, cid) else j
+	# The first one floated in and not finished (only ever the last, unless the bots had her).
+	for j: int in b.landed:
+		if not job_finished(j, cid):
+			return j
+	return -1
 
 
 func job_finished(job: int, cid := "") -> bool:

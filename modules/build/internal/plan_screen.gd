@@ -40,7 +40,7 @@ func _fill() -> void:
 	var p: Dictionary = bus.call("progress")
 	if p.is_empty():
 		_body.add_child(T.label("BUILD PLAN", "display_bold", 30, T.TEXT))
-		_body.add_child(T.label("Nothing in the build berth. Sign a small ship contract and its design comes to the berth as a ghost ship to build by hand.",
+		_body.add_child(T.label("Nothing in the build berth. Sign a ship contract and its design comes to the berth as a ghost ship, to build by hand or with the bots.",
 				"body", 18, T.DIM))
 		_berths()
 		return
@@ -50,6 +50,7 @@ func _fill() -> void:
 	head.add_child(title)
 	head.add_child(T.label("JOBS %d / %d" % [int(p.jobs_done), int(p.jobs)], "mono_bold", 20, T.AMBER))
 	_body.add_child(head)
+	_crew_row(p)
 	var figures := HBoxContainer.new()
 	figures.add_theme_constant_override("separation", 10)
 	var w := float(p.workmanship)
@@ -124,6 +125,26 @@ func _gates(cid: String) -> void:
 	var go := T.button("SIGN STAGE GATE: %s  as %s" % [stage_name.to_upper(), contracts.signer()], true, 18, false, glass)
 	go.pressed.connect(func() -> void: contracts.request_sign_gate(cid, g, contracts.signer()))
 	_body.add_child(go)
+
+
+## Who builds her, and the button that changes it (0.5.3 playtest: the bots could not be put on
+## a small ship's build).
+func _crew_row(p: Dictionary) -> void:
+	var bots := str(p.get("crew", "")) == BuildBus.CREW_BOTS
+	if not bots and not Flags.is_on(BuildBus.BOT_FLAG):
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var who := T.label("Built by the bots: they float the jobs in and fasten them. Take any job yourself as you like." if bots
+			else "Built by hand: you and your crew float each job in and fasten it.", "body", 18, T.TEXT)
+	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(who)
+	var go := T.button("BUILD HER BY HAND" if bots else "BOTS BUILD HER", not bots, 18, false, glass)
+	go.name = "CrewButton"
+	go.pressed.connect(func() -> void: bus.call("set_crew", BuildBus.CREW_HAND if bots else BuildBus.CREW_BOTS))
+	row.add_child(go)
+	_body.add_child(row)
 
 
 ## Master plan 7.4: every ship on the go, the berth she is in, and the tug to move her.

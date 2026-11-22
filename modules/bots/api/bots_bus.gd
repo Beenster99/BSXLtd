@@ -147,16 +147,19 @@ func hook_net(net: Object) -> void:
 
 
 var _seen_cid := ""
+var _seen_active := false
 
 
-## The berth's build changed (or a new one came in, or she was towed out): the bots let go of
-## what they had of the old one.
+## The berth's build changed (or a new one came in, or she was towed out, or was given back to
+## the crew to build by hand): the bots let go of what they had of the old one.
 func _on_build_changed() -> void:
 	_infos.clear()
 	var cid := str(_build.get("current")) if _build else ""
-	if cid != _seen_cid:
-		_seen_cid = cid
+	var on := active()
+	if cid != _seen_cid or (_seen_active and not on):
 		crew.call("release_all")
+	_seen_cid = cid
+	_seen_active = on
 
 
 func is_host() -> bool:
@@ -290,6 +293,19 @@ func service(id: int) -> void:
 ## The rule deck, whole (BotRules cards).
 func set_cards(cards: Array) -> void:
 	_ask({"what": "cards", "cards": cards})
+
+
+## Puts the bots on the build in the berth, whatever her size (0.5.3 playtest: a small ship's
+## build was the crew's alone). The bots pick up where the crew left off.
+func put_on_build() -> void:
+	if _build and str(_build.get("current")) != "":
+		_build.call("set_crew", BuildBus.CREW_BOTS)
+
+
+## Gives the build in the berth back to the crew to build by hand (the bots stand down).
+func stand_down() -> void:
+	if _build and str(_build.get("current")) != "":
+		_build.call("set_crew", BuildBus.CREW_HAND)
 
 
 ## The crew takes job `job` of the build in the berth off whichever bot has it (6.7): the

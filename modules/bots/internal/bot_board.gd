@@ -316,10 +316,22 @@ func _work_page() -> void:
 	var build := Modules.bus("build")
 	var p: Dictionary = build.call("progress", "") if build else {}
 	if p.is_empty():
-		_body.add_child(_wrap("Nothing in the build berth. A signed contract for a medium or bigger ship comes here for the bots.", T.DIM))
+		_body.add_child(_wrap("Nothing in the build berth. Sign a ship contract and her design comes to the berth: put the bots on her here.", T.DIM))
 		return
-	_body.add_child(_label("%s · %s" % [str(p.design_name).to_upper(), "the bots' build" if str(p.get("crew", "")) == "bots" else "a hand build"],
-			"display_bold", fs + 2, T.TEXT))
+	var bots_build := str(p.get("crew", "")) == BuildBus.CREW_BOTS
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", int(fs * 0.5))
+	var title := _label("%s · %s" % [str(p.design_name).to_upper(), "the bots' build" if bots_build else "a hand build"],
+			"display_bold", fs + 2, T.TEXT)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title)
+	var crew_b := T.button("BUILD HER BY HAND" if bots_build else "BOTS BUILD HER", not bots_build, fs - 2)
+	crew_b.name = "CrewButton"
+	crew_b.pressed.connect(func() -> void: bus.call("stand_down" if bots_build else "put_on_build"))
+	head.add_child(crew_b)
+	_body.add_child(head)
+	if not bots_build:
+		_body.add_child(_wrap("The crew is building her by hand, so the bots are standing by. Press BOTS BUILD HER to put them to work on her.", T.AMBER))
 	var stages := HBoxContainer.new()
 	stages.add_theme_constant_override("separation", int(fs * 0.5))
 	for s: String in p.by_stage:
