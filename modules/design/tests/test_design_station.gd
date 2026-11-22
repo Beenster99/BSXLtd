@@ -29,23 +29,60 @@ func run_tests() -> void:
 	check(f != null, "the design room is furnished")
 	if f == null:
 		return
-	# The walls themselves are the screens (beenster, 18 Nov), one per wall plane.
+	# The walls themselves are the screens (beenster, 18 Nov), and the two long side walls are
+	# split into screens of their own (22 Nov: "split them, so that we can configure more info").
 	var walls: Dictionary = f.get("walls")
+	var plane_of: Dictionary = f.get("plane_of")
 	var planes := {}
 	for w in bus.room_walls():
 		planes[w.id] = w
-	check(walls.size() == planes.size() and walls.size() >= 4, "every wall plane is a screen: %s" % [walls.keys()])
+	var on_plane := {}
+	for id: String in walls:
+		var p := str(plane_of.get(id, ""))
+		check(planes.has(p), "%s stands on a wall plane (%s)" % [id, p])
+		if planes.has(p):
+			on_plane[p] = (on_plane.get(p, []) as Array) + [id]
+	check(on_plane.size() == planes.size() and planes.size() >= 4, "every wall plane has screens: %s" % [on_plane.keys()])
 	for id: String in ["wall_left", "wall_right"]:
-		check(walls.has(id), "%s is a screen" % id)
+		var ids: Array = on_plane.get(id, [])
+		check(ids.size() == 4 and walls.has(id) and walls.has(id + "_4"), "%s is four screens: %s" % [id, ids])
+		var plane: Transform3D = planes[id].transform
+		var sz: Vector2 = planes[id].size
+		var cover := 0.0
+		var lefts: Array[float] = []
+		for sid: String in ids:
+			var screen: Node3D = walls[sid]
+			var at := plane.affine_inverse() * screen.position
+			check(absf(at.y) < 0.01 and absf(at.z) < 0.1 and absf(at.x) < sz.x * 0.5, "%s is on its wall" % sid)
+			cover += (screen.get("size_m") as Vector2).x
+			lefts.append(at.x)
+			check(is_equal_approx((screen.get("size_m") as Vector2).y, sz.y), "%s is the wall's full height" % sid)
+		check(cover < sz.x and cover > sz.x - 1.5, "the four fill the wall with gaps between (%.1f of %.1f m)" % [cover, sz.x])
+		var falls := lefts.size() == 4
+		for i in range(1, lefts.size()):
+			falls = falls and lefts[i] < lefts[i - 1]
+		check(falls, "they run left to right as seen from the room, the first on the left")
+	var views := {}
+	for id: String in walls:
+		views[str((walls[id] as Node).get("content").get("panels")[0].view)] = true
+	check(views.size() >= 6, "the screens start on different views: %s" % [views.keys()])
 	for id: String in walls:
 		var screen: Node3D = walls[id]
-		var plane: Transform3D = planes[id].transform
-		check(screen.position.distance_to(plane.origin) < 0.1, "%s covers its plane" % id)
+		var plane: Transform3D = planes[plane_of[id]].transform
+		if plane_of[id] == id and not ["wall_left", "wall_right"].has(id):
+			check(screen.position.distance_to(plane.origin) < 0.1, "%s covers its plane" % id)
+			var sz: Vector2 = planes[id].size
+			check(is_equal_approx((screen.get("size_m") as Vector2).x, sz.x), "%s spans the whole wall (%.1f m)" % [id, sz.x])
 		# The screen's face (+Z) points into the room, the way the plane's -Z does.
 		check(screen.basis.z.dot(-plane.basis.z) > 0.99, "%s faces into the room" % id)
-		var sz: Vector2 = planes[id].size
-		check(is_equal_approx((screen.get("size_m") as Vector2).x, sz.x), "%s spans the whole wall (%.1f m)" % [id, sz.x])
 	var board: Node = (walls["wall_left"] as Node).get("content")
+	# A crewmate's change to one screen of a split wall shows on that screen only.
+	var b2: Node = (walls["wall_left_2"] as Node).get("content")
+	var b3: Node = (walls["wall_left_3"] as Node).get("content")
+	var was3 := str(b3.get("panels")[0].view)
+	bus.set_screen("wall:wall_left_2:0", "whiteboard")
+	check(str(b2.get("panels")[0].view) == "whiteboard" and str(b3.get("panels")[0].view) == was3,
+			"each screen of a split wall is set on its own")
 	var first := str(board.get("panels")[0].view)
 	board.call("step", 0, 1)
 	var second := str(board.get("panels")[0].view)
@@ -67,9 +104,9 @@ func run_tests() -> void:
 	# Pick a module up on one wall panel, drop it on a wall plan.
 	bus.open_sample()
 	var mid := bus.library.save_module("Mess", "r9")
-	board.call("set_view", 1, "modules")
+	b2.call("set_view", 0, "modules")
 	await frames(1)
-	var mod_b := (board.call("content", 1) as Node).find_child("Module_" + mid, true, false) as Button
+	var mod_b := (b2.call("content", 0) as Node).find_child("Module_" + mid, true, false) as Button
 	check(mod_b != null, "the wall lists the modules")
 	if mod_b:
 		mod_b.pressed.emit()
