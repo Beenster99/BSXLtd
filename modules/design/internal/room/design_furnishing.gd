@@ -12,29 +12,16 @@ const WalkInside := preload("res://modules/design/internal/walk/walk_inside.gd")
 
 ## What each wall's panels show at first: wall id -> [[view, share of the width], ...].
 ## Anyone can change a panel with its < and > (WallBoard.views()).
-## Walls split into screens of their own (beenster, 22 Nov: "the two long wall screens can
-## contain 4 screens in each. The other two wall screens only 2"): "wall_back_high" is the first,
-## then "wall_back_high_2" and on, left to right as seen from the room.
+## Each wall is one screen; its panels are displays set on their own (beenster, 22 Nov: "one
+## large screen for each wall which were split into two configurable displays ... Same for the
+## long thin screens - just one big screen but with 4 configurable displays on each").
 const WALL_LAYOUT := {
-	"wall_left": [["plan:0", 1.0]],
-	"wall_left_2": [["fit", 1.0]],
-	"wall_right": [["market", 1.0]],
-	"wall_right_2": [["plan:1", 1.0]],
-	"wall_back_low_left": [["whiteboard", 1.0]],
-	"wall_back_low_left_2": [["plan:0", 1.0]],
-	"wall_back_low_left_3": [["modules", 1.0]],
-	"wall_back_low_left_4": [["data", 1.0]],
-	"wall_back_high": [["side", 1.0]],
-	"wall_back_high_2": [["end", 1.0]],
-	"wall_back_high_3": [["accounts", 1.0]],
-	"wall_back_high_4": [["plan:1", 1.0]],
+	"wall_left": [["plan:0", 0.38], ["fit", 0.62]],
+	"wall_right": [["market", 0.62], ["plan:1", 0.38]],
+	"wall_back_low_left": [["whiteboard", 0.25], ["plan:0", 0.25], ["modules", 0.25], ["data", 0.25]],
 	"wall_back_low_right": [["data", 1.0]],
+	"wall_back_high": [["side", 0.25], ["end", 0.25], ["accounts", 0.25], ["plan:1", 0.25]],
 }
-## How many screens each wall is split into: the two really long ones (the 16 m low back wall
-## left of the door and the 23 m one above it) four, the side walls two.
-const WALL_SPLIT := {"wall_back_low_left": 4, "wall_back_high": 4, "wall_left": 2, "wall_right": 2}
-## The bare wall between two screens of a split wall, m.
-const SPLIT_GAP := 0.35
 ## Pixels per metre on the walls (an 18 m wall is 2,700 px across).
 const WALL_PX_PER_M := 150.0
 ## How far from a wall it can be used, m (the room is 24 m across).
@@ -76,7 +63,6 @@ var holo: HoloTable
 var console: DesignConsole
 var walls: Dictionary = {}  # wall id -> TouchScreen (its content a WallBoard)
 var boards: Dictionary = {}  # wall id -> its WallBoard
-var plane_of: Dictionary = {}  # wall id -> the wall plane it stands on (a split wall's screens share one)
 var _layer: CanvasLayer
 ## Walk-inside mode while it's open, else null.
 var walk: WalkInside
@@ -264,7 +250,7 @@ func send_view_to_wall() -> Array:
 	for id: String in walls:
 		var screen := walls[id] as Node3D
 		var facing := screen.global_basis.z.normalized()  # out of the wall, into the room
-		# The screen looked most straight at: a split wall's screens are told apart by where
+		# The screen looked most straight at: screens facing one way are told apart by where
 		# each one is, not only the way the wall faces.
 		var to := (screen.global_position - cam.global_position).normalized()
 		var d := look.normalized().dot(-facing) + look.normalized().dot(to)
@@ -437,32 +423,9 @@ func _add_use_body() -> void:
 	holo.add_child(body)
 
 
-## A wall plane as its screens (split()).
-func _add_wall(w: Dictionary) -> void:
-	for part in split(w):
-		_add_screen(part, str(w.id))
-
-
-## A wall plane as the screens on it: itself, or for a long wall (WALL_SPLIT) that many planes
-## side by side with SPLIT_GAP of bare wall between, the first on the left as seen from the room.
-static func split(w: Dictionary) -> Array[Dictionary]:
-	var n := int(WALL_SPLIT.get(str(w.id), 1))
-	if n <= 1:
-		return [w] as Array[Dictionary]
-	var sz: Vector2 = w.size
-	var each := (sz.x - SPLIT_GAP * (n - 1)) / n
-	var out: Array[Dictionary] = []
-	for i in n:
-		# Planes face -Z, so from the room their +X is on the left.
-		var x := sz.x * 0.5 - each * 0.5 - i * (each + SPLIT_GAP)
-		out.append({"id": str(w.id) if i == 0 else "%s_%d" % [w.id, i + 1], "size": Vector2(each, sz.y),
-				"transform": (w.transform as Transform3D) * Transform3D(Basis.IDENTITY, Vector3(x, 0, 0))})
-	return out
-
-
-## One screen over a plane. Planes face into the room along their -Z; a TouchScreen faces
+## One screen over a wall plane. Planes face into the room along their -Z; a TouchScreen faces
 ## its +Z, so it is turned round, and stands 8 cm off the wall's face.
-func _add_screen(w: Dictionary, plane_id: String) -> void:
+func _add_wall(w: Dictionary) -> void:
 	var layout: Array = WALL_LAYOUT.get(str(w.id), [["plan:0", 0.5], ["data", 0.5]])
 	var sz: Vector2 = w.size
 	var px := Vector2i(int(sz.x * WALL_PX_PER_M), int(sz.y * WALL_PX_PER_M))
@@ -477,4 +440,3 @@ func _add_screen(w: Dictionary, plane_id: String) -> void:
 	add_child(screen)
 	walls[w.id] = screen
 	boards[w.id] = board
-	plane_of[w.id] = plane_id

@@ -645,7 +645,7 @@ class Runner:
 		await _frames(30)
 		await _save(out, "fit_console")
 		room.console.toggle_assessment()
-		var wall: Node = room.walls["wall_left_2"]
+		var wall: Node = room.walls["wall_left"]
 		await _frames(10)
 		var img: Image = wall.viewport.get_texture().get_image()
 		img.save_png(out.path_join("fit_wall.png"))
