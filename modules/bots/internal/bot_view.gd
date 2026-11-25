@@ -250,7 +250,8 @@ func _draw_bot(b: Dictionary, e: Dictionary, delta: float) -> void:
 			var want := Basis.looking_at(flat.normalized(), Vector3.UP)
 			look.basis = look.basis.slerp(want, clampf(delta * 4.0, 0.0, 1.0)).orthonormalized()
 	e.t = float(e.t) + delta
-	var skin := look.get_meta("skin", null) as ShaderMaterial
+	# A null default still errors on a missing key, so ask first (the androids have no "skin").
+	var skin := look.get_meta("skin") as ShaderMaterial if look.has_meta("skin") else null
 	if skin and absf(float(e.get("wear", -1.0)) - float(b.wear)) > 0.02:
 		e.wear = float(b.wear)
 		skin.set_shader_parameter("wear", clampf(float(b.wear), 0.0, 1.0) * 0.8 + 0.08)

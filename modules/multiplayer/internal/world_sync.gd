@@ -56,7 +56,7 @@ func _take(hour: float) -> void:
 
 
 func _follow_own() -> void:
-	if _hour < 0.0:
+	if _hour < 0.0 or not is_inside_tree():
 		return
 	for sky: AlienSky in get_tree().get_nodes_in_group("alien_sky"):
 		if is_equal_approx(sky.hour_override, _hour):
