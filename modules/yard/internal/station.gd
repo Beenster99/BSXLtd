@@ -495,7 +495,10 @@ func _physics_process(_delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if Router.is_holding_loading(SIM_HOLD):
+	var holding := Router.is_holding_loading(SIM_HOLD)
+	if sim:
+		sim.set("loading", holding)
+	if holding:
 		_loading_sim()
 	if _note and sim and bool(sim.get("catching_up")):
 		_show_note("Catching up with the yard...")

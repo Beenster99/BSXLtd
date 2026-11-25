@@ -15,6 +15,10 @@ const TICK := 1.0 / 60.0
 ## Time spent stepping in one frame (ms), and while catching up (a late joiner replaying).
 const FRAME_BUDGET_MS := 8.0
 const CATCH_UP_BUDGET_MS := 40.0
+## While the loading screen is up nothing else needs the frame: catching up gets most of it
+## (a guest joining a long evening replayed at 40 ms a frame for minutes, past the screen's
+## give-up, then at 15 FPS in the yard with the evening's ships streaming through).
+const LOADING_BUDGET_MS := 250.0
 ## Behind by more than this many ticks counts as catching up.
 const BEHIND := 30
 
@@ -30,6 +34,8 @@ var tick := 0
 var rate := 1.0
 ## True while well behind the shared clock (replaying after joining).
 var catching_up := false
+## True while the loading screen is held for the clock (the station sets it).
+var loading := false
 
 var _bus: Object
 var _queue: Array[Dictionary] = []
@@ -73,7 +79,11 @@ func _process(_delta: float) -> void:
 	if target < 0:
 		return
 	var start := Time.get_ticks_usec()
-	var limit := (CATCH_UP_BUDGET_MS if target - tick > BEHIND else FRAME_BUDGET_MS) * 1000.0
+	var behind := target - tick > BEHIND
+	for n in steppers:
+		if is_instance_valid(n):
+			n.set("fast", behind)
+	var limit := (LOADING_BUDGET_MS if behind and loading else (CATCH_UP_BUDGET_MS if behind else FRAME_BUDGET_MS)) * 1000.0
 	while tick < target:
 		run_tick()
 		if Time.get_ticks_usec() - start > limit:

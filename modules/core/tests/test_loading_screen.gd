@@ -49,6 +49,22 @@ func run_tests() -> void:
 	check(not screen.visible, "the screen has faded out")
 	Router.loading_finished.disconnect(on_finish)
 
+	# A hold still moving on keeps the screen past the give-up (a long co-op yard catching up);
+	# one stuck that long lets it go.
+	screen.call("begin", "Long yard")
+	Router.hold_loading("test.long", "Catching up...")
+	screen.call("scene_built")
+	var give_up_ms := int(screen.GIVE_UP_S * 1000.0) + 5000
+	screen.set("_started_ms", Time.get_ticks_msec() - give_up_ms)
+	Router.loading_progress("test.long", 0.4)
+	await _frames(3)
+	check(Router.is_loading() and Router.is_holding_loading("test.long"), "progress past the give-up keeps the screen up")
+	screen.set("_started_ms", Time.get_ticks_msec() - give_up_ms)
+	Router.loading_progress("test.long", 0.4)
+	await _frames(3)
+	check(not Router.is_holding_loading("test.long"), "a hold that stopped moving is given up")
+	await get_tree().create_timer(0.8).timeout
+
 	# release_all ends it at once.
 	screen.call("begin", "Again")
 	Router.hold_loading("test.c", "Stuck")

@@ -82,6 +82,9 @@ var _berth_used := 0
 var _hauler_free: Array[bool] = []
 var _mats: Dictionary = {}
 var _next_id := 0
+## True while the yard's clock is replaying to catch up (YardSim sets it): looks that only
+## matter on screen (the bots' fans and lean) are left for the ticks that are drawn.
+var fast := false
 var _next_brand := 0
 var _ship: Dictionary = {}
 ## The lines' own ships (YardDeliveryShips) in place of the 0.4.1 hauler and freighter.
@@ -259,12 +262,13 @@ func step(delta: float) -> void:
 			consume(l)
 	for b in bots.duplicate():
 		if b.has("hauler") and bool(b.aboard) and b.hauler.state != "open":
-			BotLook.animate(b.node, delta, false)
+			if not fast:
+				BotLook.animate(b.node, delta, false)
 			continue
 		if (b.job as Array).is_empty():
 			_next_job(b)
 		_step_bot(b, delta)
-	if racks:
+	if racks and not fast:
 		racks.show_charging(bots)
 
 
@@ -636,7 +640,7 @@ func _step_bot(b: Dictionary, delta: float) -> void:
 		grip.hold(carrying.node, from, (carrying.node as Node3D).global_position + Vector3(0, _load_height(carrying) * 0.5, 0))
 	else:
 		grip.release()
-	if not (racks and Racks.docked(b)):   # on its charger the fans stand still
+	if not fast and not (racks and Racks.docked(b)):   # on its charger the fans stand still
 		_spin(node, delta, not job.is_empty())
 	if job.is_empty():
 		return

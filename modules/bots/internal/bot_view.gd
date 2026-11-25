@@ -146,6 +146,8 @@ func _make(b: Dictionary, key: String) -> Dictionary:
 	look.name = "Bot%d" % int(b.id)
 	look.position = b.pos
 	add_child(look)
+	if wl:
+		wl.call("lay_hose", look)
 	var e := {"look": look, "key": key, "t": randf() * 10.0, "flash": 0.0, "family": str(t.family), "wl": wl}
 	# Sparks and an arc light for the welders, a scan beam for the inspectors, tractor lines for fitting.
 	var tips := _tips(e, look)
@@ -250,7 +252,8 @@ func _draw_bot(b: Dictionary, e: Dictionary, delta: float) -> void:
 			var want := Basis.looking_at(flat.normalized(), Vector3.UP)
 			look.basis = look.basis.slerp(want, clampf(delta * 4.0, 0.0, 1.0)).orthonormalized()
 	e.t = float(e.t) + delta
-	var skin := look.get_meta("skin", null) as ShaderMaterial
+	# A null default still errors on a missing key, so ask first (the androids have no "skin").
+	var skin := look.get_meta("skin") as ShaderMaterial if look.has_meta("skin") else null
 	if skin and absf(float(e.get("wear", -1.0)) - float(b.wear)) > 0.02:
 		e.wear = float(b.wear)
 		skin.set_shader_parameter("wear", clampf(float(b.wear), 0.0, 1.0) * 0.8 + 0.08)
@@ -338,6 +341,8 @@ func _animate_android(e: Dictionary, look: Node3D, task: Dictionary, working: bo
 	else:
 		wl.call("rest", look, "R")
 		wl.call("rest", look, "L")
+	# The umbilical to the tool hand: unlaid, its links lay bunched at the bot's middle.
+	wl.call("lay_hose", look)
 
 
 ## Points mesh `m` (a cone 1 m tall along y) from `a` to `b`.
