@@ -146,6 +146,8 @@ func _make(b: Dictionary, key: String) -> Dictionary:
 	look.name = "Bot%d" % int(b.id)
 	look.position = b.pos
 	add_child(look)
+	if wl:
+		wl.call("lay_hose", look)
 	var e := {"look": look, "key": key, "t": randf() * 10.0, "flash": 0.0, "family": str(t.family), "wl": wl}
 	# Sparks and an arc light for the welders, a scan beam for the inspectors, tractor lines for fitting.
 	var tips := _tips(e, look)
@@ -339,6 +341,8 @@ func _animate_android(e: Dictionary, look: Node3D, task: Dictionary, working: bo
 	else:
 		wl.call("rest", look, "R")
 		wl.call("rest", look, "L")
+	# The umbilical to the tool hand: unlaid, its links lay bunched at the bot's middle.
+	wl.call("lay_hose", look)
 
 
 ## Points mesh `m` (a cone 1 m tall along y) from `a` to `b`.
