@@ -20,7 +20,8 @@ const POINTER_ID := "core.loading"
 const SETTLE_FRAME_MS := 70.0
 ## This many settled frames in a row and the scene is ready.
 const SETTLE_FRAMES := 20
-## Ready or not, the screen goes after this long (s).
+## Ready or not, the screen goes after this long with nothing moving (s): a hold whose
+## progress keeps rising (a long co-op yard catching up) keeps it up.
 const GIVE_UP_S := 180.0
 ## Settling ends after this long even if the frames never calm (a slow PC) (s).
 const SETTLE_GIVE_UP_S := 12.0
@@ -114,7 +115,10 @@ func hold(key: String, label: String) -> void:
 func progress(key: String, fraction: float, label: String) -> void:
 	if not _holds.has(key):
 		return
-	_holds[key].fraction = clampf(fraction, 0.0, 1.0)
+	var f := clampf(fraction, 0.0, 1.0)
+	if f > float(_holds[key].fraction) + 0.001:
+		_started_ms = Time.get_ticks_msec()
+	_holds[key].fraction = f
 	if label != "":
 		_holds[key].label = label
 

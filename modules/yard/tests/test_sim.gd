@@ -47,9 +47,12 @@ func run_tests() -> void:
 	bus.sim_log.assign(log)
 	bus.sim_fleet = fleet0   # the crew at the host's tick 0
 	(b.get("sim") as Node).call("restart")
+	# Replaying to catch up, the looks only drawn on screen are skipped: the yard is the same.
+	b.get("traffic").set("fast", true)
 	(b.get("sim") as Node).call("run_ticks", TICKS)
+	b.get("traffic").set("fast", false)
 	var friend := _state(b)
-	check(host == friend, "the friend's yard is the host's, tick for tick%s" % _diff(host, friend))
+	check(host == friend, "the friend's yard (replayed fast) is the host's, tick for tick%s" % _diff(host, friend))
 	b.queue_free()
 	await frames(2)
 	await _fleet(bus)
